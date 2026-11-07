@@ -2798,11 +2798,9 @@ async fn create_prompt_success_and_unknown_create_are_never_replayed() {
         if unknown {
             assert_eq!(second, CreatePromptOutcome::CreateUnknown);
         } else {
-            assert_eq!(
-                second,
-                CreatePromptOutcome::DeliveryUnknownOrBlocked {
-                    session: SessionRef("issued".into())
-                }
+            assert!(
+                matches!(second,CreatePromptOutcome::Admitted{ref session,ref receipt} if session.0=="issued" && receipt.native_id=="turn-created"),
+                "exact prior receipt must be recovered: {second:?}"
             );
         }
         assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
@@ -2959,10 +2957,7 @@ async fn create_prompt_requires_trusted_grant_for_new_exact_session() {
     )
     .await
     .unwrap();
-    assert!(matches!(
-        repeat,
-        CreatePromptOutcome::DeliveryUnknownOrBlocked { .. }
-    ));
+    assert!(matches!(repeat, CreatePromptOutcome::Admitted { .. }));
     assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
     assert_eq!(submit.0.load(Ordering::SeqCst), 1);
 }
@@ -3848,6 +3843,25 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
             assert_eq!(again["result"]["resultType"], "task", "{again}");
             let third = request(&mut w, &mut lines, create(5)).await;
             assert_eq!(third["result"]["resultType"], "task", "{third}");
+            if scenario == "confirmed" {
+                assert_eq!(third["result"]["status"], "completed");
+                let repeated_task = third["result"]["taskId"].as_str().unwrap();
+                let recovered=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":7,"method":"tasks/get","params":{"_meta":meta,"taskId":repeated_task}})).await;
+                assert_eq!(
+                    recovered["result"]["result"]["structuredContent"]["prompt"]["outcome"],
+                    "confirmed"
+                );
+            }
+            let conflict=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"profile-ref","prompt":"changed prompt","request_key":"key"}}})).await;
+            assert_eq!(conflict["result"]["resultType"], "task", "{conflict}");
+            let conflict_id = conflict["result"]["taskId"].as_str().unwrap();
+            let conflict_status=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":9,"method":"tasks/get","params":{"_meta":meta,"taskId":conflict_id}})).await;
+            assert_eq!(
+                conflict_status["result"]["result"]["structuredContent"]["code"],
+                "idempotency_conflict",
+                "{conflict_status}"
+            );
+
             let original=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":6,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
             assert_eq!(original["result"]["status"], "completed");
             if scenario == "no_grant" {

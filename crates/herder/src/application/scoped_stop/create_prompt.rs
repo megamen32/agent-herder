@@ -137,6 +137,20 @@ where
     let instance = creator.instance();
     let (delivery_key, intent_id, task_id) =
         delivery_identifiers(&principal.id, instance, request.request_key)?;
+    // Check key/payload reuse before a new create attempt; conflicts are
+    // deterministic and must never be presented as a fresh UNKNOWN.
+    if matches!(
+        authority.recover_fresh_create(
+            identity,
+            grants,
+            instance,
+            request.request_key,
+            request.specification
+        )?,
+        RecoveredCreate::Conflict
+    ) {
+        return Ok(CreatePromptOutcome::Conflict);
+    }
     let create = authority.create_fresh_root(
         identity,
         grants,
@@ -211,6 +225,61 @@ where
         } else {
             CreatePromptOutcome::DeliveryUnknownOrBlocked { session }
         });
+    }
+    // A repeated composite request must recover its exact durable delivery
+    // receipt, not submit again or erase known admission into UNKNOWN.
+    let previous = (|| -> Result<Option<CreatePromptOutcome>, GateError> {
+        use crate::application::reconcile::{
+            ReceiptBinding, StoredReceipt, dispatch_payload_binding, load_native_receipt,
+        };
+        use crate::domain::adapter::DispatchPlan;
+        use rusqlite::OptionalExtension;
+        let (address, _) =
+            authority.resolve_session(identity, &effective_grants, &session, instance)?;
+        let expected = dispatch_payload_binding(
+            &DispatchPlan {
+                target: address.clone(),
+                mode: SendMode::Start,
+                expected_turn: None,
+            },
+            request.specification,
+        );
+        let (_guard, writer) = authority.lock()?;
+        let row:Option<(String,String,String)> = writer.connection().query_row(
+            "SELECT intent_id,payload_hash,state FROM intents WHERE principal=?1 AND target=?2 AND request_key=?3",
+            rusqlite::params![principal.id.0,session.0,delivery_key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+        ).optional().map_err(|_|GateError::Store)?;
+        let Some((prior_intent, hash, state)) = row else {
+            return Ok(None);
+        };
+        if hash != expected {
+            return Ok(Some(CreatePromptOutcome::Conflict));
+        }
+        if matches!(state.as_str(), "admitted" | "confirmed") {
+            let binding = ReceiptBinding {
+                intent_id: &prior_intent,
+                principal: &principal.id.0,
+                target_ref: &session.0,
+                request_key: &delivery_key,
+                address: &address,
+            };
+            if let StoredReceipt::Found(receipt) =
+                load_native_receipt(writer.connection(), &binding).map_err(|_| GateError::Store)?
+            {
+                return Ok(Some(CreatePromptOutcome::Admitted {
+                    session: session.clone(),
+                    receipt,
+                }));
+            }
+        }
+        Ok(Some(CreatePromptOutcome::DeliveryUnknownOrBlocked {
+            session: session.clone(),
+        }))
+    })();
+    match previous {
+        Ok(Some(outcome)) => return Ok(outcome),
+        Err(_) => return Ok(CreatePromptOutcome::DeliveryUnknownOrBlocked { session }),
+        Ok(None) => (),
     }
     let result = deliver_scoped(
         authority,
