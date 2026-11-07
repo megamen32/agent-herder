@@ -34,9 +34,12 @@ pub struct TranscriptBlock {
     /// Text is populated only for explicitly classified text blocks.
     pub text: Option<String>,
     pub source: TranscriptSourceRef,
-    pub block_index: u32,
-    /// Exact native type label, retained even when the normalized kind is Other.
-    pub native_type: String,
+    /// Index in a native block array, absent for a message-level field.
+    pub block_index: Option<u32>,
+    /// Exact native type label, absent when the provider supplied none.
+    pub native_type: Option<String>,
+    /// Native message field, such as `content`, when this was not an array block.
+    pub source_field: Option<String>,
 }
 
 /// Pagination cursor bound to trusted caller identity and one immutable snapshot.
@@ -186,8 +189,9 @@ pub fn normalize_transcript_blocks(
                 kind,
                 text,
                 source: source.clone(),
-                block_index: index as u32,
-                native_type: raw.native_type,
+                block_index: Some(index as u32),
+                native_type: Some(raw.native_type),
+                source_field: None,
             }
         })
         .collect()
@@ -213,6 +217,14 @@ mod tests {
     }
 
     #[test]
+    fn plain_message_content_retains_text_without_fabricated_block_metadata() {
+        let raw = serde_json::json!({"kind":"text","text":"hello", "source":source("msg",None), "block_index":null,"native_type":null,"source_field":"content"});
+        let block: TranscriptBlock =
+            serde_json::from_value(raw.clone()).expect("plain message field must be representable");
+        assert_eq!(serde_json::to_value(block).unwrap(), raw);
+    }
+
+    #[test]
     fn opencode_native_message_id_is_preserved_per_block() {
         let blocks = normalize_transcript_blocks(
             &source("msg_1b3a66ec3001qxRDmdN2DXIlDE", None),
@@ -234,7 +246,7 @@ mod tests {
             "msg_1b3a66ec3001qxRDmdN2DXIlDE"
         );
         assert_eq!(blocks[0].source.turn_id, None);
-        assert_eq!(blocks[0].block_index, 0);
+        assert_eq!(blocks[0].block_index, Some(0));
     }
 
     #[test]
@@ -258,7 +270,7 @@ mod tests {
         );
         assert_eq!(
             blocks.iter().map(|b| b.block_index).collect::<Vec<_>>(),
-            vec![0, 1, 2]
+            vec![Some(0), Some(1), Some(2)]
         );
         assert_eq!(
             blocks[0].source.message_id,
@@ -268,7 +280,7 @@ mod tests {
         assert_eq!(blocks[1].kind, TranscriptBlockKind::Image);
         assert_eq!(blocks[1].text, None);
         assert_eq!(blocks[2].kind, TranscriptBlockKind::Other);
-        assert_eq!(blocks[2].native_type, "vendor_block_v7");
+        assert_eq!(blocks[2].native_type.as_deref(), Some("vendor_block_v7"));
         assert_eq!(blocks[2].text, None);
         assert_eq!(blocks[0].source.turn_id, None);
     }
