@@ -15,6 +15,10 @@ pub mod domain {
 pub mod error;
 pub mod store;
 
+pub mod ownership {
+    pub mod manifest;
+}
+
 pub mod mcp {
     pub mod catalog;
 }
