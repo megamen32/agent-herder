@@ -3,6 +3,7 @@ use std::path::Path;
 
 pub mod intents;
 pub mod lineage;
+mod session_bindings;
 
 const WRITER_VERSION: i32 = 1;
 const SCHEMA: &str = include_str!("schema.sql");
@@ -13,14 +14,14 @@ pub struct Writer {
 }
 
 impl Writer {
-    fn configure(connection: Connection) -> Result<Connection> {
+    fn configure(connection: Connection, version: i32) -> Result<Connection> {
         connection.pragma_update(None, "foreign_keys", true)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.create_scalar_function(
             "herder_writer_version",
             0,
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-            |_| Ok(WRITER_VERSION),
+            move |_| Ok(version),
         )?;
         Ok(connection)
     }
@@ -35,27 +36,26 @@ impl Writer {
             options.mode(0o600);
         }
         drop(options.open(path)?);
-        let connection = Self::configure(Connection::open_with_flags(
-            path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-        )?)?;
+        let connection = Self::configure(
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?,
+            WRITER_VERSION,
+        )?;
         connection.execute_batch(&format!("BEGIN EXCLUSIVE;\n{SCHEMA}\nCOMMIT;"))?;
         Ok(Self { connection })
     }
 
     /// Open an existing supported database without creating or migrating it.
     pub fn open_file(path: &Path) -> Result<Self> {
-        let connection = Self::configure(Connection::open_with_flags(
-            path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-        )?)?;
+        let connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != WRITER_VERSION {
+        if !matches!(version, 1 | 2) {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
                 Some(format!("unsupported store schema version {version}")),
             ));
         }
+        let connection = Self::configure(connection, version)?;
         Ok(Self { connection })
     }
 
@@ -68,7 +68,7 @@ impl Writer {
 
     /// Create a fresh database; this constructor never opens persistent state.
     pub fn temporary() -> Result<Self> {
-        let connection = Self::configure(Connection::open_in_memory()?)?;
+        let connection = Self::configure(Connection::open_in_memory()?, WRITER_VERSION)?;
         connection.execute_batch(&format!("BEGIN EXCLUSIVE;\n{SCHEMA}\nCOMMIT;"))?;
         Ok(Self { connection })
     }
@@ -113,7 +113,7 @@ mod tests {
         w.insert_task("one", "p", "prepared", "now").unwrap();
         assert!(Writer::create_file(&path).is_err());
         let external = Connection::open(&path).unwrap();
-        external.pragma_update(None, "user_version", 2).unwrap();
+        external.pragma_update(None, "user_version", 3).unwrap();
         assert!(w.insert_task("two", "p", "prepared", "now").is_err());
         drop(w);
         drop(external);
