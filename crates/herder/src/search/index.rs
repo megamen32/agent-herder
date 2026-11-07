@@ -134,6 +134,60 @@ pub fn search_page(
     offset: usize,
     limit: NonZeroUsize,
 ) -> rusqlite::Result<SearchPage> {
+    search_page_with_hook(
+        connection,
+        query,
+        acl_allowed_sessions,
+        source_coverage_complete,
+        offset,
+        limit,
+        || {},
+    )
+}
+
+fn search_page_with_hook(
+    connection: &Connection,
+    query: &str,
+    acl_allowed_sessions: &[SessionAddress],
+    source_coverage_complete: bool,
+    offset: usize,
+    limit: NonZeroUsize,
+    before_hits: impl FnOnce(),
+) -> rusqlite::Result<SearchPage> {
+    // Respect a caller's existing transaction; otherwise pin a deferred read
+    // snapshot for coverage, count and all hits, without taking a write lock.
+    let tx = if connection.is_autocommit() {
+        Some(rusqlite::Transaction::new_unchecked(
+            connection,
+            TransactionBehavior::Deferred,
+        )?)
+    } else {
+        None
+    };
+    let result = search_page_inner(
+        connection,
+        query,
+        acl_allowed_sessions,
+        source_coverage_complete,
+        offset,
+        limit,
+        before_hits,
+    )?;
+    if let Some(tx) = tx {
+        tx.commit()?;
+    }
+    Ok(result)
+}
+
+fn search_page_inner(
+    connection: &Connection,
+    query: &str,
+    acl_allowed_sessions: &[SessionAddress],
+    source_coverage_complete: bool,
+    offset: usize,
+    limit: NonZeroUsize,
+    before_hits: impl FnOnce(),
+) -> rusqlite::Result<SearchPage> {
     let allowed_refs = acl_allowed_sessions
         .iter()
         .map(canonical_session_ref)
@@ -172,6 +226,8 @@ pub fn search_page(
     let sql_offset = i64::try_from(offset).map_err(|_| {
         rusqlite::Error::InvalidParameterName("search offset is out of range".into())
     })?;
+
+    before_hits();
 
     let mut statement = connection.prepare(
         "SELECT session_ref, snippet(session_search_fts, 1, '‹', '›', '…', 24) \
@@ -245,6 +301,78 @@ mod tests {
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
     use rusqlite::{Connection, OptionalExtension};
     use std::num::NonZeroUsize;
+
+    #[test]
+    fn page_coverage_count_and_hits_share_one_snapshot() {
+        use std::sync::mpsc;
+        let path = std::env::temp_dir().join(format!(
+            "herder-search-snapshot-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut reader = Connection::open(&path).unwrap();
+        reader.pragma_update(None, "journal_mode", "WAL").unwrap();
+        reader.execute_batch("CREATE VIRTUAL TABLE session_search_fts USING fts5(session_ref UNINDEXED, content, tokenize='unicode61'); CREATE TABLE session_search_state(session_ref TEXT PRIMARY KEY NOT NULL, snapshot_id TEXT NOT NULL, content_truncated INTEGER NOT NULL CHECK(content_truncated IN (0,1))) STRICT;").unwrap();
+        let a = address("node", "profile", "a");
+        let b = address("node", "profile", "b");
+        update_session(&mut reader, &a, "1", "other", false).unwrap();
+        update_session(&mut reader, &b, "1", "hello", false).unwrap();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+        let (done_tx, done_rx) = mpsc::sync_channel(0);
+        let writer_path = path.clone();
+        let writer_a = a.clone();
+        let writer = std::thread::spawn(move || {
+            let mut connection = Connection::open(writer_path).unwrap();
+            ready_rx.recv().unwrap();
+            update_session(&mut connection, &writer_a, "2", "hello", true).unwrap();
+            done_tx.send(()).unwrap();
+        });
+        let page = super::search_page_with_hook(
+            &reader,
+            "hello",
+            &[a, b.clone()],
+            true,
+            0,
+            NonZeroUsize::new(1).unwrap(),
+            || {
+                ready_tx.send(()).unwrap();
+                done_rx
+                    .recv_timeout(std::time::Duration::from_secs(3))
+                    .unwrap();
+            },
+        )
+        .unwrap();
+        writer.join().unwrap();
+        assert_eq!(page.coverage, super::SearchCoverage::Complete);
+        assert_eq!(page.total_hits, 1);
+        assert_eq!(page.hits[0].session, b);
+        assert_eq!(page.next_offset, None);
+        drop(reader);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn search_preserves_caller_owned_transaction() {
+        let mut connection = connection();
+        let a = address("node", "profile", "a");
+        update_session(&mut connection, &a, "1", "hello", false).unwrap();
+        connection.execute_batch("BEGIN DEFERRED").unwrap();
+        let page = super::search_page(
+            &connection,
+            "hello",
+            &[a],
+            true,
+            0,
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(page.total_hits, 1);
+        assert!(!connection.is_autocommit());
+        connection.execute_batch("ROLLBACK").unwrap();
+    }
 
     #[test]
     fn missing_authorized_session_cannot_claim_complete_coverage() {
