@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T18:11:58+00:00",
+  "details": "LHC1.17 observe_native purpose turn возвращаетunknown при session idle и exactnativeinProgress; reconcile выходит доjoin. RED3failed8passed, fix2b2661d1 GREEN11passed regression74passed; sourceapprovedKuhn. Installation/nativeproofpending.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T18:11:58+00:00",
+      "changes": {
+        "details": "LHC1.17 observe_native purpose turn возвращаетunknown при session idle и exactnativeinProgress; reconcile выходит доjoin. RED3failed8passed, fix2b2661d1 GREEN11passed regression74passed; sourceapprovedKuhn. Installation/nativeproofpending.",
+        "source": "QLHCCONTINUE",
+        "status": "open",
+        "title": "LHC не ставит completion wait при stale idle + exact native inProgress"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra",
+      "at": "2026-11-07T18:16:07+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QLHCCONTINUE/green.txt",
+            "red_proof_path": "evidence/QLHCCONTINUE/red.txt",
+            "red_result": "3 failed",
+            "red_sha256": "b28fffee404fb66980d93a7cfbfe215363ee62cab17a340f812d4356f351c2ec",
+            "result": "11 passed",
+            "sha256": "dd1fe9f93d6641fd48edc03fdacaff60a30c9344e3ee7f97db6f986c05b1ffcf",
+            "test_command": "python3 -m pytest -q tests/test_lhc_execution.py -k 'stale_idle or native_turn_observation or fast_child'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B9114726437de42c6b2cc",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QLHCCONTINUE/green.txt",
+      "red_proof_path": "evidence/QLHCCONTINUE/red.txt",
+      "red_result": "3 failed",
+      "red_sha256": "b28fffee404fb66980d93a7cfbfe215363ee62cab17a340f812d4356f351c2ec",
+      "result": "11 passed",
+      "sha256": "dd1fe9f93d6641fd48edc03fdacaff60a30c9344e3ee7f97db6f986c05b1ffcf",
+      "test_command": "python3 -m pytest -q tests/test_lhc_execution.py -k 'stale_idle or native_turn_observation or fast_child'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "QLHCCONTINUE",
+  "status": "fixed",
+  "title": "LHC не ставит completion wait при stale idle + exact native inProgress",
+  "updated_at": "2026-11-07T18:16:07+00:00"
+}

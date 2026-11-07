@@ -1,0 +1,84 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+F....F                                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_delayed_delivery_uses_its_own_budget_and_sends_once ___________
+
+delayed_http = (<lhc_execution_transport.HerderMcpClient object at 0x75d455e02410>, {'deliver': 0.3}, [('initialize', {'capabilities'...-11-25'}), ('notifications/initialized', {}), ('deliver', {'arguments': {'inputId': 'one-input'}, 'name': 'deliver'})])
+
+    def test_delayed_delivery_uses_its_own_budget_and_sends_once(delayed_http):
+        client, delays, calls = delayed_http
+        delays['deliver'] = 0.30
+>       result = client.call('deliver', {'inputId': 'one-input'})
+
+tests/test_execution_transport_timeout.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_execution_transport.py:188: in call
+    return unwrap_tool(self._rpc('tools/call', {'name': name, 'arguments': arguments}))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <lhc_execution_transport.HerderMcpClient object at 0x75d455e02410>
+method = 'tools/call'
+params = {'arguments': {'inputId': 'one-input'}, 'name': 'deliver'}
+
+    def _rpc(self, method, params):
+        identity = str(uuid.uuid4())
+        payload = {'jsonrpc': '2.0', 'method': method, 'params': params}
+        notify = method.startswith('notifications/')
+        if not notify:
+            payload['id'] = identity
+        if self._token is None:
+            self._token = existing_token(self._env)
+        headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
+                   'MCP-Protocol-Version': '2025-11-25', 'Authorization': 'Bearer ' + self._token}
+        if self._session:
+            headers['Mcp-Session-Id'] = self._session
+        submitted = method == 'tools/call'
+        try:
+            response = self._opener.open(urllib.request.Request(self.url, json.dumps(payload).encode(), headers), timeout=self.timeout)
+            with response:
+                if method == 'initialize':
+                    self._session = response.headers.get('Mcp-Session-Id')
+                if notify:
+                    return {}
+                data = b''
+                while True:
+                    chunk = response.read1(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                    if len(data) > 1048576:
+                        raise TransportError('herder_response_limit', submitted=submitted)
+                    if 'text/event-stream' in response.headers.get('Content-Type', ''):
+                        for frame in data.replace(b'\r\n', b'\n').split(b'\n\n')[:-1]:
+                            text = '\n'.join(l[5:].lstrip() for l in frame.decode().splitlines() if l.startswith('data:'))
+                            try:
+                                value = json.loads(text)
+                            except ValueError:
+                                continue
+                            if value.get('id') == identity:
+                                return self._checked(value, identity, submitted)
+                return self._checked(json.loads(data), identity, submitted)
+        except TransportError:
+            raise
+        except urllib.error.HTTPError as error:
+            code = error.code
+            error.close()
+            raise TransportError('herder_http_' + str(code), submitted=submitted) from None
+        except Exception:
+>           raise TransportError('herder_transport_unavailable', submitted=submitted) from None
+E           lhc_execution_transport.TransportError: herder_transport_unavailable
+
+src/common/tools/lhc_execution_transport.py:172: TransportError
+____________ test_delivery_budget_defaults_and_constructor_override ____________
+
+    def test_delivery_budget_defaults_and_constructor_override():
+        client = HerderMcpClient(token='isolated-fixture-token')
+        assert client.timeout == 10
+>       assert client.deliver_timeout == 60
+E       AttributeError: 'HerderMcpClient' object has no attribute 'deliver_timeout'
+
+tests/test_execution_transport_timeout.py:108: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_execution_transport_timeout.py::test_delayed_delivery_uses_its_own_budget_and_sends_once
+FAILED tests/test_execution_transport_timeout.py::test_delivery_budget_defaults_and_constructor_override
+2 failed, 4 passed in 0.79s

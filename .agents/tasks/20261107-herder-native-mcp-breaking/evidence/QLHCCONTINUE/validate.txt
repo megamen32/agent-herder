@@ -1,0 +1,62 @@
+warning: AGENTS.md has 295 lines; the soft limit is 250 - trim before adding more
+parity: PASS (23 skills)
+plugin validation: PASS skills=23 canonical=PASS (23) parity=PASS (23 skills)
+........................................................................ [  6%]
+...............................................s........................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 48%]
+........................................................................ [ 55%]
+........................................................................ [ 62%]
+...ss............................s...................................... [ 68%]
+........................................................................ [ 75%]
+.............................s.................s........................ [ 82%]
+........................................................................ [ 89%]
+....F................................................................... [ 96%]
+.....................................                                    [100%]
+=================================== FAILURES ===================================
+__________ test_cli_mutations_and_default_mcp_preserve_the_same_data ___________
+
+tmp_path = PosixPath('/home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/pytest-2622416-3a5bf7b032acaecd/test_cli_mutations_and_default0')
+
+    def test_cli_mutations_and_default_mcp_preserve_the_same_data(tmp_path):
+        via_mcp, via_cli = tmp_path / "mcp", tmp_path / "cli"
+        operations = [
+            ("create_leaf", "create-leaf", {"id": "A", "label": "Проверка"}, None),
+            ("update_leaf", "update-leaf", {"note": "Изменено"}, None),
+            ("update_progress", "progress", {}, "Проверено"),
+        ]
+        for tool, command, fields, note in operations:
+            args = {"plan_dir": str(via_mcp)}
+            args.update({"leaf": fields} if tool == "create_leaf" else {"leaf_id": "A", "fields": fields})
+            if note:
+                args["note"] = note
+            result = call_tool(tool, args)
+            assert not result["isError"], result
+            argv = [sys.executable, str(PLAN_JSON), command, str(via_cli), "A", "--fields", json.dumps(fields)]
+            if note:
+                argv += ["--note", note]
+            direct = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+            assert direct.returncode == 0, direct.stderr
+            left, right = read_leaf(via_mcp, "A"), read_leaf(via_cli, "A")
+            for leaf in (left, right):
+                leaf.pop("created_at")
+                leaf.pop("updated_at")
+                for event in leaf["progress_events"]:
+                    event.pop("at")
+>           assert left == right
+E           AssertionError: assert {'id': 'A', '...e': '', ...}]} == {'harness': '...', ...}], ...}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'progress_events': [{'actor': {'harness': None, 'host_id': None, 'session_id': None, 'source': 'unknown'}, 'changes': {'id': 'A', 'label': 'Проверка'}, 'harness': 'unknown', 'note': '', ...}]} != {'progress_events': [{'actor': {'harness': 'codex', 'host_id': None, 'session_id': '01a1b2b2-5685-7b52-a2bb-05eb931cafa4', 'source': 'native_environment'}, 'changes': {'id': 'A', 'label': 'Проверка'}, 'harness': 'codex', 'note': '', ...}]}
+E             Right contains 2 more items:
+E             {'harness': 'codex', 'session': '01a1b2b2-5685-7b52-a2bb-05eb931cafa4'}
+E             Use -v to get more diff
+
+tests/test_single_plan_mcp.py:97: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_single_plan_mcp.py::test_cli_mutations_and_default_mcp_preserve_the_same_data
+1 failed, 1038 passed, 6 skipped in 136.90s (0:02:16)

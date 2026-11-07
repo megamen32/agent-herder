@@ -1,0 +1,65 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+FFF........                                                              [100%]
+=================================== FAILURES ===================================
+_ test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[inProgress] _
+
+stale_idle_transport = <test_lhc_execution.stale_idle_transport.<locals>.NativeTransport object at 0x783261e74d00>
+native_state = 'inProgress'
+
+    @pytest.mark.parametrize('native_state', ['inProgress', 'in_progress', 'running'])
+    def test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance(stale_idle_transport, native_state):
+        execution = importlib.import_module('lhc_execution')
+        transport = stale_idle_transport
+        transport.turn['status'] = native_state
+        h = Harness()
+        a = execution.dispatch_assignment(h.assignment, 'task', transport=transport, persist=h.persist)
+>       assert a['state'] == 'running'
+E       AssertionError: assert 'submitted' == 'running'
+E         
+E         - running
+E         + submitted
+
+tests/test_lhc_execution.py:416: AssertionError
+_ test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[in_progress] _
+
+stale_idle_transport = <test_lhc_execution.stale_idle_transport.<locals>.NativeTransport object at 0x783261300730>
+native_state = 'in_progress'
+
+    @pytest.mark.parametrize('native_state', ['inProgress', 'in_progress', 'running'])
+    def test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance(stale_idle_transport, native_state):
+        execution = importlib.import_module('lhc_execution')
+        transport = stale_idle_transport
+        transport.turn['status'] = native_state
+        h = Harness()
+        a = execution.dispatch_assignment(h.assignment, 'task', transport=transport, persist=h.persist)
+>       assert a['state'] == 'running'
+E       AssertionError: assert 'submitted' == 'running'
+E         
+E         - running
+E         + submitted
+
+tests/test_lhc_execution.py:416: AssertionError
+_ test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[running] _
+
+stale_idle_transport = <test_lhc_execution.stale_idle_transport.<locals>.NativeTransport object at 0x783261e106d0>
+native_state = 'running'
+
+    @pytest.mark.parametrize('native_state', ['inProgress', 'in_progress', 'running'])
+    def test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance(stale_idle_transport, native_state):
+        execution = importlib.import_module('lhc_execution')
+        transport = stale_idle_transport
+        transport.turn['status'] = native_state
+        h = Harness()
+        a = execution.dispatch_assignment(h.assignment, 'task', transport=transport, persist=h.persist)
+>       assert a['state'] == 'running'
+E       AssertionError: assert 'submitted' == 'running'
+E         
+E         - running
+E         + submitted
+
+tests/test_lhc_execution.py:416: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_lhc_execution.py::test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[inProgress]
+FAILED tests/test_lhc_execution.py::test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[in_progress]
+FAILED tests/test_lhc_execution.py::test_stale_idle_exact_native_turn_arms_one_wake_and_requires_acceptance[running]
+3 failed, 8 passed, 30 deselected in 0.37s

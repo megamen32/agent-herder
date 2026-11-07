@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T18:12:11+00:00",
+  "details": "tests/validate.py:1038passed6skipped1failed test_single_plan_mcp::test_cli_mutations_and_default_mcp_preserve_the_same_data. MCP actorunknown против CLI inherited CODEX_THREAD_ID Astra/native_environment. Тест сравнивает разные callercontext, необходимо одинаковое изолированноеокружение и сохранить отдельные attributiontests. RED сохранён .tmp/parent-continuation/validate.txt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T18:12:11+00:00",
+      "changes": {
+        "details": "tests/validate.py:1038passed6skipped1failed test_single_plan_mcp::test_cli_mutations_and_default_mcp_preserve_the_same_data. MCP actorunknown против CLI inherited CODEX_THREAD_ID Astra/native_environment. Тест сравнивает разные callercontext, необходимо одинаковое изолированноеокружение и сохранить отдельные attributiontests. RED сохранён .tmp/parent-continuation/validate.txt.",
+        "source": "QLHCCONTINUE full validation",
+        "status": "open",
+        "title": "LHC parity test зависит от native окружения запуска"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra",
+      "at": "2026-11-07T18:20:13+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QLHCCONTINUE/parity-green.txt",
+            "red_proof_path": "evidence/QLHCCONTINUE/validate.txt",
+            "red_result": "1 failed",
+            "red_sha256": "d335c816546936ac08f466b81b9628bc4c4b8bb7e6ac4e20e075fbac4dcf96eb",
+            "result": "9 passed",
+            "sha256": "e37d72aff1c63de854c07899a0802c2c20f0fae1d61c0444602e9dcadf69ea95",
+            "test_command": "python3 -m pytest -q tests/test_single_plan_mcp.py::test_cli_mutations_and_default_mcp_preserve_the_same_data tests/test_execution_interface.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bf91c42584d1948c4b3ad",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QLHCCONTINUE/parity-green.txt",
+      "red_proof_path": "evidence/QLHCCONTINUE/validate.txt",
+      "red_result": "1 failed",
+      "red_sha256": "d335c816546936ac08f466b81b9628bc4c4b8bb7e6ac4e20e075fbac4dcf96eb",
+      "result": "9 passed",
+      "sha256": "e37d72aff1c63de854c07899a0802c2c20f0fae1d61c0444602e9dcadf69ea95",
+      "test_command": "python3 -m pytest -q tests/test_single_plan_mcp.py::test_cli_mutations_and_default_mcp_preserve_the_same_data tests/test_execution_interface.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "QLHCCONTINUE full validation",
+  "status": "fixed",
+  "title": "LHC parity test зависит от native окружения запуска",
+  "updated_at": "2026-11-07T18:20:13+00:00"
+}

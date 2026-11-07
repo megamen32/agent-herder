@@ -1,0 +1,14 @@
+{
+  "version": "1.17.1",
+  "published_sha": "2988f0f8",
+  "installed_root": "/home/roomhacker/.codex/plugins/cache/megamen32-plugins/last-human-commit/1.17.1",
+  "matched_source_files": [
+    "tools/lhc_execution.py",
+    "tools/lhc_execution_transport.py",
+    "tools/lhc_entry.py"
+  ],
+  "delivery_timeout_seconds": 60,
+  "read_timeout_seconds": 10,
+  "source_validation": "1045 passed, 6 skipped",
+  "native_parent_wake": "NOT_PROVEN; QLHCNATIVEOBS pending"
+}

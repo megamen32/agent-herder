@@ -1,0 +1,13 @@
+{
+  "ledger": "/home/roomhacker/.local/state/agent-herder/codex-delivery-receipts.json.buckets/43.json",
+  "key": "4308872a2444700ad311299cca00cbdda42abf48c3ceb4bdf7b58c6f3b011b33",
+  "entry": {
+    "at": 1794074870716,
+    "result": {
+      "ok": true,
+      "admitted": true,
+      "turnId": "01a1b732-02d8-7923-99eb-854b79210939",
+      "inputId": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962"
+    }
+  }
+}

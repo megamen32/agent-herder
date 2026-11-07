@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T18:11:59+00:00",
+  "details": "Actual dispatch QLHCREVIEW lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962 timeout10s→delivery_unknown. Canonical Herder receipt accepted turn01a1b732-02d8-7923-99eb-854b79210939 позже; app confirms complete and actualreviewPASS. Send not repeated. Aquinas fixes bounded tools/call deliver timeout independently fromreads.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T18:11:59+00:00",
+      "changes": {
+        "details": "Actual dispatch QLHCREVIEW lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962 timeout10s→delivery_unknown. Canonical Herder receipt accepted turn01a1b732-02d8-7923-99eb-854b79210939 позже; app confirms complete and actualreviewPASS. Send not repeated. Aquinas fixes bounded tools/call deliver timeout independently fromreads.",
+        "source": "QLHCCONTINUE live consumer",
+        "status": "open",
+        "title": "LHC HTTP timeout прерывает ожидание принятого native dispatch"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra",
+      "at": "2026-11-07T18:16:07+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QLHCCONTINUE/transport-timeout/green.txt",
+            "red_proof_path": "evidence/QLHCCONTINUE/transport-timeout/red.txt",
+            "red_result": "2 failed",
+            "red_sha256": "14a139f19bd4da6d073dc968f8f352b282e93c124b0232df09135f7710a4ba27",
+            "result": "6 passed",
+            "sha256": "848f2cfbcda358b124e5076143bb57a09655e55483d3517e5acd6c7eb893d969",
+            "test_command": "python3 -m pytest -q tests/test_execution_transport_timeout.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B5a8c54784dc844d690a5",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QLHCCONTINUE/transport-timeout/green.txt",
+      "red_proof_path": "evidence/QLHCCONTINUE/transport-timeout/red.txt",
+      "red_result": "2 failed",
+      "red_sha256": "14a139f19bd4da6d073dc968f8f352b282e93c124b0232df09135f7710a4ba27",
+      "result": "6 passed",
+      "sha256": "848f2cfbcda358b124e5076143bb57a09655e55483d3517e5acd6c7eb893d969",
+      "test_command": "python3 -m pytest -q tests/test_execution_transport_timeout.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "QLHCCONTINUE live consumer",
+  "status": "fixed",
+  "title": "LHC HTTP timeout прерывает ожидание принятого native dispatch",
+  "updated_at": "2026-11-07T18:16:07+00:00"
+}

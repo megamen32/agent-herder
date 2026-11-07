@@ -1,0 +1,27 @@
+warning: AGENTS.md has 295 lines; the soft limit is 250 - trim before adding more
+parity: PASS (23 skills)
+plugin validation: PASS skills=23 canonical=PASS (23) parity=PASS (23 skills)
+........................................................................ [  6%]
+...............................................s........................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 47%]
+........................................................................ [ 54%]
+........................................................................ [ 61%]
+.........ss............................s................................ [ 68%]
+........................................................................ [ 75%]
+...................................s.................s.................. [ 82%]
+........................................................................ [ 89%]
+........................................................................ [ 95%]
+...........................................                              [100%]
+1045 passed, 6 skipped in 104.11s (0:01:44)
+valid block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/project-agents
+applied block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/project-agents
+applied block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/project-agents
+initialized block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/project-claude
+applied block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/paths with spaces/project agents
+removed block: /home/roomhacker/.codex/worktrees/lhc-parent-continuation/LastHumanCommit/.tmp/lhc-block-test.TMKkM8/removable
+PASS: block adapter preserves project-owned instructions
+PASS: current LHC package, automatic entry, optional adapters and complete behavioral suite

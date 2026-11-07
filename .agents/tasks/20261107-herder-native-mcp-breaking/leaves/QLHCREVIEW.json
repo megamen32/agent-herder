@@ -1,0 +1,296 @@
+{
+  "id": "QLHCREVIEW",
+  "kind": "task",
+  "label": "Независимая проверка LHC продолжения на живой сессии",
+  "status": "queued",
+  "estimate_minutes": 15,
+  "owner": "Kuhn",
+  "description": "Проверить scoped LHC fix и доказать реальную dispatch→childcompletion→parentwake цепочку. Выдача исключительно новым assign/dispatch без исторических фиктивныхattempts; readyрезультат требует ручной acceptance Astra.",
+  "acceptance": "Readonly независимый review минимальногоfix; точные native dispatch/wake receipts, без UNKNOWN replay илиHumanStop bypass.",
+  "affected_files": [
+    "LastHumanCommit/tests/test_lhc_execution.py"
+  ],
+  "depends_on": [],
+  "created_at": "2026-11-07T21:07:06+03:00",
+  "updated_at": "2026-11-07T21:14:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:07:06+03:00",
+      "note": "",
+      "changes": {
+        "id": "QLHCREVIEW",
+        "kind": "task",
+        "label": "Независимая проверка LHC продолжения на живой сессии",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "Kuhn",
+        "description": "Проверить scoped LHC fix и доказать реальную dispatch→childcompletion→parentwake цепочку. Выдача исключительно новым assign/dispatch без исторических фиктивныхattempts; readyрезультат требует ручной acceptance Astra.",
+        "acceptance": "Readonly независимый review минимальногоfix; точные native dispatch/wake receipts, без UNKNOWN replay илиHumanStop bypass.",
+        "affected_files": [
+          "LastHumanCommit/tests/test_lhc_execution.py"
+        ],
+        "depends_on": []
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:07:07+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:07:36+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:07:36+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:07:46+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:14:09+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "declared"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:14:28+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-lhc-native-review-20261107T1807",
+    "executor_kind": "subagent",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b693-0f8b-71e1-82ac-9d2d215239d1"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "state": "submitted",
+    "dispatch": {
+      "request_id": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962",
+      "status": "accepted",
+      "observed_at": "2026-11-07T18:07:46.914448+00:00",
+      "turn_id": "01a1b732-02d8-7923-99eb-854b79210939",
+      "reason": null,
+      "receipt": {
+        "ok": true,
+        "admitted": true,
+        "turnId": "01a1b732-02d8-7923-99eb-854b79210939",
+        "inputId": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962"
+      }
+    },
+    "wake": {
+      "wait_id": null,
+      "state": "blocked",
+      "reason": "native_turn_mismatch",
+      "next_at": null,
+      "observed_at": "2026-11-07T18:14:28.455796+00:00",
+      "turn_id": null,
+      "captured_turn_id": null
+    },
+    "observed_runtime": {
+      "state": "idle",
+      "observed_at": "2026-11-07T18:07:36.496613+00:00",
+      "source": "native_verified",
+      "turn_id": null,
+      "model": null,
+      "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder"
+    },
+    "events": [
+      {
+        "at": "2026-11-07T18:07:07+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      },
+      {
+        "at": "2026-11-07T18:07:36+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": "assigned",
+        "to": "assigned",
+        "receipt": {
+          "observed_runtime": {
+            "state": "idle",
+            "observed_at": "2026-11-07T18:07:36.496613+00:00",
+            "source": "native_verified",
+            "turn_id": null,
+            "model": null,
+            "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder"
+          }
+        }
+      },
+      {
+        "at": "2026-11-07T18:07:36+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": "assigned",
+        "to": "dispatching",
+        "receipt": {
+          "dispatch": {
+            "request_id": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962",
+            "status": "dispatching",
+            "observed_at": "2026-11-07T18:07:36.642266+00:00",
+            "turn_id": null,
+            "reason": null,
+            "receipt": null
+          }
+        }
+      },
+      {
+        "at": "2026-11-07T18:07:46+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": "dispatching",
+        "to": "delivery_unknown",
+        "receipt": {
+          "dispatch": {
+            "request_id": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962",
+            "status": "unknown",
+            "observed_at": "2026-11-07T18:07:46.914448+00:00",
+            "turn_id": null,
+            "reason": "herder_transport_unavailable",
+            "receipt": null
+          }
+        }
+      },
+      {
+        "at": "2026-11-07T18:14:09+00:00",
+        "actor": {
+          "host_id": "roomhacker-server-100",
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "declared"
+        },
+        "from": "delivery_unknown",
+        "to": "submitted",
+        "receipt": {
+          "dispatch": {
+            "status": "accepted",
+            "turn_id": "01a1b732-02d8-7923-99eb-854b79210939",
+            "reason": null,
+            "receipt": {
+              "ok": true,
+              "admitted": true,
+              "turnId": "01a1b732-02d8-7923-99eb-854b79210939",
+              "inputId": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962"
+            }
+          }
+        }
+      },
+      {
+        "at": "2026-11-07T18:14:28+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": "submitted",
+        "to": "submitted",
+        "receipt": {
+          "wake": {
+            "wait_id": null,
+            "state": "blocked",
+            "reason": "native_turn_mismatch",
+            "next_at": null,
+            "observed_at": "2026-11-07T18:14:28.455796+00:00",
+            "turn_id": null,
+            "captured_turn_id": null
+          }
+        }
+      }
+    ]
+  },
+  "assignment_history": []
+}
