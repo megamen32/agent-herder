@@ -50,6 +50,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_responses(self, request, sequence):
         response_id, item_id = f"resp_test_{sequence}", f"msg_test_{sequence}"
+        if self.server.scenario == 'tool-call' and sequence == 1:
+            item = {'id': 'fc_test_1', 'type': 'function_call', 'call_id': 'call_test_1',
+                    'name': 'herder_test_tool', 'arguments': '{"value":"fixture"}', 'status': 'completed'}
+            response = {'id': response_id, 'object': 'response', 'created_at': 0,
+                        'status': 'completed', 'model': request.get('model', 'herder-test'),
+                        'output': [item], 'usage': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}}
+            if not request.get('stream'):
+                return self.reply(200, 'application/json', json.dumps(response).encode())
+            events = [
+                {'type': 'response.created', 'response': dict(response, status='in_progress', output=[])},
+                {'type': 'response.output_item.added', 'output_index': 0, 'item': dict(item, status='in_progress', arguments='')},
+                {'type': 'response.function_call_arguments.delta', 'item_id': item['id'], 'output_index': 0, 'delta': item['arguments']},
+                {'type': 'response.function_call_arguments.done', 'item_id': item['id'], 'output_index': 0, 'arguments': item['arguments']},
+                {'type': 'response.output_item.done', 'output_index': 0, 'item': item},
+                {'type': 'response.completed', 'response': response},
+            ]
+            body = ''.join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events).encode()
+            return self.reply(200, 'text/event-stream', body)
         part = {"type": "output_text", "text": ANSWER, "annotations": []}
         item = {"id": item_id, "type": "message", "status": "completed", "role": "assistant", "content": [part]}
         response = {"id": response_id, "object": "response", "created_at": 0, "status": "completed", "model": request.get("model", "herder-test"), "output": [item], "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}
@@ -72,6 +90,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def chat(self, request, sequence):
         base = {"id": f"chatcmpl-test-{sequence}", "object": "chat.completion", "created": 0, "model": request.get("model", "herder-test")}
+        if self.server.scenario == 'tool-call' and sequence == 1:
+            call = {'id': 'call_test_1', 'type': 'function', 'function': {'name': 'herder_test_tool', 'arguments': '{"value":"fixture"}'}}
+            if not request.get('stream'):
+                base['choices'] = [{'index': 0, 'message': {'role': 'assistant', 'content': None, 'tool_calls': [call]}, 'finish_reason': 'tool_calls'}]
+                return self.reply(200, 'application/json', json.dumps(base).encode())
+            base['object'] = 'chat.completion.chunk'
+            chunks = [dict(base, choices=[{'index': 0, 'delta': {'role': 'assistant', 'tool_calls': [dict(call, index=0)]}, 'finish_reason': None}]),
+                      dict(base, choices=[{'index': 0, 'delta': {}, 'finish_reason': 'tool_calls'}])]
+            body = (''.join(f'data: {json.dumps(chunk)}\n\n' for chunk in chunks) + 'data: [DONE]\n\n').encode()
+            return self.reply(200, 'text/event-stream', body)
         if not request.get("stream"):
             base["choices"] = [{"index": 0, "message": {"role": "assistant", "content": ANSWER}, "finish_reason": "stop"}]
             return self.reply(200, "application/json", json.dumps(base).encode())
@@ -84,8 +112,10 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument('--scenario', choices=('text', 'tool-call'), default='text')
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server.scenario = args.scenario
     print(server.server_port, flush=True)
     server.serve_forever()
 

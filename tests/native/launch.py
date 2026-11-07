@@ -88,6 +88,12 @@ def main():
         print(f'network namespace isolation unavailable: {error}', file=sys.stderr)
         return 2
     command = args[2:]
+    scenario = 'text'
+    if command[:1] == ['--scenario']:
+        if len(command) < 3 or command[1] not in ('text', 'tool-call'):
+            print('invalid fixture scenario', file=sys.stderr)
+            return 2
+        scenario, command = command[1], command[2:]
     if command and command[0] == "--":
         command = command[1:]
     if not command:
@@ -107,7 +113,7 @@ def main():
             "TMPDIR": str(home / "tmp"),
         }
         try:
-            model_cmd = sandbox_command([sys.executable, str(Path(__file__).with_name('test-model-server.py'))], root)
+            model_cmd = sandbox_command([sys.executable, str(Path(__file__).with_name('test-model-server.py')), '--scenario', scenario], root)
             client_cmd = sandbox_command(command, root)
         except RuntimeError as error:
             print(str(error), file=sys.stderr)

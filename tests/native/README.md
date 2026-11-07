@@ -20,6 +20,10 @@ and unrelated `/tmp` files are not mounted. It requires `unshare`, `ip`,
 `bwrap`, and permitted unprivileged user namespaces. The model
 supports `/models`, `/responses` and `/chat/completions` including streaming;
 `/_stats` is at the server root. The server and profile are removed on exit.
+For a tool-calling fixture, pass `--scenario tool-call` before `-- COMMAND`.
+The first model request returns `herder_test_tool` with call ID `call_test_1`
+and arguments `{"value":"fixture"}`; later requests return the normal text.
+The client must register that tool. This fixture does not execute the tool.
 Use an absolute executable path if it is outside the minimal PATH; explicitly
 configure each test client to use the provided endpoint. No credentials or
 existing profiles are inherited through the environment. Arbitrary project
