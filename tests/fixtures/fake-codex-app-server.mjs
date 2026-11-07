@@ -87,6 +87,7 @@ rl.on("line", (line) => {
   log({ kind: "request", method: request.method, id: request.id, params: request.params });
   if (request.method === "initialize") return reply(request.id, { userAgent: "fake-codex/1" });
   if (request.method === "initialized") return;
+  if (request.method === "thread/loaded/list") return reply(request.id, { data: [], nextCursor: null });
   if (request.method === "thread/list") {
     const cursor = typeof request.params?.cursor === "string" ? request.params.cursor : "";
     if (failListCursor !== undefined && cursor === failListCursor) return replyError(request.id, `forced thread/list failure at ${cursor || "first"}`);

@@ -111,6 +111,46 @@ function stubScopedCollectionReads(adapter: CodexAppServerAdapter, options: {
 }
 
 describe("Codex app-server adapter", () => {
+  it("includes loaded zero-turn threads omitted by the full native list", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-loaded-full-list-"));
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root });
+    const { calls } = stubScopedCollectionReads(adapter, {
+      root, ready: true,
+      listedThreads: [{ id: "persisted", cwd: root, status: "idle" }],
+      loadedIds: ["persisted", "empty-thread"],
+      namedThreads: [{ id: "empty-thread", cwd: root, name: "new session", status: "idle" }],
+    });
+    try {
+      const sessions = await adapter.listSessions();
+      expect(sessions.map((session) => session.id).sort()).toEqual(["empty-thread", "persisted"]);
+      expect(calls.rpc).toContain("thread/loaded/list");
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("pages loaded threads and marks incomplete metadata instead of claiming an exhaustive list", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-loaded-pages-"));
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root });
+    const { internals } = stubScopedCollectionReads(adapter, { root, ready: true });
+    const request = internals.request;
+    internals.request = async (method, params) => {
+      if (method === "thread/loaded/list") return params?.cursor
+        ? { data: ["second"], nextCursor: null } : { data: ["first"], nextCursor: "next" };
+      if (method === "thread/read" && params?.threadId === "second") return { thread: { id: "wrong" } };
+      return request(method, params);
+    };
+    try {
+      const sessions = await adapter.listSessions();
+      expect(sessions.map((session) => session.id)).toEqual(["first"]);
+      expect(adapter.getSessionSnapshotReceipt()).toMatchObject({
+        exhaustive: false, reason: "native_candidate_metadata_unavailable",
+      });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("a busy app-server thread/list page falls back to the persisted state index", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-thread-list-deadline-"));
     const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root });

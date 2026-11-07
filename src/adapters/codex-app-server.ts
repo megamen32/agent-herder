@@ -746,7 +746,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           || a.id.localeCompare(b.id));
         bounded ||= sorted.length > limit;
         sessions = sorted.slice(0, limit);
-      } else sessions = await this.listAllThreads();
+      } else {
+        const full = await this.listAllThreads();
+        sessions = full.threads;
+        candidatePartial = full.partial;
+      }
       for (const thread of sessions) {
         if (this.socketPath) this.activeTurns.delete(thread.id);
         this.threads.set(thread.id, thread);
@@ -797,7 +801,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return { ...this.sessionSnapshotReceipt };
   }
 
-  private async listAllThreads(): Promise<CodexThread[]> {
+  private async listAllThreads(): Promise<{ threads: CodexThread[]; partial?: string }> {
     const threads = new Map<string, CodexThread>();
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
@@ -817,7 +821,35 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (nextCursor) seenCursors.add(nextCursor);
       cursor = nextCursor;
     } while (cursor);
-    return [...threads.values()];
+    // Codex keeps zero-turn threads loaded but does not persist them in
+    // thread/list until their first turn. Read missing loaded IDs natively so
+    // a freshly created session is discoverable without sending a message.
+    let partial: string | undefined;
+    const seenLoadedCursors = new Set<string>();
+    cursor = undefined;
+    try {
+      do {
+        const page = await this.request("thread/loaded/list", {
+          limit: 100,
+          ...(cursor ? { cursor } : {}),
+        }) as { data?: unknown[]; nextCursor?: string | null };
+        if (!Array.isArray(page.data) || page.data.some((id) => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) {
+          throw new Error("invalid loaded IDs");
+        }
+        await Promise.all((page.data as string[]).filter((id) => !threads.has(id)).map(async (id) => {
+          try {
+            const result = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+            if (result.thread?.id !== id) throw new Error("native candidate identity mismatch");
+            threads.set(id, result.thread);
+          } catch { partial = "native_candidate_metadata_unavailable"; }
+        }));
+        const next = typeof page.nextCursor === "string" && page.nextCursor ? page.nextCursor : undefined;
+        if (next && seenLoadedCursors.has(next)) throw new Error("repeated loaded cursor");
+        if (next) seenLoadedCursors.add(next);
+        cursor = next;
+      } while (cursor);
+    } catch { partial = "native_loaded_page_unavailable"; }
+    return { threads: [...threads.values()], ...(partial ? { partial } : {}) };
   }
 
   private threadStatusTag(status: CodexThread["status"]): string | undefined {
@@ -853,7 +885,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
     } else {
       // Older Codex installations have no usable exact name index.
-      threads.push(...await this.listAllThreads());
+      const full = await this.listAllThreads();
+      if (full.partial) throw new Error(`Codex named session inventory incomplete: ${full.partial}`);
+      threads.push(...full.threads);
     }
     const canonicalCwd = await realpath(cwd).catch(() => cwd);
     const matches: AgentSession[] = [];
