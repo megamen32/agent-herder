@@ -29,6 +29,7 @@ pub mod application {
     pub mod recent;
     pub mod resource;
     pub mod settings;
+    pub mod workspace;
     pub mod target;
     pub mod target_gate;
     #[cfg(target_os = "linux")]
