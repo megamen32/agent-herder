@@ -9,7 +9,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & { getAccountScope(): string | undefined };
+  & { getAccountScope(): string | undefined; close?(): void };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -30,6 +30,7 @@ export async function serveBrowserChatAhap(
     throw new Error("AHAP_CHATGPT_ACCOUNT_SCOPE must be a pinned SHA-256 account scope");
   }
   const lines = createInterface({ input, crlfDelay: Infinity });
+  lines.once("close", () => adapter.close?.());
   let initialized = false;
   let accountVerified = false;
   let stopped = false;
@@ -161,7 +162,7 @@ async function makeConfiguredAdapter(): Promise<BrowserAdapterPort> {
   const pageTools = new DirectCdpPageTools({ endpoint, contextId, targetId });
   const driver: BrowserChatDriver = new ChatGptMacCdpDriver(pageTools, 1, 0, expectedScope);
   const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "ChatGPT browser", harness: "chatgpt", cwd: process.cwd() }, process.cwd(), true);
-  return Object.assign(adapter, { getAccountScope: () => driver.getAccountScope?.() });
+  return Object.assign(adapter, { getAccountScope: () => driver.getAccountScope?.(), close: () => pageTools.close() });
 }
 
 async function main(): Promise<void> {

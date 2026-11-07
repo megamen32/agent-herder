@@ -21,9 +21,11 @@ async function run(adapter: Partial<BrowserChatAdapter>, requests: unknown[]) {
 describe("ChatGPT AHAP browser runner", () => {
   it("advertises only its bounded surface and routes init and exact reads", async () => {
     const calls: string[] = [];
+    let closed = false;
     const session = { id: "chatgpt::native%2Fid", harness: "chatgpt", name: "one", cwd: "/tmp", status: "idle" } as never;
     const adapter = {
       getAccountScope: () => scope,
+      close() { closed = true; },
       async init() { calls.push("init"); },
       async listSessions() { calls.push("listSessions"); return [session]; },
       async getSession(id: string) { calls.push(`getSession:${id}`); return session; },
@@ -48,6 +50,7 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(calls).toEqual(["init", "listSessions", "getSession:chatgpt::native%2Fid", "getSessionMessages:chatgpt::native%2Fid:25", "createSession:new:/tmp"]);
     expect(replies[1].result).toBeNull();
     expect((replies[2].result as unknown[])[0]).toEqual(session);
+    expect(closed).toBe(true);
   });
 
   it("requires the configured account scope before any operation", async () => {
