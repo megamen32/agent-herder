@@ -84,7 +84,17 @@ def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate)
                                  str(Path(codex).resolve()), str(opencode.resolve()), str(receipt)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=240)
         if result.returncode:
-            raise RuntimeError("native candidate suite failed; release remains incomplete")
+            failure = result.stderr.lower()
+            if b'timeout' in failure or b'timed out' in failure:
+                reason = 'a native client or fixture timed out; check client availability and retry only after reconciling any unknown send'
+            elif b'fixture' in failure or b'model' in failure:
+                reason = 'the deterministic model fixture or its expected response failed; check fixture and client configuration'
+            elif b'zcode' in failure:
+                reason = 'the ZCode candidate check failed; check the isolated runner and ZCode availability'
+            else:
+                reason = 'the native candidate runner failed; check its isolated clients and configuration'
+            raise RuntimeError(f"native candidate suite failed (exit {result.returncode}); "
+                               f"{reason}; release remains incomplete")
         try:
             value = json.loads(receipt.read_text())
             report = value["report"]
