@@ -4,7 +4,8 @@
 `/home/roomhacker/agents-projects/agent-herder/scripts/test-model-server.py`
 read for V051A on 2026-11-07. Source SHA256:
 `42415b4ad6a027a750da8d0f1179c120c7971adc2ea9d9ceffb419b7feefdef6`.
-The source is another owner's work in progress; this copy is independently owned.
+The source is another owner's work in progress and is left unchanged; this copy
+is maintained with the native test fixture.
 
 Run `python3 tests/native/launch.py -- COMMAND [ARGS...]`. The command receives
 a fresh temporary HOME, XDG directories, TMPDIR, a minimal PATH and
