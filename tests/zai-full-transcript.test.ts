@@ -60,7 +60,7 @@ it('exports and pages a complete Z.ai session through the regular adapter and HT
 it('retrieves the complete export through the real Z.ai driver in verified chunks', async () => {
   const { createContext, runInContext } = await import('node:vm');
   const { ZaiCdpDriver } = await import('../src/adapters/zai-cdp-driver.js');
-  const message = { id: 'a', role: 'user', content: 'x'.repeat(70000) };
+  const message = { id: 'a', role: 'user', content: 'x'.repeat(120000) };
   const fetch = async (_url: string, init?: { body?: string }) => ({ ok: true, json: async () => init?.body
     ? { chat_id: id, data: { a: message } } : { id, chat: { history: { messages: { a: {} } } } } });
   const context = createContext({ location: { origin: 'https://chat.z.ai' }, fetch, JSON, Object, Array, Date, encodeURIComponent });
@@ -71,7 +71,7 @@ it('retrieves the complete export through the real Z.ai driver in verified chunk
     return '```json\n' + JSON.stringify(await runInContext('(' + args.function + ')()', context)) + '\n```';
   } };
   const data: any = await new ZaiCdpDriver(tools).getRawConversation('route:' + id);
-  expect(data.messages.a.content).toHaveLength(70000);
+  expect(data.messages.a.content).toHaveLength(120000);
   expect(chunks).toBeGreaterThan(1);
   expect(runInContext('Object.keys(globalThis.__herderFullConversationTransfers).length', context)).toBe(0);
 });
@@ -110,11 +110,11 @@ it('transfers large Z.ai history with bounded parallel chunks in order', async (
   const fetch = async (_url: string, init?: { body?: string }) => ({ ok: true, json: async () => init?.body
     ? { chat_id: id, data: { a: message } } : { id, chat: { history: { messages: { a: {} } } } } });
   const context = createContext({ location: { origin: 'https://chat.z.ai' }, fetch, JSON, Object, Array, Date, encodeURIComponent });
-  let running = 0, peak = 0;
+  let running = 0, peak = 0, chunkCalls = 0;
   const tools: any = { call: async (name: string, args: any) => {
     if (name === 'list_pages') return '1: Z.ai (https://chat.z.ai/)';
     const chunk = String(args.function).includes('entry.text.slice');
-    if (chunk) { running++; peak = Math.max(peak, running); await new Promise(resolve => setTimeout(resolve, 5)); }
+    if (chunk) { chunkCalls++; running++; peak = Math.max(peak, running); await new Promise(resolve => setTimeout(resolve, 5)); }
     try { return '```json\n' + JSON.stringify(await runInContext('(' + args.function + ')()', context)) + '\n```'; }
     finally { if (chunk) running--; }
   } };
@@ -122,6 +122,7 @@ it('transfers large Z.ai history with bounded parallel chunks in order', async (
   expect(data.messages.a.content).toBe(content);
   expect(peak).toBeGreaterThan(1);
   expect(peak).toBeLessThanOrEqual(4);
+  expect(chunkCalls).toBeLessThanOrEqual(4);
   expect(runInContext('Object.keys(globalThis.__herderFullConversationTransfers).length', context)).toBe(0);
 });
 
@@ -149,4 +150,18 @@ it('waits for in-flight chunks before cleaning up a failed transfer', async () =
   await expect(new ZaiCdpDriver(tools).getRawConversation('route:' + id)).rejects.toThrow(/incomplete/);
   expect(cleanedWhileActive).toBe(false);
   expect(active).toBe(0);
+});
+
+it('keeps an enlarged escaped chunk within the Chrome transport response bound', async () => {
+  const { createContext, runInContext } = await import('node:vm');
+  const { chatgptConversationChunkScript } = await import('../src/adapters/chatgpt-full-conversation.js');
+  const message = { id: 'a', role: 'user', content: '\\'.repeat(180000) };
+  const fetch = async (_url: string, init?: { body?: string }) => ({ ok: true, json: async () => init?.body
+    ? { chat_id: id, data: { a: message } } : { id, chat: { history: { messages: { a: {} } } } } });
+  const context = createContext({ location: { origin: 'https://chat.z.ai' }, fetch, JSON, Object, Array, Date, encodeURIComponent });
+  const prepared = await runInContext('(' + zaiFullConversationScript(id, 'transfer-test') + ')()', context);
+  expect(prepared.chunkSize).toBeGreaterThanOrEqual(98304);
+  const chunk = await runInContext('(' + chatgptConversationChunkScript('transfer-test', 0, prepared.chunkSize) + ')()', context);
+  const wrapped = JSON.stringify({ result: { content: [{ text: '```json\n' + JSON.stringify(chunk) + '\n```' }] } });
+  expect(Buffer.byteLength(wrapped, 'utf8')).toBeLessThan(512 * 1024);
 });

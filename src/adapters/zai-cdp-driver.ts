@@ -517,7 +517,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const transferId = randomUUID();
     try {
       const result = parseChromeEvaluation<{ error?: string; transferId?: string; length?: number; chunkSize?: number }>(await this.tools.call("evaluate_script", { pageId: page.id, function: zaiFullConversationScript(nativeId, transferId) }));
-      if (result.error || result.transferId !== transferId || !Number.isInteger(result.length) || result.length! < 2 || result.length! > 16 * 1024 * 1024 || result.chunkSize !== 65536) throw new Error("Z.ai history unavailable: " + (result.error || "unexpected response"));
+      if (result.error || result.transferId !== transferId || !Number.isInteger(result.length) || result.length! < 2 || result.length! > 16 * 1024 * 1024 || result.chunkSize !== 98304) throw new Error("Z.ai history unavailable: " + (result.error || "unexpected response"));
       const chunks: string[] = [];
       // Read at most four independent slices concurrently. Wait for every
       // in-flight read before cleanup, including when one slice fails.

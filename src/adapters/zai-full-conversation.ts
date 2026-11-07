@@ -29,6 +29,7 @@ export function zaiFullConversationScript(chatId: string, transferId = ""): stri
     const now=Date.now();
     for(const [key,entry] of Object.entries(globalThis.__herderFullConversationTransfers)) if(now-entry.at>5*60*1000) delete globalThis.__herderFullConversationTransfers[key];
     globalThis.__herderFullConversationTransfers[transferId]={text,at:now};
-    return {transferId,length:text.length,chunkSize:65536};
+    // 96K code units keep the doubly JSON-escaped response below the 512K transport bound.
+    return {transferId,length:text.length,chunkSize:98304};
   }`;
 }
