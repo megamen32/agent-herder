@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import type { HarnessAdapter } from "./types/index.js";
 import { createRawTranscriptPageReader, readIntegratorTranscriptPage, type NativeTranscriptPageReader } from "./integrator-transcript.js";
 import { createZcodeTranscriptReader } from "./zcode-transcript-reader.js";
+import { createOpencodeTranscriptReader } from "./opencode-transcript-reader.js";
 
 const MAX_READERS_PER_ADAPTER = 64;
 const readersByAdapter = new WeakMap<HarnessAdapter, Map<string, NativeTranscriptPageReader>>();
@@ -32,7 +33,9 @@ function readerFor(adapter: HarnessAdapter, harness: string, sessionId: string):
   }
   if (!adapter.getRawTranscript) throw new Error("This native adapter does not expose a complete transcript export");
   const getRawTranscript = (id: string) => adapter.getRawTranscript!(id);
-  const reader = harness === "zcode" ? createZcodeTranscriptReader({ scope, getRawTranscript }) : createRawTranscriptPageReader({ scope, getRawTranscript });
+  const reader = harness === "zcode" ? createZcodeTranscriptReader({ scope, getRawTranscript })
+    : harness === "opencode" ? createOpencodeTranscriptReader({ scope, getRawTranscript })
+    : createRawTranscriptPageReader({ scope, getRawTranscript });
   while (readers.size >= MAX_READERS_PER_ADAPTER) readers.delete(readers.keys().next().value!);
   readers.set(key, reader);
   return reader;

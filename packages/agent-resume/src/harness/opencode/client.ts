@@ -115,6 +115,7 @@ export interface OpenCodeRawTranscript {
   bytes: Uint8Array;
   location: string;
   limitations: string[];
+  complete?: boolean;
 }
 
 export type OpenCodeEvent = {
@@ -1433,6 +1434,45 @@ export class OpenCodeClient implements HarnessClient {
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<OpenCodeRawTranscript | null> {
     try {
+      await this.probeProtocol();
+      if (this.isV2) {
+        const sessionPath = this.api(`/session/${encodeURIComponent(id)}`);
+        const before = await this.fetchJson<{ id?: string; time?: { updated?: number } }>(sessionPath, { signal, cache: "no-store" });
+        if (before?.id !== id || typeof before.time?.updated !== "number" || !Number.isFinite(before.time.updated)) return null;
+        const messagePath = `${sessionPath}/message`;
+        const rows: unknown[] = [];
+        const ids = new Set<string>();
+        const cursors = new Set<string>();
+        let cursor: string | undefined;
+        let totalBytes = 0;
+        for (let page = 0; page < 1000; page++) {
+          const params = cursor ? new URLSearchParams({ cursor }) : new URLSearchParams({ limit: "200", order: "asc" });
+          const response = await this.fetch(`${messagePath}?${params}`, { signal, cache: "no-store" });
+          if (!response.ok) return null;
+          const body = await response.json() as { data?: unknown; cursor?: { next?: unknown } };
+          if (!Array.isArray(body.data) || !body.cursor || !("next" in body.cursor)) return null;
+          for (const entry of body.data) {
+            if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+            const row = entry as Record<string, unknown>;
+            if (typeof row.id !== "string" || !row.id || ids.has(row.id)
+              || ((row.sessionID ?? row.sessionId) !== undefined && (row.sessionID ?? row.sessionId) !== id)) return null;
+            ids.add(row.id);
+            totalBytes += Buffer.byteLength(JSON.stringify(row)) + 1;
+            if (totalBytes > 16 * 1024 * 1024) return null;
+          }
+          rows.push(...body.data);
+          const next = body.cursor.next;
+          if (next === null) {
+            const after = await this.fetchJson<{ id?: string; time?: { updated?: number } }>(sessionPath, { signal, cache: "no-store" });
+            if (after?.id !== id || after.time?.updated !== before.time.updated) return null;
+            return { bytes: Buffer.from(JSON.stringify(rows)), location: `${this.baseUrl}${messagePath}`, limitations: [], complete: true };
+          }
+          if (typeof next !== "string" || !next || cursors.has(next)) return null;
+          cursors.add(next);
+          cursor = next;
+        }
+        return null;
+      }
       const directory = await this.resolveDirectory(id);
       const query = new URLSearchParams({ limit: "200", ...(directory && !this.isV2 ? { directory } : {}) });
       const endpoint = this.api(`/session/${encodeURIComponent(id)}/message?${query}`);

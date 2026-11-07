@@ -1146,7 +1146,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     if (!raw) return null;
     return {
       bytes: raw.bytes,
-      complete: false,
+      complete: raw.complete === true,
       source: { kind: "native-api", location: raw.location, format: "json" },
       timestampCoverage: "partial",
       limitations: raw.limitations,
