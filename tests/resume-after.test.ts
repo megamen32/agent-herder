@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResumeAfterService, type ResumeAfterOptions } from "../src/resume-after.js";
+import { createResumeAfterRuntime } from "../src/resume-after-runtime.js";
+import type { HarnessAdapter } from "../src/types/index.js";
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(p => rm(p, {recursive:true,force:true}))); });
@@ -20,6 +22,33 @@ function done(service: ResumeAfterService, ref=a, kind="turn.completed") {
 }
 
 describe("resume after exact sessions", () => {
+  it("keeps an exact native inProgress dependency waiting until its matching terminal event", async () => {
+    await mkdir(join(process.cwd(), ".tmp"), {recursive:true});
+    const directory = await mkdtemp(join(process.cwd(), ".tmp/resume-after-active-native-")); dirs.push(directory);
+    const session = { id: "child", status: "idle", meta: { nativeLastTurn: { turnId: "turn-exact-1", status: "inProgress" } } };
+    const adapter = {
+      type: "codex",
+      async getSession(id: string) { return id === "child" ? session : { id, status: "idle" }; },
+      subscribeEvents() { return () => {}; },
+    } as unknown as HarnessAdapter;
+    const sendMessage = vi.fn(async () => ({ ok: true, admitted: true }));
+    const runtime = createResumeAfterRuntime(new Map([["codex", adapter]]), {
+      sendMessage,
+      async isAutomationHeld() { return false; },
+    }, async () => false, directory);
+
+    const wait = await runtime.service.register({ owner, dependencies: [{ harness: "codex", sessionId: "child" }], message: "continue", requestId: "active-native-turn" });
+    expect(wait.state).toBe("waiting");
+    expect(wait.dependencyTurns).toMatchObject({ '["codex","child"]': "turn-exact-1" });
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    session.meta.nativeLastTurn = { turnId: "turn-exact-1", status: "completed", completedAt: new Date().toISOString() };
+    await runtime.service.observe({ harness: "codex", sessionId: "child", kind: "turn.completed", data: { turnId: "turn-exact-1" } });
+    await runtime.service.observe({ harness: "codex", sessionId: "child", kind: "turn.completed", data: { turnId: "turn-exact-1" } });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect((await runtime.service.get(wait.id))?.state).toBe("resumed");
+  });
+
   it("does not queue native probes for unrelated progress events before registration", async () => {
     const isHeld = vi.fn(async () => false);
     const {service, deliver} = await fixture({isHeld});

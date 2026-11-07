@@ -57,8 +57,9 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
         throw new Error("Codex native turn state is unavailable");
       const active=string(meta.activeTurnId)??string(meta.nativeActiveTurnId);
       const last=meta.nativeLastTurn && typeof meta.nativeLastTurn==="object"?meta.nativeLastTurn as Record<string,unknown>:{};
-      const busy=Boolean(active || session.status==="running" || session.status==="needs_input" || session.needsPermission);
-      const turnId=active??(!busy || ["inProgress","running"].includes(String(last.status))?string(last.turnId):undefined);
+      const nativeInProgress=["inProgress","running"].includes(String(last.status));
+      const busy=Boolean(active || nativeInProgress || session.status==="running" || session.status==="needs_input" || session.needsPermission);
+      const turnId=active??(!busy || nativeInProgress?string(last.turnId):undefined);
       const outcome=last.status==="completed"?"turn.completed":["failed","error","cancelled","interrupted"].includes(String(last.status))?"turn.failed":undefined;
       const completedAt=nativeTimestamp(last.completedAt);
       return {busy,turnId,...(!busy && turnId && outcome && completedAt?{completion:{outcome,at:completedAt}}:{})};
