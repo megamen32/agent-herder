@@ -375,6 +375,20 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         pair = completed_message_pair(rows, "fixture marker", "different_receipt")
         self.assertEqual(pair["status"], "receipt_mismatch")
 
+    def test_native_completion_reader_matches_versioned_message_receipt(self):
+        rows = {"data": [
+            {"id": "msg_user_exact", "role": "user", "parts": [{"text": "fixture marker"}]},
+            {"id": "msg_assistant", "role": "assistant", "parentID": "msg_user_exact",
+             "finish": "stop", "time": {"completed": 1234},
+             "parts": [{"text": "HERDER_TEST_MODEL_OK"}]},
+            {"id": "msg_idle", "role": "idle"},
+        ]}
+        receipt = "ahap-receipt:v1:" + json.dumps(
+            {"kind": "message", "native_id": "msg_user_exact"}, separators=(",", ":"))
+        pair = completed_message_pair(rows, "fixture marker", receipt)
+        self.assertEqual(pair["status"], "confirmed")
+        self.assertEqual(pair["user_message_id"], "msg_user_exact")
+
     def test_transcript_projection_extracts_only_user_and_assistant_text(self):
         rows = {"page": {"messages": [
             {"role": "user", "text": "marker"},

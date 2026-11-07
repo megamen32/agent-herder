@@ -369,10 +369,27 @@ def native_api_read_detail(root, path, password="fixture-only"):
             return error.code, None, False
 
 
+def native_message_id_from_receipt(receipt):
+    if not isinstance(receipt, str) or not receipt:
+        return None
+    prefix = "ahap-receipt:v1:"
+    if not receipt.startswith(prefix):
+        return receipt
+    try:
+        payload = json.loads(receipt[len(prefix):])
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(payload, dict) or payload.get("kind") != "message"
+            or not isinstance(payload.get("native_id"), str) or not payload["native_id"]):
+        return None
+    return payload["native_id"]
+
+
 def completed_message_pair(value, marker, expected_receipt_id):
     rows = value.get("data") if isinstance(value, dict) else value
     if not isinstance(rows, list) or not isinstance(expected_receipt_id, str) or not expected_receipt_id:
         return None
+    expected_native_id = native_message_id_from_receipt(expected_receipt_id)
     user_index = None
     user_id = None
     for index, row in enumerate(rows):
@@ -400,7 +417,7 @@ def completed_message_pair(value, marker, expected_receipt_id):
                     or completed <= 0 or finish == "error" or row.get("error") or info.get("error")
                     or (parent_id is not None and parent_id != user_id)):
                 continue
-            return {"status": "confirmed" if user_id == expected_receipt_id else "receipt_mismatch",
+            return {"status": "confirmed" if user_id == expected_native_id else "receipt_mismatch",
                     "user_message_id": user_id, "assistant_message_id": row_id,
                     "assistant_parent_id": parent_id, "assistant_finish": finish,
                     "assistant_completed_at": completed}
