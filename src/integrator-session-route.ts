@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import type { HarnessAdapter } from "./types/index.js";
 import { createRawTranscriptPageReader, readIntegratorTranscriptPage, type NativeTranscriptPageReader } from "./integrator-transcript.js";
 import { createZcodeTranscriptReader } from "./zcode-transcript-reader.js";
+import { createChatgptTranscriptReader } from "./chatgpt-transcript-reader.js";
 import { createOpencodeTranscriptReader } from "./opencode-transcript-reader.js";
 
 const MAX_READERS_PER_ADAPTER = 64;
@@ -35,6 +36,7 @@ function readerFor(adapter: HarnessAdapter, harness: string, sessionId: string):
   const getRawTranscript = (id: string) => adapter.getRawTranscript!(id);
   const reader = harness === "zcode" ? createZcodeTranscriptReader({ scope, getRawTranscript })
     : harness === "opencode" ? createOpencodeTranscriptReader({ scope, getRawTranscript })
+    : harness === "chatgpt" ? createChatgptTranscriptReader({ scope, getRawTranscript })
     : createRawTranscriptPageReader({ scope, getRawTranscript });
   while (readers.size >= MAX_READERS_PER_ADAPTER) readers.delete(readers.keys().next().value!);
   readers.set(key, reader);
