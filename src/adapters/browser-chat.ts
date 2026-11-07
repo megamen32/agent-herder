@@ -405,6 +405,17 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
       const nativeId = this.nativeId(id);
+      // Correlated AHAP sends need a provider message ID, not merely a click.
+      // Snapshot first so an older identical prompt cannot become the receipt.
+      let beforeIds: Set<string> | undefined;
+      if (options.inputId) {
+        const before = await this.driver.getMessages?.(nativeId);
+        if (!Array.isArray(before)) {
+          return { ok: false, notSubmitted: true, nonRetryable: true,
+            error: "Native message baseline unavailable; no message submitted" };
+        }
+        beforeIds = new Set(before.map(message => message.id));
+      }
       await this.driver.sendMessage({
         chatId: nativeId,
         text: options.message,
@@ -418,6 +429,21 @@ export class BrowserChatAdapter implements HarnessAdapter {
         if (updated) this.inventory.set(nativeId,updated);
       }
       this.historyCache.invalidate(nativeId);
+      if (beforeIds) {
+        try {
+          const after = await this.driver.getMessages?.(nativeId);
+          const matches = after?.filter(message => message.role === "user"
+            && !!message.id && !beforeIds.has(message.id)
+            && message.text === options.message);
+          if (matches?.length === 1) {
+            return { ok: true, admitted: true, admission: "accepted",
+              inputId: options.inputId, nativeInputMessageId: matches[0]!.id };
+          }
+        } catch { /* A read failure after the click is not a pre-send refusal. */ }
+        return { ok: false, admission: "unknown", admissionUnknown: true,
+          nonRetryable: true, inputId: options.inputId,
+          error: "Message submitted but unique native message receipt unavailable; read history before any retry" };
+      }
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
