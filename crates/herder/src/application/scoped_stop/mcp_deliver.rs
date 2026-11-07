@@ -31,6 +31,7 @@ pub struct ScopedDeliverApplication<R, C> {
     reader: Arc<R>,
     control: Arc<C>,
     retain_until: String,
+    delivery_mode: SendMode,
     policy: Option<Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>>,
 }
 impl<R, C> ScopedDeliverApplication<R, C> {
@@ -52,8 +53,19 @@ impl<R, C> ScopedDeliverApplication<R, C> {
             reader,
             control,
             retain_until,
+            delivery_mode: SendMode::Start,
             policy: None,
         })
+    }
+    /// Restrict this application to the mode selected by trusted composition.
+    /// Queue is limited to an observed idle snapshot so the durable replay
+    /// binding never has to infer an active turn identity.
+    pub fn with_delivery_mode(mut self, mode: SendMode) -> Result<Self, ()> {
+        if !matches!(mode, SendMode::Start | SendMode::Queue) {
+            return Err(());
+        }
+        self.delivery_mode = mode;
+        Ok(self)
     }
     /// Policy is trusted server composition; it supplies exact grants only.
     pub fn with_policy(
@@ -62,6 +74,33 @@ impl<R, C> ScopedDeliverApplication<R, C> {
     ) -> Self {
         self.policy = Some(policy);
         self
+    }
+}
+pub(super) struct IdleQueueReader<'a, R> {
+    pub(super) inner: &'a R,
+    pub(super) mode: SendMode,
+}
+impl<R: NativeSessionReader> NativeSessionReader for IdleQueueReader<'_, R> {
+    async fn snapshot(
+        &self,
+        target: &crate::domain::address::SessionAddress,
+    ) -> Result<crate::domain::adapter::SessionSnapshot, crate::domain::adapter::ReadError> {
+        let mut snapshot = self.inner.snapshot(target).await?;
+        if self.mode == SendMode::Queue
+            && !matches!(
+                snapshot.activity,
+                crate::domain::adapter::SessionActivity::Idle
+            )
+        {
+            snapshot.activity = crate::domain::adapter::SessionActivity::Unknown;
+        }
+        Ok(snapshot)
+    }
+    async fn reconcile(
+        &self,
+        receipt: &crate::domain::adapter::NativeReceipt,
+    ) -> Result<crate::domain::adapter::Observation, crate::domain::adapter::ReadError> {
+        self.inner.reconcile(receipt).await
     }
 }
 pub(super) fn utc_now() -> Result<String, ()> {
@@ -160,9 +199,14 @@ where
                 catalog::DeliveryMode::Queue => SendMode::Queue,
                 catalog::DeliveryMode::Start => SendMode::Start,
             };
-            if mode != SendMode::Start {
+            if mode != self.delivery_mode {
+                let expected = if self.delivery_mode == SendMode::Queue {
+                    "queue"
+                } else {
+                    "start"
+                };
                 return Some(CallToolResult::structured_error(
-                    json!({"code":"unsupported_mode","effect":"none","expected":["start"]}),
+                    json!({"code":"unsupported_mode","effect":"none","expected":[expected]}),
                 ));
             }
             let raw = match serde_json::to_vec(&(
@@ -206,7 +250,7 @@ where
                 use rusqlite::OptionalExtension;
                 use crate::application::reconcile::dispatch_payload_binding;
                 let (address,_) = authority.resolve_session(&identity,&grants,&session,&instance).map_err(|_|())?;
-                let expected=dispatch_payload_binding(&crate::domain::adapter::DispatchPlan{target:address,mode:SendMode::Start,expected_turn:None},&message);
+                let expected=dispatch_payload_binding(&crate::domain::adapter::DispatchPlan{target:address,mode,expected_turn:None},&message);
                 let lookup = || -> Result<Option<String>,()> {
                     let (_guard,writer)=authority.lock().map_err(|_|())?;
                     writer.connection().query_row("SELECT payload_hash FROM intents WHERE task_id=?1 AND principal=?2 AND target=?3 AND request_key=?4",rusqlite::params![lookup_inside,principal_id,session.0,request_key],|r|r.get(0)).optional().map_err(|_|())
@@ -217,7 +261,8 @@ where
                     None=>(),
                 }
                 let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|())?;
-                let result=runtime.block_on(deliver_scoped(&authority,&instance,&identity,&grants,reader.as_ref(),control.as_ref(),DeliverRequest{session:&session,intent_id:&intent_id,task_id:&task_id,request_key:&request_key,message:&message,command:SendCommand{mode},now:&now,retain_until:&retain}));
+                let restricted = IdleQueueReader { inner: reader.as_ref(), mode };
+                let result=runtime.block_on(deliver_scoped(&authority,&instance,&identity,&grants,&restricted,control.as_ref(),DeliverRequest{session:&session,intent_id:&intent_id,task_id:&task_id,request_key:&request_key,message:&message,command:SendCommand{mode},now:&now,retain_until:&retain}));
                 match lookup()? {
                     Some(hash) if hash!=expected=>Ok("conflict"),
                     Some(_)=>Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside).map_err(|_|())?.is_some(){"task"}else{"unknown"}),

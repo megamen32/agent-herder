@@ -319,12 +319,18 @@ where
         Err(_) => return Ok(CreatePromptOutcome::DeliveryUnknownOrBlocked { session }),
         Ok(None) => (),
     }
+    // Queue replay binding carries no expected turn; never admit a busy
+    // snapshot that would require a turn-specific hash we cannot reconstruct.
+    let restricted = super::mcp_deliver::IdleQueueReader {
+        inner: reader,
+        mode: delivery_mode,
+    };
     let result = deliver_scoped(
         authority,
         instance,
         identity,
         &effective_grants,
-        reader,
+        &restricted,
         delivery,
         DeliverRequest {
             session: &session,

@@ -4685,3 +4685,99 @@ async fn fresh_create_uses_explicit_trusted_queue_mode_and_never_replays() {
     assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
     assert_eq!(sender.0.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn direct_queue_delivery_requires_trusted_composition_and_deduplicates() {
+    use herder::{
+        application::scoped_stop::mcp_deliver::ScopedDeliverApplication,
+        domain::adapter::{
+            NativeReceipt, NativeSessionReader, Observation, ReadError, SendMode, SessionSnapshot,
+        },
+        mcp::{catalog, transport::ApplicationPort},
+    };
+    struct QueueReader {
+        inner: FixtureReader,
+        busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl NativeSessionReader for QueueReader {
+        async fn snapshot(&self, a: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+            let mut s = self.inner.snapshot(a).await?;
+            if self.busy.load(Ordering::SeqCst) {
+                s.activity = herder::domain::adapter::SessionActivity::Busy {
+                    turn_id: "other-turn".into(),
+                };
+            }
+            s.capabilities[0].name = "deliver.queue".into();
+            Ok(s)
+        }
+        async fn reconcile(&self, r: &NativeReceipt) -> Result<Observation, ReadError> {
+            self.inner.reconcile(r).await
+        }
+    }
+    struct Sender(AtomicUsize);
+    impl BoundedNativeHandoff for Sender {
+        fn submit_bounded(
+            &self,
+            p: DispatchPlan,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(p.mode, SendMode::Queue);
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Admission {
+                receipt: NativeReceipt {
+                    target: p.target,
+                    native_id: "msg_ABC".into(),
+                },
+            })
+        }
+    }
+    let f = Fixture::new();
+    create(&f);
+    let mut allowed = grants();
+    allowed.push(Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("issued".into())),
+        action: Action::Read,
+    });
+    let a = address();
+    let busy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let reader = std::sync::Arc::new(QueueReader {
+        inner: FixtureReader {
+            target: a.clone(),
+            reads: AtomicUsize::new(0),
+            db: f.db.clone(),
+        },
+        busy: busy.clone(),
+    });
+    let sender = std::sync::Arc::new(Sender(AtomicUsize::new(0)));
+    let app = ScopedDeliverApplication::new(
+        std::sync::Arc::new(f.authority()),
+        a.instance.clone(),
+        allowed.clone(),
+        reader.clone(),
+        sender.clone(),
+        "later".into(),
+    )
+    .unwrap();
+    let req = || {
+        catalog::Request::Deliver(catalog::Deliver::Session {
+            session_ref: "issued".into(),
+            message: "hi".into(),
+            mode: catalog::DeliveryMode::Queue,
+            request_key: "queue-key".into(),
+        })
+    };
+    let denied = app.call(&identity(), req()).await.unwrap();
+    assert_eq!(denied.is_error, Some(true));
+    assert_eq!(sender.0.load(Ordering::SeqCst), 0);
+    let queue = app.with_delivery_mode(SendMode::Queue).unwrap();
+    let busy_result = queue.call(&identity(), req()).await.unwrap();
+    assert_eq!(busy_result.is_error, Some(true));
+    assert_eq!(sender.0.load(Ordering::SeqCst), 0);
+    busy.store(false, Ordering::SeqCst);
+    let first = queue.call(&identity(), req()).await.unwrap();
+    let second = queue.call(&identity(), req()).await.unwrap();
+    assert_eq!(first.structured_content, second.structured_content);
+    assert_eq!(sender.0.load(Ordering::SeqCst), 1);
+}
