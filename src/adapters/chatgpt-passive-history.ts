@@ -35,10 +35,13 @@ export function chatgptPassiveHistoryScript(): string {
               const seconds=typeof raw==='string'&&/^\\d+$/.test(raw.trim())?Number(raw):0;
               const untilDate=typeof raw==='string'&&!seconds?Date.parse(raw):0;
               const serverWait=seconds>0?seconds*1000:Number.isFinite(untilDate)?Math.max(0,untilDate-Date.now()):0;
-              const strikes=Math.min(10,(globalThis.__herderPassive429Strikes||0)+1);
+              // A navigation fans out into many requests. Responses belonging
+              // to the active cooldown are one episode, not repeated retries.
+              const active=requestStartedAt<(globalThis.__herderPassiveCooldownUntil||0);
+              const strikes=active?(globalThis.__herderPassive429Strikes||1):Math.min(10,(globalThis.__herderPassive429Strikes||0)+1);
               globalThis.__herderPassive429Strikes=strikes;
-              globalThis.__herderPassiveLast429=String(Date.now())+':'+String(strikes);
-              const delay=Math.max(300000*Math.pow(2,strikes-1),serverWait);
+              if(!active || !globalThis.__herderPassiveLast429)globalThis.__herderPassiveLast429=String(Date.now())+':'+String(strikes);
+              const delay=Math.max(active?0:300000*Math.pow(2,strikes-1),serverWait);
               globalThis.__herderPassiveCooldownUntil=Math.max(globalThis.__herderPassiveCooldownUntil||0,Date.now()+delay);
             }
             const match=url.pathname.match(/^\\/backend-api\\/conversations?\\/([a-f0-9-]{28,80})$/i);

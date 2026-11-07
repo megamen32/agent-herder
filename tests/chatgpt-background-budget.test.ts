@@ -36,6 +36,19 @@ it("fails closed when it cannot persist a reservation", () => {
   expect(budget.reserve()).toBe(false);
 });
 
+it("coalesces a burst across tabs without losing a longer Retry-After", () => {
+  const f = fixture(); const budget = new ChatGptBackgroundBudget(f.file, f.now);
+  for (let i = 0; i < 10; i++) expect(budget.observe429(`burst-${i}`, 0)).toBe(true);
+  f.advance(300_000);
+  expect(budget.reserve()).toBe(true);
+  expect(budget.observe429('next-attempt', 0)).toBe(true);
+  expect(budget.observe429('next-attempt', f.now() + 900_000)).toBe(true);
+  f.advance(600_000);
+  expect(new ChatGptBackgroundBudget(f.file, f.now).reserve()).toBe(false);
+  f.advance(300_000);
+  expect(budget.reserve()).toBe(true);
+});
+
 it("does not multiply backoff when two tabs repeatedly report the same two 429s", () => {
   const f = fixture(); const budget = new ChatGptBackgroundBudget(f.file, f.now);
   expect(budget.observe429("tab-one", 0)).toBe(true);

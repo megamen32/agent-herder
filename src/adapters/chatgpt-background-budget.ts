@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 const MIN_INTERVAL_MS = 300_000;
-type State = { version: 1; nextAt: number; strikes: number; last429: string; seen429?: string[] };
+type State = { version: 1; nextAt: number; strikes: number; last429: string; seen429?: string[]; cooldownUntil?: number };
 
 /** Persistent budget for browser actions that may make the site issue requests.
  * The caller reserves before acting, including on uncertain action outcomes. */
@@ -14,6 +14,7 @@ export class ChatGptBackgroundBudget {
       const state = JSON.parse(readFileSync(this.path, "utf8")) as State;
       if (state.version !== 1 || !Number.isFinite(state.nextAt) || state.nextAt < 0
         || !Number.isInteger(state.strikes) || state.strikes < 0 || typeof state.last429 !== "string"
+        || (state.cooldownUntil !== undefined && (!Number.isFinite(state.cooldownUntil) || state.cooldownUntil < 0))
         || (state.seen429 !== undefined && (!Array.isArray(state.seen429) || state.seen429.length > 512
           || state.seen429.some(id => typeof id !== "string" || !id || id.length > 256)))) return null;
       return state;
@@ -45,10 +46,16 @@ export class ChatGptBackgroundBudget {
     const state = this.read(); const now = this.now();
     if (!state || !id || id.length > 256 || !Number.isFinite(now)) return false;
     const seen = state.seen429 ?? (state.last429 ? [state.last429] : []);
-    if (seen.includes(id)) return true;
-    const strikes = Math.min(10, state.strikes + 1);
     const serverUntil = Number.isFinite(retryUntil) ? retryUntil : 0;
+    const cooldownUntil = state.cooldownUntil ?? (state.strikes ? state.nextAt : 0);
+    if (seen.includes(id)) {
+      if (serverUntil <= state.nextAt) return true;
+      return this.write({ ...state, cooldownUntil: Math.max(cooldownUntil, serverUntil), nextAt: serverUntil });
+    }
+    const active = now < cooldownUntil;
+    const strikes = active ? state.strikes : Math.min(10, state.strikes + 1);
+    const until = Math.max(cooldownUntil, serverUntil, active ? 0 : now + MIN_INTERVAL_MS * 2 ** (strikes - 1));
     return this.write({ ...state, strikes, last429: id, seen429: [...seen, id].slice(-512),
-      nextAt: Math.max(state.nextAt, serverUntil, now + MIN_INTERVAL_MS * 2 ** (strikes - 1)) });
+      cooldownUntil: until, nextAt: Math.max(state.nextAt, until) });
   }
 }
