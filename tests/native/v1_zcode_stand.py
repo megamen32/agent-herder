@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import signal
+import sqlite3
 import time
 import uuid
 import urllib.request
@@ -19,7 +20,7 @@ import sys
 
 from ahap_opencode_stand import RpcProcess, parse_fresh_seed, persist_evidence, validate_stand_isolation, rpc_tool, wait_task, message_texts
 
-MANIFEST_SHA = 'f1e99e12393eb3de9d92fa05f00df63d0270d74643b18e2d774a0aa8941022c7'
+MANIFEST_SHA = 'a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998'
 
 
 def digest(path):
@@ -152,6 +153,8 @@ def run(args):
     protected = Path('/herder-owner-home')
     if not protected.is_dir() or protected.stat().st_mode & 0o077:
         raise ValueError('protected fixture home missing')
+    instance = 'zcode-ci-' + uuid.uuid4().hex
+    persist_evidence(protected / 'zcode-v1-run-identity.json', {'instance':instance, 'manifest_sha256':MANIFEST_SHA, 'phase':'before_project_setup', 'network':'loopback_only'})
     project = protected / 'work'
     project.mkdir(mode=0o700)
     links = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show']))
@@ -189,7 +192,7 @@ def run(args):
         else:
             raise RuntimeError('official supervisor readiness timeout')
         project_receipt = setup_official_project(node, home, project, protected)
-        run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt)
+        run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt, instance)
     finally:
         try:
             os.killpg(server.pid, signal.SIGTERM)
@@ -203,14 +206,14 @@ def run(args):
         log.close()
 
 
-def run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt):
+def run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt, instance):
     node, entry = runtime / 'node', runtime / 'zcode.cjs'
     bootstrap = subprocess.run([manifest['bootstrap'], str(protected)], capture_output=True, text=True, check=True, timeout=30)
     seed = parse_fresh_seed(bootstrap.stdout, protected)
     profile = Path(seed['profile_seed']).parent / 'zcode-profile.json'
     value = {'database': seed['database'], 'gate': seed['gate'], 'generation': seed['generation'],
              'owner': {'kind':'zcode', 'principal':'isolated-zcode-owner', 'node':'isolated-native-node',
-                       'instance':'zcode-ci', 'executable':manifest['node'],
+                       'instance':instance, 'executable':manifest['node'],
                        'ahap_script':manifest['adapters']['zcode'], 'code_home':str(home), 'cwd':str(project),
                        'ahap_env':{'AHAP_ZCODE_TRANSPORT':'official-server', 'AHAP_ZCODE_CWD':str(project)}}}
     fd = os.open(profile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -221,14 +224,14 @@ def run_public(args, manifest, protected, project, home, runtime, server_root, p
     client = RpcProcess(manifest['core'], profile, dict(os.environ))
     try:
         tools = client.preflight()
-        models = rpc_tool(client, 'discover', {'action':'models', 'instance_ref':'zcode-ci'})
-        projects = rpc_tool(client, 'discover', {'action':'projects', 'instance_ref':'zcode-ci'})
+        models = rpc_tool(client, 'discover', {'action':'models', 'instance_ref':instance})
+        projects = rpc_tool(client, 'discover', {'action':'projects', 'instance_ref':instance})
         persist_evidence(protected / 'zcode-v1-receipt.json', {'phase':'read_only', 'models':models,
                             'projects':projects, 'session_mutations':0, 'project_saves':1, 'manifest_sha256':MANIFEST_SHA})
         print(json.dumps({'models':models, 'projects':projects}, ensure_ascii=False), flush=True)
         if args.run_case:
             require_exact_project(project_receipt['native_project_tree'], str(project))
-            exercise(client, protected, seed, tools)
+            exercise(client, protected, seed, tools, instance, home)
 
     finally:
         client.close()
@@ -242,7 +245,59 @@ def run_public(args, manifest, protected, project, home, runtime, server_root, p
     return result
 
 
-def exercise(client, protected, seed, tools):
+def classify_create_task(task):
+    content = task.get('result', {}).get('structuredContent', {})
+    create, prompt = content.get('create', {}), content.get('prompt', {})
+    return {'session_ref':create.get('session_ref') if create.get('effect') == 'confirmed' else None,
+            'prompt_effect':prompt.get('effect') or prompt.get('outcome'),
+            'retry':prompt.get('retry')}
+
+
+def read_promoted_input(database, native_id, source_id):
+    if not Path(database).is_file():
+        return None
+    with sqlite3.connect(Path(database).resolve().as_uri() + '?mode=ro', uri=True) as conn:
+        row = conn.execute('select id,status,promoted_message_id from session_input where session_id=? and id=?',
+                           (native_id, 'queue_' + source_id)).fetchone()
+    if not row:
+        return None
+    return {'input_id':row[0], 'status':row[1], 'message_id':row[2]}
+
+
+def read_terminal_assistant(database, native_id, input_message_id):
+    if not input_message_id or not Path(database).is_file():
+        return None
+    with sqlite3.connect(Path(database).resolve().as_uri() + '?mode=ro', uri=True) as conn:
+        rows = conn.execute('select id,data from message where session_id=? order by sequence', (native_id,)).fetchall()
+    for message_id, raw in rows:
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if (value.get('role') == 'assistant' and value.get('parentID') == input_message_id
+                and isinstance(value.get('time'), dict) and value['time'].get('completed')):
+            return {'message_id':message_id, 'parent_id':input_message_id,
+                    'error':value.get('error'), 'completed_at':value['time']['completed']}
+    return None
+
+
+def reconcile_unknown(seed, home, session_ref):
+    with sqlite3.connect(Path(seed['database']).resolve().as_uri() + '?mode=ro', uri=True) as conn:
+        binding = conn.execute('select native_session_id from session_bindings where session_ref=?', (session_ref,)).fetchone()
+        intents = conn.execute("select request_key,state,native_receipt from intents where target=? and request_key like 'create-prompt:%'", (session_ref,)).fetchall()
+    if not binding or len(intents) != 1:
+        return {'status':'unresolved', 'reason':'exact binding or prompt intent absent or ambiguous'}
+    key, state, receipt = intents[0]
+    source_id = 'agent-herder:auto:' + key
+    native_db = home / '.zcode/cli/db/db.sqlite'
+    admission = read_promoted_input(native_db, binding[0], source_id)
+    assistant = read_terminal_assistant(native_db, binding[0], admission.get('message_id') if admission else None)
+    return {'status':'native_input_observed' if admission else 'unresolved', 'native_session_id':binding[0],
+            'prompt_intent_key':key, 'authority_state':state, 'authority_receipt':receipt,
+            'source_command_id':source_id, 'native_input':admission, 'native_assistant':assistant, 'no_replay':True}
+
+
+def exercise(client, protected, seed, tools, instance, home):
     evidence_path = protected / 'zcode-v1-receipt.json'
     model_origin = os.environ['HERDER_TEST_MODEL_BASE_URL'][:-3]
     def stats():
@@ -252,11 +307,11 @@ def exercise(client, protected, seed, tools):
     marker = 'HERDER_ZCODE_FIRST_' + tag
     request_key = 'zcode-v1-create-' + tag
     evidence = {'phase':'before_create', 'result':'UNKNOWN', 'mutation_started': True,
-                'first_marker':marker, 'create_key':request_key,
+                'first_marker':marker, 'create_key':request_key, 'instance':instance,
                 'model_before':stats(), 'manifest_sha256':MANIFEST_SHA, 'tools':tools}
     persist_evidence(evidence_path, evidence)
     try:
-        created = rpc_tool(client, 'create', {'action':'create', 'instance_ref':'zcode-ci',
+        created = rpc_tool(client, 'create', {'action':'create', 'instance_ref':instance,
                            'prompt':marker, 'request_key':request_key})
         evidence.update(phase='create_response', create_response=created)
         persist_evidence(evidence_path, evidence)
@@ -269,9 +324,22 @@ def exercise(client, protected, seed, tools):
         evidence.update(phase='create_task_terminal', create_task=task, model_after=stats())
         persist_evidence(evidence_path, evidence)
         content = task.get('result', {}).get('structuredContent', {})
-        session = content.get('create', {}).get('session_ref')
+        classification = classify_create_task(task)
+        session = classification['session_ref']
         prompt = content.get('prompt', {})
-        if task.get('status') != 'completed' or not session or prompt.get('outcome') != 'confirmed':
+        evidence.update(session_ref=session, prompt_classification=classification)
+        persist_evidence(evidence_path, evidence)
+        if task.get('status') != 'completed' or not session or classification['prompt_effect'] != 'confirmed':
+            if session and classification['prompt_effect'] == 'unknown':
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    reconciliation = reconcile_unknown(seed, home, session)
+                    evidence.update(phase='unknown_read_reconciliation', reconciliation=reconciliation,
+                                    model_after=stats())
+                    persist_evidence(evidence_path, evidence)
+                    if reconciliation.get('native_assistant'):
+                        break
+                    time.sleep(.25)
             raise RuntimeError('create or initial delivery unconfirmed; inspect exact receipt, do not replay')
         evidence.update(phase='create_confirmed', session_ref=session, prompt_receipt=prompt)
         persist_evidence(evidence_path, evidence)

@@ -47,6 +47,27 @@ class ProjectGate(unittest.TestCase):
             stand.require_exact_project({'projects':[project, project]}, '/fixture/work')
 
 
+class UnknownReconciliation(unittest.TestCase):
+    def test_public_unknown_preserves_confirmed_session(self):
+        result = {'status':'completed', 'result':{'structuredContent':{
+            'create':{'effect':'confirmed', 'session_ref':'session:one'},
+            'prompt':{'effect':'unknown', 'retry':'forbidden'}}}}
+        self.assertEqual(stand.classify_create_task(result),
+                         {'session_ref':'session:one', 'prompt_effect':'unknown', 'retry':'forbidden'})
+
+    def test_reconciliation_requires_exact_session_and_source_id(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / 'native.sqlite'
+            c = sqlite3.connect(db)
+            c.execute('create table session_input (session_id text, id text, status text, promoted_message_id text)')
+            c.execute('insert into session_input values (?, ?, ?, ?)', ('native-a', 'queue_exact', 'promoted', 'message-a'))
+            c.commit(); c.close()
+            self.assertEqual(stand.read_promoted_input(db, 'native-a', 'exact')['message_id'], 'message-a')
+            self.assertIsNone(stand.read_promoted_input(db, 'native-b', 'exact'))
+            self.assertIsNone(stand.read_promoted_input(db, 'native-a', 'other'))
+
+
 class PublicRuntimeRegression(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('ZCODE_V1_RUNTIME') and os.environ.get('ZCODE_V1_MANIFEST'),
                          'set ZCODE_V1_RUNTIME and ZCODE_V1_MANIFEST for isolated public integration')
