@@ -1,0 +1,94 @@
+{
+  "label": "Пять kinds в штатном owner profile",
+  "owner": "Astra",
+  "depends_on": [
+    "C10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "C11",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:04:53+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:43:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:04:53+03:00",
+      "note": "",
+      "changes": {
+        "label": "Пять kinds в штатном owner profile",
+        "owner": "Astra",
+        "depends_on": [
+          "C10"
+        ],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:09+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:28:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "RED test added for all5trustedrunner profiles; profile/env/corecomposition writerAstra."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:43:27+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Trusted owner profiles all5kinds pass isolated Rust test; env allowlist excludes process injection/crossfamily. Source proof only.",
+        "actual_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "RED test added for all5trustedrunner profiles; profile/env/corecomposition writerAstra.",
+  "result": "Trusted owner profiles all5kinds pass isolated Rust test; env allowlist excludes process injection/crossfamily. Source proof only.",
+  "actual_minutes": 15
+}

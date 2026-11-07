@@ -1,0 +1,123 @@
+{
+  "label": "Thin TS runner: legacy list/raw/projects",
+  "owner": "roomhacker",
+  "depends_on": [
+    "C10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "B10",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:03+03:00",
+  "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:29:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:03+03:00",
+      "note": "",
+      "changes": {
+        "label": "Thin TS runner: legacy list/raw/projects",
+        "owner": "Bridge worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:10+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "C10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:23:48+03:00",
+      "note": "Bridge exact scope; list/raw/projects over legacy adapters; no runtime/deploy.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:25:28+03:00",
+      "note": "Env contract for Astra: Codex dist/ahap-codex-runner.js; AHAP_VERSION=0.1 AHAP_HARNESS=codex HOME absolute AHAP_CODEX_CWD absolute; exactly one AHAP_CODEX_SOCKET absolute Unix socket OR AHAP_CODEX_BIN absolute executable; optional CODEX_HOME absolute/default HOME/.codex. Existing other runner env unchanged. Reads {options}, raw {id} -> bytes_base64 + exact metadata. Direct Herder delivery skipped_inactive, no mutation sent. OpenCode v2 existing session queue/steer; v22 native fresh-only remains.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:28:58+03:00",
+      "note": "",
+      "changes": {
+        "note": "Ampere spawned for existingTSwrappers/newthinCodex; no nativeprotocol rewrite."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:29:34+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Legacy reads implemented in OpenCode/ZCode/ChatGPT/Z.ai runners, capability discovery matches optional methods; raw Uint8Array lossless base64, exact complete/source/coverage/limitations. RED 8 failures -> GREEN 34 targeted tests including existing compatibility. Source proof only; consumer/deploy owned by Astra."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    }
+  ],
+  "note": "Ampere spawned for existingTSwrappers/newthinCodex; no nativeprotocol rewrite.",
+  "result": "Legacy reads implemented in OpenCode/ZCode/ChatGPT/Z.ai runners, capability discovery matches optional methods; raw Uint8Array lossless base64, exact complete/source/coverage/limitations. RED 8 failures -> GREEN 34 targeted tests including existing compatibility. Source proof only; consumer/deploy owned by Astra."
+}

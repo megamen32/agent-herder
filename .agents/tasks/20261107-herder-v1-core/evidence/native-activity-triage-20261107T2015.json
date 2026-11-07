@@ -1,0 +1,11 @@
+{
+  "source": "independent LHC session receipt relayed to Astra; not independently replayed",
+  "session": "01a1b7a4-2eb2-7471-83fd-2edb027f38c5",
+  "turn": "01a1b7a4-ec4c-7de2-b978-bb954297a552",
+  "initial_input": "lhc-native-reader-preflight-20261107T2013",
+  "supplement_input": "lhc-native-reader-preflight-supplement-20261107T2015",
+  "observed": "local tool reads and commentary20:14:30,20:15:41UTC while session_info idle",
+  "if_running": "skipped_inactive",
+  "always_after_definitive_skip": "accepted same turnId",
+  "scope": "triage only, no stop/no resend/no LHC fixture edits; not V1 dependency and not full wake proof"
+}

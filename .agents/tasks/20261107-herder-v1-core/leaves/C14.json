@@ -1,0 +1,131 @@
+{
+  "id": "C14",
+  "label": "Упаковать Rust core и прежние TS runners в immutable candidate",
+  "kind": "task",
+  "parent": "S1",
+  "owner": "Singer",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "C13"
+  ],
+  "acceptance": "Versioned command composes core/bootstrap + four bundled TS entrypoints with source SHA/component SHA256; fresh output only, no current switch or runtime install.",
+  "affected_files": [
+    "deploy/fleet/build-v1-core.py"
+  ],
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:57:39+03:00",
+  "updated_at": "2026-11-07T23:03:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:57:39+03:00",
+      "note": "",
+      "changes": {
+        "id": "C14",
+        "label": "Упаковать Rust core и прежние TS runners в immutable candidate",
+        "kind": "task",
+        "parent": "S1",
+        "owner": "Singer",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "C13"
+        ],
+        "acceptance": "Versioned command composes core/bootstrap + four bundled TS entrypoints with source SHA/component SHA256; fresh output only, no current switch or runtime install.",
+        "affected_files": [
+          "deploy/fleet/build-v1-core.py"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:57:41+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:59:14+03:00",
+      "note": "Singer: packaging only existing debug core/bootstrap + 4 compiled JS runners using installed rolldown; SHA manifest, fresh output, isolated initialize checks, no install/current mutation.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:03:49+03:00",
+      "note": "SOURCE GREEN / result ready astra-v1-package-20261107T1958. Owned deploy/fleet/build-v1-core.py + test-build-v1-core.py. CLI --output ABS --source-sha COMMIT --node ABS; optional --core --bootstrap --compiled-dir. Reuses compiled .tmp/v1-dist, installed rolldown Node ESM createRequire banner, no daemon/UI build. Fresh output only; read-only candidate; manifest adapter compatibility + adapters map, SHA256 core/bootstrap/node/all4bundles. .tmp/C14-test manifest SHA256 1d15faa317f1f5b075e00a22b61d921c1614918598840c5a87e467506677872e. Real packaged initialize PASS opencode/zcode/codex/chatgpt/zai in isolated HOME: no native launch, no send/init, no browser connection; only local fixture GET /api/config. Hash readback + duplicate rejection with unchanged bytes PASS, exactly7 pinned files. Test receipt .tmp/C14-test-result.json. No runtime/current mutation or commit/push. Parent accepts explicit assignment and builds final artifact after commit.",
+      "changes": {
+        "actual_minutes": 7
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-package-20261107T1958",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T19:57:41+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "status": "running",
+  "actual_minutes": 7
+}

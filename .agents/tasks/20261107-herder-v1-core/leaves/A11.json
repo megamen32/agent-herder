@@ -1,0 +1,105 @@
+{
+  "label": "Rust client: modes/capabilities/receipts обычной отправки",
+  "owner": "Port worker",
+  "depends_on": [
+    "A10"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "A11",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:03+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:44:38+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:03+03:00",
+      "note": "",
+      "changes": {
+        "label": "Rust client: modes/capabilities/receipts обычной отправки",
+        "owner": "Port worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:10+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "A10"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:34:21+03:00",
+      "note": "Реализованы advertised delivery modes, request key, native snapshot recheck, stopped/unknown guards; ledger остаётся в core. Targeted tests выполняются.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:40:43+03:00",
+      "note": "24 tests green; добавляю уточнение владельца: typed native turn receipt Codex + exact nativeLastTurn reconciliation, без фиктивного usermessageID. TS modes sync/steer явно отображены на Start/Current.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:44:38+03:00",
+      "note": "Готово source+fakeAHAP: cargo test --manifest-path crates/herder/Cargo.toml --lib ahap -- --nocapture = 28 passed; rustfmt +stable --check и scoped diff-check PASS. API raw_call/capabilities/list_sessions/list_projects/raw_transcript; init capabilities сохранены. Modes start|sync -> Start, queue -> Queue, current|steer -> Current; exact IDs/key, stopped/unknown guards. NativeReceipt.native_id теперь ahap-receipt:v1:{kind:message|turn,native_id:...}, старые plain message receipts читаются; turn требует admitted=true и exact nativeLastTurn.turnId для reconcile, не idle alone. Owned files ahap.rs, ahap_opencode.rs, tests/ahap_v1_reuse.rs. Integration gap: TS Current требует getCoordinationActiveTurnId + enforce options.expectedTurnId; browser deliveryModes должны быть advertised; без них send fail closed. Parent launcher fixture должен advertise start (старый реальный OpenCode runner уже это делал). Runtime/deploy/credentials/чужие пути не менял; commit/push оставлены интегратору.",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 8
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    }
+  ],
+  "actual_minutes": 8
+}

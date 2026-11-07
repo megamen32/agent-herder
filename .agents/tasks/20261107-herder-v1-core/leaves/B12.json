@@ -1,0 +1,110 @@
+{
+  "label": "Thin TS runner: обычная отправка и понятные ошибки",
+  "owner": "roomhacker",
+  "depends_on": [
+    "B11"
+  ],
+  "estimate_minutes": 15,
+  "kind": "task",
+  "status": "done",
+  "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+  "parent": "S1",
+  "id": "B12",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:06:04+03:00",
+  "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:43:13+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:06:04+03:00",
+      "note": "",
+      "changes": {
+        "label": "Thin TS runner: обычная отправка и понятные ошибки",
+        "owner": "Bridge worker",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "kind": "task",
+        "status": "queued",
+        "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+        "parent": "S1",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:06:10+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "B11"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:31:55+03:00",
+      "note": "Existing-session delivery modes, no automatic replay, actionable errors, output frame bound; legacy/native constraints preserved.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:40:44+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "B10/B11/B12 source ready in shared cwd, uncommitted per owner integration instruction. OpenCode v2 existing-session queue/steer exact options/inputId; v2 fresh Start compatibility retained; v22 native fresh Start only unchanged. ZCode queue/sync/steer exact options; Codex legacy native receipts unchanged. Exceptions sanitized with method/expected/correctiveAction and mutation UNKNOWN/nonretryable. 4MiB request/response frame enforced incl newline, oversized export fails visibly without truncation; stream continues. Final 49/49 targeted tests across 6 files, tsc --noEmit exit0, diff --check exit0. Codex real legacy Unix WebSocket fixture proves one native steer for repeated stable inputId. Source/fixture proof only, no runtime/deploy/credentials/CI adapters touched. Owned 9 paths: src/ahap-{opencode,zcode,browser,codex}-runner.ts, src/ahap-legacy-read.ts, tests/ahap-{opencode,zcode,codex,legacy-read}-runner.test.ts. Env AHAP_CODEX_SOCKET xor AHAP_CODEX_BIN, AHAP_CODEX_CWD absolute, HOME from owner code_home, optional CODEX_HOME absolute. Remaining gap: full public installed consumer acceptance belongs to integration/CI; optional legacy projects only when available; exports >4MiB explicit unsupported. CI-reported OpenCode v2.2.4 family-v2 proof is separate external evidence."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:43:13+03:00",
+      "note": "",
+      "changes": {
+        "note": "Owner integration delta completed: browser initialize now declares exactly deliveryModes ['queue']; steer=false retained. Added tests for both ChatGPT and Z.ai: RED 2 expected failures -> GREEN 17/17 browser tests, scoped diff-check passes. Additional owned file tests/ahap-browser-runner.test.ts (10 owned paths total including prior handoff). No commit; integration remains owner-owned."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
+    }
+  ],
+  "result": "B10/B11/B12 source ready in shared cwd, uncommitted per owner integration instruction. OpenCode v2 existing-session queue/steer exact options/inputId; v2 fresh Start compatibility retained; v22 native fresh Start only unchanged. ZCode queue/sync/steer exact options; Codex legacy native receipts unchanged. Exceptions sanitized with method/expected/correctiveAction and mutation UNKNOWN/nonretryable. 4MiB request/response frame enforced incl newline, oversized export fails visibly without truncation; stream continues. Final 49/49 targeted tests across 6 files, tsc --noEmit exit0, diff --check exit0. Codex real legacy Unix WebSocket fixture proves one native steer for repeated stable inputId. Source/fixture proof only, no runtime/deploy/credentials/CI adapters touched. Owned 9 paths: src/ahap-{opencode,zcode,browser,codex}-runner.ts, src/ahap-legacy-read.ts, tests/ahap-{opencode,zcode,codex,legacy-read}-runner.test.ts. Env AHAP_CODEX_SOCKET xor AHAP_CODEX_BIN, AHAP_CODEX_CWD absolute, HOME from owner code_home, optional CODEX_HOME absolute. Remaining gap: full public installed consumer acceptance belongs to integration/CI; optional legacy projects only when available; exports >4MiB explicit unsupported. CI-reported OpenCode v2.2.4 family-v2 proof is separate external evidence.",
+  "note": "Owner integration delta completed: browser initialize now declares exactly deliveryModes ['queue']; steer=false retained. Added tests for both ChatGPT and Z.ai: RED 2 expected failures -> GREEN 17/17 browser tests, scoped diff-check passes. Additional owned file tests/ahap-browser-runner.test.ts (10 owned paths total including prior handoff). No commit; integration remains owner-owned."
+}

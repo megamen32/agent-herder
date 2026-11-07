@@ -1,0 +1,183 @@
+{
+  "label": "Сохранить существующий bootstrap в source и явно provision storev4",
+  "parent": "S1",
+  "owner": "Singer",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "C10"
+  ],
+  "acceptance": "Тот же CLI/profileseed, currentcandidate source, v4 underpinnedgate, freshonly и повторнеперезаписывает. Source/testrecipeврепо, не /tmp singleton.",
+  "id": "C13",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T22:48:26+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T23:00:21+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:48:26+03:00",
+      "note": "",
+      "changes": {
+        "label": "Сохранить существующий bootstrap в source и явно provision storev4",
+        "parent": "S1",
+        "owner": "Singer",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "C10"
+        ],
+        "acceptance": "Тот же CLI/profileseed, currentcandidate source, v4 underpinnedgate, freshonly и повторнеперезаписывает. Source/testrecipeврепо, не /tmp singleton.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:03+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:49:46+03:00",
+      "note": "Singer: переношу существующий bootstrap без нового initializer; добавляю v4 under pin, isolated tests fresh/duplicate/untrusted path. Scope только deploy/fleet/owner-bootstrap и свой protected artifact.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:54:09+03:00",
+      "note": "SOURCE GREEN / result ready: deploy/fleet/owner-bootstrap/{Cargo.toml,Cargo.lock,src/main.rs,README.md,test_bootstrap.py}. Existing bootstrap + migrate_search_v4 under pin. Locked offline build и 10 isolated CLI checks PASS (v4, authority, search, duplicate byte/inode/mtime preservation, untrusted path guards). Binary .tmp/owner-bootstrap-C13-20261107T1953/ahap-owner-bootstrap SHA256 a9b67672b9e19d38a320156a6b6d6bd071659fed06d44b7c2be1d0969ba97af0. source-sha256.json SHA256 99592ee215ca8e0a59411c641c38fa5c38575e10364aceffa0dbbf273766a51f; source hashes stable across final build. README recipe ready for CI. No runtime install, core Cargo edits, commit or push. Attempt astra-v1-bootstrap-20261107T1953: CLI refused status done with accept explicit assignment through transition_leaf; installed CLI/MCP does not expose transition_leaf, so preserving assignment for parent acceptance.",
+      "changes": {
+        "actual_minutes": 6
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:55:46+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:00:21+03:00",
+      "note": "Native final received via wait_agent; component SHA a9b67672b9e19d38a320156a6b6d6bd071659fed06d44b7c2be1d0969ba97af0.",
+      "changes": {
+        "result": "SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-bootstrap-20261107T1953",
+    "executor_kind": "subagent",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "state": "assigned",
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": {
+      "state": "idle",
+      "observed_at": "2026-11-07T19:55:46.626785+00:00",
+      "source": "native_verified",
+      "turn_id": null,
+      "model": null,
+      "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+    },
+    "events": [
+      {
+        "at": "2026-11-07T19:49:03+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      },
+      {
+        "at": "2026-11-07T19:55:46+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": "assigned",
+        "to": "assigned",
+        "receipt": {
+          "observed_runtime": {
+            "state": "idle",
+            "observed_at": "2026-11-07T19:55:46.626785+00:00",
+            "source": "native_verified",
+            "turn_id": null,
+            "model": null,
+            "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+          }
+        }
+      }
+    ]
+  },
+  "assignment_history": [],
+  "status": "running",
+  "actual_minutes": 6,
+  "result": "SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1."
+}

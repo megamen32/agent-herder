@@ -1,0 +1,71 @@
+{
+  "label": "Кворум: граница ядра/адаптеров и исполнимый трёхчасовой план",
+  "kind": "research",
+  "status": "done",
+  "owner": "Astra",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "acceptance": "Независимые предложения, критика синтеза, проверенный контракт reuse и новый план с владельцами/приёмкой; расхождения сохранены.",
+  "id": "P00",
+  "created_at": "2026-11-07T21:40:24+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-07T22:43:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:40:24+03:00",
+      "note": "",
+      "changes": {
+        "label": "Кворум: граница ядра/адаптеров и исполнимый трёхчасовой план",
+        "kind": "research",
+        "status": "queued",
+        "owner": "Astra",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "acceptance": "Независимые предложения, критика синтеза, проверенный контракт reuse и новый план с владельцами/приёмкой; расхождения сохранены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:40:25+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:43:27+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Независимая Astra gpt-6-astra дала proposal+recheck (evidence/council/astra*.md), Kuhn подтвердил corrected synthesis. GLM5.3 native accepted затем provider.auth failed, мнения нет; полноценный multimodel quorum не заявлен. Поправки digest/postFIX/receipt/wire/тайминга включены в CONTRACT. Реализация параллельно активна.",
+        "actual_minutes": 52
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "result": "Независимая Astra gpt-6-astra дала proposal+recheck (evidence/council/astra*.md), Kuhn подтвердил corrected synthesis. GLM5.3 native accepted затем provider.auth failed, мнения нет; полноценный multimodel quorum не заявлен. Поправки digest/postFIX/receipt/wire/тайминга включены в CONTRACT. Реализация параллельно активна.",
+  "actual_minutes": 52
+}
