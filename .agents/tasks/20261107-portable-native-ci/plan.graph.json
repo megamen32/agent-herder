@@ -36,7 +36,7 @@
   ],
   "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
   "slots": 3,
-  "updated_at": "2026-11-08T00:23:45+03:00",
+  "updated_at": "2026-11-08T00:32:40+03:00",
   "tasks": [
     {
       "id": "BUILD",
@@ -127,13 +127,13 @@
       "parent": "S1",
       "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
       "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
-      "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS.",
+      "result": "5ea readonly publicstartup14tools PASS existingtestpage3. Fullcase preparation: created1newtab, authoritative listdifference onlypage8. Blank UI pending-home-input/Загрузка профиля, no workingcomposer. Explicitaccount verifier1attempt auth_timeout10s. Exactnewclaim not issued; oldpage7claim not reused; nativecreate/send0. Need readyblank+verifiedaccount+fresh exactclaim. Evidence chatgpt-5ea-blank-scope-blocker.json.",
       "owner": "Astra",
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex",
       "model": "gpt-6-astra",
       "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.",
-      "blocker": "Await combined immutable candidate for readonly init; no sends",
+      "blocker": "Dedicated new page8 profile loading; explicit auth_timeout10s, no exact account/claim",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -291,6 +291,38 @@
           "changes": {
             "blocker": "Await combined immutable candidate for readonly init; no sends",
             "result": "Published adaptere4c5edb6 caches explicitly verified account scope only after mismatchcheck. RED→107GREEN, tsc exit0. Original a836 directAHAP init22.093s ERROR exceeds core20s; coreowner fixes wrapperorder/budget. Oldreceipt/chatgpt-a836-ahap-timing.json retained. Need fresh combinedcandidate readonlypreflight, not nativePASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:26:26+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Public startup fixed; full send/read/export lane not yet executed",
+            "result": "Exact5ea28f51/a5d62e9d... freshprotectedHOME publiccore preflight PASS14tools on real MacMini page3 exactaccount;native_sends0. Published adaptere4c5edb6 RED→107GREEN+tsc0 with ownerwrapperorder/budget. Evidence chatgpt-5ea-{receipt.json,preflight.log}. This proves startup fix only, NOT completejourney/installed."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:32:00+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Dedicated new page8 profile loading; explicit auth_timeout10s, no exact account/claim",
+            "result": "5ea readonly publicstartup14tools PASS existingtestpage3. Fullcase preparation: created1newtab, authoritative listdifference onlypage8. Blank UI pending-home-input/Загрузка профиля, no workingcomposer. Explicitaccount verifier1attempt auth_timeout10s. Exactnewclaim not issued; oldpage7claim not reused; nativecreate/send0. Need readyblank+verifiedaccount+fresh exactclaim. Evidence chatgpt-5ea-blank-scope-blocker.json."
           },
           "actor": {
             "host_id": null,
@@ -1590,13 +1622,13 @@
       "parent": "S4",
       "description": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
       "acceptance": "Точный установленный artifact+consumer, позитивный CI и failure injection; full product PASS только все обязательные функции. Публикация отчёта, cleanup своих ресурсов, external gaps сохранены.",
-      "result": "evidence/candidate-a836-report.json + independent expected identity + candidate-a836-gate.txt. NEG5PASS referenced with original run_id/hash/provenance, not native proof. No V1 runtime installation, no legacycurrent switch. Sameconsumer installed route awaits complete candidate acceptance.",
+      "result": "Latest evidence/candidate-5ea-{report.json,expected.json,gate.txt}; NEG5PASS exact5ea with independent originalrunid+hashprovenance. ChatGPT startup14tools realPASS separated from fulljourney. No V1 runtimeinstallation, legacycurrent untouched. Sourcefixtures allpublished.",
       "owner": "Astra",
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex",
       "model": "gpt-6-astra",
       "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять.",
-      "blocker": "Exact a836 candidate gate exit2: chatgpt.create BLOCKED; native lanes incomplete",
+      "blocker": "Exact5ea full candidate gate exit2: dedicated ChatGPT blankscope unavailable; native lanes incomplete",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -1675,6 +1707,22 @@
             "status": "blocked",
             "blocker": "Exact a836 candidate gate exit2: chatgpt.create BLOCKED; native lanes incomplete",
             "result": "evidence/candidate-a836-report.json + independent expected identity + candidate-a836-gate.txt. NEG5PASS referenced with original run_id/hash/provenance, not native proof. No V1 runtime installation, no legacycurrent switch. Sameconsumer installed route awaits complete candidate acceptance."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T00:32:40+03:00",
+          "note": "",
+          "changes": {
+            "blocker": "Exact5ea full candidate gate exit2: dedicated ChatGPT blankscope unavailable; native lanes incomplete",
+            "result": "Latest evidence/candidate-5ea-{report.json,expected.json,gate.txt}; NEG5PASS exact5ea with independent originalrunid+hashprovenance. ChatGPT startup14tools realPASS separated from fulljourney. No V1 runtimeinstallation, legacycurrent untouched. Sourcefixtures allpublished."
           },
           "actor": {
             "host_id": null,
