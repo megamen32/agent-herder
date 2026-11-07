@@ -41,7 +41,7 @@ def run_journey(api, read_transcript, harness, model, project, *, timeout=30, sl
         pages = read_transcript(harness, sid, marker)
         if type(pages) is not int or pages < 2:
             raise RuntimeError('complete paginated transcript not proven')
-        sessions.append({'id': sid, 'job': job, 'pages': pages})
+        sessions.append({'id': sid, 'job': job, 'pages': pages, 'marker': marker})
     deadline = time.monotonic() + timeout
     while True:
         listing = api('/api/sessions?harness=' + urllib.parse.quote(harness, safe='') + '&limit=100').get('sessions', [])
