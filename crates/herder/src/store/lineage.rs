@@ -36,6 +36,60 @@ pub enum RecordLineageResult {
 }
 
 impl Writer {
+    pub(crate) fn has_session_binding_schema(&self) -> Result<bool> {
+        self.connection.query_row("SELECT (SELECT user_version FROM pragma_user_version)=2 AND herder_writer_version()=2 AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_bindings')",[],|r|r.get(0))
+    }
+    /// Claim only the exact prepared create intent, before any native call.
+    pub(crate) fn claim_create_exact(
+        &mut self,
+        intent: &NewCreateLineageIntent<'_>,
+    ) -> Result<bool> {
+        Ok(self.connection.execute(
+            "UPDATE intents SET state='dispatching',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='prepared' AND native_receipt IS NULL",
+            params![intent.intent_id,intent.creator_ref,intent.target,intent.request_ref,intent.payload_hash,intent.now],
+        )? == 1)
+    }
+
+    /// No evidence of completion is not permission to call native create again.
+    pub(crate) fn mark_create_unknown(
+        &mut self,
+        intent: &NewCreateLineageIntent<'_>,
+    ) -> Result<()> {
+        self.connection.execute(
+            "UPDATE intents SET state='unknown',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL",
+            params![intent.intent_id,intent.creator_ref,intent.target,intent.request_ref,intent.payload_hash,intent.now],
+        )?;
+        Ok(())
+    }
+
+    /// Called only by the trusted create composition after the matching native
+    /// receipt. All three durable records commit or roll back together.
+    pub(crate) fn commit_created_session(
+        &mut self,
+        intent: &NewCreateLineageIntent<'_>,
+        session_ref: &str,
+        address: &crate::domain::address::SessionAddress,
+        parent_ref: Option<&str>,
+        receipt: &str,
+    ) -> Result<bool> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let claimed: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL)",
+            params![intent.intent_id,intent.creator_ref,intent.target,intent.request_ref,intent.payload_hash], |r|r.get(0))?;
+        if !claimed {
+            return Ok(false);
+        }
+        if tx.execute("INSERT INTO session_bindings(session_ref,node_ref,instance_id,native_session_id) VALUES (?1,?2,?3,?4)",params![session_ref,address.instance.node.0,address.instance.instance_id,address.native_session_id])? != 1 { return Err(rusqlite::Error::InvalidQuery); }
+        if tx.execute("INSERT INTO lineage(session_ref,creator_ref,parent_ref,created_at) VALUES (?1,?2,?3,?4)",params![session_ref,intent.creator_ref,parent_ref,intent.now])? != 1 { return Err(rusqlite::Error::InvalidQuery); }
+        let changed=tx.execute("UPDATE intents SET state='admitted',native_receipt=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NULL",params![intent.intent_id,receipt,intent.now])?;
+        if changed != 1 {
+            return Ok(false);
+        }
+        tx.commit()?;
+        Ok(true)
+    }
     /// Persist creator and request identity with the Task before any native call.
     pub fn prepare_create_lineage_intent(
         &mut self,
