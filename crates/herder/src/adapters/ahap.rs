@@ -1,0 +1,373 @@
+//! Instance-bound AHAP v0.1 JSON-RPC over stdio.
+//! Mutations are never retried: a write, timeout or disconnect can leave an
+//! unknown outcome. Transport errors are not evidence of native non-admission.
+use serde_json::{Value, json};
+use std::{
+    collections::HashSet,
+    io::{BufRead, BufReader, Read, Write},
+    path::PathBuf,
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver, RecvTimeoutError},
+    },
+    thread,
+    time::{Duration, Instant},
+};
+
+const MAX_FRAME: u64 = 4 * 1024 * 1024;
+#[derive(Debug)]
+pub enum AhapError {
+    InvalidConfig,
+    Unavailable,
+    Unsupported,
+    BeforeSend,
+    OutcomeUnknown,
+    Remote,
+    Protocol,
+}
+#[derive(Clone, Debug)]
+pub struct AhapConfig {
+    pub instance_id: String,
+    pub harness: String,
+    pub executable: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    pub env: Vec<(String, String)>,
+    pub timeout: Duration,
+}
+struct State {
+    child: Child,
+    writer: mpsc::SyncSender<(Vec<u8>, mpsc::SyncSender<Result<(), ()>>)>,
+    rx: Receiver<Result<Value, ()>>,
+    next_id: u64,
+    usable: bool,
+}
+pub struct AhapClient {
+    instance_id: String,
+    methods: HashSet<String>,
+    state: Mutex<State>,
+    timeout: Duration,
+}
+impl State {
+    /// Do not release the caller's execution guard while our runner can still
+    /// issue requests. A request already handed to the native service remains
+    /// UNKNOWN even after the runner exits.
+    fn poison(&mut self) {
+        self.usable = false;
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+impl Drop for State {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+fn frames(out: impl Read, tx: mpsc::SyncSender<Result<Value, ()>>) {
+    let mut r = BufReader::new(out);
+    loop {
+        let mut line = Vec::new();
+        let n = match (&mut r).take(MAX_FRAME + 1).read_until(b'\n', &mut line) {
+            Ok(n) => n,
+            Err(_) => {
+                let _ = tx.send(Err(()));
+                return;
+            }
+        };
+        if n == 0 {
+            return;
+        }
+        if n as u64 > MAX_FRAME || line.last() != Some(&b'\n') {
+            let _ = tx.send(Err(()));
+            return;
+        }
+        let parsed = serde_json::from_slice::<Value>(&line).map_err(|_| ());
+        if tx.send(parsed).is_err() {
+            return;
+        }
+    }
+}
+fn writes(mut input: ChildStdin, rx: Receiver<(Vec<u8>, mpsc::SyncSender<Result<(), ()>>)>) {
+    while let Ok((data, result)) = rx.recv() {
+        let written = input
+            .write_all(&data)
+            .and_then(|_| input.flush())
+            .map_err(|_| ());
+        let failed = written.is_err();
+        let _ = result.send(written);
+        if failed {
+            break;
+        }
+    }
+}
+fn rpc(s: &mut State, method: &str, params: Value, timeout: Duration) -> Result<Value, AhapError> {
+    if !s.usable {
+        return Err(AhapError::Unavailable);
+    }
+    match s.child.try_wait() {
+        Ok(None) => (),
+        _ => {
+            s.usable = false;
+            return Err(AhapError::BeforeSend);
+        }
+    }
+    let id = s.next_id;
+    s.next_id = s.next_id.checked_add(1).ok_or(AhapError::BeforeSend)?;
+    let mut data =
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .map_err(|_| AhapError::BeforeSend)?;
+    data.push(b'\n');
+    if data.len() as u64 > MAX_FRAME {
+        return Err(AhapError::BeforeSend);
+    }
+    let deadline = Instant::now() + timeout;
+    let (ack, ack_rx) = mpsc::sync_channel(1);
+    if s.writer.send((data, ack)).is_err() {
+        s.usable = false;
+        return Err(AhapError::BeforeSend);
+    }
+    match ack_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(Ok(())) => (),
+        _ => {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        }
+    }
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        }
+        let frame = match s.rx.recv_timeout(remaining) {
+            Ok(Ok(v)) => v,
+            Ok(Err(_)) => {
+                s.poison();
+                return Err(AhapError::OutcomeUnknown);
+            }
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                s.poison();
+                return Err(AhapError::OutcomeUnknown);
+            }
+        };
+        if frame.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        }
+        if frame.get("id").is_none() && frame.get("method").and_then(Value::as_str) == Some("event")
+        {
+            continue;
+        }
+        if frame.get("id").and_then(Value::as_u64) != Some(id) {
+            s.poison();
+            return Err(AhapError::OutcomeUnknown);
+        }
+        if frame.get("error").is_some() {
+            return Err(AhapError::Remote);
+        }
+        return frame.get("result").cloned().ok_or_else(|| {
+            s.poison();
+            AhapError::OutcomeUnknown
+        });
+    }
+}
+impl AhapClient {
+    pub fn open(config: AhapConfig) -> Result<Self, AhapError> {
+        if config.instance_id.is_empty()
+            || config.harness.is_empty()
+            || !config.executable.is_absolute()
+            || !config.cwd.is_absolute()
+            || config.timeout.is_zero()
+        {
+            return Err(AhapError::InvalidConfig);
+        }
+        let mut cmd = Command::new(&config.executable);
+        cmd.args(&config.args)
+            .current_dir(&config.cwd)
+            .env_clear()
+            .envs(config.env.iter().map(|(k, v)| (k, v)))
+            .env("AHAP_VERSION", "0.1")
+            .env("AHAP_HARNESS", &config.harness)
+            .env("AHAP_ROLE", "adapter")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut child = cmd.spawn().map_err(|_| AhapError::BeforeSend)?;
+        let input = child.stdin.take().ok_or(AhapError::BeforeSend)?;
+        let out = child.stdout.take().ok_or(AhapError::BeforeSend)?;
+        let (tx, rx) = mpsc::sync_channel(32);
+        thread::spawn(move || frames(out, tx));
+        let (writer, write_rx) = mpsc::sync_channel(1);
+        thread::spawn(move || writes(input, write_rx));
+        let mut state = State {
+            child,
+            writer,
+            rx,
+            next_id: 1,
+            usable: true,
+        };
+        let init = rpc(
+            &mut state,
+            "initialize",
+            json!({"harness":config.harness,"ahapVersion":"0.1"}),
+            config.timeout,
+        )?;
+        if init.get("harness").and_then(Value::as_str) != Some(config.harness.as_str()) {
+            return Err(AhapError::Protocol);
+        }
+        let entries = init
+            .pointer("/capabilities/methods")
+            .and_then(Value::as_array)
+            .ok_or(AhapError::Protocol)?;
+        let mut methods = HashSet::new();
+        for entry in entries {
+            let name = entry
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .ok_or(AhapError::Protocol)?;
+            if !methods.insert(name.to_owned()) {
+                return Err(AhapError::Protocol);
+            }
+        }
+        if methods.contains("init") {
+            rpc(&mut state, "init", json!({}), config.timeout)?;
+        }
+        Ok(Self {
+            instance_id: config.instance_id,
+            methods,
+            state: Mutex::new(state),
+            timeout: config.timeout,
+        })
+    }
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
+    pub fn supports(&self, method: &str) -> bool {
+        self.methods.contains(method)
+    }
+    pub fn call(&self, method: &str, params: Value) -> Result<Value, AhapError> {
+        if !self.supports(method) {
+            return Err(AhapError::Unsupported);
+        }
+        let mut s = self.state.lock().map_err(|_| AhapError::Unavailable)?;
+        rpc(&mut s, method, params, self.timeout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn fixture(body: &str, timeout: Duration) -> (Fixture, AhapClient) {
+        let dir = std::env::temp_dir().join(format!(
+            "herder-ahap-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let executable = dir.join("adapter");
+        fs::write(&executable, body).unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let c = AhapClient::open(AhapConfig {
+            instance_id: "node-a/profile-a".into(),
+            harness: "opencode".into(),
+            executable,
+            args: vec![],
+            cwd: dir.clone(),
+            env: vec![(
+                "TRACE".into(),
+                dir.join("trace").to_string_lossy().into_owned(),
+            )],
+            timeout,
+        })
+        .unwrap();
+        (Fixture(dir), c)
+    }
+    const SCRIPT: &str = r##"#!/usr/bin/python3
+import json,os,sys,time
+for line in sys.stdin:
+ r=json.loads(line); m=r['method']
+ with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
+ if m=='initialize':
+  assert r['params']['harness']=='opencode' and os.environ['AHAP_VERSION']=='0.1'
+  v={'harness':'opencode','name':'fixture','capabilities':{'methods':['init','createSession','sendMessage','getSessionMessages']}}
+ elif m=='init':v=None
+ elif m=='sendMessage':time.sleep(1);v={'admission':'accepted','nativeInputMessageId':'msg'}
+ elif m=='createSession':v={'id':'ses_fixture'}
+ else:v=[]
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"##;
+    #[test]
+    fn capabilities_and_instance_are_explicit() {
+        let (f, c) = fixture(SCRIPT, Duration::from_secs(2));
+        assert_eq!(c.instance_id(), "node-a/profile-a");
+        assert!(c.supports("createSession"));
+        assert!(matches!(
+            c.call("deleteSession", json!({})),
+            Err(AhapError::Unsupported)
+        ));
+        assert_eq!(
+            c.call("createSession", json!({"options":{}})).unwrap()["id"],
+            "ses_fixture"
+        );
+        drop(c);
+        assert_eq!(
+            fs::read_to_string(f.0.join("trace"))
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            ["initialize", "init", "createSession"]
+        );
+    }
+    #[test]
+    fn timeout_never_replays_a_possibly_sent_mutation() {
+        let (f, c) = fixture(SCRIPT, Duration::from_millis(100));
+        assert!(matches!(
+            c.call("sendMessage", json!({"id":"ses","options":{"message":"x"}})),
+            Err(AhapError::OutcomeUnknown)
+        ));
+        assert!(matches!(
+            c.call("sendMessage", json!({})),
+            Err(AhapError::Unavailable)
+        ));
+        drop(c);
+        let trace = fs::read_to_string(f.0.join("trace")).unwrap();
+        assert_eq!(trace.lines().filter(|m| *m == "sendMessage").count(), 1);
+    }
+    #[test]
+    fn blocked_stdin_is_bounded_and_never_retried() {
+        let script = r##"#!/usr/bin/python3
+import json,sys,time
+r=json.loads(sys.stdin.readline())
+print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':{'harness':'opencode','capabilities':{'methods':['sendMessage']}}}),flush=True)
+time.sleep(5)
+"##;
+        let (_f, mut c) = fixture(script, Duration::from_secs(2));
+        c.timeout = Duration::from_millis(150);
+        let started = Instant::now();
+        assert!(matches!(
+            c.call("sendMessage", json!({"payload":"x".repeat(1024*1024)})),
+            Err(AhapError::OutcomeUnknown)
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(matches!(
+            c.call("sendMessage", json!({})),
+            Err(AhapError::Unavailable)
+        ));
+    }
+}
