@@ -4481,7 +4481,7 @@ async fn create_wire_reports_actionable_input_errors_without_effect_or_echo() {
         )
         .unwrap(),
     );
-    let server = ScopedTaskServer::new(identity(), grants(), authority, app);
+    let server = ScopedTaskServer::new(identity(), grants(), authority.clone(), app.clone());
     let (client, io) = tokio::io::duplex(65536);
     let job = tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
     let (r, mut w) = tokio::io::split(client);
@@ -4533,6 +4533,46 @@ async fn create_wire_reports_actionable_input_errors_without_effect_or_echo() {
         assert!(d["correction"].as_str().is_some_and(|x| !x.is_empty()));
         assert!(!response.to_string().contains("secret-marker"));
         assert!(!response.to_string().contains("private-project"));
+    }
+    assert_eq!(creator.1.load(Ordering::SeqCst), 0);
+    assert_eq!(sender.0.load(Ordering::SeqCst), 0);
+    let db = Connection::open(&f.db).unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM intents", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    drop(w);
+    drop(lines);
+    job.await.unwrap();
+    let bob = ConnectionIdentity::new(
+        Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId("bob".into()),
+        }),
+        None,
+    );
+    let server = ScopedTaskServer::new(bob, grants(), authority, app);
+    let (client, io) = tokio::io::duplex(65536);
+    let job = tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+    let (r, mut w) = tokio::io::split(client);
+    let mut lines = BufReader::new(r).lines();
+    let request = json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"wrong","project_ref":"private-project","prompt":"secret-marker","request_key":""}}});
+    w.write_all(format!("{request}\n").as_bytes())
+        .await
+        .unwrap();
+    let response: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+    let diagnostic = &response["result"]["structuredContent"];
+    assert_eq!(diagnostic["code"], "unauthorized", "{response}");
+    assert_eq!(diagnostic["effect"], "none");
+    assert!(diagnostic.get("field").is_none(), "{response}");
+    let rendered = response.to_string();
+    for secret in [
+        "secret-marker",
+        "private-project",
+        "profile-ref",
+        "instance_mismatch",
+    ] {
+        assert!(!rendered.contains(secret), "{response}");
     }
     assert_eq!(creator.1.load(Ordering::SeqCst), 0);
     assert_eq!(sender.0.load(Ordering::SeqCst), 0);
