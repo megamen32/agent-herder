@@ -1,0 +1,77 @@
+{
+  "consumer": "GPTAdmin Hub agent-deliver-v1 webhook adapter",
+  "integration_kind": "shell_adapter_to_mcp_http_tools_call",
+  "owner": "megamen32",
+  "repository": {
+    "name": "gptadmin",
+    "url": "https://github.com/megamen32/gptadmin.git",
+    "local_source": "/home/roomhacker/gptadmin",
+    "branch": "main",
+    "observed_source_sha": "d4b8d7991868e1ed0544e9081ea0d36f95a2d917",
+    "go_module": "go-hub/go.mod",
+    "go_module_path": "github.com/megamen32/gptadmin/go-hub"
+  },
+  "source_paths": {
+    "owner": "The GPTAdmin repository is owned by megamen32.",
+    "caller": {
+      "path": "scripts/agent_deliver.py",
+      "symbol": "main",
+      "last_changed_commit": "cb337485e9820210e42cee7c2d8ce952fce1c64f"
+    },
+    "hub_dispatch": {
+      "path": "go-hub/internal/hub/webhook_gateway.go",
+      "symbol": "(*Server).dispatchWebhookAction",
+      "last_changed_commit": "fc57cad3f7ea63ab5eedcd8508f91ac3c1fc816f"
+    },
+    "contract_document": "docs/AGENT_DELIVER_API.md",
+    "test": "tests/test_agent_event_adapters.py"
+  },
+  "live_route_readback": {
+    "source": "GPTAdmin Hub read-only `webhook_routes_list` MCP call",
+    "route_id": "agent-deliver-v1",
+    "kind": "shell",
+    "target": "shell:roomhacker-server-100",
+    "action_count": 1,
+    "auth_mode": "hmac",
+    "boundary": "The safe route summary omits command and cwd. Its exact command is documented in docs/AGENT_DELIVER_API.md, but was not independently read from the private route configuration. No event was submitted."
+  },
+  "caller_route": {
+    "entry": "GPTAdmin POST /webhooks/v1/agent-deliver-v1",
+    "hub_function": "(*Server).dispatchWebhookAction, shell case",
+    "hub_behavior": "The Hub dispatches the configured shell action through executeMCPTool to its selected ShellMCP target. The documented fixed action runs python3 /home/roomhacker/gptadmin/scripts/agent_deliver.py with the JSON event as its sole argument.",
+    "adapter_behavior": "scripts/agent_deliver.py::main validates the event and maps it to Agent Herder deliver arguments."
+  },
+  "protocol_boundary": {
+    "transport": "HTTP POST to http://127.0.0.1:18787/mcp from the server-100 shell adapter.",
+    "request": {
+      "protocol": "JSON-RPC 2.0 MCP tools/call over the Agent Herder Streamable HTTP endpoint's legacy stateless mode.",
+      "request_id": 1,
+      "tool": "deliver",
+      "arguments": [
+        "harness",
+        "name",
+        "cwd",
+        "message",
+        "create",
+        "activation",
+        "mode"
+      ],
+      "session_id": "omitted",
+      "initialize_or_schema_discovery": "omitted by the adapter; the caller relies on Agent Herder's legacy stateless HTTP compatibility path."
+    },
+    "response": "Accepts JSON or text/event-stream, unwraps structuredContent or JSON text content, rejects JSON-RPC/tool errors, and requires parsed result ok=true.",
+    "auth_boundary": "The script sends no Authorization header. Agent Herder source allows unauthenticated owner-loopback MCP only on a managed fleet node when no HTTP token is configured; runtime token state was not inspected.",
+    "not_used": "This caller does not invoke Agent Herder through GPTAdmin's generic child-MCP relay or a custom REST endpoint."
+  },
+  "reproducible_check": {
+    "command": "python3 -m unittest discover -s tests -p test_agent_event_adapters.py",
+    "observed_result": "6 tests passed",
+    "scope": "Local adapter validation and MCP error-to-failure handling; network calls are mocked, so this is not a live Agent Herder delivery proof."
+  },
+  "owned_paths_for_followup": [
+    "scripts/agent_deliver.py",
+    "tests/test_agent_event_adapters.py",
+    "docs/AGENT_DELIVER_API.md"
+  ],
+  "scope_boundary": "Records the existing Hub webhook-to-shell-to-MCP caller route and exact wire boundary. No GPTAdmin or Agent Herder runtime changes, route edits, new bridge, or additional state store are part of this target."
+}
