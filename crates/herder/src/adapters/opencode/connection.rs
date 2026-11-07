@@ -6,13 +6,14 @@
 
 use std::{collections::HashMap, fmt, time::Duration};
 
-use reqwest::{Client, Method, RequestBuilder, Url};
-use serde::Deserialize;
+use reqwest::{Client, Method, StatusCode, Url};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{config::Profile, domain::address::InstanceRef};
 
 const DESCRIPTION_PATH: &str = "openapi.json";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Credentials are supplied by the caller after resolving the profile's
 /// protected secret reference. Debug output never includes the password.
@@ -49,6 +50,8 @@ pub enum OpenCodeConnectionError {
     HttpStatus(u16),
     Transport,
     InvalidDescription,
+    InvalidRequestId,
+    InvalidTimeout,
 }
 
 impl fmt::Display for OpenCodeConnectionError {
@@ -64,6 +67,10 @@ impl fmt::Display for OpenCodeConnectionError {
             Self::Transport => f.write_str("OpenCode endpoint could not be reached"),
             Self::InvalidDescription => {
                 f.write_str("OpenCode endpoint returned an invalid API description")
+            }
+            Self::InvalidRequestId => f.write_str("OpenCode request ID must not be empty"),
+            Self::InvalidTimeout => {
+                f.write_str("OpenCode request timeout must be greater than zero")
             }
         }
     }
@@ -88,6 +95,7 @@ pub struct OpenCodeConnection {
     client: Client,
     auth: Option<OpenCodeAuth>,
     api: OpenCodeApiDescription,
+    request_timeout: Duration,
 }
 
 impl fmt::Debug for OpenCodeConnection {
@@ -97,6 +105,7 @@ impl fmt::Debug for OpenCodeConnection {
             .field("endpoint", &self.endpoint)
             .field("auth", &self.auth.as_ref().map(|_| "[CONFIGURED]"))
             .field("api", &self.api)
+            .field("request_timeout", &self.request_timeout)
             .finish()
     }
 }
@@ -139,6 +148,7 @@ impl OpenCodeConnection {
             endpoint,
             client,
             auth,
+            request_timeout: REQUEST_TIMEOUT,
             api: OpenCodeApiDescription {
                 openapi_version: String::new(),
                 has_session_list: false,
@@ -205,11 +215,31 @@ impl OpenCodeConnection {
         &self.endpoint
     }
 
-    pub(crate) fn request(
+    pub fn request_timeout(&self) -> Duration {
+        self.request_timeout
+    }
+
+    pub fn with_request_timeout(
+        mut self,
+        timeout: Duration,
+    ) -> Result<Self, OpenCodeConnectionError> {
+        if timeout.is_zero() {
+            return Err(OpenCodeConnectionError::InvalidTimeout);
+        }
+        self.request_timeout = timeout;
+        Ok(self)
+    }
+
+    pub fn request(
         &self,
+        request_id: impl Into<String>,
         method: Method,
         path: &str,
-    ) -> Result<RequestBuilder, OpenCodeConnectionError> {
+    ) -> Result<OpenCodeRequest, OpenCodeConnectionError> {
+        let request_id = request_id.into();
+        if request_id.trim().is_empty() {
+            return Err(OpenCodeConnectionError::InvalidRequestId);
+        }
         let relative = path
             .strip_prefix('/')
             .ok_or(OpenCodeConnectionError::InvalidEndpoint)?;
@@ -224,6 +254,109 @@ impl OpenCodeConnection {
         if let Some(auth) = &self.auth {
             request = request.basic_auth(&auth.username, Some(&auth.password));
         }
-        Ok(request)
+        Ok(OpenCodeRequest {
+            request_id,
+            request,
+            timeout: self.request_timeout,
+        })
+    }
+}
+
+/// Transport outcome for one correlated native request. A timeout or an
+/// interrupted response is uncertain and must be reconciled, never resent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenCodeRequestFailure {
+    DefinitelyNotSent,
+    OutcomeUnknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodeRequestError {
+    pub request_id: String,
+    pub failure: OpenCodeRequestFailure,
+}
+
+impl fmt::Display for OpenCodeRequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.failure {
+            OpenCodeRequestFailure::DefinitelyNotSent => write!(
+                f,
+                "OpenCode request {} was not sent because the endpoint could not be reached",
+                self.request_id
+            ),
+            OpenCodeRequestFailure::OutcomeUnknown => write!(
+                f,
+                "OpenCode request {} has an unknown outcome; reconcile its native receipt before any retry",
+                self.request_id
+            ),
+        }
+    }
+}
+
+impl std::error::Error for OpenCodeRequestError {}
+
+/// Request builder that keeps its caller-supplied correlation ID through the
+/// transport result and applies one bounded timeout without retrying. For
+/// prompt mutations, the operation must also place the ID in the native prompt
+/// `id` field; this local correlation value is not sent as an invented header.
+pub struct OpenCodeRequest {
+    request_id: String,
+    request: reqwest::RequestBuilder,
+    timeout: Duration,
+}
+
+impl OpenCodeRequest {
+    pub fn json<T: Serialize + ?Sized>(mut self, body: &T) -> Self {
+        self.request = self.request.json(body);
+        self
+    }
+
+    pub async fn send(self) -> Result<OpenCodeResponse, OpenCodeRequestError> {
+        let request_id = self.request_id;
+        let response = self
+            .request
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|error| OpenCodeRequestError {
+                request_id: request_id.clone(),
+                failure: if error.is_connect() {
+                    OpenCodeRequestFailure::DefinitelyNotSent
+                } else {
+                    OpenCodeRequestFailure::OutcomeUnknown
+                },
+            })?;
+        Ok(OpenCodeResponse {
+            request_id,
+            response,
+        })
+    }
+}
+
+/// HTTP response tied to the request that produced it. HTTP status remains
+/// visible to the operation layer; transport success is not business success.
+pub struct OpenCodeResponse {
+    request_id: String,
+    response: reqwest::Response,
+}
+
+impl OpenCodeResponse {
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.response.status()
+    }
+
+    pub async fn json<T: DeserializeOwned>(self) -> Result<T, OpenCodeRequestError> {
+        let request_id = self.request_id;
+        self.response
+            .json()
+            .await
+            .map_err(|_| OpenCodeRequestError {
+                request_id,
+                failure: OpenCodeRequestFailure::OutcomeUnknown,
+            })
     }
 }
