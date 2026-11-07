@@ -4,7 +4,7 @@
   "label": "Доказать семь ChatGPT checks на исправленном candidate",
   "description": "Продолжить retained ordinaryconsumer ci-chatgpt-native-5ea-0110 после readonly reconciliation. Первый prompt не повторять. Fresh packaged adapter2e446c4c; exactpage8/account/QAclaim. Independent read-only export/search/projects/reopen proofs continue now.",
   "acceptance": "Create and initialreply, separate deliver same session, read both, full nativeexport, search coverage, projects provenance, reopen without resend. Same publiccore consumer, exact immutable candidate provenance; originalUNKNOWN receipt preserved, no lowering releasegate.",
-  "status": "running",
+  "status": "blocked",
   "estimate_minutes": 15,
   "owner": "CI Astra",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
@@ -17,7 +17,7 @@
   ],
   "model": "gpt-6-astra",
   "created_at": "2026-11-08T02:18:03+03:00",
-  "updated_at": "2026-11-08T02:18:03+03:00",
+  "updated_at": "2026-11-08T02:20:03+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T02:18:03+03:00",
@@ -49,6 +49,25 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T02:20:03+03:00",
+      "note": "Минимальное условие продолжения: exact manifest/hash нового candidate с2e446c4c; затем fresh identity/account claim и ordinary consumer. Это реальная artifact dependency, не запрет normal sends/independenttests. Не держать running без исполняемой работы.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Нет опубликованного immutable candidate с adapter2e446c4c; packing у владельца core. 5ea сохраняет доказанный receipt defect.",
+        "result": "Исходный run readonly: exact initial user+assistant, full native export4729bytes sha256a3cea07149943bc20dbefe55616cab42dab4fca95e8324f6b637136e74aa8210, search coveragecomplete, projects authorized_native_session; originalUNKNOWN retained. Secondsend notattempted. Evidence published89706fa2."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
-  ]
+  ],
+  "blocker": "Нет опубликованного immutable candidate с adapter2e446c4c; packing у владельца core. 5ea сохраняет доказанный receipt defect.",
+  "result": "Исходный run readonly: exact initial user+assistant, full native export4729bytes sha256a3cea07149943bc20dbefe55616cab42dab4fca95e8324f6b637136e74aa8210, search coveragecomplete, projects authorized_native_session; originalUNKNOWN retained. Secondsend notattempted. Evidence published89706fa2."
 }

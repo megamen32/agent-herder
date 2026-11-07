@@ -15,5 +15,8 @@
   "full_lane": "INCOMPLETE",
   "installed": "NOT_RUN",
   "source_fix": "2e446c4cb79c9ad9cc71da5b8b3f19c5fd3bb2e3",
-  "tests": "RED4 -> GREEN80; tsc exit0"
+  "tests": "RED4 -> GREEN80; tsc exit0",
+  "qa_claim_cleanup": "released; fresh status free",
+  "historical_ci_draft": "restored and verified on own page8, not sent",
+  "continuation": "Requires immutable candidate including2e446c4c and fresh exactQAclaim"
 }

@@ -36,7 +36,7 @@
   ],
   "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
   "slots": 3,
-  "updated_at": "2026-11-08T02:18:03+03:00",
+  "updated_at": "2026-11-08T02:20:34+03:00",
   "tasks": [
     {
       "id": "BUILD",
@@ -869,14 +869,16 @@
     {
       "id": "CHATGPTCASE",
       "label": "Доказать семь ChatGPT checks на исправленном candidate",
-      "status": "running",
+      "status": "blocked",
       "parent": "S1",
       "description": "Продолжить retained ordinaryconsumer ci-chatgpt-native-5ea-0110 после readonly reconciliation. Первый prompt не повторять. Fresh packaged adapter2e446c4c; exactpage8/account/QAclaim. Independent read-only export/search/projects/reopen proofs continue now.",
       "acceptance": "Create and initialreply, separate deliver same session, read both, full nativeexport, search coverage, projects provenance, reopen without resend. Same publiccore consumer, exact immutable candidate provenance; originalUNKNOWN receipt preserved, no lowering releasegate.",
+      "result": "Исходный run readonly: exact initial user+assistant, full native export4729bytes sha256a3cea07149943bc20dbefe55616cab42dab4fca95e8324f6b637136e74aa8210, search coveragecomplete, projects authorized_native_session; originalUNKNOWN retained. Secondsend notattempted. Evidence published89706fa2.",
       "owner": "CI Astra",
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex",
       "model": "gpt-6-astra",
+      "blocker": "Нет опубликованного immutable candidate с adapter2e446c4c; packing у владельца core. 5ea сохраняет доказанный receipt defect.",
       "origin": "",
       "supersedes": [
         "CHATGPT"
@@ -903,6 +905,23 @@
               "CHATGPT"
             ],
             "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T02:20:03+03:00",
+          "note": "Минимальное условие продолжения: exact manifest/hash нового candidate с2e446c4c; затем fresh identity/account claim и ordinary consumer. Это реальная artifact dependency, не запрет normal sends/independenttests. Не держать running без исполняемой работы.",
+          "changes": {
+            "status": "blocked",
+            "blocker": "Нет опубликованного immutable candidate с adapter2e446c4c; packing у владельца core. 5ea сохраняет доказанный receipt defect.",
+            "result": "Исходный run readonly: exact initial user+assistant, full native export4729bytes sha256a3cea07149943bc20dbefe55616cab42dab4fca95e8324f6b637136e74aa8210, search coveragecomplete, projects authorized_native_session; originalUNKNOWN retained. Secondsend notattempted. Evidence published89706fa2."
           },
           "actor": {
             "host_id": null,
@@ -1054,8 +1073,8 @@
       "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
       "harness": "codex",
       "model": "gpt-6.1-terra",
-      "note": "Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact.",
-      "blocker": "Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.",
+      "note": "Evidence: evidence/codex-v1-5ea28f-result.md. Scope fixture published b9f192a2; bin preflight failed before create, subscription guard unchanged; need supported product-owned isolated child launch/provider proof, then TDD fix and consumer.",
+      "blocker": "AHAP_CODEX_BIN uses systemd-run --user; isolated launch.py sandbox has no user D-Bus, so AHAP init fails before create. No supported proven child-in-netns/provider identity contract.",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -1179,6 +1198,22 @@
           "changes": {
             "blocker": "Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.",
             "note": "Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T02:20:34+03:00",
+          "note": "Pinned bin preflight on 5ea28f: AHAP init Remote, no create/send; exact systemd-run diagnostic: no /run/user/0/bus inside sandbox.",
+          "changes": {
+            "blocker": "AHAP_CODEX_BIN uses systemd-run --user; isolated launch.py sandbox has no user D-Bus, so AHAP init fails before create. No supported proven child-in-netns/provider identity contract.",
+            "note": "Evidence: evidence/codex-v1-5ea28f-result.md. Scope fixture published b9f192a2; bin preflight failed before create, subscription guard unchanged; need supported product-owned isolated child launch/provider proof, then TDD fix and consumer."
           },
           "actor": {
             "host_id": null,
