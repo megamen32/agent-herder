@@ -1,0 +1,5 @@
+Command: HERDER_TEST_CODEX_BIN=/home/roomhacker/.local/bin/codex cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate real_codex_fresh_create_deliver_native_read_stop_next_denied -- --ignored --nocapture
+Candidate: 03eccbc2; isolated Codex profile and loopback model fixture; no public MCP composition.
+scoped-native-proof session_ref=issued scope_generation=scope-1 native_thread=01a1b555-3995-7502-8c62-e46b02dda17e native_turn=01a1b555-3ad5-7ca0-b741-8a98cea4bb31 model=loopback-fixture readback=interrupted next_claim=denied
+test real_codex_fresh_create_deliver_native_read_stop_next_denied ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 2.69s
