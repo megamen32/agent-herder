@@ -3,6 +3,7 @@ pub mod adapters {
     pub mod cdp;
     pub mod codex {
         pub mod connection;
+        pub mod control;
         pub mod read;
     }
     pub mod opencode {
