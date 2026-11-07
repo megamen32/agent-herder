@@ -24,3 +24,62 @@ pub fn try_acquire(file: File) -> io::Result<TargetGateGuard> {
     })?;
     Ok(TargetGateGuard { _file: file })
 }
+
+/// Open only a pre-provisioned, singly linked gate under a private directory.
+/// Expected device/inode must be loaded from the same authoritative SQLite
+/// store, never supplied by an MCP request. Linux only; callers must still
+/// recheck authority and holds under the acquired guard before a native write.
+#[cfg(target_os = "linux")]
+pub fn acquire_pinned(
+    path: &std::path::Path,
+    device: u64,
+    inode: u64,
+) -> io::Result<TargetGateGuard> {
+    use std::{
+        fs::OpenOptions,
+        os::unix::{
+            ffi::OsStrExt,
+            fs::{MetadataExt, OpenOptionsExt},
+        },
+    };
+    unsafe extern "C" {
+        fn geteuid() -> u32;
+    }
+    let invalid = || io::Error::new(io::ErrorKind::PermissionDenied, "untrusted scoped gate");
+    let parent = path.parent().ok_or_else(invalid)?;
+    if !path.is_absolute()
+        || parent.canonicalize()? != parent
+        || path.file_name().is_none_or(|n| n.as_bytes().is_empty())
+    {
+        return Err(invalid());
+    }
+    let directory = parent.metadata()?;
+    if !directory.is_dir()
+        || directory.uid() != unsafe { geteuid() }
+        || directory.mode() & 0o077 != 0
+    {
+        return Err(invalid());
+    }
+    // Linux O_NOFOLLOW: reject a symlink at the last component.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(0x20000)
+        .open(path)?;
+    let check = |metadata: std::fs::Metadata| {
+        metadata.is_file()
+            && metadata.uid() == unsafe { geteuid() }
+            && metadata.mode() & 0o077 == 0
+            && metadata.nlink() == 1
+            && metadata.dev() == device
+            && metadata.ino() == inode
+    };
+    if !check(file.metadata()?) || !check(std::fs::symlink_metadata(path)?) {
+        return Err(invalid());
+    }
+    let guard = try_acquire(file)?;
+    if !check(guard._file.metadata()?) || !check(std::fs::symlink_metadata(path)?) {
+        return Err(invalid());
+    }
+    Ok(guard)
+}

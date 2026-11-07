@@ -103,7 +103,7 @@ fn sealed_scope_and_authority_are_immutable_and_fenced() {
     )
     .unwrap();
     t.execute(
-        "INSERT INTO humanstop_sessions VALUES ('fresh','generation','now')",
+        "INSERT INTO humanstop_sessions VALUES ('fresh','generation','scope-generation','now')",
         [],
     )
     .unwrap();
@@ -114,7 +114,7 @@ fn sealed_scope_and_authority_are_immutable_and_fenced() {
     );
     assert!(
         c.execute(
-            "INSERT OR REPLACE INTO humanstop_sessions VALUES ('fresh','generation','now')",
+            "INSERT OR REPLACE INTO humanstop_sessions VALUES ('fresh','generation','scope-generation','now')",
             []
         )
         .is_err()
@@ -142,7 +142,7 @@ fn sealed_scope_and_authority_are_immutable_and_fenced() {
     assert!(
         stale
             .execute(
-                "INSERT INTO humanstop_sessions VALUES ('other','generation','now')",
+                "INSERT INTO humanstop_sessions VALUES ('other','generation','scope-other','now')",
                 []
             )
             .is_err()

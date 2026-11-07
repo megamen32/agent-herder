@@ -13,7 +13,8 @@ CREATE TABLE humanstop_authority (
 ) STRICT;
 CREATE TABLE humanstop_sessions (
     session_ref TEXT PRIMARY KEY REFERENCES session_bindings(session_ref),
-    generation TEXT NOT NULL REFERENCES humanstop_authority(generation) CHECK(length(generation) > 0),
+    authority_generation TEXT NOT NULL REFERENCES humanstop_authority(generation) CHECK(length(authority_generation) > 0),
+    scope_generation TEXT NOT NULL UNIQUE CHECK(length(scope_generation) > 0),
     created_at TEXT NOT NULL
 ) STRICT;
 CREATE TABLE humanstop_scopes (
@@ -31,6 +32,7 @@ CREATE TRIGGER v3_authority_update_immutable BEFORE UPDATE ON humanstop_authorit
 CREATE TRIGGER v3_authority_delete_immutable BEFORE DELETE ON humanstop_authority BEGIN SELECT RAISE(ABORT, 'authority is immutable'); END;
 CREATE TRIGGER v3_session_insert_fence BEFORE INSERT ON humanstop_sessions WHEN herder_writer_version() IS NOT (SELECT user_version FROM pragma_user_version) BEGIN SELECT RAISE(ABORT, 'unsupported schema version for writer'); END;
 CREATE TRIGGER v3_session_no_replace BEFORE INSERT ON humanstop_sessions WHEN EXISTS(SELECT 1 FROM humanstop_sessions WHERE session_ref=NEW.session_ref) BEGIN SELECT RAISE(ABORT, 'session scope already exists'); END;
+CREATE TRIGGER v3_session_scope_complete BEFORE INSERT ON humanstop_sessions WHEN NOT EXISTS(SELECT 1 FROM humanstop_scopes WHERE session_ref=NEW.session_ref AND scope_ref='global') OR NOT EXISTS(SELECT 1 FROM humanstop_scopes WHERE session_ref=NEW.session_ref AND scope_ref='session:' || NEW.session_ref) BEGIN SELECT RAISE(ABORT, 'required scopes missing'); END;
 CREATE TRIGGER v3_session_update_immutable BEFORE UPDATE ON humanstop_sessions BEGIN SELECT RAISE(ABORT, 'session scope is immutable'); END;
 CREATE TRIGGER v3_session_delete_immutable BEFORE DELETE ON humanstop_sessions BEGIN SELECT RAISE(ABORT, 'session scope is immutable'); END;
 CREATE TRIGGER v3_scope_insert_fence BEFORE INSERT ON humanstop_scopes WHEN herder_writer_version() IS NOT (SELECT user_version FROM pragma_user_version) BEGIN SELECT RAISE(ABORT, 'unsupported schema version for writer'); END;
