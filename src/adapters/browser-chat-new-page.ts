@@ -143,6 +143,38 @@ export interface NewChatSubmitReceipt {
   reason?:string;
 }
 
+/** Verify the site's stored first user message before adopting a Z.ai route. */
+export function zaiNewChatMessageProbe(id:string,text:string,scope?:string):string {
+  return `async () => {
+    const herderZaiNewChatVerify=true, id=${JSON.stringify(id)}, text=${JSON.stringify(text.trim())}, scope=${JSON.stringify(scope||"")};
+    if(location.origin!=='https://chat.z.ai'||location.pathname!=='/c/'+id)return {verified:false,reason:'route_changed'};
+    const r=await fetch('/api/v1/chats/'+encodeURIComponent(id),{credentials:'same-origin'});
+    if(!r.ok)return {verified:false,reason:'history_unavailable'};
+    const chat=await r.json();
+    if(chat.id!==id)return {verified:false,reason:'native_history_mismatch'};
+    if(scope){
+      if(!chat.user_id)return {verified:false,reason:'history_unavailable'};
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(chat.user_id)));
+      const actual=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+      if(actual!==scope)return {verified:false,reason:'native_history_mismatch'};
+    }
+    const history=chat.chat?.history?.messages;
+    if(!history||typeof history!=='object'||Array.isArray(history))return {verified:false,reason:'history_unavailable'};
+    const ids=Object.keys(history);if(!ids.length||ids.length>200)return {verified:false,reason:'history_unavailable'};
+    const batch=await fetch('/api/v1/chats/'+encodeURIComponent(id)+'/messages/batch',{
+      method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({ids})});
+    if(!batch.ok)return {verified:false,reason:'history_unavailable'};
+    const result=await batch.json();
+    if(result.chat_id!==id||!result.data||ids.some(key=>!result.data[key]))return {verified:false,reason:'history_unavailable'};
+    const users=ids.map(key=>result.data[key]).filter(message=>message?.role==='user');
+    if(!users.length)return {verified:false,reason:'history_unavailable'};
+    const value=message=>typeof message.content==='string'?message.content:
+      (Array.isArray(message.content_blocks)?message.content_blocks:[]).filter(block=>block.type==='text'||block.type==='markdown').map(block=>typeof block.content==='string'?block.content:'').join('\\n');
+    if(users.length!==1||value(users[0]).trim()!==text)return {verified:false,reason:'native_history_mismatch'};
+    return {verified:true};
+  }`;
+}
+
 /** Submit the USER'S first message. This is deliberately separate from
  * createChat: creation itself must never send a synthetic prompt or use quota.
  */
@@ -152,6 +184,22 @@ export async function submitFirstChatMessage(
   let pageId:number;
   try { pageId=await openOwnedBlankChatPage(tools,site); }
   catch(error) { return {clicked:false,uncertain:false,reason:String(error)}; }
+  const existingZaiIds = new Set<string>();
+  if (site === "zai") {
+    try {
+      const before=parseChromeEvaluation<{scope?:string;chats?:Array<{id?:unknown}>}>(
+        await tools.call("evaluate_script",{pageId,function:ZAI_LIST_API_SCRIPT}));
+      if (expectedScope !== undefined && before.scope !== expectedScope) {
+        await tools.call("close_page",{pageId}).catch(()=>undefined);
+        return {clicked:false,uncertain:false,reason:"New-chat account identity could not be verified"};
+      }
+      if (!Array.isArray(before.chats)) throw new Error("Z.ai account inventory is unavailable");
+      for (const chat of before.chats) if (typeof chat.id === "string") existingZaiIds.add(chat.id);
+    } catch {
+      await tools.call("close_page",{pageId}).catch(()=>undefined);
+      return {clicked:false,uncertain:false,reason:"Z.ai account inventory unavailable; no message submitted"};
+    }
+  }
   // A new tab must belong to the *same* browser account that owns the
   // local draft. Browser profiles can coexist and account changes must not
   // silently redirect the first user message to someone else's account.
@@ -202,8 +250,21 @@ export async function submitFirstChatMessage(
       if(observed.rejection)return {clicked:true,uncertain:true,reason:
         site+" rejected the first message: "+observed.rejection+"; no automatic retry"};
       const id=observed.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
-      if(observed.origin===origin&&id)return {clicked:true,uncertain:false,
-        remoteId:site==="zai"?"route:"+id:id};
+      if(observed.origin===origin&&id){
+        if(site==="zai" && existingZaiIds.has(id))
+          return {clicked:true,uncertain:true,reason:"New-chat route was already in the account inventory; do not retry"};
+        if(site==="zai"){
+          const proof=parseChromeEvaluation<{verified?:boolean;reason?:string}>(
+            await tools.call("evaluate_script",{pageId,function:zaiNewChatMessageProbe(id,text,expectedScope)}));
+          if(!proof.verified){
+            if(proof.reason==="native_history_mismatch"||proof.reason==="route_changed")
+              return {clicked:true,uncertain:true,reason:"New-chat native history did not match the submitted message; do not retry"};
+            await new Promise(resolve=>setTimeout(resolve,350));
+            continue;
+          }
+        }
+        return {clicked:true,uncertain:false,remoteId:site==="zai"?"route:"+id:id};
+      }
     }catch { /* route navigation is transient after first message */ }
     await new Promise(resolve=>setTimeout(resolve,350));
   }

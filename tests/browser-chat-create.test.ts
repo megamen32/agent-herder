@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { createNamedSession } from "../src/named-session.js";
-import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe } from "../src/adapters/browser-chat-new-page.js";
+import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -138,6 +138,7 @@ class NewChatPageFixture implements ChromePageTools {
       if(source.includes("path:location.pathname")){
         return json({origin:this.origin,path:this.clicked&&this.nativeRoute?this.remoteRoute:"/",rejection:this.rejection});
       }
+      if(source.includes('herderZaiNewChatVerify'))return json({verified:true});
       throw Error("unexpected script");
     }
     if(name==="take_snapshot"){
@@ -151,6 +152,45 @@ class NewChatPageFixture implements ChromePageTools {
   }
 }
 describe("browser first-message admission",()=>{
+  it("verifies the exact Z.ai native user message and account before adopting its route",async()=>{
+    let text='Synthetic prompt';let count=1;
+    const fetch=async(url:string)=>({ok:true,json:async()=>url.includes('/messages/batch')
+      ?{chat_id:ZAI_NATIVE,data:Object.fromEntries(Array.from({length:count},(_,i)=>['m'+i,{role:'user',content:text}]))}
+      :{id:ZAI_NATIVE,user_id:'fixture',chat:{history:{messages:Object.fromEntries(Array.from({length:count},(_,i)=>['m'+i,{}]))}}}});
+    const fn=runInNewContext('('+zaiNewChatMessageProbe(ZAI_NATIVE,'Synthetic prompt',ACCOUNT)+')',{
+      location:{origin:'https://chat.z.ai',pathname:'/c/'+ZAI_NATIVE},fetch,JSON,encodeURIComponent,TextEncoder,Uint8Array,
+      crypto:{subtle:{digest:async()=>new Uint8Array(32).fill(0xaa).buffer}},
+    });
+    expect(await fn()).toMatchObject({verified:true});
+    text='different';expect(await fn()).toMatchObject({verified:false,reason:'native_history_mismatch'});
+    text='Synthetic prompt';count=2;expect(await fn()).toMatchObject({verified:false,reason:'native_history_mismatch'});
+  });
+  it("does not bind a new Z.ai draft to a route already in its account inventory",async()=>{
+    class ExistingRouteFixture extends NewChatPageFixture {
+      override async call(name:string,args:Record<string,unknown>={}):Promise<string>{
+        if(name==='evaluate_script' && String(args.function).includes('/api/v1/chats/?page=')) {
+          this.calls.push({name,args});return json({scope:ACCOUNT,chats:[{id:ZAI_NATIVE,title:'existing chat'}]});
+        }
+        return super.call(name,args);
+      }
+    }
+    const tools=new ExistingRouteFixture('zai');
+    const receipt=await submitFirstChatMessage(tools,'zai','Synthetic prompt',ACCOUNT);
+    expect(receipt).toMatchObject({clicked:true,uncertain:true});
+    expect(receipt.remoteId).toBeUndefined();
+  });
+  it("does not bind a Z.ai route when its native history does not contain the submitted first message",async()=>{
+    class WrongHistoryFixture extends NewChatPageFixture {
+      override async call(name:string,args:Record<string,unknown>={}):Promise<string>{
+        if(name==='evaluate_script' && String(args.function).includes('herderZaiNewChatVerify'))
+          return json({verified:false,reason:'native_history_mismatch'});
+        return super.call(name,args);
+      }
+    }
+    const receipt=await submitFirstChatMessage(new WrongHistoryFixture('zai'),'zai','Synthetic prompt',ACCOUNT);
+    expect(receipt).toMatchObject({clicked:true,uncertain:true});
+    expect(receipt.remoteId).toBeUndefined();
+  });
   it("recognizes the current Russian ChatGPT new-chat editor",async()=>{
     const tools=new NewChatPageFixture("chatgpt");
     tools.chatgptEditorLabel="Работайте с ChatGPT";
