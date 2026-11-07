@@ -237,6 +237,12 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         )
         .map_err(|_| "invalid create policy")?,
     );
+    let reconciler = Arc::new(
+        herder::application::scoped_stop::task_reconcile::ScopedReceiptReconciler::new(
+            authority.clone(),
+            reader.clone(),
+        ),
+    );
     let app = Arc::new(OwnerApp {
         authority: authority.clone(),
         instance,
@@ -247,7 +253,9 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         control,
         create,
     });
-    let server = ScopedTaskServer::new(identity, grants, authority, app).with_create_policy(policy);
+    let server = ScopedTaskServer::new(identity, grants, authority, app)
+        .with_create_policy(policy)
+        .with_reconciler(reconciler);
     let service = server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
     Ok(())

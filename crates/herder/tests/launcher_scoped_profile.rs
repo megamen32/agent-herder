@@ -486,7 +486,9 @@ for line in sys.stdin:
   experimental=p.get('capabilities',{}).get('experimentalApi') is True
   v={'codexHome':os.path.realpath(home)}
  elif m=='thread/start': v={'thread':{'id':'fake-thread'}}
- elif m=='thread/read': v={'thread':{'id':'fake-thread','turns':[]}}
+ elif m=='thread/read':
+  turns=[{'id':'fake-turn','status':'completed','items':[{'type':'userMessage'}]}] if os.path.exists(os.path.join(home,'sent')) else []
+  v={'thread':{'id':'fake-thread','turns':turns}}
  elif m=='turn/start':
   open(os.path.join(home,'sent'),'w').write('1')
   v={'turn':{'id':'fake-turn'}}
@@ -513,6 +515,24 @@ for line in sys.stdin:
             String::from_utf8_lossy(&result.stderr)
         );
         assert!(String::from_utf8_lossy(&result.stdout).contains("self=unknown no_effect=true"));
+    }
+    if let Some(probe) = std::env::var_os("HERDER_OWNER_SDK_FULL") {
+        let result = Command::new(probe)
+            .arg(env!("CARGO_BIN_EXE_herder_native_stdio"))
+            .arg(&f.profile)
+            .arg("codex-test")
+            .arg("unique test prompt")
+            .arg(f.root.join("sdk-receipt.jsonl"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "SDK owner flow: {} {}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("\"task_reopen\":\"terminal\""));
+        return;
     }
     let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
         .arg("--trusted-owner-profile")
@@ -543,6 +563,17 @@ for line in sys.stdin:
     assert!(
         f.root.join("sent").exists(),
         "prompt must pass through actual bounded fake port: {created}"
+    );
+    let task_id = created["result"]["taskId"].as_str().unwrap();
+    let terminal = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":8,"method":"tasks/get","params":{"_meta":meta,"taskId":task_id}}),
+    );
+    assert_eq!(terminal["result"]["status"], "completed", "{terminal}");
+    assert_eq!(
+        terminal["result"]["result"]["structuredContent"]["prompt"]["outcome"], "confirmed",
+        "{terminal}"
     );
     let db = Connection::open(&f.db).unwrap();
     let session: String = db
