@@ -61,6 +61,7 @@ fn claim_inner(
     require_registered(&marker)?;
     let guard = open_guard(&resource_dir)?;
     guard.lock()?;
+    cleanup_owner_temps(&resource_dir)?;
 
     let (locked_dir, locked_marker) =
         authority.read_local_resource_marker(resource_ref, authorization)?;
@@ -216,7 +217,11 @@ pub fn release(
             "claim ID does not own this resource",
         ));
     }
+    #[cfg(test)]
+    inject_owner_write_failure(FAIL_BEFORE_OWNER_UNLINK)?;
     fs::remove_file(resource_dir.join("owner.json"))?;
+    #[cfg(test)]
+    inject_owner_write_failure(FAIL_AFTER_OWNER_UNLINK)?;
     File::open(resource_dir)?.sync_all()
 }
 
@@ -291,6 +296,10 @@ const FAIL_AFTER_RENAME: u8 = 2;
 const FAIL_BEFORE_DIRECTORY_SYNC: u8 = 3;
 #[cfg(test)]
 const FAIL_AFTER_DIRECTORY_SYNC: u8 = 4;
+#[cfg(test)]
+const FAIL_BEFORE_OWNER_UNLINK: u8 = 5;
+#[cfg(test)]
+const FAIL_AFTER_OWNER_UNLINK: u8 = 6;
 
 #[cfg(test)]
 thread_local! {
@@ -348,6 +357,19 @@ fn write_owner_atomic(resource_dir: &Path, owner: &OwnerRecord) -> io::Result<()
         let _ = fs::remove_file(&temp);
     }
     result
+}
+
+/// Remove abandoned owner temp files only while the caller holds guard.lock.
+fn cleanup_owner_temps(resource_dir: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(resource_dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(".owner-") && name.ends_with(".tmp") {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn invalid_data(message: &'static str) -> io::Error {

@@ -156,3 +156,62 @@ fn failure_after_rename_or_directory_sync_leaves_one_complete_replayable_owner()
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[test]
+fn release_failure_before_unlink_preserves_owner_and_after_unlink_reports_unknown() {
+    for (failpoint, owner_remains) in [
+        (FAIL_BEFORE_OWNER_UNLINK, true),
+        (FAIL_AFTER_OWNER_UNLINK, false),
+    ] {
+        let (root, authority) = fixture();
+        let resource_ref = ResourceRef("r".into());
+        let request = requested("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+        claim(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            request.clone(),
+        )
+        .unwrap();
+
+        inject(failpoint);
+        assert!(release(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            &request.claim_id,
+        )
+        .is_err());
+        assert_eq!(
+            resource_dir_owner_exists(&root),
+            owner_remains,
+            "unlink failpoint {failpoint}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn claim_cleans_abandoned_owner_temps_under_guard_before_writing() {
+    let (root, authority) = fixture();
+    let resource_ref = ResourceRef("r".into());
+    let resource_dir = root.join("resources/r");
+    fs::write(resource_dir.join(".owner-abandoned.tmp"), b"partial").unwrap();
+
+    assert_eq!(
+        claim(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            requested("bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"),
+        )
+        .unwrap(),
+        ClaimOutcome::Acquired
+    );
+    assert!(has_no_temp_files(&resource_dir));
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn resource_dir_owner_exists(root: &Path) -> bool {
+    root.join("resources/r/owner.json").exists()
+}
