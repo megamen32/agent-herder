@@ -10,7 +10,7 @@
   "created_at": "2026-11-08T00:43:44+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:43:44+03:00",
+  "updated_at": "2026-11-08T00:55:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T00:43:44+03:00",
@@ -37,6 +37,21 @@
       "at": "2026-11-08T00:43:44+03:00",
       "note": "",
       "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:55:53+03:00",
+      "note": "",
+      "changes": {
+        "result": "Readonlytriage complete: network-route-triage.md. Mac hosts pinschatgpt toVUSA bypassingLANfallback; gatewayhealthresponds but DOMnotproven. Registerednetworkowner not_found on explicitCodexroute, noacceptedhandoff. CI now solemanagedbrowser/clientroute recovery bylatestownerauthority."
+      },
       "actor": {
         "host_id": null,
         "harness": "codex",
@@ -84,5 +99,6 @@
       }
     ]
   },
-  "assignment_history": []
+  "assignment_history": [],
+  "result": "Readonlytriage complete: network-route-triage.md. Mac hosts pinschatgpt toVUSA bypassingLANfallback; gatewayhealthresponds but DOMnotproven. Registerednetworkowner not_found on explicitCodexroute, noacceptedhandoff. CI now solemanagedbrowser/clientroute recovery bylatestownerauthority."
 }

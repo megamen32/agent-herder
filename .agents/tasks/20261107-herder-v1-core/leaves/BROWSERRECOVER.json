@@ -1,0 +1,90 @@
+{
+  "label": "Восстановить managed browser/gateway и точный ChatGPT clientroute",
+  "kind": "task",
+  "owner": "CI",
+  "estimate_minutes": 15,
+  "parent": "S2",
+  "acceptance": "Рабочее чтение gateway/DOM; сохранены persistentprofile/login/history/foreigndrafts. Штатныйrepair/restart/reload разрешён владельцем; account+exactQAclaim перед nativecase. Original modelUNKNOWN no replay.",
+  "note": "Owner clarification08.11 00:54 supersedes Astra excessive no-browser-repair/reload restriction. Accepted astra-owner-browser-recovery-20261107T2155 turn01a1b801-7366-7fc1-9d3f-4d957c6e8ee6. Networkowner delivery definitively not_found, no second writer; CI owns managedMacclientroute repair, Singer separateDISARM100/44/88.",
+  "id": "BROWSERRECOVER",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T00:55:53+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-08T00:55:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T00:55:53+03:00",
+      "note": "",
+      "changes": {
+        "label": "Восстановить managed browser/gateway и точный ChatGPT clientroute",
+        "kind": "task",
+        "owner": "CI",
+        "estimate_minutes": 15,
+        "parent": "S2",
+        "acceptance": "Рабочее чтение gateway/DOM; сохранены persistentprofile/login/history/foreigndrafts. Штатныйrepair/restart/reload разрешён владельцем; account+exactQAclaim перед nativecase. Original modelUNKNOWN no replay.",
+        "note": "Owner clarification08.11 00:54 supersedes Astra excessive no-browser-repair/reload restriction. Accepted astra-owner-browser-recovery-20261107T2155 turn01a1b801-7366-7fc1-9d3f-4d957c6e8ee6. Networkowner delivery definitively not_found, no second writer; CI owns managedMacclientroute repair, Singer separateDISARM100/44/88.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:55:53+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "state": "assigned",
+    "attempt_id": "astra-browser-recovery-20261107T2155",
+    "executor_kind": "session",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T21:55:53+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "native_environment"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": []
+}

@@ -50,3 +50,13 @@ Wire examples: listSessions params={options:{limit:200}} → массив legacy
 OpenCode verified v2.2.4 на текущем CI artifact использует family=v2 /api/session; CI сообщил два последовательных prompt одной session, completedreadback, ровно2modelrequests. Это снимает native second-send риск v2, не доказывает v22. Новый public core всё ещё требует своего consumer proof.
 
 Фиксация R2/R3 — по3мин уже собранных receipts, не отдельные15мин разработки; FIX условные15мин с re-gate. CI исполняет lanes по своим фактическим resource/executor назначениям; эти карточки — приёмка результатов, не дубли native запусков. Без подтверждённой ёмкости срок остаётся рискованным.
+
+## Уточнение владельца 08.11: восстановление браузера
+
+Ремонт и штатный перезапуск managed browser/gateway разрешены для завершения приёмки. Astra ошибочно распространил запрет повторной model send на browser repair; этот запрет снят. CI — единственный владелец browser recovery, включая точный clientroute по canonical runbook, backup/CAS, с сохранением persistentprofile, login/history и чужих drafts. Свой пустой testtarget можно перезагрузить/восстановить; при потере identity создать однозначно owned testtarget. Нельзя угадывать чужие вкладки или удалять профиль. Исходные UNKNOWN model operations не воспроизводить. После восстановления нужны actual target/account/QAclaim и весь обычный consumer scenario. Deadline00:38 пропущен, не заменён новым.
+
+Отдельное прямое поручение securityrotation ведёт Singer, единственный runtimeDRI100/44/88, по плану20261108-herder-disarm-rotation. Оно не ждётV1 и не расширяетV1acceptance. STOP/HumanStop иnative sends сохраняются.
+
+## Граница UNKNOWN и новых изолированных CI-прогонов
+
+Запрет Accepted/UNKNOWN no-replay относится к конкретной операции и её возможному внешнемуэффекту. Он не запрещает новый независимый регрессионный CI-прогон после исправления в отдельной disposablefixture с новым HOME/authority/nativeinstance/requestIDs и локальнойлжемоделью, изолированной отproduction и прежних instances. Такой прогон не продолжает старую UNKNOWNoperation под новымID и не меняет её исторический результат. CLI lanes OpenCode/Codex/ZCode можно проверять параллельно существующими исполнителями без ожидания browsermilestone. До мутации сохранить originalIDs иretainedstate; реальныеquota/admissionrefusals не обходить. Это исправление чрезмерного толкования Astra внутри исходнойавторизацииCI, не отмена пользовательского no-replay.

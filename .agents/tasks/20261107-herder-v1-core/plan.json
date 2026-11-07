@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "00:44МСК: deadline00:38 MISSED, V1INCOMPLETE/installedNOTRUN. Hourlyaudit checked all8 via individualHerderfallback after Appwait_threads stalled; sourceworkerscompleted. CI resumed actualnativeactive and proved22ChatGPTCDNjs HTTP2_PING_FAILED. CIassignedoneownedemptytabreload(no newsend); ArchimedesNETDIAG readonlyroute/owner inparallel. Latestcandidate5ea+NEG5PASS+ChatGPTstartup14toolsPASS preserved. One nextwake01:37:06MSK waiting; no duplicate.",
-  "updated_at": "2026-11-08T00:44:19+03:00",
+  "current_progress": "01:00МСК: deadline00:38MISSED. CIauthorizedbrowserrepair/restart preservesprofile; clarified no-replay appliesexactoperation, NOT independent isolatedCLIregressions afterfix. CI assignedparallel new OpenCode/Codex/ZCode fixtures withlocalfake model andseparateauthority/instances; oldUNKNOWNunchanged. Latestcandidate5ea source/package/NEG5PASS+ChatGPTstartup14toolsPASS; fullnative/installed notdone. Singer soleDISARMrotation100/44/88 separateplan. Nextwake01:37MSKwaiting.",
+  "updated_at": "2026-11-08T00:57:57+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",

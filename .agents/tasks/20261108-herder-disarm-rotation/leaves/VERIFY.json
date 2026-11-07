@@ -1,0 +1,41 @@
+{
+  "label": "Read-only disarm readback и unchanged STOP по100/44/88",
+  "kind": "task",
+  "owner": "Singer",
+  "estimate_minutes": 10,
+  "depends_on": [
+    "ROTATE"
+  ],
+  "acceptance": "Hostgeneration/authstatusreadback100/44/88, unchangedSTOP/HumanStop, native sends0, secretoutput0, protectedbackuprefs and partial/rollbackstate",
+  "id": "VERIFY",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T00:52:07+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-08T00:52:07+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T00:52:07+03:00",
+      "note": "",
+      "changes": {
+        "label": "Read-only disarm readback и unchanged STOP по100/44/88",
+        "kind": "task",
+        "owner": "Singer",
+        "estimate_minutes": 10,
+        "depends_on": [
+          "ROTATE"
+        ],
+        "acceptance": "Hostgeneration/authstatusreadback100/44/88, unchangedSTOP/HumanStop, native sends0, secretoutput0, protectedbackuprefs and partial/rollbackstate",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ]
+}

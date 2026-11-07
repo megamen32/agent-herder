@@ -1,0 +1,19 @@
+{
+  "goal": "По прямому поручению владельца заменить раскрытый общий AGENT_HERDER_DISARM_TOKEN на100/44/88: одинruntimeDRI, защищённыйCASbackup/rotation/read-onlyreadback, STOP/HumanStop/native sends безизменений. Независимо отV1.",
+  "deliverable": "implementation",
+  "decomposition": "complete",
+  "default_model": "gpt-6.1-sol",
+  "estimate_policy": {
+    "leaf_cap_minutes": 15,
+    "reason": "Bounded steps per host; one owner controls shared credential generation"
+  },
+  "acceptance_scenario": "На каждом100/44/88 подтверждена однасогласованная credentialgeneration и штатнаяread-onlyauth/disarmstatus проверка; защищённыеbackuprefs, unchangedSTOP/HumanStop, sends0, secretoutput0. SHA256pin синхронизирован поштатномуконтракту, не отдельныйсекрет. Partial/CAScollision честнозафиксированы.",
+  "current_progress": "Singer назначенединственным runtimeDRI, native submission01a1b7fb-7e1a-7c00-a966-2362d0dfe090 accepted; task doesnotwaitV1.",
+  "updated_at": "2026-11-08T00:52:07+03:00",
+  "recon": [
+    "Direct fleet transport reads DISARM_TOKEN from environment; missing token refuses state reads without moving lever :: src/automation-disarm/direct-transport.ts:18,97",
+    "Fleet automation_disarm exposes explicit read mode; source description says read changes no state :: src/mesh/fleet-node.ts:25",
+    "Fleet wiring receives approved generation from AGENT_HERDER_FLEET_CREDENTIAL_PIN; owner confirms SHA256generation not separate secret :: src/web/fleet-wiring.ts:51",
+    "Owner reported exposure in95-automation-disarm.conf and authorized one runtimeowner for100/44/88 CASrotation withoutSTOP changes ornative sends :: direct user instruction2026-11-08"
+  ]
+}
