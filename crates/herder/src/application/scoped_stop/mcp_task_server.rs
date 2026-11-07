@@ -20,6 +20,7 @@ pub struct ScopedTaskServer {
     identity: ConnectionIdentity,
     grants: Vec<Grant>,
     authority: Arc<ScopedAuthority>,
+    create_policy: Option<Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>>,
 }
 impl ScopedTaskServer {
     /// Identity and grants are issued by the same trusted ingress as the inner
@@ -35,7 +36,15 @@ impl ScopedTaskServer {
             identity,
             grants,
             authority,
+            create_policy: None,
         }
+    }
+    pub fn with_create_policy(
+        mut self,
+        policy: Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>,
+    ) -> Self {
+        self.create_policy = Some(policy);
+        self
     }
 }
 impl ServerHandler for ScopedTaskServer {
@@ -83,18 +92,31 @@ impl ServerHandler for ScopedTaskServer {
         if !task_eligible || result.is_error == Some(true) {
             return Ok(response);
         }
-        let Some(id) = result
-            .structured_content
-            .as_ref()
-            .and_then(|v| v.get("_herder_delivery_task"))
-            .and_then(|v| v.as_str())
-        else {
+        let Some(content) = result.structured_content.as_ref() else {
             return Ok(response);
         };
-        let task = match self
-            .authority
-            .get_delivery_task(&self.identity, &self.grants, id)
+        let (id, is_create) = if let Some(id) = content
+            .get("_herder_delivery_task")
+            .and_then(|v| v.as_str())
         {
+            (id, false)
+        } else if let Some(id) = content.get("_herder_create_task").and_then(|v| v.as_str()) {
+            (id, true)
+        } else {
+            return Ok(response);
+        };
+        let lookup = if is_create {
+            self.authority.get_create_task_with_policy(
+                &self.identity,
+                &self.grants,
+                id,
+                self.create_policy.as_deref(),
+            )
+        } else {
+            self.authority
+                .get_delivery_task(&self.identity, &self.grants, id)
+        };
+        let task = match lookup {
             Ok(Some(task)) => task,
             _ => {
                 return Ok(rmcp::model::CallToolResult::structured_error(
@@ -111,9 +133,22 @@ impl ServerHandler for ScopedTaskServer {
         request: GetTaskParams,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<GetTaskResult, ErrorData> {
-        self.authority
+        match self
+            .authority
             .get_delivery_task(&self.identity, &self.grants, &request.task_id)
-            .map_err(|_| ErrorData::invalid_params("task unavailable", None))?
-            .ok_or_else(|| ErrorData::invalid_params("task unavailable", None))
+        {
+            Ok(Some(task)) => Ok(task),
+            Ok(None) => self
+                .authority
+                .get_create_task_with_policy(
+                    &self.identity,
+                    &self.grants,
+                    &request.task_id,
+                    self.create_policy.as_deref(),
+                )
+                .map_err(|_| ErrorData::invalid_params("task unavailable", None))?
+                .ok_or_else(|| ErrorData::invalid_params("task unavailable", None)),
+            Err(_) => Err(ErrorData::invalid_params("task unavailable", None)),
+        }
     }
 }

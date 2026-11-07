@@ -25,6 +25,15 @@ pub trait FreshSessionGrantPolicy {
         instance: &InstanceRef,
         session: &SessionRef,
     ) -> Result<Option<Grant>, ()>;
+    /// Optional independent permission for reading the created session/task.
+    fn session_read_grant(
+        &self,
+        _principal: &PrincipalId,
+        _instance: &InstanceRef,
+        _session: &SessionRef,
+    ) -> Result<Option<Grant>, ()> {
+        Ok(None)
+    }
 }
 /// Use existing server policy grants without deriving new authorization.
 pub struct NoAdditionalGrant;
@@ -79,6 +88,26 @@ pub enum CreatePromptOutcome {
         receipt: NativeReceipt,
     },
 }
+pub(super) fn delivery_identifiers(
+    principal: &PrincipalId,
+    instance: &InstanceRef,
+    key: &str,
+) -> Result<(String, String, String), GateError> {
+    let digest = Sha256::digest(
+        serde_json::to_vec(&("create-prompt-v1", &principal.0, instance, key))
+            .map_err(|_| GateError::Invalid)?,
+    );
+    let suffix = digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    Ok((
+        format!("create-prompt:{suffix}"),
+        format!("create-prompt-intent:{suffix}"),
+        format!("create-prompt-task:{suffix}"),
+    ))
+}
+
 /// The request and exact grants are supplied by trusted application policy.
 /// Native create never sends the prompt. A separate durable delivery key is
 /// derived from the principal, exact instance, and original create key.
@@ -106,22 +135,8 @@ where
         return Err(GateError::Invalid);
     };
     let instance = creator.instance();
-    let digest = Sha256::digest(
-        serde_json::to_vec(&(
-            "create-prompt-v1",
-            &principal.id.0,
-            instance,
-            request.request_key,
-        ))
-        .map_err(|_| GateError::Invalid)?,
-    );
-    let suffix = digest
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-    let delivery_key = format!("create-prompt:{suffix}");
-    let intent_id = format!("create-prompt-intent:{suffix}");
-    let task_id = format!("create-prompt-task:{suffix}");
+    let (delivery_key, intent_id, task_id) =
+        delivery_identifiers(&principal.id, instance, request.request_key)?;
     let create = authority.create_fresh_root(
         identity,
         grants,

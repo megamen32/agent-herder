@@ -7,8 +7,10 @@ pub mod mcp_stop;
 pub mod mcp_task;
 pub mod mcp_task_server;
 pub mod mcp_deliver;
+pub mod mcp_create;
 pub mod create_recovery;
 pub mod create_prompt;
+pub mod create_task;
 pub mod mcp_read;
 
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};

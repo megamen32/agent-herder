@@ -3564,3 +3564,298 @@ async fn scoped_delivery_application_wire_dedup_tasks_and_readback() {
         job.await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn scoped_create_application_wire_preserves_session_and_deduplicates_prompt() {
+    use herder::{
+        application::scoped_stop::{
+            create_prompt::FreshSessionGrantPolicy,
+            mcp_create::ScopedCreateApplication,
+            mcp_read::{ScopedMessageReader, ScopedReadApplication},
+            mcp_task_server::ScopedTaskServer,
+        },
+        mcp::{
+            catalog,
+            transport::{ApplicationFuture, ApplicationPort},
+        },
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+        unknown: bool,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(
+            &self,
+            _: &str,
+            prompt: &str,
+        ) -> Result<SessionAddress, SubmitError> {
+            assert_eq!(prompt, "prompt");
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.unknown {
+                Err(SubmitError::OutcomeUnknown {
+                    receipt: None,
+                    reason: "lost".into(),
+                })
+            } else {
+                Ok(address())
+            }
+        }
+    }
+    struct Submit {
+        outcome: &'static str,
+        calls: AtomicUsize,
+    }
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            p: DispatchPlan,
+            m: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(m, "prompt");
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match self.outcome {
+                "unknown" => Err(SubmitError::OutcomeUnknown {
+                    receipt: None,
+                    reason: "lost".into(),
+                }),
+                "not_sent" => Err(SubmitError::DefinitelyNotSent {
+                    reason: "private diagnostic".into(),
+                }),
+                _ => Ok(Admission {
+                    receipt: NativeReceipt {
+                        target: p.target,
+                        native_id: "turn".into(),
+                    },
+                }),
+            }
+        }
+    }
+    struct Policy(std::sync::atomic::AtomicBool);
+    impl FreshSessionGrantPolicy for Policy {
+        fn session_write_grant(
+            &self,
+            p: &PrincipalId,
+            _: &InstanceRef,
+            s: &SessionRef,
+        ) -> Result<Option<Grant>, ()> {
+            Ok(self.0.load(Ordering::SeqCst).then(|| Grant {
+                principal: p.clone(),
+                resource: PrivateResource::Session(s.clone()),
+                action: Action::Write,
+            }))
+        }
+        fn session_read_grant(
+            &self,
+            p: &PrincipalId,
+            _: &InstanceRef,
+            s: &SessionRef,
+        ) -> Result<Option<Grant>, ()> {
+            Ok(self.0.load(Ordering::SeqCst).then(|| Grant {
+                principal: p.clone(),
+                resource: PrivateResource::Session(s.clone()),
+                action: Action::Read,
+            }))
+        }
+    }
+    struct Reader;
+    impl ScopedMessageReader for Reader {
+        fn read_messages(&mut self, a: &SessionAddress) -> Result<Value, ()> {
+            assert_eq!(*a, address());
+            Ok(json!({"messages":[{"text":"fixture-read"}],"coverage":"complete"}))
+        }
+    }
+    struct App {
+        create: ScopedCreateApplication<Create, Issuer, Generation, FixtureReader, Submit, Policy>,
+        db: PathBuf,
+        gate: PathBuf,
+        instance: InstanceRef,
+        base: Vec<Grant>,
+        policy: Arc<Policy>,
+    }
+    impl ApplicationPort for App {
+        fn call<'a>(
+            &'a self,
+            id: &'a ConnectionIdentity,
+            request: catalog::Request,
+        ) -> ApplicationFuture<'a> {
+            Box::pin(async move {
+                if matches!(request, catalog::Request::Create(_)) {
+                    return self.create.call(id, request).await;
+                }
+                let catalog::Request::Session(catalog::Session::Messages {
+                    ref session_ref, ..
+                }) = request
+                else {
+                    return None;
+                };
+                let Caller::Principal(p) = id.caller() else {
+                    return Some(rmcp::model::CallToolResult::structured_error(
+                        json!({"code":"unauthorized","effect":"none"}),
+                    ));
+                };
+                let s = SessionRef(session_ref.clone());
+                let mut grants = self.base.clone();
+                if let Some(g) = self
+                    .policy
+                    .session_read_grant(&p.id, &self.instance, &s)
+                    .unwrap()
+                {
+                    grants.push(g)
+                }
+                ScopedReadApplication::new(
+                    ScopedAuthority::new(self.db.clone(), self.gate.clone(), "authority-1".into())
+                        .unwrap(),
+                    self.instance.clone(),
+                    grants,
+                    Reader,
+                )
+                .call(id, request)
+                .await
+            })
+        }
+    }
+    async fn request(
+        w: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>,
+        lines: &mut tokio::io::Lines<BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>,
+        v: Value,
+    ) -> Value {
+        w.write_all(format!("{v}\n").as_bytes()).await.unwrap();
+        serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap()
+    }
+    for scenario in [
+        "no_grant",
+        "unknown_create",
+        "unknown_delivery",
+        "not_sent",
+        "confirmed",
+    ] {
+        let f = Fixture::new();
+        let target = address();
+        let authority = Arc::new(f.authority());
+        let base:Vec<_>=grants().into_iter().filter(|g|matches!(&g.resource,PrivateResource::Resource(r) if r.starts_with("instance:"))).collect();
+        let creator = Arc::new(Create {
+            instance: target.instance.clone(),
+            calls: AtomicUsize::new(0),
+            unknown: scenario == "unknown_create",
+        });
+        let sender = Arc::new(Submit {
+            outcome: if scenario == "unknown_delivery" {
+                "unknown"
+            } else {
+                scenario
+            },
+            calls: AtomicUsize::new(0),
+        });
+        let policy = Arc::new(Policy(std::sync::atomic::AtomicBool::new(
+            scenario != "no_grant",
+        )));
+        let app = Arc::new(App {
+            create: ScopedCreateApplication::new(
+                authority.clone(),
+                "profile-ref".into(),
+                base.clone(),
+                creator.clone(),
+                Arc::new(Issuer),
+                Arc::new(Generation),
+                Arc::new(FixtureReader {
+                    target: target.clone(),
+                    reads: AtomicUsize::new(0),
+                    db: f.db.clone(),
+                }),
+                sender.clone(),
+                policy.clone(),
+                "9999-12-31T23:59:59Z".into(),
+            )
+            .unwrap(),
+            db: f.db.clone(),
+            gate: f.gate.clone(),
+            instance: target.instance,
+            base: base.clone(),
+            policy: policy.clone(),
+        });
+        let server = ScopedTaskServer::new(identity(), base, authority, app)
+            .with_create_policy(policy.clone());
+        let (client, io) = tokio::io::duplex(65536);
+        let job =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (r, mut w) = tokio::io::split(client);
+        let mut lines = BufReader::new(r).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"spoofed"});
+        let create = |id| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"profile-ref","prompt":"prompt","request_key":"key"}}});
+        let no_tasks_meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"unsupported","version":"1"}});
+        let no_tasks=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":90,"method":"tools/call","params":{"_meta":no_tasks_meta,"name":"create","arguments":{"action":"create","instance_ref":"profile-ref","prompt":"prompt","request_key":"key"}}})).await;
+        assert!(no_tasks.get("error").is_some());
+        assert_eq!(creator.calls.load(Ordering::SeqCst), 0);
+        let first = request(&mut w, &mut lines, create(1)).await;
+        assert_eq!(first["result"]["resultType"], "task", "{first}");
+        let task = first["result"]["taskId"].as_str().unwrap().to_owned();
+        if scenario == "confirmed" {
+            assert_eq!(first["result"]["status"], "working");
+            let c = Connection::open(&f.db).unwrap();
+            c.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |_| Ok(3),
+            )
+            .unwrap();
+            c.execute("UPDATE intents SET state='confirmed' WHERE payload_hash LIKE 'sha256-dispatch-v1:%'",[]).unwrap();
+        }
+        let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
+        assert_eq!(poll["result"]["status"], "completed", "{poll}");
+        let data = &poll["result"]["result"]["structuredContent"];
+        match scenario {
+            "unknown_create" => assert_eq!(data["create"]["effect"], "unknown"),
+            "no_grant" => {
+                assert_eq!(data["create"]["effect"], "confirmed");
+                assert_eq!(data["create"]["session_ref"], "issued");
+                assert_eq!(data["prompt"]["effect"], "none");
+                assert_ne!(data["effect"], "none");
+            }
+            "unknown_delivery" => assert_eq!(data["prompt"]["effect"], "unknown"),
+            "not_sent" => {
+                assert_eq!(data["prompt"]["code"], "adapter_refused");
+                assert!(!data.to_string().contains("private diagnostic"));
+            }
+            _ => assert_eq!(data["prompt"]["outcome"], "confirmed"),
+        };
+        if scenario == "no_grant" {
+            policy.0.store(true, Ordering::SeqCst);
+        }
+        let again = request(&mut w, &mut lines, create(3)).await;
+        assert_eq!(again["result"]["resultType"], "task", "{again}");
+        let third = request(&mut w, &mut lines, create(5)).await;
+        assert_eq!(third["result"]["resultType"], "task", "{third}");
+        let original=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":6,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
+        assert_eq!(original["result"]["status"], "completed");
+        if scenario == "no_grant" {
+            assert_eq!(
+                original["result"]["result"]["structuredContent"]["prompt"]["code"],
+                "session_write_grant_required"
+            );
+        }
+        assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            sender.calls.load(Ordering::SeqCst),
+            if scenario == "unknown_create" { 0 } else { 1 }
+        );
+        if scenario != "unknown_create" {
+            let read=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":"issued"}}})).await;
+            assert_eq!(
+                read["result"]["structuredContent"]["page"]["messages"][0]["text"], "fixture-read",
+                "{read}"
+            );
+        }
+        drop(w);
+        drop(lines);
+        job.await.unwrap();
+    }
+}
