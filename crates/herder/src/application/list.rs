@@ -11,6 +11,15 @@ use crate::domain::{
 pub struct CachedSession {
     pub project_ref: Option<String>,
     pub snapshot: SessionSnapshot,
+    /// Time this cached record was observed, if known; it is not a live read.
+    pub observed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceCoverage {
+    Complete,
+    Incomplete,
+    Unknown,
 }
 
 /// An independently supplied observation, not a property inferred from records.
@@ -18,6 +27,96 @@ pub struct CachedSession {
 pub struct InstanceAvailability {
     pub instance: InstanceRef,
     pub availability: Availability,
+    pub observed_at: Option<String>,
+    /// Coverage of the source enumeration, independently of cached records.
+    pub coverage: SourceCoverage,
+}
+
+/// Owns one filtered view, so later cache changes cannot shift its offsets.
+#[derive(Debug, Clone)]
+pub struct SessionListSnapshot {
+    sessions: Vec<CachedSession>,
+    availability: Vec<InstanceAvailability>,
+    missing_sources: Vec<InstanceRef>,
+    coverage_complete: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SnapshotPage<'a> {
+    pub sessions: Vec<&'a CachedSession>,
+    pub availability: Vec<&'a InstanceAvailability>,
+    pub missing_sources: Vec<&'a InstanceRef>,
+    pub coverage_complete: bool,
+    pub next_offset: Option<usize>,
+}
+
+impl SessionListSnapshot {
+    /// `expected_sources` must be the caller's authoritative source inventory.
+    /// Coverage is conservative and applies to every page, not just its records.
+    pub fn new(
+        sessions: &[CachedSession],
+        availability: &[InstanceAvailability],
+        expected_sources: &[InstanceRef],
+        project_ref: Option<&str>,
+        instance: Option<&InstanceRef>,
+    ) -> Self {
+        let sessions: Vec<CachedSession> = sessions
+            .iter()
+            .filter(|record| {
+                project_ref.is_none_or(|project| record.project_ref.as_deref() == Some(project))
+                    && instance.is_none_or(|wanted| &record.snapshot.address.instance == wanted)
+            })
+            .cloned()
+            .collect();
+        let availability: Vec<_> = availability
+            .iter()
+            .filter(|o| instance.is_none_or(|wanted| &o.instance == wanted))
+            .cloned()
+            .collect();
+        let expected: Vec<_> = expected_sources
+            .iter()
+            .filter(|s| instance.is_none_or(|wanted| *s == wanted))
+            .collect();
+        let missing_sources: Vec<_> = expected
+            .iter()
+            .filter(|source| !availability.iter().any(|o| &o.instance == **source))
+            .map(|source| (*source).clone())
+            .collect();
+        let coverage_complete = !expected.is_empty()
+            && missing_sources.is_empty()
+            && sessions
+                .iter()
+                .all(|s| expected.contains(&&s.snapshot.address.instance))
+            && availability.iter().all(|o| {
+                expected.contains(&&o.instance)
+                    && o.availability == Availability::Available
+                    && o.coverage == SourceCoverage::Complete
+                    && o.observed_at.is_some()
+            });
+        Self {
+            sessions,
+            availability,
+            missing_sources,
+            coverage_complete,
+        }
+    }
+
+    pub fn page(&self, offset: usize, limit: NonZeroUsize) -> SnapshotPage<'_> {
+        let mut remaining = self.sessions.iter().skip(offset);
+        let sessions: Vec<_> = remaining.by_ref().take(limit.get()).collect();
+        let next_offset = if remaining.next().is_some() {
+            offset.checked_add(sessions.len())
+        } else {
+            None
+        };
+        SnapshotPage {
+            sessions,
+            availability: self.availability.iter().collect(),
+            missing_sources: self.missing_sources.iter().collect(),
+            coverage_complete: self.coverage_complete,
+            next_offset,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -80,6 +179,7 @@ mod tests {
     fn record(project: &str, node: &str, native_id: &str) -> CachedSession {
         CachedSession {
             project_ref: Some(project.into()),
+            observed_at: None,
             snapshot: SessionSnapshot {
                 address: SessionAddress {
                     instance: instance(node),
@@ -133,10 +233,14 @@ mod tests {
             InstanceAvailability {
                 instance: instance("a"),
                 availability: Availability::Unavailable,
+                observed_at: None,
+                coverage: SourceCoverage::Unknown,
             },
             InstanceAvailability {
                 instance: instance("b"),
                 availability: Availability::Unknown,
+                observed_at: None,
+                coverage: SourceCoverage::Unknown,
             },
         ];
         let limit = NonZeroUsize::new(2).unwrap();
@@ -157,5 +261,92 @@ mod tests {
                 .availability
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn snapshot_pages_keep_cached_timestamps_and_report_offline_and_missing_sources() {
+        let mut records = vec![record("p1", "a", "one"), record("p1", "a", "two")];
+        records[0].observed_at = Some("old".into());
+        let observations = vec![InstanceAvailability {
+            instance: instance("a"),
+            availability: Availability::Unavailable,
+            observed_at: Some("offline-check".into()),
+            coverage: SourceCoverage::Incomplete,
+        }];
+        let snapshot = SessionListSnapshot::new(
+            &records,
+            &observations,
+            &[instance("a"), instance("b")],
+            Some("p1"),
+            None,
+        );
+        records.clear();
+        let first = snapshot.page(0, NonZeroUsize::new(1).unwrap());
+        assert_eq!(first.sessions[0].observed_at.as_deref(), Some("old"));
+        assert_eq!(
+            first.availability[0].availability,
+            Availability::Unavailable
+        );
+        assert_eq!(
+            first.availability[0].observed_at.as_deref(),
+            Some("offline-check")
+        );
+        assert!(!first.coverage_complete);
+        assert_eq!(first.missing_sources, vec![&instance("b")]);
+        let next = snapshot.page(first.next_offset.unwrap(), NonZeroUsize::new(1).unwrap());
+        assert_eq!(next.sessions[0].snapshot.address.native_session_id, "two");
+        assert_eq!(next.next_offset, None);
+        assert!(!next.coverage_complete);
+    }
+
+    #[test]
+    fn coverage_requires_explicit_complete_observations_for_filtered_inventory() {
+        let records = vec![
+            record("p1", "a", "one"),
+            record("p1", "b", "two"),
+            record("p2", "a", "three"),
+        ];
+        let mut observations = vec![InstanceAvailability {
+            instance: instance("a"),
+            availability: Availability::Available,
+            observed_at: Some("now".into()),
+            coverage: SourceCoverage::Complete,
+        }];
+        let sources = vec![instance("a"), instance("b")];
+        let limit = NonZeroUsize::new(10).unwrap();
+        let snapshot = SessionListSnapshot::new(
+            &records,
+            &observations,
+            &sources,
+            Some("p1"),
+            Some(&instance("a")),
+        );
+        let page = snapshot.page(0, limit);
+        assert!(page.coverage_complete);
+        assert_eq!(page.sessions.len(), 1);
+        assert_eq!(page.sessions[0].snapshot.address.native_session_id, "one");
+        assert!(
+            !SessionListSnapshot::new(&records, &observations, &sources, None, None)
+                .page(0, limit)
+                .coverage_complete
+        );
+        observations[0].observed_at = None;
+        assert!(
+            !SessionListSnapshot::new(
+                &records,
+                &observations,
+                &sources,
+                None,
+                Some(&instance("a"))
+            )
+            .page(0, limit)
+            .coverage_complete
+        );
+        assert!(
+            !SessionListSnapshot::new(&[], &[], &[], None, None)
+                .page(0, limit)
+                .coverage_complete
+        );
+        assert!(snapshot.page(usize::MAX, limit).sessions.is_empty());
     }
 }
