@@ -1,0 +1,50 @@
+{
+  "id": "MOVE",
+  "parent": "S4",
+  "label": "Доказать перенос на второй runner конфигурацией",
+  "description": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+  "acceptance": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+  "depends_on": [
+    "OPENCODE",
+    "CONFIG"
+  ],
+  "status": "queued",
+  "estimate_minutes": 15,
+  "owner": "CI Astra",
+  "harness": "codex",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:33+03:00",
+  "updated_at": "2026-11-07T21:29:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:33+03:00",
+      "note": "",
+      "changes": {
+        "id": "MOVE",
+        "parent": "S4",
+        "label": "Доказать перенос на второй runner конфигурацией",
+        "description": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+        "acceptance": "Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.",
+        "depends_on": [
+          "OPENCODE",
+          "CONFIG"
+        ],
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "CI Astra",
+        "harness": "codex",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "BUILD",
+  "parent": "S1",
+  "label": "Исправить B83: сборка сохраняет current и активный релиз",
+  "description": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+  "acceptance": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+  "depends_on": [],
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "CI Astra",
+  "harness": "codex",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:27+03:00",
+  "updated_at": "2026-11-07T21:32:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:27+03:00",
+      "note": "",
+      "changes": {
+        "id": "BUILD",
+        "parent": "S1",
+        "label": "Исправить B83: сборка сохраняет current и активный релиз",
+        "description": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+        "acceptance": "RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.",
+        "depends_on": [],
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "CI Astra",
+        "harness": "codex",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:30:11+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:32:19+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "result": "23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS."
+}

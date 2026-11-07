@@ -1,0 +1,33 @@
+{
+  "title": "Переносимый CI реальных приложений",
+  "goal": "После обновления Herder/внешнего harness проверять send, read, full transcript, search, projects через штатный consumer. Замена runner не требует изменения сценариев.",
+  "business_result": "Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается.",
+  "mode": "fullcycle",
+  "default_model": "gpt-6-astra",
+  "deliverable": "implementation",
+  "decomposition": "complete",
+  "slots": 1,
+  "recon": [
+    "Разбор >=15мин 18:13:17–18:28:19 UTC, два builder repro :: ANALYSIS.md",
+    "Native 3-lane candidate ~50с сохранён, installed не принят :: ../20261105-deterministic-harness-ci/evidence/CI-SHARED-INPUTS-20261107.md",
+    "Public MCP launch/ownership согласованы dccf9cb7; V2 export unsupported, search unproven, projects absent :: ../20261107-herder-native-mcp-breaking/CI-CONSUMER-CONTRACT.md"
+  ],
+  "acceptance_scenario": "Одна команда на двух настроенных runners без правок scenario source. Реальные приложения и обычный MCP consumer. Положительный путь и внесённый сбой проверяют CI; обязательный missing/unsupported/UNKNOWN не даёт release PASS. Installed использует тот же consumer с точной runtime identity.",
+  "current_progress": "BUILD done: B83 исправлен TDD и опубликован 23df966f (exact2files, 5 tests GREEN). Контракт dccf9cb7 принят; следующий CONFIG→REPORT. Остальные CI lanes ещё не реализованы/не приняты. Публичное зеркало недоступно из-за локального config наблюдателя, plan.md доступен в проекте.",
+  "external_waits": "Herder: export/search/projects, owner launch ZCode/browser и installed instance selection. Browser exact account/claim/backoff; page7 у CI. Пробелы продукта — честный nonzero CI, не test-only обход.",
+  "started_at": "2026-11-07T18:13:17Z",
+  "revisions": [
+    {
+      "at": "2026-11-07T21:29:24+03:00",
+      "reason": "Прямой запрос владельца заменить старый план после >=15мин анализа.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "summary": "Старые результаты сохранены; новый ограниченный scope согласован dccf9cb7. Без новых исполнителей и fleet-wide rollout каждого fix."
+    }
+  ],
+  "updated_at": "2026-11-07T21:33:18+03:00"
+}

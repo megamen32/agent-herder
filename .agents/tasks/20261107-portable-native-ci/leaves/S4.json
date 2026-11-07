@@ -1,0 +1,36 @@
+{
+  "id": "S4",
+  "label": "Автозапуск CI, перенос runner и post-install acceptance",
+  "kind": "milestone",
+  "status": "queued",
+  "estimate_minutes": 45,
+  "acceptance": "Опубликован полезный этап с точными доказательствами; unsupported и внешние зависимости не выданы за PASS.",
+  "owner": "CI Astra",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:26+03:00",
+  "updated_at": "2026-11-07T21:29:26+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "S4",
+        "label": "Автозапуск CI, перенос runner и post-install acceptance",
+        "kind": "milestone",
+        "status": "queued",
+        "estimate_minutes": 45,
+        "acceptance": "Опубликован полезный этап с точными доказательствами; unsupported и внешние зависимости не выданы за PASS.",
+        "owner": "CI Astra",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ]
+}

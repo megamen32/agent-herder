@@ -1,0 +1,48 @@
+{
+  "id": "REPORT",
+  "parent": "S1",
+  "label": "Выпустить единый отчёт и отказ неполного gate",
+  "description": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+  "acceptance": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+  "depends_on": [
+    "CONFIG"
+  ],
+  "status": "queued",
+  "estimate_minutes": 15,
+  "owner": "CI Astra",
+  "harness": "codex",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:28+03:00",
+  "updated_at": "2026-11-07T21:29:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:28+03:00",
+      "note": "",
+      "changes": {
+        "id": "REPORT",
+        "parent": "S1",
+        "label": "Выпустить единый отчёт и отказ неполного gate",
+        "description": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+        "acceptance": "PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.",
+        "depends_on": [
+          "CONFIG"
+        ],
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "CI Astra",
+        "harness": "codex",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "OPENCODE",
+  "parent": "S2",
+  "label": "Подключить опубликованный OpenCode AHAP consumer",
+  "description": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+  "acceptance": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+  "depends_on": [
+    "CONFIG",
+    "REPORT"
+  ],
+  "status": "queued",
+  "estimate_minutes": 15,
+  "owner": "CI Astra",
+  "harness": "codex",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:29+03:00",
+  "updated_at": "2026-11-07T21:29:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:29+03:00",
+      "note": "",
+      "changes": {
+        "id": "OPENCODE",
+        "parent": "S2",
+        "label": "Подключить опубликованный OpenCode AHAP consumer",
+        "description": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+        "acceptance": "Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.",
+        "depends_on": [
+          "CONFIG",
+          "REPORT"
+        ],
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "CI Astra",
+        "harness": "codex",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ]
+}

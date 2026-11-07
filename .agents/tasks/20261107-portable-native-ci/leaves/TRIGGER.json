@@ -1,0 +1,48 @@
+{
+  "id": "TRIGGER",
+  "parent": "S4",
+  "label": "Подключить existing CI и update/release triggers",
+  "description": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+  "acceptance": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+  "depends_on": [
+    "REPORT"
+  ],
+  "status": "queued",
+  "estimate_minutes": 15,
+  "owner": "CI Astra",
+  "harness": "codex",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-07T21:29:32+03:00",
+  "updated_at": "2026-11-07T21:29:32+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:29:32+03:00",
+      "note": "",
+      "changes": {
+        "id": "TRIGGER",
+        "parent": "S4",
+        "label": "Подключить existing CI и update/release triggers",
+        "description": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+        "acceptance": "PR fast tests; native compatibility на candidate и изменении native versions; required unavailable не даёт принять update. Никакого нового scheduler.",
+        "depends_on": [
+          "REPORT"
+        ],
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "CI Astra",
+        "harness": "codex",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ]
+}
