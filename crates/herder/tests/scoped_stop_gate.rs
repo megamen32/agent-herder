@@ -2411,3 +2411,362 @@ fn mcp_stop_wire_waits_for_inflight_handoff_then_commits_hold() {
     assert_eq!(c.query_row("SELECT count(*) FROM humanstop_holds WHERE scope_ref='session:issued' AND released_at IS NULL",[],|r|r.get::<_,i64>(0)).unwrap(),1);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn recover_exact_create_after_unknown_delivery_never_recreates_or_resends() {
+    use herder::application::scoped_stop::create_recovery::RecoveredCreate;
+    struct CountingCreator {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for CountingCreator {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    let f = Fixture::new();
+    let target = address();
+    let control = CountingCreator {
+        instance: target.instance.clone(),
+        calls: AtomicUsize::new(0),
+    };
+    let request = || CreateRequest {
+        intent_id: "create",
+        task_id: "create-task",
+        request_key: "create-key",
+        specification: "unique prompt",
+        now: "now",
+        retain_until: "later",
+    };
+    assert_eq!(
+        f.authority()
+            .recover_fresh_create(
+                &identity(),
+                &grants(),
+                &target.instance,
+                "create-key",
+                "unique prompt"
+            )
+            .unwrap(),
+        RecoveredCreate::Missing
+    );
+    assert_eq!(
+        f.authority()
+            .create_fresh_root(
+                &identity(),
+                &grants(),
+                &control,
+                &Issuer,
+                &Generation,
+                request()
+            )
+            .unwrap(),
+        CreateResult::Created(SessionRef("issued".into()))
+    );
+    let p = plan();
+    f.prepare("delivery", "k", &p);
+    let b = binding(&target, "delivery", "k");
+    assert!(
+        f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "now")
+            .unwrap()
+    );
+    let sends = Arc::new(AtomicUsize::new(0));
+    let lost = Lost {
+        calls: sends.clone(),
+    };
+    assert_eq!(
+        f.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &b,
+                "scope-1",
+                p.clone(),
+                "message",
+                "now",
+                &lost
+            )
+            .unwrap(),
+        DurableDispatch::Unknown
+    );
+    assert_eq!(
+        f.authority()
+            .create_fresh_root(
+                &identity(),
+                &grants(),
+                &control,
+                &Issuer,
+                &Generation,
+                request()
+            )
+            .unwrap(),
+        CreateResult::Existing
+    );
+    assert_eq!(
+        f.authority()
+            .recover_fresh_create(
+                &identity(),
+                &grants(),
+                &target.instance,
+                "create-key",
+                "unique prompt"
+            )
+            .unwrap(),
+        RecoveredCreate::Created {
+            task_id: "create-task".into(),
+            session: SessionRef("issued".into()),
+            address: target.clone()
+        }
+    );
+    assert_eq!(
+        f.authority()
+            .recover_fresh_create(
+                &identity(),
+                &grants(),
+                &target.instance,
+                "create-key",
+                "other prompt"
+            )
+            .unwrap(),
+        RecoveredCreate::Conflict
+    );
+    assert!(
+        !f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "now")
+            .unwrap()
+    );
+    assert_eq!(control.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(sends.load(Ordering::SeqCst), 1);
+    assert!(
+        f.authority()
+            .recover_fresh_create(
+                &identity(),
+                &[],
+                &target.instance,
+                "create-key",
+                "unique prompt"
+            )
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn create_prompt_composition_keeps_create_after_uncertain_delivery() {
+    use herder::application::scoped_stop::create_prompt::{
+        CreatePromptOutcome, create_with_prompt,
+    };
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, spec: &str) -> Result<SessionAddress, SubmitError> {
+            assert_eq!(spec, "unique prompt");
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(address())
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            plan: DispatchPlan,
+            message: &str,
+            key: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(plan.target, address());
+            assert_eq!(message, "unique prompt");
+            assert!(key.0.starts_with("create-prompt:"));
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(SubmitError::OutcomeUnknown {
+                receipt: None,
+                reason: "fixture lost response".into(),
+            })
+        }
+    }
+    let f = Fixture::new();
+    let target = address();
+    let create = Create {
+        instance: target.instance.clone(),
+        calls: AtomicUsize::new(0),
+    };
+    let submit = Submit(AtomicUsize::new(0));
+    let reader = FixtureReader {
+        target,
+        reads: AtomicUsize::new(0),
+        db: f.db.clone(),
+    };
+    let request = || CreateRequest {
+        intent_id: "create",
+        task_id: "create-task",
+        request_key: "create-key",
+        specification: "unique prompt",
+        now: "now",
+        retain_until: "later",
+    };
+    let authority = f.authority();
+    let first = create_with_prompt(
+        &authority,
+        &identity(),
+        &grants(),
+        &create,
+        &Issuer,
+        &Generation,
+        &reader,
+        &submit,
+        request(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        first,
+        CreatePromptOutcome::DeliveryUnknownOrBlocked {
+            session: SessionRef("issued".into())
+        }
+    );
+    let replay = create_with_prompt(
+        &authority,
+        &identity(),
+        &grants(),
+        &create,
+        &Issuer,
+        &Generation,
+        &reader,
+        &submit,
+        request(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        replay,
+        CreatePromptOutcome::DeliveryUnknownOrBlocked {
+            session: SessionRef("issued".into())
+        }
+    );
+    assert_eq!(create.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(submit.0.load(Ordering::SeqCst), 1);
+    let db = Connection::open(&f.db).unwrap();
+    let result:(i64,i64)=db.query_row("SELECT (SELECT count(*) FROM session_bindings WHERE session_ref='issued'),(SELECT count(*) FROM intents WHERE state='unknown')",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert_eq!(result, (1, 1));
+}
+
+#[tokio::test]
+async fn create_prompt_success_and_unknown_create_are_never_replayed() {
+    use herder::application::scoped_stop::create_prompt::{
+        CreatePromptOutcome, create_with_prompt,
+    };
+    struct Create {
+        instance: InstanceRef,
+        calls: AtomicUsize,
+        unknown: bool,
+    }
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.unknown {
+                Err(SubmitError::OutcomeUnknown {
+                    receipt: None,
+                    reason: "create reply lost".into(),
+                })
+            } else {
+                Ok(address())
+            }
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit {
+        fn submit_bounded(
+            &self,
+            plan: DispatchPlan,
+            message: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert_eq!(message, "prompt");
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Admission {
+                receipt: NativeReceipt {
+                    target: plan.target,
+                    native_id: "turn-created".into(),
+                },
+            })
+        }
+    }
+    for unknown in [false, true] {
+        let f = Fixture::new();
+        let target = address();
+        let creator = Create {
+            instance: target.instance.clone(),
+            calls: AtomicUsize::new(0),
+            unknown,
+        };
+        let sender = Submit(AtomicUsize::new(0));
+        let reader = FixtureReader {
+            target,
+            reads: AtomicUsize::new(0),
+            db: f.db.clone(),
+        };
+        let request = || CreateRequest {
+            intent_id: "create",
+            task_id: "task",
+            request_key: "key",
+            specification: "prompt",
+            now: "now",
+            retain_until: "later",
+        };
+        let authority = f.authority();
+        let first = create_with_prompt(
+            &authority,
+            &identity(),
+            &grants(),
+            &creator,
+            &Issuer,
+            &Generation,
+            &reader,
+            &sender,
+            request(),
+        )
+        .await
+        .unwrap();
+        if unknown {
+            assert_eq!(first, CreatePromptOutcome::CreateUnknown);
+        } else {
+            assert!(matches!(first, CreatePromptOutcome::Admitted { .. }));
+        }
+        let second = create_with_prompt(
+            &authority,
+            &identity(),
+            &grants(),
+            &creator,
+            &Issuer,
+            &Generation,
+            &reader,
+            &sender,
+            request(),
+        )
+        .await
+        .unwrap();
+        if unknown {
+            assert_eq!(second, CreatePromptOutcome::CreateUnknown);
+        } else {
+            assert_eq!(
+                second,
+                CreatePromptOutcome::DeliveryUnknownOrBlocked {
+                    session: SessionRef("issued".into())
+                }
+            );
+        }
+        assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(sender.0.load(Ordering::SeqCst), if unknown { 0 } else { 1 });
+    }
+}

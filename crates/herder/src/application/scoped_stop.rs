@@ -4,6 +4,8 @@
 compile_error!("scoped HumanStop gate currently requires Linux inode semantics");
 
 pub mod mcp_stop;
+pub mod create_recovery;
+pub mod create_prompt;
 pub mod mcp_read;
 
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
