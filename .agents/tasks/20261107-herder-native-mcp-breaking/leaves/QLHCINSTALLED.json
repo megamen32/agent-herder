@@ -1,0 +1,67 @@
+{
+  "id": "QLHCINSTALLED",
+  "kind": "task",
+  "label": "Проверка установленного LHC: задача исполнителю и пробуждение родителя",
+  "status": "blocked",
+  "estimate_minutes": 15,
+  "owner": "Astra",
+  "description": "LHC1.17.1 уже установлен. После готового exactnative readcontract Herder: использовать новую полезную независимую задачу existingworker черезassign/dispatch, проверитьacceptedreceipt+одинcompletionwait, terminal→parentcontinuation→reconcile→accept. Не повторять прошлыеunknown inputs.",
+  "acceptance": "Фактические native turn/input/wait IDs, terminal event и доставленныйparentwake. PublicinstalledLhcPlan entrypoint, безfakeobserver/privateworkflow. HumanStop/UNKNOWNбезобходов.",
+  "depends_on": [
+    "QLHCNATIVEOBS"
+  ],
+  "affected_files": [
+    "evidence/QLHCCONTINUE"
+  ],
+  "created_at": "2026-11-07T21:25:32+03:00",
+  "updated_at": "2026-11-07T21:29:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:25:32+03:00",
+      "note": "",
+      "changes": {
+        "id": "QLHCINSTALLED",
+        "kind": "task",
+        "label": "Проверка установленного LHC: задача исполнителю и пробуждение родителя",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "Astra",
+        "description": "LHC1.17.1 уже установлен. После готового exactnative readcontract Herder: использовать новую полезную независимую задачу existingworker черезassign/dispatch, проверитьacceptedreceipt+одинcompletionwait, terminal→parentcontinuation→reconcile→accept. Не повторять прошлыеunknown inputs.",
+        "acceptance": "Фактические native turn/input/wait IDs, terminal event и доставленныйparentwake. PublicinstalledLhcPlan entrypoint, безfakeobserver/privateworkflow. HumanStop/UNKNOWNбезобходов.",
+        "depends_on": [
+          "QLHCNATIVEOBS"
+        ],
+        "affected_files": [
+          "evidence/QLHCCONTINUE"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:29:47+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Self-test wait_51988f58b1ae0c2991bea8f245b9743a immediately delivery_failed: exact turn captured but native completion unavailable/idle. QLHCNATIVEOBS + installed readback required.",
+        "note": "Прямой запрос владельца проверить на Astra выполнен как живой RED. Herder73e7 и LHC1.17.1 installed; failedwait не повторяется. Hourlywait_dc371... waiting18:31UTC; duplicate schedule не создавался. EvidenceQLHCCONTINUE/self-wake-failed.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Self-test wait_51988f58b1ae0c2991bea8f245b9743a immediately delivery_failed: exact turn captured but native completion unavailable/idle. QLHCNATIVEOBS + installed readback required.",
+  "note": "Прямой запрос владельца проверить на Astra выполнен как живой RED. Herder73e7 и LHC1.17.1 installed; failedwait не повторяется. Hourlywait_dc371... waiting18:31UTC; duplicate schedule не создавался. EvidenceQLHCCONTINUE/self-wake-failed.json."
+}

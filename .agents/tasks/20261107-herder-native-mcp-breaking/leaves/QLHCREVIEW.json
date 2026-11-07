@@ -12,7 +12,7 @@
   ],
   "depends_on": [],
   "created_at": "2026-11-07T21:07:06+03:00",
-  "updated_at": "2026-11-07T21:14:28+03:00",
+  "updated_at": "2026-11-07T21:24:06+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:07:06+03:00",
@@ -117,6 +117,19 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:24:06+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "declared"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -138,7 +151,7 @@
       "harness": "codex",
       "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
     },
-    "state": "submitted",
+    "state": "result_ready",
     "dispatch": {
       "request_id": "lhc:90036582c69052848182fd14f10b6854279ec6cc8e0c239d9169da25ac419962",
       "status": "accepted",
@@ -162,10 +175,10 @@
       "captured_turn_id": null
     },
     "observed_runtime": {
-      "state": "idle",
-      "observed_at": "2026-11-07T18:07:36.496613+00:00",
-      "source": "native_verified",
-      "turn_id": null,
+      "state": "completed",
+      "observed_at": "2026-11-07T18:09:22+00:00",
+      "source": "codex_app.wait_threads",
+      "turn_id": "01a1b732-02d8-7923-99eb-854b79210939",
       "model": null,
       "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder"
     },
@@ -287,6 +300,25 @@
             "observed_at": "2026-11-07T18:14:28.455796+00:00",
             "turn_id": null,
             "captured_turn_id": null
+          }
+        }
+      },
+      {
+        "at": "2026-11-07T18:24:06+00:00",
+        "actor": {
+          "host_id": "roomhacker-server-100",
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "declared"
+        },
+        "from": "submitted",
+        "to": "result_ready",
+        "receipt": {
+          "observed_runtime": {
+            "state": "completed",
+            "source": "codex_app.wait_threads",
+            "turn_id": "01a1b732-02d8-7923-99eb-854b79210939",
+            "observed_at": "2026-11-07T18:09:22+00:00"
           }
         }
       }

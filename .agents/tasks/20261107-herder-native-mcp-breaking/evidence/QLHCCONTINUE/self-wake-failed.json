@@ -1,0 +1,24 @@
+{
+  "jobId": "wait_51988f58b1ae0c2991bea8f245b9743a",
+  "wait": {
+    "id": "wait_51988f58b1ae0c2991bea8f245b9743a",
+    "owner": {
+      "harness": "codex",
+      "sessionId": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "dependencies": [
+      {
+        "harness": "codex",
+        "sessionId": "01a1b39a-83ab-7ea2-a343-25d92b900488"
+      }
+    ],
+    "message": "Проверка на самой Astra по прямому поручению пользователя «Ну вот на себе и проверь. тебя всё равно через час уже разбудит». Сначала HumanStop и последнее поручение. Это completion ZCode worker QLHCNATIVEOBS (review guard commit8b3bebe7, inputastra-native-observation-stop-review-20261107T1827, turn01a1b744-6e9e-7430-b766-a3dca5802279). Прочитай canonical /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/leaves/QLHCNATIVEOBS.json и проверяй фактический result/evidence, не ACK. Зафиксируй ID именно этого wait и полученный parent continuation как directHerder proof, не подменяй им LHC dispatch proof. LHC1.17.1 уже опубликован/installed2988f0f8, sourcegate1045passed6skipped; QLHCINSTALLED ещё открыт. После sourceguard review передай CI единоличный scoped install/readback конкретного publishedfix, затем реальный assign→dispatch→completionwake→reconcile→accept черезinstalledLhcPlan. CI scopeпереоформляетплан+builderbugB83; точныйconsumercontract CI-CONSUMER-CONTRACT.md ужеотправлен acceptedinputastra-ci-consumer-contract-20261107T1827. Не повторять UNKNOWN/accepted. Сохрани ровноодин hourlywait; текущий wait_dc37187a2df83b877484ee99bd63e3cf на18:31UTC, прочитайstatus, nextтолькоеслипредыдущийсработал. Продолжай полезнуюработу; useraskedselftest, не фиктивныйPASS.",
+    "createdAt": "2026-11-07T18:29:04.248Z",
+    "state": "delivery_failed",
+    "completed": {},
+    "dependencyTurns": {
+      "[\"codex\",\"01a1b39a-83ab-7ea2-a343-25d92b900488\"]": "01a1b744-6e9e-7430-b766-a3dca5802279"
+    },
+    "reason": "Dependency codex:01a1b39a-83ab-7ea2-a343-25d92b900488: native turn completion is unavailable; idle alone is not completion"
+  }
+}

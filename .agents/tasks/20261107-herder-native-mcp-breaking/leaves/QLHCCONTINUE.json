@@ -1,14 +1,14 @@
 {
   "id": "QLHCCONTINUE",
   "kind": "task",
-  "label": "LHC: завершение исполнителя возвращает руководителя к результату",
-  "status": "running",
+  "label": "Исправить и установить LHC completion wait и delivery timeout",
+  "status": "done",
   "estimate_minutes": 15,
   "owner": "Astra",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
   "description": "Прямое поручение владельца 07.11: доделать LHC child completion→parent continuation. Переиспользовать LHC1.17 assign/dispatch/reconcile и Herder resume_after; Aquinas проверяет минимальный разрыв в hooks, Astra live consumer и интеграцию. Отдельный scheduler не вводить.",
-  "acceptance": "Точный автоматический wake с реальным native turn и сохранённым LHC assignment; завершение требует acceptance и следующий готовый шаг; HumanStop/UNKNOWN не обходятся. Source/mock proof отдельно от installed/native.",
+  "acceptance": "RED/GREEN, независимый review, опубликованный LHC1.17.1, actual installed hash/readback. Native parent continuation выделен в QLHCINSTALLED и не считается доказанным этим листом.",
   "affected_files": [
     "LastHumanCommit/src/common/tools/lhc_execution.py",
     "LastHumanCommit/src/common/tools/lhc_entry.py",
@@ -16,7 +16,7 @@
   ],
   "note": "Установленный LHC1.17 уже имеет execution API. Историческая L07 приёмка явно не заявляет real native wake. Herder QDEPENDENCYWAKE source fixed; QCONTROLINSTALL владелец CI.",
   "created_at": "2026-11-07T21:03:07+03:00",
-  "updated_at": "2026-11-07T21:20:57+03:00",
+  "updated_at": "2026-11-07T21:25:33+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:03:07+03:00",
@@ -73,6 +73,25 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:25:33+03:00",
+      "note": "Разделён превышающий15мин остаток по конкретному результату: исходный запрос не закрыт, source/install proven закрыт отдельно; nativeconsumer QLHCINSTALLED, Herderreadfix QLHCNATIVEOBS.",
+      "changes": {
+        "label": "Исправить и установить LHC completion wait и delivery timeout",
+        "acceptance": "RED/GREEN, независимый review, опубликованный LHC1.17.1, actual installed hash/readback. Native parent continuation выделен в QLHCINSTALLED и не считается доказанным этим листом.",
+        "status": "done",
+        "result": "LHC1.17.1 publishedmain2988f0f8483a2a33a6fb762c86e597513b445d1a и installed штатнымwrapper с сохранением oldhookroutes. Исправлены staleidle/nativeinProgress потеряwake и слишкомкороткийHTTPdeliver timeout10→60s; reads10s, no retries. SourceRED3→GREEN11; transportRED2→GREEN6; independentreviewsPASS. Fullvalidation1045passed6skipped; generatedpackageparityPASS. Installed execution/transport/entry hashes match; old1.17.0expandedhookcommand запускается черезcanonicalcompatroute. Реальныйparentwake остаётся непринятым в QLHCINSTALLED; нужен QLHCNATIVEOBS readcontract. EvidenceQLHCCONTINUE, docs/parent-continuation-1.17.1.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "LHC1.17.1 publishedmain2988f0f8483a2a33a6fb762c86e597513b445d1a и installed штатнымwrapper с сохранением oldhookroutes. Исправлены staleidle/nativeinProgress потеряwake и слишкомкороткийHTTPdeliver timeout10→60s; reads10s, no retries. SourceRED3→GREEN11; transportRED2→GREEN6; independentreviewsPASS. Fullvalidation1045passed6skipped; generatedpackageparityPASS. Installed execution/transport/entry hashes match; old1.17.0expandedhookcommand запускается черезcanonicalcompatroute. Реальныйparentwake остаётся непринятым в QLHCINSTALLED; нужен QLHCNATIVEOBS readcontract. EvidenceQLHCCONTINUE, docs/parent-continuation-1.17.1.md."
 }
