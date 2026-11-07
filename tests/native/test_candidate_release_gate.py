@@ -1,8 +1,12 @@
 import unittest
 import json
+import sys
 import tempfile
 from pathlib import Path
-from candidate_release_gate import invalidate_receipt, validate_cli_candidate
+from unittest.mock import patch
+from types import SimpleNamespace
+import candidate_release_gate
+from candidate_release_gate import invalidate_receipt, validate_cli_candidate, validate_zcode_candidate
 
 
 def receipt():
@@ -21,6 +25,37 @@ def receipt():
 
 
 class CandidateReleaseGateTest(unittest.TestCase):
+    def test_zcode_unavailable_invalidates_receipt_and_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'receipt.json'
+            path.write_text(json.dumps({'cli_candidate': 'PASS', 'release': 'PASS'}))
+            args = ['gate', '/candidate', 'a' * 40, '/codex', '/opencode', str(path)]
+            completed = SimpleNamespace(returncode=2, stdout=json.dumps(receipt()), stderr='')
+            with patch.object(sys, 'argv', args), patch.object(candidate_release_gate.subprocess, 'run', return_value=completed), \
+                    patch.object(candidate_release_gate, 'run_zcode_candidate', side_effect=RuntimeError('unavailable')):
+                with self.assertRaisesRegex(RuntimeError, 'unavailable'):
+                    candidate_release_gate.main()
+            result = json.loads(path.read_text())
+            self.assertEqual(result['cli_candidate'], 'INCOMPLETE')
+            self.assertEqual(result['release'], 'INCOMPLETE')
+
+    def test_zcode_requires_same_payload_and_complete_native_journey(self):
+        row = {'scope': 'zcode-official-project', 'version': '3.17.2', 'fixtureRequests': 5,
+               'sessions': ['one', 'two'], 'sessionsCreated': True, 'sessionsListed': True,
+               'sessionsSearched': True, 'projectListed': True, 'answer': True,
+               'transcriptComplete': True, 'transcriptPages': [8, 8]}
+        result = {'scope': 'isolated-candidate-only', 'status': 'PASS', 'artifact_sha256': 'a' * 64,
+                  'artifact_consistent': True, 'reports': [row]}
+        self.assertEqual(validate_zcode_candidate(result, 'a' * 64)['scope'], 'zcode-official-project')
+        for key, value in [('artifact_sha256', 'b' * 64), ('artifact_consistent', False)]:
+            broken = dict(result, **{key: value})
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_zcode_candidate(broken, 'a' * 64)
+        for key, value in [('sessionsSearched', False), ('transcriptPages', [8, 1])]:
+            broken = dict(result, reports=[dict(row, **{key: value})])
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_zcode_candidate(broken, 'a' * 64)
+
     def test_stale_success_is_invalidated_before_a_new_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'receipt.json'

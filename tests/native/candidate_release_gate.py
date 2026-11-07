@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from zcode_candidate_remote import run_zcode_candidate
 
 
 def write_receipt(path, value):
@@ -20,6 +21,28 @@ def write_receipt(path, value):
 
 def invalidate_receipt(path):
     write_receipt(path, {'cli_candidate': 'INCOMPLETE', 'release': 'INCOMPLETE'})
+
+
+def validate_zcode_candidate(report, payload_digest):
+    if (not isinstance(report, dict) or report.get('scope') != 'isolated-candidate-only'
+            or report.get('status') != 'PASS' or report.get('artifact_consistent') is not True
+            or report.get('artifact_sha256') != payload_digest):
+        raise ValueError('ZCode candidate payload or scoped result invalid')
+    rows = [x for x in report.get('reports', []) if isinstance(x, dict) and x.get('scope') == 'zcode-official-project']
+    if len(rows) != 1:
+        raise ValueError('ZCode native scenario missing or duplicated')
+    row = rows[0]
+    sessions, pages = row.get('sessions'), row.get('transcriptPages')
+    if (not isinstance(row.get('version'), str) or not row['version']
+            or type(row.get('fixtureRequests')) is not int or row['fixtureRequests'] < 2
+            or not isinstance(sessions, list) or len(sessions) != 2
+            or any(not isinstance(s, str) or not s for s in sessions) or sessions[0] == sessions[1]
+            or not isinstance(pages, list) or len(pages) != 2
+            or any(type(n) is not int or n < 2 for n in pages)
+            or any(row.get(key) is not True for key in ('sessionsCreated', 'sessionsListed',
+                   'sessionsSearched', 'projectListed', 'answer', 'transcriptComplete'))):
+        raise ValueError('ZCode native journey incomplete')
+    return row
 
 
 def validate_cli_candidate(report, sha, returncode):
@@ -63,12 +86,16 @@ def main():
     try:
         report = json.loads(result.stdout)
         output = validate_cli_candidate(report, sha, result.returncode)
+        zcode_report, digest = run_zcode_candidate(release, sha)
+        validate_zcode_candidate(zcode_report, digest)
     except (ValueError, TypeError) as error:
         raise ValueError(f'CLI candidate gate failed: {error}; {result.stderr[-1200:]}') from error
+    output['zcode_candidate'] = 'PASS'
+    output['zcode_report'] = zcode_report
     output['elapsed_seconds'] = round(time.monotonic() - start, 3)
     path = Path(receipt)
     write_receipt(path, output)
-    print(f"CLI candidate PASS; full release INCOMPLETE; receipt {path}")
+    print(f"Codex/OpenCode/ZCode candidate PASS; full release INCOMPLETE; receipt {path}")
     return 0
 
 
