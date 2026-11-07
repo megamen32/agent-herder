@@ -1,13 +1,13 @@
 # CI checkpoint — 2026-11-08
 
-Результат текущего цикла: **candidate INCOMPLETE, installed NOT RUN**. Exact a836 candidate проверен существующим gate: exit2 `V1 chatgpt.create is BLOCKED`. Это реальный отказ допуска, не five-adapter PASS. Legacy current не менялся.
+Результат текущего цикла: **candidate INCOMPLETE, installed NOT RUN**. Exact5ea candidate (последний), предыдущийa836 сохранён; проверен существующим gate: exit2 `V1 chatgpt.create is BLOCKED`. Это реальный отказ допуска, не five-adapter PASS. Legacy current не менялся.
 
 ## Готовое
 
 - CONFIG8708597c published main: manifest readonly mount, отдельный pinned official OpenCode, проверка bundled Node/bootstrap hashes. 8 tests GREEN после RED. Actual config dry-run: evidence/runner-config-a836-{argv.json} и runner-config-a836.json.
 - REPORT76ec55f3: exact stage/run/source/artifact identity, 5×7 checks + negatives; 12 tests GREEN.
 - Existing workflow4464390a: Linux/macOS fast CONFIG/REPORT checks; browser consumer guard3GREEN. Это source CI, не autonomous five-native-run PASS.
-- a836 public initialization Z.ai и ZCode проходит;5negative checks core PASS с отдельным оригинальным run_id. Provenance в evidence/candidate-a836-report.json.
+- a836 public initialization Z.ai и ZCode проходит;5negative checks core PASS с отдельным оригинальным run_id. Provenance в evidence/candidate-5ea-report.json.
 
 ## Проверки реальных сред
 
@@ -30,3 +30,7 @@
 ## Source publication follow-up
 
 OpenCode reader7cc88e48 published (26offline tests); Codex manifest inputsc314fbb5 published (5tests); ZCode official projectsetup61503548 published (7tests including isolated supervisor preflight). ChatGPT pinnedverifiedscope e4c5edb6 published, RED→107GREEN, tsc --noEmit exit0. Core owner integrates wrapper verifier-before-passive and startupbudget separately. Fresh combinedcandidate browserpreflight pending; earlier UNKNOWN receipts unchanged.
+
+## Latest exact5ea browser result
+
+Public ChatGPT startup PASS14tools on existingtestpage3/account with fresh protectedHOME, native sends0; evidence/chatgpt-5ea-receipt.json. For fullnative scenario one newblankpage8 was created and reconciled by exact listdifference, but UI stays Загрузка профиля/pending-home-input and explicit account check returns auth_timeout10s. New exactscope/claim unavailable; no create/send. Oldpage7 claim not reused, ordinarytabs and existingpage3 not changed. Conditional unblock documented in evidence/chatgpt-5ea-blank-scope-blocker.json.

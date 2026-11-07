@@ -21,7 +21,7 @@
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:33+03:00",
-  "updated_at": "2026-11-08T00:15:27+03:00",
+  "updated_at": "2026-11-08T00:32:40+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:33+03:00",
@@ -106,11 +106,27 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:32:40+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Exact5ea full candidate gate exit2: dedicated ChatGPT blankscope unavailable; native lanes incomplete",
+        "result": "Latest evidence/candidate-5ea-{report.json,expected.json,gate.txt}; NEG5PASS exact5ea with independent originalrunid+hashprovenance. ChatGPT startup14tools realPASS separated from fulljourney. No V1 runtimeinstallation, legacycurrent untouched. Sourcefixtures allpublished."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 4,
   "note": "Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять.",
-  "blocker": "Exact a836 candidate gate exit2: chatgpt.create BLOCKED; native lanes incomplete",
-  "result": "evidence/candidate-a836-report.json + independent expected identity + candidate-a836-gate.txt. NEG5PASS referenced with original run_id/hash/provenance, not native proof. No V1 runtime installation, no legacycurrent switch. Sameconsumer installed route awaits complete candidate acceptance."
+  "blocker": "Exact5ea full candidate gate exit2: dedicated ChatGPT blankscope unavailable; native lanes incomplete",
+  "result": "Latest evidence/candidate-5ea-{report.json,expected.json,gate.txt}; NEG5PASS exact5ea with independent originalrunid+hashprovenance. ChatGPT startup14tools realPASS separated from fulljourney. No V1 runtimeinstallation, legacycurrent untouched. Sourcefixtures allpublished."
 }
