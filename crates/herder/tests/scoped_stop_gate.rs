@@ -2043,3 +2043,275 @@ fn definitely_not_sent_is_durable_and_allows_a_new_key() {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+
+#[tokio::test]
+async fn mcp_stop_wire_holds_only_authorized_scoped_session() {
+    use herder::{
+        application::scoped_stop::mcp_stop::ScopedStopApplication, mcp::transport::NativeServer,
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    async fn stop(
+        identity: ConnectionIdentity,
+        app: Arc<ScopedStopApplication>,
+        session: &str,
+    ) -> Value {
+        let server = NativeServer::with_connection_identity(identity, app);
+        let (client, io) = tokio::io::duplex(65536);
+        let task =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (read, mut write) = tokio::io::split(client);
+        let mut lines = BufReader::new(read).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"alice"});
+        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"stop","arguments":{"action":"stop","session_ref":session,"request_key":"stop-key"}}});
+        write
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        let response = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        drop(write);
+        drop(lines);
+        task.await.unwrap();
+        response
+    }
+    let f = Fixture::new();
+    create(&f);
+    let p = plan();
+    f.prepare("intent", "key", &p);
+    let app = Arc::new(ScopedStopApplication::new(
+        f.authority(),
+        address().instance,
+        grants(),
+    ));
+    let bob = ConnectionIdentity::new(
+        Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId("bob".into()),
+        }),
+        None,
+    );
+    let denied = stop(bob, app.clone(), "issued").await;
+    assert_eq!(
+        denied["result"]["structuredContent"]["code"],
+        "unauthorized"
+    );
+    let db = Connection::open(&f.db).unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM humanstop_holds", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    db.create_scalar_function(
+        "herder_writer_version",
+        0,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |_| Ok(3),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO session_bindings VALUES ('imported','node','isolated','imported-native')",
+        [],
+    )
+    .unwrap();
+    let mut imported_grants = grants();
+    imported_grants.push(Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("imported".into())),
+        action: Action::Write,
+    });
+    let imported_app = Arc::new(ScopedStopApplication::new(
+        f.authority(),
+        address().instance,
+        imported_grants,
+    ));
+    let imported = stop(identity(), imported_app, "imported").await;
+    assert_eq!(
+        imported["result"]["structuredContent"]["code"],
+        "scope_unavailable"
+    );
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM humanstop_holds", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    let accepted = stop(identity(), app, "issued").await;
+    assert_eq!(accepted["result"]["structuredContent"]["hold"], "active");
+    assert_eq!(
+        accepted["result"]["structuredContent"]["native_interrupt"],
+        "not_attempted_no_known_handoff"
+    );
+    let target = address();
+    let first_binding = binding(&target, "intent", "key");
+    assert!(
+        !f.authority()
+            .claim(
+                &identity(),
+                &grants(),
+                &first_binding,
+                "scope-1",
+                &p,
+                "message",
+                "now"
+            )
+            .unwrap()
+    );
+    assert_eq!(db.query_row("SELECT count(*) FROM humanstop_holds WHERE scope_ref='session:issued' AND released_at IS NULL",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+
+    let f2 = Fixture::new();
+    create(&f2);
+    f2.prepare("after", "k", &p);
+    let target = address();
+    let sent = binding(&target, "after", "k");
+    assert!(
+        f2.authority()
+            .claim(
+                &identity(),
+                &grants(),
+                &sent,
+                "scope-1",
+                &p,
+                "message",
+                "now"
+            )
+            .unwrap()
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let control = Control {
+        calls: calls.clone(),
+        db: f2.db.clone(),
+        ready: None,
+        proceed: None,
+    };
+    assert!(matches!(
+        f2.authority()
+            .handoff(
+                &identity(),
+                &grants(),
+                &sent,
+                "scope-1",
+                p.clone(),
+                "message",
+                "now",
+                &control
+            )
+            .unwrap(),
+        DurableDispatch::Admitted(_)
+    ));
+    let app = Arc::new(ScopedStopApplication::new(
+        f2.authority(),
+        target.instance,
+        grants(),
+    ));
+    let stopped = stop(identity(), app, "issued").await;
+    assert_eq!(
+        stopped["result"]["structuredContent"]["native_interrupt"],
+        "required_or_reconcile"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
+    use herder::{
+        application::scoped_stop::mcp_read::{ScopedMessageReader, ScopedReadApplication},
+        mcp::transport::NativeServer,
+    };
+    use rmcp::ServiceExt;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    struct Reader(Arc<AtomicUsize>);
+    impl ScopedMessageReader for Reader {
+        fn read_messages(&mut self, address: &SessionAddress) -> Result<Value, ()> {
+            assert_eq!(*address, super_address());
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(
+                json!({"messages":[{"id":"fixture-message","text":"fixture-text"}],"coverage":"complete"}),
+            )
+        }
+    }
+    fn super_address() -> SessionAddress {
+        address()
+    }
+    async fn read(
+        identity: ConnectionIdentity,
+        app: Arc<ScopedReadApplication<Reader>>,
+        session: &str,
+        cursor: Option<&str>,
+    ) -> Value {
+        let server = NativeServer::with_connection_identity(identity, app);
+        let (client, io) = tokio::io::duplex(65536);
+        let task =
+            tokio::spawn(async move { server.serve(io).await.unwrap().waiting().await.unwrap() });
+        let (r, mut w) = tokio::io::split(client);
+        let mut lines = BufReader::new(r).lines();
+        let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"alice"});
+        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session,"cursor":cursor}}});
+        w.write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        let result = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        drop(w);
+        drop(lines);
+        task.await.unwrap();
+        result
+    }
+    let f = Fixture::new();
+    create(&f);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let read_grant = Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("issued".into())),
+        action: Action::Read,
+    };
+    let db = Connection::open(&f.db).unwrap();
+    db.create_scalar_function(
+        "herder_writer_version",
+        0,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |_| Ok(3),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO session_bindings VALUES ('imported','node','isolated','imported-native')",
+        [],
+    )
+    .unwrap();
+    let imported_grant = Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("imported".into())),
+        action: Action::Read,
+    };
+    let app = Arc::new(ScopedReadApplication::new(
+        f.authority(),
+        address().instance,
+        vec![read_grant, imported_grant],
+        Reader(calls.clone()),
+    ));
+    let bob = ConnectionIdentity::new(
+        Caller::Principal(VerifiedPrincipal {
+            id: PrincipalId("bob".into()),
+        }),
+        None,
+    );
+    assert_eq!(
+        read(bob, app.clone(), "issued", None).await["result"]["structuredContent"]["code"],
+        "unauthorized"
+    );
+    assert_eq!(
+        read(identity(), app.clone(), "issued", Some("foreign-cursor")).await["result"]["structuredContent"]
+            ["code"],
+        "unsupported_cursor"
+    );
+    assert_eq!(
+        read(identity(), app.clone(), "imported", None).await["result"]["structuredContent"]["code"],
+        "scope_unavailable"
+    );
+    let result = read(identity(), app, "issued", None).await;
+    assert_eq!(
+        result["result"]["structuredContent"]["page"]["messages"][0]["text"],
+        "fixture-text"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}

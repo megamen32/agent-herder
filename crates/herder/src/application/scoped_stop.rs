@@ -3,6 +3,9 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("scoped HumanStop gate currently requires Linux inode semantics");
 
+pub mod mcp_stop;
+pub mod mcp_read;
+
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
 use crate::domain::address::SessionRef;
 use crate::{
@@ -321,11 +324,34 @@ impl ScopedAuthority {
         session: &SessionRef,
         instance: &crate::domain::address::InstanceRef,
     ) -> Result<(crate::domain::address::SessionAddress, String), GateError> {
+        self.resolve_session_for_action(identity, grants, session, instance, Action::Write)
+    }
+
+    /// Read authorization is independent of write authorization and still
+    /// requires a verified scoped binding in the authoritative store.
+    pub fn resolve_session_read(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        session: &SessionRef,
+        instance: &crate::domain::address::InstanceRef,
+    ) -> Result<(crate::domain::address::SessionAddress, String), GateError> {
+        self.resolve_session_for_action(identity, grants, session, instance, Action::Read)
+    }
+
+    fn resolve_session_for_action(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        session: &SessionRef,
+        instance: &crate::domain::address::InstanceRef,
+        action: Action,
+    ) -> Result<(crate::domain::address::SessionAddress, String), GateError> {
         identity
             .authorize(
                 grants,
                 &PrivateResource::Session(session.clone()),
-                Action::Write,
+                action,
             )
             .map_err(|_| GateError::Invalid)?;
         let (_gate, writer) = self.lock()?;
