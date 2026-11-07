@@ -48,5 +48,17 @@ class JourneyTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'duplicate'):
             run_journey(duplicate, transcript, 'codex', 'herder-test', '/isolated/project')
 
+    def test_transcript_visibility_delay_only_retries_read(self):
+        api, _, calls = self.fixture()
+        reads = []
+        def transcript(harness, sid, marker):
+            reads.append(sid)
+            if reads.count(sid) == 1: raise ValueError('exact input followed by fixture answer missing')
+            return 2
+        result = run_journey(api, transcript, 'codex', 'herder-test', '/isolated/project', sleep=lambda _: None)
+        self.assertEqual(len(reads), 4)
+        self.assertEqual(len([p for p, _ in calls if p.endswith('/message')]), 2)
+        self.assertEqual(result['status'], 'INCOMPLETE')
+
 
 if __name__ == '__main__': unittest.main()

@@ -38,7 +38,15 @@ def run_journey(api, read_transcript, harness, model, project, *, timeout=30, sl
             sleep(.2)
         if state.get('state') != 'completed' or (state.get('result') or {}).get('ok') is not True:
             raise RuntimeError(f'{harness} session {sid}: delivery failed; no replay')
-        pages = read_transcript(harness, sid, marker)
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                pages = read_transcript(harness, sid, marker)
+                break
+            except ValueError as error:
+                if str(error) != 'exact input followed by fixture answer missing' or time.monotonic() >= deadline:
+                    raise
+                sleep(.2)
         if type(pages) is not int or pages < 2:
             raise RuntimeError('complete paginated transcript not proven')
         sessions.append({'id': sid, 'job': job, 'pages': pages, 'marker': marker})

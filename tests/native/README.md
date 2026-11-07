@@ -42,8 +42,19 @@ OpenCode binary; `HERDER_CI_TOKEN` supplies the stand's test-only MCP token.
 It checks the network's interfaces and routes, but the caller must also create
 and verify filesystem and network isolation before starting the stand. The
 result is always `INCOMPLETE`: it does not prove the installed process or the
-remaining required environments. A standalone stand launcher and release-gate
-integration remain separate work.
+remaining required environments. To create the stand and run this driver:
+
+```sh
+python3 tests/native/launch.py --candidate /absolute/fleet/releases/RELEASE -- /usr/bin/python3 "$PWD/tests/native/candidate_stand.py" /absolute/fleet/releases/RELEASE /absolute/path/to/codex /absolute/path/to/opencode
+```
+
+The launcher exposes the named release and its detected shared dependency
+store read-only, creates a synthetic user and temporary HOME, and removes its
+own processes and state afterward. The stand checks isolation before writing
+any configuration. Its quota and fleet-admission overrides apply only inside
+that disposable environment. Release-gate integration remains separate work.
+An `INCOMPLETE` result exits with status 2, so a CI caller cannot treat
+candidate-only checks as successful acceptance.
 Use an absolute executable path if it is outside the minimal PATH; explicitly
 configure each test client to use the provided endpoint. No credentials or
 existing profiles are inherited through the environment. Arbitrary project

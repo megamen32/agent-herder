@@ -9,11 +9,30 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 from herder_journey import run_journey
 from herder_transcript_http import NoRedirect, read_transcript
 from search_proof import attach_search_proof
+
+
+def http_error_summary(status, body):
+    try:
+        value = json.loads(body)
+        detail = value.get('error', 'no error detail') if isinstance(value, dict) else 'no error detail'
+    except (ValueError, UnicodeError):
+        detail = 'invalid error response'
+    return f'HTTP {status}: {str(detail)[:500]}'
+
+
+def timeout_summary(stderr):
+    if isinstance(stderr, bytes): stderr = stderr.decode(errors='replace')
+    return 'search timed out: ' + (stderr or 'no diagnostics')[-1000:].strip()
+
+
+def exit_code_for_status(status):
+    return 0 if status == 'PASS' else 2
 
 
 def validate_isolation(links, routes4, routes6, project, herder, model):
@@ -49,8 +68,11 @@ def main():
         payload = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(root + path, data=payload, method=method,
                                      headers={'Origin': herder, 'Content-Type': 'application/json'})
-        with opener.open(req, timeout=10) as response:
-            raw = response.read(4_000_001)
+        try:
+            with opener.open(req, timeout=10) as response:
+                raw = response.read(4_000_001)
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(http_error_summary(error.code, error.read(4096))) from error
         if len(raw) > 4_000_000:
             raise ValueError('response exceeds fixture limit')
         return json.loads(raw)
@@ -63,8 +85,11 @@ def main():
     # This operates only on the fixture candidate's disposable settings store.
     for enabled in (False, True):
         api('/api/settings/background-indexing', {'enabled': enabled}, method='PUT')
-    result = subprocess.run(['node', str(Path(__file__).with_name('herder_search.mjs')), dist, herder,
-                             json.dumps(journeys)], check=True, capture_output=True, text=True, timeout=60)
+    try:
+        result = subprocess.run(['node', str(Path(__file__).with_name('herder_search.mjs')), dist, herder,
+                                 json.dumps(journeys)], check=True, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(timeout_summary(error.stderr)) from error
     replies = json.loads(result.stdout)
     verified = [attach_search_proof(j, [r for r in replies if r.get('harness') == j['harness']], socket.gethostname()) for j in journeys]
     after = hashlib.sha256(candidate.read_bytes()).hexdigest()
@@ -73,6 +98,7 @@ def main():
     print(json.dumps({'scope': 'isolated-candidate', 'status': 'INCOMPLETE', 'candidate_entry_sha256': before,
                       'cli_versions': versions, 'seconds': round(time.monotonic()-started, 3),
                       'journeys': verified, 'missing': ['installed-process', 'other-required-environments']}), flush=True)
+    return exit_code_for_status('INCOMPLETE')
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__': sys.exit(main())
