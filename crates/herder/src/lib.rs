@@ -13,6 +13,7 @@ pub mod domain {
 }
 
 pub mod error;
+pub mod store;
 
 pub mod mcp {
     pub mod catalog;
