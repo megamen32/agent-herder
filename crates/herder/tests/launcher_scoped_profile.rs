@@ -573,6 +573,28 @@ for line in sys.stdin:
     assert_eq!(imported["result"]["isError"], true, "{imported}");
     drop(input);
     let _ = reopened.wait();
+    // Selecting another trusted principal does not inherit the old owner's grant.
+    let mut other_profile = p.clone();
+    other_profile["owner"]["principal"] = serde_json::json!("other-owner");
+    fs::write(&f.profile, other_profile.to_string()).unwrap();
+    let mut other = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--trusted-owner-profile")
+        .arg(&f.profile)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = other.stdin.take().unwrap();
+    let mut out = BufReader::new(other.stdout.take().unwrap());
+    let denied = call(
+        &mut input,
+        &mut out,
+        serde_json::json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session}}}),
+    );
+    assert_eq!(denied["result"]["isError"], true, "{denied}");
+    drop(input);
+    let _ = other.wait();
 }
 
 #[test]
