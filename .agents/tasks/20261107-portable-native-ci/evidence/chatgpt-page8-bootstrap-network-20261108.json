@@ -1,0 +1,51 @@
+{
+  "observed_at": "2026-11-07T21:40:09.037Z",
+  "scope": "single fresh readonly identity/DOM/auth plus existing network and console records on same CI-created page8",
+  "page_id": 8,
+  "identity": {
+    "origin": "https://chatgpt.com",
+    "path": "/",
+    "renumbering_observed": false
+  },
+  "dom": {
+    "observed_at": "2026-11-07T21:40:09.037Z",
+    "origin": "https://chatgpt.com",
+    "path": "/",
+    "readyState": "complete",
+    "profileLoading": true,
+    "editors": [
+      {
+        "tag": "TEXTAREA",
+        "id": "pending-home-input",
+        "role": null,
+        "markdown": false,
+        "visible": true,
+        "empty": true
+      }
+    ],
+    "auth_error": "auth_timeout"
+  },
+  "network_summary": {
+    "document_status": 200,
+    "http2_failed_script_requests": 22,
+    "manifest_failed": true,
+    "auth_requests_observed_aborted": 2
+  },
+  "network_and_console": [
+    {
+      "tool": "list_network_requests",
+      "text": "## Network requests\nShowing 1-44 of 44 (Page 1 of 1).\nreqid=1 GET https://chatgpt.com/ [200]\nreqid=4 GET https://chatgpt.com/cdn/assets/manifest-30819b84.js [net::ERR_HTTP2_PING_FAILED]\nreqid=5 GET https://chatgpt.com/cdn/assets/685809.b4385c96d6.js [net::ERR_HTTP2_PING_FAILED]\nreqid=6 GET https://chatgpt.com/cdn/assets/633146.7a7da82fba.js [net::ERR_HTTP2_PING_FAILED]\nreqid=7 GET https://chatgpt.com/cdn/assets/680612.3c8d72f22d.js [200]\nreqid=8 GET https://chatgpt.com/cdn/assets/418851.7ea990b865.js [net::ERR_HTTP2_PING_FAILED]\nreqid=9 GET https://chatgpt.com/cdn/assets/109308.fbb414d4aa.js [200]\nreqid=10 GET https://chatgpt.com/cdn/assets/399565.a7f9c29dec.js [net::ERR_HTTP2_PING_FAILED]\nreqid=11 GET https://chatgpt.com/cdn/assets/257798.0b3d6025cd.js [200]\nreqid=12 GET https://chatgpt.com/cdn/assets/153380.6675e448cd.js [200]\nreqid=13 GET https://chatgpt.com/cdn/assets/617936.c61cb3b894.js [net::ERR_HTTP2_PING_FAILED]\nreqid=14 GET https://chatgpt.com/cdn/assets/807489.00704ce5f6.js [net::ERR_HTTP2_PING_FAILED]\nreqid=15 GET https://chatgpt.com/cdn/assets/337882.d56c5dd9ec.js [net::ERR_HTTP2_PING_FAILED]\nreqid=16 GET https://chatgpt.com/cdn/assets/955979.4ec7b9c49b.js [net::ERR_HTTP2_PING_FAILED]\nreqid=17 GET https://chatgpt.com/cdn/assets/646436.1f33d39585.js [net::ERR_HTTP2_PING_FAILED]\nreqid=18 GET https://chatgpt.com/cdn/assets/7078.e9c7fab122.js [net::ERR_HTTP2_PING_FAILED]\nreqid=19 GET https://chatgpt.com/cdn/assets/200429.4217a3f10d.js [net::ERR_HTTP2_PING_FAILED]\nreqid=20 GET https://chatgpt.com/cdn/assets/698524.cd24e3b049.js [net::ERR_HTTP2_PING_FAILED]\nreqid=21 GET https://chatgpt.com/cdn/assets/956483.d9bedeb1ff.js [net::ERR_HTTP2_PING_FAILED]\nreqid=22 GET https://chatgpt.com/cdn/assets/87162.636a6b2a55.js [200]\nreqid=23 GET https://chatgpt.com/cdn/assets/396705.c39944bbf2.js [200]\nreqid=24 GET https://chatgpt.com/cdn/assets/155568.984a5c9de4.js [net::ERR_HTTP2_PING_FAILED]\nreqid=25 GET https://chatgpt.com/cdn/assets/731863.8b87e9728a.js [net::ERR_HTTP2_PING_FAILED]\nreqid=26 GET https://chatgpt.com/cdn/assets/767086.db77131b17.js [200]\nreqid=27 GET https://chatgpt.com/cdn/assets/76629.2edc9c8efc.js [net::ERR_HTTP2_PING_FAILED]\nreqid=28 GET https://chatgpt.com/cdn/assets/514085.87ea9a1275.js [net::ERR_HTTP2_PING_FAILED]\nreqid=29 GET https://chatgpt.com/cdn/assets/204542.91dfabf541.js [net::ERR_HTTP2_PING_FAILED]\nreqid=30 GET https://chatgpt.com/cdn/assets/982651.7bfd071e83.js [200]\nreqid=31 GET https://chatgpt.com/cdn/assets/673108.8e78836d0a.js [200]\nreqid=32 GET https://chatgpt.com/cdn/assets/487481.59f4896493.js [net::ERR_HTTP2_PING_FAILED]\nreqid=33 GET https://chatgpt.com/cdn/assets/229522.e2e5d6765c.js [net::ERR_HTTP2_PING_FAILED]\nreqid=34 GET https://chatgpt.com/cdn/assets/390575.8b3e50f119.js [200]\nreqid=35 GET https://chatgpt.com/cdn/assets/353032.600f273724.js [200]\nreqid=36 GET https://chatgpt.com/cdn/assets/637885.d599a2287f.js [200]\nreqid=37 GET https://chatgpt.com/cdn/assets/284470.fdb0479a8d.js [200]\nreqid=38 GET https://chatgpt.com/cdn/assets/226913.b323f04fd6.js [200]\nreqid=39 GET https://chatgpt.com/cdn/assets/736644.3fe596ad02.js [200]\nreqid=40 GET https://chatgpt.com/cdn/assets/538990.c51de3756d.js [200]\nreqid=41 GET https://chatgpt.com/cdn/assets/902158.5a4b6c2c66.js [200]\nreqid=42 GET https://chatgpt.com/cdn/assets/687836.bc6f952c86.js [200]\nreqid=43 GET https://chatgpt.com/cdn/assets/42763.2534af631c.js [200]\nreqid=44 GET https://chatgpt.com/cdn/assets/906348.5a2f11131e.js [net::ERR_HTTP2_PING_FAILED]\nreqid=46 GET https://chatgpt.com/api/auth/session [net::ERR_ABORTED]\nreqid=47 GET https://chatgpt.com/api/auth/session [net::ERR_ABORTED]"
+    },
+    {
+      "tool": "list_console_messages",
+      "text": "## Console messages\nShowing 1-2 of 2 (Page 1 of 1).\nmsgid=2 [error] Failed to load resource: net::ERR_HTTP2_PING_FAILED (0 args) [26 times]\nmsgid=33 [warn] The resource https://chatgpt.com/cdn/assets/ru-RU.073e273f8d.json was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. (0 args) [2 times]"
+    }
+  ],
+  "conclusion": "Page bootstrap blocked by failed ChatGPT CDN JavaScript HTTP/2 requests; underlying transport root cause not established. No reproducible Herder source defect shown.",
+  "native_create_calls": 0,
+  "native_send_calls": 0,
+  "new_page_calls": 0,
+  "profile_or_login_or_infrastructure_changes": false,
+  "model_unknown_replayed": false,
+  "next": "Network owner diagnoses Mac Mini browser-to-chatgpt.com HTTP/2 transport. Then revalidate this exact blank page/account and acquire new QA claim before native case; no automatic resend."
+}
