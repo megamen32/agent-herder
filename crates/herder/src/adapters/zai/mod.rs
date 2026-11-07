@@ -241,17 +241,34 @@ impl ZaiReader {
     /// that later pages are absent.
     pub async fn list_chats(&mut self) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
         self.verify_account().await?;
+        let expected_scope = serde_json::to_string(&self.account_scope)
+            .map_err(|_| ZaiReadError::InvalidResponse)?;
+        let expression = ZAI_CHAT_LIST_EXPRESSION.replace("__EXPECTED_SCOPE__", &expected_scope);
         let result = self
             .cdp
-            .evaluate(ZAI_CHAT_LIST_EXPRESSION)
+            .evaluate(&expression)
             .await
             .map_err(ZaiReadError::Cdp)?;
         if result.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
             return Err(ZaiReadError::WrongOrigin);
         }
+        if matches!(
+            result.get("error").and_then(Value::as_str),
+            Some("account_mismatch" | "account_unverified")
+        ) {
+            return Err(ZaiReadError::AccountMismatch);
+        }
+        if result.get("error").is_some() {
+            return Err(ZaiReadError::InvalidResponse);
+        }
         let status = result.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
         if status != 200 {
             return Err(ZaiReadError::ProviderStatus(status));
+        }
+        if result.get("scope_verified").and_then(Value::as_bool) != Some(true)
+            || result.get("scope").and_then(Value::as_str) != Some(self.account_scope.as_str())
+        {
+            return Err(ZaiReadError::AccountMismatch);
         }
         let chats = result.get("chats").ok_or(ZaiReadError::InvalidResponse)?;
         normalize_chat_list(chats).map_err(ZaiReadError::Normalize)
@@ -261,6 +278,15 @@ impl ZaiReader {
         &mut self,
         chat_id: &str,
     ) -> Result<Vec<NormalizedMessage>, ZaiReadError> {
+        let (ids, batch) = self.read_chat_batch(chat_id).await?;
+        let requested: Vec<&str> = ids.iter().map(String::as_str).collect();
+        normalize_batch(chat_id, &requested, &batch).map_err(ZaiReadError::Normalize)
+    }
+
+    async fn read_chat_batch(
+        &mut self,
+        chat_id: &str,
+    ) -> Result<(Vec<String>, String), ZaiReadError> {
         if !valid_chat_id(chat_id) {
             return Err(ZaiReadError::InvalidResponse);
         }
@@ -323,8 +349,7 @@ impl ZaiReader {
             .ok_or(ZaiReadError::InvalidResponse)?;
         let batch = serde_json::to_string(&serde_json::json!({"chat_id": chat_id, "data": data}))
             .map_err(|_| ZaiReadError::InvalidResponse)?;
-        let requested: Vec<&str> = ids.iter().map(String::as_str).collect();
-        normalize_batch(chat_id, &requested, &batch).map_err(ZaiReadError::Normalize)
+        Ok((ids, batch))
     }
 
     /// Project the newest user and assistant records from one explicitly
@@ -348,8 +373,18 @@ impl ZaiReader {
             return Err(ZaiReadError::InvalidResponse);
         }
         let identity = self.cdp.identity().clone();
-        let messages = self.read_chat(chat_id).await?;
-        project_transcript_page(principal_id, &identity, chat_id, &messages)
+        let account_scope = self.account_scope.clone();
+        let (ids, batch) = self.read_chat_batch(chat_id).await?;
+        let batch: Batch =
+            serde_json::from_str(&batch).map_err(|_| ZaiReadError::InvalidResponse)?;
+        project_transcript_page(
+            principal_id,
+            &account_scope,
+            &identity,
+            chat_id,
+            &ids,
+            &batch,
+        )
     }
 
     /// Send exactly one first prompt in a fresh target and prove its reply by
@@ -489,11 +524,20 @@ const ZAI_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
 
 const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async()=>{
   if(location.origin!=="https://chat.z.ai")return {origin:location.origin};
+  const expected=__EXPECTED_SCOPE__;
   const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',{credentials:'same-origin',cache:'no-store'});
   if(!r.ok)return {origin:location.origin,status:r.status};
   let chats;try{chats=await r.json()}catch{return {origin:location.origin,error:'invalid_json'}};
   if(!Array.isArray(chats))return {origin:location.origin,error:'invalid_list'};
-  return {origin:location.origin,chats};
+  if(!chats.length||typeof chats[0]?.id!=='string')return {origin:location.origin,error:'account_unverified'};
+  const proof=await fetch('/api/v1/chats/'+encodeURIComponent(chats[0].id),{credentials:'same-origin',cache:'no-store'});
+  if(!proof.ok)return {origin:location.origin,error:'account_unverified'};
+  let chat;try{chat=await proof.json()}catch{return {origin:location.origin,error:'account_unverified'}};
+  if(chat?.id!==chats[0].id||!chat?.user_id)return {origin:location.origin,error:'account_unverified'};
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(chat.user_id)));
+  const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  if(scope!==expected)return {origin:location.origin,error:'account_mismatch',scope,scope_verified:true};
+  return {origin:location.origin,chats,scope,scope_verified:true};
 })()"#;
 
 const ZAI_COMPOSER_SELECTOR: &str = r#"textarea[placeholder="Send a Message"]"#;
@@ -603,11 +647,18 @@ fn project_recent_messages(messages: &[NormalizedMessage]) -> RecentMessages {
     )
 }
 
+fn update_snapshot_field(hash: &mut Sha256, value: &[u8]) {
+    hash.update((value.len() as u64).to_be_bytes());
+    hash.update(value);
+}
+
 fn project_transcript_page(
     principal_id: &str,
+    account_scope: &str,
     identity: &CdpTargetIdentity,
     chat_id: &str,
-    messages: &[NormalizedMessage],
+    ordered_ids: &[String],
+    batch: &Batch,
 ) -> Result<TranscriptPage, ZaiReadError> {
     let address = SessionAddress {
         instance: InstanceRef {
@@ -617,17 +668,81 @@ fn project_transcript_page(
         native_session_id: chat_id.to_owned(),
     };
     let mut snapshot = Sha256::new();
-    snapshot.update(chat_id.as_bytes());
-    for message in messages {
-        snapshot.update([0]);
-        snapshot.update(message.id.as_bytes());
-        snapshot.update([0]);
-        snapshot.update(match &message.role {
-            Role::User => b"user".as_slice(),
-            Role::Assistant => b"assistant".as_slice(),
-        });
-        snapshot.update([0]);
-        snapshot.update(message.text.as_bytes());
+    update_snapshot_field(&mut snapshot, b"agent-herder/zai-transcript/v1");
+    update_snapshot_field(&mut snapshot, principal_id.as_bytes());
+    update_snapshot_field(&mut snapshot, account_scope.as_bytes());
+    update_snapshot_field(&mut snapshot, identity.node_id.as_bytes());
+    update_snapshot_field(&mut snapshot, identity.instance_id.as_bytes());
+    update_snapshot_field(&mut snapshot, chat_id.as_bytes());
+    let data = batch.data.as_ref().ok_or(ZaiReadError::InvalidResponse)?;
+    let mut blocks = Vec::new();
+    for message_id in ordered_ids {
+        update_snapshot_field(&mut snapshot, message_id.as_bytes());
+        let Some(message) = data.get(message_id) else {
+            update_snapshot_field(&mut snapshot, b"missing-message");
+            continue;
+        };
+        update_snapshot_field(
+            &mut snapshot,
+            message.id.as_deref().unwrap_or_default().as_bytes(),
+        );
+        let role = message.role.as_deref().unwrap_or_default();
+        update_snapshot_field(&mut snapshot, role.as_bytes());
+        if let Some(content) = message.content.as_ref() {
+            update_snapshot_field(&mut snapshot, b"untyped-content");
+            update_snapshot_field(&mut snapshot, content.to_string().as_bytes());
+        }
+        if let Some(native_blocks) = message.content_blocks.as_ref() {
+            for (index, native_block) in native_blocks.iter().enumerate() {
+                update_snapshot_field(&mut snapshot, &(index as u64).to_be_bytes());
+                update_snapshot_field(
+                    &mut snapshot,
+                    native_block.kind.as_deref().unwrap_or_default().as_bytes(),
+                );
+                update_snapshot_field(
+                    &mut snapshot,
+                    native_block
+                        .content
+                        .as_deref()
+                        .unwrap_or_default()
+                        .as_bytes(),
+                );
+            }
+        }
+        if message.id.as_deref() != Some(message_id.as_str()) {
+            continue;
+        }
+        if !matches!(role, "user" | "assistant") {
+            continue;
+        }
+        let source = TranscriptSourceRef {
+            session: address.clone(),
+            message_id: message_id.clone(),
+            turn_id: None,
+        };
+        for (index, native_block) in message
+            .content_blocks
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            let Some(native_type) = native_block.kind.as_deref().filter(|kind| !kind.is_empty())
+            else {
+                continue;
+            };
+            let mut normalized = normalize_transcript_blocks(
+                &source,
+                [RawTranscriptBlock {
+                    native_type: native_type.to_owned(),
+                    text: native_block.content.clone(),
+                }],
+            );
+            if let Some(block) = normalized.first_mut() {
+                block.block_index = index as u32;
+            }
+            blocks.extend(normalized);
+        }
     }
     let snapshot_hex = snapshot
         .finalize()
@@ -635,27 +750,6 @@ fn project_transcript_page(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let snapshot_id = format!("zai:{snapshot_hex}");
-    let blocks = messages
-        .iter()
-        .flat_map(|message| {
-            let source = TranscriptSourceRef {
-                session: address.clone(),
-                message_id: message.id.clone(),
-                turn_id: None,
-            };
-            let native_type = match &message.role {
-                Role::User => "input_text",
-                Role::Assistant => "output_text",
-            };
-            normalize_transcript_blocks(
-                &source,
-                [RawTranscriptBlock {
-                    native_type: native_type.into(),
-                    text: Some(message.text.clone()),
-                }],
-            )
-        })
-        .collect();
     TranscriptPage::new(principal_id, &snapshot_id, blocks, None, true)
         .map_err(|_| ZaiReadError::InvalidResponse)
 }
@@ -719,7 +813,10 @@ mod tests {
     const RECENT_TWO_CHATS: &str =
         include_str!("../../../../../acceptance/native/z-ai/recent-two-chats.json");
 
-    async fn fake_cdp(recheck_scope: Option<String>) -> (String, tokio::task::JoinHandle<()>) {
+    async fn fake_cdp(
+        preflight_scope: Option<String>,
+        listed_scope: Option<String>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let endpoint = format!("ws://{address}/devtools/page/target-1");
@@ -746,7 +843,7 @@ mod tests {
                             let scope = if account_checks == 1 {
                                 Some(attached_scope.as_str())
                             } else {
-                                recheck_scope.as_deref()
+                                preflight_scope.as_deref()
                             };
                             match scope {
                                 Some(scope) => serde_json::json!({
@@ -754,8 +851,24 @@ mod tests {
                                 }),
                                 None => serde_json::json!({"origin":"https://chat.z.ai"}),
                             }
+                        } else if expression.contains("scope_verified:true") {
+                            match listed_scope.as_deref() {
+                                Some(scope) => {
+                                    let prefix = if scope == attached_scope { "a" } else { "b" };
+                                    serde_json::json!({
+                                        "origin":"https://chat.z.ai",
+                                        "scope":scope,
+                                        "scope_verified":true,
+                                        "chats":[{"id":format!("{prefix}001000000000001")}]
+                                    })
+                                }
+                                None => serde_json::json!({
+                                    "origin":"https://chat.z.ai",
+                                    "error":"account_unverified"
+                                }),
+                            }
                         } else {
-                            let scope = recheck_scope.as_deref().unwrap_or(&attached_scope);
+                            let scope = preflight_scope.as_deref().unwrap_or(&attached_scope);
                             let prefix = if scope == attached_scope { "a" } else { "b" };
                             serde_json::json!({
                                 "origin":"https://chat.z.ai",
@@ -900,8 +1013,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_chats_rejects_account_changed_after_attach() {
-        let (endpoint, server) = fake_cdp(Some("b".repeat(64))).await;
+    async fn list_chats_rejects_account_changed_between_preflight_and_list_result() {
+        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), Some("b".repeat(64))).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();
@@ -913,7 +1026,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_chats_allows_the_same_verified_account() {
-        let (endpoint, server) = fake_cdp(Some("a".repeat(64))).await;
+        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), Some("a".repeat(64))).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();
@@ -925,7 +1038,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_chats_fails_closed_when_account_identity_is_unavailable() {
-        let (endpoint, server) = fake_cdp(None).await;
+        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), None).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();
@@ -936,19 +1049,24 @@ mod tests {
     }
 
     #[test]
-    fn transcript_projection_preserves_chat_message_identity_and_known_limits() {
+    fn transcript_projection_preserves_native_block_types_indices_and_known_limits() {
         let identity = fake_identity();
-        let messages = normalize_batch(
+        let batch: Batch = serde_json::from_str(OBSERVED_SHAPE).unwrap();
+        let ids = vec!["user-001".to_owned(), "assistant-001".to_owned()];
+        let account_scope = "account-scope-a".repeat(4);
+        let page = project_transcript_page(
+            "principal-test",
+            &account_scope,
+            &identity,
             "chat-fixture-z-001",
-            &["user-001", "assistant-001"],
-            OBSERVED_SHAPE,
+            &ids,
+            &batch,
         )
         .unwrap();
-        let page =
-            project_transcript_page("principal-test", &identity, "chat-fixture-z-001", &messages)
-                .unwrap();
 
-        assert_eq!(page.blocks.len(), 2);
+        // The user fixture has a plain `content` string with no native block
+        // type, so it is intentionally omitted rather than assigned a fake type.
+        assert_eq!(page.blocks.len(), 3);
         assert_eq!(
             page.blocks[0].source.session.native_session_id,
             "chat-fixture-z-001"
@@ -958,14 +1076,86 @@ mod tests {
             page.blocks[0].source.session.instance.instance_id,
             "instance-1"
         );
-        assert_eq!(page.blocks[0].source.message_id, "user-001");
-        assert_eq!(page.blocks[0].native_type, "input_text");
-        assert_eq!(page.blocks[0].text.as_deref(), Some("question text"));
+        assert_eq!(page.blocks[0].source.message_id, "assistant-001");
+        assert_eq!(page.blocks[0].native_type, "markdown");
+        assert_eq!(page.blocks[0].block_index, 0);
+        assert_eq!(page.blocks[0].text.as_deref(), Some("answer"));
         assert_eq!(page.blocks[1].source.message_id, "assistant-001");
-        assert_eq!(page.blocks[1].native_type, "output_text");
-        assert_eq!(page.blocks[1].text.as_deref(), Some("answer\ncontinued"));
+        assert_eq!(page.blocks[1].native_type, "image");
+        assert_eq!(page.blocks[1].block_index, 1);
+        assert_eq!(page.blocks[1].text, None);
+        assert_eq!(page.blocks[2].source.message_id, "assistant-001");
+        assert_eq!(page.blocks[2].native_type, "text");
+        assert_eq!(page.blocks[2].block_index, 2);
+        assert_eq!(page.blocks[2].text.as_deref(), Some("continued"));
         assert_eq!(page.next_cursor, None);
         assert!(page.truncated);
         assert!(page.is_complete());
+    }
+
+    #[test]
+    fn transcript_snapshot_binds_full_session_account_and_principal() {
+        let identity = fake_identity();
+        let batch: Batch = serde_json::from_str(OBSERVED_SHAPE).unwrap();
+        let ids = vec!["user-001".to_owned(), "assistant-001".to_owned()];
+        let account_scope = "account-scope-a".repeat(4);
+        let page = project_transcript_page(
+            "principal-test",
+            &account_scope,
+            &identity,
+            "chat-fixture-z-001",
+            &ids,
+            &batch,
+        )
+        .unwrap();
+        let other_node = CdpTargetIdentity {
+            node_id: "node-2".into(),
+            ..identity.clone()
+        };
+        let other_instance = CdpTargetIdentity {
+            instance_id: "instance-2".into(),
+            ..identity.clone()
+        };
+        let other_account = "account-scope-b".repeat(4);
+        let other_principal = "principal-other";
+        let snapshot_for = |principal: &str, account: &str, target: &CdpTargetIdentity| {
+            project_transcript_page(
+                principal,
+                account,
+                target,
+                "chat-fixture-z-001",
+                &ids,
+                &batch,
+            )
+            .unwrap()
+            .snapshot_id
+        };
+        assert_ne!(
+            page.snapshot_id,
+            snapshot_for("principal-test", &account_scope, &other_node)
+        );
+        assert_ne!(
+            page.snapshot_id,
+            snapshot_for("principal-test", &account_scope, &other_instance)
+        );
+        assert_ne!(
+            page.snapshot_id,
+            snapshot_for("principal-test", &other_account, &identity)
+        );
+        assert_ne!(
+            page.snapshot_id,
+            snapshot_for(other_principal, &account_scope, &identity)
+        );
+    }
+
+    #[test]
+    fn snapshot_fields_are_length_delimited_even_when_values_contain_nul() {
+        let mut left = Sha256::new();
+        update_snapshot_field(&mut left, b"a\0b");
+        update_snapshot_field(&mut left, b"c");
+        let mut right = Sha256::new();
+        update_snapshot_field(&mut right, b"a");
+        update_snapshot_field(&mut right, b"b\0c");
+        assert_ne!(left.finalize(), right.finalize());
     }
 }
