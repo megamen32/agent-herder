@@ -74,17 +74,9 @@ impl NativeSessionControl for OpenCodeSessionControl {
         }
 
         let delivery = match plan.mode {
-            SendMode::Current
-                if plan
-                    .expected_turn
-                    .as_deref()
-                    .is_some_and(|id| !id.is_empty()) =>
-            {
-                "steer"
-            }
             SendMode::Current => {
                 return Err(definitely_not_sent(
-                    "OpenCode current delivery requires the observed active turn",
+                    "OpenCode current delivery is unsupported: steer has no atomic expected-turn check",
                 ));
             }
             SendMode::Queue => "queue",
@@ -355,7 +347,7 @@ mod tests {
         let target = address(instance(), SESSION_ID);
         let admission = control
             .submit(
-                plan(target.clone(), SendMode::Current, Some("turn-current")),
+                plan(target.clone(), SendMode::Queue, None),
                 "one harmless fixture input",
                 &RequestKey("native-submit-success".into()),
             )
@@ -368,11 +360,34 @@ mod tests {
         assert_eq!(posts[0].0, format!("/api/session/{SESSION_ID}/prompt"));
         assert_eq!(posts[0].1.get("id"), None);
         assert_eq!(posts[0].1["text"], "one harmless fixture input");
-        assert_eq!(posts[0].1["delivery"], "steer");
+        assert_eq!(posts[0].1["delivery"], "queue");
         assert_eq!(
             posts[0].1["metadata"]["agentHerderInputId"],
             "native-submit-success"
         );
+    }
+
+    #[tokio::test]
+    async fn current_with_observed_turn_is_rejected_before_native_submission() {
+        let fixture = Fixture::start(Duration::ZERO).await;
+        let control = control(&fixture, Duration::from_secs(2)).await;
+        let result = control
+            .submit(
+                plan(
+                    address(instance(), SESSION_ID),
+                    SendMode::Current,
+                    Some("observed-turn-before-race"),
+                ),
+                "must not steer an unverified current turn",
+                &RequestKey("native-submit-current-precondition".into()),
+            )
+            .await;
+        let posts = fixture.stop().await;
+        assert!(matches!(
+            result,
+            Err(SubmitError::DefinitelyNotSent { .. })
+        ));
+        assert!(posts.is_empty(), "Current must be refused before POST");
     }
 
     #[tokio::test]
