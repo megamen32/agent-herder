@@ -1,5 +1,6 @@
 //! Shared building blocks for the Herder daemon.
 pub mod application {
+    pub mod list;
     pub mod recent;
 }
 pub mod auth {
