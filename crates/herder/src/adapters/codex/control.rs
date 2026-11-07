@@ -20,6 +20,8 @@ use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
 
 const LOOKUP_PAGE_LIMIT: u32 = 200;
 const LOOKUP_MAX_PAGES: usize = 128;
+const LOOKUP_RETRY_LIMIT: usize = 20;
+const LOOKUP_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub enum CodexControlOpenError {
@@ -136,7 +138,9 @@ impl CodexControl {
                     "name": "agent-herder-native",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
-                "capabilities": {},
+                // Required by this app-server version to expose experimentalApi
+                // methods such as thread/items/list used for read-only receipt lookup.
+                "capabilities": {"experimentalApi": true},
             }),
             timeout,
         )?;
@@ -228,9 +232,9 @@ impl CodexControl {
         let mut seen_cursors = HashSet::new();
         let mut matched_turn: Option<String> = None;
         for _ in 0..LOOKUP_MAX_PAGES {
-            let response = state
-                .connection
-                .request(
+            let mut transient_retries = 0;
+            let response = loop {
+                let result = state.connection.request(
                     "thread/items/list",
                     json!({
                         "threadId": target.native_session_id,
@@ -239,8 +243,28 @@ impl CodexControl {
                         "sortDirection": "desc",
                     }),
                     self.timeout,
-                )
-                .map_err(RequestLookupError::Rpc)?;
+                );
+                match result {
+                    Ok(response) => break response,
+                    Err(
+                        error @ RpcError::Remote {
+                            code: Some(-32601), ..
+                        },
+                    ) if matches!(
+                        &error,
+                        RpcError::Remote { message, .. }
+                            if message == "thread/items/list is not supported yet"
+                    ) =>
+                    {
+                        if transient_retries >= LOOKUP_RETRY_LIMIT {
+                            return Err(RequestLookupError::Rpc(error));
+                        }
+                        transient_retries += 1;
+                        std::thread::sleep(LOOKUP_RETRY_DELAY);
+                    }
+                    Err(error) => return Err(RequestLookupError::Rpc(error)),
+                }
+            };
             let rows = response
                 .get("data")
                 .and_then(Value::as_array)
@@ -469,7 +493,9 @@ mod tests {
 
     #[tokio::test]
     async fn starts_only_a_controller_created_thread_and_correlates_read_only_receipt() {
-        let (control, _root) = fake_control(&fixture_server(""), Duration::from_secs(2));
+        let transient_error = "if m == 'thread/items/list' and not globals().get('_transient_error_sent'): _transient_error_sent=True; print(json.dumps({'id':r['id'],'error':{'code':-32601,'message':'thread/items/list is not supported yet'}}), flush=True); continue";
+        let (control, _root) =
+            fake_control(&fixture_server(transient_error), Duration::from_secs(2));
         let target = control.start_thread("/tmp").unwrap();
         assert_eq!(target.native_session_id, "thread-1");
 
