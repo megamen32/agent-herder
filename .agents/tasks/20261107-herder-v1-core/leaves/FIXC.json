@@ -1,0 +1,109 @@
+{
+  "id": "FIXC",
+  "label": "Сверить create контракт Codex с native schema без повторной отправки",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Archimedes",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "R1"
+  ],
+  "acceptance": "Точный schema mismatch или подтверждение соответствия, без нового native create/send; CI получает только необходимое исправление.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T23:56:48+03:00",
+  "updated_at": "2026-11-08T00:18:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T23:56:48+03:00",
+      "note": "",
+      "changes": {
+        "id": "FIXC",
+        "label": "Сверить create контракт Codex с native schema без повторной отправки",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Archimedes",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "R1"
+        ],
+        "acceptance": "Точный schema mismatch или подтверждение соответствия, без нового native create/send; CI получает только необходимое исправление.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:57:44+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:18:17+03:00",
+      "note": "",
+      "changes": {
+        "result": "Official Codex 0.167.0 schema matches reconstructed request;20offline checks. No justified serviceTier fix. Original UNKNOWN retained. evidence/codex-schema-triage/REPORT.md"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-codex-schema-20261107T2055",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T20:57:44+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "result": "Official Codex 0.167.0 schema matches reconstructed request;20offline checks. No justified serviceTier fix. Original UNKNOWN retained. evidence/codex-schema-triage/REPORT.md"
+}

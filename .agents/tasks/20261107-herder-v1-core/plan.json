@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "23:18МСК: published d66c9c07, immutable candidate + exactcandidate NEG PASS. CI подтвердил native active work, CLI lanes начинаются. Browsergateway перенумеровал pages, CI readonlyrebinding; oldpins запрещены. C13/C14/B13/N1 source фактически приняты, explicitassignment остаётся assigned из-за отсутствия external subagent receipt transition; не пересылаем задания. Исходный дедлайн00:38МСК, native5/5+installed ещё не доказаны.",
-  "updated_at": "2026-11-07T23:24:43+03:00",
+  "current_progress": "00:28МСК: published5ea28f51 candidate/package/NEG5PASS; actualChatGPTbrowser publicinit14toolsPASS, no sends. Startupfailure fixed. CI accepted next fullChatGPTslice on own exactblankscope. Other originalUNKNOWN retained/no replay; installedgateclosed. Source results ready but LHC cannotaccept externallydispatched assignments, no fabricateddone. Deadline00:38 retained.",
+  "updated_at": "2026-11-08T00:27:23+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",

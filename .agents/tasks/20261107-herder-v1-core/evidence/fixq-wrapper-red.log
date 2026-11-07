@@ -1,0 +1,185 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ↓ tests/ahap-codex-runner.test.ts > requires explicit single transport and owner HOME/cwd without inherited socket fallback
+ ↓ tests/ahap-codex-runner.test.ts > constructs the existing adapter without starting it
+ ↓ tests/ahap-codex-runner.test.ts > forwards existing-session delivery modes and native turn receipts verbatim
+ ↓ tests/ahap-codex-runner.test.ts > exposes legacy discovery/raw bytes and does not claim unavailable projects
+ ↓ tests/ahap-codex-runner.test.ts > sanitizes mutation exception with corrective context and never automatically retries
+ ↓ tests/ahap-codex-runner.test.ts > AHAP uses the real legacy Unix socket transport and its receipt journal without replay
+ ↓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=false uses the legacy socket semantics without duplicate effects
+ ↓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=true uses the legacy socket semantics without duplicate effects
+ × tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason provider_denied 29ms
+   → expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+ × tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason below_reserve 4ms
+   → expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+ × tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_snapshot_expired 4ms
+   → expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+ × tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_unknown 3ms
+   → expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+ × tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_policy_unavailable 3ms
+   → expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps ordinary error UNKNOWN without replay or raw text 3ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps duck type UNKNOWN without replay or raw text 2ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps other operation UNKNOWN without replay or raw text 1ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps other mutation UNKNOWN without replay or raw text 3ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps unrecognized reason UNKNOWN without replay or raw text 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason provider_denied
+AssertionError: expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "codex_quota_guard",
++   "correctiveAction": "Do not repeat this mutation. Read the exact session and native receipt using the original inputId; inspect owner-side adapter diagnostics.",
++   "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "createSession",
+-   "notSubmitted": true,
+-   "operation": "thread/start",
+-   "outcome": "not_submitted",
+-   "reason": "provider_denied",
++   "outcome": "unknown",
+    "retryable": false,
+  }
+
+ ❯ tests/ahap-codex-runner.test.ts:169:35
+    167|     expect(createSession).toHaveBeenCalledTimes(1);
+    168|     expect(replies[1].error.code).toBe(-32000);
+    169|     expect(replies[1].error.data).toEqual({ outcome: "not_submitted", …
+       |                                   ^
+    170|       code: "codex_quota_guard", method: "createSession", operation: "…
+    171|     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason below_reserve
+AssertionError: expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "codex_quota_guard",
++   "correctiveAction": "Do not repeat this mutation. Read the exact session and native receipt using the original inputId; inspect owner-side adapter diagnostics.",
++   "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "createSession",
+-   "notSubmitted": true,
+-   "operation": "thread/start",
+-   "outcome": "not_submitted",
+-   "reason": "below_reserve",
++   "outcome": "unknown",
+    "retryable": false,
+  }
+
+ ❯ tests/ahap-codex-runner.test.ts:169:35
+    167|     expect(createSession).toHaveBeenCalledTimes(1);
+    168|     expect(replies[1].error.code).toBe(-32000);
+    169|     expect(replies[1].error.data).toEqual({ outcome: "not_submitted", …
+       |                                   ^
+    170|       code: "codex_quota_guard", method: "createSession", operation: "…
+    171|     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_snapshot_expired
+AssertionError: expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "codex_quota_guard",
++   "correctiveAction": "Do not repeat this mutation. Read the exact session and native receipt using the original inputId; inspect owner-side adapter diagnostics.",
++   "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "createSession",
+-   "notSubmitted": true,
+-   "operation": "thread/start",
+-   "outcome": "not_submitted",
+-   "reason": "quota_snapshot_expired",
++   "outcome": "unknown",
+    "retryable": false,
+  }
+
+ ❯ tests/ahap-codex-runner.test.ts:169:35
+    167|     expect(createSession).toHaveBeenCalledTimes(1);
+    168|     expect(replies[1].error.code).toBe(-32000);
+    169|     expect(replies[1].error.data).toEqual({ outcome: "not_submitted", …
+       |                                   ^
+    170|       code: "codex_quota_guard", method: "createSession", operation: "…
+    171|     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_unknown
+AssertionError: expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "codex_quota_guard",
++   "correctiveAction": "Do not repeat this mutation. Read the exact session and native receipt using the original inputId; inspect owner-side adapter diagnostics.",
++   "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "createSession",
+-   "notSubmitted": true,
+-   "operation": "thread/start",
+-   "outcome": "not_submitted",
+-   "reason": "quota_unknown",
++   "outcome": "unknown",
+    "retryable": false,
+  }
+
+ ❯ tests/ahap-codex-runner.test.ts:169:35
+    167|     expect(createSession).toHaveBeenCalledTimes(1);
+    168|     expect(replies[1].error.code).toBe(-32000);
+    169|     expect(replies[1].error.data).toEqual({ outcome: "not_submitted", …
+       |                                   ^
+    170|       code: "codex_quota_guard", method: "createSession", operation: "…
+    171|     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_policy_unavailable
+AssertionError: expected { outcome: 'unknown', …(4) } to deeply equal { outcome: 'not_submitted', …(7) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": false,
+-   "code": "codex_quota_guard",
++   "correctiveAction": "Do not repeat this mutation. Read the exact session and native receipt using the original inputId; inspect owner-side adapter diagnostics.",
++   "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "createSession",
+-   "notSubmitted": true,
+-   "operation": "thread/start",
+-   "outcome": "not_submitted",
+-   "reason": "quota_policy_unavailable",
++   "outcome": "unknown",
+    "retryable": false,
+  }
+
+ ❯ tests/ahap-codex-runner.test.ts:169:35
+    167|     expect(createSession).toHaveBeenCalledTimes(1);
+    168|     expect(replies[1].error.code).toBe(-32000);
+    169|     expect(replies[1].error.data).toEqual({ outcome: "not_submitted", …
+       |                                   ^
+    170|       code: "codex_quota_guard", method: "createSession", operation: "…
+    171|     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 5 passed | 8 skipped (18)
+   Start at  00:12:18
+   Duration  1.69s (transform 1.17s, setup 76ms, import 1.28s, tests 60ms, environment 0ms)
+

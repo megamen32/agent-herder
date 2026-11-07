@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ↓ tests/ahap-codex-runner.test.ts > requires explicit single transport and owner HOME/cwd without inherited socket fallback
+ ↓ tests/ahap-codex-runner.test.ts > constructs the existing adapter without starting it
+ ↓ tests/ahap-codex-runner.test.ts > forwards existing-session delivery modes and native turn receipts verbatim
+ ↓ tests/ahap-codex-runner.test.ts > exposes legacy discovery/raw bytes and does not claim unavailable projects
+ ↓ tests/ahap-codex-runner.test.ts > sanitizes mutation exception with corrective context and never automatically retries
+ ↓ tests/ahap-codex-runner.test.ts > AHAP uses the real legacy Unix socket transport and its receipt journal without replay
+ ↓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=false uses the legacy socket semantics without duplicate effects
+ ↓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=true uses the legacy socket semantics without duplicate effects
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason provider_denied 13ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason below_reserve 2ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_snapshot_expired 3ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_unknown 2ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ classifies typed createSession thread/start refusal with allowlisted reason quota_policy_unavailable 2ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps ordinary error UNKNOWN without replay or raw text 3ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps duck type UNKNOWN without replay or raw text 2ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps other operation UNKNOWN without replay or raw text 1ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps other mutation UNKNOWN without replay or raw text 4ms
+ ✓ tests/ahap-codex-runner.test.ts > FIXQ keeps unrecognized reason UNKNOWN without replay or raw text 2ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed | 8 skipped (18)
+   Start at  00:12:44
+   Duration  1.31s (transform 836ms, setup 52ms, import 965ms, tests 37ms, environment 0ms)
+

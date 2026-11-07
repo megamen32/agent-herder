@@ -1,0 +1,30 @@
+warning: fields `authority`, `database`, `gate`, and `generation` are never read
+  --> tests/../src/bin/herder_native_stdio/scoped_profile.rs:63:9
+   |
+62 | pub struct OpenedOwner {
+   |            ----------- fields in this struct
+63 |     pub authority: ScopedAuthority,
+   |         ^^^^^^^^^
+64 |     pub owner: OwnerProfile,
+65 |     pub database: PathBuf,
+   |         ^^^^^^^^
+66 |     pub gate: PathBuf,
+   |         ^^^^
+67 |     pub generation: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "launcher_scoped_profile") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.85s
+     Running tests/launcher_scoped_profile.rs (crates/herder/target/debug/deps/launcher_scoped_profile-fc7dba0d39c1c78e)
+
+running 5 tests
+test trusted_owner_runner_rejects_process_injection_and_cross_family_environment ... ok
+test trusted_owner_profiles_bind_all_v1_types_to_legacy_runners ... ok
+test trusted_owner_launcher_wires_create_and_scoped_read_over_stdio ... ok
+test trusted_owner_opencode_ahap_create_start_task_and_read ... ok
+test trusted_owner_other_ahap_types_use_same_public_create_read_and_restart ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 13.04s
+

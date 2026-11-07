@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T23:17:46+03:00",
+  "updated_at": "2026-11-08T00:25:54+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -104,9 +104,39 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:05:24+03:00",
+      "note": "",
+      "changes": {
+        "result": "Latest candidate a836a7dc exactpackagedcore all5negativechecks PASS via publicstdiodriver: evidence/candidate-negative-a836a7dc.json+hashedlog, manifestf1e99e12393eb3de9d92fa05f00df63d0270d74643b18e2d774a0aa8941022c7. Prior d66receipt retained. Native/installed lanes separate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:25:54+03:00",
+      "note": "",
+      "changes": {
+        "result": "Exact candidate5ea28f51 NEG5/5PASS: wronginstance,keynoreplay,payloadconflict,UNKNOWNrestart,HumanStop. evidence/candidate-negative-5ea28f51.json; isolatedfakeAHAP notnative."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "note": "Completed task.status may legitimately carry outcome_unknown error; assert result/receipt, never confuse completed evaluation with native successful outcome.",
-  "result": "Exact packaged core d66c9c07 tested through real public stdio, all5 fixture kinds. PASS wrong instance, same key no replay, changed payload conflict, UNKNOWN after restart retry forbidden/no resend, HumanStop blocks send. Receipt evidence/candidate-negative-d66c9c07.json + hashedlog, artifact manifest2db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Isolated fakeAHAP for negative effects; five real native lanes and installed remain separate.",
+  "result": "Exact candidate5ea28f51 NEG5/5PASS: wronginstance,keynoreplay,payloadconflict,UNKNOWNrestart,HumanStop. evidence/candidate-negative-5ea28f51.json; isolatedfakeAHAP notnative.",
   "actual_minutes": 12
 }

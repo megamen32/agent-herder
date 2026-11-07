@@ -1,0 +1,114 @@
+{
+  "label": "Сохранить доказанный отказ Codex до отправки: Singer",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Singer",
+  "estimate_minutes": 10,
+  "affected_files": [
+    "crates/herder/src/adapters/ahap.rs",
+    "crates/herder/src/adapters/ahap_opencode.rs"
+  ],
+  "acceptance": "RED→GREEN exact typed thread/start quota refusal; generic errors remain UNKNOWN; no native replay",
+  "note": "Native submission accepted 01a1b7d9-fae1-78b1-b8f0-3f812fe2707a",
+  "id": "FIXQC",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T00:12:43+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-08T00:18:18+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T00:12:43+03:00",
+      "note": "",
+      "changes": {
+        "label": "Сохранить доказанный отказ Codex до отправки: Singer",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Singer",
+        "estimate_minutes": 10,
+        "affected_files": [
+          "crates/herder/src/adapters/ahap.rs",
+          "crates/herder/src/adapters/ahap_opencode.rs"
+        ],
+        "acceptance": "RED→GREEN exact typed thread/start quota refusal; generic errors remain UNKNOWN; no native replay",
+        "note": "Native submission accepted 01a1b7d9-fae1-78b1-b8f0-3f812fe2707a",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:12:43+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:18:18+03:00",
+      "note": "",
+      "changes": {
+        "result": "561951cc: exact harness+method strict frame/data classification;32AHAP checks PASS + original create UNKNOWN restart/no-replay regression1PASS. evidence/fixq-core.md"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "state": "assigned",
+    "attempt_id": "astra-v1-fixqc-20261107T2115",
+    "executor_kind": "subagent",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T21:12:43+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "native_environment"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "result": "561951cc: exact harness+method strict frame/data classification;32AHAP checks PASS + original create UNKNOWN restart/no-replay regression1PASS. evidence/fixq-core.md"
+}

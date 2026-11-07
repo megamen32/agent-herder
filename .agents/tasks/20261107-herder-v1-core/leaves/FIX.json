@@ -1,20 +1,20 @@
 {
   "label": "Исправление конкретных consumer регрессий",
-  "owner": "Astra",
+  "owner": "Ampere (thin browser wrapper); Astra integration",
   "depends_on": [
-    "R2"
+    "R1"
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "queued",
+  "status": "running",
   "acceptance": "Если sourcebytesизменены, новыйimmutablemanifest+affectedlanes/NEG re-gate. Если измененийнет сохраняетсяdigest. 5/5mandatoryPASSдоinstall.",
   "parent": "S3",
   "id": "FIX",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T22:06:07+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
   "harness": "codex",
-  "updated_at": "2026-11-07T22:43:28+03:00",
+  "updated_at": "2026-11-07T23:46:19+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:07+03:00",
@@ -70,6 +70,96 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:34:47+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "owner": "Ampere (thin browser wrapper); Astra integration",
+        "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "note": "Native browser preflight RED before anysend: freshHOME adapter.init passive doesn't populate accountscope. Explicit supplied verifier must run in init before final pinnedaccount comparison. TDD thinwrapper only, drivers CIowned. New candidate + affectedlane/NEG re-gate required.",
+        "depends_on": [
+          "R1"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:39:14+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:46:19+03:00",
+      "note": "",
+      "changes": {
+        "result": "Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required.",
+        "note": "Ready for Astra candidate rebuild/CI. Source/TDD evidence in canonical V1 evidence/FIX-browser-init-*.log and FIX-browser-zai-scope-red.log; no runtime/installed claim."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
+      "harness": "codex"
     }
-  ]
+  ],
+  "note": "Ready for Astra candidate rebuild/CI. Source/TDD evidence in canonical V1 evidence/FIX-browser-init-*.log and FIX-browser-zai-scope-red.log; no runtime/installed claim.",
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-browser-init-20261107T2034",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T20:39:14+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "result": "Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required."
 }

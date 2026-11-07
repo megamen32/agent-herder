@@ -1,0 +1,161 @@
+{
+  "id": "FIXZ",
+  "label": "Подключить штатный ZCode app-server через thin runner",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Singer/Astra",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "R1"
+  ],
+  "acceptance": "Официальный argv и существующий provider config проходят native init без modelsend; typed allowlist не пропускает processloader overrides.",
+  "affected_files": [
+    "src/ahap-zcode-runner.ts",
+    "tests/ahap-zcode-runner.test.ts",
+    "crates/herder/src/bin/herder_native_stdio/scoped_profile.rs"
+  ],
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T23:40:18+03:00",
+  "updated_at": "2026-11-07T23:59:20+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T23:40:18+03:00",
+      "note": "",
+      "changes": {
+        "id": "FIXZ",
+        "label": "Подключить штатный ZCode app-server через thin runner",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Singer/Astra",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "R1"
+        ],
+        "acceptance": "Официальный argv и существующий provider config проходят native init без modelsend; typed allowlist не пропускает processloader overrides.",
+        "affected_files": [
+          "src/ahap-zcode-runner.ts",
+          "tests/ahap-zcode-runner.test.ts",
+          "crates/herder/src/bin/herder_native_stdio/scoped_profile.rs"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:42:32+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:50:26+03:00",
+      "note": "CI evidence подтверждает protocol mismatch, argv-only rejected. Исправляю explicit AHAP_ZCODE_TRANSPORT=official-server, HOME control.sock, existing adapter без command/args; no native calls. Scope runner factory+unit tests.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:55:36+03:00",
+      "note": "Singer source GREEN: existing official route selected by AHAP_ZCODE_TRANSPORT=official-server, absolute HOME/cwd, control.sock presence, no command/args, verify nativeReadWithoutActivation to prevent fallback. New allowlist key only AHAP_ZCODE_TRANSPORT; baseline HOME, AHAP_ZCODE_CWD, AHAP_VERSION, AHAP_HARNESS. Official mode rejects AHAP_ZCODE_SERVER_NODE/ENTRY and ZCODE_SERVER_NODE; no provider env requested. Supervisor run/{control.sock,status.json,ingress-token} is CI-owned under HOME/.zcode/server. Regression RED before fix, GREEN 11/11 tests/ahap-zcode-runner.test.ts; diff check PASS. Read canonical CI zcode-v1-owner-regression.txt; no native init/send, driver unchanged, no commit. Custom binary route retained [entry], not misrepresented as official JSON app-server. Core allowlist/native-init proof remain Astra/Terra scope.",
+      "changes": {
+        "actual_minutes": 10
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:59:04+03:00",
+      "note": "Финальная scoped передача Singer: runner SHA256 f7ae209703e760cbe4d4f7f14fb750017bf73f200b0facaa9d17ee63f4791c43; test SHA256 2179e2c7eefb369554b5118fe68f1a49b857382130feec43a8737bda58c36756. Approved official route реализован только в factory; scoped diff-check PASS. Повторный final unit run выполняется; исходный run 11/11 PASS. Native supervisor/init/send остаются CI; фикстуры не расширяю, LHC lifecycle не исправляю. Source готов к candidate packaging родителем.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:59:20+03:00",
+      "note": "Final scoped unit run завершён 23:58 МСК: node node_modules/vitest/vitest.mjs run --config vitest.config.ts tests/ahap-zcode-runner.test.ts — 11/11 PASS, exit0, 2.27s. Scoped diff-check PASS. SOURCE HANDOFF READY; CI native operations не запускались.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "attempt_id": "astra-v1-zcode-init-20261107T2040",
+    "executor_kind": "subagent",
+    "state": "assigned",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-39f3-7010-8e44-afdfc2ed68cc"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T20:42:32+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "status": "running",
+  "actual_minutes": 10
+}

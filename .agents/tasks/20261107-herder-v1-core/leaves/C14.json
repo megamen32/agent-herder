@@ -14,7 +14,7 @@
   ],
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T22:57:39+03:00",
-  "updated_at": "2026-11-07T23:03:49+03:00",
+  "updated_at": "2026-11-07T23:33:04+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:57:39+03:00",
@@ -86,6 +86,21 @@
       },
       "session": "01a1b776-39f3-7010-8e44-afdfc2ed68cc",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:33:04+03:00",
+      "note": "",
+      "changes": {
+        "result": "Source accepted and published70d11532; build-v1-core.py/test-build-v1-core.py produce immutable all5kind bundle. Final candidate d66c9c07 built with this recipe and passed hashes/initialize/duplicate-refusal, plus public NEG. Packaging/install are separate. C14 development complete; LHC assigned acceptance lifecycle unresolved independently, no re-dispatch."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -127,5 +142,6 @@
   },
   "assignment_history": [],
   "status": "running",
-  "actual_minutes": 7
+  "actual_minutes": 7,
+  "result": "Source accepted and published70d11532; build-v1-core.py/test-build-v1-core.py produce immutable all5kind bundle. Final candidate d66c9c07 built with this recipe and passed hashes/initialize/duplicate-refusal, plus public NEG. Packaging/install are separate. C14 development complete; LHC assigned acceptance lifecycle unresolved independently, no re-dispatch."
 }

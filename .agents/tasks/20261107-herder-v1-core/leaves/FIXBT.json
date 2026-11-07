@@ -1,0 +1,55 @@
+{
+  "label": "Browser AHAP outer timeout accommodates30s native transport; compile+existing no-replay checks; native result separately CI",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Astra",
+  "estimate_minutes": 5,
+  "acceptance": "Browser AHAP outer timeout accommodates30s native transport; compile+existing no-replay checks; native result separately CI",
+  "id": "FIXBT",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T00:21:15+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-08T00:22:14+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T00:21:15+03:00",
+      "note": "",
+      "changes": {
+        "label": "Browser AHAP outer timeout accommodates30s native transport; compile+existing no-replay checks; native result separately CI",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Astra",
+        "estimate_minutes": 5,
+        "acceptance": "Browser AHAP outer timeout accommodates30s native transport; compile+existing no-replay checks; native result separately CI",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:22:14+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Source508500ed; browser120s outer bound, CLI20s. cargo buildPASS. CI direct originalinit22.093sERROR proves20s masking; largerbudget alone notPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "result": "Source508500ed; browser120s outer bound, CLI20s. cargo buildPASS. CI direct originalinit22.093sERROR proves20s masking; largerbudget alone notPASS."
+}

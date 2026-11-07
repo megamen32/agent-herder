@@ -1,20 +1,20 @@
 {
   "label": "Codex: прежний adapter и лжемодель через core",
-  "owner": "CI",
+  "owner": "CI: Terra",
   "depends_on": [
     "R1"
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "queued",
+  "status": "blocked",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NCODEX",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T22:06:06+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
   "harness": "codex",
-  "updated_at": "2026-11-07T22:06:13+03:00",
+  "updated_at": "2026-11-08T00:20:20+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -55,6 +55,44 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:26:36+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "owner": "CI: Terra",
+        "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NCODEX. Native result not yet ready. This is integration acceptance tracking, not a new dispatch."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:20:20+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance.",
+        "result": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NCODEX. Native result not yet ready. This is integration acceptance tracking, not a new dispatch.",
+  "blocker": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance.",
+  "result": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance."
 }

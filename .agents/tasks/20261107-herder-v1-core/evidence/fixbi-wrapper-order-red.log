@@ -1,0 +1,275 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > explicitly selects MacMiniChromeTransport and verifies the configured page and account
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed instead of selecting another page when the configured page is absent
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires an explicit transport and does not infer direct CDP from its variables
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed when Mac Mini transport lacks exact page or account scope
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects raw direct CDP only when explicitly configured and verifies its exact page
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects the existing Z.ai driver on the explicit Mac Mini transport and proves the pinned page/account
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed for Z.ai when exact page or current account proof is unavailable
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > advertises only its bounded surface and routes init and exact reads
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > reports the selected Z.ai harness, provider name and factual browser features
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires the configured account scope before any operation
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > does not return a read result if the adapter scope changes during the call
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > checks the current provider scope before consulting cached session inventory
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > preserves an ambiguous send as UNKNOWN and never retries
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > treats legacy notSubmitted send failures as UNKNOWN unless typed pre-effect proof exists
+ ↓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > rejects malformed frames without preventing later valid requests
+ ↓ tests/ahap-browser-runner.test.ts > chatgpt advertises exactly queue delivery without a steer claim
+ ↓ tests/ahap-browser-runner.test.ts > zai advertises exactly queue delivery without a steer claim
+ ↓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=true)
+ ↓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=false)
+ ↓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=true)
+ ↓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=false)
+ ↓ tests/ahap-browser-runner.test.ts > configured Z.ai verifier exposes its verified scope with an empty driver cache and fails closed on mismatch
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage adapter_init/transport_no_json without exception text 19ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/pinned_page_unavailable without exception text 5ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/account_scope_mismatch without exception text 3ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage account_match/account_scope_mismatch without exception text 2ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage adapter_init/unknown without exception text 2ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/unknown without exception text 1ms
+   → expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+ × tests/ahap-browser-runner.test.ts > FIXBI verifies before passive init that depends on the verified account 2ms
+   → expected { code: -32000, …(2) } to be undefined
+ × tests/ahap-browser-runner.test.ts > FIXBI verifier mismatch prevents passive reads and send 2ms
+   → expected { code: -32000, …(2) } to match object { data: { …(2) } }
+(6 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage adapter_init/transport_no_json without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "transport_no_json",
+-     "stage": "adapter_init",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/pinned_page_unavailable without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "pinned_page_unavailable",
+-     "stage": "verify_pinned_account",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/account_scope_mismatch without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "account_scope_mismatch",
+-     "stage": "verify_pinned_account",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage account_match/account_scope_mismatch without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "account_scope_mismatch",
+-     "stage": "account_match",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage adapter_init/unknown without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "unknown",
+-     "stage": "adapter_init",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI reports safe init stage verify_pinned_account/unknown without exception text
+AssertionError: expected { code: -32000, …(2) } to match object { code: -32000, data: { …(4) } }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "code": -32000,
+    "data": {
+      "method": "init",
+      "outcome": "read_failed",
+-     "reason": "unknown",
+-     "stage": "verify_pinned_account",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:386:30
+    384|     }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    385|       { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "f…
+    386|     expect(replies[1].error).toMatchObject({ code: -32000, data: { out…
+       |                              ^
+    387|     expect(replies[2].error).toBeDefined();
+    388|     expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI verifies before passive init that depends on the verified account
+AssertionError: expected { code: -32000, …(2) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "code": -32000,
+  "data": {
+    "correctiveAction": "Check the selected instance, owner profile and native session ID; inspect owner-side adapter diagnostics.",
+    "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "init",
+    "outcome": "read_failed",
+  },
+  "message": "Browser adapter call failed",
+}
+
+ ❯ tests/ahap-browser-runner.test.ts:404:28
+    402|     async init() { calls.push("passive-init"); if (currentScope !== sc…
+    403|   }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }]);
+    404|   expect(replies[1].error).toBeUndefined();
+       |                            ^
+    405|   expect(replies[1].result).toBeNull();
+    406|   expect(calls).toEqual(["verify", "passive-init"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > FIXBI verifier mismatch prevents passive reads and send
+AssertionError: expected { code: -32000, …(2) } to match object { data: { …(2) } }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "data": {
+-     "reason": "account_scope_mismatch",
+-     "stage": "verify_pinned_account",
++     "correctiveAction": "Check the selected instance, owner profile and native session ID; inspect owner-side adapter diagnostics.",
++     "expected": "Selected legacy adapter must return a response for the requested method",
++     "method": "init",
++     "outcome": "read_failed",
+    },
+  }
+
+ ❯ tests/ahap-browser-runner.test.ts:419:28
+    417|   }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+    418|     { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "fix…
+    419|   expect(replies[1].error).toMatchObject({ data: { stage: "verify_pinn…
+       |                            ^
+    420|   expect(reads).toBe(0);
+    421|   expect(sends).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 22 skipped (30)
+   Start at  00:20:27
+   Duration  2.08s (transform 1.64s, setup 62ms, import 1.72s, tests 39ms, environment 0ms)
+

@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T22:06:12+03:00",
+  "updated_at": "2026-11-08T00:27:23+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -55,6 +55,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:18:18+03:00",
+      "note": "",
+      "changes": {
+        "result": "CI a836: init OutcomeUnknown on page3, native0. Core20s deadline shorter than transport30s. Astra bounded timeout correction; CI exact readonly init elapsed probe requested accepted astra-v1-chatgpt-timeout-contract-20261107T2117."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:27:23+03:00",
+      "note": "",
+      "changes": {
+        "result": "5ea28f51 actual browser public core preflightPASS14tools/PREFLIGHT_READY/native_sends0. CI/evidence/chatgpt-5ea-receipt.json. Startupfixed; fullnative lane notPASS. CI accepted next full ChatGPT slice astra-v1-chatgpt-native-next-20261107T2128, exact dedicatedblank/account only."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "5ea28f51 actual browser public core preflightPASS14tools/PREFLIGHT_READY/native_sends0. CI/evidence/chatgpt-5ea-receipt.json. Startupfixed; fullnative lane notPASS. CI accepted next full ChatGPT slice astra-v1-chatgpt-native-next-20261107T2128, exact dedicatedblank/account only."
 }

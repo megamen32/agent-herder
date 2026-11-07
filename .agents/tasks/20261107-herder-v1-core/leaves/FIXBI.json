@@ -1,0 +1,104 @@
+{
+  "label": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Ampere",
+  "estimate_minutes": 10,
+  "acceptance": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
+  "id": "FIXBI",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T00:21:15+03:00",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "updated_at": "2026-11-08T00:22:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T00:21:15+03:00",
+      "note": "",
+      "changes": {
+        "label": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Ampere",
+        "estimate_minutes": 10,
+        "acceptance": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:21:15+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T00:22:27+03:00",
+      "note": "",
+      "changes": {
+        "result": "Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "state": "assigned",
+    "attempt_id": "astra-v1-fixbi-20261107T2119",
+    "executor_kind": "subagent",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1b776-3e9f-7ec1-b821-faa93a4f6935"
+    },
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-07T21:21:15+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "source": "native_environment"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": [],
+  "result": "Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS."
+}

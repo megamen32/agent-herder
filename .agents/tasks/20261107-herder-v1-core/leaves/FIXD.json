@@ -1,0 +1,70 @@
+{
+  "id": "FIXD",
+  "label": "Показывать стадию отказа AHAP initialize/init и способ исправления",
+  "kind": "task",
+  "parent": "S2",
+  "owner": "Astra",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "R1"
+  ],
+  "acceptance": "Отказ init идентифицирован отдельно от initialize; sanitized diagnostic не выводит remote secrets; native send не добавлен.",
+  "affected_files": [
+    "crates/herder/src/adapters/ahap.rs",
+    "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs"
+  ],
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-07T23:44:20+03:00",
+  "updated_at": "2026-11-07T23:55:23+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T23:44:20+03:00",
+      "note": "",
+      "changes": {
+        "id": "FIXD",
+        "label": "Показывать стадию отказа AHAP initialize/init и способ исправления",
+        "kind": "task",
+        "parent": "S2",
+        "owner": "Astra",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "R1"
+        ],
+        "acceptance": "Отказ init идентифицирован отдельно от initialize; sanitized diagnostic не выводит remote secrets; native send не добавлен.",
+        "affected_files": [
+          "crates/herder/src/adapters/ahap.rs",
+          "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs"
+        ],
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T23:55:23+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "AHAP startup error now includes harness and initialize vs init phase plus typed cause, with corrective profile/native config guidance. Remote text/stderr not exposed. RED Remote withoutstage→GREEN29AHAPtests; no mutation/retry path changed.",
+        "actual_minutes": 8
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "result": "AHAP startup error now includes harness and initialize vs init phase plus typed cause, with corrective profile/native config guidance. Remote text/stderr not exposed. RED Remote withoutstage→GREEN29AHAPtests; no mutation/retry path changed.",
+  "actual_minutes": 8
+}
