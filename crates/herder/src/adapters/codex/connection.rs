@@ -270,6 +270,9 @@ impl CodexConnection {
         params: Value,
         timeout: Duration,
     ) -> Result<Value, RpcError> {
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .unwrap_or_else(Instant::now);
         if self.child.try_wait().map_err(RpcError::Process)?.is_some() {
             return Err(RpcError::NotRunning);
         }
@@ -286,14 +289,11 @@ impl CodexConnection {
         .map_err(RpcError::Encode)?;
         request.push(b'\n');
         let stdin = self.stdin.as_mut().ok_or(RpcError::NotRunning)?;
-        stdin
-            .write_all(&request)
-            .and_then(|()| stdin.flush())
-            .map_err(|source| RpcError::Write { request_id, source })?;
-
-        let deadline = Instant::now()
-            .checked_add(timeout)
-            .unwrap_or_else(Instant::now);
+        if let Err(source) = write_before_deadline(stdin, &request, deadline) {
+            // A partial JSON record cannot safely share a stream with a later request.
+            self.stdin.take();
+            return Err(RpcError::Write { request_id, source });
+        }
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -350,6 +350,79 @@ impl CodexConnection {
     }
 }
 
+#[cfg(unix)]
+fn write_before_deadline(
+    stdin: &mut ChildStdin,
+    bytes: &[u8],
+    deadline: Instant,
+) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let fd = stdin.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let result = (|| {
+        let mut remaining_bytes = bytes;
+        while !remaining_bytes.is_empty() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Codex pipe write deadline",
+                ));
+            }
+            let millis = remaining
+                .as_millis()
+                .saturating_add(1)
+                .min(i32::MAX as u128) as i32;
+            let mut pfd = libc::pollfd {
+                fd,
+                events: libc::POLLOUT,
+                revents: 0,
+            };
+            let ready = unsafe { libc::poll(&mut pfd, 1, millis) };
+            if ready < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(error);
+            }
+            if ready == 0 {
+                continue;
+            }
+            match stdin.write(remaining_bytes) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "Codex pipe closed",
+                    ));
+                }
+                Ok(written) => remaining_bytes = &remaining_bytes[written..],
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    })();
+    let restored = unsafe { libc::fcntl(fd, libc::F_SETFL, flags) };
+    if restored < 0 && result.is_ok() {
+        return Err(io::Error::last_os_error());
+    }
+    result
+}
+
 impl Drop for CodexConnection {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
@@ -357,6 +430,47 @@ impl Drop for CodexConnection {
             let _ = self.child.wait();
         }
         self.stdin.take();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod deadline_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn stalled_pipe_obeys_request_deadline_and_is_not_reused() {
+        let root = std::env::temp_dir().join(format!("herder-stalled-pipe-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let executable = root.join("fake-codex");
+        fs::write(&executable, "#!/bin/sh\nexec sleep 2\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut connection = CodexConnection::open(CodexInstance {
+            instance_id: "test".into(),
+            executable,
+            code_home: root.clone(),
+            cwd: root.clone(),
+        })
+        .unwrap();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let first = connection.request(
+                "turn/start",
+                json!({"input": "x".repeat(1024 * 1024)}),
+                Duration::from_millis(100),
+            );
+            let second = connection.request("turn/start", json!({}), Duration::from_millis(100));
+            tx.send((first, second)).unwrap();
+        });
+        let (first, second) = rx
+            .recv_timeout(Duration::from_millis(700))
+            .expect("pipe write exceeded deadline");
+        assert!(first.is_err());
+        assert!(
+            matches!(second, Err(RpcError::NotRunning)),
+            "broken stream must not be reused: {second:?}"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }
 
