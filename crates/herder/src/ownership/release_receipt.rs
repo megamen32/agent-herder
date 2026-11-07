@@ -9,6 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +111,48 @@ pub fn admit(
     }
 }
 
+/// Spawn a child while transferring the already-held target lock into its
+/// process descriptor table. The reserved descriptor is exposed to the child
+/// as `HERDER_EXECUTION_LOCK_FD`; the lock is released by the OS at child exit.
+#[cfg(unix)]
+pub fn spawn_with_execution_lock(
+    command: &mut Command,
+    lock: TargetExecutionLock,
+) -> io::Result<Child> {
+    use std::os::unix::process::CommandExt;
+
+    const CHILD_LOCK_FD: libc::c_int = 198;
+    let source_fd = lock.raw_lock_fd();
+    command.env("HERDER_EXECUTION_LOCK_FD", CHILD_LOCK_FD.to_string());
+    // SAFETY: dup2 is async-signal-safe and the closure touches no shared Rust
+    // state; the parent keeps the source descriptor alive through spawn().
+    unsafe {
+        command.pre_exec(move || {
+            let result = if source_fd == CHILD_LOCK_FD {
+                libc::fcntl(source_fd, libc::F_SETFD, 0)
+            } else {
+                libc::dup2(source_fd, CHILD_LOCK_FD)
+            };
+            if result == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.spawn()
+}
+
+#[cfg(not(unix))]
+pub fn spawn_with_execution_lock(
+    _command: &mut Command,
+    _lock: TargetExecutionLock,
+) -> io::Result<Child> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "execution lock transfer requires Unix descriptor inheritance",
+    ))
+}
+
 fn receipt_path(dir: &Path, request_key: &str) -> PathBuf {
     dir.join(format!("{}.json", request_key.to_ascii_lowercase()))
 }
@@ -143,6 +186,7 @@ mod tests {
     use crate::ownership::manifest::{
         AuthorityRoute, ResourceMarker, StorageId, StorageMarker,
     };
+    use std::process::Stdio;
 
     #[test]
     fn admission_receipt_is_durable_idempotent_and_rejects_changed_payload() {
@@ -256,6 +300,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(serde_json::from_slice::<ReleaseReceipt>(&bytes).unwrap(), first);
+        let contender = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(lock.lock_path())
+            .unwrap();
+        let mut command = Command::new("/bin/sh");
+        command.arg("-c").arg("read line").stdin(Stdio::piped());
+        let mut child = spawn_with_execution_lock(&mut command, lock).unwrap();
+        assert!(matches!(
+            contender.try_lock(),
+            Err(std::fs::TryLockError::WouldBlock)
+        ));
+        let mut child_stdin = child.stdin.take().unwrap();
+        child_stdin.write_all(b"release\n").unwrap();
+        drop(child_stdin);
+        assert!(child.wait().unwrap().success());
+        contender.try_lock().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 }

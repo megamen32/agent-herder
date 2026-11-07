@@ -64,6 +64,12 @@ impl TargetExecutionLock {
         &self.path
     }
 
+    #[cfg(unix)]
+    pub(crate) fn raw_lock_fd(&self) -> std::os::fd::RawFd {
+        use std::os::fd::AsRawFd;
+        self._file.as_raw_fd()
+    }
+
     /// Revalidate the deployed descriptor revision and current owner while
     /// this target's execution lock is still held.
     pub fn verify_current_claim(
