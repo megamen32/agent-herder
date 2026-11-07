@@ -128,3 +128,32 @@ it("returns UNKNOWN after a post-effect HTTP error without retrying", async () =
     server.close();
   }
 });
+
+it("routes actual AHAP runner Start through v22 adapter to native payload", async () => {
+  const { PassThrough } = await import("node:stream");
+  const { serveOpenCodeAhap } = await import("../src/ahap-opencode-runner.js");
+  const state = fixtureState();
+  const { server, baseUrl } = await startFixture(state);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const chunks: string[] = [];
+  output.setEncoding("utf8");
+  output.on("data", (chunk: string) => chunks.push(chunk));
+  const adapter = new OpenCodeAdapter({ baseUrl, protocol: "v22" });
+  try {
+    const done = serveOpenCodeAhap(adapter, input, output);
+    const requests = [
+      {jsonrpc:"2.0",id:1,method:"initialize",params:{harness:"opencode",ahapVersion:"0.1"}},
+      {jsonrpc:"2.0",id:2,method:"createSession",params:{options:{name:"worker",cwd:"/tmp/work"}}},
+      {jsonrpc:"2.0",id:3,method:"sendMessage",params:{id:"ses_fresh",options:{message:"initial task",queue:false,start:true,activeTurnOnly:true,inputId:"caller-input-1"}}},
+      {jsonrpc:"2.0",id:4,method:"shutdown"},
+    ];
+    input.end(requests.map((request) => JSON.stringify(request)).join("\n") + "\n");
+    await done;
+    const replies = chunks.join("").trim().split("\n").map((line) => JSON.parse(line));
+    expect(replies[2].result).toMatchObject({ admitted:true, nativeInputMessageId:"msg_exact1", inputId:"caller-input-1" });
+    const posts = state.paths.filter((call) => call.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toEqual({method:"POST",path:"/session/ses_fresh/message",body:{parts:[{type:"text",text:"initial task"}]}});
+  } finally { server.close(); }
+});
