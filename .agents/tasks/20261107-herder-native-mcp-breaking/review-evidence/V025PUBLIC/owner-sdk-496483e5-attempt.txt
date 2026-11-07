@@ -1,0 +1,7 @@
+One-shot authorized isolated SDK/Codex consumer. No replay if outcome unknown.
+source=496483e5ebc414c93bd609d6bce57ef95116a5f1
+launcher_test_sha256=ad1a9f942ed2fbf6aff32103d047687f6d3b2d41de870ddc040e6138e2f29285
+herder_native_sha256=6cfbe4885bbf80979a728b031d911853be11bce316ab57c69de1daca812705c4
+sdk_probe_sha256=b3e4f78540558283a68a2e5ccd940d4f93eb33cf01a97dc52ef06a78ce24052a
+state=prepared
+state=unknown; task=create-operation:efe91c25ee89063a168ece5517cce3e4; session=session:abb1994536b31f3025658d23b7032c79; do_not_replay=true; receipt=owner-sdk-496483e5-run.log

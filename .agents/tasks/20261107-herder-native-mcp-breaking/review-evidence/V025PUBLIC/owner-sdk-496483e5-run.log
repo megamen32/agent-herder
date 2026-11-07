@@ -1,0 +1,21 @@
+
+running 1 test
+OWNER_PROOF_PREPARED marker=HERDER_OWNER_INPUT_1794050459019832846 no-replay=true
+{"phase":"admitted","task_id":"create-operation:efe91c25ee89063a168ece5517cce3e4"}
+Error: "terminal prompt not confirmed: {\"content\":[{\"text\":\"{\\\"create\\\":{\\\"effect\\\":\\\"confirmed\\\",\\\"session_ref\\\":\\\"session:abb1994536b31f3025658d23b7032c79\\\"},\\\"prompt\\\":{\\\"code\\\":\\\"outcome_unknown\\\",\\\"diagnostic_ref\\\":null,\\\"effect\\\":\\\"unknown\\\",\\\"expected\\\":null,\\\"field\\\":null,\\\"fix\\\":null,\\\"receipt_ref\\\":null,\\\"received\\\":null,\\\"retry\\\":\\\"forbidden\\\"}}\",\"type\":\"text\"}],\"isError\":true,\"resultType\":\"complete\",\"structuredContent\":{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:abb1994536b31f3025658d23b7032c79\"},\"prompt\":{\"code\":\"outcome_unknown\",\"diagnostic_ref\":null,\"effect\":\"unknown\",\"expected\":null,\"field\":null,\"fix\":null,\"receipt_ref\":null,\"received\":null,\"retry\":\"forbidden\"}}}"
+OWNER_PROOF_RECEIPT {"marker":"HERDER_OWNER_INPUT_1794050459019832846","phase":"prepared_no_replay"}
+{"marker":"HERDER_OWNER_INPUT_1794050459019832846","phase":"admitted","task_id":"create-operation:efe91c25ee89063a168ece5517cce3e4"}
+
+
+thread 'real_sdk_owner_stdio_create_task_and_reopened_messages' (4) panicked at tests/launcher_scoped_profile.rs:681:5:
+one-shot result failed or unknown; never resend
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test real_sdk_owner_stdio_create_task_and_reopened_messages ... FAILED
+
+failures:
+
+failures:
+    real_sdk_owner_stdio_create_task_and_reopened_messages
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.82s
+
