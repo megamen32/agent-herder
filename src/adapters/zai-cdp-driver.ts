@@ -519,10 +519,20 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       const result = parseChromeEvaluation<{ error?: string; transferId?: string; length?: number; chunkSize?: number }>(await this.tools.call("evaluate_script", { pageId: page.id, function: zaiFullConversationScript(nativeId, transferId) }));
       if (result.error || result.transferId !== transferId || !Number.isInteger(result.length) || result.length! < 2 || result.length! > 16 * 1024 * 1024 || result.chunkSize !== 65536) throw new Error("Z.ai history unavailable: " + (result.error || "unexpected response"));
       const chunks: string[] = [];
-      for (let offset = 0; offset < result.length!; offset += result.chunkSize!) {
-        const chunk = parseChromeEvaluation<{ error?: string; offset?: number; text?: string }>(await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationChunkScript(transferId, offset, result.chunkSize!) }));
-        if (chunk.error || chunk.offset !== offset || typeof chunk.text !== "string" || chunk.text.length !== Math.min(result.chunkSize!, result.length! - offset)) throw new Error("Z.ai history transfer incomplete: " + (chunk.error || "invalid chunk"));
-        chunks.push(chunk.text);
+      // Read at most four independent slices concurrently. Wait for every
+      // in-flight read before cleanup, including when one slice fails.
+      for (let first = 0; first < result.length!; first += result.chunkSize! * 4) {
+        const offsets = Array.from({ length: Math.min(4, Math.ceil((result.length! - first) / result.chunkSize!)) },
+          (_, index) => first + index * result.chunkSize!);
+        const batch = await Promise.allSettled(offsets.map(async offset => {
+          const chunk = parseChromeEvaluation<{ error?: string; offset?: number; text?: string }>(await this.tools.call("evaluate_script", { pageId: page.id, function: chatgptConversationChunkScript(transferId, offset, result.chunkSize!) }));
+          if (chunk.error || chunk.offset !== offset || typeof chunk.text !== "string" || chunk.text.length !== Math.min(result.chunkSize!, result.length! - offset)) throw new Error("Z.ai history transfer incomplete: " + (chunk.error || "invalid chunk"));
+          return chunk.text;
+        }));
+        for (const chunk of batch) {
+          if (chunk.status === "rejected") throw chunk.reason;
+          chunks.push(chunk.value);
+        }
       }
       const data = JSON.parse(chunks.join("")) as { conversation_id?: unknown; messages?: unknown };
       if (data.conversation_id !== nativeId || !data.messages || typeof data.messages !== "object" || Array.isArray(data.messages)) throw new Error("Z.ai history transfer identity mismatch");

@@ -101,3 +101,52 @@ it('pages an admitted Z.ai draft using its verified native export identity', asy
   const reader = createZaiTranscriptReader({ scope, getRawTranscript: async () => ({ complete: true, source: { kind: 'native-api', format: 'json', location: 'https://chat.z.ai/c/' + id }, bytes: Buffer.from(JSON.stringify({ conversation_id: id, messages: { a: { id: 'a', role: 'user', content: 'question' } } })) }) });
   expect((await reader({ scope, cursor: null, limit: 10 })).events[0]).toMatchObject({ eventId: 'a', text: 'question' });
 });
+
+it('transfers large Z.ai history with bounded parallel chunks in order', async () => {
+  const { createContext, runInContext } = await import('node:vm');
+  const { ZaiCdpDriver } = await import('../src/adapters/zai-cdp-driver.js');
+  const content = 'abcdefghij'.repeat(30000);
+  const message = { id: 'a', role: 'user', content };
+  const fetch = async (_url: string, init?: { body?: string }) => ({ ok: true, json: async () => init?.body
+    ? { chat_id: id, data: { a: message } } : { id, chat: { history: { messages: { a: {} } } } } });
+  const context = createContext({ location: { origin: 'https://chat.z.ai' }, fetch, JSON, Object, Array, Date, encodeURIComponent });
+  let running = 0, peak = 0;
+  const tools: any = { call: async (name: string, args: any) => {
+    if (name === 'list_pages') return '1: Z.ai (https://chat.z.ai/)';
+    const chunk = String(args.function).includes('entry.text.slice');
+    if (chunk) { running++; peak = Math.max(peak, running); await new Promise(resolve => setTimeout(resolve, 5)); }
+    try { return '```json\n' + JSON.stringify(await runInContext('(' + args.function + ')()', context)) + '\n```'; }
+    finally { if (chunk) running--; }
+  } };
+  const data: any = await new ZaiCdpDriver(tools).getRawConversation('route:' + id);
+  expect(data.messages.a.content).toBe(content);
+  expect(peak).toBeGreaterThan(1);
+  expect(peak).toBeLessThanOrEqual(4);
+  expect(runInContext('Object.keys(globalThis.__herderFullConversationTransfers).length', context)).toBe(0);
+});
+
+it('waits for in-flight chunks before cleaning up a failed transfer', async () => {
+  const { createContext, runInContext } = await import('node:vm');
+  const { ZaiCdpDriver } = await import('../src/adapters/zai-cdp-driver.js');
+  const message = { id: 'a', role: 'user', content: 'x'.repeat(220000) };
+  const fetch = async (_url: string, init?: { body?: string }) => ({ ok: true, json: async () => init?.body
+    ? { chat_id: id, data: { a: message } } : { id, chat: { history: { messages: { a: {} } } } } });
+  const context = createContext({ location: { origin: 'https://chat.z.ai' }, fetch, JSON, Object, Array, Date, encodeURIComponent });
+  let active = 0, cleanedWhileActive = false, chunks = 0;
+  const tools: any = { call: async (name: string, args: any) => {
+    if (name === 'list_pages') return '1: Z.ai (https://chat.z.ai/)';
+    const fn = String(args.function);
+    if (fn.includes('delete globalThis.__herderFullConversationTransfers')) cleanedWhileActive ||= active > 0;
+    if (fn.includes('entry.text.slice')) {
+      const index = chunks++; active++;
+      try { await new Promise(resolve => setTimeout(resolve, index === 0 ? 1 : 15));
+        if (index === 0) return '```json\n' + JSON.stringify({ error: 'broken_chunk' }) + '\n```';
+        return '```json\n' + JSON.stringify(await runInContext('(' + fn + ')()', context)) + '\n```';
+      } finally { active--; }
+    }
+    return '```json\n' + JSON.stringify(await runInContext('(' + fn + ')()', context)) + '\n```';
+  } };
+  await expect(new ZaiCdpDriver(tools).getRawConversation('route:' + id)).rejects.toThrow(/incomplete/);
+  expect(cleanedWhileActive).toBe(false);
+  expect(active).toBe(0);
+});
