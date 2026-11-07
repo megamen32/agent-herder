@@ -80,4 +80,94 @@ class CandidateReleaseGateTest(unittest.TestCase):
                 validate_cli_candidate(data, 'a' * 40, rc)
 
 
+class V1ReportTest(unittest.TestCase):
+    harnesses = ('chatgpt', 'zai', 'opencode', 'codex', 'zcode')
+    checks = ('create', 'second_deliver_same_session', 'read_both', 'export_native_complete',
+              'search_with_coverage', 'projects_with_provenance', 'reopen_without_resend')
+
+    negative_checks = ('wrong_instance_or_principal', 'same_key_no_replay',
+                       'same_key_payload_conflict', 'unknown_after_restart_no_replay',
+                       'human_stop_before_send')
+
+    def setUp(self):
+        self.identity = {'run_id': 'run-42', 'source_sha': 'a' * 40,
+                         'artifact_sha256': 'b' * 64, 'stage': 'candidate'}
+        self.report = dict(self.identity, lanes={h: {'checks': {c: 'PASS' for c in self.checks}}
+                                                for h in self.harnesses},
+                           negative_checks={c: 'PASS' for c in self.negative_checks})
+
+    def test_all_lanes_pass_only_for_exact_requested_stage(self):
+        result = candidate_release_gate.validate_v1_report(self.report, self.identity)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['stage'], 'candidate')
+        installed = dict(self.identity, stage='installed')
+        self.report['stage'] = 'installed'
+        self.assertEqual(candidate_release_gate.validate_v1_report(self.report, installed)['stage'], 'installed')
+
+    def test_missing_lane_check_and_nonpass_states_refuse(self):
+        for failure in ('missing_lane', 'missing_check', 'UNSUPPORTED', 'UNKNOWN', 'BLOCKED', 'FAIL', 'other'):
+            import copy
+            report = copy.deepcopy(self.report)
+            if failure == 'missing_lane': del report['lanes']['zai']
+            elif failure == 'missing_check': del report['lanes']['chatgpt']['checks']['create']
+            else: report['lanes']['opencode']['checks']['create'] = failure
+            with self.subTest(failure=failure), self.assertRaises(ValueError):
+                candidate_release_gate.validate_v1_report(report, self.identity)
+
+    def test_common_negative_checks_are_mandatory_and_must_pass(self):
+        import copy
+        variants = [None, {}, {**self.report['negative_checks'], 'human_stop_before_send': 'UNKNOWN'}]
+        for variant in variants:
+            report = copy.deepcopy(self.report)
+            if variant is None:
+                del report['negative_checks']
+            else:
+                report['negative_checks'] = variant
+            with self.subTest(variant=variant), self.assertRaises(ValueError):
+                candidate_release_gate.validate_v1_report(report, self.identity)
+        for check in self.negative_checks:
+            report = copy.deepcopy(self.report)
+            del report['negative_checks'][check]
+            with self.subTest(missing=check), self.assertRaises(ValueError):
+                candidate_release_gate.validate_v1_report(report, self.identity)
+
+    def test_wrong_identity_stale_run_and_stage_refused_without_echo(self):
+        for field, wrong in [('run_id', 'old-run-secret'), ('source_sha', 'c' * 40),
+                             ('artifact_sha256', 'd' * 64), ('stage', 'installed')]:
+            with self.subTest(field=field), self.assertRaises(ValueError) as context:
+                candidate_release_gate.validate_v1_report(dict(self.report, **{field: wrong}), self.identity)
+            self.assertNotIn(wrong, str(context.exception))
+
+    def test_invalid_identity_is_not_equal_by_accident(self):
+        for field in ('run_id', 'source_sha', 'artifact_sha256', 'stage'):
+            identity = dict(self.identity); identity[field] = ''
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                candidate_release_gate.validate_v1_report(dict(self.report, **identity), identity)
+
+    def test_cli_v1_is_read_only_and_reports_bounded_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / 'report.json'; expected = Path(tmp) / 'expected.json'
+            report.write_text(json.dumps(self.report)); expected.write_text(json.dumps(self.identity))
+            with patch.object(sys, 'argv', ['gate', '--validate-v1', str(report), str(expected)]), \
+                    patch.object(candidate_release_gate.subprocess, 'run', side_effect=AssertionError('launched')):
+                self.assertEqual(candidate_release_gate.main(), 0)
+                self.report['lanes']['zcode']['checks']['create'] = 'UNKNOWN'
+                report.write_text(json.dumps(self.report))
+                self.assertNotEqual(candidate_release_gate.main(), 0)
+                self.report['lanes']['zcode']['checks']['create'] = 'secret-provider-output'
+                report.write_text(json.dumps(self.report))
+                with patch('sys.stderr') as stderr:
+                    self.assertNotEqual(candidate_release_gate.main(), 0)
+                    self.assertNotIn('secret-provider-output', str(stderr.write.call_args_list))
+
+    def test_cli_rejects_malformed_or_duplicate_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / 'report.json'; expected = Path(tmp) / 'expected.json'
+            expected.write_text(json.dumps(self.identity))
+            for content in ('{', '{"stage":"candidate","stage":"installed"}'):
+                report.write_text(content)
+                with patch.object(sys, 'argv', ['gate', '--validate-v1', str(report), str(expected)]):
+                    self.assertNotEqual(candidate_release_gate.main(), 0)
+
+
 if __name__ == '__main__': unittest.main()

@@ -2,6 +2,7 @@
 """Run the isolated native CLI candidate stage, never attest a release."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -73,7 +74,96 @@ def validate_cli_candidate(report, sha, returncode):
     return {'cli_candidate': 'PASS', 'release': 'INCOMPLETE', 'report': report}
 
 
+V1_HARNESSES = ('chatgpt', 'zai', 'opencode', 'codex', 'zcode')
+V1_CHECKS = ('create', 'second_deliver_same_session', 'read_both', 'export_native_complete',
+             'search_with_coverage', 'projects_with_provenance', 'reopen_without_resend')
+V1_NEGATIVE_CHECKS = ('wrong_instance_or_principal', 'same_key_no_replay',
+                      'same_key_payload_conflict', 'unknown_after_restart_no_replay',
+                      'human_stop_before_send')
+V1_STATUSES = frozenset(('PASS', 'FAIL', 'BLOCKED', 'UNSUPPORTED', 'UNKNOWN'))
+
+
+def validate_v1_report(report, expected):
+    """Validate a stage report against caller-supplied run and artifact identities.
+
+    Each lane is {"checks": {check_name: status}}. Only exact PASS for every
+    required check permits the named stage; this never upgrades candidate to installed.
+    """
+    if not isinstance(expected, dict) or not isinstance(report, dict):
+        raise ValueError('V1 report and expected identity must be objects')
+    run_id = expected.get('run_id')
+    if (not isinstance(run_id, str) or not 1 <= len(run_id) <= 128
+            or any(ord(char) < 32 for char in run_id)):
+        raise ValueError('V1 expected run_id invalid')
+    for key, pattern in (('source_sha', r'(?:[0-9a-f]{40}|[0-9a-f]{64})'),
+                         ('artifact_sha256', r'[0-9a-f]{64}')):
+        value = expected.get(key)
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            raise ValueError(f'V1 expected {key} invalid')
+    if expected.get('stage') not in ('candidate', 'installed'):
+        raise ValueError('V1 expected stage invalid')
+    for key in ('run_id', 'source_sha', 'artifact_sha256', 'stage'):
+        if report.get(key) != expected[key]:
+            raise ValueError(f'V1 {key} mismatch')
+    lanes = report.get('lanes')
+    if not isinstance(lanes, dict):
+        raise ValueError('V1 lanes missing or invalid')
+    for harness in V1_HARNESSES:
+        lane = lanes.get(harness)
+        checks = lane.get('checks') if isinstance(lane, dict) else None
+        if not isinstance(checks, dict):
+            raise ValueError(f'V1 {harness} checks missing or invalid')
+        for check in V1_CHECKS:
+            state = checks.get(check)
+            if not isinstance(state, str) or state not in V1_STATUSES:
+                raise ValueError(f'V1 {harness}.{check} missing or invalid')
+            if state != 'PASS':
+                raise ValueError(f'V1 {harness}.{check} is {state}')
+    negative = report.get('negative_checks')
+    if not isinstance(negative, dict):
+        raise ValueError('V1 negative_checks missing or invalid')
+    for check in V1_NEGATIVE_CHECKS:
+        state = negative.get(check)
+        if not isinstance(state, str) or state not in V1_STATUSES:
+            raise ValueError(f'V1 negative_checks.{check} missing or invalid')
+        if state != 'PASS':
+            raise ValueError(f'V1 negative_checks.{check} is {state}')
+    return {'status': 'PASS', 'stage': expected['stage']}
+
+
+def _v1_json(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key')
+            result[key] = value
+        return result
+    try:
+        with open(path, 'rb') as stream:
+            data = stream.read(1024 * 1024 + 1)
+        if len(data) > 1024 * 1024:
+            raise ValueError('too large')
+        return json.loads(data, object_pairs_hook=unique)
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        raise ValueError('V1 input is unreadable or invalid JSON') from None
+
+
+def _validate_v1_cli(args):
+    try:
+        if len(args) != 2:
+            raise ValueError('V1 requires report and expected identity files')
+        result = validate_v1_report(_v1_json(args[0]), _v1_json(args[1]))
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == '--validate-v1':
+        return _validate_v1_cli(sys.argv[2:])
     if len(sys.argv) != 6:
         raise ValueError('expected release, SHA, Codex binary, OpenCode binary and receipt')
     release, sha, codex, opencode, receipt = sys.argv[1:]
