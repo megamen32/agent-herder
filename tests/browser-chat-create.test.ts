@@ -104,6 +104,7 @@ class NewChatPageFixture implements ChromePageTools {
   ambiguousClick=false;
   nativeRoute=true;
   rejection:string|undefined;
+  chatgptEditorLabel="Спросить ChatGPT";
   constructor(readonly site:"chatgpt"|"zai",readonly timeoutOnOpen=false) {}
   get origin(){return this.site==="chatgpt"?"https://chatgpt.com":"https://chat.z.ai"}
   get remoteRoute(){return "/c/"+(this.site==="chatgpt"?GPT_NATIVE:ZAI_NATIVE)}
@@ -141,7 +142,7 @@ class NewChatPageFixture implements ChromePageTools {
     }
     if(name==="take_snapshot"){
       return this.site==="chatgpt"
-        ? 'uid=1_42 textbox "Спросить ChatGPT" focusable multiline'
+        ? `uid=1_42 textbox "${this.chatgptEditorLabel}" focusable multiline`
         : 'uid=1_44 textbox "Send a Message" focusable multiline';
     }
     if(name==="fill")return "ok";
@@ -150,6 +151,12 @@ class NewChatPageFixture implements ChromePageTools {
   }
 }
 describe("browser first-message admission",()=>{
+  it("recognizes the current Russian ChatGPT new-chat editor",async()=>{
+    const tools=new NewChatPageFixture("chatgpt");
+    tools.chatgptEditorLabel="Работайте с ChatGPT";
+    const receipt=await submitFirstChatMessage(tools,"chatgpt","User-written prompt");
+    expect(receipt).toMatchObject({clicked:true,uncertain:false,remoteId:GPT_NATIVE});
+  });
   for(const site of ["chatgpt","zai"] as const){
     it(site+" creates a background chat with verified provider ID only after user's text",async()=>{
       const tools=new NewChatPageFixture(site,true);

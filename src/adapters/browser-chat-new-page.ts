@@ -167,7 +167,7 @@ export async function submitFirstChatMessage(
     }
   }
   const editorLabel=site==="chatgpt"
-    ? /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i
+    ? /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Работайте с ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i
     : /uid=([\w-]+) textbox "Send a Message"/i;
   try {
     const a11y=await tools.call("take_snapshot",{pageId});
