@@ -1,0 +1,8 @@
+{
+  "source": "src/resume-after.ts",
+  "test": "40 unrelated nonterminal events before registration",
+  "nativeProbesAfterEnqueue": 43,
+  "registrationElapsedMs": 909,
+  "waitState": "waiting",
+  "liveEffects": 0
+}
