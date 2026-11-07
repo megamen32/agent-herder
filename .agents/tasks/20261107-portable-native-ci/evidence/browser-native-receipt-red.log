@@ -1,0 +1,65 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder
+
+ ❯ tests/browser-chat-adapter.test.ts (5 tests | 4 failed) 33ms
+     × returns the new native user ID, never an older identical prompt 14ms
+     × keeps missing, ambiguous or failed post-send evidence unknown 4ms
+     × keeps missing, ambiguous or failed post-send evidence unknown 3ms
+     × keeps missing, ambiguous or failed post-send evidence unknown 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-chat-adapter.test.ts > browser native admission correlation > returns the new native user ID, never an older identical prompt
+AssertionError: expected { ok: true } to match object { ok: true, admitted: true, …(2) }
+
+- Expected
++ Received
+
+  {
+-   "admitted": true,
+-   "inputId": "request-1",
+-   "nativeInputMessageId": "new",
+    "ok": true,
+  }
+
+ ❯ tests/browser-chat-adapter.test.ts:34:8
+     32|     const f = fixture([row("old")], [row("old"), row("new")]);
+     33|     expect(await f.adapter.sendMessage("c1", { message: "hello", input…
+     34|       .toMatchObject({ ok: true, admitted: true, nativeInputMessageId:…
+       |        ^
+     35|     expect(f.sent()).toBe(1);
+     36|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/browser-chat-adapter.test.ts > browser native admission correlation > keeps missing, ambiguous or failed post-send evidence unknown
+ FAIL  tests/browser-chat-adapter.test.ts > browser native admission correlation > keeps missing, ambiguous or failed post-send evidence unknown
+ FAIL  tests/browser-chat-adapter.test.ts > browser native admission correlation > keeps missing, ambiguous or failed post-send evidence unknown
+AssertionError: expected { ok: true } to match object { ok: false, …(2) }
+
+- Expected
++ Received
+
+  {
+-   "admissionUnknown": true,
+-   "nonRetryable": true,
+-   "ok": false,
++   "ok": true,
+  }
+
+ ❯ tests/browser-chat-adapter.test.ts:41:22
+     39|       const f = fixture([row("old")], after);
+     40|       const result = await f.adapter.sendMessage("c1", { message: "hel…
+     41|       expect(result).toMatchObject({ ok: false, admissionUnknown: true…
+       |                      ^
+     42|       expect(result.notSubmitted).not.toBe(true);
+     43|       expect(f.sent()).toBe(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  02:14:04
+   Duration  800ms (transform 446ms, setup 202ms, import 328ms, tests 33ms, environment 0ms)
+

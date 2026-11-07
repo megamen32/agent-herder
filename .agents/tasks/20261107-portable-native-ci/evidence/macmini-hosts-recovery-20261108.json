@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-11-07T21:59:48Z",
+  "host": "mac-mini-2012.lan",
+  "uid": 501,
+  "before_sha256": "3f8e2c16f3193b61da4714a55da69ba1f1ccc7bd830d8a64d10acb8f74da502a",
+  "after_sha256": "fc98eb3bc7a6aeb3ccd843f6309195a06202f2b90f8bf3479b25444cc135cdf9",
+  "backup": "/etc/hosts.herder-ci-20261107T215948Z.bak",
+  "change": "Removed only exact 185.240.120.152 chatgpt.com; neighboring pins preserved",
+  "cas_verified": true,
+  "dns_cache_flushed": true,
+  "system_resolver_after": "203.0.113.1",
+  "browser_acceptance": "PENDING",
+  "model_sends": 0,
+  "reload": "confirmed 8.12s",
+  "account_scope": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1",
+  "composer_ready": true,
+  "profile_loading": false,
+  "chrome_restart": false,
+  "gateway_restart": false,
+  "restored_ci_draft": "Для технической проверки ответь ровно: HERDER_CHATGPT_CI_OK",
+  "original_draft_page": 8
+}

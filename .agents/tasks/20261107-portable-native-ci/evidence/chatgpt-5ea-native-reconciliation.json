@@ -1,0 +1,84 @@
+{
+  "task": {
+    "resultType": "complete",
+    "taskId": "create-operation:27b40bf8617313095e843bf0fdeeedaa",
+    "status": "completed",
+    "createdAt": "2026-11-07T22:05:42Z",
+    "lastUpdatedAt": "2026-11-07T22:05:42Z",
+    "ttlMs": null,
+    "result": {
+      "content": [
+        {
+          "text": "{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:183290eb6166e0ef754d3e89d9e523fa\"},\"prompt\":{\"code\":\"outcome_unknown\",\"diagnostic_ref\":null,\"effect\":\"unknown\",\"expected\":null,\"field\":null,\"fix\":null,\"receipt_ref\":null,\"received\":null,\"retry\":\"forbidden\"}}",
+          "type": "text"
+        }
+      ],
+      "isError": true,
+      "resultType": "complete",
+      "structuredContent": {
+        "create": {
+          "effect": "confirmed",
+          "session_ref": "session:183290eb6166e0ef754d3e89d9e523fa"
+        },
+        "prompt": {
+          "code": "outcome_unknown",
+          "diagnostic_ref": null,
+          "effect": "unknown",
+          "expected": null,
+          "field": null,
+          "fix": null,
+          "receipt_ref": null,
+          "received": null,
+          "retry": "forbidden"
+        }
+      }
+    }
+  },
+  "messages": {
+    "resultType": "complete",
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"page\":{\"complete\":false,\"limitations\":[\"\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041f\u0440\u0435\u0436\u043d\u0438\u0439 API \u043d\u0435 \u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u043a\u0443\u0440\u0441\u043e\u0440 \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u043e\u043b\u043d\u043e\u0442\u044b \u0438\u0441\u0442\u043e\u0440\u0438\u0438.\"],\"messages\":[{\"id\":\"86df93a2-4fcc-4faa-8cfc-e60b30d1df03\",\"parts\":[{\"text\":\"Reply with exactly this token and nothing else: HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"Reply with exactly this token and nothing else: HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317\",\"timestamp\":\"2026-11-07T22:05:34.979Z\"},{\"id\":\"6a232e64-c717-4d22-9ac4-2bba3d1c0e18\",\"model\":\"gpt-6-thinking\",\"parts\":[{\"text\":\"HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317\",\"type\":\"text\"}],\"role\":\"assistant\",\"text\":\"HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317\",\"timestamp\":\"2026-11-07T22:05:37.233Z\"}],\"next_cursor\":null},\"session_ref\":\"session:183290eb6166e0ef754d3e89d9e523fa\"}"
+      }
+    ],
+    "structuredContent": {
+      "page": {
+        "complete": false,
+        "limitations": [
+          "\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041f\u0440\u0435\u0436\u043d\u0438\u0439 API \u043d\u0435 \u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u043a\u0443\u0440\u0441\u043e\u0440 \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u043e\u043b\u043d\u043e\u0442\u044b \u0438\u0441\u0442\u043e\u0440\u0438\u0438."
+        ],
+        "messages": [
+          {
+            "id": "86df93a2-4fcc-4faa-8cfc-e60b30d1df03",
+            "parts": [
+              {
+                "text": "Reply with exactly this token and nothing else: HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "Reply with exactly this token and nothing else: HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317",
+            "timestamp": "2026-11-07T22:05:34.979Z"
+          },
+          {
+            "id": "6a232e64-c717-4d22-9ac4-2bba3d1c0e18",
+            "model": "gpt-6-thinking",
+            "parts": [
+              {
+                "text": "HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317",
+                "type": "text"
+              }
+            ],
+            "role": "assistant",
+            "text": "HERDER_V1_CHATGPT_bc850c3989654d83bb8a91a2fe13a317",
+            "timestamp": "2026-11-07T22:05:37.233Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "session_ref": "session:183290eb6166e0ef754d3e89d9e523fa"
+    },
+    "isError": false
+  }
+}

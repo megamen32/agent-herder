@@ -1,0 +1,19 @@
+{
+  "original_run": "ci-chatgpt-native-5ea-0110",
+  "original_task_status": "UNKNOWN preserved",
+  "first_prompt_reconciled": true,
+  "native_user_id": "86df93a2-4fcc-4faa-8cfc-e60b30d1df03",
+  "native_assistant_id": "6a232e64-c717-4d22-9ac4-2bba3d1c0e18",
+  "readonly_native_export": {
+    "complete": true,
+    "bytes": 4729,
+    "sha256": "a3cea07149943bc20dbefe55616cab42dab4fca95e8324f6b637136e74aa8210"
+  },
+  "search_coverage": "complete",
+  "projects_source": "authorized_native_session",
+  "second_send": "NOT_ATTEMPTED",
+  "full_lane": "INCOMPLETE",
+  "installed": "NOT_RUN",
+  "source_fix": "2e446c4cb79c9ad9cc71da5b8b3f19c5fd3bb2e3",
+  "tests": "RED4 -> GREEN80; tsc exit0"
+}

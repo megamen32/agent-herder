@@ -1,35 +1,31 @@
 Граф задач: Переносимый CI реальных приложений
-Ревизия плана: d713f5802cb1
+Ревизия плана: 6c7b6e1b4451
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
 Цель: До 08.11.2026 00:38 МСК довести CI и прежние адаптеры Herder V1: ChatGPT/Z.ai первыми, затем OpenCode, Codex, ZCode. Ядро и тонкое подключение у продуктовой стороны; без новых адаптеров/test-only API.
 Бизнес-результат: Одна команда CI, конфигурация вместо привязки к машине, реальные CLI с лжемоделью и browser lanes; неполное обновление не принимается.
 Как проверим: Одна команда на двух настроенных runners без правок scenario source. Реальные приложения и обычный MCP consumer. Положительный путь и внесённый сбой проверяют CI; обязательный missing/unsupported/UNKNOWN не даёт release PASS. Installed использует тот же consumer с точной runtime identity.
-Декомпозиция: 12 листьев · 3 параллельно · 5 волн · слотов: 3
-Прогресс (по листьям графа): 4/12 готово (33.3%) · в работе 0 · заблокировано 7 · ждёт листа 1 · ждёт исполнителя 0 · осталось 8
+Декомпозиция: 13 листьев · 3 параллельно · 5 волн · слотов: 3
+Прогресс (по листьям графа): 5/13 готово (38.5%) · в работе 1 · заблокировано 6 · ждёт листа 1 · ждёт исполнителя 0 · осталось 8
 Кандидаты по зависимостям и вместимости: нет
 Подтверждённый допуск к запуску: нет
-Смета плана: $1.45 (provisional) за 12 из 12 листьев
-frontier $1.45 (provisional) — 100.0% всех долларов плана
+Смета плана: $1.77 (provisional) за 13 из 13 листьев
+frontier $1.77 (provisional) — 100.0% всех долларов плана
 остатку к запуску $1.06 (provisional)
 бюджет не задан
-снимок b3044531c367 от 2026-11-07T18:27:29Z · возраст 3 ч 20 мин · скорость токенов: frontier provisional
-Листьев в графе: 12 · слотов: 3 · волн: 5
-Параллельность: сейчас 0 из 3 слотов, пик по плану 3
-Исполнители: занято 0 из 3 слотов · ждёт листа: 1 (MOVE) · ждёт исполнителя: 0 · готово к запуску: 0
-Прогноз: известная активная часть 1 ч (от 1 ч), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-08T00:46+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
+снимок b3044531c367 от 2026-11-07T18:27:29Z · возраст 4 ч 51 мин · скорость токенов: frontier provisional
+Листьев в графе: 13 · слотов: 3 · волн: 5
+Параллельность: сейчас 1 из 3 слотов, пик по плану 3
+Исполнители: занято 1 из 3 слотов · ждёт листа: 1 (MOVE) · ждёт исполнителя: 0 · готово к запуску: 0
+Прогноз: известная активная часть 1 ч (от 1 ч), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-08T02:18+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
 Критический путь: Задать runner через config/manifest, проверить capabilities → Выпустить единый отчёт и отказ неполного gate → Подключить опубликованный OpenCode AHAP consumer → Доказать перенос на второй runner конфигурацией → Выпустить post-install gate через тот же consumer
 Блокеры:
-  - Почему ждём: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
-    Кто делает: Astra
-    Следующий шаг: No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.
-    Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
   - Почему ждём: Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry
     Кто делает: Astra
     Следующий шаг: Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
-  - Почему ждём: Original create UNKNOWN; missing historical error stage, retry forbidden
+  - Почему ждём: Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.
     Кто делает: Terra
-    Следующий шаг: Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.
+    Следующий шаг: Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
   - Почему ждём: Original native effect confirmed, retained authority unavailable; no replay
     Кто делает: roomhacker
@@ -39,7 +35,7 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
     Кто делает: Terra research + Astra integration
     Следующий шаг: Native candidate became ready; Terra reassigned to CODEX by owner priority. Preserve TRIGGER.md result if ready; Astra integrates after live lanes. REPORT76ec55f3 published.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
-  - Почему ждём: Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven
+  - Почему ждём: Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.
     Кто делает: Terra
     Следующий шаг: Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
@@ -47,32 +43,16 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
     Кто делает: Astra
     Следующий шаг: Финальная сложная интеграция и release acceptance лично Lead. Worker результаты принимаются по реальному consumer; новые UNKNOWN sends не повторять.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
-Листья плана (12):
+Листья плана (13):
   - BUILD · ✅ Готово · (Исправить B83: сборка сохраняет current и активный релиз) · оценка 15 мин · усилие 2 мин по часам · по часам 2 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.
       Приёмка: RED→GREEN для нового SHA, отсутствующего current и rebuild активного SHA; scoped main publication. Только builder и его regression.
       Результат: 23df966f887159327619d224f87d2ffb6b3f4c5a опубликован в main, exact2files. RED: 3 новых regression failures (current switched, empty catalog auto-installed, active SHA moved). GREEN: все5 tests за0.009s; py_compile и diff-check. assemble теперь не меняет current; rebuild активного release отвергается до перемещения; main проверяет snapshot. Проверка реального assemble во временном каталоге, без live mutation. Runtime не перезапускался: это release tooling, не installed/five-adapter PASS.
-  - CHATGPT · ⛔ Заблокировано · (Подключить ChatGPT на разрешённом browser runner) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
+  - CHATGPT · ✅ Готово · (Восстановить ChatGPT browser scope и native receipt adapter) · оценка 15 мин · усилие 4 ч 17 мин по часам · по часам 4 ч 17 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.
       Приёмка: Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.
       Затрагиваемые файлы: `src/adapters/chatgpt-passive-history.ts`, `src/adapters/chatgpt-background-budget.ts`, `tests/chatgpt-passive-backoff-burst.test.ts`, `tests/chatgpt-background-budget.test.ts`
-      Результат: Before exactpage8 origin/path=/ emptydraft+mapping verified. One navigate_page reload submitted, no repetition; job0d5ee93cdb74ba2f270a77b2bf2a79dd exit1. After evaluate_script job843128ae615398073b044dd03cd03586 exit1, no DOM/auth result. Reload effect unconfirmed; cannot claim ready or execute fullcase. Nativecreate/send0,newpage0,oldUNKNOWN untouched. evidence/chatgpt-page8-single-reload-20261108.json. Next readablegateway/browser then reconcile samepage; reload budget exhausted.
-      Сохранённый статус: blocked
-      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T00:46:53+03:00
-      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Прежняя привязка leaf.session: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26
-      Плановая модель: gpt-6-astra
-      Наблюдаемая модель: неизвестно
-      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
-      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
-      Наблюдаемый turn: неизвестно; worktree=неизвестно
-      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; записан блокер (external_blocked)
-      Незавершённые зависимости: нет
-      Причина ожидания / доставки: leaf: Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped
+      Результат: MacMini exact hosts backup/CAS recovery; ownpage8/account/claim current. First ordinary prompt+assistant and native export confirmed. Adapter source2e446c4c published RED4→80GREEN+tsc. Full7checks explicitly remain in CHATGPTCASE; no installedPASS.
   - CONFIG · ✅ Готово · (Задать runner через config/manifest, проверить capabilities) · оценка 15 мин · усилие 17 мин по часам · по часам 17 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.
       Приёмка: Пути CLI/Node/bootstrap, transport, OS/arch — входы; missing capability до mutation; никаких machine constants в сценарии.
@@ -102,18 +82,37 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: leaf: Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry
+  - CHATGPTCASE · 🔄 В работе · (Доказать семь ChatGPT checks на исправленном candidate) · оценка 15 мин · усилие не измерено · прошло 0 мин на момент сборки · волна 2 · зависит: CHATGPT · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Продолжить retained ordinaryconsumer ci-chatgpt-native-5ea-0110 после readonly reconciliation. Первый prompt не повторять. Fresh packaged adapter2e446c4c; exactpage8/account/QAclaim. Independent read-only export/search/projects/reopen proofs continue now.
+      Приёмка: Create and initialreply, separate deliver same session, read both, full nativeexport, search coverage, projects provenance, reopen without resend. Same publiccore consumer, exact immutable candidate provenance; originalUNKNOWN receipt preserved, no lowering releasegate.
+      Сохранённый статус: running
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T02:18:03+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26
+      Плановая модель: gpt-6-astra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
   - REPORT · ✅ Готово · (Выпустить единый отчёт и отказ неполного gate) · оценка 15 мин · усилие 18 мин по часам · по часам 18 мин · волна 2 · зависит: CONFIG · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.
       Приёмка: PASS/FAIL/BLOCKED/UNSUPPORTED/UNKNOWN по каждой обязательной функции, source/runtime identity; stale receipt и candidate-as-installed отвергаются. Публикация S1.
       Затрагиваемые файлы: `tests/native/candidate_release_gate.py`, `tests/native/test_candidate_release_gate.py`
       Результат: Published76ec55f305b01309d273cb55d3b234b0714f3694. 12focused tests. Existing candidate_release_gate --validate-v1 report expectedidentity enforces5harnesses×7checks+5negativechecks and exact run/source/artifact/stage. This validates reports, not native evidence by itself.
-  - CODEX · ⛔ Заблокировано · (Подключить реальный Codex и локальный model fixture) · оценка 15 мин · усилие не измерено · волна 3 · зависит: CONFIG, REPORT · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Original create UNKNOWN; missing historical error stage, retry forbidden
+  - CODEX · ⛔ Заблокировано · (Подключить реальный Codex и локальный model fixture) · оценка 15 мин · усилие не измерено · волна 3 · зависит: CONFIG, REPORT · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.
       Описание задачи: Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.
       Приёмка: Реальный app-server через обычный core consumer; точный native instance/provider. Нет supported launch — отдельный product blocker без повторного create/UNKNOWN.
       Результат: Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md.
       Сохранённый статус: blocked
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T00:12:53+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1b77b-aed7-79c1-956a-5678680c0d56; source=mcp_metadata; at=2026-11-08T01:02:41+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -126,7 +125,7 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
-      Причина ожидания / доставки: leaf: Original create UNKNOWN; missing historical error stage, retry forbidden
+      Причина ожидания / доставки: leaf: Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.
   - OPENCODE · ⛔ Заблокировано · (Подключить опубликованный OpenCode AHAP consumer) · оценка 15 мин · усилие не измерено · волна 2 · зависит: CONFIG, REPORT · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Original native effect confirmed, retained authority unavailable; no replay
       Описание задачи: Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.
       Приёмка: Reuse Luna stand без конкурирующей правки. Initial send/read/reopen и отдельный deliver различаются; export/search/projects через public MCP либо явный неподдержанный результат.
@@ -167,13 +166,13 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: leaf: Autonomous native producer requires complete authorized lanes; existing fast checks published, runtime gate not wired
-  - ZCODE · ⛔ Заблокировано · (Выпустить ZCode lane без зависимости от server44) · оценка 15 мин · усилие не измерено · волна 3 · зависит: CONFIG, REPORT · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven
+  - ZCODE · ⛔ Заблокировано · (Выпустить ZCode lane без зависимости от server44) · оценка 15 мин · усилие не измерено · волна 3 · зависит: CONFIG, REPORT · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.
       Описание задачи: Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.
       Приёмка: Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.
-      Результат: Published6150354810e80bb35cec4ab40addbb48591088ea, exact2files,7GREEN. OfficialWS14tools and registeredproject exactroot confirmed on isolatedsupervisor,0modelcalls. Original a836 createUNKNOWN taskefccb595dadfbc9e413b39fdb1cb26d7 retained, no replay. Full lane/installed NOTPASS.
+      Результат: Изолированное создание сессии подтверждено; prompt достиг native storage, public receipt unknown; семь проверок не завершены.
       Сохранённый статус: blocked
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1ac52-d25c-7050-a65d-3fca32642c26; source=mcp_metadata; at=2026-11-08T00:23:31+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1b7a8-f171-7d73-bb09-ad2081d226a3; source=mcp_metadata; at=2026-11-08T01:01:30+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -186,7 +185,7 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
-      Причина ожидания / доставки: leaf: Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven
+      Причина ожидания / доставки: leaf: Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.
   - MOVE · ⋯ В очереди · (Доказать перенос на второй runner конфигурацией) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 4 · зависит: OPENCODE, CONFIG · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.
       Приёмка: Тот же опубликованный scenario SHA на двух runners; отличаются только manifest/config. Обе runtime версии и OS/arch записаны; неподдержанная ОС не объявлена проверенной.
@@ -224,5 +223,5 @@ frontier $1.45 (provisional) — 100.0% всех долларов плана
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
       Допуск к запуску: нет; записан блокер (external_blocked)
-      Незавершённые зависимости: TRIGGER, MOVE, OPENCODE, CODEX, ZCODE, CHATGPT, ZAI
+      Незавершённые зависимости: TRIGGER, MOVE, OPENCODE, CODEX, ZCODE, ZAI
       Причина ожидания / доставки: leaf: Exact5ea full candidate gate exit2: dedicated ChatGPT blankscope unavailable; native lanes incomplete

@@ -36,7 +36,7 @@
   ],
   "external_waits": "V1 product candidate supplies core/profile/wrappers and public consumer launch. OpenCode actual fixture verified familyv2; wrapper initial-only restriction product-owned. ChatGPT existing42h burst cooldown preserved until supported installation/reconciliation; no UNKNOWN replays.",
   "slots": 3,
-  "updated_at": "2026-11-08T00:46:53+03:00",
+  "updated_at": "2026-11-08T02:18:03+03:00",
   "tasks": [
     {
       "id": "BUILD",
@@ -122,18 +122,17 @@
     },
     {
       "id": "CHATGPT",
-      "label": "Подключить ChatGPT на разрешённом browser runner",
-      "status": "blocked",
+      "label": "Восстановить ChatGPT browser scope и native receipt adapter",
+      "status": "done",
       "parent": "S1",
       "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
       "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
-      "result": "Before exactpage8 origin/path=/ emptydraft+mapping verified. One navigate_page reload submitted, no repetition; job0d5ee93cdb74ba2f270a77b2bf2a79dd exit1. After evaluate_script job843128ae615398073b044dd03cd03586 exit1, no DOM/auth result. Reload effect unconfirmed; cannot claim ready or execute fullcase. Nativecreate/send0,newpage0,oldUNKNOWN untouched. evidence/chatgpt-page8-single-reload-20261108.json. Next readablegateway/browser then reconcile samepage; reload budget exhausted.",
+      "result": "MacMini exact hosts backup/CAS recovery; ownpage8/account/claim current. First ordinary prompt+assistant and native export confirmed. Adapter source2e446c4c published RED4→80GREEN+tsc. Full7checks explicitly remain in CHATGPTCASE; no installedPASS.",
       "owner": "Astra",
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex",
       "model": "gpt-6-astra",
       "note": "No fake running while candidate is built. Resume on candidate receipt; install updated hook through normal browser lifecycle; do not clear backoff or replay accepted sends.",
-      "blocker": "Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -364,6 +363,39 @@
           },
           "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T01:04:11+03:00",
+          "note": "Owner-authorized browser recovery: exact stale hosts pin removed backup+CAS; resolver203.0.113.1. Own page8 reload8.12s confirmed, accountscope matches and composer ready. No Chrome/gateway restart, no credential mutations. Restored historical CI draft saved in evidence/macmini-hosts-recovery-20261108.json; QA resource qa-ci-chatgpt-page8-20261108 claim54494de3-c442-4f81-b3eb-3ca702548bb3 acquired. Prepare full 5ea case; historical UNKNOWN unchanged. New independent CLI regressions dispatched existing Luna/Terra per owner clarification.",
+          "changes": {
+            "status": "running",
+            "blocker": ""
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T02:17:53+03:00",
+          "note": "Split overdue leaf: proven recovery/source portion complete; original taskUNKNOWN retained with separate positive readonly reconciliation. Next leaf CHATGPTCASE keeps full7checks, candidate rebuild and retained original session, no replay.",
+          "changes": {
+            "status": "done",
+            "label": "Восстановить ChatGPT browser scope и native receipt adapter",
+            "result": "MacMini exact hosts backup/CAS recovery; ownpage8/account/claim current. First ordinary prompt+assistant and native export confirmed. Adapter source2e446c4c published RED4→80GREEN+tsc. Full7checks explicitly remain in CHATGPTCASE; no installedPASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -379,6 +411,7 @@
       },
       "created_at": "2026-11-07T21:29:31+03:00",
       "started_at": "2026-11-07T22:00:29+03:00",
+      "finished_at": "2026-11-08T02:17:53+03:00",
       "wave": 1
     },
     {
@@ -834,6 +867,64 @@
       "wave": 1
     },
     {
+      "id": "CHATGPTCASE",
+      "label": "Доказать семь ChatGPT checks на исправленном candidate",
+      "status": "running",
+      "parent": "S1",
+      "description": "Продолжить retained ordinaryconsumer ci-chatgpt-native-5ea-0110 после readonly reconciliation. Первый prompt не повторять. Fresh packaged adapter2e446c4c; exactpage8/account/QAclaim. Independent read-only export/search/projects/reopen proofs continue now.",
+      "acceptance": "Create and initialreply, separate deliver same session, read both, full nativeexport, search coverage, projects provenance, reopen without resend. Same publiccore consumer, exact immutable candidate provenance; originalUNKNOWN receipt preserved, no lowering releasegate.",
+      "owner": "CI Astra",
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [
+        "CHATGPT"
+      ],
+      "progress_events": [
+        {
+          "at": "2026-11-08T02:18:03+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHATGPTCASE",
+            "parent": "S1",
+            "label": "Доказать семь ChatGPT checks на исправленном candidate",
+            "description": "Продолжить retained ordinaryconsumer ci-chatgpt-native-5ea-0110 после readonly reconciliation. Первый prompt не повторять. Fresh packaged adapter2e446c4c; exactpage8/account/QAclaim. Independent read-only export/search/projects/reopen proofs continue now.",
+            "acceptance": "Create and initialreply, separate deliver same session, read both, full nativeexport, search coverage, projects provenance, reopen without resend. Same publiccore consumer, exact immutable candidate provenance; originalUNKNOWN receipt preserved, no lowering releasegate.",
+            "status": "running",
+            "estimate_minutes": 15,
+            "owner": "CI Astra",
+            "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "harness": "codex",
+            "depends_on": [
+              "CHATGPT"
+            ],
+            "supersedes": [
+              "CHATGPT"
+            ],
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "CHATGPT"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-08T02:18:03+03:00",
+      "started_at": "2026-11-08T02:18:03+03:00"
+    },
+    {
       "id": "REPORT",
       "label": "Выпустить единый отчёт и отказ неполного gate",
       "status": "done",
@@ -963,8 +1054,8 @@
       "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
       "harness": "codex",
       "model": "gpt-6.1-terra",
-      "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
-      "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+      "note": "Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact.",
+      "blocker": "Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -1080,6 +1171,22 @@
             "source": "mcp_metadata"
           },
           "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T01:02:41+03:00",
+          "note": "5ea28f independent run: public preflight OK; create task 6be51843 rejected before native submission by Codex quota guard; seven-check acceptance incomplete.",
+          "changes": {
+            "blocker": "Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.",
+            "note": "Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
           "harness": "codex"
         }
       ],
@@ -1419,13 +1526,13 @@
       "parent": "S3",
       "description": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
       "acceptance": "Точный реальный server package/runner берётся из manifest; нет hardcoded SSH/IP/live dependency store. Публикация CLI этапа, limits явны.",
-      "result": "Published6150354810e80bb35cec4ab40addbb48591088ea, exact2files,7GREEN. OfficialWS14tools and registeredproject exactroot confirmed on isolatedsupervisor,0modelcalls. Original a836 createUNKNOWN taskefccb595dadfbc9e413b39fdb1cb26d7 retained, no replay. Full lane/installed NOTPASS.",
+      "result": "Изолированное создание сессии подтверждено; prompt достиг native storage, public receipt unknown; семь проверок не завершены.",
       "owner": "Terra",
       "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
       "harness": "codex",
       "model": "gpt-6.1-terra",
       "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
-      "blocker": "Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven",
+      "blocker": "Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.",
       "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
       "origin": "",
       "supersedes": [],
@@ -1559,6 +1666,26 @@
           },
           "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-08T01:01:30+03:00",
+          "note": "Новый независимый regression остановлен на UNKNOWN; исходный UNKNOWN не тронут.",
+          "changes": {
+            "blocker": "Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.",
+            "blocker_details": {
+              "evidence": "evidence/zcode-v1-5ea28f-outcome.txt",
+              "next": "Сверить и исправить public dispatch в разрешённом owner scope без повторной отправки."
+            },
+            "result": "Изолированное создание сессии подтверждено; prompt достиг native storage, public receipt unknown; семь проверок не завершены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -1571,6 +1698,10 @@
       },
       "created_at": "2026-11-07T21:29:30+03:00",
       "started_at": "2026-11-07T23:24:37+03:00",
+      "blocker_details": {
+        "evidence": "evidence/zcode-v1-5ea28f-outcome.txt",
+        "next": "Сверить и исправить public dispatch в разрешённом owner scope без повторной отправки."
+      },
       "wave": 3
     },
     {
@@ -1784,7 +1915,7 @@
       "wave": 4
     }
   ],
-  "leaf_count": 12,
+  "leaf_count": 13,
   "milestones": [
     {
       "id": "S1",
@@ -1793,14 +1924,15 @@
       "children": [
         "BUILD",
         "CHATGPT",
+        "CHATGPTCASE",
         "ZAI"
       ],
       "estimate_minutes": {
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 1,
-      "total": 3
+      "done": 2,
+      "total": 4
     },
     {
       "id": "S2",

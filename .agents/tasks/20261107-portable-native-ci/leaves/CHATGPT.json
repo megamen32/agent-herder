@@ -1,18 +1,18 @@
 {
   "id": "CHATGPT",
   "parent": "S1",
-  "label": "Подключить ChatGPT на разрешённом browser runner",
+  "label": "Восстановить ChatGPT browser scope и native receipt adapter",
   "description": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
   "acceptance": "Exact page/account/claim через MacMini transport; только собственные тесты, original receipts; без background fetch, UI/hooks и backoff.",
   "depends_on": [],
-  "status": "blocked",
+  "status": "done",
   "estimate_minutes": 15,
   "owner": "Astra",
   "harness": "codex",
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-08T00:46:53+03:00",
+  "updated_at": "2026-11-08T02:17:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -240,6 +240,39 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T01:04:11+03:00",
+      "note": "Owner-authorized browser recovery: exact stale hosts pin removed backup+CAS; resolver203.0.113.1. Own page8 reload8.12s confirmed, accountscope matches and composer ready. No Chrome/gateway restart, no credential mutations. Restored historical CI draft saved in evidence/macmini-hosts-recovery-20261108.json; QA resource qa-ci-chatgpt-page8-20261108 claim54494de3-c442-4f81-b3eb-3ca702548bb3 acquired. Prepare full 5ea case; historical UNKNOWN unchanged. New independent CLI regressions dispatched existing Luna/Terra per owner clarification.",
+      "changes": {
+        "status": "running",
+        "blocker": ""
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T02:17:53+03:00",
+      "note": "Split overdue leaf: proven recovery/source portion complete; original taskUNKNOWN retained with separate positive readonly reconciliation. Next leaf CHATGPTCASE keeps full7checks, candidate rebuild and retained original session, no replay.",
+      "changes": {
+        "status": "done",
+        "label": "Восстановить ChatGPT browser scope и native receipt adapter",
+        "result": "MacMini exact hosts backup/CAS recovery; ownpage8/account/claim current. First ordinary prompt+assistant and native export confirmed. Adapter source2e446c4c published RED4→80GREEN+tsc. Full7checks explicitly remain in CHATGPTCASE; no installedPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
@@ -251,6 +284,6 @@
     "tests/chatgpt-passive-backoff-burst.test.ts",
     "tests/chatgpt-background-budget.test.ts"
   ],
-  "blocker": "Single permitted page8 reload socket_timeout35s; after-read socket_timeout25s; recovery stopped",
-  "result": "Before exactpage8 origin/path=/ emptydraft+mapping verified. One navigate_page reload submitted, no repetition; job0d5ee93cdb74ba2f270a77b2bf2a79dd exit1. After evaluate_script job843128ae615398073b044dd03cd03586 exit1, no DOM/auth result. Reload effect unconfirmed; cannot claim ready or execute fullcase. Nativecreate/send0,newpage0,oldUNKNOWN untouched. evidence/chatgpt-page8-single-reload-20261108.json. Next readablegateway/browser then reconcile samepage; reload budget exhausted."
+  "blocker": "",
+  "result": "MacMini exact hosts backup/CAS recovery; ownpage8/account/claim current. First ordinary prompt+assistant and native export confirmed. Adapter source2e446c4c published RED4→80GREEN+tsc. Full7checks explicitly remain in CHATGPTCASE; no installedPASS."
 }

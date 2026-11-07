@@ -1,0 +1,37 @@
+{
+  "task": {
+    "resultType": "complete",
+    "taskId": "create-operation:27b40bf8617313095e843bf0fdeeedaa",
+    "status": "completed",
+    "createdAt": "2026-11-07T22:05:42Z",
+    "lastUpdatedAt": "2026-11-07T22:05:42Z",
+    "ttlMs": null,
+    "result": {
+      "content": [
+        {
+          "text": "{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:183290eb6166e0ef754d3e89d9e523fa\"},\"prompt\":{\"code\":\"outcome_unknown\",\"diagnostic_ref\":null,\"effect\":\"unknown\",\"expected\":null,\"field\":null,\"fix\":null,\"receipt_ref\":null,\"received\":null,\"retry\":\"forbidden\"}}",
+          "type": "text"
+        }
+      ],
+      "isError": true,
+      "resultType": "complete",
+      "structuredContent": {
+        "create": {
+          "effect": "confirmed",
+          "session_ref": "session:183290eb6166e0ef754d3e89d9e523fa"
+        },
+        "prompt": {
+          "code": "outcome_unknown",
+          "diagnostic_ref": null,
+          "effect": "unknown",
+          "expected": null,
+          "field": null,
+          "fix": null,
+          "receipt_ref": null,
+          "received": null,
+          "retry": "forbidden"
+        }
+      }
+    }
+  }
+}

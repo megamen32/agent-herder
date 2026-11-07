@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 199, in <module>
+    main()
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 195, in main
+    print(json.dumps(run(json.loads(Path(args.config).read_text()), args.run_case)))
+  File "/home/roomhacker/.codex/worktrees/herder-ci-runner-config/agent-herder/tests/native/v1_browser_stand.py", line 136, in run
+    raise RuntimeError('delivery not confirmed; do not replay')
+RuntimeError: delivery not confirmed; do not replay
