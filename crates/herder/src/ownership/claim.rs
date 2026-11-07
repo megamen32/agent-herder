@@ -81,6 +81,86 @@ pub fn claim(
     }
 }
 
+/// Extend the expiry of the current claim only when its claim ID still matches.
+pub fn renew(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    expires_at: Option<String>,
+) -> io::Result<ResourceClaim> {
+    if !is_uuid(claim_id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "claim ID must be a UUID",
+        ));
+    }
+    let (resource_dir, marker) =
+        authority.read_local_resource_marker(resource_ref, authorization)?;
+    let guard = open_guard(&resource_dir)?;
+    guard.lock()?;
+
+    let (locked_dir, locked_marker) =
+        authority.read_local_resource_marker(resource_ref, authorization)?;
+    if locked_dir != resource_dir || locked_marker != marker {
+        return Err(invalid_data("resource identity changed before renew"));
+    }
+    let bytes = authority
+        .read_owner_bytes(resource_ref, authorization)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "resource has no owner"))?;
+    let mut owner: OwnerRecord = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, &marker, resource_ref, &owner)?;
+    if owner.claim.claim_id != claim_id {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "claim ID does not own this resource",
+        ));
+    }
+    owner.claim.expires_at = expires_at;
+    write_owner_atomic(&resource_dir, &owner)?;
+    Ok(owner.claim)
+}
+
+/// Release the current claim only when its claim ID still matches.
+pub fn release(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+) -> io::Result<()> {
+    if !is_uuid(claim_id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "claim ID must be a UUID",
+        ));
+    }
+    let (resource_dir, marker) =
+        authority.read_local_resource_marker(resource_ref, authorization)?;
+    let guard = open_guard(&resource_dir)?;
+    guard.lock()?;
+
+    let (locked_dir, locked_marker) =
+        authority.read_local_resource_marker(resource_ref, authorization)?;
+    if locked_dir != resource_dir || locked_marker != marker {
+        return Err(invalid_data("resource identity changed before release"));
+    }
+    let bytes = authority
+        .read_owner_bytes(resource_ref, authorization)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "resource has no owner"))?;
+    let owner: OwnerRecord = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, &marker, resource_ref, &owner)?;
+    if owner.claim.claim_id != claim_id {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "claim ID does not own this resource",
+        ));
+    }
+    fs::remove_file(resource_dir.join("owner.json"))?;
+    File::open(resource_dir)?.sync_all()
+}
+
 fn validate_request(resource_ref: &ResourceRef, claim: &ResourceClaim) -> io::Result<()> {
     if claim.resource_ref != *resource_ref
         || !is_uuid(&claim.claim_id)
@@ -309,6 +389,67 @@ mod tests {
             io::ErrorKind::PermissionDenied
         );
         assert!(!root.join("resources/r/owner.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn renew_and_release_compare_claim_id_and_preserve_guard() {
+        let (root, authority) = fixture();
+        let resource_ref = ResourceRef("r".into());
+        let claim_id = "01234567-89ab-4cde-8fab-0123456789ab";
+        let wrong_id = "fedcba98-7654-4321-8abc-fedcba987654";
+        let dir = root.join("resources/r");
+        claim(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            requested(claim_id),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        #[cfg(unix)]
+        let guard_before = {
+            let metadata = fs::metadata(dir.join("guard.lock")).unwrap();
+            (metadata.dev(), metadata.ino())
+        };
+
+        assert_eq!(
+            renew(
+                &authority,
+                &resource_ref,
+                Authorization::Authorized,
+                wrong_id,
+                Some("2026-11-08T00:00:00Z".into()),
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        let updated = renew(
+            &authority,
+            &resource_ref,
+            Authorization::Authorized,
+            claim_id,
+            Some("2026-11-08T00:00:00Z".into()),
+        )
+        .unwrap();
+        assert_eq!(updated.expires_at.as_deref(), Some("2026-11-08T00:00:00Z"));
+
+        assert_eq!(
+            release(&authority, &resource_ref, Authorization::Authorized, wrong_id)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert!(dir.join("owner.json").exists());
+        release(&authority, &resource_ref, Authorization::Authorized, claim_id).unwrap();
+        assert!(!dir.join("owner.json").exists());
+        #[cfg(unix)]
+        {
+            let metadata = fs::metadata(dir.join("guard.lock")).unwrap();
+            assert_eq!((metadata.dev(), metadata.ino()), guard_before);
+        }
         fs::remove_dir_all(root).unwrap();
     }
 }
