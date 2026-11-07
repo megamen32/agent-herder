@@ -15,6 +15,18 @@ function text(v:any):string {if(typeof v==='string')return v;if(Array.isArray(v)
 function check(signal?:AbortSignal){signal?.throwIfAborted();}
 async function stamp(path:string):Promise<string>{const s=await stat(path);return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;}
 async function dbStamp(path:string){return `${await stamp(path)}:${await stamp(path+'-wal').catch(()=>'-')}`;}
+/** Verify SQLite bytes when a read-only open changes file metadata (e.g. WAL ownership). */
+async function sqliteBytes(path:string):Promise<string>{
+ const hash=createHash('sha256');
+ for(const file of [path,path+'-wal']){
+  const before=await stamp(file).catch(error=>{if(file!==path&&(error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+  hash.update(file===path?'database:':'wal:');
+  if(before===null){hash.update('absent');continue;}
+  for await(const chunk of createReadStream(file))hash.update(chunk as Buffer);
+  if(await stamp(file)!==before)throw new Error('native_source_changed_during_scan');
+ }
+ return hash.digest('hex');
+}
 async function* files(root:string,signal?:AbortSignal):AsyncGenerator<string>{
  check(signal);for(const e of await readdir(root,{withFileTypes:true})){check(signal);const p=join(root,e.name);if(e.isDirectory())yield* files(p,signal);else if(e.isFile())yield p;}
 }
@@ -119,11 +131,28 @@ const digestCaches=new Map<string,DigestCache>();
 /** A periodic full rehash bounds how long an unnoticed in-place edit may stay. */
 function resyncScans():number{const value=Number(process.env.AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS);return Number.isInteger(value)&&value>0?value:60;}
 async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,options:Options):AsyncGenerator<SearchSourceSession>{
- await stat(path);const sourceRevision=await dbStamp(path);const db=new DatabaseSync(path,{readOnly:true});
+ await stat(path);const sourceRevision=await dbStamp(path);const initialBytes=harness==='opencode'?await sqliteBytes(path):undefined;const db=new DatabaseSync(path,{readOnly:true});
  let cacheKey='',dbClosed=false;
  const closeDb=()=>{if(!dbClosed){db.close();dbClosed=true;}};
  try{
   db.exec('PRAGMA temp_store=MEMORY; PRAGMA query_only=ON; PRAGMA busy_timeout=1000');
+  if(harness==='opencode' && columnsOf(db,'session_v2').has('id') && columnsOf(db,'session_message').has('session_id')){
+   db.exec('BEGIN');
+   const sessions=db.prepare('SELECT id,title,directory AS cwd FROM session_v2 ORDER BY id');
+   const messages=db.prepare('SELECT id,data FROM session_message WHERE session_id=? ORDER BY seq,id');
+   const content=(value:any):string=>typeof value==='string'?value:Array.isArray(value)?value.map(content).filter(Boolean).join('\n'):value&&typeof value==='object'?(typeof value.text==='string'?value.text:content(value.content)):'';
+   for(const row of sessions.iterate() as Iterable<any>){
+    check(options.signal);const id=str(row.id);if(!id)continue;
+    const hash=createHash('sha256').update(JSON.stringify({id,title:row.title,cwd:row.cwd}));
+    let count=0;for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);hash.update(JSON.stringify(message));if(++count%128===0)await yieldEventLoop();}
+    const revision=hash.digest('hex');
+    const chunks=async function*(){for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);const value=JSON.parse(str(message.data));const body=content(value);if(body)yield {id:String(message.id),text:body};}};
+    yield {harness,nativeSessionId:id,title:str(row.title)||id,cwd:str(row.cwd),revision,chunks:chunks()};
+   }
+   db.exec('COMMIT');closeDb();
+   if(await dbStamp(path)!==sourceRevision && await sqliteBytes(path)!==initialBytes)throw new Error('native_source_changed_during_scan');
+   return;
+  }
   const hermes=harness==='hermes';
   const sessionTable=hermes?'sessions':'session',messageTable=hermes?'messages':'message';
   const sessionColumns=columnsOf(db,sessionTable);
@@ -220,7 +249,7 @@ export async function* scanSessionSearchSources(options:Options={}):AsyncGenerat
  const home=homedir();const sources:Array<{harness:string;source:string;scan:()=>AsyncGenerator<SearchSourceSession>}>= [
   {harness:'codex',source:process.env.CODEX_HOME||join(home,'.codex'),scan:()=>codex(options)},
   {harness:'minimax-code',source:process.env.MINIMAX_CODE_SESSION_STORE||join(home,'.minimax/v2/sessions'),scan:()=>minimax(options)},
-  ...(['opencode','zcode','hermes'] as const).map(harness=>{const source=harness==='opencode'?process.env.OPENCODE_DB_PATH||join(home,'.local/share/opencode/opencode.db'):harness==='zcode'?process.env.ZCODE_DB_PATH||join(home,'.zcode/cli/db/db.sqlite'):process.env.HERMES_STATE_DB||join(process.env.HERMES_HOME||join(home,'.hermes'),'state.db');return {harness,source,scan:()=>sqliteSessions(harness,source,options)};}),
+  ...(['opencode','zcode','hermes'] as const).map(harness=>{const source=harness==='opencode'?process.env.OPENCODE_DB_PATH||join(process.env.XDG_DATA_HOME||join(home,'.local/share'),'opencode/opencode.db'):harness==='zcode'?process.env.ZCODE_DB_PATH||join(home,'.zcode/cli/db/db.sqlite'):process.env.HERMES_STATE_DB||join(process.env.HERMES_HOME||join(home,'.hermes'),'state.db');return {harness,source,scan:()=>sqliteSessions(harness,source,options)};}),
   {harness:'claude',source:process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),scan:async function*(){for await(const p of files(process.env.CLAUDE_PROJECTS_DIR||join(home,'.claude/projects'),options.signal))if(p.endsWith('.jsonl')){const session=await safeJsonSession(p,'claude',options);if(session)yield session;}}},
   ...(['chatgpt','zai'] as const).map(harness=>({harness,source:process.env.AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT||join(home,'.local/state/agent-herder/browser-chat-inventory'),scan:()=>browserChatInventory(harness,options)})),
  ];
