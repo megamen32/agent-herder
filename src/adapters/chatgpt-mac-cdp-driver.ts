@@ -662,6 +662,13 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   async getRawConversation(chatId: string): Promise<unknown | null> {
+    if (chatId.startsWith("draft:")) {
+      // Revalidate account ownership before resolving an admitted draft.
+      if (!await this.getChat(chatId)) return null;
+      const native = this.drafts.get(chatId)?.remoteId;
+      if (!native) return null;
+      chatId = native;
+    }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     const page = await this.page();
     const transferId = randomUUID();

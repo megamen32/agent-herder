@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { BrowserChatAdapter } from '../src/adapters/browser-chat.js';
 import { chatgptFullConversationApiScript, chatgptConversationMessages } from '../src/adapters/chatgpt-full-conversation.js';
 import vm from 'node:vm';
@@ -48,6 +48,30 @@ it('reads the full current conversation rather than the latest 60 turns', () => 
 });
 
 import { ChatGptMacCdpDriver } from '../src/adapters/chatgpt-mac-cdp-driver.js';
+import { BrowserChatDraftStore } from '../src/adapters/browser-chat-drafts.js';
+it('reads an admitted draft through its verified native conversation', async () => {
+  const root=await mkdtemp(join(tmpdir(),'herder-chat-draft-export-'));
+  vi.stubEnv('AGENT_HERDER_BROWSER_DRAFT_ROOT',root);
+  const scope='a'.repeat(64), id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
+  try {
+    const drafts=new BrowserChatDraftStore('chatgpt',root);await drafts.useScope(scope);
+    const draft=await drafts.create('fixture');await drafts.startSend(draft.id);await drafts.admit(draft.id,id);
+    const mapping={first:{message:{id:'m1',author:{role:'user'},content:{parts:['question']}}},last:{message:{id:'m2',author:{role:'assistant'},content:{parts:['answer']}}}};
+    const fetch=async(url:string)=>({ok:true,status:200,json:async()=>url==='/api/auth/session'?{accessToken:'fixture'}:{conversation_id:id,mapping}});
+    const context=vm.createContext({location:{origin:'https://chatgpt.com'},fetch,JSON,encodeURIComponent,Date,Object});
+    const tools:any={call:async(name:string,args:any)=>{
+      if(name==='list_pages')return '1: ChatGPT (https://chatgpt.com/)';
+      if(args.function.includes('const digest=await crypto.subtle.digest'))return '```json\n'+JSON.stringify({scope})+'\n```';
+      const result=await vm.runInContext('('+args.function+')()',context);
+      return '```json\n'+JSON.stringify(result)+'\n```';
+    }};
+    const driver=new ChatGptMacCdpDriver(tools);
+    const adapter=new BrowserChatAdapter(driver,{id:'chatgpt',name:'ChatGPT',harness:'chatgpt',cwd:'/tmp/chatgpt'});
+    expect((await adapter.getSessionMessages(draft.id,200))?.map(m=>m.text)).toEqual(['question','answer']);
+    const raw=await adapter.getRawTranscript(draft.id);
+    expect(raw).toMatchObject({complete:true,source:{location:'https://chatgpt.com/c/'+id}});
+  } finally {vi.unstubAllEnvs();await rm(root,{recursive:true,force:true});}
+});
 it('transfers a conversation larger than the Chrome transport bound in verified chunks', async () => {
   const id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
   const large='ф'.repeat(800_000); const mapping={first:{message:{text:large}},last:{message:{text:'end'}}};

@@ -347,9 +347,12 @@ export class BrowserChatAdapter implements HarnessAdapter {
     const data = await this.driver.getRawConversation(native);
     signal?.throwIfAborted();
     if (!data) return null;
+    const resolved = (data as { conversation_id?: unknown }).conversation_id;
+    if (native.startsWith("draft:") && (typeof resolved !== "string" || !/^[a-f0-9-]{28,80}$/i.test(resolved))) return null;
+    const locationId = native.startsWith("draft:") ? resolved as string : native;
     return {
       bytes: Buffer.from(JSON.stringify(data), "utf8"), complete: true,
-      source: { kind: "native-api", location: `https://chatgpt.com/c/${native}`, format: "json" },
+      source: { kind: "native-api", location: `https://chatgpt.com/c/${locationId}`, format: "json" },
       timestampCoverage: "native", limitations: ["Attachment bytes are not included; the native conversation contains their references."],
     };
   }
