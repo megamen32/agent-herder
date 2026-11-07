@@ -161,6 +161,295 @@ pub fn list_cached_sessions<'a>(
     }
 }
 
+/// Trusted composition supplies an exhaustive inventory and exact opaque bindings.
+/// An unavailable source stays in `sources` with no observation or an explicit
+/// unavailable observation; cache contents do not establish availability.
+#[derive(Clone)]
+pub struct ListSource {
+    pub node_ref: String,
+    pub instance_ref: String,
+    pub instance: InstanceRef,
+    /// Exact server-issued ACL resource for this instance, never a request claim.
+    pub acl_resource: String,
+    pub observation: Option<InstanceAvailability>,
+}
+
+#[derive(Clone)]
+pub struct ListRecord {
+    pub session_ref: crate::domain::address::SessionRef,
+    pub cached: CachedSession,
+}
+
+#[derive(Clone)]
+pub struct ListInventory {
+    pub sources: Vec<ListSource>,
+    pub records: Vec<ListRecord>,
+}
+
+/// Implemented by the authoritative composition layer, not client metadata.
+/// Return a pre-collected snapshot without making native calls. Return an error
+/// when the inventory cannot be obtained; an empty inventory is not evidence of
+/// fleet-wide completeness. Sources are authorized before data is returned.
+pub trait ListInventoryPort: Send + Sync + 'static {
+    fn snapshot(&self) -> Result<ListInventory, ()>;
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct ListFilter {
+    project: Option<String>,
+    node: Option<String>,
+    instance: Option<String>,
+}
+
+struct ListCursor {
+    principal: crate::auth::identity::PrincipalId,
+    filter: ListFilter,
+    sources: Vec<ListSource>,
+    records: Vec<ListRecord>,
+    view: SessionListSnapshot,
+    created: std::time::Instant,
+}
+
+/// ApplicationPort for `sessions/list`. Inventory and policy are injected by
+/// trusted server composition. Cursors bind a frozen view, caller and filters.
+pub struct ListApplication<P: ListInventoryPort> {
+    inventory: P,
+    grants: Vec<crate::auth::identity::Grant>,
+    page_size: NonZeroUsize,
+    next: std::sync::atomic::AtomicU64,
+    cursors: std::sync::Mutex<std::collections::HashMap<String, ListCursor>>,
+}
+
+impl<P: ListInventoryPort> ListApplication<P> {
+    pub fn new(
+        inventory: P,
+        grants: Vec<crate::auth::identity::Grant>,
+        page_size: NonZeroUsize,
+    ) -> Self {
+        Self {
+            inventory,
+            grants,
+            page_size,
+            next: std::sync::atomic::AtomicU64::new(0),
+            cursors: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    fn allowed(
+        &self,
+        identity: &crate::auth::identity::ConnectionIdentity,
+        sources: &[ListSource],
+        records: &[ListRecord],
+    ) -> bool {
+        use crate::auth::identity::{Action, PrivateResource};
+        sources.iter().all(|s| {
+            identity
+                .authorize(
+                    &self.grants,
+                    &PrivateResource::Resource(s.acl_resource.clone()),
+                    Action::Read,
+                )
+                .is_ok()
+        }) && records.iter().all(|r| {
+            identity
+                .authorize(
+                    &self.grants,
+                    &PrivateResource::Session(r.session_ref.clone()),
+                    Action::Read,
+                )
+                .is_ok()
+        })
+    }
+}
+
+impl<P: ListInventoryPort> crate::mcp::transport::ApplicationPort for ListApplication<P> {
+    fn call<'a>(
+        &'a self,
+        identity: &'a crate::auth::identity::ConnectionIdentity,
+        request: crate::mcp::catalog::Request,
+    ) -> crate::mcp::transport::ApplicationFuture<'a> {
+        use crate::auth::identity::Caller;
+        use crate::mcp::catalog::{Request, Sessions};
+        use rmcp::model::CallToolResult;
+        use serde_json::json;
+        Box::pin(async move {
+            let Request::Sessions(Sessions::List {
+                project_ref,
+                node_ref,
+                instance_ref,
+                cursor,
+            }) = request
+            else {
+                return None;
+            };
+            let fail = |code: &str| {
+                Some(CallToolResult::structured_error(
+                    json!({"code":code,"effect":"none"}),
+                ))
+            };
+            let Caller::Principal(principal) = identity.caller() else {
+                return fail("unauthorized");
+            };
+            let filter = ListFilter {
+                project: project_ref,
+                node: node_ref,
+                instance: instance_ref,
+            };
+            let mut stored = match self.cursors.lock() {
+                Ok(value) => value,
+                Err(_) => return fail("source_unavailable"),
+            };
+            stored.retain(|_, state| state.created.elapsed() < std::time::Duration::from_secs(300));
+            let (key, offset) = if let Some(cursor) = cursor {
+                let Some((key, offset)) = cursor.split_once(':') else {
+                    return fail("invalid_cursor");
+                };
+                let Ok(offset) = offset.parse::<usize>() else {
+                    return fail("invalid_cursor");
+                };
+                (key.to_owned(), offset)
+            } else {
+                if stored.len() >= 128 {
+                    return fail("capacity_exceeded");
+                }
+                let inventory = match self.inventory.snapshot() {
+                    Ok(value) => value,
+                    Err(_) => return fail("source_unavailable"),
+                };
+                // Reject malformed or ambiguous trusted mappings rather than risk cross-instance access.
+                let mut native = std::collections::HashSet::new();
+                let mut refs = std::collections::HashSet::new();
+                let mut acl_refs = std::collections::HashSet::new();
+                let mut nodes = std::collections::HashMap::new();
+                let mut reverse_nodes = std::collections::HashMap::new();
+                for s in &inventory.sources {
+                    if s.node_ref.is_empty()
+                        || s.instance_ref.is_empty()
+                        || s.acl_resource.is_empty()
+                        || !native.insert(s.instance.clone())
+                        || !refs.insert(s.instance_ref.clone())
+                        || !acl_refs.insert(s.acl_resource.clone())
+                        || nodes
+                            .insert(s.node_ref.clone(), s.instance.node.clone())
+                            .is_some_and(|old| old != s.instance.node)
+                        || reverse_nodes
+                            .insert(s.instance.node.clone(), s.node_ref.clone())
+                            .is_some_and(|old| old != s.node_ref)
+                        || s.observation
+                            .as_ref()
+                            .is_some_and(|o| o.instance != s.instance)
+                    {
+                        return fail("source_unavailable");
+                    }
+                }
+                let mut session_refs = std::collections::HashSet::new();
+                let mut addresses = std::collections::HashSet::new();
+                for r in &inventory.records {
+                    if r.session_ref.0.is_empty()
+                        || r.cached.snapshot.address.native_session_id.is_empty()
+                        || !session_refs.insert(r.session_ref.clone())
+                        || !addresses.insert(r.cached.snapshot.address.clone())
+                        || !native.contains(&r.cached.snapshot.address.instance)
+                    {
+                        return fail("source_unavailable");
+                    }
+                }
+                let sources: Vec<_> = inventory
+                    .sources
+                    .into_iter()
+                    .filter(|s| {
+                        filter.node.as_ref().is_none_or(|n| n == &s.node_ref)
+                            && filter
+                                .instance
+                                .as_ref()
+                                .is_none_or(|i| i == &s.instance_ref)
+                    })
+                    .collect();
+                // Unknown requested refs and contradictory filters reveal no inventory detail.
+                if (filter.node.is_some() || filter.instance.is_some()) && sources.is_empty() {
+                    return fail("unauthorized");
+                }
+                let source_records: Vec<_> = inventory
+                    .records
+                    .into_iter()
+                    .filter(|r| {
+                        sources
+                            .iter()
+                            .any(|s| s.instance == r.cached.snapshot.address.instance)
+                    })
+                    .collect();
+                // Check the whole source before filtering: project guesses must
+                // not reveal the presence of a session lacking an exact grant.
+                if !self.allowed(identity, &sources, &source_records) {
+                    return fail("unauthorized");
+                }
+                let records: Vec<_> = source_records
+                    .into_iter()
+                    .filter(|r| {
+                        filter
+                            .project
+                            .as_ref()
+                            .is_none_or(|p| r.cached.project_ref.as_ref() == Some(p))
+                    })
+                    .collect();
+                let expected: Vec<_> = sources.iter().map(|s| s.instance.clone()).collect();
+                let observations: Vec<_> = sources
+                    .iter()
+                    .filter_map(|s| s.observation.clone())
+                    .collect();
+                let cached: Vec<_> = records.iter().map(|r| r.cached.clone()).collect();
+                let view = SessionListSnapshot::new(&cached, &observations, &expected, None, None);
+                let key = self
+                    .next
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    .to_string();
+                stored.insert(
+                    key.clone(),
+                    ListCursor {
+                        principal: principal.id.clone(),
+                        filter: filter.clone(),
+                        sources,
+                        records,
+                        view,
+                        created: std::time::Instant::now(),
+                    },
+                );
+                (key, 0)
+            };
+            let Some(state) = stored.get(&key) else {
+                return fail("invalid_cursor");
+            };
+            if state.principal != principal.id
+                || state.filter != filter
+                || !self.allowed(identity, &state.sources, &state.records)
+            {
+                return fail("unauthorized");
+            }
+            if offset > 0 && (offset >= state.records.len() || offset % self.page_size.get() != 0) {
+                return fail("invalid_cursor");
+            }
+            let page = state.view.page(offset, self.page_size);
+            let items: Vec<_> = page.sessions.iter().filter_map(|s| state.records.iter().find(|r| &r.cached == *s).and_then(|r| state.sources.iter().find(|source| source.instance == r.cached.snapshot.address.instance).map(|source| json!({"session_ref":r.session_ref.0,"project_ref":r.cached.project_ref,"node_ref":source.node_ref,"instance_ref":source.instance_ref,"observed_at":r.cached.observed_at})))).collect();
+            if items.len() != page.sessions.len() {
+                return fail("source_unavailable");
+            }
+            let coverage: Vec<_> = state.sources.iter().map(|source| json!({"node_ref":source.node_ref,"instance_ref":source.instance_ref,"availability":source.observation.as_ref().map(|o| o.availability),"observed_at":source.observation.as_ref().and_then(|o| o.observed_at.as_ref()),"coverage":source.observation.as_ref().map(|o| match o.coverage { SourceCoverage::Complete => "complete", SourceCoverage::Incomplete => "incomplete", SourceCoverage::Unknown => "unknown" })})).collect();
+            let next_cursor = page.next_offset.map(|next| format!("{key}:{next}"));
+            let missing: Vec<_> = state
+                .sources
+                .iter()
+                .filter(|s| s.observation.is_none())
+                .map(|s| json!({"node_ref":s.node_ref,"instance_ref":s.instance_ref}))
+                .collect();
+            let result = json!({"sessions":items,"sources":coverage,"missing_sources":missing,"coverage_complete":page.coverage_complete,"next_cursor":next_cursor});
+            if offset == 0 && page.next_offset.is_none() {
+                stored.remove(&key);
+            }
+            Some(CallToolResult::structured(result))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
