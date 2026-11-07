@@ -217,4 +217,76 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn creator_survives_restart_before_receipt_and_unknown_parent_stays_unknown() -> Result<()> {
+        use rusqlite::{Connection, functions::FunctionFlags};
+
+        let path = std::env::temp_dir().join(format!(
+            "herder-lineage-restart-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(path.clone());
+        let open = || -> Result<Writer> {
+            let connection = Connection::open(&path)?;
+            connection.pragma_update(None, "foreign_keys", true)?;
+            connection.create_scalar_function(
+                "herder_writer_version",
+                0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |_| Ok(super::super::WRITER_VERSION),
+            )?;
+            Ok(Writer { connection })
+        };
+
+        let mut first = open()?;
+        first.connection.execute_batch(super::super::SCHEMA)?;
+        assert!(matches!(
+            first.prepare_create_lineage_intent(&intent("payload-hash-1", "task-1"))?,
+            PrepareResult::Created { .. }
+        ));
+        drop(first);
+
+        // Reopen the same durable store as a fresh process would, then attach
+        // admission evidence without changing the creator recorded pre-dispatch.
+        let mut restarted = open()?;
+        restarted.connection.execute(
+            "UPDATE intents SET state = 'admitted', native_receipt = 'receipt-after-restart' WHERE intent_id = ?1",
+            ["create-intent-1"],
+        )?;
+        assert_eq!(
+            restarted.record_admitted_create_lineage(&AdmittedCreateLineage {
+                intent_id: "create-intent-1",
+                session_ref: "native-session-after-restart",
+                parent_ref: None,
+                now: "admitted-at",
+            })?,
+            RecordLineageResult::Recorded
+        );
+        let stored: (String, Option<String>, Option<String>) =
+            restarted.connection.query_row(
+                "SELECT i.principal, l.creator_ref, l.parent_ref FROM intents i JOIN lineage l ON l.session_ref = ?1 WHERE i.intent_id = ?2",
+                params!["native-session-after-restart", "create-intent-1"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+        assert_eq!(
+            stored,
+            (
+                "creator-agent-a".into(),
+                Some("creator-agent-a".into()),
+                None
+            )
+        );
+        Ok(())
+    }
 }
