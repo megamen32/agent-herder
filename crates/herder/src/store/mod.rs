@@ -364,7 +364,7 @@ mod tests {
             .insert_task("kept", "p", "prepared", "now")
             .unwrap();
         drop(provision);
-        let old = Writer::open_file(&path).unwrap();
+        let mut old = Writer::open_file(&path).unwrap();
         Writer::open_file(&path)
             .unwrap()
             .migrate_search_v4(&gate)
@@ -372,6 +372,23 @@ mod tests {
         assert!(
             old.insert_task("old-write", "p", "prepared", "now")
                 .is_err()
+        );
+        let old_address = crate::domain::address::SessionAddress {
+            instance: crate::domain::address::InstanceRef {
+                node: crate::domain::address::NodeRef("n".into()),
+                instance_id: "i".into(),
+            },
+            native_session_id: "old-native".into(),
+        };
+        assert!(
+            crate::search::index::update_session(
+                old.connection_mut(),
+                &old_address,
+                "old",
+                "forbidden",
+                false
+            )
+            .is_err()
         );
         drop(old);
         let mut fresh = Writer::open_file(&path).expect("valid v4 should reopen");
@@ -385,6 +402,11 @@ mod tests {
             })
             .unwrap();
         assert_eq!(kept, 1);
+        let leaked: i64 = fresh.connection.query_row("SELECT count(*) FROM session_search_fts WHERE session_search_fts MATCH 'forbidden'", [], |r| r.get(0)).unwrap();
+        assert_eq!(
+            leaked, 0,
+            "old-writer FTS changes must roll back with fenced state"
+        );
         let address = crate::domain::address::SessionAddress {
             instance: crate::domain::address::InstanceRef {
                 node: crate::domain::address::NodeRef("n".into()),
