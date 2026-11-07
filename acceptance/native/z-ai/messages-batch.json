@@ -1,0 +1,27 @@
+{
+  "chat_id": "chat-fixture-z-001",
+  "data": {
+    "user-001": {
+      "id": "user-001",
+      "role": "user",
+      "content": " question text ",
+      "created_at": 1794052800
+    },
+    "assistant-001": {
+      "id": "assistant-001",
+      "role": "assistant",
+      "content_blocks": [
+        { "type": "markdown", "content": "answer" },
+        { "type": "image", "content": "not user-visible text" },
+        { "type": "text", "content": "continued" }
+      ],
+      "timestamp": 1794052801,
+      "model": "fixture-model"
+    },
+    "internal-001": {
+      "id": "internal-001",
+      "role": "system",
+      "content": "must not be exposed"
+    }
+  }
+}

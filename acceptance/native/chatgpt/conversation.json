@@ -1,0 +1,36 @@
+{
+  "conversation_id": "chat-fixture-001",
+  "current_node": "assistant-final",
+  "mapping": {
+    "user-root": {
+      "parent": null,
+      "message": {
+        "id": "user-001",
+        "author": { "role": "user" },
+        "create_time": 1794052800,
+        "content": { "parts": ["hello", { "text": "from object part" }] }
+      }
+    },
+    "assistant-analysis": {
+      "parent": "user-root",
+      "message": {
+        "id": "assistant-analysis-001",
+        "author": { "role": "assistant" },
+        "channel": "analysis",
+        "content": { "parts": ["must not be exposed"] }
+      }
+    },
+    "assistant-final": {
+      "parent": "assistant-analysis",
+      "message": {
+        "id": "assistant-final-001",
+        "author": { "role": "assistant" },
+        "channel": "final",
+        "recipient": "all",
+        "create_time": 1794052801,
+        "metadata": { "model_slug": "fixture-model" },
+        "content": { "parts": [" fixture answer "] }
+      }
+    }
+  }
+}
