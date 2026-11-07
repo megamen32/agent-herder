@@ -2,7 +2,7 @@
 
 use std::{fs, path::PathBuf, time::Duration};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
 
@@ -58,6 +58,28 @@ pub struct NativeThread {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeThreadPage {
     pub data: Vec<NativeThread>,
+    pub next_cursor: Option<String>,
+    pub backwards_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeMessageRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeMessage {
+    pub id: String,
+    pub role: NativeMessageRole,
+    pub text: Option<String>,
+    /// Native turn containing this item, as returned by `thread/items/list`.
+    pub turn_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeMessagePage {
+    pub data: Vec<NativeMessage>,
     pub next_cursor: Option<String>,
     pub backwards_cursor: Option<String>,
 }
@@ -140,6 +162,102 @@ impl CodexReader {
             });
         }
         Ok(NativeThreadPage {
+            data,
+            next_cursor: optional_cursor(&result, "nextCursor")?,
+            backwards_cursor: optional_cursor(&result, "backwardsCursor")?,
+        })
+    }
+
+    /// Read one paginated page of user and assistant messages with native turn refs.
+    /// Other Codex item kinds are intentionally omitted from this normalized view.
+    pub fn list_messages(
+        &mut self,
+        thread_id: &str,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<NativeMessagePage, CodexReadError> {
+        if thread_id.is_empty() || limit == 0 {
+            return Err(CodexReadError::InvalidThreadList(
+                "thread_id and limit must be non-empty/positive".into(),
+            ));
+        }
+        let result = self.connection.request(
+            "thread/items/list",
+            json!({
+                "threadId": thread_id,
+                "cursor": cursor,
+                "limit": limit,
+                "sortDirection": "desc",
+            }),
+            self.timeout,
+        )?;
+        let rows = result
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| CodexReadError::InvalidThreadList("missing item data array".into()))?;
+        let mut data = Vec::new();
+        for row in rows {
+            let turn_id = row
+                .get("turnId")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| CodexReadError::InvalidThreadList("item has no turn id".into()))?
+                .to_owned();
+            let item = row.get("item").ok_or_else(|| {
+                CodexReadError::InvalidThreadList("item entry has no item".into())
+            })?;
+            let item_type = item.get("type").and_then(Value::as_str).unwrap_or_default();
+            let role_and_text = match item_type {
+                "userMessage" => {
+                    let content =
+                        item.get("content")
+                            .and_then(Value::as_array)
+                            .ok_or_else(|| {
+                                CodexReadError::InvalidThreadList(
+                                    "user item has no content array".into(),
+                                )
+                            })?;
+                    let text = content
+                        .iter()
+                        .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+                        .filter_map(|part| part.get("text").and_then(Value::as_str))
+                        .collect::<Vec<_>>();
+                    (
+                        NativeMessageRole::User,
+                        (!text.is_empty()).then(|| text.join("")),
+                    )
+                }
+                "agentMessage" => (
+                    NativeMessageRole::Assistant,
+                    Some(
+                        item.get("text")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                CodexReadError::InvalidThreadList(
+                                    "assistant item has no text".into(),
+                                )
+                            })?
+                            .to_owned(),
+                    ),
+                ),
+                _ => continue,
+            };
+            let id = item
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| {
+                    CodexReadError::InvalidThreadList("message has no stable id".into())
+                })?
+                .to_owned();
+            data.push(NativeMessage {
+                id,
+                role: role_and_text.0,
+                text: role_and_text.1,
+                turn_id,
+            });
+        }
+        Ok(NativeMessagePage {
             data,
             next_cursor: optional_cursor(&result, "nextCursor")?,
             backwards_cursor: optional_cursor(&result, "backwardsCursor")?,
