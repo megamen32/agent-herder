@@ -6,7 +6,7 @@
 
 | Готовый вход | Что использовать | Чего он пока не доказывает |
 |---|---|---|
-| main 94e7d98c, artifact /home/roomhacker/herder-artifacts/ahap-94e7d98c | Rust core, durable intents/Tasks, trusted owner composition, AHAP transport, OpenCode TS runner | API2.2.4 несовместим с pinv2 этого candidate; FASTOC22/FASTCORE22 исправляют перед запуском Luna |
+| main 94e7d98c, artifact /home/roomhacker/herder-artifacts/ahap-94e7d98c | Rust core, durable intents/Tasks, trusted owner composition, AHAP transport, OpenCode TS runner | Реальная API family ещё сверяется: preflight v9 увидел api-session, core отверг protected profile до mutation. FASTINIT исправляет точный отказ; version-only предположение не выбирает новый adapter |
 | Старые src/adapters и AHAP v0.1 | Реализации harness, site scripts, native readers; языконезависимый процессный интерфейс | Нельзя переносить скрытый retry, второй ledger или ложный notSubmitted |
 | tests/native/launch.py, test-model-server.py, opencode_receipt.py | Готовая изоляция, лжемодель, native readback и счётчик запросов | Новую модель/стенд не создавать; новый business driver — Luna |
 | V027A/B, V028/V029, V031A/B, V017B | Durable sender/reply, recent/transcript projections, inventory и resource ACL | Большая часть source-only: осталось подключение к application, а не переписывание функций |
@@ -69,8 +69,8 @@
 
 ## Что открывать Тере сейчас
 
-1. FASTOC22: existing OpenCode owner переносит рабочие2.2.4 routes/payload из старого CI в общий TS client.
-2. FASTCORE22: Terra соединяет typed fresh Start с тем же core и собирает пакет.
+1. FASTINIT: Luna исправляет конкретный protected-profile отказ и сохраняет read-only API доказательство. FASTOC22 source-порт сохраняется, но если готовая v2 ветка подтверждается тем же binary, этот порт не блокирует первый canary.
+2. FASTCORE22: Terra собирает core с подтверждённой FASTINIT веткой; для v22 соединяет typed fresh Start, для подходящей готовой v2 не создаёт лишнюю зависимость. Изолированный proof не означает поддержку общего direct Start.
 3. V065AHAPCIDRIVER → V065AHAPCIRUN: Luna заканчивает stand и выполняет единственный case; E002 принимает его receipt без повторной отправки.
 4. Независимо готовы V017, V040B, V044A (resources/context), V031C (inventory) и T003 (translator identity). На одного исполнителя один активный owned объект; не брать одновременно все эти карточки.
 5. V060/E003/E004/V069/V078/V087/V096/E005/E006/E007/E008/E009/V159 — незакрытые gates обязательных этапов, не задания на новую архитектуру. Их waiting означает отсутствие полного acceptance пакета; эта очередь не превращается в фиктивный Done после ближайшего canary.
