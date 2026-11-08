@@ -28,11 +28,15 @@ python3 deploy/noticeplace/autostart_source_verifier.py \
 
 `run_tick()` or `--tick --verifier-state <dedicated-source-state>` is the supported one-shot SDK seam for the **existing owning cycle**, not a new timer. It uses the existing `NOTIFY_CENTER_EVENT_URL` and `NOTIFY_CENTER_TOKEN`; registration/grant is not created by this helper. One source check per call, bounded10s admission. Never invoke a live tick just to generate acceptance evidence.
 
-## Integration boundary — not installed
+## Existing-cycle integration
 
 The existing owner is `UnfinishedSessionLauncher`, `src/autopilot/unfinished-session-launcher.ts`. Its `notifyExhausted` emits this source through `createUnfinishedSessionNotifier` in `src/index.ts`; its existing reconcile/watchdog cycle is the future invocation seam. The current NoticeplaceHealthObserver follows the **repair executor** and intentionally cannot supply source health.
 
-At handoff, index/server/unfinished-session-launcher have foreign WIP; no hook was added and no shared build/runtime was changed. The source adapter and fixtures alone are not installed consumer coverage. The owner must also retain the exact source binding before the producer emits: normal completion removes the unfinished record (`store.remove`), so an absent historical binding cannot safely become healthy. Reuse the existing producer/episode receipt rather than inventing a failed turn or new scheduler. The adapter intentionally returns unknown when that binding is absent. The archived-session signal requires its own predicate and is not covered by this first adapter.
+The existing watchdog calls the one-shot SDK adapter through `sourceVerifierTick`; there is no new timer. Before `notifyExhausted` sends its event, `retainSourceBinding` persists the exact episode in `sourceBindings` inside the existing unfinished registry. Work-record removal/rearm preserves that snapshot. The predicate prefers it over mutable work records. Historical missing bindings are not reconstructed from event titles or correlation strings. The event constructor and live original event shapes were checked: they do not currently carry structured failed native turn data.
+
+`src/autopilot/autostart-source-verifier.ts` invokes the packaged helper with a30s process deadline and existing private producer environment. The normal immutable release packages `deploy/noticeplace`. Source integration alone is not installed/runtime acceptance: see the deployment receipt. A valid project token with exact verifier grant is required; an invalid or revoked producer credential is not substituted with an executor/QA credential.
+
+The archived-session signal and non-Codex harnesses still yield unknown. This checker proves native continuation of the exact failed root, not semantic business deliverable QA.
 
 The HTTP session GET was deliberately not used: current supervisor `getSession` invokes `HumanStopStore.observe`, and may also list models. Source checks use direct documented native archive/state reads instead.
 

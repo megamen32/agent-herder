@@ -1239,6 +1239,8 @@ type DiscoveryOutcome = "ready" | "idle" | "blocked";
 type UnfinishedSessionFile = {
   version: 1;
   sessions: UnfinishedSessionRecord[];
+  /** Exact emitted source episodes survive removal of the recovery work item. */
+  sourceBindings?: UnfinishedSessionRecord[];
   inventory?: UnfinishedSessionInventoryRecord[];
 };
 
@@ -2466,6 +2468,16 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
+  async retainSourceBinding(record: UnfinishedSessionRecord, now = new Date()): Promise<void> {
+    await this.mutate((file) => {
+      const key = `${unfinishedRecordKey(record)}:${record.startedAt}`;
+      const bindings = file.sourceBindings ??= [];
+      if (!bindings.some((item) => `${unfinishedRecordKey(item)}:${item.startedAt}` === key)) {
+        bindings.push({ ...cloneUnfinishedSessionRecord(record), notifiedAt: now.toISOString() });
+      }
+    });
+  }
+
   async markNotified(harness: HarnessType, sessionId: string, now = new Date(), cwd?: string): Promise<void> {
     await this.mutate((file) => {
       const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
@@ -2543,6 +2555,8 @@ export interface UnfinishedSessionLauncherOptions {
   judge?: SessionCompletionJudge;
   continuationMessage?: string;
   notify?: (notice: UnfinishedSessionNotice) => Promise<void>;
+  /** Independent source readback on the existing watchdog cycle; never resumes a session. */
+  sourceVerifierTick?: () => Promise<void>;
   /** Durable safe-boundary inbox used when a Codex Desktop writer still owns the thread. */
   deferredStore?: Pick<DeferredMessageStore, "add" | "list">;
   /** Replaces a stale provider-cache session with a compact same-harness continuation. */
@@ -3214,6 +3228,9 @@ export class UnfinishedSessionLauncher {
     if (!this.started || this.watchdogRunning) return;
     this.watchdogRunning = true;
     try {
+      await this.options.sourceVerifierTick?.().catch((error) => {
+        console.error(`[agent-herder] source verifier unavailable: ${errorText(error)}`);
+      });
       const settings = await this.options.settingsStore.getSettings();
       if (!settings.watchdogEnabled) return;
       const stallMs = this.stalledTurnOverrideMs ?? settings.stalledTurnMinutes * 60_000;
@@ -6052,6 +6069,8 @@ export class UnfinishedSessionLauncher {
 
   private async notifyExhausted(record: UnfinishedSessionRecord): Promise<void> {
     if (!this.options.notify || record.notifiedAt) return;
+    // Persist before the existing send: UNKNOWN ingress must not lose the source binding.
+    await this.options.store.retainSourceBinding(record);
     const harness = displayHarness(record.harness);
     await this.options.notify({
       title: "Agent Herder не смог восстановить аварийно завершённый ход",
@@ -6454,6 +6473,7 @@ function parseFile(value: unknown): UnfinishedSessionFile {
   return {
     version: 1,
     sessions: object.sessions.map(parseRecord),
+    ...(Array.isArray(object.sourceBindings) ? { sourceBindings: object.sourceBindings.map(parseRecord) } : {}),
     ...(Array.isArray(object.inventory) ? { inventory: object.inventory.map(parseInventoryRecord) } : {}),
   };
 }
