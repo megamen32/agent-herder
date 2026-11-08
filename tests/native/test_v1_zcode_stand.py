@@ -82,6 +82,24 @@ class PortableConfig(unittest.TestCase):
                     stand.validate_manifest(path,invalid)
 
 
+class SuccessReceipt(unittest.TestCase):
+    def test_success_returns_zero_and_writes_complete_receipt_without_secret_fields(self):
+        import io, contextlib
+        evidence={'phase':'complete','result':'PASS','session_ref':'session:test',
+                  'export':{'structuredContent':{'complete':True,'bytes_base64':'e30='}},
+                  'prompt_receipt':{'outcome':'confirmed','native_receipt_id':'msg:1'},
+                  'ingress-token':'secret-value'}
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result=stand.emit_success(evidence)
+        self.assertIsNone(result)
+        body=json.loads(output.getvalue())
+        self.assertEqual(body['status'],'PASS')
+        self.assertEqual(body['evidence']['prompt_receipt']['native_receipt_id'],'msg:1')
+        self.assertTrue(body['evidence']['export']['structuredContent']['complete'])
+        self.assertNotIn('secret-value',output.getvalue())
+
+
 class PublicRuntimeRegression(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('ZCODE_V1_RUNTIME') and os.environ.get('ZCODE_V1_MANIFEST') and os.environ.get('ZCODE_V1_CLIENT_DIST'),
                          'set ZCODE_V1_RUNTIME and ZCODE_V1_MANIFEST for isolated public integration')
