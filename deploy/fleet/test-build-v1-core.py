@@ -29,7 +29,8 @@ def main():
     manifest = json.loads(manifest_path.read_text())
     artifact = Path(manifest["artifact_root"])
     assert manifest_path == artifact / "manifest.json"
-    for key in ["core", "bootstrap", "node", "adapter"]:
+    components = ["core", "bootstrap", "node", "adapter"] + (["compat"] if manifest.get("compat") else [])
+    for key in components:
         assert digest(manifest[key]) == manifest["sha256"][key], key
     for harness, path in manifest["adapters"].items():
         assert digest(path) == manifest["sha256"]["adapters"][harness], harness
@@ -97,14 +98,44 @@ def main():
                 initialized[harness] = reply["result"]["capabilities"]
                 assert not marker.exists(), "initialize launched a native executable"
             assert requests == [("GET", "/api/config")], requests
+            if manifest.get("compat"):
+                launch = manifest.get("launch_compat") or {}
+                assert launch.get("env", {}).get("HERDER_NATIVE_COMMAND") == manifest["core"], launch
+                assert launch.get("argv") == [manifest["compat"], "--trusted-owner-profile",
+                                              "{protected_owner_profile}"], launch
+                # The native core resolves identity against an existing private
+                # HOME, like every real profile consumer. The probe profile must
+                # also exist: a missing file fails with ENOENT before the trust
+                # check, while an existing file with group/other permissions
+                # reaches the exact untrusted-profile rejection.
+                probe_home = root / "compat-probe-home"
+                probe_home.mkdir(mode=0o700)
+                untrusted_profile = root / "untrusted-profile"
+                untrusted_profile.write_text("{}")
+                untrusted_profile.chmod(0o644)
+                # The exact packaged core must reject the untrusted profile
+                # before any MCP traffic. Empty stdout proves the legacy edge
+                # never served a session; the quoted core rejection proves the
+                # translator forwarded launcher argv instead of dropping it.
+                probe = subprocess.run(
+                    [manifest["compat"], "--trusted-owner-profile", str(untrusted_profile)],
+                    input="", text=True, capture_output=True, timeout=20,
+                    env={"PATH": os.defpath, "HOME": str(probe_home),
+                         "HERDER_NATIVE_COMMAND": manifest["core"]})
+                assert probe.returncode != 0, (probe.returncode, probe.stdout)
+                assert probe.stdout.strip() == "", probe.stdout
+                assert "invalid or untrusted scoped launch profile" in probe.stderr, probe.stderr
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+    checks = ["all-component-hashes", "duplicate-refusal-unchanged-bytes",
+              "five-harness-initialize", "zero-native-executable-launches",
+              "zero-native-mutations", "zero-browser-connections"]
+    if manifest.get("compat"):
+        checks.append("compat-forwards-trusted-profile-argv")
     print(json.dumps({"result": "PASS", "manifest_sha256": digest(manifest_path),
-                      "checks": ["all-component-hashes", "duplicate-refusal-unchanged-bytes",
-                                 "five-harness-initialize", "zero-native-executable-launches",
-                                 "zero-native-mutations", "zero-browser-connections"],
+                      "checks": checks,
                       "capabilities": initialized}))
 
 

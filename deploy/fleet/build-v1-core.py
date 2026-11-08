@@ -69,15 +69,19 @@ def build(args):
         ["git", "rev-parse", "--verify", "--end-of-options", args.source_sha + "^{commit}"],
         cwd=ROOT, text=True).strip()
     core, bootstrap, node = map(executable, (args.core, args.bootstrap, args.node))
+    compat = executable(args.compat) if args.compat else None
     compiled = args.compiled_dir.resolve(strict=True)
     entries = {name: compiled / f"ahap-{name}-runner.js" for name in RUNNERS}
     entry_hashes = {name: digest(path) for name, path in entries.items()}
     inputs = {"core": core, "bootstrap": bootstrap, "node": node}
+    if compat is not None:
+        inputs["compat"] = compat
     input_hashes = {name: digest(path) for name, path in inputs.items()}
     output.mkdir(mode=0o700)  # exclusive; also rejects races and dangling links
     fixture = output / "fixture"
     fixture.mkdir(mode=0o700)
-    names = {"core": "herder_native_stdio", "bootstrap": "ahap-owner-bootstrap", "node": "node"}
+    names = {"core": "herder_native_stdio", "bootstrap": "ahap-owner-bootstrap",
+             "node": "node", "compat": "herder-compat"}
     shipped = {}
     for name, source in inputs.items():
         target = fixture / names[name]
@@ -114,6 +118,13 @@ def build(args):
                          "source_commit_role": "caller-supplied provenance for prebuilt inputs"},
         "launch": [str(shipped["core"]), "--trusted-owner-profile", "{protected_owner_profile}"],
     }
+    if compat is not None:
+        # The translator owns exactly one trusted profile per process and only
+        # forwards launcher-controlled arguments to the pinned native core.
+        manifest["launch_compat"] = {
+            "argv": [str(shipped["compat"]), "--trusted-owner-profile", "{protected_owner_profile}"],
+            "env": {"HERDER_NATIVE_COMMAND": str(shipped["core"])},
+        }
     with (output / "manifest.json").open("x") as stream:
         json.dump(manifest, stream, indent=2)
         stream.write("\n")
@@ -132,6 +143,8 @@ def main():
     parser.add_argument("--core", type=Path, default=ROOT / "crates/herder/target/debug/herder_native_stdio")
     parser.add_argument("--bootstrap", type=Path, default=ROOT / "crates/herder/target/debug/ahap-owner-bootstrap")
     parser.add_argument("--compiled-dir", type=Path, default=ROOT / ".tmp/v1-dist")
+    parser.add_argument("--compat", type=Path, default=None,
+                        help="optional herder-compat translator binary to pin in the manifest")
     args = parser.parse_args()
     if not args.node.is_absolute():
         parser.error("--node must explicitly select an absolute executable path")

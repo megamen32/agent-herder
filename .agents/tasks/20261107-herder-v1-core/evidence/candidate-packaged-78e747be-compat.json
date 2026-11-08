@@ -1,0 +1,13 @@
+{
+ "run_id": "astra-v1-packaged-78e747be-20261108T1259",
+ "stage": "candidate",
+ "source_sha": "78e747bef373d9ec2188f44c51e7422fc5bf88a4",
+ "artifact_sha256": "bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+ "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/manifest.json",
+ "result": "PASS",
+ "checks": ["all-component-hashes", "duplicate-refusal-unchanged-bytes", "five-harness-initialize", "zero-native-executable-launches", "zero-native-mutations", "zero-browser-connections", "compat-forwards-trusted-profile-argv"],
+ "note": "Runtime bytes 78e747befinal unchanged. First probe run failed with core ENOENT because the absent profile path reached open() after passing the private-parent checks; a missing profile yields ENOENT, while an existing file with group/other bits yields the exact untrusted-profile rejection. Test fix only: existing untrusted profile 0644 under a private 0700 HOME root; strict launch_compat argv/env assertions retained. No rebuild, no native sends.",
+ "evidence_log": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/candidate-packaged-78e747be-compat.log",
+ "native_lanes": null,
+ "installed": null
+}
