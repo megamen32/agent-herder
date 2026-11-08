@@ -754,6 +754,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async listObservedChats(): Promise<readonly BrowserChat[]> {
     return this.exclusive(async () => {
+      // The passive listing carries no scope of its own. The account of the
+      // owned tab is still proved here, so that every later read of this
+      // instance is served as the pinned account instead of an unknown one.
+      await this.verifyCurrentPinnedAccountScope();
       const native = await this.listUnlocked(true);
       await this.drafts.useScope(this.accountScope);
       return this.drafts.merge(native);
@@ -908,7 +912,22 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   /** Authenticated read-only conversation API; never navigate to load history. */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
     if (chatId.startsWith("draft:")) {
-      const draft = this.drafts.get(chatId);
+      let draft = this.drafts.get(chatId);
+      if (!draft) {
+        // A fresh process knows no draft yet. The durable store of the
+        // verified account is loaded here, otherwise the read of a delivered
+        // draft fails and its follow-up delivery can never be confirmed.
+        const page = await this.page().catch(() => undefined);
+        if (page) {
+          try {
+            const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
+            this.requirePinnedAccountScope(scope);
+            this.accountScope = scope;
+            await this.drafts.useScope(scope);
+          } catch { /* the store stays unloaded when the account is unknown */ }
+        }
+        draft = this.drafts.get(chatId);
+      }
       if (!draft) return null;
       if (!draft.remoteId) return [];
       chatId = draft.remoteId;

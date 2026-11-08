@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 import { CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
+import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 // The driver now owns a durable inventory cache; every test keeps its own
 // private root so nothing ever touches the state directory of the host.
 let _invDir: string;
@@ -625,6 +626,66 @@ describe("ChatGPT owned tab ownership", () => {
 });
 
 describe("ChatGPT one owned tab", () => {
+  it("keeps the verified account scope after the passive startup listing", async () => {
+    const scope = "a".repeat(64);
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        if (source === CHATGPT_LIST_API_PASSIVE_SCRIPT) return json({ scope: "", chats: [], source: "passive" });
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase: "idle", draftPresent: false, chats: [{ id: ID, title: "Fixture chat" }],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    // The startup listing is passive and carries no scope of its own. The
+    // driver must still prove the account it belongs to, otherwise every
+    // later read of the same instance is refused as an unknown account.
+    await driver.listObservedChats();
+    expect(driver.getAccountScope()).toBe(scope);
+  });
+
+  it("reads the history of a draft session before the inventory was listed", async () => {
+    const scope = "a".repeat(64);
+    const disk = mkdtempSync(join(tmpdir(), "chatgpt-draft-"));
+    process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT = disk;
+    try {
+      const store = new BrowserChatDraftStore("chatgpt", disk);
+      await store.useScope(scope);
+      const draft = await store.create("Fixture draft");
+      await store.startSend(draft.id);
+      await store.admit(draft.id, ID);
+      const tools: ChromePageTools = { call: async (name, args = {}) => {
+        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+        if (name === "evaluate_script") {
+          const source = String(args.function);
+          if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+          if (source.includes("conversation_read")) {
+            return json({ messages: [{ id: "m1", role: "user", text: "question" }] });
+          }
+          return json({
+            origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+            composer: true, phase: "idle", draftPresent: false, chats: [],
+          });
+        }
+        throw new Error("unexpected action " + name);
+      } };
+      const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+      // A fresh process knows no draft yet: the read must resolve the account
+      // scope and load the durable drafts itself. A reader that only knows
+      // the draft after a listing never confirms the follow-up delivery.
+      const messages = await driver.getMessages(draft.id);
+      expect(messages).toMatchObject([{ id: "m1", role: "user", text: "question" }]);
+    } finally {
+      rmSync(disk, { recursive: true, force: true });
+      delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+    }
+  });
+
   it("clears the running flag of a chat whose answer already arrived", async () => {
     const scope = "a".repeat(64);
     const tools: ChromePageTools = { call: async (name, args = {}) => {
