@@ -29,10 +29,18 @@ async function fixture(mode: "success" | "malformed" | "unknown", createEnvelope
         create: { effect: "confirmed", session_ref: "judge-own-ref" }, prompt: { outcome: "confirmed" },
       } } });
     }
-    if (name === "session" && args.action === "messages") return { structuredContent: { session_ref: "judge-own-ref", page: { messages: [
-      { role: "user", text: "ignored user JSON" },
-      { role: "assistant", text: replyText ?? (mode === "malformed" ? '{"kind":"continue","nextGoal":42}' : '{"kind":"continue","nextGoal":"Проверь результат"}') },
-    ] } } };
+    if (name === "sessions") return { structuredContent: { sessions: [{
+      session_ref: "judge-own-ref",
+      address: { instance: { instance_id: "opencode-noticeplace-local" }, native_session_id: "ses_judge" },
+      native: { id: "ses_judge", harness: "opencode", status: "idle" },
+    }] } };
+    if (name === "session" && args.action === "messages") {
+      const text = replyText ?? (mode === "malformed" ? '{"kind":"continue","nextGoal":42}' : '{"kind":"continue","nextGoal":"Проверь результат"}');
+      return { structuredContent: { session_ref: "judge-own-ref", page: { messages: [
+        { role: "user", text: "ignored user JSON" },
+        { id: "judge-answer", role: "assistant", phase: "stop", text, parts: [{ type: "text", text }] },
+      ] } } };
+    }
     if (name === "session" && args.action === "archive") {
       expect(args.session_ref).toBe("judge-own-ref"); return { structuredContent: { archived: true } };
     }
@@ -43,7 +51,59 @@ async function fixture(mode: "success" | "malformed" | "unknown", createEnvelope
   return { dir, call, options, judge: createNoticePlaceNativeJudge(options) };
 }
 
+async function streamingFixture(completion: "complete" | "running" | "unknown") {
+  const f = await fixture("success");
+  const ordinary = f.call.getMockImplementation()!;
+  let messageReads = 0;
+  f.call.mockImplementation(async (name, args) => {
+    if (name === "sessions") return { structuredContent: { sessions: [{
+      session_ref: "judge-own-ref",
+      address: { instance: { instance_id: "opencode-noticeplace-local" }, native_session_id: "ses_judge" },
+      native: completion === "unknown" ? null : {
+        id: "ses_judge", harness: "opencode",
+        status: completion === "complete" && messageReads >= 3 ? "idle" : "running",
+      },
+    }] } };
+    if (name === "session" && args.action === "messages") {
+      messageReads++;
+      const final = completion !== "complete" || messageReads >= 3;
+      const verdict = '{"kind":"done","summary":"Проверено"}';
+      const thinking = "Thinking through the task; draft is {\"not_a_verdict\":true}.";
+      const text = final ? thinking + "\n" + verdict
+        : messageReads === 1 ? thinking : '{"kind":"done","summary":"Пров';
+      return { structuredContent: { session_ref: "judge-own-ref", page: { messages: [{
+        id: "judge-answer", role: "assistant", ...(final ? { phase: "stop" } : {}),
+        text, parts: [{ type: "thinking", text: thinking }, ...(final ? [{ type: "text", text: verdict }] : [])],
+      }] } } };
+    }
+    return ordinary(name, args);
+  });
+  if (completion !== "complete") f.options.timeoutMs = 100;
+  return { ...f, judge: createNoticePlaceNativeJudge(f.options), messageReads: () => messageReads };
+}
+
 describe("NoticePlace native subscription judge", () => {
+  it("waits past prompt admission and streamed reasoning for native idle plus final text-only verdict", async () => {
+    const f = await streamingFixture("complete");
+    expect(await f.judge.decide(input)).toEqual({ kind: "done", summary: "Проверено" });
+    expect(f.messageReads()).toBeGreaterThanOrEqual(3);
+    expect(f.call.mock.calls.filter(([name]) => name === "create")).toHaveLength(1);
+    expect(f.call.mock.calls.filter(([name, args]) => name === "session" && args.action === "archive")).toHaveLength(1);
+    expect(f.call.mock.calls.some(([name]) => /automation|deliver|resume/.test(name))).toBe(false);
+  });
+  it("retains the same admitted judge without archive or replay when native completion stays running or unknown", async () => {
+    for (const completion of ["running", "unknown"] as const) {
+      const f = await streamingFixture(completion);
+      await expect(f.judge.decide(input)).rejects.toThrow("native_judge_failed_or_unknown");
+      await vi.waitFor(() => expect(f.options.jobs.list()[0]?.state).toBe("failed"));
+      const retained = f.options.jobs.list()[0]!;
+      expect(f.call.mock.calls.filter(([name, args]) => name === "session" && args.action === "archive")).toHaveLength(0);
+      expect(retained.error).toContain("own-task");
+      expect(retained.error).toContain("judge-own-ref");
+      await expect(f.judge.decide(input)).rejects.toThrow("native_judge_failed_or_unknown");
+      expect(f.call.mock.calls.filter(([name]) => name === "create")).toHaveLength(1);
+    }
+  });
   it("creates one bounded ordinary prompt, validates exact assistant JSON, archives its own session", async () => {
     for (const envelope of ["task_ref", "taskId", "_herder_create_task"]) {
       const f = await fixture("success", envelope);

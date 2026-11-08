@@ -85,6 +85,8 @@ export function createNoticePlaceNativeJudge(options: NoticePlaceNativeJudgeOpti
           const controller = new AbortController();
           const deadline = Date.now() + timeout;
           const timer = setTimeout(() => controller.abort(), timeout);
+          // Keep only ownership receipts in the durable failure record for reconciliation.
+          const receipt: { task_ref?: string; session_ref?: string } = {};
           const call = async (name: string, args: ObjectValue) => {
             if (controller.signal.aborted || Date.now() >= deadline) throw new Error("native_judge_deadline");
             let rejectAbort!: () => void;
@@ -108,7 +110,10 @@ export function createNoticePlaceNativeJudge(options: NoticePlaceNativeJudgeOpti
                 const created = await call("create", { action: "create", instance_ref: options.instanceRef, prompt, request_key: key });
                 const task = taskRef(created);
                 let session = ownedSession(created);
-                let terminal = false;
+                receipt.task_ref = task;
+                receipt.session_ref = session;
+                let admissionTerminal = false;
+                let nativeTerminal = false;
                 try {
                   if (task) {
                     for (let reads = 0; reads < 400; reads++) {
@@ -118,15 +123,16 @@ export function createNoticePlaceNativeJudge(options: NoticePlaceNativeJudgeOpti
                       const ref = ownedSession(state);
                       if (ref && session && ref !== session) throw new Error("native_judge_session_mismatch");
                       session = ref ?? session;
+                      receipt.session_ref = session;
                       if (["completed", "failed", "cancelled"].includes(String(state.status))) {
-                        terminal = true;
+                        admissionTerminal = true;
                         if (state.status !== "completed") throw new Error("native_judge_task_failed");
                         break;
                       }
                       await delay(Math.min(poll, Math.max(1, deadline - Date.now())));
                     }
-                    if (!terminal) throw new Error("native_judge_read_budget_exhausted");
-                  } else terminal = !!session;
+                    if (!admissionTerminal) throw new Error("native_judge_read_budget_exhausted");
+                  }
                   if (!session || session === original.hook.session_id) throw new Error("native_judge_owned_session_unavailable");
                   for (let reads = 0; reads < 400; reads++) {
                     const reply = await call("session", { action: "messages", session_ref: session });
@@ -134,18 +140,39 @@ export function createNoticePlaceNativeJudge(options: NoticePlaceNativeJudgeOpti
                     const messages = object(reply.page).messages;
                     if (!Array.isArray(messages)) throw new Error("native_judge_messages_unavailable");
                     const assistant = messages.filter(message => message?.role === "assistant").at(-1);
-                    const text = typeof assistant?.text === "string" ? assistant.text
-                      : Array.isArray(assistant?.parts) ? assistant.parts.filter((part: ObjectValue) => part.type === "text" && typeof part.text === "string").map((part: ObjectValue) => part.text).join("\n") : "";
-                    if (text.trim()) {
-                      if (text.length > 16_384) throw new Error("native_judge_output_too_large");
-                      return new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), { headers: { "content-type": "application/json" } });
+                    // Prompt admission is not native completion. Normalized .text also
+                    // contains thinking parts, so only a stopped assistant's text parts
+                    // may become the verdict, after a fresh read confirms native idle.
+                    if (assistant?.phase === "stop") {
+                      const listed = await call("sessions", { action: "list", instance_ref: options.instanceRef });
+                      if (!Array.isArray(listed.sessions)) throw new Error("native_judge_sessions_unavailable");
+                      const matches = listed.sessions.filter(row => row?.session_ref === session);
+                      if (matches.length > 1) throw new Error("native_judge_session_ambiguous");
+                      const row = matches[0];
+                      if (row?.native) {
+                        const native = object(row.native), address = object(row.address);
+                        if (object(address.instance).instance_id !== options.instanceRef
+                          || native.harness !== "opencode" || typeof native.id !== "string"
+                          || native.id !== address.native_session_id || native.id === original.hook.session_id)
+                          throw new Error("native_judge_session_mismatch");
+                        if (native.status === "idle") {
+                          nativeTerminal = true;
+                          const text = Array.isArray(assistant.parts) ? assistant.parts
+                            .filter((part: ObjectValue) => part?.type === "text" && typeof part.text === "string")
+                            .map((part: ObjectValue) => part.text).join("\n") : "";
+                          if (!text.trim()) throw new Error("native_judge_final_text_unavailable");
+                          if (text.length > 16_384) throw new Error("native_judge_output_too_large");
+                          return new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), { headers: { "content-type": "application/json" } });
+                        }
+                      }
                     }
                     await delay(Math.min(poll, Math.max(1, deadline - Date.now())));
                   }
                   throw new Error("native_judge_read_budget_exhausted");
                 } finally {
-                  // Never archive a guessed target, the repair session, or an in-flight UNKNOWN task.
-                  if (session && session !== original.hook.session_id && terminal && !controller.signal.aborted) {
+                  // A completed create/prompt task does not permit archiving a running
+                  // or UNKNOWN native turn. Retain its receipt for reconciliation.
+                  if (session && session !== original.hook.session_id && nativeTerminal && !controller.signal.aborted) {
                     const archived = await call("session", { action: "archive", session_ref: session, request_key: `${key}:archive` });
                     if (archived.archived !== true) throw new Error("native_judge_archive_unconfirmed");
                   }
@@ -153,7 +180,7 @@ export function createNoticePlaceNativeJudge(options: NoticePlaceNativeJudgeOpti
               },
             });
             return await judge.decide(input); // Existing JSON parser + normalizeDecision validation.
-          } catch { throw new Error("native_judge_failed_or_unknown"); }
+          } catch { throw new Error(`native_judge_failed_or_unknown ${JSON.stringify(receipt)}`); }
           finally { clearTimeout(timer); }
         } });
       const deadline = Date.now() + timeout;
