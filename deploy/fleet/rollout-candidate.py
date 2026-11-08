@@ -45,7 +45,7 @@ from deployment_config import load_config, validate_node, descriptor_digest, ver
 DEFAULT_CATALOG = Path.home() / "agents-projects/.fleet-candidate"
 BUDGET_MIB = 512
 MAX_RELEASES = 2
-PACKAGED = ("dist", "packages", "package.json", "package-lock.json", "build-manifest.json")
+PACKAGED = ("dist", "packages", "deploy/noticeplace", "package.json", "package-lock.json", "build-manifest.json")
 
 
 def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate) -> None:
