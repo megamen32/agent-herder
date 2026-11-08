@@ -1213,6 +1213,124 @@ describe("original task completion evidence", () => {
             await rm(root, { recursive: true, force: true });
         }
     });
+
+    // The Codex quota guard refuses the native resume before it is submitted.
+    // The refusal is a deferral: it must not consume the retry budget and it
+    // must not be reported as a native failure.
+    it("keeps a quota-blocked recovery armed instead of exhausting it", async () => {
+        const root = await mkdtemp(join(tmpdir(), "quota-guard-deferral-"));
+        try {
+            const current = fixture("error", "codex", "quota-guard-deferral");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.resumeSession = async () => ({
+                ok: false,
+                notSubmitted: true,
+                admitted: false,
+                nonRetryable: true,
+                error: "codex_quota_guard: below_reserve; remaining=16%; request was not submitted. Настройка: Автоматизация / Запуск сессий / Защита лимита Codex.",
+                quotaBlock: { reason: "below_reserve", remainingPercent: 16, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+            });
+            const notices: UnfinishedSessionNotice[] = [];
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            const record = (await store.list())[0];
+            // Nothing was submitted, so nothing failed: the record stays armed
+            // and the retry budget is untouched.
+            expect(record).toMatchObject({ state: "active", attempts: 0 });
+            expect(record.lastError).toContain("codex_quota_guard");
+            expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
+            expect(notices).toHaveLength(1);
+            expect(notices[0].severity).toBe("notice");
+            expect(notices[0].signalType).toBe("unfinished-session-quota-blocked");
+            expect(notices[0].body).toContain("Защита лимита Codex");
+            expect(calls.messages).toHaveLength(0);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("re-arms an exhausted quota-blocked record and continues the interrupted turn", async () => {
+        const root = await mkdtemp(join(tmpdir(), "quota-guard-exhausted-"));
+        try {
+            const current = fixture("error", "codex", "quota-guard-exhausted");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const quotaRefusal = "codex_quota_guard: below_reserve; remaining=16%; request was not submitted. Настройка: Автоматизация / Запуск сессий / Защита лимита Codex.";
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const reserved = await store.beginAttempt("codex", current.id, 3, 0, new Date(), current.cwd);
+                if (!reserved) break;
+                await store.markFailure("codex", current.id, quotaRefusal, 3, new Date(), current.cwd);
+            }
+            expect((await store.list())[0]).toMatchObject({ state: "exhausted", attempts: 3 });
+            const notices: UnfinishedSessionNotice[] = [];
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            // The guard admits the native resume again, so the exhausted record
+            // returns to the armed state and the interrupted turn continues.
+            expect(calls.messages).toHaveLength(1);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps an exhausted quota-blocked record exhausted without a native failure notice", async () => {
+        const root = await mkdtemp(join(tmpdir(), "quota-guard-still-blocked-"));
+        try {
+            const current = fixture("error", "codex", "quota-guard-still-blocked");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            adapter.resumeSession = async () => ({
+                ok: false,
+                notSubmitted: true,
+                admitted: false,
+                nonRetryable: true,
+                error: "codex_quota_guard: below_reserve; remaining=16%; request was not submitted.",
+                quotaBlock: { reason: "below_reserve", remainingPercent: 16, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+            });
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const quotaRefusal = "codex_quota_guard: below_reserve; remaining=16%; request was not submitted.";
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const reserved = await store.beginAttempt("codex", current.id, 3, 0, new Date(), current.cwd);
+                if (!reserved) break;
+                await store.markFailure("codex", current.id, quotaRefusal, 3, new Date(), current.cwd);
+            }
+            const notices: UnfinishedSessionNotice[] = [];
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                discoveryIdleMs: 1,
+                notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
+            });
+            await launcher.recoverPending();
+            const record = (await store.list())[0];
+            expect(record).toMatchObject({ state: "exhausted", attempts: 3 });
+            // The guard still refuses the request, so the next probe waits for
+            // the binding window and no native failure is reported.
+            expect(Date.parse(record.nextAttemptAt)).toBeGreaterThan(Date.now());
+            expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
+            expect(calls.messages).toHaveLength(0);
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
 });
 
 describe("terminal quota recovery", () => {

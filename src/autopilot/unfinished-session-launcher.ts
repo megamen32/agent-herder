@@ -37,6 +37,12 @@ import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from 
 const SUPPORTED_HARNESSES: readonly HarnessType[] = ["codex", "opencode", "claude", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai"];
 const DEFAULT_CONTINUATION = "Продолжи незавершённую задачу с того места, где выполнение было прервано. Сначала проверь текущее состояние и не повторяй уже завершённые действия.";
 const MAX_TEXT = 1_024;
+/**
+ * The fallback probe interval of a blocked recovery when the binding quota
+ * window has no known reset. It matches the quota sampler interval, so the
+ * guard is re-read on fresh account evidence and not on a blind timer.
+ */
+const QUOTA_DEFERRAL_RETRY_MS = 5 * 60_000;
 const DEFAULT_EVIDENCE_MESSAGE_COUNT = 200;
 const MAX_EVIDENCE_MESSAGE_COUNT = 200;
 const DEFAULT_BATCH_CONTEXT_TOKEN_BUDGET = 480_000;
@@ -182,6 +188,28 @@ function isSubagentSession(session: AgentSession | null | undefined): boolean {
  */
 export function isArchivedSessionFailure(error: unknown): boolean {
   return typeof error === "string" && /\bis archived\b/i.test(error);
+}
+
+/**
+ * A refusal that never reached the native writer.
+ *
+ * The native harness did not accept the request, so the native turn did not
+ * fail. The recovery is blocked, not failed: it must not consume the retry
+ * budget, and it must never be reported as a native failure.
+ */
+export function isUnsubmittedRefusal(result: { notSubmitted?: boolean; nonRetryable?: boolean } | null | undefined): boolean {
+  return result?.notSubmitted === true && result?.nonRetryable === true;
+}
+
+/**
+ * The Codex quota guard refuses the request before it is submitted.
+ *
+ * The guard protects the OpenAI Codex account with a local reserve policy, so
+ * the refusal repeats until the binding window resets. It is not a native
+ * failure and not a reason to spend the retry budget.
+ */
+export function isQuotaGuardRefusal(error: unknown): boolean {
+  return typeof error === "string" && error.includes("codex_quota_guard");
 }
 
 export type QuotaFailureEvidence = {
@@ -2468,6 +2496,29 @@ export class UnfinishedSessionStore {
     }, (record) => record !== null);
   }
 
+  /**
+   * Postpone the next probe of an exhausted record.
+   *
+   * The budget stays spent and the record stays exhausted: only the moment of
+   * the next probe changes, so a blocked admission is not retried on every
+   * cycle.
+   */
+  async postponeExhaustedProbe(
+    harness: HarnessType,
+    sessionId: string,
+    nextAttemptAt: Date,
+    now = new Date(),
+    cwd?: string,
+  ): Promise<UnfinishedSessionRecord | null> {
+    return this.mutate((file) => {
+      const record = findUnfinishedRecord(file.sessions, harness, sessionId, cwd);
+      if (!record || record.state !== "exhausted") return null;
+      record.nextAttemptAt = nextAttemptAt.toISOString();
+      record.updatedAt = now.toISOString();
+      return { ...record };
+    }, (record) => record !== null);
+  }
+
   async retainSourceBinding(record: UnfinishedSessionRecord, now = new Date()): Promise<void> {
     await this.mutate((file) => {
       const key = `${unfinishedRecordKey(record)}:${record.startedAt}`;
@@ -3564,12 +3615,14 @@ export class UnfinishedSessionLauncher {
         }
       }
       if (record.state === "exhausted") {
-        // Exhausted is not a dead end: the archived refusal that exhausted the
-        // record is reversible, so a restored thread re-arms the record and the
+        // Exhausted is not a dead end: the refusal that exhausted the record
+        // is reversible, so a restored thread re-arms the record and the
         // interrupted turn continues instead of being stranded.
-        const rearmed = await this.rearmExhaustedArchivedRecord(adapter, record, session);
+        const rearmed = await this.rearmExhaustedReversibleRecord(adapter, record, session);
         if (!rearmed) {
-          await this.notifyExhausted(record);
+          // A blocked admission is not a native failure and must never be
+          // reported as one.
+          if (!isQuotaGuardRefusal(record.lastError ?? "")) await this.notifyExhausted(record);
           continue;
         }
         record = rearmed;
@@ -4470,7 +4523,16 @@ export class UnfinishedSessionLauncher {
           ||await this.options.humanStopStore?.isHeld(record.harness,record.sessionId)){await this.options.store.cancelAttempt(attempt);return;}
       }
       const resumed = await this.resumeRestorableSession(adapter, record);
-      if (!resumed.ok) throw new Error(resumed.error);
+      if (!resumed.ok) {
+        // A refusal that was never submitted is a deferral: the native turn did
+        // not fail, so the reserved attempt is given back and the record stays
+        // armed until the guard admits the request again.
+        if (resumed.notSubmitted && resumed.nonRetryable) {
+          await this.deferUnsubmittedRecovery(attempt, record, { error: resumed.error, quotaBlock: resumed.quotaBlock });
+          return;
+        }
+        throw new Error(resumed.error);
+      }
       if (!this.lifecycleActive(lifecycleEpoch)) {
         await this.options.store.cancelAttempt(attempt);
         return;
@@ -4557,7 +4619,18 @@ export class UnfinishedSessionLauncher {
         console.error(`[agent-herder] исход продолжения ${record.harness}:${record.sessionId} не подтверждён; автоматический повтор запрещён`);
         return;
       }
-      if (!sent.ok) throw new Error(sent.error || "команда продолжения отклонена");
+      if (!sent.ok) {
+        if (sent.admission === "not_submitted") {
+          // The prompt never crossed the native admission boundary: the
+          // recovery is blocked, not failed, and it keeps its retry budget.
+          await this.deferUnsubmittedRecovery(attempt, record, {
+            error: sent.error || "продолжение отклонено до отправки",
+            quotaBlock: sent.quotaBlock,
+          });
+          return;
+        }
+        throw new Error(sent.error || "команда продолжения отклонена");
+      }
       promptAccepted = true;
       promptPending = sent.pending === true;
       // The prompt is now accepted by the native harness. Always settle the
@@ -6052,6 +6125,74 @@ export class UnfinishedSessionLauncher {
     if (blocked) await this.notifyDeterministicBlock(blocked);
   }
 
+  /**
+   * A refusal that never reached the native writer is a deferral.
+   *
+   * The reserved attempt is given back, the record stays armed and the cause
+   * is reported as what it is: a local admission guard, not a native failure.
+   */
+  private async deferUnsubmittedRecovery(
+    attempt: UnfinishedSessionRecord,
+    record: UnfinishedSessionRecord,
+    refusal: { error: string; quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null } },
+  ): Promise<void> {
+    const blocked = await this.options.store.markDeterministicFailure(
+      attempt.harness,
+      attempt.sessionId,
+      refusal.error,
+      this.quotaRetryAt(refusal.quotaBlock),
+      new Date(),
+      attempt.workspaceIdentity || attempt.cwd,
+    );
+    console.error(`[agent-herder] восстановление ${record.harness}:${record.sessionId} отложено до отправки: ${refusal.error}`);
+    if (blocked) await this.notifyUnsubmittedBlock(blocked, refusal.quotaBlock);
+  }
+
+  /**
+   * The next probe of a blocked recovery.
+   *
+   * A known binding window resets at a known moment, so the retry waits for
+   * that moment. Without a known reset the guard is read again on the quota
+   * sampler interval.
+   */
+  private quotaRetryAt(quotaBlock?: { resetsAt: number | null }): Date {
+    const resetsAt = quotaBlock?.resetsAt;
+    if (resetsAt && resetsAt > 0) {
+      const at = new Date(resetsAt * 1000);
+      if (at.getTime() > Date.now()) return at;
+    }
+    return new Date(Date.now() + QUOTA_DEFERRAL_RETRY_MS);
+  }
+
+  /**
+   * The operator sees the true cause of the block.
+   *
+   * A critical "native failure" would name a failure that never happened and
+   * would hide the one action that changes the outcome.
+   */
+  private async notifyUnsubmittedBlock(
+    record: UnfinishedSessionRecord,
+    quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null },
+  ): Promise<void> {
+    if (!this.options.notify || record.notifiedAt) return;
+    const harness = displayHarness(record.harness);
+    const body = quotaBlock
+      ? `${harness}: восстановление прерванного хода отложено — защита лимита Codex. Запрос к Codex не отправлялся (причина: ${quotaBlock.reason}${quotaBlock.remainingPercent === null ? "" : `, остаток ${quotaBlock.remainingPercent}%`}). Это локальная политика резерва аккаунта, а не сбой нативного хода. Прерванный ход остаётся в очереди восстановления и продолжится сам, когда лимит восстановится. Настройка: Автоматизация / Запуск сессий / Защита лимита Codex.`
+      : `${harness}: восстановление прерванного хода отложено до отправки. Запрос не дошёл до нативного рантайма (${record.lastError || "причина отказа не названа"}); сбой нативного хода не зафиксирован. Прерванный ход остаётся в очереди восстановления и будет проверен снова.`;
+    await this.options.notify({
+      severity: "notice",
+      title: quotaBlock
+        ? `${harness}: восстановление прерванного хода отложено — защита лимита Codex`
+        : `${harness}: восстановление прерванного хода отложено до отправки`,
+      body,
+      dedupKey: `agent-herder:unfinished-session:${quotaBlock ? "quota-blocked" : "not-submitted"}:${unfinishedRecordKey(record)}`,
+      correlationId: `unfinished-${unfinishedRecordKey(record)}-${record.startedAt}`,
+      sourceId: "agent-herder-autostart",
+      signalType: quotaBlock ? "unfinished-session-quota-blocked" : "unfinished-session-not-submitted",
+    });
+    await this.options.store.markNotified(record.harness, record.sessionId, new Date(), record.workspaceIdentity || record.cwd);
+  }
+
   private async notifyDeterministicBlock(record: UnfinishedSessionRecord): Promise<void> {
     if (!this.options.notify || record.notifiedAt) return;
     const harness = displayHarness(record.harness);
@@ -6094,12 +6235,25 @@ export class UnfinishedSessionLauncher {
   private async resumeRestorableSession(
     adapter: HarnessAdapter,
     record: UnfinishedSessionRecord,
-  ): Promise<{ ok: true } | { ok: false; error: string }> {
+  ): Promise<{ ok: true } | { ok: false; error: string; notSubmitted?: boolean; nonRetryable?: boolean; quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null } }> {
     const resume = async () => (adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true });
     const resumed = await resume();
     if (resumed.ok) return { ok: true };
     const refusal = resumed.error || "";
-    if (!isArchivedSessionFailure(refusal)) return { ok: false, error: refusal || "возобновление отклонено" };
+    if (!isArchivedSessionFailure(refusal)) {
+      // A refusal that was never submitted is a deferral: the native turn did
+      // not fail, so the caller must not charge it against the retry budget.
+      if (isUnsubmittedRefusal(resumed)) {
+        return {
+          ok: false,
+          error: refusal || "возобновление отклонено до отправки",
+          notSubmitted: true,
+          nonRetryable: true,
+          ...(resumed.quotaBlock ? { quotaBlock: resumed.quotaBlock } : {}),
+        };
+      }
+      return { ok: false, error: refusal || "возобновление отклонено" };
+    }
     const unarchive = adapter.unarchiveSession;
     if (!unarchive) return { ok: false, error: refusal };
     const restored = await unarchive.call(adapter, record.sessionId).catch((cause: unknown) => ({ ok: false, error: errorText(cause) }));
@@ -6108,28 +6262,53 @@ export class UnfinishedSessionLauncher {
       return { ok: false, error: refusal };
     }
     const retried = await resume();
-    if (!retried.ok) return { ok: false, error: retried.error || refusal };
+    if (!retried.ok) {
+      return {
+        ok: false,
+        error: retried.error || refusal,
+        ...(isUnsubmittedRefusal(retried) ? { notSubmitted: true, nonRetryable: true } : {}),
+        ...(retried.quotaBlock ? { quotaBlock: retried.quotaBlock } : {}),
+      };
+    }
     console.error(`[agent-herder] архивированная сессия ${record.harness}:${record.sessionId} восстановлена и возобновлена`);
     return { ok: true };
   }
 
   /**
-   * Re-arm an exhausted record whose only cause was a reversible native refusal.
+   * Re-arm an exhausted record whose only cause was a reversible refusal.
    *
    * Exhausting the retry budget must not strand unfinished work: when the
    * thread becomes resumable again, the durable record returns to the armed
-   * state and the ordinary recovery continues the interrupted turn.
+   * state and the ordinary recovery continues the interrupted turn. An archived
+   * thread is restored first; a quota guard simply admits the resume again.
    */
-  private async rearmExhaustedArchivedRecord(
+  private async rearmExhaustedReversibleRecord(
     adapter: HarnessAdapter,
     record: UnfinishedSessionRecord,
     session: AgentSession,
   ): Promise<UnfinishedSessionRecord | null> {
-    if (!isArchivedSessionFailure(record.lastError ?? "")) return null;
+    const cause = record.lastError ?? "";
+    const archived = isArchivedSessionFailure(cause);
+    const blocked = isQuotaGuardRefusal(cause);
+    if (!archived && !blocked) return null;
+    // A blocked record waits for the binding window instead of probing the
+    // guard on every cycle.
+    if (blocked && record.nextAttemptAt && Date.parse(record.nextAttemptAt) > Date.now()) return null;
     const resumed = await this.resumeRestorableSession(adapter, record);
-    if (!resumed.ok) return null;
+    if (!resumed.ok) {
+      if (resumed.notSubmitted && resumed.nonRetryable) {
+        await this.options.store.postponeExhaustedProbe(
+          record.harness,
+          record.sessionId,
+          this.quotaRetryAt(resumed.quotaBlock),
+          new Date(),
+          record.workspaceIdentity || record.cwd,
+        );
+      }
+      return null;
+    }
     const rearmed = await this.options.store.markStarted(session, this.generationId, new Date(), true);
-    console.error(`[agent-herder] запись ${record.harness}:${record.sessionId} перевзведена: архив восстановлен, прерванный ход продолжится`);
+    console.error(`[agent-herder] запись ${record.harness}:${record.sessionId} перевзведена: ${archived ? "архив восстановлен" : "ограничение лимита снято"}, прерванный ход продолжится`);
     return rearmed;
   }
 

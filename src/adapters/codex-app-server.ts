@@ -2971,9 +2971,21 @@ export class CodexAppServerAdapter implements HarnessAdapter {
    * A quota refusal happens before the transport write: nothing was submitted,
    * so the caller must not read it as an unknown admission it may retry.
    */
-  private quotaRefusal(error: unknown): { ok: false; notSubmitted: true; admitted: false; nonRetryable: true; admissionUnknown: false; error: string } | undefined {
+  private quotaRefusal(error: unknown): { ok: false; notSubmitted: true; admitted: false; nonRetryable: true; admissionUnknown: false; error: string; quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null } } | undefined {
     if (!(error instanceof CodexQuotaBlockedError)) return undefined;
-    return { ok: false, notSubmitted: true, admitted: false, nonRetryable: true, admissionUnknown: false, error: error.message };
+    // The binding window is the one with the least remaining quota. Its reset
+    // is the earliest moment the guard can admit the request again, so the
+    // caller can wait for that moment instead of spending its retry budget.
+    const binding = error.decision.windows.reduce<{ remainingPercent: number; resetsAt: number | null } | null>((lowest, window) => {
+      if (!lowest || window.remainingPercent < lowest.remainingPercent) {
+        return { remainingPercent: window.remainingPercent, resetsAt: window.resetsAt };
+      }
+      return lowest;
+    }, null);
+    return {
+      ok: false, notSubmitted: true, admitted: false, nonRetryable: true, admissionUnknown: false, error: error.message,
+      quotaBlock: { reason: error.decision.reason, remainingPercent: error.decision.remainingPercent, resetsAt: binding?.resetsAt ?? null },
+    };
   }
 
   /** The top-level default model of the native config, as a fresh thread/start

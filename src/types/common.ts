@@ -164,6 +164,12 @@ export interface SendMessageResult {
   admissionUnknown?: boolean;
   /** A failed result that crossed the native idempotency boundary and cannot be retried safely. */
   nonRetryable?: boolean;
+  /**
+   * A local admission guard refused the request before the native writer saw
+   * it. The native turn never failed: the request was not submitted, and the
+   * binding window reset is the earliest moment a retry can be admitted.
+   */
+  quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null };
   /** The native harness admitted the prompt, but its turn-start event is not confirmed yet. */
   pending?: boolean;
 }
@@ -548,6 +554,12 @@ export interface HarnessAdapter {
     /** The failure must not be replayed. */
     nonRetryable?: boolean;
     admitted?: boolean;
+    /**
+     * A local admission guard refused the request before the native writer
+     * saw it. The native turn never failed, and the binding window reset is
+     * the earliest moment a retry can be admitted.
+     */
+    quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null };
   }>;
 
   /** List available models for this harness */
