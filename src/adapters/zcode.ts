@@ -2334,6 +2334,21 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (options.steer || options.queue || options.images?.length) {
       const result = normalizeSendAdmission(await this.sendConversationInput(id, options));
       const callerInputId = result.inputId ?? options.inputId;
+      // A transport failure may follow a committed V4 input. Reconcile only
+      // this command and session; never replay it or weaken a typed rejection.
+      if (result.admissionUnknown && options.queue && !options.steer && options.inputId && options.inputId === callerInputId && this.useLocalTurnMetadata && existsSync(this.localDbPath)) {
+        const origin = options.origin === "human" ? "human" : "automation";
+        const command = zcodeInputId(callerInputId, origin);
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const native = zcodeNativeAdmission(this.localDbPath, id, [command]);
+          if ((native.state === "admitted" || native.state === "started") && native.userMessageId) {
+            return { ok: true, admitted: true, inputId: callerInputId,
+              nativeInputMessageId: native.userMessageId, ...(native.turnId ? {turnId:native.turnId} : {}) };
+          }
+          if (native.state === "failed") break;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
       if (callerInputId && (!result.inputId || !options.inputId || result.inputId === options.inputId)) {
         const origin = options.origin === "human" ? "human" : "automation";
         const native = zcodeNativeAdmission(this.localDbPath, id, [zcodeInputId(callerInputId, origin)]);
@@ -2429,6 +2444,13 @@ export class ZcodeAdapter implements HarnessAdapter {
       return { ok: false, admitted: true, nonRetryable: true, error };
     }
     await this.persistDesiredSessionTitle(id);
+    // A source-command match in this exact session is the native user-message
+    // receipt. Do not substitute the caller input ID or an unrelated turn ID.
+    const native = zcodeNativeAdmission(this.localDbPath, id, [result.inputId!]);
+    if (options.inputId && (native.state === "admitted" || native.state === "started") && native.userMessageId) {
+      return { ok: true, admitted: true, inputId: options.inputId,
+        nativeInputMessageId: native.userMessageId, ...(started.turnId ? { turnId: started.turnId } : {}) };
+    }
     return { ok: true, ...(started.turnId ? { turnId: started.turnId } : {}) };
   }
 
@@ -2522,6 +2544,23 @@ export class ZcodeAdapter implements HarnessAdapter {
         // original turn. ACK alone is pending, never failure or permission to replay.
         this.ensureSessionEventSubscription(id, workspace);
         return { ok: true, pending: true, inputId };
+      }
+      if (requestedDelivery === "queue" && nativeInput.delivery === "startNow" && !options.durableUserDelivery) {
+        // A fresh ordinary input can be promoted immediately by V4. Only a
+        // persisted exact source command makes this a usable message receipt.
+        if (this.useLocalTurnMetadata && existsSync(this.localDbPath)) {
+          for (let attempt = 0; attempt < 20; attempt++) {
+            const native = zcodeNativeAdmission(this.localDbPath, id, [commandId]);
+            if ((native.state === "admitted" || native.state === "started") && native.userMessageId) {
+              return {ok:true, admitted:true, inputId, nativeInputMessageId:native.userMessageId,
+                ...(native.turnId ? {turnId:native.turnId} : {})};
+            }
+            if (native.state === "failed") break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        return {ok:false, admitted:true, nonRetryable:true, inputId,
+          error:"ZCode начал сообщение, но точный native receipt недоступен; повтор запрещён."};
       }
       if (nativeInput.delivery !== requestedDelivery) {
         return { ok: false, admitted: true, inputId, nonRetryable: true,
