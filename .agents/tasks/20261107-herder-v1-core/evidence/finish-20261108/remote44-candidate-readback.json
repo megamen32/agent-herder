@@ -1,0 +1,280 @@
+{
+  "entry": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/deploy/fleet/launch-v1-core.py",
+  "model_sends": 0,
+  "at": "2026-11-08T18:25:08Z",
+  "first_call_without_tools_list": true,
+  "checks": [
+    {
+      "run": 1,
+      "protocol": "2025-06-18",
+      "tool_count": 15,
+      "tools": [
+        "discover",
+        "sessions",
+        "session",
+        "create",
+        "deliver",
+        "resume",
+        "stop",
+        "search",
+        "export",
+        "automation",
+        "resource",
+        "configure",
+        "permission",
+        "human_request",
+        "compat_task"
+      ],
+      "instances": {
+        "complete": true,
+        "instances": [
+          {
+            "capabilities": {
+              "controlCapabilities": {
+                "cancelTurn": false,
+                "detach": false,
+                "events": false,
+                "fork": false,
+                "modelSwitch": false,
+                "recover": false,
+                "resume": false,
+                "steer": false,
+                "subagents": false,
+                "terminate": false
+              },
+              "deliveryModes": [
+                "queue",
+                "sync",
+                "steer"
+              ],
+              "methods": [
+                "init",
+                "createSession",
+                "sendMessage",
+                "getSession",
+                "getSessionMessages",
+                "listSessions",
+                "getRawTranscript",
+                "archiveSession"
+              ]
+            },
+            "harness": "codex",
+            "instance_ref": "codex-local",
+            "node_ref": "roomhacker-server-100"
+          },
+          {
+            "capabilities": {
+              "controlCapabilities": {
+                "cancelTurn": false,
+                "detach": false,
+                "events": false,
+                "fork": false,
+                "modelSwitch": false,
+                "recover": false,
+                "resume": false,
+                "steer": false,
+                "subagents": false,
+                "terminate": false
+              },
+              "deliveryModes": [
+                "queue",
+                "sync",
+                "steer"
+              ],
+              "methods": [
+                "init",
+                "createSession",
+                "sendMessage",
+                "getSession",
+                "getSessionMessages",
+                "listSessions",
+                "getRawTranscript",
+                "archiveSession"
+              ]
+            },
+            "harness": "codex",
+            "instance_ref": "codex-44",
+            "node_ref": "server-44"
+          }
+        ],
+        "next_cursor": null,
+        "scope": "configured_owner_instances",
+        "sources": [
+          {
+            "instance_ref": "codex-local",
+            "result": {
+              "complete": true,
+              "instances": [
+                {
+                  "capabilities": {
+                    "controlCapabilities": {
+                      "cancelTurn": false,
+                      "detach": false,
+                      "events": false,
+                      "fork": false,
+                      "modelSwitch": false,
+                      "recover": false,
+                      "resume": false,
+                      "steer": false,
+                      "subagents": false,
+                      "terminate": false
+                    },
+                    "deliveryModes": [
+                      "queue",
+                      "sync",
+                      "steer"
+                    ],
+                    "methods": [
+                      "init",
+                      "createSession",
+                      "sendMessage",
+                      "getSession",
+                      "getSessionMessages",
+                      "listSessions",
+                      "getRawTranscript",
+                      "archiveSession"
+                    ]
+                  },
+                  "harness": "codex",
+                  "instance_ref": "codex-local",
+                  "node_ref": "roomhacker-server-100"
+                }
+              ],
+              "scope": "configured_owner_instance"
+            }
+          },
+          {
+            "instance_ref": "codex-44",
+            "result": {
+              "complete": true,
+              "instances": [
+                {
+                  "capabilities": {
+                    "controlCapabilities": {
+                      "cancelTurn": false,
+                      "detach": false,
+                      "events": false,
+                      "fork": false,
+                      "modelSwitch": false,
+                      "recover": false,
+                      "resume": false,
+                      "steer": false,
+                      "subagents": false,
+                      "terminate": false
+                    },
+                    "deliveryModes": [
+                      "queue",
+                      "sync",
+                      "steer"
+                    ],
+                    "methods": [
+                      "init",
+                      "createSession",
+                      "sendMessage",
+                      "getSession",
+                      "getSessionMessages",
+                      "listSessions",
+                      "getRawTranscript",
+                      "archiveSession"
+                    ]
+                  },
+                  "harness": "codex",
+                  "instance_ref": "codex-44",
+                  "node_ref": "server-44"
+                }
+              ],
+              "scope": "configured_owner_instance"
+            }
+          }
+        ]
+      },
+      "projects": {
+        "complete": false,
+        "limitations": [
+          "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+        ],
+        "projects": [
+          {
+            "native": null,
+            "project_ref": "/home/roomhacker/agents-projects",
+            "source": "authorized_native_session"
+          }
+        ],
+        "scope": "authorized_registered_sessions"
+      },
+      "core_children": [
+        {
+          "pid": 672045,
+          "exe": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-compat-c52b44fe/fixture/herder_native_stdio",
+          "sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+        }
+      ]
+    }
+  ],
+  "nodes": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"complete\":true,\"next_cursor\":null,\"nodes\":[{\"node_ref\":\"roomhacker-server-100\"},{\"node_ref\":\"server-44\"}],\"scope\":\"configured_owner_instances\",\"sources\":[{\"instance_ref\":\"codex-local\",\"result\":{\"complete\":true,\"nodes\":[{\"node_ref\":\"roomhacker-server-100\"}],\"scope\":\"configured_owner_instance\"}},{\"instance_ref\":\"codex-44\",\"result\":{\"complete\":true,\"nodes\":[{\"node_ref\":\"server-44\"}],\"scope\":\"configured_owner_instance\"}}]}"
+      }
+    ],
+    "structuredContent": {
+      "complete": true,
+      "next_cursor": null,
+      "nodes": [
+        {
+          "node_ref": "roomhacker-server-100"
+        },
+        {
+          "node_ref": "server-44"
+        }
+      ],
+      "scope": "configured_owner_instances",
+      "sources": [
+        {
+          "instance_ref": "codex-local",
+          "result": {
+            "complete": true,
+            "nodes": [
+              {
+                "node_ref": "roomhacker-server-100"
+              }
+            ],
+            "scope": "configured_owner_instance"
+          }
+        },
+        {
+          "instance_ref": "codex-44",
+          "result": {
+            "complete": true,
+            "nodes": [
+              {
+                "node_ref": "server-44"
+              }
+            ],
+            "scope": "configured_owner_instance"
+          }
+        }
+      ]
+    },
+    "isError": false
+  },
+  "remote_sessions": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"complete\":true,\"limitations\":[],\"native_coverage_complete\":true,\"next_cursor\":null,\"scope\":\"authorized_registered_sessions\",\"sessions\":[]}"
+      }
+    ],
+    "structuredContent": {
+      "complete": true,
+      "limitations": [],
+      "native_coverage_complete": true,
+      "next_cursor": null,
+      "scope": "authorized_registered_sessions",
+      "sessions": []
+    },
+    "isError": false
+  },
+  "result": "PASS"
+}

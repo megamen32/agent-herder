@@ -94,6 +94,30 @@ class LaunchTests(unittest.TestCase):
                 finally:p.write_text(original);p.chmod(0o600)
         self.write_selector([self.profiles[0],self.profiles[0]]);self.rejected()
         self.write_selector([]);self.rejected()
+    def setup_remote(self):
+        script=self.root/'remote.mjs';script.write_text('remote wrapper');config=Path(str(script)+'.json')
+        self.write_private(config,{'nodeRef':'server-44','kind':'codex'})
+        self.manifest['remote_ahap_wrappers']=[{'node':'server-44','instance':'remote-opencode','kind':'codex','script':str(script),'script_sha256':self.hash(script),'config_sha256':self.hash(config)}]
+        self.manifest_path.write_text(json.dumps(self.manifest))
+        profile=self.root/'remote-profile.json';self.write_private(profile,{'owner':{'node':'server-44','instance':'remote-opencode','kind':'codex','executable':self.paths['node'],'ahap_script':str(script)}})
+        self.write_selector([self.profiles[0],str(profile)])
+        return script,config,profile
+    def test_remote_and_local_same_kind_are_pinned_independently(self):
+        script,config,profile=self.setup_remote();r=self.run_launcher('--check');self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(json.loads(r.stdout)['argv'],[self.paths['compat'],'--trusted-owner-profile',self.profiles[0],'--trusted-owner-profile',str(profile)])
+    def test_remote_script_config_and_identity_tampering_rejected(self):
+        script,config,profile=self.setup_remote()
+        for p in (script,config):
+            old=p.read_bytes()
+            try:p.write_bytes(old+b' ');self.rejected()
+            finally:p.write_bytes(old)
+        for field,value in [('node','server-88'),('instance','other'),('executable',self.paths['core']),('kind','chatgpt')]:
+            old=profile.read_text();data=json.loads(old);data['owner'][field]=value
+            try:self.write_private(profile,data);self.rejected()
+            finally:profile.write_text(old);profile.chmod(0o600)
+        config.chmod(0o644);self.rejected()
+    def test_duplicate_remote_identity_rejected(self):
+        self.setup_remote();self.manifest['remote_ahap_wrappers'].append(dict(self.manifest['remote_ahap_wrappers'][0]));self.manifest_path.write_text(json.dumps(self.manifest));self.write_selector();self.rejected()
     def test_profile_permissions_and_unknown_cli_rejected(self):
         p=Path(self.profiles[0]);p.chmod(0o644);self.rejected();p.chmod(0o600)
         self.rejected('--unexpected')

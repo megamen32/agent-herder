@@ -1,0 +1,14 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync,chmodSync,symlinkSync,rmSync} from 'node:fs';
+import os from 'node:os';import path from 'node:path';
+import {loadConfig,sshArgs} from './remote-ahap-ssh.mjs';
+const good={host:'192.168.2.5',user:'roomhacker',port:22,nodeRef:'server-44',kind:'opencode',remoteNode:'/usr/bin/node',remoteRunner:'/home/roomhacker/a.mjs',remoteHome:'/home/roomhacker',remoteCwd:'/home/roomhacker',remoteRunnerSha256:'a'.repeat(64),opencodeBaseUrl:'http://127.0.0.1:12345/'};
+function fixture(fn){const d=mkdtempSync(path.join(os.tmpdir(),'ahap-ssh-'));try{fn(d)}finally{rmSync(d,{recursive:true,force:true})}}
+test('private pinned configuration produces batch strict SSH without secret in argv',()=>fixture(d=>{const p=path.join(d,'config');writeFileSync(p,JSON.stringify(good),{mode:0o600});const args=sshArgs(loadConfig(p));assert.ok(args.includes('BatchMode=yes'));assert.ok(args.includes('StrictHostKeyChecking=yes'));assert.ok(args.at(-1).includes(good.remoteRunnerSha256));assert.equal(args.at(-2),'roomhacker@192.168.2.5')}));
+test('rejects nonprivate and symlink config',()=>fixture(d=>{const p=path.join(d,'config');writeFileSync(p,JSON.stringify(good),{mode:0o600});chmodSync(p,0o644);assert.throws(()=>loadConfig(p));chmodSync(p,0o600);const s=path.join(d,'symlink');symlinkSync(p,s);assert.throws(()=>loadConfig(s))}));
+test('rejects command injection, remote nonloopback and secrets in config',()=>fixture(d=>{const p=path.join(d,'config');for(const patch of [{remoteRunner:'/tmp/x;id'},{host:'x;id'},{opencodeBaseUrl:'http://example.com:3/'},{password:'secret'},{remoteRunnerSha256:'oops'}]){writeFileSync(p,JSON.stringify({...good,...patch}),{mode:0o600});assert.throws(()=>loadConfig(p))}}));
+
+test('normalizes URL before constructing remote shell command',()=>fixture(d=>{const p=path.join(d,'config');writeFileSync(p,JSON.stringify({...good,opencodeBaseUrl:'  http://127.0.0.1:12345/  '}),{mode:0o600});const args=sshArgs(loadConfig(p));assert.ok(args.at(-1).includes('AHAP_OPENCODE_BASE_URL=http://127.0.0.1:12345/ '));assert.ok(!args.at(-1).includes('URL=  '))}));
+
+test('codex socket must be explicit and shell safe',()=>fixture(d=>{const p=path.join(d,'config');const {opencodeBaseUrl,...base}=good;writeFileSync(p,JSON.stringify({...base,kind:'codex',codexSocket:'/run/user/1000/codex.sock'}),{mode:0o600});const a=sshArgs(loadConfig(p));assert.ok(a.at(-1).includes('AHAP_CODEX_SOCKET=/run/user/1000/codex.sock'));writeFileSync(p,JSON.stringify({...base,kind:'codex',codexSocket:'/tmp/x;id'}),{mode:0o600});assert.throws(()=>loadConfig(p))}));

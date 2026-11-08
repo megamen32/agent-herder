@@ -45,11 +45,38 @@ def prepare(selector):
     for kind, path in manifest['adapters'].items():
         if digest(path) != manifest['sha256']['adapters'][kind]:
             raise ValueError('adapter digest mismatch: ' + kind)
+    # Explicit, immutable per-instance exceptions for a remote transport. A
+    # wrapper can never change the executable or replace the canonical adapter.
+    wrappers = manifest.get('remote_ahap_wrappers', [])
+    if not isinstance(wrappers, list):
+        raise ValueError('invalid remote wrappers')
+    pinned = {}
+    for item in wrappers:
+        if not isinstance(item, dict) or set(item) != {'node', 'instance', 'kind', 'script', 'script_sha256', 'config_sha256'}:
+            raise ValueError('invalid remote wrapper')
+        identity = (item['node'], item['instance'], item['kind'])
+        if any(not isinstance(v, str) or not v for v in identity) or identity in pinned:
+            raise ValueError('invalid or duplicate remote identity')
+        if item['kind'] not in manifest['adapters']:
+            raise ValueError('unknown remote kind')
+        script = Path(item['script'])
+        if not script.is_absolute() or script.resolve() != script or digest(script) != item['script_sha256']:
+            raise ValueError('remote wrapper digest mismatch')
+        config_path = str(script) + '.json'
+        companion = private_json(config_path)
+        if (digest(config_path) != item['config_sha256'] or companion.get('nodeRef') != item['node']
+                or companion.get('kind') != item['kind']):
+            raise ValueError('remote configuration mismatch')
+        pinned[identity] = str(script)
     argv = [manifest['compat']]
     for path in profiles:
         profile = private_json(path)
         owner = profile['owner']
-        if owner['executable'] != manifest['node'] or owner['ahap_script'] != manifest['adapters'][owner['kind']]:
+        if owner['executable'] != manifest['node']:
+            raise ValueError('profile does not select the installed executable')
+        canonical = manifest['adapters'][owner['kind']]
+        identity = (owner.get('node'), owner.get('instance'), owner['kind'])
+        if owner['ahap_script'] != canonical and pinned.get(identity) != owner['ahap_script']:
             raise ValueError('profile does not select the installed artifact')
         argv.extend(['--trusted-owner-profile', path])
     return argv, dict(os.environ, HERDER_NATIVE_COMMAND=manifest['core']), {
