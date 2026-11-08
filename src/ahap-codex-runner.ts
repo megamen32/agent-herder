@@ -28,7 +28,9 @@ export async function serveCodexAhap(
   adapter: CodexAhapPort,
   input: Readable = process.stdin,
   output: Writable = process.stdout,
+  instanceModel?: string,
 ): Promise<void> {
+  if (instanceModel !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(instanceModel)) throw new Error("invalid protected Codex instance model");
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
   let stopped = false;
@@ -87,7 +89,10 @@ export async function serveCodexAhap(
             error(id, -32602, "createSession requires name, absolute cwd, and restricted permissions");
             continue;
           }
-          result = await adapter.createSession({ ...params.options, fullAccess: false });
+          if (instanceModel && params.options.model !== undefined && params.options.model !== instanceModel) {
+            error(id, -32602, "model conflicts with protected instance route"); continue;
+          }
+          result = await adapter.createSession({ ...params.options, ...(instanceModel ? { model: instanceModel } : {}), fullAccess: false });
           break;
         }
         case "sendMessage": {
@@ -95,7 +100,10 @@ export async function serveCodexAhap(
             error(id, -32602, "sendMessage requires exact session id, explicit queue boolean, message, and stable inputId");
             continue;
           }
-          const options: SendMessageOptions = { ...params.options };
+          if (instanceModel && params.options.model !== undefined && params.options.model !== instanceModel) {
+            error(id, -32602, "model conflicts with protected instance route"); continue;
+          }
+          const options: SendMessageOptions = { ...params.options, ...(instanceModel ? { model: instanceModel } : {}) };
           const receipt: SendMessageResult = await adapter.sendMessage(params.id, options);
           // Keep the adapter's receipt fields verbatim. inputId remains the
           // caller correlation; nativeInputMessageId is present only when the
@@ -201,7 +209,7 @@ async function main(): Promise<void> {
     throw new Error("AHAP_VERSION=0.1 and AHAP_HARNESS=codex are required");
   }
   const adapter = makeConfiguredAdapter();
-  try { await serveCodexAhap(adapter); } finally { await adapter.dispose(); }
+  try { await serveCodexAhap(adapter, process.stdin, process.stdout, process.env.AHAP_CODEX_MODEL); } finally { await adapter.dispose(); }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

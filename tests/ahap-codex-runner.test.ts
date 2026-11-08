@@ -212,3 +212,11 @@ it("preserves archive rejection and never retries an ambiguous exception", async
   expect(failed[1].error.data).toMatchObject({outcome:"unknown",retryable:false});
   expect(JSON.stringify(failed)).not.toContain("sensitive");
 });
+
+it('pins the configured Codex model for create and delivery and rejects conflicting requests',async()=>{
+ const input=new PassThrough(),output=new PassThrough();let text='';output.on('data',c=>{text+=c;});const calls:any[]=[];
+ const adapter={async createSession(options:any){calls.push(['create',options]);return {id:'native-thread'};},async sendMessage(_id:string,options:any){calls.push(['send',options]);return {ok:true,admitted:true,turnId:'turn-1'};}};
+ const serving=serveCodexAhap(adapter as any,input,output,'gpt-6.1-terra');
+ input.end([rpc(1,'initialize',{harness:'codex',ahapVersion:'0.1'}),rpc(2,'createSession',{options:{name:'worker',cwd:'/tmp'}}),rpc(3,'sendMessage',{id:'thread',options:{message:'work',queue:true,inputId:'once'}}),rpc(4,'createSession',{options:{name:'worker',cwd:'/tmp',model:'gpt-6.1-luna'}}),rpc(5,'sendMessage',{id:'thread',options:{message:'bad',queue:true,inputId:'other',model:'gpt-6.1-luna'}})].map(x=>JSON.stringify(x)).join('\n')+'\n');await serving;
+ const replies=text.trim().split('\n').map(x=>JSON.parse(x));expect(calls).toHaveLength(2);expect(calls[0][1].model).toBe('gpt-6.1-terra');expect(calls[1][1].model).toBe('gpt-6.1-terra');expect(replies[3].error.code).toBe(-32602);expect(replies[4].error.code).toBe(-32602);
+});

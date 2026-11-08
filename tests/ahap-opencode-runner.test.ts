@@ -146,3 +146,18 @@ it("v2 forwards a second delivery to an existing session with exact mode and cal
   expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
 });
+
+it('pins an instance model on create and send, and rejects conflicting requests before effects', async () => {
+  const input=new PassThrough(),output=new PassThrough();let text='';output.on('data',c=>{text+=c;});
+  const calls:Array<{method:string;options:any}>=[];
+  const adapter={async createSession(options:any){calls.push({method:'create',options});return {id:'ses_model',cwd:options.cwd};},async sendMessage(_id:string,options:any){calls.push({method:'send',options});return {ok:true,admitted:true,nativeInputMessageId:'msg_abc'};}};
+  const serving=serveOpenCodeAhap(adapter as OpenCodeAdapter,input,output,'v2','minimax-coding-plan/MiniMax-M3.1-Flash');
+  input.end([initialize,
+    {jsonrpc:'2.0',id:2,method:'createSession',params:{options:{name:'worker',cwd:'/tmp/work'}}},
+    {jsonrpc:'2.0',id:3,method:'sendMessage',params:{id:'ses_model',options:{message:'one',queue:true,inputId:'a'}}},
+    {jsonrpc:'2.0',id:4,method:'createSession',params:{options:{name:'bad',cwd:'/tmp/work',model:'other/model'}}},
+    {jsonrpc:'2.0',id:5,method:'sendMessage',params:{id:'ses_model',options:{message:'bad',queue:true,inputId:'b',model:'other/model'}}},
+  ].map(x=>JSON.stringify(x)).join('\n')+'\n');await serving;
+  const replies=text.trim().split('\n').map(x=>JSON.parse(x));
+  expect(calls).toHaveLength(2);expect(calls[0].options.model).toBe('minimax-coding-plan/MiniMax-M3.1-Flash');expect(calls[1].options.model).toBe('minimax-coding-plan/MiniMax-M3.1-Flash');expect(replies[3].error.code).toBe(-32602);expect(replies[4].error.code).toBe(-32602);
+});

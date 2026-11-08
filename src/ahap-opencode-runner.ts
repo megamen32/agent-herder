@@ -30,7 +30,9 @@ export async function serveOpenCodeAhap(
   input: Readable = process.stdin,
   output: Writable = process.stdout,
   family?: "v2" | "v22",
+  instanceModel?: string,
 ): Promise<void> {
+  if (instanceModel !== undefined && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/u.test(instanceModel)) throw new Error("invalid protected OpenCode instance model");
   if (family !== "v2" && family !== "v22") throw new Error("OpenCode native protocol must be selected before AHAP startup");
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
@@ -102,7 +104,11 @@ export async function serveOpenCodeAhap(
             error(id, -32602, "createSession requires a named session and absolute cwd");
             continue;
           }
-          result = await adapter.createSession(options);
+          if (instanceModel && options.model !== undefined && options.model !== instanceModel) {
+            error(id, -32602, "model conflicts with protected instance route");
+            continue;
+          }
+          result = await adapter.createSession(instanceModel ? { ...options, model: instanceModel } : options);
           if (result && typeof result === "object" && typeof (result as AgentSession).id === "string") {
             createdSessionIds.add((result as AgentSession).id);
           }
@@ -114,7 +120,11 @@ export async function serveOpenCodeAhap(
             error(id, -32602, "sendMessage expects {id,options:{message,inputId,queue:boolean,steer?}}; select one delivery mode");
             continue;
           }
-          let delivery: SendMessageOptions = { ...options };
+          if (instanceModel && options.model !== undefined && options.model !== instanceModel) {
+            error(id, -32602, "model conflicts with protected instance route");
+            continue;
+          }
+          let delivery: SendMessageOptions = { ...options, ...(instanceModel ? { model: instanceModel } : {}) };
           if (family === "v22") {
             if (options.queue || options.steer || options.start === false
               || !createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
@@ -122,7 +132,7 @@ export async function serveOpenCodeAhap(
               continue;
             }
             attemptedStartSessionIds.add(params.id);
-            delivery = { ...options, queue: false, start: true, activeTurnOnly: true };
+            delivery = { ...delivery, queue: false, start: true, activeTurnOnly: true };
           } else if (options.start === true) {
             // Preserve the existing fresh Start compatibility route on v2.
             if (!createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
@@ -130,7 +140,7 @@ export async function serveOpenCodeAhap(
               continue;
             }
             attemptedStartSessionIds.add(params.id);
-            delivery = { ...options, queue: true, start: false, activeTurnOnly: true };
+            delivery = { ...delivery, queue: true, start: false, activeTurnOnly: true };
           }
           result = await adapter.sendMessage(params.id, delivery);
           const receipt = result as SendMessageResult;
@@ -243,7 +253,7 @@ async function main(): Promise<void> {
     throw new Error("AHAP_VERSION=0.1 and AHAP_HARNESS=opencode are required");
   }
   const {adapter, family} = await makeConfiguredAdapter();
-  await serveOpenCodeAhap(adapter, process.stdin, process.stdout, family);
+  await serveOpenCodeAhap(adapter, process.stdin, process.stdout, family, process.env.AHAP_OPENCODE_MODEL);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
