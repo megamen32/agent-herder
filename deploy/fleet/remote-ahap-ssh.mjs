@@ -16,7 +16,9 @@ export function loadConfig(file) {
   const common = ['host','user','port','nodeRef','kind','remoteNode','remoteRunner','remoteHome','remoteCwd','remoteRunnerSha256'];
   const keys = [...common, ...(c.kind === 'opencode' ? ['opencodeBaseUrl'] : c.kind === 'codex' ? ['codexSocket'] : [])];
   if (!['opencode','codex'].includes(c.kind)) throw new Error('invalid kind');
-  if (Object.keys(c).some(k => !keys.includes(k)) || keys.some(k => !(k in c))) throw new Error('invalid config keys');
+  const allowed = c.kind === 'codex' ? [...keys, 'model'] : keys;
+  if (Object.keys(c).some(k => !allowed.includes(k)) || keys.some(k => !(k in c))) throw new Error('invalid config keys');
+  if ('model' in c && (typeof c.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(c.model))) throw new Error('invalid model');
   if (!SAFE_HOST.test(c.nodeRef) || !SAFE_HOST.test(c.host) || !/^[a-z_][a-z0-9_-]*$/.test(c.user) || !Number.isInteger(c.port) || c.port < 1 || c.port > 65535) throw new Error('invalid ssh destination');
   for (const k of ['remoteNode','remoteRunner','remoteHome','remoteCwd']) if (!SAFE_PATH.test(c[k]) || c[k].includes('/../') || c[k].endsWith('/..')) throw new Error('invalid remote path');
   if (!/^[a-f0-9]{64}$/.test(c.remoteRunnerSha256)) throw new Error('invalid digest');
@@ -30,7 +32,7 @@ export function loadConfig(file) {
 export function sshArgs(c) {
   // All interpolated fields have been constrained above. The hash gate runs on
   // the remote host before executing the runner, and never reconnects/replays.
-  const native = c.kind === "codex" ? `AHAP_CODEX_SOCKET=${c.codexSocket} AHAP_CODEX_CWD=${c.remoteCwd}` : `AHAP_OPENCODE_BASE_URL=${c.opencodeBaseUrl}`;
+  const native = c.kind === "codex" ? `AHAP_CODEX_SOCKET=${c.codexSocket} AHAP_CODEX_CWD=${c.remoteCwd}${c.model === undefined ? "" : ` AHAP_CODEX_MODEL=${c.model}`}` : `AHAP_OPENCODE_BASE_URL=${c.opencodeBaseUrl}`;
   const command = `cd ${c.remoteCwd} && test "$(sha256sum ${c.remoteRunner} | cut -d' ' -f1)" = ${c.remoteRunnerSha256} && exec env HOME=${c.remoteHome} PATH=/usr/bin:/bin AHAP_VERSION=0.1 AHAP_HARNESS=${c.kind} AHAP_ROLE=adapter ${native} ${c.remoteNode} ${c.remoteRunner}`;
   return ['-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','-p',String(c.port),`${c.user}@${c.host}`,command];
 }
