@@ -1,0 +1,28 @@
+{
+  "incident_id": "inc_2aef5a863b3a4dbab8b034f4a718506e",
+  "worker_native_id": "ses_e43267656ffeWCWEyGuPg2xsvB",
+  "judge_native_id": "ses_e43237559ffe3fgT0T9XoqxWNG",
+  "judge_core_ref": "session:9b9b46b462a63c2fd8c483e010068780",
+  "judge_message_id": "msg_1bcdc8c46001qkO6oj8yup2QIo",
+  "once_key": "notice-native-judge:6a8011bca5597c62a75adeac9560bb91809bf76f7b7366fbea9fc305eb00a34f",
+  "prompt_admission_task": "create-operation:1fb12115fa441d433a62cc626686c177",
+  "archive_task": "task:archive:5157789042bfdad19598c8b3991779e09247789d8a3f5e0fce2699fcdb3fc801",
+  "timeline_utc": {
+    "reasoning_end": "2026-11-08T20:32:23.112Z",
+    "archive_confirmed": "2026-11-08T20:32:23.550Z",
+    "native_archived": "2026-11-08T20:32:23.652Z",
+    "final_text_complete": "2026-11-08T20:32:25.419Z",
+    "native_idle": "2026-11-08T20:32:25.429Z"
+  },
+  "final_verdict_kind": "done",
+  "message_shape": {
+    "typed_parts": [
+      "thinking",
+      "text"
+    ],
+    "terminal_phase": "stop",
+    "aggregate_text_includes_thinking": true
+  },
+  "result": "historical failure preserved; native completed final response arrived after wrapper archive",
+  "verified_by": "acceptance_audit and release_audit read-only native/core receipts"
+}

@@ -1,0 +1,84 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+--x·x--------------------------(node:3603697) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+-------x··----·
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/v1-noticeplace-runtime.test.ts > NoticePlace runtime composition ports > does not invent an automatic delivery mode when configuration is absent
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/v1-noticeplace-runtime.test.ts:88:106
+     86|   it('does not invent an automatic delivery mode when configuration is…
+     87|     const port={call:vi.fn(async()=>({}))};
+     88|     expect(()=>createNoticePlaceRustAutopilotPort(port,'opencode-notic…
+       |                                                                                                          ^
+     89|     expect(port.call).not.toHaveBeenCalled();
+     90|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/v1-noticeplace-server.test.ts > V1 NoticePlace HTTP → Rust MCP consumer > resumes the exact session with configured queue mode and a native receipt
+AssertionError: expected [ { tool: 'deliver', …(2) } ] to deeply equal [ { tool: 'deliver', …(2) } ]
+
+- Expected
++ Received
+
+@@ -2,11 +2,11 @@
+    {
+      "args": {
+        "action": "session",
+        "message": "continue the existing repair
+  with this follow-up",
+-       "mode": "queue",
++       "mode": "start",
+        "request_key": "resume-input-7",
+        "session_ref": "session:66ecba3bf525a89f494b9f2c7ebc8421",
+      },
+      "key": "resume-input-7",
+      "tool": "deliver",
+
+ ❯ tests/v1-noticeplace-server.test.ts:130:59
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/v1-noticeplace-server.test.ts > V1 NoticePlace HTTP → Rust MCP consumer > does not invent a resume mode when its configured port is missing one
+AssertionError: expected { …(6) } to match object { outcome: 'not_sent', …(2) }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "code": "unsupported_mode",
+-   "effect": "none",
+-   "outcome": "not_sent",
++   "code": "outcome_unknown",
++   "outcome": "admission_unknown",
+  }
+
+ ❯ tests/v1-noticeplace-server.test.ts:136:20
+    134|     const call=vi.fn(async()=>({structuredContent:{task_ref:'must-not-…
+    135|     const result=await resumeNoticePlaceSession({coreSessionRef:coreRe…
+    136|     expect(result).toMatchObject({outcome:'not_sent',effect:'none',cod…
+       |                    ^
+    137|     expect(call).not.toHaveBeenCalled();
+    138|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 4 passed | 39 skipped (46)
+   Start at  23:37:53
+   Duration  2.48s (transform 2.23s, setup 90ms, import 3.23s, tests 130ms, environment 0ms)
+

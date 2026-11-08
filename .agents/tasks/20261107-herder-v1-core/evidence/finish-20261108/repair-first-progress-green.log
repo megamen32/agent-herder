@@ -1,0 +1,21 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+············(node:300025) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:300037) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+····················································(node:300005) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+··········(node:299997) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+····································stderr | tests/autopilot-notice-incident.test.ts > accepts explicit incident context through the production arm HTTP handler
+Notice health observer refused ses_real_opencode: the incident inc_original has no selected health plan [no_selected_health_plan]
+
+····
+
+ Test Files  8 passed (8)
+      Tests  114 passed (114)
+   Start at  00:18:37
+   Duration  4.22s (transform 10.17s, setup 275ms, import 12.24s, tests 7.47s, environment 1ms)
+

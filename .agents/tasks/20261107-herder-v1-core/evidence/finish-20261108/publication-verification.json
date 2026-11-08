@@ -1,0 +1,17 @@
+{
+  "schema": "herder.handoff.publication-verification.v1",
+  "source_candidate": "abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+  "verified_at": 1794173612.3281093,
+  "artifact_files_checked": 39,
+  "protected_credential_values_checked": 68,
+  "credential_hits": 0,
+  "raw_transcripts_included": false,
+  "config_backups_included": false,
+  "bug_journal_own_entries": 8,
+  "leaf_count": 64,
+  "unique_leaf_ids": 64,
+  "missing_parent_count": 0,
+  "plan_json_unchanged": true,
+  "foreign_wip_policy": "exact file allowlist; outside paths and index entries compared before/after commit",
+  "raw_log_policy": "Captured logs preserved byte-for-byte, including original trailing blank lines; normal diff-check applies to authored prose and JSON, raw logs verified by SHA256."
+}

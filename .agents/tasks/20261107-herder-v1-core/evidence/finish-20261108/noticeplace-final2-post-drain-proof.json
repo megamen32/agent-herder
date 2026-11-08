@@ -1,0 +1,131 @@
+{
+  "schema": "herder.fixture.post-drain-readback.v1",
+  "observed_at": "2026-11-08T21:28:22.654022+00:00",
+  "incident": {
+    "id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+    "project": "agent-herder",
+    "state": "resolved",
+    "observed_state": "healthy",
+    "notifications_muted": true,
+    "resolved_at": 1794171593.8101528,
+    "health_field": "lifecycle.last_check_receipt.result.observed_state"
+  },
+  "exact_progress": {
+    "idempotency_key": "agent-herder:incident:be86fe02be976b7b18030d25788dcf651d0818aff1a42334e3839d75e56cf754",
+    "event_count": 1,
+    "events": [
+      {
+        "event_id": "evt_bf0654594320464bbd6e728fcea01d74",
+        "event_type": "health.progress",
+        "created_at": 1794173172.5211947,
+        "plan_id": "repair",
+        "progress_fingerprint": "db86f5029d87d42dda41e027e63ac01f2fdc216cb699cf7de5c1411843424d6e",
+        "useful": "True"
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "channel": "gptadmin.agent:health-diagnosis",
+      "status": "sent",
+      "attempt": 1
+    }
+  ],
+  "human_delivery_count": 0,
+  "outbox": {
+    "path": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/v1-notice-18279080ad505494f432478955a39a7f4b3141621f42fea88b4ff7a25a618b63.json",
+    "sha256": "82edf9da3715eb25ef1f8061e5381e3997bcfa8d886cfbe308d2ebefc8a20bbb",
+    "matches_reported_drain_after_sha256": true
+  },
+  "known_workers": [
+    {
+      "native_session_id": "ses_e434b3fc0ffeNkQ5AJ1nuWLYgl",
+      "core_session_ref": "session:66ecba3bf525a89f494b9f2c7ebc8421",
+      "case": "pre-handoff",
+      "autopilot_enabled": false,
+      "receipt_entries": [],
+      "jobs": [],
+      "active_job_count": 0,
+      "pending_update_count": 0
+    },
+    {
+      "native_session_id": "ses_e43267656ffeWCWEyGuPg2xsvB",
+      "core_session_ref": "session:47608ef3a41e031c27f73f12f62d0bd8",
+      "case": "final1",
+      "autopilot_enabled": false,
+      "receipt_entries": [],
+      "jobs": [
+        {
+          "id": "job_b8fd2ad235eadec3f39a76372d48d9f8e2a6885964ad3325e55b91dbcde64daa",
+          "state": "failed",
+          "kind": "Продолжение исправления NoticePlace",
+          "updated_at": "2026-11-08T20:32:23.813Z"
+        },
+        {
+          "id": "job_e97e95301d3c74afbea45ee6493583537e7d1b939070351a57f579b50b5a2523",
+          "state": "failed",
+          "kind": "Проверка продолжения NoticePlace",
+          "updated_at": "2026-11-08T20:32:23.795Z"
+        }
+      ],
+      "active_job_count": 0,
+      "pending_update_count": 0
+    },
+    {
+      "native_session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+      "core_session_ref": "session:4be97d2e9d3b3dd088a13cbbf9532930",
+      "case": "final2",
+      "autopilot_enabled": false,
+      "receipt_entries": [
+        {
+          "file": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/v1-notice-18279080ad505494f432478955a39a7f4b3141621f42fea88b4ff7a25a618b63.json",
+          "entry_key": "ses_e430ed432ffe68MLZ5SaT1gWR5:msg_1bcf3b6cd0014QJzMAdnJ4kvDl:6376ba1d4b9a16e171761099",
+          "kind": "done",
+          "pending_incident_update": false
+        }
+      ],
+      "jobs": [
+        {
+          "id": "job_62ee41a3d326b3e329efdc69bb38708a6211f6076aa230c4a0c39626d8a5c0bd",
+          "state": "completed",
+          "kind": "Продолжение исправления NoticePlace",
+          "updated_at": "2026-11-08T20:58:09.067Z"
+        },
+        {
+          "id": "job_088fff8563e9bf8aab22fbb702686181d720e791127cf63e936c31404ac5bb75",
+          "state": "completed",
+          "kind": "Проверка продолжения NoticePlace",
+          "updated_at": "2026-11-08T20:58:07.790Z"
+        }
+      ],
+      "active_job_count": 0,
+      "pending_update_count": 0
+    }
+  ],
+  "known_state_files": [
+    {
+      "path": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/v1-noticeplace-jobs.json",
+      "sha256": "41a9faaedfd64e101cb17f3012ae4fe7e1bc8a54875db147b161be52f151a4ca"
+    },
+    {
+      "path": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/sessions.json",
+      "sha256": "8e9f6bcf5a47e0f32c031648c79823a7e11d7197db23d8dc90b7210313cc8832"
+    },
+    {
+      "path": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/v1-notice-18279080ad505494f432478955a39a7f4b3141621f42fea88b4ff7a25a618b63.json",
+      "sha256": "82edf9da3715eb25ef1f8061e5381e3997bcfa8d886cfbe308d2ebefc8a20bbb"
+    }
+  ],
+  "total_pending_updates": 0,
+  "total_active_jobs": 0,
+  "historical_terminal_failures": "Final1 continuation and judge failed before judge fix; their records are terminal and preserved",
+  "actions": [
+    "GET exact incident",
+    "SELECT exact incident events/deliveries",
+    "rg exact three native IDs in known state directory",
+    "read matching local state",
+    "write this readback"
+  ],
+  "callback_count": 0,
+  "native_or_judge_actions": 0
+}

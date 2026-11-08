@@ -1,0 +1,113 @@
+{
+  "schema": "handoff-continuation.v1",
+  "observed_at": "2026-11-08T20:21:03.252960+00:00",
+  "task_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "predecessor_native_session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "authority": "Current user explicitly requested completion from handoff 7e4708cd",
+  "work_host": "roomhacker-server-100",
+  "worktree": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder",
+  "runtime_host": "ChatGPT external session",
+  "state": "completed",
+  "scope": [
+    "src/automation/v1-noticeplace-judge.ts",
+    "src/automation/v1-noticeplace-resume.ts",
+    "src/automation/v1-noticeplace-runtime.ts",
+    "src/v1-noticeplace-server.ts",
+    "tests/v1-noticeplace-judge.test.ts",
+    "tests/v1-noticeplace-runtime.test.ts",
+    "tests/v1-noticeplace-server.test.ts"
+  ],
+  "notes": [
+    "No new native worker, branch or plan created. Existing handoff worktree reused.",
+    "Herder v1 context/resource unavailable: instance_or_session_required; no native identity impersonation.",
+    "Handoff releases the three Luna paths; no exact parent/Luna process match observed.",
+    "Only successor lead integrates and installs; local review helper owns the two identity-failure fix paths while active."
+  ],
+  "head": "7e4708cde15fa7040fef91ae25d4f1e2d2a25fb7",
+  "source_before_sha256": {
+    "src/v1-noticeplace-server.ts": "4400f0b15382f0cda868ceb8eabf5ab5901ed2f84054a56a2e67a44382e32ed5",
+    "src/automation/v1-noticeplace-resume.ts": "b162a762396fc912579598d019dd9b4bff25992f9bf48c91652429665c7c02b9",
+    "tests/v1-noticeplace-server.test.ts": "9c2ba0e6d916ad3bf4efd60ad314e3f85ea22204a05d9080e0f16692007de25f"
+  },
+  "focused_tests": {
+    "task_id": "256a1bdbe753a99f6244813eb31071cd",
+    "files_passed": 6,
+    "tests_passed": 70,
+    "exit_code": 0
+  },
+  "discovered_bug": {
+    "status": "fixed",
+    "issue": "Accepted launch with unavailable toNativeId leaks core ref into sessionId and retains accepted outcome",
+    "source": "independent review_luna",
+    "bug_id": "NPIDENTITY_LOOKUP_UNKNOWN"
+  },
+  "source_commit": "85aa674af7d05c878d7851bf647705501e22b67d",
+  "live_acceptance": {
+    "incident_id": "inc_2aef5a863b3a4dbab8b034f4a718506e",
+    "native_session_id": "ses_e43267656ffeWCWEyGuPg2xsvB",
+    "core_session_ref": "session:47608ef3a41e031c27f73f12f62d0bd8",
+    "state": "resolved",
+    "source_verifier": "source:agent-herder",
+    "manual_id_correction": false,
+    "remaining": [
+      "Native judge failed after confirmed admission and archive; diagnosis in progress",
+      "Configured deliveryMode=start conflicts with native expected queue; HTTP resume hardcodes start; fix in progress"
+    ],
+    "scope_steer_attempt": {
+      "receipt": "20055fb25f4294b1ce9f3a4e1953173a",
+      "code": "unsupported_mode",
+      "effect": "none",
+      "expected": [
+        "queue"
+      ],
+      "native_effects": 0
+    },
+    "judge_failure_evidence": "evidence/finish-20261108/judge-live-race.json"
+  },
+  "mode_source_commit": "96f0a59c7936a13f454cff7349fbafeb85c1c6ac",
+  "final_source_commit": "abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+  "final_source_checks": {
+    "files": 6,
+    "tests_passed": 78,
+    "tsc_exit": 0,
+    "proof": "evidence/finish-20261108/final-focused-green.log"
+  },
+  "direction_review": {
+    "at": 1794171250.9002562,
+    "goal_unchanged": true,
+    "remaining": [
+      "Install final runtime and queue config",
+      "Fresh complete consumer/judge/source acceptance",
+      "Same-session resume and exact cleanup",
+      "Publish owned evidence and close two scoped leaves"
+    ]
+  },
+  "final_fixture": {
+    "root": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd",
+    "source_id": "agent-herder-v1-final2-chatgpt-7e4708cd",
+    "prepared_only": true
+  },
+  "final_runtime": {
+    "source_commit": "abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+    "manifest_sha256": "e30923f3b677b1b192a5980f34db1fb914caf91b34b9d7154bb34459d0d982be",
+    "delivery_mode": "queue",
+    "incidentProgressPlanId": "repair",
+    "installed": true,
+    "evidence": "evidence/finish-20261108/outbox-rollout.json"
+  },
+  "completion": {
+    "identity_manual_changes": 0,
+    "incident_id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+    "state": "resolved",
+    "verification": "healthy",
+    "native_session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "core_session_ref": "session:4be97d2e9d3b3dd088a13cbbf9532930",
+    "same_session_resume": "accepted; retained URL34075 and repairs1 without context supplied; 0 tool calls",
+    "cleanup": "5 known sessions archived; 3 ports closed; 0 human deliveries",
+    "outbox": "existing saved record drained once after explicit repair policy; HTTP200; no new judge or native send"
+  },
+  "completed_at": 1794173335.348878,
+  "final_postcheck": "evidence/finish-20261108/noticeplace-final2-post-drain-proof.json",
+  "remaining_handoff_items": []
+}

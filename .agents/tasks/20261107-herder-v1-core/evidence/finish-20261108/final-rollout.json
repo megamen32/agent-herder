@@ -1,0 +1,56 @@
+{
+  "candidate": "19daba50694988228a96e783481d482e997b4bdf",
+  "old_release": "/home/roomhacker/herder-artifacts/releases/85aa674af7d05c878d7851bf647705501e22b67d",
+  "new_release": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf",
+  "session_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "artifact": {
+    "source_commit": "19daba50694988228a96e783481d482e997b4bdf",
+    "release": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf",
+    "manifest_path": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf/noticeplace-manifest.json",
+    "manifest_sha256": "5d3a26ab1a3e8cf87c1583bd78d470dc5b244cb5e08f408d11dcc0710c4a898c",
+    "verified_files": 12,
+    "replaced_modules": [
+      "automation/v1-noticeplace-runtime",
+      "automation/v1-noticeplace-resume",
+      "automation/v1-noticeplace-judge"
+    ],
+    "built_at": 1794171204.523975
+  },
+  "method": "handoff scoped inputs + lease + exact unit/config CAS",
+  "generic_clean_version_gate": "not claimed passed; explicit handoff preserves foreign WIP/no VERSION",
+  "started_at": 1794171204.5241668,
+  "lease": {
+    "action": "acquire",
+    "commit": "c98c99781f4a08f207deea670f682777ca1ee747",
+    "expires": 1794172104,
+    "ok": true,
+    "ref": "refs/lhc/release/agent-herder",
+    "took_over_expired": false
+  },
+  "unit_before_sha256": "1217108f11a6eebca0b1ce6abb7ae537bbbcdab0ae67f76e51c7b974ce6f1f81",
+  "unit_after_sha256": "f064c893c952e26ec8b42777ef1867a7cc37d1ef9166b94b51187884787640e2",
+  "config_before_sha256": "b14f64fab146d92647df218397408506a94956fe3c66b614eaef83a236b99714",
+  "config_after_sha256": "daa7305d80cdfd968e0715be6fa4759fc379371b640773d350603ca5e11fbadf",
+  "delivery_mode": "queue",
+  "config_change": "instance.deliveryMode start -> queue; all other parsed values unchanged",
+  "switched_at": 1794171207.7237625,
+  "state": "installed",
+  "status": "MainPID=3946669\nWorkingDirectory=/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf\nActiveState=active\nSubState=running",
+  "api_checks": {
+    "/api/automation/launch-policy": {
+      "status": 200
+    },
+    "/api/settings/automation/disarm": {
+      "status": 200
+    }
+  },
+  "old_daemon": "MainPID=0\nActiveState=inactive",
+  "finished_at": 1794171218.3460968,
+  "lease_release": {
+    "action": "release",
+    "ok": true,
+    "ref": "refs/lhc/release/agent-herder",
+    "released": true
+  }
+}

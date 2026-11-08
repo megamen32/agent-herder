@@ -1,0 +1,38 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+---------------xx------------
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/v1-noticeplace-server.test.ts > V1 NoticePlace HTTP → Rust MCP consumer > keeps unavailable native identity null UNKNOWN without leaking core IDs or repeating create
+ FAIL  tests/v1-noticeplace-server.test.ts > V1 NoticePlace HTTP → Rust MCP consumer > keeps unavailable native identity throws UNKNOWN without leaking core IDs or repeating create
+AssertionError: expected { …(22) } to match object { outcome: 'admission_unknown', …(2) }
+(19 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "core_session_ref": "session:66ecba3bf525a89f494b9f2c7ebc8421",
+    "identity": "unknown",
+-   "outcome": "admission_unknown",
++   "outcome": "accepted",
+  }
+
+ ❯ tests/v1-noticeplace-server.test.ts:225:20
+    223|       expect(response.status).toBe(503);
+    224|       const body=await response.json();
+    225|       expect(body).toMatchObject({outcome:'admission_unknown',core_ses…
+       |                    ^
+    226|       expect(body.sessionId).toBeUndefined();
+    227|       expect(body.session_id).toBeUndefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 27 skipped (29)
+   Start at  23:22:22
+   Duration  1.20s (transform 637ms, setup 41ms, import 721ms, tests 190ms, environment 0ms)
+

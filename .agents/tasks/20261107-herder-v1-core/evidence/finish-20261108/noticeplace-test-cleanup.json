@@ -1,0 +1,234 @@
+{
+  "schema": "herder.fixture.cleanup-summary.v1",
+  "observed_at": "2026-11-08T21:19:59.029932+00:00",
+  "scope": "Only five explicitly identified test sessions; no session discovery or other archive",
+  "sessions": [
+    {
+      "case": "pre-handoff",
+      "role": "worker",
+      "native": "ses_e434b3fc0ffeNkQ5AJ1nuWLYgl",
+      "core": "session:66ecba3bf525a89f494b9f2c7ebc8421",
+      "verified_identity": true,
+      "archived_at": 1794167909070,
+      "archived": true,
+      "idle_at": 1794167708052,
+      "completed_at": 1794167909070,
+      "autopilot_enabled": false,
+      "autopilot_source": "v1-noticeplace/sessions.json"
+    },
+    {
+      "case": "final1",
+      "role": "worker",
+      "native": "ses_e43267656ffeWCWEyGuPg2xsvB",
+      "core": "session:47608ef3a41e031c27f73f12f62d0bd8",
+      "verified_identity": true,
+      "archived_at": 1794170831025,
+      "archived": true,
+      "idle_at": 1794169925886,
+      "completed_at": 1794170831025,
+      "autopilot_enabled": false,
+      "autopilot_source": "v1-noticeplace/sessions.json"
+    },
+    {
+      "case": "final1",
+      "role": "judge",
+      "native": "ses_e43237559ffe3fgT0T9XoqxWNG",
+      "core": "session:9b9b46b462a63c2fd8c483e010068780",
+      "verified_identity": true,
+      "archived_at": 1794169943652,
+      "archived": true,
+      "idle_at": 1794169945429,
+      "completed_at": 1794169945449
+    },
+    {
+      "case": "final2",
+      "role": "worker",
+      "native": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+      "core": "session:4be97d2e9d3b3dd088a13cbbf9532930",
+      "verified_identity": true,
+      "archived_at": 1794172726942,
+      "archived": true,
+      "idle_at": 1794172022236,
+      "completed_at": 1794172726942,
+      "autopilot_enabled": false,
+      "autopilot_source": "v1-noticeplace/sessions.json"
+    },
+    {
+      "case": "final2",
+      "role": "judge",
+      "native": "ses_e430c1254ffenk4I1fPofB8w63",
+      "core": "session:addbb21ba3c106f6ccd5e77e6fac0384",
+      "verified_identity": true,
+      "archived_at": 1794171487687,
+      "archived": true,
+      "idle_at": 1794171486223,
+      "completed_at": 1794171487687
+    }
+  ],
+  "all_known_sessions_archived": true,
+  "all_known_workers_autopilot_false": true,
+  "incidents": [
+    {
+      "id": "inc_c2f37bfe20d448369d6a9218283ddcfc",
+      "project": "agent-herder",
+      "state": "resolved",
+      "resolved_at": 1794167721.2644463,
+      "case": "pre-handoff",
+      "deliveries": [
+        {
+          "channel": "gptadmin.agent:health-diagnosis",
+          "status": "failed",
+          "attempt": 5
+        },
+        {
+          "channel": "gptadmin.agent:health-diagnosis",
+          "status": "sent",
+          "attempt": 1
+        }
+      ],
+      "human_delivery_count": 0
+    },
+    {
+      "id": "inc_2aef5a863b3a4dbab8b034f4a718506e",
+      "project": "agent-herder",
+      "state": "resolved",
+      "resolved_at": 1794170130.4581826,
+      "case": "final1",
+      "deliveries": [
+        {
+          "channel": "gptadmin.agent:health-diagnosis",
+          "status": "sent",
+          "attempt": 1
+        }
+      ],
+      "human_delivery_count": 0
+    },
+    {
+      "id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+      "project": "agent-herder",
+      "state": "resolved",
+      "resolved_at": 1794171593.8101528,
+      "case": "final2",
+      "deliveries": [
+        {
+          "channel": "gptadmin.agent:health-diagnosis",
+          "status": "sent",
+          "attempt": 1
+        }
+      ],
+      "human_delivery_count": 0
+    }
+  ],
+  "total_human_deliveries": 0,
+  "exports": [
+    {
+      "receipt_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final-20261108-01a1bb0c/cleanup/export-receipt.json",
+      "transcript_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final-20261108-01a1bb0c/cleanup/repair-native-transcript.json",
+      "complete": true,
+      "bytes": 246682,
+      "sha256": "20c95240d8ca4410fb83837a5924bb3f6e9ad54c1f5c05015f18ad7953686ee7",
+      "hash_verified": true,
+      "redactions": 0,
+      "mode": "0o600"
+    },
+    {
+      "receipt_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/cleanup/export-receipt.json",
+      "transcript_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/cleanup/repair-native-transcript.json",
+      "complete": true,
+      "bytes": 309898,
+      "sha256": "5414ee4e1afeb1f9b83e821d3e1329d2c11e9b2dca99f1ebf3fc1378555b5f6f",
+      "hash_verified": true,
+      "redactions": 0,
+      "mode": "0o600"
+    }
+  ],
+  "fixtures": [
+    {
+      "proof_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final-20261108-01a1bb0c/fixture-cleanup.json",
+      "sha256": "b54c0c6a5acaa970634f8ed13dd1b1aa5f29dbc3aff4b8454f5309276ebefad7",
+      "receipt": {
+        "unit": "herder-np-final-7e4708cd.service",
+        "before": {
+          "MainPID": "3275974",
+          "LoadState": "loaded",
+          "ActiveState": "active"
+        },
+        "after": {
+          "MainPID": "0",
+          "LoadState": "not-found",
+          "ActiveState": "inactive"
+        },
+        "owned_pid_gone": true,
+        "port": 19241,
+        "port_closed": true,
+        "checked_at": 1794171115.3193367
+      }
+    },
+    {
+      "proof_path": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/fixture-cleanup.json",
+      "sha256": "c536ff20b04e199277259ce99e48a56a57ecffdbe07f0770fc557f942d196a90",
+      "receipt": {
+        "unit": "herder-np-final2-7e4708cd.service",
+        "fixture": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd",
+        "pid": 3803681,
+        "port": 34075,
+        "before": {
+          "MainPID": "3803681",
+          "LoadState": "loaded",
+          "ActiveState": "active",
+          "SubState": "running"
+        },
+        "requested_at": 1794172620.0343082,
+        "after": {
+          "MainPID": "0",
+          "LoadState": "not-found",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "pid_gone": true,
+        "port_closed": true,
+        "completed_at": 1794172620.049846
+      }
+    }
+  ],
+  "pre_handoff_fixture": {
+    "root": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-20261108-01a1bb0c",
+    "port": 17141,
+    "stopped_according_to": "parent/handoff, no process action by this observer",
+    "port_closed_observed": true
+  },
+  "final2_archive": {
+    "request_key": "np-final2-cleanup-7e4708cd-20261108",
+    "verified": true,
+    "receipt": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/cleanup/archive-receipt.json",
+    "readback": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/cleanup/archive-readback.json",
+    "intent": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/cleanup/archive-intent.json"
+  },
+  "effects_this_cleanup": {
+    "archive_calls": 1,
+    "archive_native_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "judge_archive_calls": 0,
+    "autopilot_changes": 0,
+    "http_process_actions": 0
+  },
+  "fixture_ports_readback": {
+    "observed_at": "2026-11-08T21:20:24.027343+00:00",
+    "ports": [
+      {
+        "host": "127.0.0.1",
+        "port": 17141,
+        "listening": false
+      },
+      {
+        "host": "127.0.0.1",
+        "port": 19241,
+        "listening": false
+      },
+      {
+        "host": "127.0.0.1",
+        "port": 34075,
+        "listening": false
+      }
+    ]
+  }
+}

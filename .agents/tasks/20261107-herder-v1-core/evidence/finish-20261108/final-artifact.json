@@ -1,0 +1,13 @@
+{
+  "source_commit": "19daba50694988228a96e783481d482e997b4bdf",
+  "release": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf",
+  "manifest_path": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf/noticeplace-manifest.json",
+  "manifest_sha256": "5d3a26ab1a3e8cf87c1583bd78d470dc5b244cb5e08f408d11dcc0710c4a898c",
+  "verified_files": 12,
+  "replaced_modules": [
+    "automation/v1-noticeplace-runtime",
+    "automation/v1-noticeplace-resume",
+    "automation/v1-noticeplace-judge"
+  ],
+  "built_at": 1794171204.523975
+}

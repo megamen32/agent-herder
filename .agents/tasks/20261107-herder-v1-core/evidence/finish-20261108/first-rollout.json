@@ -1,0 +1,39 @@
+{
+  "candidate": "85aa674af7d05c878d7851bf647705501e22b67d",
+  "old_release": "/home/roomhacker/herder-artifacts/releases/41b4284731f4671c0b9a668165538d1d86861de9",
+  "new_release": "/home/roomhacker/herder-artifacts/releases/85aa674af7d05c878d7851bf647705501e22b67d",
+  "session_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "method": "handoff scoped inputs, native fallback lease, exact unit/revision CAS",
+  "generic_clean_version_gate": "not applicable to explicit handoff: existing foreign WIP and no VERSION file; not claimed passed",
+  "started_at": 1794169663.2204478,
+  "lease": {
+    "action": "acquire",
+    "commit": "33d7ab68a497fd8c9d5e40f8e2101e84a80df3e8",
+    "expires": 1794170563,
+    "ok": true,
+    "ref": "refs/lhc/release/agent-herder",
+    "took_over_expired": false
+  },
+  "unit_before_sha256": "dcd5a8d60490c2060cfcccbf5a03a0253ef1bd6149e39ba4e39581c22c30fb25",
+  "unit_after_sha256": "1217108f11a6eebca0b1ce6abb7ae537bbbcdab0ae67f76e51c7b974ce6f1f81",
+  "switched_at": 1794169666.6180904,
+  "state": "installed",
+  "status": "MainPID=3382754\nWorkingDirectory=/home/roomhacker/herder-artifacts/releases/85aa674af7d05c878d7851bf647705501e22b67d\nActiveState=active\nSubState=running",
+  "api_checks": {
+    "/api/automation/launch-policy": {
+      "status": 200
+    },
+    "/api/settings/automation/disarm": {
+      "status": 200
+    }
+  },
+  "old_daemon": "MainPID=0\nActiveState=inactive",
+  "finished_at": 1794169670.8808699,
+  "lease_release": {
+    "action": "release",
+    "ok": true,
+    "ref": "refs/lhc/release/agent-herder",
+    "released": true
+  }
+}

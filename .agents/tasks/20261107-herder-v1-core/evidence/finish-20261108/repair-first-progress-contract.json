@@ -1,0 +1,158 @@
+{
+  "schema": "herder.fixture.repair-first-progress-contract.v1",
+  "observed_at": "2026-11-08T21:15:24.685107+00:00",
+  "incident": {
+    "id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+    "project": "agent-herder",
+    "state": "resolved",
+    "resolved_at": 1794171593.8101528
+  },
+  "sources": [
+    {
+      "path": "/opt/noticeplace/notification_center/http_api.py",
+      "sha256": "ae8d7166c19fd305922bc89190e3ac04ec47a409eba01596955e1df973e7e375",
+      "line_ranges": [
+        [
+          2851,
+          2873
+        ],
+        [
+          3207,
+          3260
+        ]
+      ]
+    },
+    {
+      "path": "/opt/noticeplace/notification_center/core.py",
+      "sha256": "4854b1c275d220543366294be80286f8b23d22c5c6abf21d81bc4007d8bfe308",
+      "line_ranges": [
+        [
+          665,
+          673
+        ],
+        [
+          4873,
+          4922
+        ],
+        [
+          5043,
+          5052
+        ],
+        [
+          5070,
+          5121
+        ]
+      ]
+    },
+    {
+      "path": "/opt/noticeplace/notification_center/health_workflow.py",
+      "sha256": "df3e6124942e06dc221c85784adf811fd5b23999ed4a9d8cd109bf6d90c836ef",
+      "line_ranges": [
+        [
+          557,
+          590
+        ]
+      ]
+    },
+    {
+      "path": "/opt/noticeplace/notification_center/agent_job_helper.py",
+      "sha256": "b1dcf0b9ad0c19abfb79cdf2574977b2a10ab3c4030ad4b603085205c4a65050",
+      "line_ranges": [
+        [
+          29,
+          29
+        ],
+        [
+          177,
+          178
+        ],
+        [
+          233,
+          233
+        ],
+        [
+          1839,
+          1840
+        ]
+      ]
+    },
+    {
+      "path": "/opt/noticeplace/notification_center/gptadmin_agent.py",
+      "sha256": "39abf61fd873a5f343dacb2e84a27251211f8fc42fe5d50461dd99edd35e89f8",
+      "line_ranges": [
+        [
+          90,
+          137
+        ]
+      ]
+    },
+    {
+      "path": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf/dist/autopilot/notice-incident.js",
+      "sha256": "81b0febef86bcb81f81249db494758f6582f1d4d6bd33d3083d3da06a0118608",
+      "line_ranges": [
+        [
+          109,
+          124
+        ]
+      ]
+    }
+  ],
+  "contract": {
+    "plan_id_required": true,
+    "repair_first_selected_plan_required": false,
+    "repair_first_gate": "No plan candidates, valid plan_id observe|repair|verify, selected plan absent or equal",
+    "source_owned_health_diagnosis_progress_plan_id": "repair",
+    "structured_launch_repair_first_plan_field": null,
+    "structured_legacy_selection_field": "event.health.selection.plan_id",
+    "get_health_context_implemented": false,
+    "base_incident_get_exposes_health_plan": false,
+    "resolved_progress_allowed": true,
+    "discarded_progress_allowed": false,
+    "effect": "append event and audit; no incident state change or human delivery creation",
+    "minimal_herder_fix": "Explicit opt-in runtime incidentProgressPlanId=repair; update plan > binding plan > runtime policy; generic sink stays strict"
+  },
+  "current_outbox": {
+    "path": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace/v1-notice-18279080ad505494f432478955a39a7f4b3141621f42fea88b4ff7a25a618b63.json",
+    "file_sha256": "078da37d58a9fa5a9d1f8e065f39af39eb686998b6081dbb212a3c17a6d97a06",
+    "entry_key": "ses_e430ed432ffe68MLZ5SaT1gWR5:msg_1bcf3b6cd0014QJzMAdnJ4kvDl:6376ba1d4b9a16e171761099",
+    "kind": "done",
+    "binding": {
+      "incidentId": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+      "project": "agent-herder"
+    },
+    "idempotency_key": "agent-herder:incident:be86fe02be976b7b18030d25788dcf651d0818aff1a42334e3839d75e56cf754",
+    "fingerprint": "db86f5029d87d42dda41e027e63ac01f2fdc216cb699cf7de5c1411843424d6e",
+    "plan_id_present": false,
+    "effect": "none",
+    "effect_evidence": "Installed sink throws before loadIncidentCallback and fetch when both plan fields are absent",
+    "noticeplace_events_with_same_key": 0,
+    "safe_retry": "Use existing persisted update and exact idempotency key through normal outbox after explicit runtime policy is installed"
+  },
+  "accepted_progress": [
+    {
+      "event_type": "health.progress",
+      "created_at": 1794171388.5973845,
+      "plan_id": "repair"
+    },
+    {
+      "event_type": "health.progress",
+      "created_at": 1794171397.2170734,
+      "plan_id": "repair"
+    }
+  ],
+  "plan_selection_or_cards_events": [],
+  "deliveries": [
+    {
+      "channel": "gptadmin.agent:health-diagnosis",
+      "status": "sent",
+      "attempt": 1
+    }
+  ],
+  "human_delivery_count": 0,
+  "actions_performed": [
+    "bounded source reads",
+    "SELECT only database reads",
+    "this evidence file write"
+  ],
+  "callbacks_performed": 0
+}

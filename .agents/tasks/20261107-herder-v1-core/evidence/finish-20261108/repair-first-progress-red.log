@@ -1,0 +1,76 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+---x-------------------·x··xxx·--(node:265009) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+----xxx-----------
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/autopilot-notice-incident.test.ts > drains a repair-first done outbox with the exact original key after restart without rejudging or notifying
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/autopilot-notice-incident.test.ts:83:20
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/noticeplace-health-observer-contract.test.ts > Notice Place explicit incident progress policy > uses the explicit repair-first runtime policy without inventing a selection or reading a nonexistent context endpoint
+Error: Notice incident progress needs the selected health plan (observe, repair, verify)
+ ❯ Object.send src/autopilot/notice-incident.ts:126:42
+    124|       // being sent with a guessed one.
+    125|       const planId = update.planId ?? update.binding.planId;
+    126|       if (!isHealthPlanId(planId)) throw new Error(`Notice incident pr…
+       |                                          ^
+    127|       const callback = await loadIncidentCallback(update.binding.proje…
+    128|       const response = await fetchImpl(`${callback.url}/v1/incidents/$…
+ ❯ tests/noticeplace-health-observer-contract.test.ts:237:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/noticeplace-health-observer-contract.test.ts > Notice Place explicit incident progress policy > rejects invalid configured policy unknown-plan before effects
+ FAIL  tests/noticeplace-health-observer-contract.test.ts > Notice Place explicit incident progress policy > rejects invalid configured policy null before effects
+ FAIL  tests/noticeplace-health-observer-contract.test.ts > Notice Place explicit incident progress policy > rejects invalid configured policy  before effects
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/noticeplace-health-observer-contract.test.ts:256:140
+    254|   it.each(["unknown-plan", null, ""] as const)("rejects invalid config…
+    255|     const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    256|     expect(() => createIncidentUpdateSink(process.env, fetchImpl as un…
+       |                                                                                                                                            ^
+    257|     expect(fetchImpl).not.toHaveBeenCalled();
+    258|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  tests/v1-noticeplace-runtime.test.ts > NoticePlace runtime composition ports > rejects invalid incident progress policy unknown-plan before reading credentials or connecting native adapters
+ FAIL  tests/v1-noticeplace-runtime.test.ts > NoticePlace runtime composition ports > rejects invalid incident progress policy null before reading credentials or connecting native adapters
+ FAIL  tests/v1-noticeplace-runtime.test.ts > NoticePlace runtime composition ports > rejects invalid incident progress policy  before reading credentials or connecting native adapters
+AssertionError: expected [Function] to throw error including 'incidentProgressPlanId' but got 'The "path" argument must be of type s…'
+
+Expected: "incidentProgressPlanId"
+Received: "The "path" argument must be of type string. Received undefined"
+
+ ❯ tests/v1-noticeplace-runtime.test.ts:52:193
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  8 failed | 4 passed | 39 skipped (51)
+   Start at  00:17:05
+   Duration  2.75s (transform 2.26s, setup 105ms, import 3.51s, tests 97ms, environment 0ms)
+

@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+    "node_modules/typescript/bin/tsc"
+  ],
+  "returncode": 0,
+  "seconds": 23.133,
+  "source_sha256": {
+    "src/autopilot/notice-incident.ts": "bf0f723081e672d142d2b89be729bca9d4d965475a7cbfa011c7c7c5a2b87fe8",
+    "src/automation/v1-noticeplace-runtime.ts": "210696fe1a0af2a8fad38c5300684e01a74f112434089ff8a350454023f3ba46",
+    "tests/noticeplace-health-observer-contract.test.ts": "7691c07c43fee47537c424db3f23b09a5387ff8783fe876147525e4b53a8d69b",
+    "tests/v1-noticeplace-runtime.test.ts": "7e75db6a73c5592480a23930e31d5c386527c096bf7ab94cc7fc26eefa3de322",
+    "tests/autopilot-notice-incident.test.ts": "c6eeece9748a575ab2b66456d80d69a6acee26e3665e2cadc01c79d565fb9195"
+  },
+  "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-outbox-20261108/tsc-build.log",
+  "verification": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/noticeplace-repair-first-outbox-20261108/green-result.json"
+}

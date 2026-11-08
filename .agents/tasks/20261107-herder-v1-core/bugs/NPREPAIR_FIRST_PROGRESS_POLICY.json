@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-08T21:17:47+00:00",
+  "details": "V1 NoticePlace repair-first binding has no legacy selected plan. Generic sink refuses before credential lookup/network. Native worker completed, independent verification resolved incident, judge done persisted with original pendingIncidentUpdate. Installed NoticePlace repair-first contract explicitly uses plan_id=repair. Fix is explicit trusted runtime policy with explicit update/binding priority; no global default, no callback scope change, no native replay.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-handoff-7e4708cd-20261108",
+      "at": "2026-11-08T21:17:47+00:00",
+      "changes": {
+        "details": "V1 NoticePlace repair-first binding has no legacy selected plan. Generic sink refuses before credential lookup/network. Native worker completed, independent verification resolved incident, judge done persisted with original pendingIncidentUpdate. Installed NoticePlace repair-first contract explicitly uses plan_id=repair. Fix is explicit trusted runtime policy with explicit update/binding priority; no global default, no callback scope change, no native replay.",
+        "source": "evidence/finish-20261108/repair-first-progress-contract.json",
+        "status": "open",
+        "title": "Repair-first completion progress remains pending without a selected plan"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-handoff-7e4708cd-20261108",
+      "at": "2026-11-08T21:28:55+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/finish-20261108/repair-first-progress-green.log",
+            "red_proof_path": "evidence/finish-20261108/repair-first-progress-red.log",
+            "red_result": "8 failed",
+            "red_sha256": "6c4366e5ac2716902108f0673a153aace1ae2b0b38bab3589b85a3b78258ba24",
+            "result": "114 passed",
+            "sha256": "2f226822f99a2c87660e99371579444781be6ab6d61eb5ff373de32888e14963",
+            "test_command": "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node node_modules/vitest/vitest.mjs run tests/v1-noticeplace-server.test.ts tests/v1-noticeplace-runtime.test.ts tests/v1-noticeplace-mcp.test.ts tests/v1-noticeplace-autopilot.test.ts tests/v1-noticeplace-judge.test.ts tests/v1-noticeplace-session-read.test.ts tests/noticeplace-health-observer-contract.test.ts tests/autopilot-notice-incident.test.ts --reporter=dot"
+          },
+          "kind": "fixed",
+          "reason": "Explicit protected runtime repair policy installed in abd9a50; generic sink remains strict, explicit plans retain priority. Original saved progress delivered once with its original key by existing scoped drain, without handleStop/judge/native send. Independent readback confirms exactly one progress event, unchanged resolved/healthy incident, no pending updates or active test jobs."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "NPREPAIR_FIRST_PROGRESS_POLICY",
+  "owner": "chatgpt-handoff-7e4708cd-20261108",
+  "reporter": "chatgpt-handoff-7e4708cd-20261108",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/finish-20261108/repair-first-progress-green.log",
+      "red_proof_path": "evidence/finish-20261108/repair-first-progress-red.log",
+      "red_result": "8 failed",
+      "red_sha256": "6c4366e5ac2716902108f0673a153aace1ae2b0b38bab3589b85a3b78258ba24",
+      "result": "114 passed",
+      "sha256": "2f226822f99a2c87660e99371579444781be6ab6d61eb5ff373de32888e14963",
+      "test_command": "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node node_modules/vitest/vitest.mjs run tests/v1-noticeplace-server.test.ts tests/v1-noticeplace-runtime.test.ts tests/v1-noticeplace-mcp.test.ts tests/v1-noticeplace-autopilot.test.ts tests/v1-noticeplace-judge.test.ts tests/v1-noticeplace-session-read.test.ts tests/noticeplace-health-observer-contract.test.ts tests/autopilot-notice-incident.test.ts --reporter=dot"
+    },
+    "kind": "fixed",
+    "reason": "Explicit protected runtime repair policy installed in abd9a50; generic sink remains strict, explicit plans retain priority. Original saved progress delivered once with its original key by existing scoped drain, without handleStop/judge/native send. Independent readback confirms exactly one progress event, unchanged resolved/healthy incident, no pending updates or active test jobs."
+  },
+  "source": "evidence/finish-20261108/repair-first-progress-contract.json",
+  "status": "fixed",
+  "title": "Repair-first completion progress remains pending without a selected plan",
+  "updated_at": "2026-11-08T21:28:55+00:00"
+}

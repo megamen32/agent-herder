@@ -1,0 +1,72 @@
+{
+  "schema": "noticeplace.handoff.scoped-proof.v1",
+  "task_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "runtime_commit": "19daba50694988228a96e783481d482e997b4bdf",
+  "proof_kind": "native_judge_terminal_and_archive",
+  "sources": [
+    {
+      "path": ".tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/observation/observed.json",
+      "sha256": "1b2c1667574819514e4ab22c3210b81bd881c26f1fa683f5d091cd0e6b5330f1"
+    },
+    {
+      "path": ".tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/observation/completion-readback.json",
+      "sha256": "2938b445b94cd34c84367c421b27059c14166ac3883f19a342c6a3f6d8a006e6"
+    }
+  ],
+  "incident_id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+  "repair_native_session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+  "repair_core_session_ref": "session:4be97d2e9d3b3dd088a13cbbf9532930",
+  "initial_native_binding_matches": true,
+  "judge_native_session_id": "ses_e430c1254ffenk4I1fPofB8w63",
+  "judge_core_session_ref": "session:addbb21ba3c106f6ccd5e77e6fac0384",
+  "judge_assistant": {
+    "id": "msg_1bcf3eebb00196ejnyFBAkcoLk",
+    "time": {
+      "created": 1794171465411,
+      "streamed": 1794171486182,
+      "completed": 1794171486213
+    },
+    "finish": "stop",
+    "rawFinish": "end_turn",
+    "part_types": [
+      "reasoning",
+      "text"
+    ]
+  },
+  "judge_native_time": {
+    "created": 1794171465142,
+    "updated": 1794171487687,
+    "busy": 1794171465366,
+    "idle": 1794171486223,
+    "archived": 1794171487687
+  },
+  "judge_final_kind": "done",
+  "judge_archive_receipt": {
+    "archived": true,
+    "effect": "confirmed",
+    "session_ref": "session:addbb21ba3c106f6ccd5e77e6fac0384"
+  },
+  "archive_after_native_completion_and_idle": true,
+  "jobs": [
+    {
+      "id": "job_62ee41a3d326b3e329efdc69bb38708a6211f6076aa230c4a0c39626d8a5c0bd",
+      "kind": "Продолжение исправления NoticePlace",
+      "state": "completed",
+      "updatedAt": "2026-11-08T20:58:09.067Z"
+    },
+    {
+      "id": "job_088fff8563e9bf8aab22fbb702686181d720e791127cf63e936c31404ac5bb75",
+      "kind": "Проверка продолжения NoticePlace",
+      "state": "completed",
+      "updatedAt": "2026-11-08T20:58:07.790Z"
+    }
+  ],
+  "autopilot_receipt_exists": true,
+  "automatic_test_window": {
+    "manual_model_sends": 0,
+    "identity_changes": 0,
+    "manual_callbacks": 0
+  },
+  "outbox_delivery_confirmed": false
+}

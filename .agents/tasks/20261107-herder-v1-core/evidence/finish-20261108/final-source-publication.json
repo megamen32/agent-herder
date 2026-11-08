@@ -1,0 +1,59 @@
+{
+  "candidate": "19daba50694988228a96e783481d482e997b4bdf",
+  "base": "96f0a59c7936a13f454cff7349fbafeb85c1c6ac",
+  "owned_paths": [
+    "src/automation/v1-noticeplace-judge.ts",
+    "tests/v1-noticeplace-judge.test.ts"
+  ],
+  "source_sha256": {
+    "src/automation/v1-noticeplace-judge.ts": "5c5d15df051eab816be18588db7145dea4d755c5dfe71a48fb87441105b1fbae",
+    "tests/v1-noticeplace-judge.test.ts": "56195b2adc53e2e11fc994687d17b29cd359f76f01c690a45255344b3a02faff"
+  },
+  "published": true,
+  "checks": [
+    {
+      "name": "focused-tests",
+      "argv": [
+        "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/v1-noticeplace-server.test.ts",
+        "tests/v1-noticeplace-runtime.test.ts",
+        "tests/v1-noticeplace-mcp.test.ts",
+        "tests/v1-noticeplace-autopilot.test.ts",
+        "tests/v1-noticeplace-judge.test.ts",
+        "tests/v1-noticeplace-session-read.test.ts",
+        "--reporter=dot"
+      ],
+      "returncode": 0,
+      "seconds": 3.939,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final2-20261108/focused-tests.log"
+    },
+    {
+      "name": "tsc-build",
+      "argv": [
+        "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+        "node_modules/typescript/bin/tsc"
+      ],
+      "returncode": 0,
+      "seconds": 22.601,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final2-20261108/tsc-build.log"
+    },
+    {
+      "name": "diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "src/automation/v1-noticeplace-judge.ts",
+        "tests/v1-noticeplace-judge.test.ts"
+      ],
+      "returncode": 0,
+      "seconds": 0.007,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final2-20261108/diff-check.log"
+    }
+  ],
+  "committed_at": 1794171089.2256117,
+  "remote_main": "19daba50694988228a96e783481d482e997b4bdf"
+}

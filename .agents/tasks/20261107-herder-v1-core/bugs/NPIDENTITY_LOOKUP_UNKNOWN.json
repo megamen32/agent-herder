@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-08T20:39:22+00:00",
+  "details": "После подтвержденного create при null или исключении toNativeId ответ503 сохранял outcome accepted и core ref в sessionId. Два отрицательных теста воспроизвели ошибку.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-handoff-7e4708cd-20261108",
+      "at": "2026-11-08T20:39:22+00:00",
+      "changes": {
+        "details": "После подтвержденного create при null или исключении toNativeId ответ503 сохранял outcome accepted и core ref в sessionId. Два отрицательных теста воспроизвели ошибку.",
+        "source": "evidence/finish-20261108/identity-lookup-red.log",
+        "status": "open",
+        "title": "Неизвестный native ID после принятого запуска"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-handoff-7e4708cd-20261108",
+      "at": "2026-11-08T20:39:22+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/finish-20261108/identity-lookup-green.log",
+            "red_proof_path": "evidence/finish-20261108/identity-lookup-red.log",
+            "red_result": "2 failed",
+            "red_sha256": "ceb1de20b955091b6d0320a7d8f039523c34d42755baa245e7836839bf4311f4",
+            "result": "72 passed",
+            "sha256": "9b932a0d00ebf671cf9c963e8d7c359b1baf1c51e5691beda0375ff9b010e3e6",
+            "test_command": "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node node_modules/vitest/vitest.mjs run tests/v1-noticeplace-server.test.ts tests/v1-noticeplace-runtime.test.ts tests/v1-noticeplace-mcp.test.ts tests/v1-noticeplace-autopilot.test.ts tests/v1-noticeplace-judge.test.ts tests/v1-noticeplace-session-read.test.ts --reporter=dot"
+          },
+          "kind": "fixed",
+          "reason": "Исправлено и опубликовано в85aa674a: admission_unknown и только core_session_ref, без native ID при неизвестном сопоставлении."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "NPIDENTITY_LOOKUP_UNKNOWN",
+  "owner": "chatgpt-handoff-7e4708cd-20261108",
+  "reporter": "chatgpt-handoff-7e4708cd-20261108",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/finish-20261108/identity-lookup-green.log",
+      "red_proof_path": "evidence/finish-20261108/identity-lookup-red.log",
+      "red_result": "2 failed",
+      "red_sha256": "ceb1de20b955091b6d0320a7d8f039523c34d42755baa245e7836839bf4311f4",
+      "result": "72 passed",
+      "sha256": "9b932a0d00ebf671cf9c963e8d7c359b1baf1c51e5691beda0375ff9b010e3e6",
+      "test_command": "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node node_modules/vitest/vitest.mjs run tests/v1-noticeplace-server.test.ts tests/v1-noticeplace-runtime.test.ts tests/v1-noticeplace-mcp.test.ts tests/v1-noticeplace-autopilot.test.ts tests/v1-noticeplace-judge.test.ts tests/v1-noticeplace-session-read.test.ts --reporter=dot"
+    },
+    "kind": "fixed",
+    "reason": "Исправлено и опубликовано в85aa674a: admission_unknown и только core_session_ref, без native ID при неизвестном сопоставлении."
+  },
+  "source": "evidence/finish-20261108/identity-lookup-red.log",
+  "status": "fixed",
+  "title": "Неизвестный native ID после принятого запуска",
+  "updated_at": "2026-11-08T20:39:22+00:00"
+}

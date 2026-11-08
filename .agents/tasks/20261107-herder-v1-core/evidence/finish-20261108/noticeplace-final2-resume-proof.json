@@ -1,0 +1,27 @@
+{
+  "schema": "noticeplace.handoff.scoped-proof.v1",
+  "task_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "runtime_commit": "19daba50694988228a96e783481d482e997b4bdf",
+  "proof_kind": "same_session_context_resume",
+  "sources": [
+    {
+      "path": ".tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/resume-check/confirmed.json",
+      "sha256": "5ee50fafadeb4c0bb07dd86a3f70c96e8f0549cf29b82e900ea4930633467f4e"
+    }
+  ],
+  "resume": {
+    "outcome": "passed",
+    "observed_at": 1794172070.4544663,
+    "same_native_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "same_core_ref": "session:4be97d2e9d3b3dd088a13cbbf9532930",
+    "delivery_mode": "queue",
+    "input_id": "np-final2-resume-7e4708cd-20261108",
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1bcfc65490019mYbMvK0GCsjYO\"}",
+    "answer": "NP_RESUME_FINAL2_7e4708cd\nhttp://127.0.0.1:34075/health, repairs=1",
+    "status": "idle",
+    "tools_after_resume": 0,
+    "context_not_supplied_in_test_message": true,
+    "after_sha256": "bafe327a2d4d758c2b44bf43e92f32b58f222a635a164b740f4cfe96d90c861c"
+  }
+}

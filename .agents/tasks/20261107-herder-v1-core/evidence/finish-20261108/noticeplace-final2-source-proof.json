@@ -1,0 +1,60 @@
+{
+  "schema": "noticeplace.handoff.scoped-proof.v1",
+  "task_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "runtime_commit": "19daba50694988228a96e783481d482e997b4bdf",
+  "proof_kind": "independent_source_resolution",
+  "sources": [
+    {
+      "path": ".tmp/v1-noticeplace-final2-20261108-chatgpt-7e4708cd/independent-source-confirmed.json",
+      "sha256": "15cfe4e52891d41318f6edd633cc2822c2caca722c30daca5f085d9871b709ae"
+    }
+  ],
+  "principal": "source:agent-herder",
+  "independent_of_executor": true,
+  "before": {
+    "incident_id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+    "generation": 1,
+    "attempt_state": "work_finished",
+    "verification_state": "due",
+    "request_id": "check_3d43263852dc4e29a6efbdc79e86af49",
+    "session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "harness": "opencode"
+  },
+  "measurements": [
+    {
+      "http_status": 200,
+      "health": {
+        "state": "healthy",
+        "repairs": 1
+      },
+      "observed_at": 1794171593.766004,
+      "url": "http://127.0.0.1:34075/health"
+    }
+  ],
+  "source_verifier_results": [
+    {
+      "incident_id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+      "request_id": "check_3d43263852dc4e29a6efbdc79e86af49",
+      "generation": 1,
+      "observed_state": "healthy",
+      "observed_at": 1794171593.766005
+    }
+  ],
+  "after": {
+    "id": "inc_36bb1ad1283d43aa8bc5c6df1457128d",
+    "state": "resolved",
+    "resolved_at": 1794171593.8101528,
+    "session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "session_harness": "opencode"
+  },
+  "after_lifecycle": {
+    "attempt_state": "work_finished",
+    "verification_state": "healthy",
+    "request_id": "check_3d43263852dc4e29a6efbdc79e86af49",
+    "generation": 1,
+    "session_id": "ses_e430ed432ffe68MLZ5SaT1gWR5",
+    "harness": "opencode"
+  },
+  "outbox_delivery_confirmed": false
+}

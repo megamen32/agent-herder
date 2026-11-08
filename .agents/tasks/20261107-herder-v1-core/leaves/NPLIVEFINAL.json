@@ -1,0 +1,69 @@
+{
+  "id": "NPLIVEFINAL",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Проверить установленный ремонт NoticePlace без ручной коррекции",
+  "status": "done",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "estimate_minutes": 15,
+  "acceptance": "Native completion event observed, installed consumer creates exact native session, owns repair, work_finished accepted, independent source resolves; no human deliveries; own sessions archived.",
+  "affected_files": [
+    "src/automation/v1-noticeplace-runtime.ts",
+    "tests/v1-noticeplace-runtime.test.ts",
+    "evidence/finish-20261108/noticeplace-final.json"
+  ],
+  "note": "First real incident resolved after manual identity correction; clean automatic pass remains. Core/wake proven separately. Existing41b42847 runtime resolves protected secret markers without credential changes.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T22:56:57+03:00",
+  "updated_at": "2026-11-09T00:28:55+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T22:56:57+03:00",
+      "note": "",
+      "changes": {
+        "id": "NPLIVEFINAL",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Проверить установленный ремонт NoticePlace без ручной коррекции",
+        "status": "running",
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "estimate_minutes": 15,
+        "acceptance": "Native completion event observed, installed consumer creates exact native session, owns repair, work_finished accepted, independent source resolves; no human deliveries; own sessions archived.",
+        "affected_files": [
+          "src/automation/v1-noticeplace-runtime.ts",
+          "tests/v1-noticeplace-runtime.test.ts",
+          "evidence/finish-20261108/noticeplace-final.json"
+        ],
+        "note": "First real incident resolved after manual identity correction; clean automatic pass remains. Core/wake proven separately. Existing41b42847 runtime resolves protected secret markers without credential changes.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-09T00:28:55+03:00",
+      "note": "Продолжение handoff7e4708cd: chatgpt-handoff-7e4708cd-20261108; native session ID текущего ChatGPT неизвестен.",
+      "changes": {
+        "status": "done",
+        "result": "Fresh final2 completed launch -> native repair -> automatic work_finished and completed judge -> independent SourceVerifier healthy -> resolved without manual ID edits. Same native/core session resumed through configured queue, remembered fixture URL34075 and repairs1 with 0 tool calls. Final runtime abd9a50 installed; exact old completion progress drained once after explicit repair policy, HTTP200, independent event count1. All five known test chats archived, all three fixture ports closed, test pending updates/active jobs/human deliveries0. Evidence: HANDOFF-COMPLETED-20261108.md and evidence/finish-20261108/noticeplace-final2-*-proof.json, noticeplace-test-cleanup.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "chatgpt",
+        "session_id": null,
+        "source": "declared"
+      },
+      "session": "unknown",
+      "harness": "chatgpt"
+    }
+  ],
+  "result": "Fresh final2 completed launch -> native repair -> automatic work_finished and completed judge -> independent SourceVerifier healthy -> resolved without manual ID edits. Same native/core session resumed through configured queue, remembered fixture URL34075 and repairs1 with 0 tool calls. Final runtime abd9a50 installed; exact old completion progress drained once after explicit repair policy, HTTP200, independent event count1. All five known test chats archived, all three fixture ports closed, test pending updates/active jobs/human deliveries0. Evidence: HANDOFF-COMPLETED-20261108.md and evidence/finish-20261108/noticeplace-final2-*-proof.json, noticeplace-test-cleanup.json."
+}

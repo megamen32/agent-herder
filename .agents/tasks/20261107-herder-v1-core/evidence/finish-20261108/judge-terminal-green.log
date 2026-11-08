@@ -1,0 +1,16 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+(node:3866923) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ tests/v1-noticeplace-judge.test.ts > NoticePlace native subscription judge > waits past prompt admission and streamed reasoning for native idle plus final text-only verdict 37ms
+ ✓ tests/v1-noticeplace-judge.test.ts > NoticePlace native subscription judge > retains the same admitted judge without archive or replay when native completion stays running or unknown 235ms
+ ✓ tests/v1-noticeplace-judge.test.ts > NoticePlace native subscription judge > creates one bounded ordinary prompt, validates exact assistant JSON, archives its own session 85ms
+ ✓ tests/v1-noticeplace-judge.test.ts > NoticePlace native subscription judge > rejects malformed decision with the existing validator and archives only the confirmed judge 55ms
+ ✓ tests/v1-noticeplace-judge.test.ts > NoticePlace native subscription judge > pins unknown create durably and never repeats it across caller/factory restart 29ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  23:49:49
+   Duration  1.92s (transform 667ms, setup 64ms, import 1.23s, tests 442ms, environment 0ms)
+

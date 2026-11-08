@@ -1,0 +1,54 @@
+{
+  "schema": "lhc.publication.scope-validation.v1",
+  "observed_at": "2026-11-08T21:18:53.259520+00:00",
+  "task_attribution": "chatgpt-handoff-7e4708cd-20261108",
+  "native_session_id": null,
+  "validator": {
+    "module_path": "/home/roomhacker/.codex/plugins/cache/megamen32-plugins/last-human-commit/1.17.2/tools/lhc_plan_json.py",
+    "module_sha256": "11aea69d6bb37ea861e06fa90cb08f477019cfde213adeb6471e68f8c9f4467e",
+    "functions": [
+      "collect_leaves",
+      "task_from_leaf"
+    ],
+    "actual_leaf_fields_sha256": "a78265d8e5e3f52347cc269b9349e7587f2b1294c09b3819538ced7ff27a50af",
+    "collection": "plan_metadata defaults and leaves/*.json; no explicit leaf index in plan.json"
+  },
+  "integration_plan_sha256": "b07ba1ed7b66a92a8ad5164f0ac88f4e0dd845f37480c1244b2ac7cacc263cbd",
+  "base_leaf_count": 61,
+  "merged_leaf_count": 64,
+  "unique_ids": 64,
+  "missing_parents": 0,
+  "minimal_delta": [
+    {
+      "id": "RESTORELEGACY",
+      "path": "leaves/RESTORELEGACY.json",
+      "parent": null,
+      "kind": "milestone",
+      "status": "running",
+      "sha256": "196ab7ef5db27c1ee8b0ff43a808913bce9088e27f76591e94efe7552655d99f"
+    },
+    {
+      "id": "NPIDENTITY",
+      "path": "leaves/NPIDENTITY.json",
+      "parent": "RESTORELEGACY",
+      "kind": "task",
+      "status": "done",
+      "sha256": "af0289d16c1222f65887124bdae801a334c6926e515739f63687b7acffb74a36"
+    },
+    {
+      "id": "NPLIVEFINAL",
+      "path": "leaves/NPLIVEFINAL.json",
+      "parent": "RESTORELEGACY",
+      "kind": "task",
+      "status": "running",
+      "sha256": "abf01c62fd3e127e684cf31ee4a80186996d1dd8521d4fa7277161a277b97f0e"
+    }
+  ],
+  "unchanged_scope": [
+    "plan.json",
+    "RESTORENOTICE and historical task statuses",
+    "generated plan graphs"
+  ],
+  "validation_mode": "read-only official parsing and in-memory parent resolution; no graph generation",
+  "result": "passed"
+}

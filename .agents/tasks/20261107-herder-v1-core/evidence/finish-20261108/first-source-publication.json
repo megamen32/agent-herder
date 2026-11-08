@@ -1,0 +1,65 @@
+{
+  "base": "7e4708cde15fa7040fef91ae25d4f1e2d2a25fb7",
+  "candidate": "85aa674af7d05c878d7851bf647705501e22b67d",
+  "owned_paths": [
+    "src/automation/v1-noticeplace-resume.ts",
+    "src/v1-noticeplace-server.ts",
+    "tests/v1-noticeplace-server.test.ts"
+  ],
+  "committed_at": 1794169496.0323744,
+  "commit_output": "[отделённый HEAD 85aa674a] Fix NoticePlace native identity and verified session resume\n 3 files changed, 327 insertions(+), 31 deletions(-)\n create mode 100644 src/automation/v1-noticeplace-resume.ts",
+  "checks": [
+    {
+      "name": "focused-tests",
+      "argv": [
+        "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/v1-noticeplace-server.test.ts",
+        "tests/v1-noticeplace-runtime.test.ts",
+        "tests/v1-noticeplace-mcp.test.ts",
+        "tests/v1-noticeplace-autopilot.test.ts",
+        "tests/v1-noticeplace-judge.test.ts",
+        "tests/v1-noticeplace-session-read.test.ts",
+        "--reporter=dot"
+      ],
+      "returncode": 0,
+      "seconds": 3.992,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final-20261108/focused-tests.log"
+    },
+    {
+      "name": "tsc-build",
+      "argv": [
+        "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+        "node_modules/typescript/bin/tsc"
+      ],
+      "returncode": 0,
+      "seconds": 22.972,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final-20261108/tsc-build.log"
+    },
+    {
+      "name": "diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "src/v1-noticeplace-server.ts",
+        "src/automation/v1-noticeplace-resume.ts",
+        "tests/v1-noticeplace-server.test.ts"
+      ],
+      "returncode": 0,
+      "seconds": 0.008,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/handoff-final-20261108/diff-check.log"
+    }
+  ],
+  "source_sha256": {
+    "src/v1-noticeplace-server.ts": "f23eb56690e358eb48d9dc9e70edaf233cdff2f49c7ce5061044d1008356aa35",
+    "src/automation/v1-noticeplace-resume.ts": "b162a762396fc912579598d019dd9b4bff25992f9bf48c91652429665c7c02b9",
+    "tests/v1-noticeplace-server.test.ts": "e090ee91176745bd2c0afee765a01e87c570b9baaa26d6167bbc13d232ddc710"
+  },
+  "published": true,
+  "remote_main": "85aa674af7d05c878d7851bf647705501e22b67d",
+  "push_output": "",
+  "scoped_status": ""
+}

@@ -1,0 +1,62 @@
+{
+  "id": "RESTORELEGACY",
+  "kind": "milestone",
+  "label": "Три рабочих сценария нового ядра: fleet, wake, NoticePlace",
+  "status": "running",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Оценить отдельными slices после принятого запуска core",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "wait_reason": "",
+  "acceptance": "Crosshostlist/read/deliver через actualremoteinstance; child completion→parentwake без дубля и с HumanStop; NoticePlace incident→repair session→result receipt. Решения purefunctions, effects отдельно; deterministicdomain tests + realinstalledconsumer. Legacydaemonoff.",
+  "note": "Владелец возобновил функции; parentorchestrator, Lunaimplementation, Terracontracts/acceptance. Нет искусственного ожидания другой сессии.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T20:19:01+03:00",
+  "updated_at": "2026-11-08T20:23:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:19:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "RESTORELEGACY",
+        "kind": "task",
+        "label": "Восстановить отложенные потребители и completion wake на новом core",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Оценить отдельными slices после принятого запуска core",
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "wait_reason": "owner_deferred",
+        "acceptance": "Отдельно переносить fleet routing, childcompletion/selfwake, NoticePlace repair, agent-workspace legacyAPI и UserIOconsumer; не включать старый daemon для имитации parity.",
+        "note": "Владелец явно: выключитьстарыйсейчас,функциивосстановитьпотом. Нет activehourlyschedules; фактhooksнеравенwakePASS.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:23:19+03:00",
+      "note": "",
+      "changes": {
+        "kind": "milestone",
+        "status": "running",
+        "wait_reason": "",
+        "label": "Три рабочих сценария нового ядра: fleet, wake, NoticePlace",
+        "acceptance": "Crosshostlist/read/deliver через actualremoteinstance; child completion→parentwake без дубля и с HumanStop; NoticePlace incident→repair session→result receipt. Решения purefunctions, effects отдельно; deterministicdomain tests + realinstalledconsumer. Legacydaemonoff.",
+        "note": "Владелец возобновил функции; parentorchestrator, Lunaimplementation, Terracontracts/acceptance. Нет искусственного ожидания другой сессии."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ]
+}

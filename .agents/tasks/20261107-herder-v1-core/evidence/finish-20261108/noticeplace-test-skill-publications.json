@@ -1,0 +1,31 @@
+{
+  "schema": "herder.test-skill-publications.v1",
+  "count": 2,
+  "created_by": "existing NoticePlace repair consumer",
+  "verified_from": "saved native transcripts and successful publication receipts; adjacent repository not opened or modified by handoff completion tools",
+  "artifacts": [
+    {
+      "run": "final1",
+      "repository": "megamen32/noticeplace-incident-skills",
+      "commit": "8375556ca067c9210a449e9cd4afc7ea108f1889",
+      "path": "skills/incident-f347d63bc89037aefda5fa40b0608df1/SKILL.md",
+      "skill_sha256": "268ee15413ab7eb4bc0995ba01f49b88253bd42b4aeadd3719584fc6576f8a3b",
+      "transcript_sha256": "20c95240d8ca4410fb83837a5924bb3f6e9ad54c1f5c05015f18ad7953686ee7",
+      "verification": "confirmed earlier in final1 observation"
+    },
+    {
+      "run": "final2",
+      "repository": "megamen32/noticeplace-incident-skills",
+      "commit": "d2188cc9742783593fefce3872866798cde1211c",
+      "path": "skills/incident-941ba9ddae891609380f45bda76e6af0/SKILL.md",
+      "skill_sha256": "e9cd01d68f8c0862d7ed091b8577f97d5ffb0e21a3e2b4110b69c5f59b73bbdf",
+      "transcript_sha256": "5414ee4e1afeb1f9b83e821d3e1329d2c11e9b2dca99f1ebf3fc1378555b5f6f",
+      "message_id": "msg_1bcf34468001AQqKeu25cOjv5N",
+      "tool_call_id": "call_bbe89dddf3f74b05b4f4e7ca",
+      "tool_status": "completed",
+      "exit_code": 0,
+      "publication_status": "published"
+    }
+  ],
+  "cleanup_scope": "test chat archives and test processes; these published skill artifacts are retained and disclosed"
+}

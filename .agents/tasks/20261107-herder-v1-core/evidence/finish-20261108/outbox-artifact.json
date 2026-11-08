@@ -1,0 +1,18 @@
+{
+  "candidate": "abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+  "base_release": "/home/roomhacker/herder-artifacts/releases/19daba50694988228a96e783481d482e997b4bdf",
+  "release": "/home/roomhacker/herder-artifacts/releases/abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+  "changed_artifacts": [
+    "dist/autopilot/notice-incident.js",
+    "dist/autopilot/notice-incident.d.ts",
+    "dist/automation/v1-noticeplace-runtime.js",
+    "dist/automation/v1-noticeplace-runtime.d.ts"
+  ],
+  "manifest_sha256": "e30923f3b677b1b192a5980f34db1fb914caf91b34b9d7154bb34459d0d982be",
+  "verified_files": 13,
+  "package_lock_sha256": "934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727",
+  "package_lock_included": true,
+  "external_symlinks": 0,
+  "built_at": 1794172971.8977203,
+  "build_resume": "Published source and copied bundle reconciled after missing inherited package-lock; committed unchanged lock copied and verified before install."
+}

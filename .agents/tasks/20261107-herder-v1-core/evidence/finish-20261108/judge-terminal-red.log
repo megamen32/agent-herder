@@ -1,0 +1,53 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [31m×[39m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mwaits past prompt admission and streamed reasoning for native idle plus final text-only verdict[32m 39[2mms[22m[39m
+[31m   → native_judge_failed_or_unknown[39m
+ [31m×[39m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mretains the same admitted judge without archive or replay when native completion stays running or unknown[32m 35[2mms[22m[39m
+[31m   → expected [ [ 'session', …(2) ] ] to have a length of +0 but got 1[39m
+ [32m✓[39m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mcreates one bounded ordinary prompt, validates exact assistant JSON, archives its own session[32m 86[2mms[22m[39m
+ [32m✓[39m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mrejects malformed decision with the existing validator and archives only the confirmed judge[32m 56[2mms[22m[39m
+ [32m✓[39m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mpins unknown create durably and never repeats it across caller/factory restart[32m 29[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 23:47:03
+[2m   Duration [22m 1.61s[2m (transform 552ms, setup 47ms, import 1.17s, tests 246ms, environment 0ms)[22m
+
+(node:3808656) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mwaits past prompt admission and streamed reasoning for native idle plus final text-only verdict
+[31m[1mError[22m: native_judge_failed_or_unknown[39m
+[36m [2m❯[22m Object.decide src/automation/v1-noticeplace-judge.ts:[2m163:95[22m[39m
+    [90m161|[39m         [35mconst[39m current [33m=[39m options[33m.[39mjobs[33m.[39m[35mget[39m(job[33m.[39mid)[33m;[39m
+    [90m162|[39m         [35mif[39m (current[33m?.[39mstate [33m===[39m [32m"completed"[39m) [35mreturn[39m current[33m.[39mresult[33m;[39m
+    [90m163|[39m         if (!current || ["failed", "interrupted", "cancelled"].include…
+    [90m   |[39m                                                                                               [31m^[39m
+    [90m164|[39m         [35mawait[39m [34mdelay[39m([33mMath[39m[33m.[39m[34mmin[39m([34m25[39m[33m,[39m timeout))[33m;[39m
+    [90m165|[39m       }
+[90m [2m❯[22m tests/v1-noticeplace-judge.test.ts:[2m88:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/v1-noticeplace-judge.test.ts[2m > [22mNoticePlace native subscription judge[2m > [22mretains the same admitted judge without archive or replay when native completion stays running or unknown
+[31m[1mAssertionError[22m: expected [ [ 'session', …(2) ] ] to have a length of +0 but got 1[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 0[39m
+[31m+ 1[39m
+
+[36m [2m❯[22m tests/v1-noticeplace-judge.test.ts:[2m100:107[22m[39m
+    [90m 98|[39m       await vi.waitFor(() => expect(f.options.jobs.list()[0]?.state).t…
+    [90m 99|[39m       [35mconst[39m retained [33m=[39m f[33m.[39moptions[33m.[39mjobs[33m.[39m[34mlist[39m()[[34m0[39m][33m![39m[33m;[39m
+    [90m100|[39m       expect(f.call.mock.calls.filter(([name, args]) => name === "sess…
+    [90m   |[39m                                                                                                           [31m^[39m
+    [90m101|[39m       [34mexpect[39m(retained[33m.[39merror)[33m.[39m[34mtoContain[39m([32m"own-task"[39m)[33m;[39m
+    [90m102|[39m       [34mexpect[39m(retained[33m.[39merror)[33m.[39m[34mtoContain[39m([32m"judge-own-ref"[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
