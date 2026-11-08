@@ -1,0 +1,17 @@
+{
+  "manifest_sha256": "bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+  "status": "PASS",
+  "mode": "reuse of proven identical core bytes",
+  "binary_sha256": "c1952779c9ca812345d7ba4929a12b727ed87dc24d2a06d08852330c90bcc368",
+  "negative_checks": {
+    "wrong_instance_or_principal": "PASS",
+    "same_key_no_replay": "PASS",
+    "same_key_payload_conflict": "PASS",
+    "unknown_after_restart_no_replay": "PASS",
+    "human_stop_before_send": "PASS",
+    "codex_workload_isolation_exact_value_only": "PASS"
+  },
+  "source_receipt": "candidate-negative-805fd477.json",
+  "source_log_sha256": "9f60644182ade50e8fb66e38bf0396c546932a037d6b6cb87099eed0fcd0e990",
+  "native_sends": 0
+}
