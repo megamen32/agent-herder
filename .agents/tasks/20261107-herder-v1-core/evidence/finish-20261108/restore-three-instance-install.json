@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-08T18:40:50.827960+00:00",
+  "selector": "/home/roomhacker/.config/agent-herder/v1-entry.json",
+  "manifest_sha256": "203decf5178c80e3c12a44f7e7c64aeec3c0d2cfc05b36c8d3614e4c62147d22",
+  "core_sha256": "b51e550e3a8a2c2131ea01a5fc794d41b008f192cea126182dc25d3cec99291f",
+  "source": "a3812e2c",
+  "composition_source": "3ee99555",
+  "instances": [
+    "codex-local",
+    "codex-44",
+    "opencode-noticeplace-local"
+  ],
+  "gptadmin_restart": "confirmed",
+  "gptadmin_discover_instances": "confirmed all three",
+  "gptadmin_readback_receipt": "efc98098b223206661003540f2a8cf11",
+  "backup": "/home/roomhacker/herder-artifacts/installed-v1/selector-before-3ee99555.json",
+  "native_model_sends_by_integrator": 0,
+  "acceptance": "startup and readonly only; remote full, wake, NoticePlace consumer pending"
+}
