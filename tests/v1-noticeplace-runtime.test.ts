@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { createNoticePlaceSessionIdentity, loadNoticePlaceSecretReferences, createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
+import { createNoticePlaceRuntime, createNoticePlaceSessionIdentity, loadNoticePlaceSecretReferences, createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
 import { composeNoticePlaceOwnerRead, noticePlaceOwnerNodeStatus } from '../src/automation/v1-noticeplace-owner-state.js';
 
 const row = {
@@ -48,6 +48,10 @@ describe('NoticePlace fleet disarm preflight', () => {
 });
 
 describe('NoticePlace runtime composition ports', () => {
+  it.each(['unknown-plan',null,''] as const)('rejects invalid incident progress policy %s before reading credentials or connecting native adapters',async(incidentProgressPlanId)=>{
+    await expect(createNoticePlaceRuntime({incidentProgressPlanId,instance:{instanceRef:'opencode-noticeplace-local',harness:'opencode',model:row.native.model,deliveryMode:'queue'}} as never)).rejects.toThrow('incidentProgressPlanId');
+  });
+
   it('constructs the session reader with the shared Rust port, exact instance and cwd', async () => {
     const port={call:vi.fn(async()=>({}))};
     const factory=vi.fn((input:{port:typeof port;instanceRef:string;cwd:string})=>({read:async(sessionRef:string,kind:'progress'|'details')=>({sessionRef,kind,instanceRef:input.instanceRef,cwd:input.cwd,samePort:input.port===port,from:'legacy-reader'})}));

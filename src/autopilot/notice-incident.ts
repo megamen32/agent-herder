@@ -32,6 +32,8 @@ export type IncidentProgressUpdate = {
   fingerprint: string;
 };
 export type IncidentUpdateSink = { send(update: IncidentProgressUpdate): Promise<void> };
+/** Explicit trusted runtime contract; absent means a selected plan is required. */
+export type IncidentUpdatePolicy = { incidentProgressPlanId?: HealthPlanId };
 
 export function parseNoticeIncident(value: unknown): NoticeIncidentBinding {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("noticeIncident must name the original incident and project");
@@ -116,13 +118,15 @@ export async function readIncidentBinding(
 /** The center's open incident states; anything else is closed for progress. */
 const OPEN_INCIDENT_STATES = ["open", "acknowledged", "snoozed"];
 
-export function createIncidentUpdateSink(env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch): IncidentUpdateSink {
+export function createIncidentUpdateSink(env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch, policy: IncidentUpdatePolicy = {}): IncidentUpdateSink {
+  const configuredPlanId = policy.incidentProgressPlanId === undefined
+    ? undefined : parseHealthPlanId(policy.incidentProgressPlanId, "incidentProgressPlanId");
   return {
     async send(update) {
-      // The center accepts progress only for the selected plan of the
-      // incident. A progress without a known plan is refused here instead of
-      // being sent with a guessed one.
-      const planId = update.planId ?? update.binding.planId;
+      // Explicit selected plans always win. The repair-first consumer has an
+      // explicit plan_id=repair contract, enabled only by its protected runtime
+      // policy. Generic callers still require their original selected plan.
+      const planId = update.planId ?? update.binding.planId ?? configuredPlanId;
       if (!isHealthPlanId(planId)) throw new Error(`Notice incident progress needs the selected health plan (${HEALTH_PLAN_IDS.join(", ")})`);
       const callback = await loadIncidentCallback(update.binding.project, env);
       const response = await fetchImpl(`${callback.url}/v1/incidents/${encodeURIComponent(update.binding.incidentId)}/health/progress`, {

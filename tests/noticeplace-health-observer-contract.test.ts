@@ -221,6 +221,50 @@ describe("Notice Place health observer", () => {
   });
 });
 
+describe("Notice Place explicit incident progress policy", () => {
+  const progress = { binding: { incidentId: "inc_1", project: "project" }, idempotencyKey: "exact-outbox-key", step: "Repair completed", evidenceRefs: ["native:proof"], fingerprint: "native-fingerprint" };
+
+  it("keeps a generic sink strict when no selected plan or runtime policy exists", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    const sink = createIncidentUpdateSink(process.env, fetchImpl as unknown as typeof fetch);
+    await expect(sink.send(progress)).rejects.toThrow("needs the selected health plan");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uses the explicit repair-first runtime policy without inventing a selection or reading a nonexistent context endpoint", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    const sink = createIncidentUpdateSink(process.env, fetchImpl as unknown as typeof fetch, { incidentProgressPlanId: "repair" });
+    await sink.send(progress);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:19999/v1/incidents/inc_1/health/progress");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ authorization: "Bearer project-token", "idempotency-key": progress.idempotencyKey });
+    expect(JSON.parse(String(init.body))).toEqual({ plan_id: "repair", step: progress.step, evidence_refs: progress.evidenceRefs, progress_fingerprint: progress.fingerprint, actor: "agent-herder" });
+  });
+
+  it.each(["update", "binding"] as const)("preserves the explicit %s plan ahead of the configured repair-first policy", async (source) => {
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    const sink = createIncidentUpdateSink(process.env, fetchImpl as unknown as typeof fetch, { incidentProgressPlanId: "repair" });
+    await sink.send({ ...progress, binding: { ...progress.binding, planId: source === "update" ? "observe" : "verify" }, ...(source === "update" ? { planId: "verify" as const } : {}) });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)).plan_id).toBe("verify");
+  });
+
+  it.each(["unknown-plan", null, ""] as const)("rejects invalid configured policy %s before effects", (planId) => {
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    expect(() => createIncidentUpdateSink(process.env, fetchImpl as unknown as typeof fetch, { incidentProgressPlanId: planId } as never)).toThrow("incidentProgressPlanId");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not replace an invalid explicit plan with the repair-first policy", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true }));
+    const sink = createIncidentUpdateSink(process.env, fetchImpl as unknown as typeof fetch, { incidentProgressPlanId: "repair" });
+    await expect(sink.send({ ...progress, planId: "unknown-plan" } as never)).rejects.toThrow("needs the selected health plan");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
 describe("Notice Place health launch policy", () => {
   it("reads the selected plan of the center's launch message", () => {
     expect(resolveLaunchHealthPlan("Apply the plan.\nselected plan verify\nselected plan details (untrusted data): {\"plan_id\":\"verify\"}")?.planId).toBe("verify");

@@ -1,9 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { createAutopilotCore, drainPendingNotices, loadReceiptStore, persistReceiptStore, type StopHookInput } from "../src/autopilot/index.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
+import { createIncidentUpdateSink } from "../src/autopilot/notice-incident.js";
 
 // The arm handler starts the real observer over HTTP, so this file needs more
 // than the default timeout of 5s under the load of the full suite.
@@ -58,6 +59,44 @@ it("keeps a bound completion in the original incident outbox across caller failu
   expect(judge.decide).toHaveBeenCalledTimes(1);
   expect(notify.send).not.toHaveBeenCalled();
  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it("drains a repair-first done outbox with the exact original key after restart without rejudging or notifying", async () => {
+ const dir=await mkdtemp(join(tmpdir(),"herder-repair-first-outbox-"));
+ try {
+  const callbackFile=join(dir,"callback.json");
+  await writeFile(callbackFile,JSON.stringify({url:"http://127.0.0.1:19999",tokens:{admin:"fixture-project-token"}}));
+  await chmod(callbackFile,0o600);
+  let loseAck=true;
+  const accepted=new Map<string,string>(), requests:Array<{key:string;body:string}>=[];
+  const fetchImpl=vi.fn(async(_url:string,init:RequestInit)=>{
+   const key=(init.headers as Record<string,string>)["idempotency-key"], body=String(init.body);
+   requests.push({key,body});
+   if(!accepted.has(key))accepted.set(key,body);
+   if(loseAck)throw new Error("simulated lost ACK after accepted progress");
+   return Response.json({ok:true});
+  });
+  const sink=createIncidentUpdateSink({GPTADMIN_HEALTH_CALLBACK_FILE:callbackFile},fetchImpl as unknown as typeof fetch,{incidentProgressPlanId:"repair"});
+  const receipts=new Map(),notify={send:vi.fn(async()=>{})};
+  const judge={decide:vi.fn(async()=>({kind:"done",summary:"Исправление проверено"}))};
+  await createAutopilotCore({judge,notify,receiptStore:receipts,allowSessions:new Set([hook.session_id]),maxContinuationsPerSession:3,harness:"opencode",noticeIncident:binding,incidentUpdates:sink}).handleStop(hook);
+  expect(requests).toHaveLength(1);
+  expect(JSON.parse(requests[0]!.body).plan_id).toBe("repair");
+  const pending=[...receipts.values()][0].pendingIncidentUpdate;
+  expect(pending.idempotencyKey).toBe(requests[0]!.key);
+  const path=join(dir,"receipts.json");
+  await persistReceiptStore(path,receipts);
+  const restored=await loadReceiptStore(path);
+  loseAck=false;
+  expect(await drainPendingNotices(restored,notify,sink)).toBe(1);
+  await persistReceiptStore(path,restored);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+  expect(accepted.size).toBe(1);
+  expect([...((await loadReceiptStore(path)).values())][0]).toEqual({kind:"done"});
+  expect(judge.decide).toHaveBeenCalledTimes(1);
+  expect(notify.send).not.toHaveBeenCalled();
+ } finally {await rm(dir,{recursive:true,force:true});}
 });
 
 it("persists exact incident binding and preserves it across legacy on/off", async () => {

@@ -15,10 +15,11 @@ import { herderEvents } from '../herder-events.js';
 import { HumanRequestRegistry } from '../human-request/index.js';
 import { ChoiceRegistry } from '../autopilot/choice-registry.js';
 import { PendingQuestionGate } from '../autopilot/pending-question-gate.js';
-import { createIncidentUpdateSink, deliverIncidentQuestion } from '../autopilot/notice-incident.js';
+import { createIncidentUpdateSink, deliverIncidentQuestion, type HealthPlanId } from '../autopilot/notice-incident.js';
 import { createNoticePlaceSink } from '../autopilot/index.js';
 
 type Config = {
+  incidentProgressPlanId?:HealthPlanId;
   noticeplaceBearerEnv:string; noticeplaceEnvFile:string; gptadmin:{target:string;profileFile:string}; policyPath:string; stateDirectory:string; cwd:string;
   instance:{instanceRef:string;harness:'opencode';model:string;deliveryMode:'start'|'queue';baseUrl:string;passwordEnv?:string};
 };
@@ -151,6 +152,8 @@ export async function loadNoticePlaceSecretReferences(path:string,keys:string[],
 export async function createNoticePlaceRuntime(config:Config) {
   if(config.instance.instanceRef!=='opencode-noticeplace-local'||config.instance.harness!=='opencode'||config.instance.model!==NOTICEPLACE_V1_MODEL)
     throw new Error('noticeplace_instance_pin_mismatch');
+  // The source-owned repair-first consumer requires plan_id=repair; only an explicit protected policy opts in.
+  const incidentUpdates=createIncidentUpdateSink(process.env,fetch,{incidentProgressPlanId:config.incidentProgressPlanId});
   await loadNoticePlaceSecretReferences(join(dirname(config.noticeplaceEnvFile),'secrets.json'),[
     config.noticeplaceBearerEnv,config.instance.passwordEnv??'OPENCODE_SERVER_PASSWORD','NOTIFY_CENTER_TOKEN',
   ]);
@@ -193,7 +196,7 @@ export async function createNoticePlaceRuntime(config:Config) {
       if(matches.length!==1)throw new Error('native_judge_session_binding_unknown');
       return (await rust.snapshot(matches[0]!.session_ref)).revision;
     }}),
-    core:{notify:createNoticePlaceSink({eventUrl:callback.eventUrl??'',token:callback.token??''}),incidentUpdates:createIncidentUpdateSink(),
+    core:{notify:createNoticePlaceSink({eventUrl:callback.eventUrl??'',token:callback.token??''}),incidentUpdates,
       deliverHumanQuestion:deliverIncidentQuestion,pendingQuestions:new PendingQuestionGate({humanRequests,choices:choiceRegistry}),humanRequests,choiceRegistry,maxContinuationsPerSession:3},
   });
   const autopilot={
