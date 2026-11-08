@@ -1,0 +1,45 @@
+warning: fields `authority`, `database`, `gate`, and `generation` are never read
+  --> tests/../src/bin/herder_native_stdio/scoped_profile.rs:63:9
+   |
+62 | pub struct OpenedOwner {
+   |            ----------- fields in this struct
+63 |     pub authority: ScopedAuthority,
+   |         ^^^^^^^^^
+64 |     pub owner: OwnerProfile,
+65 |     pub database: PathBuf,
+   |         ^^^^^^^^
+66 |     pub gate: PathBuf,
+   |         ^^^^
+67 |     pub generation: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "launcher_scoped_profile") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running tests/launcher_scoped_profile.rs (crates/herder/target/debug/deps/launcher_scoped_profile-fc7dba0d39c1c78e)
+
+running 20 tests
+test real_sdk_owner_stdio_create_task_and_reopened_messages ... ignored, run exactly once in the isolated tests/native launcher after Task reconciliation review
+test trusted_owner_runner_rejects_process_injection_and_cross_family_environment ... ok
+test fifo_profile_is_rejected_without_waiting_for_a_writer ... ok
+test scoped_stdio_rejects_spoofed_identity_and_mutation ... ok
+test trusted_opencode_profile_rejects_foreign_writable_runner ... ok
+test launch_rejects_v3_store_missing_schema_fence ... ok
+test launch_rejects_downgraded_version_and_missing_v3_fence ... ok
+test launched_authority_rejects_imported_mapping_without_scope ... ok
+test owner_profile_requires_explicit_complete_protected_configuration ... ok
+test launcher_opens_only_pinned_authority_and_refuses_changed_generation ... ok
+test trusted_owner_profiles_bind_all_v1_types_to_legacy_runners ... ok
+test launcher_opens_migrated_v4_without_losing_authority ... ok
+test trusted_owner_codex_profile_accepts_only_exact_isolation_off ... ok
+test launch_rejects_writable_ancestor ... ok
+test v4_migration_rejects_gate_from_another_authority ... ok
+test launched_authority_retains_fresh_create_receipt_in_the_same_store ... ok
+test trusted_owner_launcher_wires_create_and_scoped_read_over_stdio ... ok
+test trusted_owner_opencode_ahap_create_start_task_and_read ... ok
+test one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart ... ok
+test trusted_owner_other_ahap_types_use_same_public_create_read_and_restart ... ok
+
+test result: ok. 19 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 15.07s
+

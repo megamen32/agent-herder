@@ -41,6 +41,20 @@ impl ScopedTaskServer {
             reconciler: None,
         }
     }
+    /// Read-only routing lookup. A multi-instance ingress must select exactly
+    /// one owner before invoking reconciliation; this method performs no native I/O.
+    pub fn has_task(&self, id: &str) -> Result<bool, ()> {
+        match self.authority.current_task_read_grants(
+            &self.identity, &self.grants, id, self.create_policy.as_deref(),
+        ).map_err(|_| ())? {
+            Some(grants) => self.authority.get_delivery_task(&self.identity, &grants, id)
+                .map(|task| task.is_some()).map_err(|_| ()),
+            None => self.authority.get_create_task_with_policy(
+                &self.identity, &self.grants, id, self.create_policy.as_deref(),
+            ).map(|task| task.is_some()).map_err(|_| ()),
+        }
+    }
+
     pub fn with_reconciler(
         mut self,
         reconciler: Arc<dyn super::task_reconcile::TaskReconciler>,

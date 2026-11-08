@@ -132,8 +132,8 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     ) => ChatGptMacCdpDriver;
     const driver = new Driver(tools, 7, 0, "a".repeat(64));
     await expect(driver.createChat({ title: "must not be created" })).rejects.toThrow("pinned account scope mismatch");
-    // Resolve the surviving page marker, then verify the account. Both are reads.
-    expect(actions).toEqual(["list_pages", "evaluate_script", "evaluate_script"]);
+    // Resolve the configured target, then verify the account before mutation.
+    expect(actions).toEqual(["list_pages", "evaluate_script"]);
   });
 
   it("parses only the official ChatGPT origin", () => {
@@ -814,7 +814,7 @@ describe("ChatGPT one owned tab", () => {
     expect(opened).toEqual([]);
   });
 
-  it("closes its own duplicate tabs and keeps exactly one", async () => {
+  it("does not close legacy marked tabs without instance ownership", async () => {
     const scope = "a".repeat(64);
     const closed: number[] = [];
     const tools: ChromePageTools = { call: async (name, args = {}) => {
@@ -833,6 +833,6 @@ describe("ChatGPT one owned tab", () => {
     } };
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
     await driver.listChats();
-    expect(closed).toEqual([30]);
+    expect(closed).toEqual([]);
   });
 });

@@ -97,15 +97,24 @@ async function clearComposer(tools:ChromePageTools,pageId:number,site:BrowserCha
 }
 
 export async function openOwnedBlankChatPage(
-  tools:ChromePageTools,site:BrowserChatSite,
+  tools:ChromePageTools,site:BrowserChatSite,scope?:string,onCreated?:(pageId:number)=>void,
 ):Promise<number> {
   const origin=SITE_ORIGIN[site];
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
   // One tab per provider: the marked tab that the driver already owns is
   // reused, so a first message never opens a second tab.
   const listing=pages(await tools.call("list_pages"));
-  const owned=listing.find(p=>isOwnedTabUrl(p.url,site));
+  let owned=listing.find(p=>isOwnedTabUrl(p.url,site,scope));
+  if (!owned && scope) {
+    for (const page of listing.filter(p=>isOwnedTabUrl(p.url,site))) {
+      if (await verifyNewChatAccountScope(tools,site,page.id).catch(()=>undefined) !== scope) continue;
+      await claimOwnedTab(tools,site,page.id,scope);
+      owned=page;break;
+    }
+  }
   if (owned) {
+    if (scope && await verifyNewChatAccountScope(tools,site,owned.id) !== scope)
+      throw new Error("New-chat account identity could not be verified");
     // Our own tab may still hold a composer value from an earlier run. Clear
     // it here so the first message starts from a clean composer; a draft the
     // human wrote in a foreign tab is never touched.
@@ -130,8 +139,10 @@ export async function openOwnedBlankChatPage(
   // Our own tab may have navigated into a conversation and lost its URL
   // marker. It is still ours: the page keeps the ownership marker, and such
   // a tab is reused instead of opening another one.
-  const claimed=await resolveOwnedTab(tools,site,listing);
+  const claimed=await resolveOwnedTab(tools,site,listing,scope);
   if (claimed) {
+    if (scope && await verifyNewChatAccountScope(tools,site,claimed.id) !== scope)
+      throw new Error("New-chat account identity could not be verified");
     await navigateToRoot(tools,claimed.id,site);
     await clearComposer(tools,claimed.id,site);
     for(let attempt=0;attempt<7;attempt++){
@@ -152,12 +163,13 @@ export async function openOwnedBlankChatPage(
     throw new Error(site+" owned tab could not be returned to a blank chat; no message submitted");
   }
   void before;
-  try { await tools.call("new_page",{url:ownedTabUrl(origin,site),background:true,timeout:12_000}); }
+  try { await tools.call("new_page",{url:ownedTabUrl(origin,site,scope),background:true,timeout:12_000}); }
   catch { /* require new unique page in authoritative list instead */ }
   const now=pages(await tools.call("list_pages"));
   const created=now.filter(p=>!before.has(p.id)&&new URL(p.url).origin===origin);
   if (created.length!==1) throw new Error(site+" new-chat tab not uniquely identified; no message submitted");
   const pageId=created[0]!.id;
+  onCreated?.(pageId);
   for(let attempt=0;attempt<7;attempt++){
     try {
       const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
@@ -172,7 +184,7 @@ export async function openOwnedBlankChatPage(
       if(state.origin!==origin||state.path!=="/"||!state.empty)
         throw new Error("New chat page changed or contains a draft");
       if(state.ready) {
-        if (!await claimOwnedTab(tools,site,pageId)) {
+        if (!await claimOwnedTab(tools,site,pageId,scope)) {
           throw new Error(site+" new chat ownership could not be retained; no message submitted");
         }
         return pageId;
@@ -327,8 +339,9 @@ export async function submitFirstChatMessage(
   tools:ChromePageTools,site:BrowserChatSite,text:string,expectedScope?:string,pinnedPageId?:number,
 ):Promise<NewChatSubmitReceipt> {
   let pageId:number;
+  let createdPageId:number|undefined;
   try {
-    if (pinnedPageId === undefined) pageId=await openOwnedBlankChatPage(tools,site);
+    if (pinnedPageId === undefined) pageId=await openOwnedBlankChatPage(tools,site,site === "chatgpt" ? expectedScope : undefined,id=>{createdPageId=id;});
     else {
       if (!Number.isSafeInteger(pinnedPageId) || pinnedPageId < 1
         || !expectedScope || !/^[a-f0-9]{64}$/.test(expectedScope))
@@ -349,7 +362,7 @@ export async function submitFirstChatMessage(
   } catch(error) { return {clicked:false,uncertain:false,reason:String(error)}; }
   // Only dispose a tab allocated by this call. A supplied pin belongs to the caller.
   const closeOwnedPage=async()=>{
-    if(pinnedPageId===undefined)await tools.call("close_page",{pageId}).catch(()=>undefined);
+    if(createdPageId===pageId)await tools.call("close_page",{pageId}).catch(()=>undefined);
   };
   const existingZaiIds = new Set<string>();
   if (site === "zai") {

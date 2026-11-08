@@ -116,7 +116,10 @@ class NewChatPageFixture implements ChromePageTools {
         +(this.created ? "20: New blank chat ("+this.origin+"/)\n" : "");
     }
     if(name==="new_page"){
-      expect(args).toMatchObject({background:true,url:this.origin+"/?herder_owned="+this.site});
+      expect(args.background).toBe(true);
+      const openedUrl=new URL(String(args.url));
+      expect(openedUrl.origin).toBe(this.origin);
+      expect(openedUrl.searchParams.get("herder_owned")?.split(":")[0]).toBe(this.site);
       this.created=true;
       if(this.timeoutOnOpen)throw Error("Navigation timeout");
       return "Opened new page";

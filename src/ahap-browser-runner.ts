@@ -255,7 +255,7 @@ export function makeConfiguredAdapter(
     if (!endpoint || !contextId || !targetId) {
       throw new Error("Direct CDP requires endpoint, context and target IDs");
     }
-    selectedTransport = factories.directCdp({ endpoint, contextId, targetId });
+    selectedTransport = factories.directCdp({ endpoint, contextId, targetId, accountScope: expectedScope });
   }
   // The driver owns exactly one tab per provider and finds it by its own
   // marker, so a gateway restart or a closed tab never breaks the route.

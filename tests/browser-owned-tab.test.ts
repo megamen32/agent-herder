@@ -63,3 +63,18 @@ describe("owned browser tab marker", () => {
     expect(owned?.id).toBe(7);
   });
 });
+
+
+it("does not confuse two account markers or overwrite another account's ownership", async () => {
+  const a = "a".repeat(64), b = "b".repeat(64);
+  const foreign = { name: ownedTabWindowName("chatgpt", b) };
+  const result = runInNewContext("(" + ownedTabClaimScript("chatgpt", a) + ")()", { window: foreign });
+  expect(result.owned).toBe(false);
+  expect(foreign.name).toBe(ownedTabWindowName("chatgpt", b));
+  const tools = { call: async () => { throw Error("must resolve exact URL marker"); } };
+  const pages = [{ id: 1, url: ownedTabUrl("https://chatgpt.com", "chatgpt", a) },
+    { id: 2, url: ownedTabUrl("https://chatgpt.com", "chatgpt", b) }];
+  expect((await resolveOwnedTab(tools, "chatgpt", pages, b))?.id).toBe(2);
+  await expect(resolveOwnedTab(tools, "chatgpt", [pages[0]!, { ...pages[0]!, id: 3 }], a))
+    .rejects.toThrow("duplicate_owned_browser_tabs");
+});

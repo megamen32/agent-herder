@@ -60,3 +60,28 @@ OpenCode verified v2.2.4 на текущем CI artifact использует fa
 ## Граница UNKNOWN и новых изолированных CI-прогонов
 
 Запрет Accepted/UNKNOWN no-replay относится к конкретной операции и её возможному внешнемуэффекту. Он не запрещает новый независимый регрессионный CI-прогон после исправления в отдельной disposablefixture с новым HOME/authority/nativeinstance/requestIDs и локальнойлжемоделью, изолированной отproduction и прежних instances. Такой прогон не продолжает старую UNKNOWNoperation под новымID и не меняет её исторический результат. CLI lanes OpenCode/Codex/ZCode можно проверять параллельно существующими исполнителями без ожидания browsermilestone. До мутации сохранить originalIDs иretainedstate; реальныеquota/admissionrefusals не обходить. Прежний blanket no-replay в самописном часовом тексте не является прямым запретом владельца на сообщения или проверки. Действует проверка фактического исхода; история сохраняется, подтверждённые эффекты не дублируются.
+
+## Уточнение владельца 08.11: архивирование тестов
+
+После AI-проверки сохранять transcript/receipt и архивировать только свой тестовый
+чат штатной native операцией. Новый public action: session/archive с session_ref и
+request_key; AHAP archiveSession. Native archive предпочтительнее удаления,
+ошибка cleanup сохраняется отдельно. Unsupported archive не подменяется delete.
+Текущее распределение: интегратор01a1bb0c — Rust/browser/sole V1 installation;
+Terra01a1b77b — CLI archive seam. Старое назначение CI installer выше заменено
+прямым поручением владельца интегратору завершать самостоятельно.
+
+
+## Два профиля Chrome: уточнение владельца и launcher 08.11
+
+Один процесс Rust core обслуживает несколько существующих AHAP адаптеров.
+Повторяемый аргумент `--trusted-owner-profile <protected-file>` добавляет
+экземпляр адаптера, а не процесс ядра. Все профили этого локального owner-входа
+имеют одного principal и разные instance; account/home/authority остаются
+привязаны к своему экземпляру. Ordinary `herder-compat` передаёт эти аргументы.
+Адресация задач и session_ref сохраняется после restart по существующим receipts.
+Маркер ChatGPT-вкладки содержит account scope; два legacy marker одного provider
+не дают права закрывать соседнюю вкладку. Direct CDP понимает default Chrome
+context и восстанавливает пропавший target по своему account marker внутри
+настроенного browser context. Избыточные scoped tabs дают явную ошибку.
+Source/fixture тест двух аккаунтов не заменяет живую проверку и установку.

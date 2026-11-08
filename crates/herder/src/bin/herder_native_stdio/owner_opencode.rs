@@ -162,7 +162,18 @@ impl ApplicationPort for App {
         })
     }
 }
+pub struct BoundOwner {
+    pub server: ScopedTaskServer,
+    pub policy: Arc<OwnerPolicy>,
+    pub instance: InstanceRef,
+}
+
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
+    build(opened)?.server.serve(rmcp::transport::stdio()).await?.waiting().await?;
+    Ok(())
+}
+
+pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Error>> {
     let instance = InstanceRef {
         node: NodeRef(opened.owner.node.clone()),
         instance_id: opened.owner.instance.clone(),
@@ -270,7 +281,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
             .with_policy(policy.clone()),
     );
     let app = Arc::new(App {
-        instance,
+        instance: instance.clone(),
         harness,
         grants: grants.clone(),
         policy: policy.clone(),
@@ -280,12 +291,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     });
     let reconciler = Arc::new(ScopedReceiptReconciler::new(authority.clone(), adapter));
     let server = ScopedTaskServer::new(identity, grants, authority, app)
-        .with_create_policy(policy)
+        .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
-    server
-        .serve(rmcp::transport::stdio())
-        .await?
-        .waiting()
-        .await?;
-    Ok(())
+    Ok(BoundOwner { server, policy, instance })
 }

@@ -153,3 +153,45 @@ describe("DirectCdpPageTools", () => {
     expect(socket.sent.filter(frame => frame.method === "Runtime.evaluate")).toHaveLength(1);
   });
 });
+
+it("supports the default context of each separate Chrome profile without mixing their targets", async () => {
+  const a=new FakeSocket(), b=new FakeSocket();
+  a.contextId=undefined as unknown as string; b.contextId=undefined as unknown as string;
+  // Two Chrome processes can expose the same local target id. The endpoint,
+  // not that target id alone, is part of the connection identity.
+  const first=create(a,{endpoint:"ws://127.0.0.1:19221/browser/a",contextId:"default"});
+  const second=create(b,{endpoint:"ws://127.0.0.1:19222/browser/b",contextId:"default"});
+  await Promise.all([first.call("list_pages"),second.call("list_pages")]);
+  await first.call("evaluate_script",{pageId:1,function:"() => 'read-account-A'"});
+  await second.call("evaluate_script",{pageId:1,function:"() => 'archive-account-B'"});
+  expect(a.sent.filter(x=>x.method==="Runtime.evaluate").map(x=>x.params.expression)).toEqual(["(() => 'read-account-A')()"]);
+  expect(b.sent.filter(x=>x.method==="Runtime.evaluate").map(x=>x.params.expression)).toEqual(["(() => 'archive-account-B')()"]);
+  await second.call("new_page",{url:"https://chatgpt.com/"});
+  expect(b.sent.find(x=>x.method==="Target.createTarget")!.params).not.toHaveProperty("browserContextId");
+  second.close();
+  await expect(second.call("list_pages")).rejects.toThrow("closed");
+  await expect(first.call("list_pages")).resolves.toContain("ChatGPT");
+  expect(a.sent.some(x=>x.method==="Target.createTarget")).toBe(false);
+  first.close();
+});
+
+
+it("recovers the account-owned target after restart without creating a second tab", async () => {
+  const socket = new FakeSocket();
+  const scope = "a".repeat(64);
+  socket.respond = frame => {
+    if (frame.method === "Target.getTargets") return { targetInfos: [
+      { targetId: "other-profile", type: "page", browserContextId: "ctx-B", url: "https://chatgpt.com/" },
+      { targetId: "recovered", type: "page", browserContextId: "ctx-A", url: "https://chatgpt.com/c/123" },
+    ] };
+    if (frame.method === "Target.attachToTarget") return { sessionId: "session-recovered" };
+    if (frame.method === "Runtime.evaluate") return { result: { value: "herder-owned:chatgpt:" + scope } };
+    return {};
+  };
+  const tools = create(socket, { accountScope: scope });
+  expect(await tools.call("list_pages")).toContain("https://chatgpt.com/c/123");
+  expect(await tools.call("list_pages")).toContain("https://chatgpt.com/c/123");
+  expect(socket.sent.filter(frame => frame.method === "Target.attachToTarget").map(frame => frame.params.targetId)).toEqual(["recovered"]);
+  expect(socket.sent.some(frame => frame.method === "Target.createTarget")).toBe(false);
+  tools.close();
+});

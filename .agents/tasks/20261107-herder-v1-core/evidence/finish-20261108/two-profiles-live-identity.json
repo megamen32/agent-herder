@@ -1,0 +1,24 @@
+[
+  {
+    "pageId": 1,
+    "scope": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1",
+    "state": {
+      "origin": "https://chatgpt.com",
+      "path": "/c/6af08367-a040-83ea-8b45-4b6b46087a7f",
+      "marker": "herder-owned:chatgpt",
+      "ready": false,
+      "generating": false
+    }
+  },
+  {
+    "pageId": 11,
+    "scope": "e6c8e585212c14fa4aaa53aca0d1f70c18367abfbb1c568f6721912a6d2d54a3",
+    "state": {
+      "origin": "https://chatgpt.com",
+      "path": "/",
+      "marker": "",
+      "ready": false,
+      "generating": false
+    }
+  }
+]

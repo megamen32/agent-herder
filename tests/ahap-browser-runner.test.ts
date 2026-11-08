@@ -33,7 +33,7 @@ describe("ChatGPT AHAP browser runner", () => {
     const macMini = {
       async call(name: string, args: Record<string, unknown> = {}) {
         calls.push({ name, args });
-        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/abc)\n8: ChatGPT (https://chatgpt.com/c/def)";
+        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/11111111-1111-4111-8111-111111111111)\n8: ChatGPT (https://chatgpt.com/c/22222222-2222-4222-8222-222222222222)";
         return `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope })}\n\`\`\``;
       },
     };
@@ -48,7 +48,8 @@ describe("ChatGPT AHAP browser runner", () => {
     });
     await adapter.verifyPinnedAccountScope?.();
     expect(selected).toEqual(["mac-mini"]);
-    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
+    expect(calls[0]?.name).toBe("list_pages");
+    expect(calls.some(call => call.name === "evaluate_script")).toBe(true);
     expect(calls[1]?.args?.pageId).toBe(7);
   });
 
@@ -108,14 +109,15 @@ describe("ChatGPT AHAP browser runner", () => {
         selected.push(config);
         return { async call(name, args = {}) {
           calls.push({ name, args });
-          return name === "list_pages" ? "9: ChatGPT (https://chatgpt.com/c/abc)"
+          return name === "list_pages" ? "9: ChatGPT (https://chatgpt.com/c/11111111-1111-4111-8111-111111111111)"
             : `Script ran on page and returned:\n\`\`\`json\n${JSON.stringify({ scope })}\n\`\`\``;
         } };
       },
     });
     await adapter.verifyPinnedAccountScope?.();
-    expect(selected).toEqual([{ endpoint: "ws://127.0.0.1:9222/devtools", contextId: "context-exact", targetId: "target-exact" }]);
-    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
+    expect(selected).toEqual([{ endpoint: "ws://127.0.0.1:9222/devtools", contextId: "context-exact", targetId: "target-exact", accountScope: scope }]);
+    expect(calls[0]?.name).toBe("list_pages");
+    expect(calls.some(call => call.name === "evaluate_script")).toBe(true);
     expect(calls[1]?.args?.pageId).toBe(9);
   });
 

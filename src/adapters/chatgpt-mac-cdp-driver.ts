@@ -379,9 +379,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   private async verifyCurrentPinnedAccountScope(pageId?: number): Promise<void> {
     if (!this.expectedAccountScope) return;
-    const page = this.pinnedPageId === undefined
-      ? (pageId === undefined ? await this.page() : { id: pageId } as Page)
-      : parseChatGptPages(await this.tools.call("list_pages")).find(candidate => candidate.id === this.pinnedPageId);
+    const page = pageId === undefined ? await this.page() : { id: pageId } as Page;
     if (!page) throw new Error("Pinned ChatGPT page unavailable; no read data returned");
     const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
     this.requirePinnedAccountScope(scope);
@@ -402,6 +400,29 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * pin never disables the provider and falls back to auto-detection. */
   private async page(): Promise<Page> {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (this.expectedAccountScope && pages.length) {
+      // A configured target is a routing hint; callers still verify its actual
+      // account before and after reading. Do not require a marker to read it.
+      const pinned = pages.find(page => page.id === this.pinnedPageId);
+      if (pinned) return pinned;
+      const candidates = pages.filter(page => page.conversation || new URL(page.url).pathname === "/");
+      const owned = await resolveOwnedTab(this.tools, "chatgpt", candidates, this.expectedAccountScope);
+      if (owned) { this.ownedTabPath = chatGptTabPath(owned.url); return owned; }
+      const previous = candidates.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
+      if (previous) return previous;
+      if (this.ownedTabPath) return this.openChatGptTab();
+      // Legacy provider-only markers are not proof of an account. Verify before
+      // adopting; never close another account's page as a supposed duplicate.
+      for (const candidate of candidates) {
+        const scope = await verifyNewChatAccountScope(this.tools,"chatgpt",candidate.id).catch(() => undefined);
+        if (scope !== this.expectedAccountScope) continue;
+        await claimOwnedTab(this.tools,"chatgpt",candidate.id,scope);
+        // A marker helps recovery, but is not the authority for an account read.
+        this.ownedTabPath = chatGptTabPath(candidate.url);
+        return candidate;
+      }
+      throw new Error("ChatGPT pinned account scope mismatch; no read data returned");
+    }
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
     // One owned tab per provider. The tab is identified by its own URL, not
@@ -472,6 +493,17 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * failing the whole read. */
   private async readablePages(): Promise<Page[]> {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (this.expectedAccountScope) {
+      const first = await this.page();
+      if (this.pinnedPageId !== undefined) return [first];
+      const readable = [first];
+      for (const page of pages) {
+        if (page.id === first.id) continue;
+        const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id).catch(() => undefined);
+        if (scope === this.expectedAccountScope) readable.push(page);
+      }
+      return readable;
+    }
     if (!pages.length) return [await this.page()];
     const owned = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
     const order = [...owned, ...pages.filter(page => !owned.includes(page))];
@@ -491,15 +523,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
     try {
-      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt") });
+      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt", this.expectedAccountScope) });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
-    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt")) ?? pickChatGptPage(pages);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt", this.expectedAccountScope)) ?? pickChatGptPage(pages);
     // Claim the replacement in the page itself: its URL marker is dropped by
     // the site's own navigation, and only the page marker survives that.
-    if (isOwnedTabUrl(opened.url, "chatgpt")) await claimOwnedTab(this.tools, "chatgpt", opened.id);
+    if (isOwnedTabUrl(opened.url, "chatgpt", this.expectedAccountScope)) await claimOwnedTab(this.tools, "chatgpt", opened.id, this.expectedAccountScope);
     this.ownedTabPath = chatGptTabPath(opened.url);
     return opened;
   }
@@ -615,7 +647,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pages = paused ? parseChatGptPages(await this.tools.call("list_pages")) : undefined;
     if (pages && !pages.length) return [];
     const pinned = pages?.find(candidate => candidate.id === this.pinnedPageId && candidate.conversation);
-    const page = pages ? (pinned ?? pickChatGptPage(pages)) : await this.page();
+    const page = pages && !this.expectedAccountScope ? (pinned ?? pickChatGptPage(pages)) : await this.page();
     const s = await this.snapshot(page.id);
     // The runtime switch of the owner: while the site requests of this
     // harness are paused, the list answers from passive sources only — the

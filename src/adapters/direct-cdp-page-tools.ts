@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { isOwnedTabUrl, ownedTabWindowName } from "./browser-owned-tab.js";
 import type { ChromePageTools } from "./mac-mini-chrome-transport.js";
 
 type TargetInfo = { targetId: string; type: string; title?: string; url?: string; browserContextId?: string };
@@ -10,11 +11,13 @@ type SocketFactory = (url: string) => Socket;
 export interface DirectCdpConfig {
   /** Trusted browser-level CDP WebSocket URL, supplied explicitly by the owner. */
   endpoint: string;
-  /** Exact existing BrowserContext to which this adapter is pinned. */
+  /** Exact existing BrowserContext, or "default" for a normal Chrome profile.
+   * Separate profiles use separate browser endpoints, even if target IDs match. */
   contextId: string;
   /** Exact initial page target. A page created by new_page replaces it. */
   targetId: string;
   timeoutMs?: number;
+  accountScope?: string;
 }
 
 /** Narrow direct-CDP implementation of the page operations ChatGPT uses. */
@@ -107,6 +110,8 @@ export class DirectCdpPageTools implements ChromePageTools {
   private onClose(): void {
     this.socket = undefined;
     this.sessionId = undefined;
+    this.refs.clear();
+    this.accessibilityEnabled = false;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("direct_cdp_disconnected; operation outcome may be unknown"));
@@ -141,7 +146,7 @@ export class DirectCdpPageTools implements ChromePageTools {
 
   private async attachExactTarget(): Promise<void> {
     const target = (await this.targets()).find(item => item.targetId === this.currentTargetId);
-    if (!target || target.type !== "page" || target.browserContextId !== this.config.contextId) {
+    if (!target || target.type !== "page" || (target.browserContextId ?? "default") !== this.config.contextId) {
       throw new Error("direct_cdp_target_context_mismatch");
     }
     const attached = await this.command<{ sessionId?: string }>("Target.attachToTarget", { targetId: target.targetId, flatten: true });
@@ -159,9 +164,31 @@ export class DirectCdpPageTools implements ChromePageTools {
   }
 
   private async listPages(): Promise<string> {
-    const target = (await this.targets()).find(item => item.targetId === this.currentTargetId);
+    const targets = await this.targets();
+    let target = targets.find(item => item.targetId === this.currentTargetId);
+    if (!target && this.config.accountScope) {
+      const matches: TargetInfo[] = [];
+      for (const item of targets) {
+        if (item.type !== "page" || (item.browserContextId ?? "default") !== this.config.contextId) continue;
+        let url: URL; try { url = new URL(item.url || ""); } catch { continue; }
+        if (url.origin !== "https://chatgpt.com") continue;
+        if (isOwnedTabUrl(url.toString(), "chatgpt", this.config.accountScope)) { matches.push(item); continue; }
+        // A normal site navigation removes URL markers. Read only the durable
+        // window marker, through a temporary session in this exact context.
+        const attached = await this.command<{ sessionId?: string }>("Target.attachToTarget", { targetId: item.targetId, flatten: true });
+        if (!attached.sessionId) continue;
+        try {
+          const probe = await this.command<{ result?: { value?: unknown } }>("Runtime.evaluate",
+            { expression: "window.name", returnByValue: true }, attached.sessionId);
+          if (probe.result?.value === ownedTabWindowName("chatgpt", this.config.accountScope)) matches.push(item);
+        } finally { await this.command("Target.detachFromTarget", { sessionId: attached.sessionId }).catch(() => undefined); }
+      }
+      if (matches.length > 1) throw new Error("duplicate_owned_browser_tabs");
+      target = matches[0];
+      if (target) { this.currentTargetId = target.targetId; this.sessionId = undefined; this.refs.clear(); this.accessibilityEnabled = false; }
+    }
     if (!target) return "";
-    if (target.type !== "page" || target.browserContextId !== this.config.contextId) throw new Error("direct_cdp_target_context_mismatch");
+    if (target.type !== "page" || (target.browserContextId ?? "default") !== this.config.contextId) throw new Error("direct_cdp_target_context_mismatch");
     const url = target.url || "about:blank";
     const title = (target.title || "").replace(/[\r\n()]/gu, " ").slice(0, 200);
     return `1: ${title} (${url}) [selected]`;
@@ -170,7 +197,7 @@ export class DirectCdpPageTools implements ChromePageTools {
   private async newPage(args: Record<string, unknown>): Promise<string> {
     const url = typeof args.url === "string" ? new URL(args.url) : undefined;
     if (!url || url.protocol !== "https:" || url.origin !== "https://chatgpt.com") throw new Error("direct_cdp_new_page_url_rejected");
-    const created = await this.command<{ targetId?: string }>("Target.createTarget", { url: url.toString(), browserContextId: this.config.contextId });
+    const created = await this.command<{ targetId?: string }>("Target.createTarget", { url: url.toString(), ...(this.config.contextId === "default" ? {} : { browserContextId: this.config.contextId }) });
     if (!created.targetId) throw new Error("direct_cdp_new_page_missing_target");
     const prior = this.sessionId;
     this.sessionId = undefined;
