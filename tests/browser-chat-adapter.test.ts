@@ -74,3 +74,50 @@ describe("browser session activity", () => {
     expect(session?.status).toBe("running");
   });
 });
+
+describe("bounded read-only receipt polling", () => {
+  const row = (id: string, text = "hello") => ({ id, role: "user" as const, text });
+
+  it("re-reads the history when the provider stores the message late", async () => {
+    // The provider accepts the message first and stores it a moment later.
+    // A single immediate read then finds nothing and the delivery would stay
+    // permanently unknown even though the message is in the conversation.
+    let reads = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      getMessages: async () => { reads += 1; return reads < 3 ? [] : [row("new")]; },
+      sendMessage: async () => ({}),
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const result = await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(result).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "new" });
+    expect(reads).toBeGreaterThan(1);
+  });
+
+  it("keeps the outcome unknown when no read ever proves the message", async () => {
+    let reads = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      getMessages: async () => { reads += 1; return []; },
+      sendMessage: async () => ({}),
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const result = await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(result).toMatchObject({ ok: false, admissionUnknown: true, nonRetryable: true });
+    expect(result.notSubmitted).not.toBe(true);
+    expect(reads).toBeGreaterThan(1);
+  });
+
+  it("never repeats the send while polling for the receipt", async () => {
+    let sends = 0;
+    let reads = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      getMessages: async () => { reads += 1; return reads < 2 ? [] : [row("new")]; },
+      sendMessage: async () => { sends += 1; return {}; },
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(sends).toBe(1);
+  });
+});

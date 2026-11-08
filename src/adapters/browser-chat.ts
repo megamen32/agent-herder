@@ -107,6 +107,11 @@ registerHarnessRuntimeCapabilities("chatgpt", BROWSER_RUNTIME_CAPS);
 registerHarnessRuntimeCapabilities("zai", BROWSER_RUNTIME_CAPS);
 registerHarnessRuntimeCapabilities("browser-chat", { ...BROWSER_RUNTIME_CAPS, autopilotEligible: false });
 export class BrowserChatAdapter implements HarnessAdapter {
+  /** Bounded READ-ONLY re-reads that settle a native receipt after a click.
+   * The provider stores the accepted message a moment after the click, so a
+   * single immediate read can miss it. The send is never repeated. */
+  private static readonly RECEIPT_READ_ATTEMPTS = 4;
+  private static readonly RECEIPT_READ_GAP_MS = 1_500;
   readonly type: HarnessType;
   readonly name: string;
   readonly controlCapabilities: HarnessCapabilities;
@@ -445,16 +450,27 @@ export class BrowserChatAdapter implements HarnessAdapter {
       }
       this.historyCache.invalidate(nativeId);
       if (beforeIds) {
-        try {
-          const after = await this.driver.getMessages?.(nativeId);
-          const matches = after?.filter(message => message.role === "user"
-            && !!message.id && !beforeIds.has(message.id)
-            && message.text === options.message);
-          if (matches?.length === 1) {
-            return { ok: true, admitted: true, admission: "accepted",
-              inputId: options.inputId, nativeInputMessageId: matches[0]!.id };
+        // The provider stores the accepted message a moment after the click.
+        // One immediate read can therefore find nothing and would leave the
+        // delivery permanently unknown even though the message exists. A
+        // bounded number of READ-ONLY re-reads settles the receipt; the send
+        // itself is never repeated.
+        for (let attempt = 0; attempt < BrowserChatAdapter.RECEIPT_READ_ATTEMPTS; attempt++) {
+          try {
+            const after = await this.driver.getMessages?.(nativeId);
+            const matches = after?.filter(message => message.role === "user"
+              && !!message.id && !beforeIds.has(message.id)
+              && message.text === options.message);
+            if (matches?.length === 1) {
+              return { ok: true, admitted: true, admission: "accepted",
+                inputId: options.inputId, nativeInputMessageId: matches[0]!.id };
+            }
+            if (matches && matches.length > 1) break;
+          } catch { /* A read failure after the click is not a pre-send refusal. */ }
+          if (attempt + 1 < BrowserChatAdapter.RECEIPT_READ_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, BrowserChatAdapter.RECEIPT_READ_GAP_MS));
           }
-        } catch { /* A read failure after the click is not a pre-send refusal. */ }
+        }
         return { ok: false, admission: "unknown", admissionUnknown: true,
           nonRetryable: true, inputId: options.inputId,
           error: "Message submitted but unique native message receipt unavailable; read history before any retry" };
