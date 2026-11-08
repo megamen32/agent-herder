@@ -1407,19 +1407,57 @@ for line in sys.stdin:
     #[test]
     fn projects_use_authorized_observation_and_not_config_or_foreign_inventory() {
         let f = Fixture::new();
-        f.own();
         let request =
             catalog::Request::Discover(catalog::Discover::Projects { instance_ref: None });
-        let result=payload(f.invoke(request,|method,_| match method {
-            "listSessions"=>Ok(json!([{"id":"native-owned","cwd":"/allowed"},{"id":"foreign","cwd":"/secret"}])),
-            "listProjects"=>Ok(json!([{"path":"/allowed","id":"real-project"},{"path":"/secret","id":"secret-project"}])),
-            _=>panic!("unexpected method")
-        }));
-        assert_eq!(result["projects"].as_array().unwrap().len(), 1);
-        assert_eq!(result["projects"][0]["source"], "native_project_inventory");
-        assert_eq!(result["projects"][0]["native"]["id"], "real-project");
-        assert!(!result.to_string().contains("secret"));
-        assert_eq!(result["complete"], false);
+        // Premutation discovery cannot attribute a project to an unregistered
+        // session. Its empty receipt must not replace post-registration readback.
+        let before = payload(f.invoke(request.clone(), never));
+        assert_eq!(before["projects"], json!([]));
+        assert_eq!(before["complete"], false);
+        f.own();
+        f.create("bob", "bob-owned", &f.policy.instance, "native-bob");
+        let other_instance = InstanceRef {
+            instance_id: "other-instance".into(),
+            ..f.policy.instance.clone()
+        };
+        f.create("alice", "elsewhere", &other_instance, "native-elsewhere");
+        for inventory_available in [true, false] {
+            let result = payload(f.invoke(request.clone(), |method, params| match method {
+                // The existing TS adapter maps OpenCode location.directory to
+                // AgentSession.cwd before returning this AHAP response.
+                "listSessions" => {
+                    assert_eq!(params, json!({"options":{"limit":CORPUS_LIMIT}}));
+                    Ok(json!([
+                        {"id":"native-owned","harness":"opencode","cwd":"/allowed"},
+                        {"id":"native-bob","cwd":"/secret-principal"},
+                        {"id":"native-elsewhere","cwd":"/secret-instance"},
+                        {"id":"unregistered","cwd":"/secret-unregistered"}
+                    ]))
+                }
+                "listProjects" if inventory_available => Ok(json!([
+                    {"worktree":"/allowed","id":"real-project"},
+                    {"worktree":"/secret-unregistered","id":"secret-project"}
+                ])),
+                "listProjects" => Err(ReadError("inventory unavailable".into())),
+                _ => panic!("unexpected native operation: {method}"),
+            }));
+            assert_eq!(result["projects"].as_array().unwrap().len(), 1);
+            assert_eq!(result["projects"][0]["project_ref"], "/allowed");
+            if inventory_available {
+                assert_eq!(result["projects"][0]["source"], "native_project_inventory");
+                assert_eq!(result["projects"][0]["native"]["id"], "real-project");
+            } else {
+                assert_eq!(result["projects"][0]["source"], "authorized_native_session");
+                assert_eq!(result["projects"][0]["native"], Value::Null);
+            }
+            assert!(!result.to_string().contains("secret"));
+            assert_eq!(result["complete"], false);
+            assert_eq!(result["scope"], "authorized_registered_sessions");
+            assert!(result["limitations"].as_array().unwrap().iter().any(|v| {
+                v.as_str()
+                    .is_some_and(|s| s.contains("not globally exhaustive"))
+            }));
+        }
     }
     #[test]
     fn context_requires_verified_self_and_only_claims_proven_root_lineage() {
