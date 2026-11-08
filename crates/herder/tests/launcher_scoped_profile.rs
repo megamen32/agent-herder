@@ -758,6 +758,37 @@ fn trusted_owner_runner_rejects_process_injection_and_cross_family_environment()
 }
 
 #[test]
+fn trusted_owner_codex_profile_accepts_only_exact_isolation_off() {
+    let f = Fixture::new();
+    let script = f.root.join("runner.js");
+    fs::write(&script, "// trusted thin adapter runner").unwrap();
+    let executable = fs::canonicalize("/usr/bin/python3").unwrap();
+    let write_profile = |env: serde_json::Value, kind: &str| {
+        let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+            "kind":kind,"principal":"owner","node":"node","instance":"codex-iso",
+            "executable":executable,"ahap_script":script,"ahap_env":env,"code_home":f.root,"cwd":f.root}});
+        fs::write(&f.profile, profile.to_string()).unwrap();
+    };
+    write_profile(serde_json::json!({"AGENT_HERDER_WORKLOAD_ISOLATION":"off"}), "codex");
+    assert!(
+        scoped_profile::open_owner(&f.profile).is_ok(),
+        "exact workload-isolation off opt-in must be accepted for codex"
+    );
+    for bad in ["on", "1", "Off", "off "] {
+        write_profile(serde_json::json!({"AGENT_HERDER_WORKLOAD_ISOLATION":bad}), "codex");
+        assert!(
+            scoped_profile::open_owner(&f.profile).is_err(),
+            "must reject AGENT_HERDER_WORKLOAD_ISOLATION value {bad:?}"
+        );
+    }
+    write_profile(serde_json::json!({"AGENT_HERDER_WORKLOAD_ISOLATION":"off"}), "zcode");
+    assert!(
+        scoped_profile::open_owner(&f.profile).is_err(),
+        "workload-isolation switch stays codex-only"
+    );
+}
+
+#[test]
 fn trusted_owner_opencode_ahap_create_start_task_and_read() {
     owner_ahap_public_flow("opencode");
 }
