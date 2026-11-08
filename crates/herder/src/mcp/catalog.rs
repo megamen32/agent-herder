@@ -57,7 +57,7 @@ pub enum DispatchError {
 catalog! {
     "discover" => Discover(Discover) { read: ["nodes", "instances", "models", "projects"], mutate: [] },
     "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
-    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: [] },
+    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: ["archive"] },
     "create" => Create(Create) { read: [], mutate: ["create"] },
     "deliver" => Deliver(Deliver) { read: [], mutate: ["session", "reply_to"] },
     "resume" => Resume(Resume) { read: [], mutate: ["resume"] },
@@ -148,6 +148,7 @@ actions!(Sessions {
     List { project_ref: Option<String>, node_ref: Option<String>, instance_ref: Option<String>, cursor: Option<String> },
 });
 actions!(Session {
+    Archive { session_ref: String, request_key: String },
     Recent { session_ref: String, cursor: Option<String> },
     Context {},
     Messages { session_ref: String, cursor: Option<String> },

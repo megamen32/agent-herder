@@ -13,7 +13,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
+  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -101,7 +101,7 @@ export async function serveBrowserChatAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: adapter.type, name: adapter.name,
-        capabilities: { deliveryModes: ["queue"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
+        capabilities: { deliveryModes: ["queue"], methods: [...new Set([...METHODS, ...(adapter.archiveSession && adapter.supportsArchive?.() !== false ? ["archiveSession"] : []), ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
       } });
       continue;
     }
@@ -169,6 +169,12 @@ export async function serveBrowserChatAhap(
           }
           break;
         }
+        case "archiveSession":
+          if (!adapter.archiveSession || adapter.supportsArchive?.() === false) { error(id, -32601, "archive not supported"); continue; }
+          if (typeof params.id !== "string" || !params.id.trim()) { error(id, -32602, "archiveSession requires session id"); continue; }
+          await assertCurrentAccount();
+          result = await adapter.archiveSession(params.id);
+          break;
         case "createSession":
           assertAccount();
           if (!isCreateOptions(params.options)) { error(id, -32602, "createSession requires a name and absolute cwd"); continue; }
@@ -190,7 +196,7 @@ export async function serveBrowserChatAhap(
         continue;
       }
       const mutation = request.method === "sendMessage" || request.method === "createSession"
-        || request.method === "stopTurn" || request.method === "changeModel";
+        || request.method === "archiveSession" || request.method === "stopTurn" || request.method === "changeModel";
       error(id, -32000, "Browser adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }

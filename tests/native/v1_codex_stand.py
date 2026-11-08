@@ -423,6 +423,13 @@ def main():
         evidence.update(phase='completed', result='PASS', reopen_read=after_wire,
                         requests_before_restart=before_restart, requests_after_restart=after_restart)
         persist_evidence(evidence_path, evidence)
+        cleanup = rpc_tool(core, 'session', {'action':'archive','session_ref':session,'request_key':run_id+'-archive'})
+        evidence['archive'] = cleanup
+        persist_evidence(evidence_path, evidence)
+        if cleanup.get('structuredContent', {}).get('archived') is not True:
+            raise RuntimeError('test chat archive not confirmed; evidence preserved')
+        evidence['checks']['archive_test_chat'] = 'PASS'
+        persist_evidence(evidence_path, evidence)
         print(json.dumps(success_receipt(evidence), sort_keys=True), flush=True)
     finally:
         core.close()

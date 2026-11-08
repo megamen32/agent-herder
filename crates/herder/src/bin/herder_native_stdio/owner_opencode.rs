@@ -83,7 +83,7 @@ impl ApplicationPort for App {
                 return self.deliver.call(identity, request).await;
             }
             let session = match &request {
-                catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
+                catalog::Request::Session(catalog::Session::Messages { session_ref, .. } | catalog::Session::Archive { session_ref, .. })
                 | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
                 | catalog::Request::Deliver(catalog::Deliver::Session { session_ref, .. }) => {
                     SessionRef(session_ref.clone())
@@ -124,6 +124,18 @@ impl ApplicationPort for App {
                 )
             };
             match &request {
+                catalog::Request::Session(catalog::Session::Archive { session_ref, request_key }) => {
+                    let supported = self.adapter.capabilities().get("methods").and_then(serde_json::Value::as_array)
+                        .is_some_and(|m|m.iter().any(|v|v.as_str()==Some("archiveSession")));
+                    if !supported { return Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"unsupported_archive","effect":"none"}))); }
+                    let result = authority().and_then(|a| a.archive_session(identity,&grants,&SessionRef(session_ref.clone()),&self.instance,request_key,
+                        |id|self.adapter.raw_call("archiveSession",serde_json::json!({"id":id})).map_err(|_|())));
+                    Some(match result {
+                        Ok(value) if value.get("archived")==Some(&serde_json::Value::Bool(true)) => rmcp::model::CallToolResult::structured(value),
+                        Ok(value) => rmcp::model::CallToolResult::structured_error(value),
+                        Err(_) => rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"archive_unavailable","effect":"unknown"})),
+                    })
+                },
                 catalog::Request::Session(_) => match authority() {
                     Ok(a) => {
                         ScopedReadApplication::new(

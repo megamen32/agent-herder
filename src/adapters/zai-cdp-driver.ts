@@ -1,3 +1,4 @@
+import { zaiArchiveScript } from "./zai-archive.js";
 import { randomUUID } from "node:crypto";
 import { zaiFullConversationScript } from "./zai-full-conversation.js";
 import { chatgptConversationChunkScript, chatgptConversationCleanupScript } from "./chatgpt-full-conversation.js";
@@ -106,7 +107,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     nativeConversationIds: false, // Sidebar title IDs until ZAI native API is adopted.
     queueAfterGeneration: true,
     chatCreation: true,
-    accountArchiveViaCdp: false,
+    accountArchiveViaCdp: true,
     projects: true,
   } as const;
   /** The paused harness still lists: the intercept stash of the page plus
@@ -124,6 +125,20 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   /** The one tab this driver owns, remembered by its own URL path. */
   private ownedTabPath?: string;
   getAccountScope(): string | undefined { return this.accountScope; }
+
+  async archiveChat(chatId: string): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const remote = this.drafts.get(chatId)?.remoteId ?? chatId;
+      const id = remote.startsWith("route:") ? remote.slice(6) : remote;
+      if (!/^[a-f0-9-]{12,80}$/i.test(id)) return { ok:false, error:"invalid_native_chat_id" };
+      const page = await this.page();
+      const scope = this.accountScope;
+      if (!scope) return { ok:false,error:"account_scope_unverified" };
+      return parseChromeEvaluation<{ok:boolean;error?:string}>(await this.tools.call("evaluate_script", {
+        pageId:page.id,function:zaiArchiveScript(id,scope),
+      }));
+    });
+  }
 
   async verifyPinnedAccountScope(expectedScope: string): Promise<void> {
     this.accountScope = undefined;

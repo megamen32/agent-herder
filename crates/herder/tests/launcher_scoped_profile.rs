@@ -810,7 +810,7 @@ def messages():
  return json.load(open(events)) if os.path.exists(events) else []
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
- if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','getRawTranscript','listSessions'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
+ if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','getRawTranscript','listSessions','archiveSession'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
  elif m=='init':v=None
  elif m=='createSession':v={'id':'sesABC','harness':harness}
  elif m=='getSession':v={'id':'sesABC','harness':harness,'status':'idle','cwd':home}
@@ -823,6 +823,10 @@ for line in sys.stdin:
   v={'ok':True,'admitted':True,'nativeInputMessageId':mid,'inputId':p['options']['inputId']}
   if p['options']['message']=='unknownmarker':v={'ok':True,'admitted':True}
  elif m=='getSessionMessages':v=messages()
+ elif m=='archiveSession':
+  assert p['id']=='sesABC'
+  with open(os.path.join(home,'archived'),'a') as out:out.write('1')
+  v={'ok':True,'sessionId':p['id']}
  elif m=='getRawTranscript':v={'bytes_base64':base64.b64encode(json.dumps(messages()).encode()).decode(),'complete':True,'source':{'kind':'native-api','location':'fixture-session','format':'json'},'timestampCoverage':'none'}
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
@@ -947,6 +951,13 @@ for line in sys.stdin:
         after_read["result"]["structuredContent"]["page"]["messages"][0]["text"], "ahap prompt",
         "{after_read}"
     );
+    // Archived test conversations preserve messages and receipts; repeating the
+    // exact archive key reads the core receipt instead of a second native call.
+    for archive_id in [201,202] {
+        let archived=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":archive_id,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"archive","session_ref":session_owned,"request_key":"cleanup-once"}}}));
+        assert_eq!(archived["result"]["structuredContent"]["archived"],true,"{archived}");
+    }
+    assert_eq!(fs::read_to_string(f.root.join("archived")).unwrap(),"1");
     let unresolved=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":103,"method":"tasks/get","params":{"_meta":meta,"taskId":unknown_task}}));
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["code"],"outcome_unknown","{unresolved}");
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["retry"],"forbidden","{unresolved}");

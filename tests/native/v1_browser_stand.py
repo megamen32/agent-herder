@@ -149,6 +149,10 @@ def run(config, run_case=False):
             {'action':'export','session_ref':session,'format':'native'}), 'native')
         raw = exported.pop('_payload_bytes', None)
         record['export'] = exported
+        if raw:
+            transcript_path = root / 'native-transcript.json'
+            transcript_path.write_bytes(raw)
+            record['transcript_path'] = str(transcript_path)
         if exported['status'] != 'confirmed' or not raw or not all(m.encode() in raw for m in markers + [r['native_receipt_id'] for r in record['delivery_receipts']]):
             raise RuntimeError('full native export unproven')
         record['checks']['export_native_complete'] = 'PASS'
@@ -184,6 +188,21 @@ def run(config, run_case=False):
         raise
     finally:
         if core is not None:
+            # Preserve the result first, then archive only this run's issued chat.
+            # Cleanup failure is distinct from test failure; neither loses evidence.
+            if run_case and record.get('session_ref'):
+                save()
+                try:
+                    cleanup = helpers.rpc_tool(core, 'session', {'action':'archive',
+                        'session_ref':record['session_ref'], 'request_key':config['run_id']+'-archive'})
+                    record['cleanup'] = cleanup
+                    record['checks']['archive_test_chat'] = 'PASS' if cleanup.get('structuredContent', cleanup).get('archived') is True else 'INCOMPLETE'
+                except Exception as cleanup_error:
+                    record['cleanup'] = {'status':'UNKNOWN','error':str(cleanup_error)[:500]}
+                    record['checks']['archive_test_chat'] = 'INCOMPLETE'
+                if record['status'] == 'PASS' and record['checks']['archive_test_chat'] != 'PASS':
+                    record['status'] = 'INCOMPLETE_CLEANUP'
+                save()
             core.close()
 
 

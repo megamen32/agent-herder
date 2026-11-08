@@ -1,3 +1,4 @@
+import { chatgptArchiveScript } from "./chatgpt-archive.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -910,6 +911,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       this.backgroundNavigator = new ChatGptBackgroundNavigator(this.tools, budget);
     }
     await this.backgroundNavigator.visit(id);
+  }
+
+  async archiveChat(chatId: string): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(async () => {
+      const id = this.drafts.get(chatId)?.remoteId ?? chatId;
+      if (!NATIVE_CHAT_ID.test(id)) return { ok: false, error: "invalid_native_chat_id" };
+      const page = await this.page();
+      const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
+      this.requirePinnedAccountScope(scope);
+      return parseChromeEvaluation<{ ok: boolean; error?: string }>(await this.tools.call("evaluate_script", {
+        pageId: page.id, function: chatgptArchiveScript(id, scope),
+      }));
+    });
   }
 
   async getRawConversation(chatId: string): Promise<unknown | null> {

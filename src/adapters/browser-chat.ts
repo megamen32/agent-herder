@@ -76,6 +76,7 @@ export interface BrowserChatDriver {
    * page. The adapter forwards these as HarnessEvent of kind
    * permission.requested / permission.resolved into the shared bus. */
   subscribePromptEvents?(handler: (event: HarnessEvent) => void): () => void;
+  archiveChat?(chatId: string): Promise<{ ok: boolean; error?: string }>;
   createChat?(input: { title?: string }, signal?: AbortSignal): Promise<BrowserChat>;
   listModels?(signal?: AbortSignal): Promise<string[]>;
   supportsModelSwitch?(): boolean;
@@ -395,6 +396,18 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async requestBackgroundVisit(id: string): Promise<void> {
     if (this.provider.id === "chatgpt") await this.driver.visitBackgroundChat?.(this.nativeId(id));
+  }
+
+  supportsArchive(): boolean { return typeof this.driver.archiveChat === "function"; }
+
+  async archiveSession(id: string): Promise<ControlResult> {
+    if (!this.driver.archiveChat) return { ok: false, error: "archive_unsupported" };
+    const native = this.nativeId(id);
+    const result = await this.driver.archiveChat(native);
+    if (!result.ok) return { ok: false, error: result.error ?? "archive_outcome_unknown" };
+    this.inventory.delete(native);
+    this.historyCache.invalidate(native);
+    return { ok: true, sessionId: id };
   }
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {

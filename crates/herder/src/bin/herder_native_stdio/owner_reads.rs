@@ -132,7 +132,7 @@ fn handle(
         Request::Sessions(_)
             | Request::Export(_)
             | Request::Search(_)
-            | Request::Session(_)
+            | Request::Session(Session::Recent { .. } | Session::Context {} | Session::Messages { .. })
             | Request::Discover(Discover::Projects { .. })
     ) {
         return None;

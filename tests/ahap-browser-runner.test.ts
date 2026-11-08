@@ -420,3 +420,14 @@ it("FIXBI verifier mismatch prevents passive reads and send", async () => {
   expect(reads).toBe(0);
   expect(sends).toBe(0);
 });
+
+it("advertises and routes archive only when the browser driver implements it", async () => {
+  const ids:string[]=[];
+  const adapter={type:"chatgpt",name:"ChatGPT",init:async()=>{},getAccountScope:()=>scope,
+    archiveSession:async(id:string)=>{ids.push(id);return {ok:true,sessionId:id}},supportsArchive:()=>true};
+  const result=await run(adapter,[initialize,{jsonrpc:"2.0",id:2,method:"init"},{jsonrpc:"2.0",id:3,method:"archiveSession",params:{id:"chatgpt::native"}}]);
+  expect((result[0]!.result as any).capabilities.methods).toContain("archiveSession");
+  expect(result[2]!.result).toEqual({ok:true,sessionId:"chatgpt::native"});expect(ids).toEqual(["chatgpt::native"]);
+  const unsupported=await run({...adapter,supportsArchive:()=>false},[initialize,{jsonrpc:"2.0",id:4,method:"archiveSession",params:{id:"chatgpt::native"}}]);
+  expect((unsupported[0]!.result as any).capabilities.methods).not.toContain("archiveSession");expect(unsupported[1]!.error).toMatchObject({code:-32601});expect(ids.length).toBe(1);
+});
