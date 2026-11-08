@@ -1,0 +1,303 @@
+{
+  "at": "2026-11-08T19:00:42.011963+00:00",
+  "manifest_sha256": "7e91064c918540fac4bfaf108b284c730c95c3f54e06567b5f8f797248c10907",
+  "core_sha256": "2c6f4160991f824f77d05c9df64fc0dc52279887e351598827c0576d0cba71f1",
+  "shared_catalog_reconcile": true,
+  "instances": {
+    "complete": true,
+    "instances": [
+      {
+        "capabilities": {
+          "controlCapabilities": {
+            "cancelTurn": false,
+            "detach": false,
+            "events": false,
+            "fork": false,
+            "modelSwitch": false,
+            "recover": false,
+            "resume": false,
+            "steer": false,
+            "subagents": false,
+            "terminate": false
+          },
+          "deliveryModes": [
+            "queue",
+            "sync",
+            "steer"
+          ],
+          "methods": [
+            "init",
+            "createSession",
+            "sendMessage",
+            "getSession",
+            "getSessionMessages",
+            "listSessions",
+            "getRawTranscript",
+            "archiveSession"
+          ]
+        },
+        "harness": "codex",
+        "instance_ref": "codex-local",
+        "node_ref": "roomhacker-server-100"
+      },
+      {
+        "capabilities": {
+          "controlCapabilities": {
+            "cancelTurn": false,
+            "detach": false,
+            "events": false,
+            "fork": false,
+            "modelSwitch": false,
+            "recover": false,
+            "resume": false,
+            "steer": false,
+            "subagents": false,
+            "terminate": false
+          },
+          "deliveryModes": [
+            "queue",
+            "sync",
+            "steer"
+          ],
+          "methods": [
+            "init",
+            "createSession",
+            "sendMessage",
+            "getSession",
+            "getSessionMessages",
+            "listSessions",
+            "getRawTranscript",
+            "archiveSession"
+          ]
+        },
+        "harness": "codex",
+        "instance_ref": "codex-44",
+        "node_ref": "server-44"
+      },
+      {
+        "capabilities": {
+          "controlCapabilities": {
+            "cancelTurn": false,
+            "detach": false,
+            "events": false,
+            "fork": false,
+            "modelSwitch": false,
+            "recover": false,
+            "resume": false,
+            "steer": false,
+            "subagents": false,
+            "terminate": false
+          },
+          "deliveryModes": [
+            "queue",
+            "steer",
+            "start"
+          ],
+          "methods": [
+            "init",
+            "createSession",
+            "sendMessage",
+            "getSession",
+            "getSessionMessages",
+            "listSessions",
+            "getRawTranscript",
+            "archiveSession"
+          ],
+          "nativeProtocol": "v2"
+        },
+        "harness": "opencode",
+        "instance_ref": "opencode-noticeplace-local",
+        "node_ref": "roomhacker-server-100"
+      }
+    ],
+    "next_cursor": null,
+    "scope": "configured_owner_instances",
+    "sources": [
+      {
+        "instance_ref": "codex-local",
+        "result": {
+          "complete": true,
+          "instances": [
+            {
+              "capabilities": {
+                "controlCapabilities": {
+                  "cancelTurn": false,
+                  "detach": false,
+                  "events": false,
+                  "fork": false,
+                  "modelSwitch": false,
+                  "recover": false,
+                  "resume": false,
+                  "steer": false,
+                  "subagents": false,
+                  "terminate": false
+                },
+                "deliveryModes": [
+                  "queue",
+                  "sync",
+                  "steer"
+                ],
+                "methods": [
+                  "init",
+                  "createSession",
+                  "sendMessage",
+                  "getSession",
+                  "getSessionMessages",
+                  "listSessions",
+                  "getRawTranscript",
+                  "archiveSession"
+                ]
+              },
+              "harness": "codex",
+              "instance_ref": "codex-local",
+              "node_ref": "roomhacker-server-100"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      },
+      {
+        "instance_ref": "codex-44",
+        "result": {
+          "complete": true,
+          "instances": [
+            {
+              "capabilities": {
+                "controlCapabilities": {
+                  "cancelTurn": false,
+                  "detach": false,
+                  "events": false,
+                  "fork": false,
+                  "modelSwitch": false,
+                  "recover": false,
+                  "resume": false,
+                  "steer": false,
+                  "subagents": false,
+                  "terminate": false
+                },
+                "deliveryModes": [
+                  "queue",
+                  "sync",
+                  "steer"
+                ],
+                "methods": [
+                  "init",
+                  "createSession",
+                  "sendMessage",
+                  "getSession",
+                  "getSessionMessages",
+                  "listSessions",
+                  "getRawTranscript",
+                  "archiveSession"
+                ]
+              },
+              "harness": "codex",
+              "instance_ref": "codex-44",
+              "node_ref": "server-44"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      },
+      {
+        "instance_ref": "opencode-noticeplace-local",
+        "result": {
+          "complete": true,
+          "instances": [
+            {
+              "capabilities": {
+                "controlCapabilities": {
+                  "cancelTurn": false,
+                  "detach": false,
+                  "events": false,
+                  "fork": false,
+                  "modelSwitch": false,
+                  "recover": false,
+                  "resume": false,
+                  "steer": false,
+                  "subagents": false,
+                  "terminate": false
+                },
+                "deliveryModes": [
+                  "queue",
+                  "steer",
+                  "start"
+                ],
+                "methods": [
+                  "init",
+                  "createSession",
+                  "sendMessage",
+                  "getSession",
+                  "getSessionMessages",
+                  "listSessions",
+                  "getRawTranscript",
+                  "archiveSession"
+                ],
+                "nativeProtocol": "v2"
+              },
+              "harness": "opencode",
+              "instance_ref": "opencode-noticeplace-local",
+              "node_ref": "roomhacker-server-100"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      }
+    ]
+  },
+  "nodes": {
+    "complete": true,
+    "next_cursor": null,
+    "nodes": [
+      {
+        "node_ref": "roomhacker-server-100"
+      },
+      {
+        "node_ref": "server-44"
+      }
+    ],
+    "scope": "configured_owner_instances",
+    "sources": [
+      {
+        "instance_ref": "codex-local",
+        "result": {
+          "complete": true,
+          "nodes": [
+            {
+              "node_ref": "roomhacker-server-100"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      },
+      {
+        "instance_ref": "codex-44",
+        "result": {
+          "complete": true,
+          "nodes": [
+            {
+              "node_ref": "server-44"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      },
+      {
+        "instance_ref": "opencode-noticeplace-local",
+        "result": {
+          "complete": true,
+          "nodes": [
+            {
+              "node_ref": "roomhacker-server-100"
+            }
+          ],
+          "scope": "configured_owner_instance"
+        }
+      }
+    ]
+  },
+  "model_sends": 0,
+  "wire_fixture": "python3 tests/v1-restored-workflows/automation-wire.py PASS; one send, restart duplicate0, HumanStop0",
+  "live_wake": "not_yet_proven",
+  "legacy": "MainPID=0\nActiveState=inactive\nUnitFileState=masked\n"
+}
