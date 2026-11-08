@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "path": "/home/roomhacker/.codex/config.toml",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.config/opencode/opencode.jsonc",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude.json",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/config.yaml",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/profiles/lhc/config.yaml",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.mcp.json",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/.mcp.json",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/.mcp.json",
+      "unchanged_other_entries": true,
+      "backup_mode": "0600",
+      "installed_bytes_match": true
+    }
+  ],
+  "codex_cli_remote_entry": true,
+  "codex_local_duplicate_absent": true,
+  "opencode_symlink_preserved": true,
+  "hooks_unchanged": true,
+  "services_changed": false
+}

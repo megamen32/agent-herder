@@ -1,0 +1,34 @@
+{
+  "backup_directory": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z",
+  "inputs": {
+    "tests/autopilot-plugin-surfaces.test.ts": {
+      "sha256": "670bbca5dabb82ced16010857af6052bfd1ee639646bac3569c21901f59b501e",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z/autopilot-plugin-surfaces.test.ts"
+    },
+    "tests/hooks-plugin-package.test.ts": {
+      "sha256": "a3ecda374ba59fefcade520aa20718bb08da294ded1e4e3b49e84fce8d3a4e40",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z/hooks-plugin-package.test.ts"
+    },
+    ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/server100-cutover-complete.json": {
+      "sha256": "5c7b130f786b1ad501c4925bb3e26e9c552492070a38e51c4ea4686409b9e084",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z/server100-cutover-complete.json"
+    },
+    ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/server100-cutover-complete.md": {
+      "sha256": "e2ba3ef75a54cd120eb00449c066c2d3b19494e3d012af3a6ae85f18feb7cd86",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z/server100-cutover-complete.md"
+    },
+    ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/server100-cutover-verification.json": {
+      "sha256": "de3974ce3475fd82a14a3ae89c1a6416ae2ef889fbf5b8342926d535baec8692",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/regression-delta-20261108T171854Z/server100-cutover-verification.json"
+    }
+  },
+  "source_config_hashes": {
+    ".mcp.json": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
+    "mcp.json": "1788697eb2d3aa1caa8da59a62331a92529e24885f0e7151418f915000fbf7fd",
+    ".codex-plugin/hooks.json": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+    "com.openai/hooks/hooks.json": "e656ad3b77c63d182be332ff4cb48dc28971d924f5f18af4e4947246741e7a58",
+    "hooks/hooks.json": "337775f2de65faf38bc832dd573cdf0abd7acf3e14c73f53d03b3ff372d90724",
+    "tests/hooks-script-safety.test.ts": "3f635e377955188de6f02c063fd93e500afe5c8e7c96ec8560db99a4a6a00121",
+    "tests/codex-plugin-manifest-compat.test.ts": "d2efc3887febabb574f32857b0cd3cb7b3f9fe93d7642ae4ea8a7f62f9624051"
+  }
+}

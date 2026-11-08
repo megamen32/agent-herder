@@ -13,3 +13,9 @@
 Настроен один backend codex-local. Пустой список projects имеет явную неполную coverage; полнота native sessions и пять установленных адаптеров здесь НЕ доказаны. Remote HTTP доступность не равна наличию remote harness backend. Межхостовое управление, wake, NoticePlace launch/repair, legacy UI и hooks отложены владельцем; новые расписания не ставились, секреты не ротировались. Состояние native sessions и прежние артефакты сохранены.
 
 Подробности клиентов: server100-config-migration.md. Remote shutdown/readback: fleet-herder-remote-stop-receipt.md. Точные parent receipts: fleet-cutover-parent.json, installed-v1-cold-startup.json, installed-v1-http-cutover.json.
+
+Конфигурации clients проверены:100 Codex/OpenCode/Claude/Hermes;44,88,MacM1 Codex/OpenCode;MacMini Codex. На каждом remotehost authenticated initialize/toolslist/discoverPASS,15tools,1instance. Новая native harness сессия для reload отдельно не запускалась.
+
+Причина повторного старта100 найдена: zcode-session-resume-watchdog.timer каждые10мин запускает service с Wants=agent-herder.service. Timer отключён; disabled/inactive подтверждены. Legacy NoticePlace autofinish timer уже disabled/inactive. Agent-workspace — отдельный UserIOconsumer, active; его legacy loopback-only transport/API не мигрированы, принадлежат отдельному отложенному workflow. Он не является старым Herder daemon; чужойruntime не остановлен. Требуется отдельное восстановление потребителя вместе с legacy функциональностью.
+
+Plugin legacy HTTP hooks отключены вsource и фактически активированных caches; LHC/AgentMemory сохранены. Автовозобновление от завершения children сейчас НЕ работает и не заявляется; его восстановление остаётся отдельным пунктом.

@@ -4,19 +4,22 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
 
-describe("Codex plugin hook manifest compatibility", () => {
-  it("connects plugin clients directly to the singleton HTTP endpoint without a subprocess", () => {
+describe("Herder plugin external shared MCP registration", () => {
+  it("leaves authenticated MCP registration to the host without embedding credentials or starting a core", () => {
+    const registrations = [];
     for (const filename of [".mcp.json", "mcp.json"]) {
       const manifest = JSON.parse(readFileSync(resolve(root, filename), "utf8"));
-      const server = manifest.mcpServers["agent-herder"];
-      expect(server.url).toBe("http://127.0.0.1:18787/mcp");
-      expect(server.type).toBe(filename === "mcp.json" ? "streamable-http" : "http");
-      for (const field of ["command", "args", "cwd", "env"]) expect(server).not.toHaveProperty(field);
+      expect(manifest.mcpServers).toEqual({});
+      registrations.push(manifest.mcpServers);
+      expect(JSON.stringify(manifest)).not.toMatch(/18787|authorization|bearer|command|token/i);
     }
+    expect(registrations[0]).toEqual(registrations[1]);
   });
-  it("resolves legacy and portable manifests to the same Codex hook commands", () => {
+  it("keeps plugin entrypoints and skills while retiring only their legacy HTTP hooks", () => {
     const legacy = JSON.parse(readFileSync(resolve(root, ".codex-plugin/plugin.json"), "utf8")) as {
       hooks?: string;
+      mcpServers?: string;
+      skills?: string;
     };
     const portable = JSON.parse(readFileSync(resolve(root, "plugin.json"), "utf8")) as {
       extensions?: { "com.openai"?: { hooks?: string } };
@@ -24,20 +27,12 @@ describe("Codex plugin hook manifest compatibility", () => {
 
     expect(legacy.hooks).toBe("./com.openai/hooks/hooks.json");
     expect(portable.extensions?.["com.openai"]?.hooks).toBe(legacy.hooks);
+    expect(legacy.mcpServers).toBe("./.mcp.json");
+    expect(legacy.skills).toBe("./skills/");
 
-    const hooksPath = resolve(root, legacy.hooks!);
-    const hooks = JSON.parse(readFileSync(hooksPath, "utf8")) as {
-      hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-    };
-    const commands = Object.values(hooks.hooks ?? {}).flatMap((groups) => groups.flatMap((group) =>
-      (group.hooks ?? []).map((hook) => hook.command ?? "")));
-
-    // The commands of the Codex plugin call the scripts of the hooks directly,
-    // and every one of them is safe: a hook that cannot start leaves the
-    // session alone instead of breaking it.
-    expect(commands.some((command) => command.startsWith('node "${PLUGIN_ROOT}/scripts/codex-stop-hook.mjs"'))).toBe(true);
-    expect(commands.some((command) => command.startsWith('node "${PLUGIN_ROOT}/scripts/coordination-hook.mjs"'))).toBe(true);
-    expect(commands.every((command) => command.trimEnd().endsWith("|| true"))).toBe(true);
-    expect(commands.every((command) => !command.includes("CLAUDE_PLUGIN_ROOT"))).toBe(true);
+    for (const filename of [legacy.hooks!, ".codex-plugin/hooks.json", "hooks/hooks.json"]) {
+      const hooks = JSON.parse(readFileSync(resolve(root, filename), "utf8"));
+      expect(hooks.hooks).toEqual({});
+    }
   });
 });

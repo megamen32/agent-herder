@@ -23,8 +23,8 @@ describe("/autopilot plugin surfaces", () => {
     expect(codexSkill).toContain("/autopilot");
     expect(codexSkill).toContain("scripts/run.sh");
     expect(claudeManifest).toContain('"name": "agent-herder"');
-    expect(claudeHooks).toContain('"Stop"');
-    expect(claudeHooks).toContain("${CLAUDE_PLUGIN_ROOT}/scripts/claude-autopilot-hook-launcher.sh");
+    // Scripts remain packaged, but the shared-registration cutover disables legacy HTTP hooks.
+    expect(JSON.parse(claudeHooks).hooks).toEqual({});
     expect(commandLauncher).toContain("CLAUDE_CODE_SESSION_ID");
     expect(commandLauncher).toContain("harness=claude");
     expect(sharedCommandLauncher).toContain(".config/agent-herder/autopilot.env");

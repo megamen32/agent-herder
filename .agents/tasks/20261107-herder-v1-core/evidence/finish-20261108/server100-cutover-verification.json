@@ -1,0 +1,159 @@
+{
+  "ok": true,
+  "checked_files": [
+    {
+      "path": "/home/roomhacker/.codex/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.codex-plugin/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/com.openai/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/mcp.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/com.openai/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/com.openai/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/.codex-plugin/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/com.openai/hooks/hooks.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/.mcp.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/mcp.json",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/config.yaml",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/profiles/lhc/config.yaml",
+      "parsed_only_authorized_changes": true,
+      "backup_mode": "0600",
+      "readback_sha256_match": true
+    }
+  ],
+  "unchanged_other_inputs": true,
+  "global_mixed_group_preservation": true,
+  "hermes_installed_config_auth_probe": {
+    "ok": true,
+    "initialize_status": 200,
+    "tools_list_status": 200,
+    "tool_count": 15,
+    "has_discover": true
+  },
+  "native_mutations": 0,
+  "services_changed": false,
+  "plugin_source_installed_empty_registration_paths": [
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/mcp.json",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.mcp.json",
+    "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/.mcp.json",
+    "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/.mcp.json",
+    "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/mcp.json",
+    "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/.mcp.json"
+  ],
+  "regression": {
+    "red": {
+      "tests_failed": 2,
+      "log": "cutover-plugin-red.log"
+    },
+    "green": {
+      "tests_passed": 2,
+      "log": "cutover-plugin-green.log"
+    }
+  },
+  "final_regression_delta": {
+    "at_utc": "2026-11-08T17:19:35.261540+00:00",
+    "command": [
+      "./node_modules/.bin/vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "tests/autopilot-plugin-surfaces.test.ts",
+      "tests/hooks-script-safety.test.ts",
+      "tests/hooks-plugin-package.test.ts",
+      "tests/codex-plugin-manifest-compat.test.ts"
+    ],
+    "red": {
+      "exit_code": 1,
+      "failed": 2,
+      "passed": 16,
+      "log": "cutover-regression-delta-red.log"
+    },
+    "green": {
+      "exit_code": 0,
+      "files_passed": 4,
+      "tests_passed": 18,
+      "log": "cutover-regression-delta-green.log"
+    },
+    "changed_tests": [
+      "tests/autopilot-plugin-surfaces.test.ts",
+      "tests/hooks-plugin-package.test.ts"
+    ],
+    "unchanged_tests": [
+      "tests/hooks-script-safety.test.ts",
+      "tests/codex-plugin-manifest-compat.test.ts"
+    ],
+    "source_hooks_manifests_unchanged": true,
+    "runtime_configs_changed": false,
+    "native_or_live_operations": 0,
+    "backup_inputs_receipt": "cutover-regression-delta-inputs.json",
+    "test_sha256": {
+      "tests/autopilot-plugin-surfaces.test.ts": "cc8238d16ae187a3e1081989384044d95e46101c82b64cd60840647a6c4bd8d9",
+      "tests/hooks-plugin-package.test.ts": "55da25b52324743755f979a38b67500587403c0a90816c4ef9ee3522f551b9c8"
+    }
+  }
+}

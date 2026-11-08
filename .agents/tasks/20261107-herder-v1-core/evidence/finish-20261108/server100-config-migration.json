@@ -1,0 +1,124 @@
+{
+  "at_utc": "20261108T170903Z",
+  "endpoint": "https://mcp.bezrabotnyi.com/server/shell-roomhacker-server-100-agentherder/mcp",
+  "backup_directory": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z",
+  "changes": [
+    {
+      "path": "/home/roomhacker/.codex/config.toml",
+      "resolved_path": "/home/roomhacker/.codex/config.toml",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/00-config.toml",
+      "before_sha256": "98143ed3626430702a60eac831d3215d9788ac1cb59300f970ee6178b2dc4812",
+      "after_sha256": "5863a183b0163c14bf395c358c24d2749bfce3ae3113f7d8f2edc6bf08a465fd",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "remote agent-herder with own GPTAdmin headers; remove redundant local agent-herder-v1"
+    },
+    {
+      "path": "/home/roomhacker/.config/opencode/opencode.jsonc",
+      "resolved_path": "/home/roomhacker/.local/share/opencode-private/settings.jsonc",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/01-opencode.jsonc",
+      "before_sha256": "cdf38f87d24a913f3a5853dcbd064996b0c89f114ff5d4b53b63a767ab843a49",
+      "after_sha256": "62aa14259c8201417b96f17e96d9d13d7a8686895142892623a1bc7cc7d6988c",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "remote agent-herder using same-client GPTAdmin headers"
+    },
+    {
+      "path": "/home/roomhacker/.claude.json",
+      "resolved_path": "/home/roomhacker/.claude.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/02-.claude.json",
+      "before_sha256": "c122ef9d11906e19fcc7b68ca533e8076527521679f0d78d11bb45744add56e1",
+      "after_sha256": "6d1e4a31c029444e4c9c0ab82da2869b6724a4339cfd9cc0f698504d77bfd0ca",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "remote agent-herder using same-client GPTAdmin headers"
+    },
+    {
+      "path": "/home/roomhacker/.hermes/config.yaml",
+      "resolved_path": "/home/roomhacker/.hermes/config.yaml",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/03-config.yaml",
+      "before_sha256": "8f6e3bcb55d0517a1e4992d2506362a7ea5f977f47f56ed356f8e823e9338503",
+      "after_sha256": "41089400a65eba2e341ecd0772edef8e8c12dc41b5d145129aef9c5222c91b66",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "disable only Herder connector: missing per-client GPTAdmin credential"
+    },
+    {
+      "path": "/home/roomhacker/.hermes/profiles/lhc/config.yaml",
+      "resolved_path": "/home/roomhacker/.hermes/profiles/lhc/config.yaml",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/04-config.yaml",
+      "before_sha256": "4a742f387f25f85d23231a04cbfd4e9c3f966f857afbc1fa5b3fa5fa7b5d138d",
+      "after_sha256": "bbeb9fa37744a2cdda7ede9468a928a273c94fa16d5b17b17063058a5b678333",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "disable only Herder connector: missing per-client GPTAdmin credential"
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.mcp.json",
+      "resolved_path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/05-.mcp.json",
+      "before_sha256": "04063ebf63168e8888161664edd8c9dec8c561b845dc615a3491e029a13871d9",
+      "after_sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "deduplicate plugin MCP against protected global Codex agent-herder; no token in source"
+    },
+    {
+      "path": "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/.mcp.json",
+      "resolved_path": "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/.mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/06-.mcp.json",
+      "before_sha256": "04063ebf63168e8888161664edd8c9dec8c561b845dc615a3491e029a13871d9",
+      "after_sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "deduplicate plugin MCP against protected global Codex agent-herder; no token in source"
+    },
+    {
+      "path": "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/.mcp.json",
+      "resolved_path": "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/.mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/20261108T170903Z/07-.mcp.json",
+      "before_sha256": "04063ebf63168e8888161664edd8c9dec8c561b845dc615a3491e029a13871d9",
+      "after_sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
+      "mode": "0600",
+      "parsed_exact_keys_only": true,
+      "change": "deduplicate plugin MCP against protected global Codex agent-herder; no token in source"
+    }
+  ],
+  "auth_probes": {
+    "codex": {
+      "ok": true,
+      "initialize_status": 200,
+      "tools_list_status": 200,
+      "tool_count": 15,
+      "has_discover": true
+    },
+    "opencode": {
+      "ok": true,
+      "initialize_status": 200,
+      "tools_list_status": 200,
+      "tool_count": 15,
+      "has_discover": true
+    },
+    "claude": {
+      "ok": true,
+      "initialize_status": 200,
+      "tools_list_status": 200,
+      "tool_count": 15,
+      "has_discover": true
+    }
+  },
+  "limitations": [
+    "/home/roomhacker/.hermes/config.yaml: no GPTAdmin registration or env credential; Herder disabled, not claimed migrated",
+    "/home/roomhacker/.hermes/profiles/lhc/config.yaml: no GPTAdmin registration or env credential; Herder disabled, not claimed migrated",
+    "Herder plugin and global hooks retained unchanged after inspection; legacy HTTP routes unavailable. LHC hooks untouched."
+  ],
+  "services_changed": false,
+  "hooks_unchanged_sha256": {
+    "/home/roomhacker/.codex/hooks.json": "1a39ab8167fd04f3be8344bf09435bdf433e95a68a1faecdd38f4e4eee3fd971",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/hooks/hooks.json": "9cd8ac5e3da1637413cd28e423bf73e1c20a53176dec8b158903a1982eb26a3d",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/com.openai/hooks/hooks.json": "8591a99949376de2629597203b3ef1ecbddf43f8d0f957eed992fba6556b9df5",
+    "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/com.openai/hooks/hooks.json": "66a2db0cbcf0209a8e7525de44532fd2f55399e016644fc5d8a4e90e508083b5",
+    "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/com.openai/hooks/hooks.json": "66a2db0cbcf0209a8e7525de44532fd2f55399e016644fc5d8a4e90e508083b5"
+  },
+  "ok": true
+}

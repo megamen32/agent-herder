@@ -1,0 +1,121 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/codex-plugin-manifest-compat.test.ts (2 tests | 2 failed) 15ms
+     × leaves authenticated MCP registration to the host without embedding credentials or starting a core 10ms
+     × keeps plugin entrypoints and skills while retiring only their legacy HTTP hooks 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/codex-plugin-manifest-compat.test.ts > Herder plugin external shared MCP registration > leaves authenticated MCP registration to the host without embedding credentials or starting a core
+AssertionError: expected { 'agent-herder': { …(2) } } to deeply equal {}
+
+- Expected
++ Received
+
+- {}
++ {
++   "agent-herder": {
++     "type": "streamable-http",
++     "url": "http://127.0.0.1:18787/mcp",
++   },
++ }
+
+ ❯ tests/codex-plugin-manifest-compat.test.ts:12:35
+     10|     for (const filename of [".mcp.json", "mcp.json"]) {
+     11|       const manifest = JSON.parse(readFileSync(resolve(root, filename)…
+     12|       expect(manifest.mcpServers).toEqual({});
+       |                                   ^
+     13|       registrations.push(manifest.mcpServers);
+     14|       expect(JSON.stringify(manifest)).not.toMatch(/18787|authorizatio…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/codex-plugin-manifest-compat.test.ts > Herder plugin external shared MCP registration > keeps plugin entrypoints and skills while retiring only their legacy HTTP hooks
+AssertionError: expected { …(5) } to deeply equal {}
+
+- Expected
++ Received
+
+- {}
++ {
++   "PostToolUse": [
++     {
++       "hooks": [
++         {
++           "command": "node \"${PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
++           "statusMessage": "Syncing Agent Herder coordination",
++           "timeout": 3,
++           "type": "command",
++         },
++       ],
++       "matcher": ".*",
++     },
++   ],
++   "PreToolUse": [
++     {
++       "hooks": [
++         {
++           "command": "node \"${PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
++           "statusMessage": "Syncing Agent Herder coordination",
++           "timeout": 3,
++           "type": "command",
++         },
++       ],
++       "matcher": ".*",
++     },
++   ],
++   "SessionStart": [
++     {
++       "hooks": [
++         {
++           "command": "node \"${PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
++           "statusMessage": "Syncing Agent Herder coordination",
++           "timeout": 3,
++           "type": "command",
++         },
++       ],
++     },
++   ],
++   "Stop": [
++     {
++       "hooks": [
++         {
++           "command": "node \"${PLUGIN_ROOT}/scripts/codex-stop-hook.mjs\" 2>/dev/null || true",
++           "statusMessage": "Checking Agent Herder autopilot decision",
++           "timeout": 45,
++           "type": "command",
++         },
++       ],
++     },
++   ],
++   "UserPromptSubmit": [
++     {
++       "hooks": [
++         {
++           "command": "node \"${PLUGIN_ROOT}/scripts/coordination-hook.mjs\" 2>/dev/null || true",
++           "statusMessage": "Syncing Agent Herder coordination",
++           "timeout": 3,
++           "type": "command",
++         },
++       ],
++     },
++   ],
++ }
+
+ ❯ tests/codex-plugin-manifest-compat.test.ts:35:27
+     33|     for (const filename of [legacy.hooks!, ".codex-plugin/hooks.json",…
+     34|       const hooks = JSON.parse(readFileSync(resolve(root, filename), "…
+     35|       expect(hooks.hooks).toEqual({});
+       |                           ^
+     36|     }
+     37|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  20:13:33
+   Duration  473ms (transform 83ms, setup 74ms, import 33ms, tests 15ms, environment 0ms)
+

@@ -1,0 +1,355 @@
+{
+  "at_utc": "20261108T171506Z",
+  "endpoint": "https://mcp.bezrabotnyi.com/server/shell-roomhacker-server-100-agentherder/mcp",
+  "backup_directory": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z",
+  "changes": [
+    {
+      "path": "/home/roomhacker/.codex/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/00-hooks.json",
+      "before_sha256": "1a39ab8167fd04f3be8344bf09435bdf433e95a68a1faecdd38f4e4eee3fd971",
+      "after_sha256": "4c63d932d04e5cee6f68c260bef0ebde6b0f41ae4326b02af44c853dff7e5fd2",
+      "mode": "0600",
+      "purpose": "remove only old Herder coordination/autopilot HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "Stop",
+          "script": "autopilot-hook.js"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.codex-plugin/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/01-hooks.json",
+      "before_sha256": "66a2db0cbcf0209a8e7525de44532fd2f55399e016644fc5d8a4e90e508083b5",
+      "after_sha256": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "codex-stop-hook.mjs"
+        },
+        {
+          "event": "SessionStart",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/02-hooks.json",
+      "before_sha256": "9cd8ac5e3da1637413cd28e423bf73e1c20a53176dec8b158903a1982eb26a3d",
+      "after_sha256": "337775f2de65faf38bc832dd573cdf0abd7acf3e14c73f53d03b3ff372d90724",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "claude-autopilot-hook-launcher.sh"
+        },
+        {
+          "event": "SessionStart",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/com.openai/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/03-hooks.json",
+      "before_sha256": "8591a99949376de2629597203b3ef1ecbddf43f8d0f957eed992fba6556b9df5",
+      "after_sha256": "e656ad3b77c63d182be332ff4cb48dc28971d924f5f18af4e4947246741e7a58",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "codex-stop-hook.mjs"
+        },
+        {
+          "event": "SessionStart",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/04-mcp.json",
+      "before_sha256": "4c93f896e1725f46079d44cf0afaea4013a390743333bf37b9b068df7328177e",
+      "after_sha256": "1788697eb2d3aa1caa8da59a62331a92529e24885f0e7151418f915000fbf7fd",
+      "mode": "0600",
+      "purpose": "external authenticated host registration; remove duplicate plugin MCP",
+      "removed_hooks": [],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.local/share/agent-herder/codex-native-releases/0.2.5/com.openai/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/05-hooks.json",
+      "before_sha256": "66a2db0cbcf0209a8e7525de44532fd2f55399e016644fc5d8a4e90e508083b5",
+      "after_sha256": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "codex-stop-hook.mjs"
+        },
+        {
+          "event": "SessionStart",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.codex/plugins/cache/agent-herder-local/agent-herder/0.2.5/com.openai/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/06-hooks.json",
+      "before_sha256": "66a2db0cbcf0209a8e7525de44532fd2f55399e016644fc5d8a4e90e508083b5",
+      "after_sha256": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "codex-stop-hook.mjs"
+        },
+        {
+          "event": "SessionStart",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "UserPromptSubmit",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PreToolUse",
+          "script": "coordination-hook.mjs"
+        },
+        {
+          "event": "PostToolUse",
+          "script": "coordination-hook.mjs"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/.codex-plugin/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/07-hooks.json",
+      "before_sha256": "d73716810ebb43998c4b632410a8ba686b5e40b3574e60b193d0e00136a21d4d",
+      "after_sha256": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "autopilot-hook-launcher.sh"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/08-hooks.json",
+      "before_sha256": "25e1d70b58444b5fb4c7382eb4f65264d32635b4a4feb9407bd00ca4495c87cc",
+      "after_sha256": "940f447c70e2a6a291a69799864eb17a4bb6ff8e9b8d9861088bae56d2cee7e6",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "claude-autopilot-hook-launcher.sh"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/com.openai/hooks/hooks.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/09-hooks.json",
+      "before_sha256": "d73716810ebb43998c4b632410a8ba686b5e40b3574e60b193d0e00136a21d4d",
+      "after_sha256": "232580f341ffd2a2b65e3f45e2106146e0c27acc5292c6e2058b1274e446bbfd",
+      "mode": "0600",
+      "purpose": "retire only old Herder plugin HTTP hooks",
+      "removed_hooks": [
+        {
+          "event": "Stop",
+          "script": "autopilot-hook-launcher.sh"
+        }
+      ],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/.mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/10-.mcp.json",
+      "before_sha256": "4cad121e8b8839c9ca1dd3764a3cad43a632bac73bc9208924eb753284c50c10",
+      "after_sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
+      "mode": "0600",
+      "purpose": "external authenticated host registration; remove duplicate plugin MCP",
+      "removed_hooks": [],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.claude/plugins/cache/agent-herder-local/agent-herder/0.2.0/mcp.json",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/11-mcp.json",
+      "before_sha256": "f0dcb4c7e38eaf966008580cbb63dfc3afce8245c721f16db9cd38cb997f2c36",
+      "after_sha256": "1788697eb2d3aa1caa8da59a62331a92529e24885f0e7151418f915000fbf7fd",
+      "mode": "0600",
+      "purpose": "external authenticated host registration; remove duplicate plugin MCP",
+      "removed_hooks": [],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/config.yaml",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/12-config.yaml",
+      "before_sha256": "41089400a65eba2e341ecd0772edef8e8c12dc41b5d145129aef9c5222c91b66",
+      "after_sha256": "6feffdae75f68472cebd4b2e0324123b888ff7eb20d387162c0740208adbd55a",
+      "mode": "0600",
+      "purpose": "enable central shared Herder with existing protected owner GPTAdmin credential",
+      "removed_hooks": [],
+      "parsed_expected_only": true
+    },
+    {
+      "path": "/home/roomhacker/.hermes/profiles/lhc/config.yaml",
+      "backup": "/home/roomhacker/.local/state/agent-herder/config-migration/complete-20261108T171506Z/13-config.yaml",
+      "before_sha256": "bbeb9fa37744a2cdda7ede9468a928a273c94fa16d5b17b17063058a5b678333",
+      "after_sha256": "f762315ecfc1bfc765f4e843805e20260b9a2d31b581623218ee60dfd3e0c73d",
+      "mode": "0600",
+      "purpose": "enable central shared Herder with existing protected owner GPTAdmin credential",
+      "removed_hooks": [],
+      "parsed_expected_only": true
+    }
+  ],
+  "checks": {
+    "mixed_hook_group_preserves_lhc_and_agentmemory": true,
+    "hermes_gptadmin_env_store_unchanged": true,
+    "global_lhc_other_hooks_preserved": true
+  },
+  "services_changed": false,
+  "native_mutations": 0,
+  "token_issuance_or_rotation": false,
+  "hermes_auth": {
+    "source": "~/.codex/config.toml:mcp_servers.gptadmin.http_headers",
+    "authorization": "reuse existing owner credential; no new grant; identity remains existing credential identity",
+    "provisioning_contract": "/home/roomhacker/gptadmin/cli.py:_configure_hermes_mcp headers.Authorization",
+    "probe": {
+      "ok": true,
+      "initialize_status": 200,
+      "tools_list_status": 200,
+      "tool_count": 15,
+      "has_discover": true
+    }
+  },
+  "unchanged_inputs_sha256": {
+    "/home/roomhacker/.codex/config.toml": "5863a183b0163c14bf395c358c24d2749bfce3ae3113f7d8f2edc6bf08a465fd",
+    "/home/roomhacker/.claude.json": "6d1e4a31c029444e4c9c0ab82da2869b6724a4339cfd9cc0f698504d77bfd0ca",
+    "/home/roomhacker/.claude/settings.json": "d9de78257fbc6db7b4df8e35f8b7bb467f150f80b9cd1beb6a3e024bcdf855ca",
+    "/home/roomhacker/.claude/settings.local.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "/home/roomhacker/.config/gptadmin/gptadmin.env": "00a334a4ff54bc1f4029098e5c7a7f11b9ca232ad879a88c87ee823563449174",
+    "/home/roomhacker/.config/opencode/opencode.jsonc": "62aa14259c8201417b96f17e96d9d13d7a8686895142892623a1bc7cc7d6988c",
+    "/home/roomhacker/.hermes/profiles/luna/config.yaml": "a28e99923712a2f58b8f372017effb721ff6737ace5d4885a9bee1f544d15035"
+  },
+  "ok": true,
+  "final_regression_delta": {
+    "at_utc": "2026-11-08T17:19:35.261540+00:00",
+    "command": [
+      "./node_modules/.bin/vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "tests/autopilot-plugin-surfaces.test.ts",
+      "tests/hooks-script-safety.test.ts",
+      "tests/hooks-plugin-package.test.ts",
+      "tests/codex-plugin-manifest-compat.test.ts"
+    ],
+    "red": {
+      "exit_code": 1,
+      "failed": 2,
+      "passed": 16,
+      "log": "cutover-regression-delta-red.log"
+    },
+    "green": {
+      "exit_code": 0,
+      "files_passed": 4,
+      "tests_passed": 18,
+      "log": "cutover-regression-delta-green.log"
+    },
+    "changed_tests": [
+      "tests/autopilot-plugin-surfaces.test.ts",
+      "tests/hooks-plugin-package.test.ts"
+    ],
+    "unchanged_tests": [
+      "tests/hooks-script-safety.test.ts",
+      "tests/codex-plugin-manifest-compat.test.ts"
+    ],
+    "source_hooks_manifests_unchanged": true,
+    "runtime_configs_changed": false,
+    "native_or_live_operations": 0,
+    "backup_inputs_receipt": "cutover-regression-delta-inputs.json",
+    "test_sha256": {
+      "tests/autopilot-plugin-surfaces.test.ts": "cc8238d16ae187a3e1081989384044d95e46101c82b64cd60840647a6c4bd8d9",
+      "tests/hooks-plugin-package.test.ts": "55da25b52324743755f979a38b67500587403c0a90816c4ef9ee3522f551b9c8"
+    }
+  }
+}

@@ -1,5 +1,15 @@
 # Agent Herder
 
+> **Managed fleet cutover, 2026-11-08:** the deployed service now uses one Rust
+> core behind the authenticated GPTAdmin `AgentHerder` endpoint. Configure the
+> MCP connection in the host harness; plugin manifests intentionally contain
+> no server registration or legacy lifecycle hooks. The TypeScript daemon and
+> its fleet/autopilot services are disabled on the managed fleet. The legacy
+> build instructions and feature descriptions below are retained as source
+> documentation, not a statement of installed V1 parity. See the
+> [cutover receipt](.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/fleet-cutover-result.md)
+> for the exact installed capabilities and deferred functions.
+
 **MCP control center for coding agents — and the missing inter-agent messenger.**
 
 Monitor, inspect, and coordinate AI sessions — and message them — from one **MCP server**: OpenCode, Claude Code, Codex CLI, Qoder, ZCode, Fast Agent, and existing ChatGPT conversations.

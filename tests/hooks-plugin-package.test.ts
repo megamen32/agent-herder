@@ -46,7 +46,7 @@ describe("the package of the plugin of MiniMax Code", () => {
     expect(await exists(join(built.directory, "scripts", "hooks-stop-gate.mjs"))).toBe(true);
   });
 
-  it("names only files that are inside the package", async () => {
+  it("keeps legacy HTTP hooks disabled in the built package", async () => {
     const built = await buildPackage();
     const manifest = JSON.parse(await readFile(join(built.directory, "hooks", "hooks.json"), "utf8")) as {
       hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
@@ -61,7 +61,8 @@ describe("the package of the plugin of MiniMax Code", () => {
         }
       }
     }
-    expect(references.size).toBeGreaterThan(0);
+    expect(manifest.hooks).toEqual({});
+    expect(references.size).toBe(0);
     for (const reference of references) {
       expect(await exists(join(built.directory, reference))).toBe(true);
     }

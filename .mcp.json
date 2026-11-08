@@ -1,8 +1,3 @@
 {
-  "mcpServers": {
-    "agent-herder": {
-      "type": "http",
-      "url": "http://127.0.0.1:18787/mcp"
-    }
-  }
+  "mcpServers": {}
 }
