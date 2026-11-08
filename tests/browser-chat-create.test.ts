@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { createNamedSession } from "../src/named-session.js";
-import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe, chatGptNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
+import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe, chatGptNewChatMessageProbe, CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -675,6 +675,20 @@ describe("first message composer write", () => {
 });
 
 describe("chatgpt first message route proof", () => {
+  it("verifies the account even while the history read is in cooldown", async () => {
+    // The account check reads /api/auth/session, which the site answers
+    // during a history cooldown. Refusing to verify the account then makes
+    // every startup fail while the site is merely rate-limited on history.
+    const fn = runInNewContext("(" + CHATGPT_CREATE_SCOPE_SCRIPT + ")", {
+      location: { origin: "https://chatgpt.com" },
+      globalThis: { __herderChatGptReadCooldownUntil: Date.now() + 600_000 },
+      AbortController, setTimeout, clearTimeout, Date, TextEncoder, Uint8Array,
+      crypto: { subtle: { digest: async () => new Uint8Array(32).fill(0xaa).buffer } },
+      fetch: async () => ({ ok: true, json: async () => ({ account: { id: "account-1" } }) }),
+    }) as () => Promise<{ scope?: string; error?: string }>;
+    expect(await fn()).toMatchObject({ scope: "a".repeat(64) });
+  });
+
   it("reads the conversation messages of the account history endpoint", async () => {
     // The ChatGPT conversation list endpoint answers with a `messages` array,
     // not with the `mapping` tree of the single-conversation endpoint. A
