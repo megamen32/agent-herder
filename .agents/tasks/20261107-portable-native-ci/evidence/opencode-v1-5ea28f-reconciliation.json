@@ -1,0 +1,106 @@
+{
+  "stage": "candidate",
+  "status": "UNKNOWN_POST_EFFECT",
+  "phase": "post_effect_reconciled",
+  "result": "STOPPED_AFTER_CREATE_RECEIPT_READER_MISMATCH",
+  "run_id": "10d8b003-d44d-4bd5-9c76-86a5a81cc82e",
+  "instance_ref": "opencode-v1-5ea28f-ccc78c838ca9",
+  "source_commit": "5ea28f51838fcfc3230006a8709090f08009a47f",
+  "manifest_sha256": "a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998",
+  "artifact_identity": {
+    "bootstrap_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+    "core_sha256": "71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569",
+    "identity_status": "complete",
+    "manifest_path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ea28f51838f/manifest.json",
+    "manifest_sha256": "a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998",
+    "manifest_visible": true,
+    "node_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "node_version": "v22.22.2",
+    "opencode_sha256": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+    "opencode_version": "opencode v2.2.4",
+    "runner_sha256": "ed0821e07e3949d7bfe58cdc0fb7be759464f203cea32f7b3e95ceb862e23155",
+    "source_commit": "5ea28f51838fcfc3230006a8709090f08009a47f",
+    "stage": "candidate"
+  },
+  "runner_protocol": "v2",
+  "api_family": "v2",
+  "fixture_model": "http://127.0.0.1:33919",
+  "network_gate": "loopback-only fake model; no external provider path observed",
+  "model_requests_before": 0,
+  "model_requests_after": 1,
+  "request_keys": [
+    "ahap-opencode-create-4f5f9e4d7a554cb48d77b499e9b7cb91",
+    "ahap-opencode-deliver-3f17f28a902e49878debfe062f243c7f"
+  ],
+  "inputs": [
+    "AHAP_OPENCODE_FIXTURE_1_c4d964ff58c54f2b877fc82b67599731",
+    "AHAP_OPENCODE_FIXTURE_2_8ad9bbf1d6e34b7ab3688f3b8b747c2c"
+  ],
+  "native_session_id": "ses_e47f2e834ffek767rBfxCC8Lf2",
+  "native_reconciliation": {
+    "user_id": "msg_1b80d1952001VKROlOzFCkBRaK",
+    "task_receipt": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1b80d1952001VKROlOzFCkBRaK\"}",
+    "assistant_id": "msg_1b80d1996001Ij3clu55Upo4Y0",
+    "assistant_finish": "stop",
+    "trailing_idle_id": "msg_1b80d19eb0015J4BESMRVi6Jd1",
+    "observed_messages": [
+      {
+        "id": "msg_1b80d1952001VKROlOzFCkBRaK",
+        "role": null,
+        "finish": null,
+        "text": ""
+      },
+      {
+        "id": "msg_1b80d1996001Ij3clu55Upo4Y0",
+        "role": null,
+        "finish": "stop",
+        "text": ""
+      },
+      {
+        "id": "msg_1b80d19eb0015J4BESMRVi6Jd1",
+        "role": null,
+        "finish": null,
+        "text": ""
+      }
+    ]
+  },
+  "authority_reconciliation": {
+    "intent": {
+      "task_id": "mcp-create-lineage:2a699377a6b2e4b4fb46fbe1f960649264203119561a7bb5509d2aaf3c4d5361",
+      "request_key": "ahap-opencode-create-4f5f9e4d7a554cb48d77b499e9b7cb91",
+      "state": "admitted",
+      "native_receipt": "{\"instance\":{\"instance_id\":\"opencode-v1-5ea28f-ccc78c838ca9\",\"node\":\"isolated-native-node\"},\"native_session_id\":\"ses_e47f2e834ffek767rBfxCC8Lf2\",\"parent_ref\":null,\"request_key\":\"ahap-opencode-create-4f5f9e4d7a554cb48d77b499e9b7cb91\",\"session_ref\":\"session:71e8afae0f6124736ba6b0d298d39db1\",\"version\":1}"
+    },
+    "task": {
+      "status": "prepared",
+      "result_json": null
+    },
+    "finding": "intent admitted while task row remained prepared/result_json null; retained native evidence confirms effect"
+  },
+  "scenarios": {
+    "create_initial_completion": "UNKNOWN_POST_EFFECT (native user and completed assistant confirmed; outer task receipt state inconsistent)",
+    "projects": "INCOMPLETE (complete=false; empty projects; limitation: No native project observed for authorized registered corpus)",
+    "second_same_session_deliver": "NOT_RUN",
+    "export_native": "NOT_RUN",
+    "export_common": "NOT_RUN",
+    "search_marker_coverage": "NOT_RUN",
+    "restart_no_resend": "NOT_RUN"
+  },
+  "no_replay": true,
+  "cleanup": {
+    "launcher_cleanup": "after_stand_exit",
+    "opencode_server_stopped": true
+  },
+  "retained_root": "/tmp/herder-native-model-opencode-v1-5ea28f-ccc78c838ca9",
+  "retained_evidence_sha256": "3c3c64d73eee681c7d1f02f154cd5d1e88d246528fdcad3a17437a46abc56da7",
+  "offline_fix": {
+    "commit": "38bd0ea0a5c9953a0a7a61aad1dc77fa44127251",
+    "published": "origin/main",
+    "owned_files": [
+      "tests/native/ahap_opencode_stand.py",
+      "tests/native/test_ahap_opencode_stand.py"
+    ],
+    "offline_regression": "27 tests GREEN (per run proof; no tests rerun in this reconciliation turn)"
+  },
+  "next": "Preserve this post-effect receipt and authority/native state. Do not replay either request key or perform another native mutation. Owner decision required before any further mutation; remaining consumer checks were not run."
+}

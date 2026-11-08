@@ -1,0 +1,125 @@
+{
+  "report_schema": "ahap-opencode-v1",
+  "stage": "candidate",
+  "status": "PARTIAL",
+  "result": "All requested delivery/read/export/search/restart checks passed; projects remains incomplete.",
+  "manifest": {
+    "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-814759a9248d/manifest.json",
+    "sha256": "83f5593155f11f7216dd6f36d81190025daef01fc73574fdda30b0e405977385",
+    "source_commit": "814759a9248df707f974168f8fb57ba56280ec6b",
+    "reader_fix": "38bd0ea0a5c9953a0a7a61aad1dc77fa44127251",
+    "identity_digests_match": 5
+  },
+  "runtime": {
+    "core": "3d21813f041f2388ed4f060d7df94f880ecbb6532e7e99da2a305aa59c3539ae",
+    "bootstrap": "c6d5f2bc6844948674e02901821c8c56390efb706202771446bc4a68d6fb2fd7",
+    "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "adapter": "af867ab7464b4ff75aee3f57a0fa3ef5da5d7947cdd7e8a6822787a8ffd00d45",
+    "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+    "node_version": "v22.22.2",
+    "opencode_version": "opencode v2.2.4",
+    "runner_protocol": "v2",
+    "native_api_family": "v2"
+  },
+  "preflight": {
+    "run_id": "e88d20c3-482a-437b-9304-e8f2711dcbb5",
+    "instance": "opencode-814759-preflight-6cb41a",
+    "mutations": 0,
+    "model_requests": 0,
+    "mcp_ready": true,
+    "negative_guard": "PASS"
+  },
+  "acceptance": {
+    "run_id": "7c7eb80b-0b78-46b5-a219-68bd98327ed5",
+    "instance": "opencode-814759-final3-7cf814d2",
+    "network": "isolated network namespace, loopback fake model only",
+    "model_requests_delta": 2,
+    "request_keys": [
+      "ahap-opencode-create-ba2ae486eac7452dab19a14dc54573a4",
+      "ahap-opencode-deliver-03a8ed68795045f8910d0e3c96bf7840"
+    ],
+    "task_ids": [
+      "create-operation:a758879654d37792482395f52c5b19e3",
+      "mcp-delivery-task:de6ab1bd138600f13804ced99930aa86a30093247ec0f4edb220a04d5f257d0f"
+    ],
+    "session_ref": "session:4337f8078e2011b3305dc0d5bf31ba4a",
+    "native_session_id": "ses_e47093569ffehWbRmU9JVXGiET",
+    "inputs": [
+      "AHAP_OPENCODE_FIXTURE_1_b8fcc309c0094faf8d76af08338496b2",
+      "AHAP_OPENCODE_FIXTURE_2_cf281c655cf04c61926b2a2822a380d6"
+    ],
+    "user_ids": [
+      "msg_1b8f6cbc000108rc7o9jo7H8pN",
+      "msg_1b8f6cea0001QXlU0YjCHKHAKw"
+    ],
+    "assistant_ids": [
+      "msg_1b8f6cbfa001ape0d3iRnm3kei",
+      "msg_1b8f6cebd00171Vk79S2KTmVF6"
+    ],
+    "checks": {
+      "create_and_read": "PASS",
+      "same_session_second_deliver_and_read": "PASS",
+      "native_export": "PASS",
+      "common_export": "UNSUPPORTED_EXPECTED_EFFECT_NONE",
+      "search": "PASS_COMPLETE",
+      "core_restart_readback_without_resend": "PASS",
+      "projects": "INCOMPLETE"
+    },
+    "export": {
+      "complete": true,
+      "sha256": "f19b9dc3a8d8f4dbcc6e0ccfff1de70bd7de99348835bf1edc32e993b1701c82",
+      "length": 1507,
+      "source": {
+        "format": "json",
+        "kind": "native-api",
+        "location": "http://127.0.0.1:32961/api/session/ses_e47093569ffehWbRmU9JVXGiET/message"
+      },
+      "correlated": true
+    },
+    "common_export_receipt": {
+      "code": "unsupported_format",
+      "effect": "none"
+    },
+    "search": {
+      "coverage": "complete",
+      "marker_found": true,
+      "source": "existing_session_search_index"
+    },
+    "projects": {
+      "complete": false,
+      "count": 0,
+      "scope": "authorized_registered_sessions",
+      "limitations": [
+        "No native project observed for the authorized registered corpus."
+      ]
+    },
+    "restart": {
+      "core_reopened": true,
+      "model_requests_before": 2,
+      "model_requests_after": 2,
+      "resend_count": 0,
+      "export_digest_unchanged": true,
+      "search_coverage_preserved": true
+    },
+    "cleanup": {
+      "opencode_stopped": true,
+      "fixture_removed": true
+    }
+  },
+  "offline_regression": {
+    "command": "PYTHONPATH=tests/native python3 -m unittest test_ahap_opencode_stand",
+    "result": "31 tests passed",
+    "diff_check": "passed",
+    "fixes": [
+      "Decode versioned Task receipt IDs before public message readback comparison",
+      "Correlate complete native export JSON rows with decoded IDs and completed replies",
+      "Recognize typed unsupported_format/effect=none Common export",
+      "Do not call projects PASS unless complete and attributable"
+    ],
+    "owned_file_sha256": {
+      "tests/native/ahap_opencode_stand.py": "d2291e51ad602051f37aa1dee6e5e1eac20785ed7f517714542d5d6de18b7ca7",
+      "tests/native/test_ahap_opencode_stand.py": "9a83e0b7ed59be08d89905196f647a3d62ab01dd99ef18b3f2b32e9d215c3a9d"
+    }
+  },
+  "next": "Core-owned projects discovery must supply complete attributable data or explicit partial/unsupported status before full acceptance."
+}
