@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,8 @@ async function fixture(run: (path: string, calls: unknown[]) => Promise<void>) {
   const path = join(dir, 'config.json');
   const tokenPath = join(dir, 'bearer');
   const config = { endpoint: MCP_ENDPOINT, bearer_file: tokenPath, children: [
-    { session_id: input.session_id, cwd: input.cwd, child_ref: 'child-ref', rule_ref: 'rule-ref' },
+    { session_id: input.session_id, child_native_id: input.session_id, parent_native_id: 'native-parent-1',
+      cwd: input.cwd, child_ref: 'child-ref', rule_ref: 'rule-ref' },
   ] };
   await writeFile(path, JSON.stringify(config), { mode: 0o600 });
   await writeFile(tokenPath, 'test-token\n', { mode: 0o600 });
@@ -25,7 +26,8 @@ describe('v1 Codex completion hook', () => {
       await reconcileCompletion(input, { configPath, fetchImpl: async (url, init) => {
         calls.push({ url, init });
         const req = JSON.parse(String(init?.body));
-        const result = req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
           : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] }
             : {};
         const sse = req.method === 'tools/list';
@@ -69,6 +71,10 @@ describe('v1 Codex completion hook', () => {
       await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
       await reconcileCompletion(input, { configPath, fetchImpl });
       expect(calls).toHaveLength(0);
+      config.children = [{ ...config.children[0], child_native_id: 'different-native-child' }];
+      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
+      await reconcileCompletion(input, { configPath, fetchImpl });
+      expect(calls).toHaveLength(0);
     });
   });
 
@@ -77,7 +83,8 @@ describe('v1 Codex completion hook', () => {
     await fixture(async (configPath, calls) => {
       await reconcileCompletion(exact, { configPath, fetchImpl: async (_url, init) => {
         const req = JSON.parse(String(init?.body)); calls.push(req);
-        const result = req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
           : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] }
             : {};
         return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
@@ -104,10 +111,70 @@ describe('v1 Codex completion hook', () => {
         const result = req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
           : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'list' } } }] } }] }
             : {};
-        return new Response(JSON.stringify({ jsonrpc: '2.0', id: req.id, result }), { status: 200,
-          headers: { 'content-type': 'application/json' } });
+        return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
+          { status: req.method === 'notifications/initialized' ? 204 : 200, headers: { 'content-type': 'application/json' } });
       } });
       expect(calls).toEqual(['initialize', 'notifications/initialized', 'tools/list']);
+    });
+  });
+
+  it('defers retries only for explicit effect-none completion_unconfirmed, then reconciles the same native turn', async () => {
+    await fixture(async (configPath, calls) => {
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      config.completion_wait_ms = 500; config.completion_poll_ms = 100;
+      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
+      let reconcileCalls = 0;
+      await reconcileCompletion(input, { configPath, fetchImpl: async (_url, init) => {
+        const req = JSON.parse(String(init?.body)); calls.push(req.method);
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+          : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] }
+            : (++reconcileCalls === 1 ? { isError: true, structuredContent: { code: 'completion_unconfirmed', effect: 'none' } }
+              : { structuredContent: { event_id: input.turn_id, admission: 'admitted' } });
+        return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
+          { status: req.method === 'notifications/initialized' ? 204 : 200, headers: { 'content-type': 'application/json' } });
+      } });
+      expect(reconcileCalls).toBe(2);
+      expect(calls).toEqual(['initialize', 'notifications/initialized', 'tools/list', 'tools/call', 'tools/call']);
+    });
+  });
+
+  it('does not retry source-unavailable, arbitrary errors, or transport-unknown results', async () => {
+    await fixture(async (configPath, calls) => {
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      config.completion_wait_ms = 500; config.completion_poll_ms = 100;
+      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
+      let callsToTool = 0;
+      await reconcileCompletion(input, { configPath, fetchImpl: async (_url, init) => {
+        const req = JSON.parse(String(init?.body)); calls.push(req.method);
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+          : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] }
+            : (++callsToTool, { isError: true, structuredContent: { code: 'completion_source_unavailable', effect: 'none' } });
+        return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
+          { status: req.method === 'notifications/initialized' ? 204 : 200, headers: { 'content-type': 'application/json' } });
+      } });
+      expect(callsToTool).toBe(1);
+      expect(calls).toHaveLength(4);
+    });
+  });
+
+  it('does not retry completion_unconfirmed unless Core explicitly says effect none', async () => {
+    await fixture(async (configPath, calls) => {
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      config.completion_wait_ms = 500; config.completion_poll_ms = 100;
+      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
+      let toolCalls = 0;
+      await reconcileCompletion(input, { configPath, fetchImpl: async (_url, init) => {
+        const req = JSON.parse(String(init?.body)); calls.push(req.method);
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+            : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] }
+              : (++toolCalls, { isError: true, structuredContent: { code: 'completion_unconfirmed' } });
+        return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
+          { status: req.method === 'notifications/initialized' ? 204 : 200, headers: { 'content-type': 'application/json' } });
+      } });
+      expect(toolCalls).toBe(1);
     });
   });
 
@@ -121,6 +188,43 @@ describe('v1 Codex completion hook', () => {
       await chmod(config.bearer_file, 0o644);
       await reconcileCompletion(input, { configPath, fetchImpl: async () => { calls.push(1); return new Response(); } });
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  it('writes sanitized private receipts only for exact mapped session identities', async () => {
+    await fixture(async (configPath, calls) => {
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      const receiptDir = `${configPath}.receipts`;
+      Object.assign(config, { receipt_dir: receiptDir });
+      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 }); await chmod(configPath, 0o600);
+      await reconcileCompletion({ ...input, hook_event_name: 'Stop', thread_id: 'untrusted-parent-field',
+        last_assistant_message: 'must not be captured', transcript_path: '/private/transcript', auth_token: 'secret-token' },
+      { configPath, fetchImpl: async (_url, init) => {
+        const req = JSON.parse(String(init?.body)); calls.push(req.method);
+        const result = req.method === 'notifications/initialized' ? null
+          : req.method === 'initialize' ? { protocolVersion: '2025-03-26', serverInfo: { name: 'fixture', version: '1' } }
+          : req.method === 'tools/list' ? { tools: [{ name: 'automation', inputSchema: { oneOf: [{ properties: { action: { const: 'reconcile' } } }] } }] } : {};
+        return new Response(req.method === 'notifications/initialized' ? null : JSON.stringify({ jsonrpc: '2.0', id: req.id, result }),
+          { status: req.method === 'notifications/initialized' ? 204 : 200 });
+      } });
+      expect(calls).toHaveLength(4);
+      const files = await readdir(receiptDir);
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatch(/^[a-f0-9]{64}\.json$/);
+      const receiptPath = join(receiptDir, files[0]);
+      const receipt = await readFile(receiptPath, 'utf8');
+      expect(receipt).toContain('native-child-1');
+      expect(receipt).toContain('turn-7');
+      expect(receipt).toContain('hook_event_name');
+      expect(receipt).not.toContain('untrusted-parent-field');
+      expect(receipt).not.toContain('must not be captured');
+      expect(receipt).not.toContain('/private/transcript');
+      expect(receipt).not.toContain('secret-token');
+      expect(Buffer.byteLength(receipt)).toBeLessThanOrEqual(4096);
+      expect((await stat(receiptDir)).mode & 0o777).toBe(0o700);
+      expect((await stat(receiptPath)).mode & 0o777).toBe(0o600);
+      await reconcileCompletion({ ...input, session_id: 'foreign-session' }, { configPath, fetchImpl: async () => { calls.push('foreign'); return new Response(); } });
+      expect(await readdir(receiptDir)).toHaveLength(1);
     });
   });
 });
