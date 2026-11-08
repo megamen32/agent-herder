@@ -46,8 +46,8 @@ pub struct OwnerProfile {
 /// identity and HOME variables are set by the composition, never this map.
 fn allowed_adapter_env(kind: &str, name: &str) -> bool {
     match kind {
-        "opencode" => matches!(name, "AHAP_OPENCODE_PASSWORD" | "OPENCODE_SERVER_USERNAME"),
-        "codex" => matches!(name, "AHAP_CODEX_SOCKET" | "AHAP_CODEX_BIN" | "AHAP_CODEX_CWD" | "CODEX_HOME" | "AGENT_HERDER_WORKLOAD_ISOLATION"),
+        "opencode" => matches!(name, "AHAP_OPENCODE_PASSWORD" | "AHAP_OPENCODE_MODEL" | "OPENCODE_SERVER_USERNAME"),
+        "codex" => matches!(name, "AHAP_CODEX_SOCKET" | "AHAP_CODEX_BIN" | "AHAP_CODEX_CWD" | "AHAP_CODEX_MODEL" | "CODEX_HOME" | "AGENT_HERDER_WORKLOAD_ISOLATION"),
         "zcode" => matches!(name, "AHAP_ZCODE_SERVER_NODE" | "AHAP_ZCODE_SERVER_ENTRY" | "AHAP_ZCODE_CWD" | "AHAP_ZCODE_TRANSPORT"),
         "chatgpt" | "zai" => matches!(name,
             "AHAP_BROWSER_TRANSPORT" | "AHAP_BROWSER_PAGE_ID" | "AHAP_BROWSER_ACCOUNT_SCOPE"

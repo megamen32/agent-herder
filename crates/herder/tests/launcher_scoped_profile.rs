@@ -735,7 +735,7 @@ fn trusted_owner_profiles_bind_all_v1_types_to_legacy_runners() {
             "kind":kind,"principal":"owner","node":"node","instance":format!("{kind}-one"),
             "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
             "ahap_base_url":if kind=="opencode" {Some("http://127.0.0.1:3456")}else{None},
-            "ahap_env":if kind=="zcode" {serde_json::json!({"AHAP_ZCODE_TRANSPORT":"official-server"})} else {serde_json::json!({})},"code_home":f.root,"cwd":f.root}});
+            "ahap_env":match kind { "zcode" => serde_json::json!({"AHAP_ZCODE_TRANSPORT":"official-server"}), "codex" => serde_json::json!({"AHAP_CODEX_MODEL":"gpt-6-luna"}), "opencode" => serde_json::json!({"AHAP_OPENCODE_MODEL":"minimax-coding-plan/MiniMax-M3.1-Flash"}), _ => serde_json::json!({}) },"code_home":f.root,"cwd":f.root}});
         fs::write(&f.profile, profile.to_string()).unwrap();
         let opened = scoped_profile::open_owner(&f.profile);
         assert!(opened.is_ok(), "{kind} must accept its trusted TypeScript runner");
