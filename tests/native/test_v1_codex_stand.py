@@ -110,6 +110,15 @@ class ManifestTest(unittest.TestCase):
 
 
 class PublicEvidenceTest(unittest.TestCase):
+    def test_success_receipt_contains_task_and_readback_evidence(self):
+        evidence = {'result':'PASS', 'run_id':'r', 'checks':{'create':'PASS'},
+                    'task_id':'task1', 'second_task_id':'task2', 'first_receipt':{'native_receipt_id':'turn1'},
+                    'second_receipt':{'native_receipt_id':'turn2'}, 'public_read':{'messages':['first','second']}}
+        result = stand.success_receipt(evidence)
+        self.assertEqual(result['task_id'], 'task1')
+        self.assertEqual(result['second_receipt']['native_receipt_id'], 'turn2')
+        self.assertEqual(result['public_read'], evidence['public_read'])
+
     def test_task_receipt_must_be_unique_confirmed_and_terminal(self):
         task = {'status':'completed', 'result':{'structuredContent':{'deliver':{'outcome':'confirmed','native_receipt_id':'m1'}}}}
         self.assertEqual(stand.confirmed_receipt(task)['native_receipt_id'], 'm1')

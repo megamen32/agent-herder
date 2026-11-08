@@ -244,6 +244,12 @@ def wait_readback(core, session, markers, receipts, timeout=75):
         time.sleep(.5)
 
 
+def success_receipt(evidence):
+    if not isinstance(evidence, dict) or evidence.get('result') != 'PASS':
+        raise ValueError('successful evidence required')
+    return dict(evidence)
+
+
 def main():
     parser = argparse.ArgumentParser()
     for key in ('core', 'bootstrap', 'node', 'adapter', 'codex', 'manifest', 'manifest-sha256', 'codex-sha256'):
@@ -417,7 +423,7 @@ def main():
         evidence.update(phase='completed', result='PASS', reopen_read=after_wire,
                         requests_before_restart=before_restart, requests_after_restart=after_restart)
         persist_evidence(evidence_path, evidence)
-        print(json.dumps({'result':'PASS', 'run_id':run_id, 'checks':evidence['checks'], **identity}, sort_keys=True), flush=True)
+        print(json.dumps(success_receipt(evidence), sort_keys=True), flush=True)
     finally:
         core.close()
         if native is not None and native.poll() is None:
