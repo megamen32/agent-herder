@@ -43,3 +43,34 @@ describe("browser native admission correlation", () => {
       expect(f.sent()).toBe(1);
     });
 });
+
+describe("browser session activity", () => {
+  it("settles a finished chat to idle before the follow-up delivery", async () => {
+    let refreshed = 0;
+    let working = true;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [{ id: "draft:c1", title: "Chat", unread: false, working,
+        updatedAt: "2026-11-08T06:00:00Z" }],
+      getKnownChat: () => ({ id: "draft:c1", title: "Chat", unread: false, working,
+        updatedAt: "2026-11-08T06:00:00Z" }),
+      refreshTurnState: async () => { refreshed++; working = false; return true; },
+      sendMessage: async () => ({}),
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const session = await adapter.getSession("draft:c1");
+    expect(refreshed).toBe(1);
+    expect(session?.status).toBe("idle");
+  });
+
+  it("keeps the running status when the provider cannot settle the turn", async () => {
+    const driver: BrowserChatDriver = {
+      listChats: async () => [{ id: "c1", title: "Chat", unread: false, working: true,
+        updatedAt: "2026-11-08T06:00:00Z" }],
+      refreshTurnState: async () => false,
+      sendMessage: async () => ({}),
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const session = await adapter.getSession("c1");
+    expect(session?.status).toBe("running");
+  });
+});

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { createNamedSession } from "../src/named-session.js";
-import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
+import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe, chatGptNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -675,6 +675,57 @@ describe("first message composer write", () => {
 });
 
 describe("chatgpt first message route proof", () => {
+  it("reads the conversation messages of the account history endpoint", async () => {
+    // The ChatGPT conversation list endpoint answers with a `messages` array,
+    // not with the `mapping` tree of the single-conversation endpoint. A
+    // proof that reads `mapping` there can never see the submitted message.
+    const requested: string[] = [];
+    const fetch = async (url: string) => {
+      requested.push(url);
+      if (url.includes("/api/auth/session")) {
+        return { ok: true, json: async () => ({ accessToken: "token", account: { id: "account-1" } }) };
+      }
+      if (url.includes("/backend-api/conversations?")) {
+        return { ok: true, json: async () => ({ items: [{ id: GPT_NATIVE }] }) };
+      }
+      return { ok: true, json: async () => ({
+        conversation_id: GPT_NATIVE,
+        messages: [
+          { id: "m1", author: { role: "user" }, content: { parts: ["User prompt"] } },
+          { id: "m2", author: { role: "assistant" }, content: { parts: ["User prompt"] } },
+        ],
+      }) };
+    };
+    const fn = runInNewContext("(" + chatGptNewChatMessageProbe("User prompt", ACCOUNT) + ")", {
+      location: { origin: "https://chatgpt.com" },
+      fetch, JSON, encodeURIComponent, TextEncoder, Uint8Array, Date,
+      crypto: { subtle: { digest: async () => new Uint8Array(32).fill(0xaa).buffer } },
+    }) as () => Promise<{ verified?: boolean; id?: string; reason?: string }>;
+    expect(await fn()).toMatchObject({ verified: true, id: GPT_NATIVE });
+    expect(requested.some(url => url.includes("/backend-api/conversations/"))).toBe(true);
+  });
+
+  it("does not accept a conversation whose user message is not the submitted one", async () => {
+    const fetch = async (url: string) => {
+      if (url.includes("/api/auth/session")) {
+        return { ok: true, json: async () => ({ accessToken: "token", account: { id: "account-1" } }) };
+      }
+      if (url.includes("/backend-api/conversations?")) {
+        return { ok: true, json: async () => ({ items: [{ id: GPT_NATIVE }] }) };
+      }
+      return { ok: true, json: async () => ({
+        conversation_id: GPT_NATIVE,
+        messages: [{ id: "m1", author: { role: "user" }, content: { parts: ["another prompt"] } }],
+      }) };
+    };
+    const fn = runInNewContext("(" + chatGptNewChatMessageProbe("User prompt", ACCOUNT) + ")", {
+      location: { origin: "https://chatgpt.com" },
+      fetch, JSON, encodeURIComponent, TextEncoder, Uint8Array, Date,
+      crypto: { subtle: { digest: async () => new Uint8Array(32).fill(0xaa).buffer } },
+    }) as () => Promise<{ verified?: boolean; reason?: string }>;
+    expect(await fn()).toMatchObject({ verified: false });
+  });
+
   it("confirms the native route from the message history when the tab stays on the root", async () => {
     const tools: ChromePageTools = { call: async (name, args = {}) => {
       if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";

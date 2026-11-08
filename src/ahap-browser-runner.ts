@@ -271,11 +271,13 @@ export function makeConfiguredAdapter(
       const originPattern = new RegExp(`\(https://${origin}(?:/[^)]*)?\)`);
       const candidates = result.split("\n").filter(line => originPattern.test(line));
       if (!candidates.length) return "";
-      const marked = candidates.find(line => isOwnedTabUrl(line.match(originPattern)![0]!.slice(1, -1), harness));
-      if (marked) return marked;
-      const hinted = pageId === undefined ? undefined
-        : candidates.find(line => new RegExp(`^\s*${pageId}\s*:`).test(line));
-      return hinted ?? candidates[0]!;
+      // The driver owns exactly one tab per provider and finds it by its own
+      // marker. Hiding the other tabs of the same site here would make that
+      // ownership unverifiable, so the marked tab comes first and the rest
+      // stay visible for the driver to probe read-only.
+      const marked = candidates.filter(line => isOwnedTabUrl(line.match(originPattern)![0]!.slice(1, -1), harness));
+      const rest = candidates.filter(line => !marked.includes(line));
+      return [...marked, ...rest].join("\n");
     },
   };
   const driver = harness === "chatgpt"

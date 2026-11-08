@@ -336,6 +336,21 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async getSession(id: string): Promise<AgentSession | null> {
     const native = this.nativeId(id);
+    // A chat whose model answered must not stay "running" forever: the core
+    // refuses a follow-up delivery to a busy chat, so every later message to
+    // the same session would be rejected as if the turn were still active.
+    // One bounded read of the provider's own state settles the real status.
+    const observedBusy = this.inventory.get(native)?.working
+      ?? this.driver.getKnownChat?.(native)?.working;
+    if (observedBusy) {
+      try {
+        if (await this.refreshSession(native)) {
+          // The refreshed state replaces the stale one in the inventory too.
+          const settled = this.driver.getKnownChat?.(native);
+          if (settled) this.inventory.set(native, settled);
+        }
+      } catch { /* the cached state stands */ }
+    }
     // Never navigate the user's browser merely to display history metadata.
     const observed = this.inventory.get(native);
     if (observed) return this.withCallerId(this.toSession(observed), id);

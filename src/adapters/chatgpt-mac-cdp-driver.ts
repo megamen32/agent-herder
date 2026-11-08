@@ -5,7 +5,7 @@ import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatg
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
-import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
+import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 import { chatgptPassiveHistoryScript } from "./chatgpt-passive-history.js";
 import { ChatGptBackgroundBudget } from "./chatgpt-background-budget.js";
 import { ChatGptBackgroundNavigator } from "./chatgpt-background-navigator.js";
@@ -418,8 +418,26 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         this.closedOwnedTabs.add(duplicate.id);
         await this.tools.call("close_page", { pageId: duplicate.id }).catch(() => undefined);
       }
+      // Claim the tab in the page itself: the site drops the URL marker on
+      // its own navigation, and only the page marker survives that.
+      await claimOwnedTab(this.tools, "chatgpt", owned.id);
       this.ownedTabPath = chatGptTabPath(owned.url);
       return owned;
+    }
+    // The site rewrites the URL of its own navigation, so the marker of our
+    // tab can be gone while the tab itself is still ours. The page keeps the
+    // ownership marker, so an already-owned tab is found there instead of a
+    // second one being opened. A driver that owned no tab yet still adopts
+    // one existing tab on its first use.
+    if (this.ownedTabPath) {
+      // Only a plain chat route or the root can be our own tab; a workspace
+      // dashboard such as /dots/… belongs to the human and is never probed.
+      const claimed = await resolveOwnedTab(this.tools, "chatgpt",
+        pages.filter(page => page.conversation || new URL(page.url).pathname === "/"));
+      if (claimed) {
+        this.ownedTabPath = chatGptTabPath(claimed.url);
+        return claimed;
+      }
     }
     if (this.ownedTabPath) {
       const owned = pages.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
@@ -447,6 +465,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
     const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt")) ?? pickChatGptPage(pages);
+    // Claim the replacement in the page itself: its URL marker is dropped by
+    // the site's own navigation, and only the page marker survives that.
+    if (isOwnedTabUrl(opened.url, "chatgpt")) await claimOwnedTab(this.tools, "chatgpt", opened.id);
     this.ownedTabPath = chatGptTabPath(opened.url);
     return opened;
   }
@@ -770,6 +791,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
       const draft = this.drafts.get(id);
       if (draft) {
+        // A draft that already delivered its first message has a native
+        // route. Its running flag comes from the moment of the delivery and
+        // would otherwise stay true forever, so every later delivery to the
+        // same chat is refused as if the model were still answering. One
+        // bounded read of the provider's own history settles the real state.
+        if (draft.remoteId) await this.refreshTurnState(draft.remoteId).catch(() => undefined);
         const result = this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
         await this.verifyCurrentPinnedAccountScope();
         return result;
@@ -816,6 +843,27 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       agreed = messages;
     }
     return freshVisit ? agreed : null;
+  }
+
+  /** One bounded re-read of the turn state of one chat from the provider's
+   * own history. The newest assistant message is the proof that the turn of
+   * this chat is over: without it the chat stays marked as running and every
+   * later delivery is refused as if the model were still answering. The read
+   * is authenticated and read-only; it never navigates or sends. */
+  async refreshTurnState(chatId: string): Promise<boolean> {
+    let nativeId = chatId;
+    if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(nativeId)) return false;
+    let messages: SessionMessageView[] | null;
+    try { messages = await this.getMessages(nativeId); }
+    catch { return false; }
+    if (!Array.isArray(messages) || !messages.length) return false;
+    const known = this.cache.get(nativeId);
+    if (known && known.working && messages[messages.length - 1]!.role === "assistant") {
+      this.cache.set(nativeId, { ...known, working: false, stopVisible: false });
+      this.recentlyGenerating.delete(nativeId);
+    }
+    return true;
   }
 
   async visitBackgroundChat(id: string): Promise<void> {

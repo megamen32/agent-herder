@@ -4,7 +4,7 @@ import { chatgptConversationChunkScript, chatgptConversationCleanupScript } from
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
-import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
+import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 import type { SessionMessageView } from "../types/index.js";
 import { ZAI_LIST_API_SCRIPT, ZAI_LIST_API_PASSIVE_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
@@ -145,6 +145,15 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     // page number: a gateway restart renumbers everything.
     const marked = pages.find(page => isOwnedTabUrl(page.url, "zai"));
     if (marked) { this.ownedTabPath = zaiTabPath(marked.url); return marked; }
+    // The site rewrites the URL of its own navigation, so the marker of our
+    // tab can be gone while the tab itself is still ours. The page keeps the
+    // ownership marker, so an already-owned tab is found there instead of a
+    // second one being opened. A driver that owned no tab yet still adopts
+    // one existing tab on its first use.
+    if (this.ownedTabPath) {
+      const claimed = await resolveOwnedTab(this.tools, "zai", pages);
+      if (claimed) { this.ownedTabPath = zaiTabPath(claimed.url); return claimed; }
+    }
     if (this.ownedTabPath) {
       const owned = pages.find(page => zaiTabPath(page.url) === this.ownedTabPath);
       if (owned) return owned;
@@ -171,6 +180,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const pages = parseZaiPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ZAI tab open in Mac mini Chrome and auto-open failed");
     const opened = pages.find(page => isOwnedTabUrl(page.url, "zai")) ?? pickZaiPage(pages);
+    if (isOwnedTabUrl(opened.url, "zai")) await claimOwnedTab(this.tools, "zai", opened.id);
     this.ownedTabPath = zaiTabPath(opened.url);
     return opened;
   }

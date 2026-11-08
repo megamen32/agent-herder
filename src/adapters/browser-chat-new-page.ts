@@ -1,6 +1,6 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
-import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
+import { isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -41,6 +41,14 @@ function pages(text:string): Array<{id:number;url:string}> {
     try { return [{id:Number(match[1]),url:new URL(match[2]!).toString()}]; }
     catch { return []; }
   });
+}
+
+/** Return our own tab to the blank chat route of the provider. Only the tab
+ * this provider owns is touched; a foreign tab is never navigated. */
+async function navigateToRoot(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<void> {
+  try {
+    await tools.call("navigate_page",{pageId,type:"url",url:SITE_ORIGIN[site]+"/"});
+  } catch { /* the blank state is verified by the caller */ }
 }
 
 /** One NEW background tab, identified by exact page-ID set difference.
@@ -92,7 +100,8 @@ export async function openOwnedBlankChatPage(
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
   // One tab per provider: the marked tab that the driver already owns is
   // reused, so a first message never opens a second tab.
-  const owned=pages(await tools.call("list_pages")).find(p=>isOwnedTabUrl(p.url,site));
+  const listing=pages(await tools.call("list_pages"));
+  const owned=listing.find(p=>isOwnedTabUrl(p.url,site));
   if (owned) {
     // Our own tab may still hold a composer value from an earlier run. Clear
     // it here so the first message starts from a clean composer; a draft the
@@ -114,6 +123,30 @@ export async function openOwnedBlankChatPage(
       await new Promise(resolve=>setTimeout(resolve,300));
     }
     throw new Error(site+" owned tab composer could not be cleared; no message submitted");
+  }
+  // Our own tab may have navigated into a conversation and lost its URL
+  // marker. It is still ours: the page keeps the ownership marker, and such
+  // a tab is reused instead of opening another one.
+  const claimed=await resolveOwnedTab(tools,site,listing);
+  if (claimed) {
+    await navigateToRoot(tools,claimed.id,site);
+    await clearComposer(tools,claimed.id,site);
+    for(let attempt=0;attempt<7;attempt++){
+      try{
+        const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
+          await tools.call("evaluate_script",{pageId:claimed.id,function:`() => {
+            const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+              ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+              :'textarea[placeholder="Send a Message"]')});
+            return {origin:location.origin,path:location.pathname,
+              ready:!!editor&&editor.getClientRects().length>0,
+              empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+          }`}));
+        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return claimed.id;
+      }catch{ /* retried below */ }
+      await new Promise(resolve=>setTimeout(resolve,300));
+    }
+    throw new Error(site+" owned tab could not be returned to a blank chat; no message submitted");
   }
   void before;
   try { await tools.call("new_page",{url:ownedTabUrl(origin,site),background:true,timeout:12_000}); }
@@ -223,16 +256,14 @@ export function chatGptNewChatMessageProbe(text:string,scope?:string):string {
       if(!read.ok)continue;
       const conversation=await read.json();
       if(conversation.conversation_id!==item.id)continue;
-      const mapping=conversation.mapping||{};
-      const users=[];
-      for(const key of Object.keys(mapping)){
-        const node=mapping[key];
-        const message=node&&node.message;
-        if(!message||!message.author||message.author.role!=='user')continue;
-        const parts=(message.content&&message.content.parts)||[];
-        const value=parts.map(p=>typeof p==='string'?p:'').join('').trim();
-        if(value)users.push(value);
-      }
+      // The conversation list endpoint answers with a messages array; the
+      // mapping tree belongs to the single-conversation endpoint. Reading
+      // the wrong field here hides the submitted message forever.
+      const rows=Array.isArray(conversation.messages)?conversation.messages:[];
+      const users=rows.filter(message=>message&&message.author&&message.author.role==='user')
+        .map(message=>((message.content&&message.content.parts)||[])
+          .map(part=>typeof part==='string'?part:'').join('').trim())
+        .filter(value=>value.length>0);
       if(users.length===1&&users[0]===text)return {verified:true,id:item.id};
     }
     return {verified:false,reason:'history_unavailable'};
