@@ -1,5 +1,23 @@
 # Current candidate 805fd477final
 
+# Current candidate 78e747befinal
+
+Published source 78e747bef373d9ec2188f44c51e7422fc5bf88a4 (origin/main: Codex
+owned-provider guard be109a18 + transport-generation recheck 6237dca1, ZCode
+07d54220 receipt correlation, compat argv launcher 60365397, portable ZCode
+fixture 2ee73f04). Immutable manifest
+/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/manifest.json,
+SHA256 bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c.
+First candidate to ship the optional herder-compat translator with the
+launch_compat contract (compat --trusted-owner-profile, HERDER_NATIVE_COMMAND
+pointing at the pinned core). build-v1-core.py grew an optional --compat input;
+test-build-v1-core.py grew the compat-forwards-trusted-profile-argv check.
+Package verification PASS on the exact packaged bytes, 7 checks including
+compat forwarding: evidence/candidate-packaged-78e747be-compat.{json,log},
+log SHA256 ba29796ba5a5dd79546ef6ff0c61af60a2b7a3ba6094098825d1d1b7792c0c65.
+CI separately proved full native+packaged-compat consumer PASS on 78e747
+(evidence 14ee7d4b). Source/package proofs, not installed proof.
+
 Published source 805fd477f19296c926863d8dabc3b25bc8390167 (origin/main;
 includes Codex scoped-profile AGENT_HERDER_WORKLOAD_ISOLATION=off 9f4cd928 and
 OpenCode CI projects fix 23eca4b9). Immutable manifest
