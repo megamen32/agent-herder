@@ -1,0 +1,183 @@
+{
+  "entry": "/home/roomhacker/.local/bin/agent-herder-v1",
+  "model_sends": 0,
+  "at": "2026-11-08T16:35:12Z",
+  "checks": [
+    {
+      "run": 1,
+      "protocol": "2025-06-18",
+      "tool_count": 15,
+      "tools": [
+        "discover",
+        "sessions",
+        "session",
+        "create",
+        "deliver",
+        "resume",
+        "stop",
+        "search",
+        "export",
+        "automation",
+        "resource",
+        "configure",
+        "permission",
+        "human_request",
+        "compat_task"
+      ],
+      "instances": {
+        "complete": true,
+        "instances": [
+          {
+            "capabilities": {
+              "controlCapabilities": {
+                "cancelTurn": false,
+                "detach": false,
+                "events": false,
+                "fork": false,
+                "modelSwitch": false,
+                "recover": false,
+                "resume": false,
+                "steer": false,
+                "subagents": false,
+                "terminate": false
+              },
+              "deliveryModes": [
+                "queue",
+                "sync",
+                "steer"
+              ],
+              "methods": [
+                "init",
+                "createSession",
+                "sendMessage",
+                "getSession",
+                "getSessionMessages",
+                "listSessions",
+                "getRawTranscript",
+                "archiveSession"
+              ]
+            },
+            "harness": "codex",
+            "instance_ref": "codex-local",
+            "node_ref": "roomhacker-server-100"
+          }
+        ],
+        "scope": "configured_owner_instance"
+      },
+      "projects": {
+        "complete": false,
+        "limitations": [
+          "No native project observed for the authorized registered corpus."
+        ],
+        "projects": [],
+        "scope": "authorized_registered_sessions"
+      },
+      "core_children": [
+        {
+          "pid": 2275495,
+          "exe": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-cooldown/fixture/herder_native_stdio",
+          "sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "protocol": "2025-06-18",
+      "tool_count": 15,
+      "tools": [
+        "discover",
+        "sessions",
+        "session",
+        "create",
+        "deliver",
+        "resume",
+        "stop",
+        "search",
+        "export",
+        "automation",
+        "resource",
+        "configure",
+        "permission",
+        "human_request",
+        "compat_task"
+      ],
+      "instances": {
+        "complete": true,
+        "instances": [
+          {
+            "capabilities": {
+              "controlCapabilities": {
+                "cancelTurn": false,
+                "detach": false,
+                "events": false,
+                "fork": false,
+                "modelSwitch": false,
+                "recover": false,
+                "resume": false,
+                "steer": false,
+                "subagents": false,
+                "terminate": false
+              },
+              "deliveryModes": [
+                "queue",
+                "sync",
+                "steer"
+              ],
+              "methods": [
+                "init",
+                "createSession",
+                "sendMessage",
+                "getSession",
+                "getSessionMessages",
+                "listSessions",
+                "getRawTranscript",
+                "archiveSession"
+              ]
+            },
+            "harness": "codex",
+            "instance_ref": "codex-local",
+            "node_ref": "roomhacker-server-100"
+          }
+        ],
+        "scope": "configured_owner_instance"
+      },
+      "projects": {
+        "complete": false,
+        "limitations": [
+          "No native project observed for the authorized registered corpus."
+        ],
+        "projects": [],
+        "scope": "authorized_registered_sessions"
+      },
+      "core_children": [
+        {
+          "pid": 2277427,
+          "exe": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-cooldown/fixture/herder_native_stdio",
+          "sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+        }
+      ]
+    }
+  ],
+  "result": "PASS",
+  "registration": {
+    "name": "agent-herder-v1",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/home/roomhacker/.local/bin/agent-herder-v1",
+      "args": [],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "enabled_tools": null,
+    "disabled_tools": null,
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null
+  },
+  "unrelated_config_byte_preserved": true,
+  "manifest_sha256": "5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39",
+  "launcher_sha256": "482fd73431d4046052921034e123c28b1e6ffcf0a729524ac075a38ef97b25f2",
+  "launcher_tests": "7 passed"
+}

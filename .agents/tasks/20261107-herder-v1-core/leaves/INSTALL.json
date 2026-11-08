@@ -1,20 +1,18 @@
 {
-  "label": "Установка immutable candidate единственным installer",
+  "label": "Запустить установленный Rust core через обычный MCP",
   "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
-  "depends_on": [
-    "FIX"
-  ],
+  "depends_on": [],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "queued",
-  "acceptance": "Интегратор01a1bb0c — единственный installer по последнему прямому поручению. Exact immutable artifact + пройденные обязательные lanes; затем installed readback без изменений секретов/соседних runtime.",
+  "status": "done",
+  "acceptance": "Новое прямое поручение08.11 19:31МСК: первым установить и запустить готовый Rust core+существующиеTS/AHAP через обычный MCP entrypoint. Exact manifest/hash, startup/tools/list и полезный реальный MCP readback. Полный5lane/browser/liveprofile gate остаётся отдельной последующей задачей, не prerequisite этого ограниченного запуска. Source чужих WIP не включать.",
   "parent": "S3",
   "id": "INSTALL",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T22:06:07+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
   "harness": "codex",
-  "updated_at": "2026-11-08T17:36:37+03:00",
+  "updated_at": "2026-11-08T19:36:45+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:07+03:00",
@@ -86,6 +84,44 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T19:31:23+03:00",
+      "note": "Владелец прямо отложил все остальные улучшения ради запуска нового core. Ранее обязательный5/5 gate для этой установки заменён ограниченной startup acceptance; полнота всех функций не заявляется. Subagents сохраняют WIP и прекращают расширение UserIO/discovery.",
+      "changes": {
+        "label": "Запустить установленный Rust core через обычный MCP",
+        "status": "running",
+        "depends_on": [],
+        "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "acceptance": "Новое прямое поручение08.11 19:31МСК: первым установить и запустить готовый Rust core+существующиеTS/AHAP через обычный MCP entrypoint. Exact manifest/hash, startup/tools/list и полезный реальный MCP readback. Полный5lane/browser/liveprofile gate остаётся отдельной последующей задачей, не prerequisite этого ограниченного запуска. Source чужих WIP не включать."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T19:36:45+03:00",
+      "note": "Завершена новая ограниченная acceptance по прямому поручению владельца; общий V1 не объявлен полностьюготовым. Installed evidence finish-20261108/installed-v1-startup.json; publication next.",
+      "changes": {
+        "status": "done",
+        "result": "Установлен /home/roomhacker/.local/bin/agent-herder-v1; selector ~/.config/agent-herder/v1-entry.json pinned d08a68ae manifest5e21be1d. Codex native bin через прежнийTS AHAP, persistent fresh authority. OrdinaryMCP2025-06-18: два запуска/restart PASS,15tools,discover instances+projectsPASS; /proc coreSHAe82a8353 совпадает. Штатная регистрация Codex agent-herder-v1 enabled; остальные config bytes preserved.7launcher regressionPASS. Browser/5lane readiness не заявлена; legacy сервис не переключён.",
+        "finished_at": "2026-11-08T16:36:45.141Z"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Установлен /home/roomhacker/.local/bin/agent-herder-v1; selector ~/.config/agent-herder/v1-entry.json pinned d08a68ae manifest5e21be1d. Codex native bin через прежнийTS AHAP, persistent fresh authority. OrdinaryMCP2025-06-18: два запуска/restart PASS,15tools,discover instances+projectsPASS; /proc coreSHAe82a8353 совпадает. Штатная регистрация Codex agent-herder-v1 enabled; остальные config bytes preserved.7launcher regressionPASS. Browser/5lane readiness не заявлена; legacy сервис не переключён.",
+  "finished_at": "2026-11-08T16:36:45.141Z"
 }

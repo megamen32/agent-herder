@@ -1,0 +1,78 @@
+{
+  "id": "USERIOQUIET",
+  "parent": "S2",
+  "kind": "task",
+  "label": "UserIO MV3: убрать лишние фоновые запросы к ChatGPT",
+  "status": "queued",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "acceptance": "By explicit owner scope extension change: silent default/startup, no overlapping sync, durable429RetryAfter, explicit manual sync works; artifact+tests and installed claim separated.",
+  "affected_files": [
+    "universal-userio/extensions/vk-inbox/lib/chatgpt.js",
+    "universal-userio/extensions/vk-inbox/tests"
+  ],
+  "note": "Owner directly expanded scope08.11; reuse currentUserIO main, preserve canonicaldirtyWIP. MV3 preferreddistribution, CDP diagnosticfallback.",
+  "created_at": "2026-11-08T19:24:30+03:00",
+  "updated_at": "2026-11-08T19:31:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T19:24:30+03:00",
+      "note": "",
+      "changes": {
+        "id": "USERIOQUIET",
+        "parent": "S2",
+        "kind": "task",
+        "label": "UserIO MV3: убрать лишние фоновые запросы к ChatGPT",
+        "status": "running",
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "acceptance": "By explicit owner scope extension change: silent default/startup, no overlapping sync, durable429RetryAfter, explicit manual sync works; artifact+tests and installed claim separated.",
+        "affected_files": [
+          "universal-userio/extensions/vk-inbox/lib/chatgpt.js",
+          "universal-userio/extensions/vk-inbox/tests"
+        ],
+        "note": "Owner directly expanded scope08.11; reuse currentUserIO main, preserve canonicaldirtyWIP. MV3 preferreddistribution, CDP diagnosticfallback."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T19:29:34+03:00",
+      "note": "2026-11-08T16:29Z: Dot relay owner 01a1ac90 discovered via Herder active inventory; workspace get=null, workspaces=[], no canonical UserIO notes. Indexed title search partial, indirect hit only. Boundary delivery accepted input herder-userio-quiet-boundary-20261108T1628, turn01a1bbfc-fce2-79a3-a61f-cbb81c2be9c6; now reading our scope and reconciling own paths. Our actual UserIO workspace declared; ownership note4e7973cc-44b5-4740-a2b6-55c1f4ed3972. Maxwell initial45testsPASS; options RED→2PASS. Independent audit found potential extra ChatGPT traffic from Collect recipes; no zero-traffic claim until verified. No live extension replacement.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T19:31:24+03:00",
+      "note": "Прямое поручение08.11 19:31МСК: отложить, сохранить source/tests WIP; первым запустить новоеRustcore. Не устанавливать extension сейчас.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": "owner_deferred_core_start_first"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "owner_deferred_core_start_first"
+}

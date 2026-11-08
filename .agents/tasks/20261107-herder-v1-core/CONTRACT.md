@@ -1,3 +1,15 @@
+## Приоритет владельца 08.11.2026 19:31 МСК: сначала запуск нового ядра
+
+Владелец отложил остальные улучшения и разрешил ограниченную установку нового Rust core до полной приёмки пяти адаптеров. Для этого запуска прежнее требование 5/5 перед INSTALL заменено: установленный обычный MCP entrypoint, фактический Rust процесс, discovery и readback после повторного запуска. Полная функциональная приёмка остаётся незавершённой отдельной работой.
+
+Выполнено: `/home/roomhacker/.local/bin/agent-herder-v1`, зарегистрированный Codex MCP `agent-herder-v1`, immutable d08a68ae / manifest `5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39`. Один подключённый production Codex через прежний TS AHAP adapter; persistent authority в `herder-artifacts/installed-v1/herder-owner-home`. Два запуска ordinary MCP 2025-06-18: 15 инструментов, instances/projects read без ошибки; core SHA e82a8353 подтверждён через /proc. Это scoped startup proof; отправок модели 0, полнота проектов явно отражена в receipt.
+
+UserIO quiet sync и автоматическое обнаружение observed/declared workspaces отложены, WIP сохранён. Старый HTTP MCP остаётся для существующих потребителей; новый stdio запускается при подключении. Это не переключение всего флота и не заявление полной замены старого API.
+
+Evidence: `evidence/finish-20261108/installed-v1-startup.json`. Source launcher regression: 7 PASS. Штатный `codex mcp add` добавил только один блок; прочие bytes config сохранены. Закрытые probe connections не оставляют постоянный тестовый core. `agent-herder-v1 --check` проверяет выбранный пакет без запуска.
+
+---
+
 # Herder V1: Rust core и прежние TypeScript adapters
 
 Решение владельца 07.11.2026; срок **08.11.2026 00:38 МСК**, отсчёт с21:38, включая планирование. Этот план заменяет очередь20261107-herder-native-mcp-breaking; её исходники, receipts, незавершённый Rust adapter WIP и история сохраняются. Это не новый срок после кворума.
