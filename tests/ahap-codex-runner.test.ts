@@ -189,3 +189,26 @@ for (const [label, method, cause] of [
     expect(JSON.stringify(replies)).not.toContain("PRIVATE");
   });
 }
+
+it("advertises and forwards archive only when the adapter supports it", async () => {
+  const archiveSession = vi.fn(async (id:string) => ({ok:true,sessionId:id}));
+  const replies = await run({archiveSession}, [rpc(2,"archiveSession",{id:"owned-fixture"}), rpc(3,"archiveSession",{id:" "})]);
+  expect(replies[0].result.capabilities.methods).toContain("archiveSession");
+  expect(replies[1].result).toEqual({ok:true,sessionId:"owned-fixture"});
+  expect(replies[2].error.code).toBe(-32602);
+  expect(archiveSession).toHaveBeenCalledExactlyOnceWith("owned-fixture");
+  const unsupported = await run({}, [rpc(2,"archiveSession",{id:"fixture"})]);
+  expect(unsupported[0].result.capabilities.methods).not.toContain("archiveSession");
+  expect(unsupported[1].error.code).toBe(-32601);
+});
+
+it("preserves archive rejection and never retries an ambiguous exception", async () => {
+  const denied = vi.fn(async () => ({ok:false,error:"active",sessionId:"owned"}));
+  const replies = await run({archiveSession:denied}, [rpc(2,"archiveSession",{id:"owned"})]);
+  expect(replies[1].result).toEqual({ok:false,error:"active",sessionId:"owned"});
+  const uncertain=vi.fn(async()=>{throw new Error("sensitive");});
+  const failed=await run({archiveSession:uncertain},[rpc(2,"archiveSession",{id:"owned"})]);
+  expect(uncertain).toHaveBeenCalledTimes(1);
+  expect(failed[1].error.data).toMatchObject({outcome:"unknown",retryable:false});
+  expect(JSON.stringify(failed)).not.toContain("sensitive");
+});

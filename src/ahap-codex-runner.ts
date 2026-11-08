@@ -9,7 +9,7 @@ import { CodexAppServerAdapter } from "./adapters/codex-app-server.js";
 
 type RpcId = string | number;
 interface RpcRequest { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
-type CodexAhapPort = Pick<CodexAppServerAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose"> & LegacyReadPort;
+type CodexAhapPort = Pick<CodexAppServerAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose"> & Partial<Pick<CodexAppServerAdapter, "archiveSession">> & LegacyReadPort;
 
 const METHODS = ["init", "createSession", "sendMessage", "getSession", "getSessionMessages"];
 const CONTROL_CAPABILITIES = {
@@ -64,7 +64,7 @@ export async function serveCodexAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: "codex", name: "Codex legacy adapter via AHAP",
-        capabilities: { deliveryModes: ["queue", "sync", "steer"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { deliveryModes: ["queue", "sync", "steer"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter), ...(typeof adapter.archiveSession === "function" ? ["archiveSession"] : [])])], controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -108,6 +108,11 @@ export async function serveCodexAhap(
         case "listProjects":
           result = await legacyRead(adapter, request.method, params);
           break;
+        case "archiveSession":
+          if (typeof adapter.archiveSession !== "function") { error(id, -32601, "method not implemented"); continue; }
+          if (!validSessionId(params.id)) { error(id, -32602, "archiveSession requires exact session id"); continue; }
+          result = await adapter.archiveSession(params.id);
+          break;
         case "getSession":
           if (!validSessionId(params.id)) { error(id, -32602, "getSession requires a valid session id"); continue; }
           result = await adapter.getSession(params.id);
@@ -140,7 +145,7 @@ export async function serveCodexAhap(
         error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
         continue;
       }
-      const mutation = request.method === "createSession" || request.method === "sendMessage";
+      const mutation = request.method === "createSession" || request.method === "sendMessage" || request.method === "archiveSession";
       error(id, -32000, "Codex adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }
