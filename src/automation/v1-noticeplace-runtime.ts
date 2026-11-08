@@ -1,5 +1,6 @@
+import { isSecretMarker } from '../web/settings-store.js';
 import { readFile, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { AutomationLaunchPolicyStore } from '../automation-launch-policy.js';
 import { ProjectLaunchAttemptLog } from './project-launch-dispatch.js';
@@ -18,7 +19,7 @@ import { createIncidentUpdateSink, deliverIncidentQuestion } from '../autopilot/
 import { createNoticePlaceSink } from '../autopilot/index.js';
 
 type Config = {
-  noticeplaceBearerEnv:string; gptadmin:{target:string;profileFile:string}; policyPath:string; stateDirectory:string; cwd:string;
+  noticeplaceBearerEnv:string; noticeplaceEnvFile:string; gptadmin:{target:string;profileFile:string}; policyPath:string; stateDirectory:string; cwd:string;
   instance:{instanceRef:string;harness:'opencode';model:string;deliveryMode:'start'|'queue';baseUrl:string;passwordEnv?:string};
 };
 
@@ -106,10 +107,25 @@ async function protectedJson(path:string):Promise<Record<string,unknown>> {
   return value as Record<string,unknown>;
 }
 
+/** Read existing credential references only. No adoption, rotation or store writes. */
+export async function loadNoticePlaceSecretReferences(path:string,keys:string[],env:NodeJS.ProcessEnv=process.env):Promise<void> {
+  const unresolved=keys.filter(key=>env[key]!==undefined&&isSecretMarker(env[key]!));
+  if(!unresolved.length)return;
+  const data=await protectedJson(path),secrets=object(data.secrets);
+  for(const key of unresolved){
+    const value=secrets[key];
+    if(typeof value!=='string'||!value.trim()||isSecretMarker(value))throw new Error('noticeplace_secret_reference_unavailable');
+    env[key]=value;
+  }
+}
+
 /** Assemble the real one-instance NoticePlace facade; secrets remain in protected providers/in-memory headers. */
 export async function createNoticePlaceRuntime(config:Config) {
   if(config.instance.instanceRef!=='opencode-noticeplace-local'||config.instance.harness!=='opencode'||config.instance.model!==NOTICEPLACE_V1_MODEL)
     throw new Error('noticeplace_instance_pin_mismatch');
+  await loadNoticePlaceSecretReferences(join(dirname(config.noticeplaceEnvFile),'secrets.json'),[
+    config.noticeplaceBearerEnv,config.instance.passwordEnv??'OPENCODE_SERVER_PASSWORD','NOTIFY_CENTER_TOKEN',
+  ]);
   const profile=await protectedJson(config.gptadmin.profileFile);
   const auth=profile.authorization;
   if(typeof profile.endpoint!=='string'||typeof auth!=='string'||!auth||typeof process.env[config.noticeplaceBearerEnv]!=='string')throw new Error('noticeplace_protected_profile_incomplete');

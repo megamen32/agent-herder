@@ -1,6 +1,9 @@
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
+import { loadNoticePlaceSecretReferences, createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
 import { composeNoticePlaceOwnerRead, noticePlaceOwnerNodeStatus } from '../src/automation/v1-noticeplace-owner-state.js';
 
 const row = {
@@ -101,5 +104,27 @@ describe('NoticePlace runtime composition ports', () => {
     const delivery=calls.find(call=>call.tool==='deliver')!;
     expect(delivery.args).toEqual({action:'session',session_ref:'opaque-rust-ref',message:'continue',mode:'current',request_key:'stable-key'});
     expect(delivery.key).toBe('stable-key');
+  });
+});
+
+
+describe('NoticePlace existing secret references', () => {
+  it('resolves a marker through the existing store without changing credentials', async () => {
+    const root=await mkdtemp(join(tmpdir(),'noticeplace-secret-'));
+    const path=join(root,'secrets.json');
+    const bytes=JSON.stringify({version:1,secrets:{NOTICEPLACE_HEALTH_LAUNCH_TOKEN:'test-existing-credential'}});
+    try {
+      await writeFile(path,bytes,{mode:0o600});
+      const env={NOTICEPLACE_HEALTH_LAUNCH_TOKEN:'sha256:0123456789abcdef'};
+      await loadNoticePlaceSecretReferences(path,Object.keys(env),env);
+      expect(env.NOTICEPLACE_HEALTH_LAUNCH_TOKEN).toBe('test-existing-credential');
+      expect(await readFile(path,'utf8')).toBe(bytes);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+  it('keeps an explicitly injected real value and rejects unresolved markers', async () => {
+    const env={NOTICEPLACE_HEALTH_LAUNCH_TOKEN:'explicit-test-value'};
+    await loadNoticePlaceSecretReferences('/does-not-exist',Object.keys(env),env);
+    expect(env.NOTICEPLACE_HEALTH_LAUNCH_TOKEN).toBe('explicit-test-value');
+    await expect(loadNoticePlaceSecretReferences('/does-not-exist',['TOKEN'],{TOKEN:'sha256:0123456789abcdef'})).rejects.toThrow();
   });
 });
