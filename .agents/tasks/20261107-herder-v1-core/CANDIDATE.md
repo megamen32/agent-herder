@@ -1,4 +1,26 @@
-# Current candidate 814759a9
+# Current candidate 71b357f8core
+
+Published source 7ee42db728ed50f731e80e61c2a7bb7ef1a7328c (owner_reads
+projects discovery regression; supersedes the 814759a9 core for new
+operations). Immutable manifest
+/home/roomhacker/herder-artifacts/releases/herder-v1-71b357f8core/manifest.json,
+SHA256 a451e1088169419913f6010306f3611767042b0fdaa1da85c87fb62226cfa0c4.
+Exact component SHA256: core 71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569,
+bootstrap e9f5ea6424794a42583a2c25352f1e30b5bfcf8453672b341855fb0da71c734c.
+Adapters unchanged from 814759a9 (browser 2e446c4c correlation bundle).
+Rust lib 182/182 PASS, launcher_scoped_profile 17 PASS, bootstrap
+test_bootstrap.py PASS (schema v4, 10 checks), test-build-v1-core.py PASS
+(all-component-hashes, duplicate-refusal, five-harness initialize, zero
+native launches/mutations/browser connections). Exact packaged core
+negative gate 5/5 PASS via HERDER_V1_CANDIDATE_BINARY, run log
+evidence/candidate-negative-71b357f8core.log (SHA256
+a8bcff2b1dfcc83501fa0f08541f70c65f579ce917b4eb007a315ac776b3ca6e).
+discover(projects) after authorized registration now returns count=1 with
+source authorized_native_session (Archimedes evidence 05:58). These are
+source/candidate proofs, not native 5-lane or installed proof; no
+installation or runtime switch before exact-digest lanes plus NEG.
+
+# Previous candidate 814759a9
 
 Published source 814759a9248df707f974168f8fb57ba56280ec6b. Immutable
 manifest /home/roomhacker/herder-artifacts/releases/herder-v1-814759a9248d/manifest.json,
