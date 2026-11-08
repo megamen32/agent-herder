@@ -635,7 +635,7 @@ describe("first message composer replacement", () => {
       throw new Error("unexpected action " + name);
     } };
     await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
-    const replace = scripts.find(source => source.includes("selectAll") && source.includes("insertText"));
+    const replace = scripts.find(source => source.includes("execCommand('delete')"));
     expect(replace).toBeTruthy();
   });
 });

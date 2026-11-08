@@ -59,9 +59,13 @@ async function clearComposer(tools:ChromePageTools,pageId:number,site:BrowserCha
         :'textarea[placeholder="Send a Message"]')});
       if(!editor)return {cleared:false};
       editor.focus();
-      document.execCommand('selectAll');
-      document.execCommand('insertText',false,'');
-      return {cleared:true};
+      const range=document.createRange();
+      range.selectNodeContents(editor);
+      const selection=window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand('delete');
+      return {cleared:!(editor.innerText||editor.value||editor.textContent||'').trim()};
     }`});
   } catch { /* the fill below still writes the user's own text */ }
 }
