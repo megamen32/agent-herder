@@ -35,10 +35,11 @@ export function noticePlaceSnapshot(rowValue:unknown,messagesValue:unknown){
     throw new Error('rust_authoritative_snapshot_contract_unavailable');
   const rows=messages as Array<Record<string,unknown>>;
   let terminal:Record<string,unknown>|undefined;
-  for(let index=rows.length-1;index>=0;index--){const message=rows[index]!;if(message.role==='assistant'&&typeof message.turnId==='string'&&message.turnId.trim()){terminal=message;break;}}
+  for(let index=rows.length-1;index>=0;index--){const message=rows[index]!;if(message.role==='assistant'){terminal=message;break;}}
   // A freshly created/running session may not have an assistant turn yet. Keep
   // that state explicit; completion handling must later provide a real turn ID.
-  const turnId=typeof terminal?.turnId==='string'?terminal.turnId:'';
+  const turnId=typeof terminal?.turnId==='string'?terminal.turnId:
+    native.status==='idle'&&terminal?.phase==='stop'&&typeof terminal.id==='string'?terminal.id:'';
   const revision=createHash('sha256').update(JSON.stringify(canonical({row,messages:rows}))).digest('hex');
   return {sessionRef:row.session_ref,nativeSessionId:address.native_session_id,cwd:native.cwd,status:native.status,humanStopHeld:hold.held,turnId,revision,model:native.model,messages:rows};
 }
@@ -51,9 +52,10 @@ export function createNoticePlaceSessionReadAdapter(factory:NoticePlaceSessionRe
   if(!handler||typeof handler.read!=='function')throw new Error('noticeplace_session_read_provider_missing');
   return {read:(sessionRef:string,kind:'progress'|'details')=>handler.read(sessionRef,kind)};
 }
-export function createNoticePlaceCompletionRegistrar(source:NoticePlaceCompletionSource,listSessions:()=>Promise<Array<{session_ref:string;address:{native_session_id:string}}>>,timeoutMs=10_000){
+export function createNoticePlaceCompletionRegistrar(source:NoticePlaceCompletionSource,listSessions:()=>Promise<Array<{session_ref:string;address:{native_session_id:string}}>>,timeoutMs=10_000,snapshot?:(sessionRef:string)=>Promise<{nativeSessionId:string;status:string;turnId:string}>){
   return async (sessionRef:string,callback:(event:{sessionRef:string;nativeSessionId:string;turnId:string})=>Promise<unknown>)=>{
     let active=false,closed=false,unsubscribe=()=>{};
+    const pending=new Set<string>(),seen=new Set<string>();
     let connectedResolve!:()=>void,connectedReject!:(error:Error)=>void;
     const connected=new Promise<void>((resolve,reject)=>{connectedResolve=resolve;connectedReject=reject;});
     const timer=setTimeout(()=>connectedReject(new Error('opencode_event_stream_connect_timeout')),Math.max(1,timeoutMs));
@@ -61,14 +63,24 @@ export function createNoticePlaceCompletionRegistrar(source:NoticePlaceCompletio
     const installedUnsubscribe=source.subscribeEvents(event=>{
       if(event.kind==='process.connected'){active=true;connectedResolve();return;}
       if(event.kind==='process.disconnected'){close();connectedReject(new Error('opencode_event_stream_disconnected'));return;}
-      if(!active||event.kind!=='turn.completed'||!event.sessionId)return;
-      const turnId=event.data?.turnId;
-      if(typeof turnId!=='string'||!turnId.trim())return;
-      void listSessions().then(rows=>{
-        const matches=rows.filter(row=>row.address?.native_session_id===event.sessionId);
-        if(!closed&&active&&matches.length===1&&matches[0]!.session_ref===sessionRef)
-          return callback({sessionRef,nativeSessionId:event.sessionId!,turnId});
-      }).catch(()=>undefined);
+      const candidate=event.kind==='turn.completed'||event.kind==='session.updated'&&['session.idle','session.status'].includes(String(event.data?.nativeType));
+      if(!active||!candidate||!event.sessionId||pending.has(event.sessionId))return;
+      const nativeId=event.sessionId;
+      pending.add(nativeId);
+      void listSessions().then(async rows=>{
+        const matches=rows.filter(row=>row.address?.native_session_id===nativeId);
+        if(closed||!active||matches.length!==1||matches[0]!.session_ref!==sessionRef)return;
+        let turnId=event.data?.turnId;
+        if(typeof turnId!=='string'||!turnId.trim()){
+          if(!snapshot)return;
+          const fresh=await snapshot(sessionRef);
+          if(fresh.nativeSessionId!==nativeId||fresh.status!=='idle'||!fresh.turnId)return;
+          turnId=fresh.turnId;
+        }
+        if(closed||!active||seen.has(turnId as string))return;
+        seen.add(turnId as string);
+        return callback({sessionRef,nativeSessionId:nativeId,turnId:turnId as string});
+      }).catch(()=>undefined).finally(()=>pending.delete(nativeId));
     });
     unsubscribe=installedUnsubscribe;
     if(closed)unsubscribe();
@@ -78,7 +90,7 @@ export function createNoticePlaceCompletionRegistrar(source:NoticePlaceCompletio
   };
 }
 
-export function createNoticePlaceRustAutopilotPort(port:{call(tool:string,args:Record<string,unknown>,operationKey?:string):Promise<unknown>},instanceRef:string){
+export function createNoticePlaceRustAutopilotPort(port:{call(tool:string,args:Record<string,unknown>,operationKey?:string):Promise<unknown>},instanceRef:string,deliveryMode:'start'|'queue'='start'){
   const value=(value:unknown):Record<string,unknown>=>object(value);
   const listSessions=async()=>{
     const payload=value(await port.call('sessions',{action:'list',instance_ref:instanceRef}));
@@ -86,16 +98,17 @@ export function createNoticePlaceRustAutopilotPort(port:{call(tool:string,args:R
     return payload.sessions as Array<{session_ref:string;address:{native_session_id:string};native:{harness:string;cwd:string}|null;human_stop?:{held?:unknown}}>;
   };
   const snapshot=async(sessionRef:string)=>{
-    const matches=(await listSessions()).filter(row=>row.session_ref===sessionRef);
+    const [rows,messageValue]=await Promise.all([listSessions(),port.call('session',{action:'messages',session_ref:sessionRef})]);
+    const matches=rows.filter(row=>row.session_ref===sessionRef);
     if(matches.length!==1||matches[0]!.native?.harness!=='opencode')throw new Error('exact_rust_session_unavailable');
-    const messages=value(await port.call('session',{action:'messages',session_ref:sessionRef}));
+    const messages=value(messageValue);
     return noticePlaceSnapshot(matches[0],messages);
   };
   return {listSessions,snapshot,async deliver(input:{sessionRef:string;nativeSessionId:string;message:string;requestKey:string;model:string;expectedRevision:string;turnId:string}){
     const fresh=await snapshot(input.sessionRef);
     if(fresh.nativeSessionId!==input.nativeSessionId||fresh.revision!==input.expectedRevision||fresh.turnId!==input.turnId
       ||fresh.model!==input.model||fresh.humanStopHeld||fresh.status!=='idle')throw new Error('noticeplace_snapshot_changed');
-    return port.call('deliver',{action:'session',session_ref:input.sessionRef,message:input.message,mode:'current',request_key:input.requestKey},input.requestKey);
+    return port.call('deliver',{action:'session',session_ref:input.sessionRef,message:input.message,mode:deliveryMode,request_key:input.requestKey},input.requestKey);
   }};
 }
 
@@ -105,6 +118,20 @@ async function protectedJson(path:string):Promise<Record<string,unknown>> {
   const value:unknown=JSON.parse(await readFile(path,'utf8'));
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('protected_profile_invalid');
   return value as Record<string,unknown>;
+}
+
+/** The legacy consumer names native sessions; the Rust authority uses opaque refs. */
+export function createNoticePlaceSessionIdentity(listSessions:()=>Promise<Array<{session_ref:string;address:{native_session_id:string};native:{harness:string;cwd:string}|null}>>,cwd:string){
+  const resolve=async(id:string,nativeAllowed:boolean)=>{
+    if(!id.trim())return null;
+    const rows=(await listSessions()).filter(row=>row.native?.harness==='opencode'&&row.native.cwd===cwd
+      &&(row.session_ref===id||nativeAllowed&&row.address.native_session_id===id));
+    return rows.length===1&&rows[0]!.session_ref&&rows[0]!.address.native_session_id?rows[0]!:null;
+  };
+  return {
+    toCoreRef:async(id:string)=>(await resolve(id,true))?.session_ref??null,
+    toNativeId:async(id:string)=>(await resolve(id,false))?.address.native_session_id??null,
+  };
 }
 
 /** Read existing credential references only. No adoption, rotation or store writes. */
@@ -150,13 +177,13 @@ export async function createNoticePlaceRuntime(config:Config) {
   if(typeof sessionReadModule.createNoticePlaceSessionRead!=='function')throw new Error('noticeplace_session_read_factory_missing');
   const sessionRead=createNoticePlaceSessionReadAdapter(sessionReadModule.createNoticePlaceSessionRead,port,instance.instanceRef,instance.cwd);
   const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
-  const rust=createNoticePlaceRustAutopilotPort(port,instance.instanceRef);
+  const rust=createNoticePlaceRustAutopilotPort(port,instance.instanceRef,instance.deliveryMode);
   const listSessions=rust.listSessions;
   const store=new AutopilotSessionStore(join(stateDir,'sessions.json'));
   const jobs=new HerderJobRegistry(herderEvents,{persistencePath:join(stateDir,'v1-noticeplace-jobs.json')});
   const humanRequests=new HumanRequestRegistry(join(stateDir,'human-requests.json'));
   const choiceRegistry=new ChoiceRegistry(join(stateDir,'choices.json'));
-  const registerCompletion=createNoticePlaceCompletionRegistrar(openCode,listSessions);
+  const registerCompletion=createNoticePlaceCompletionRegistrar(openCode,listSessions,10_000,rust.snapshot);
   const callback={eventUrl:process.env.NOTIFY_CENTER_EVENT_URL,token:process.env.NOTIFY_CENTER_TOKEN};
   const service=new classModule.V1NoticePlaceAutopilot({store,jobs,stateDir,rust,registerCompletion,
     createJudge:()=>judgeModule.createNoticePlaceNativeJudge({port,instanceRef:instance.instanceRef,jobs,stateDir,revision:async (input:{hook:{session_id?:string}})=>{
@@ -185,5 +212,5 @@ export async function createNoticePlaceRuntime(config:Config) {
     },
   };
   await service.restore();
-  return {policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead};
+  return {policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead,identity:createNoticePlaceSessionIdentity(listSessions,instance.cwd),resume:port};
 }

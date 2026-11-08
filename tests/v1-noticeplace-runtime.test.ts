@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { loadNoticePlaceSecretReferences, createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
+import { createNoticePlaceSessionIdentity, loadNoticePlaceSecretReferences, createNoticePlaceCompletionRegistrar, createNoticePlaceRustAutopilotPort, createNoticePlaceSessionReadAdapter, noticePlaceSnapshot } from '../src/automation/v1-noticeplace-runtime.js';
 import { composeNoticePlaceOwnerRead, noticePlaceOwnerNodeStatus } from '../src/automation/v1-noticeplace-owner-state.js';
 
 const row = {
@@ -102,7 +102,7 @@ describe('NoticePlace runtime composition ports', () => {
     currentMessages=messages;
     await rust.deliver(input);
     const delivery=calls.find(call=>call.tool==='deliver')!;
-    expect(delivery.args).toEqual({action:'session',session_ref:'opaque-rust-ref',message:'continue',mode:'current',request_key:'stable-key'});
+    expect(delivery.args).toEqual({action:'session',session_ref:'opaque-rust-ref',message:'continue',mode:'start',request_key:'stable-key'});
     expect(delivery.key).toBe('stable-key');
   });
 });
@@ -127,4 +127,42 @@ describe('NoticePlace existing secret references', () => {
     expect(env.NOTICEPLACE_HEALTH_LAUNCH_TOKEN).toBe('explicit-test-value');
     await expect(loadNoticePlaceSecretReferences('/does-not-exist',['TOKEN'],{TOKEN:'sha256:0123456789abcdef'})).rejects.toThrow();
   });
+});
+
+
+describe('NoticePlace native OpenCode completion without synthetic turn IDs', () => {
+ it('uses a terminal native assistant ID only for confirmed idle snapshots', () => {
+  const nativeMessages={page:{messages:[{id:'msg-native-final',role:'assistant',phase:'stop',text:'done'}]}};
+  expect(noticePlaceSnapshot(row,nativeMessages).turnId).toBe('msg-native-final');
+  expect(noticePlaceSnapshot({...row,native:{...row.native,status:'running'}},nativeMessages).turnId).toBe('');
+  expect(noticePlaceSnapshot(row,{page:{messages:[{id:'tool-step',role:'assistant',phase:'tool-calls'}]}}).turnId).toBe('');
+ });
+ it('observes native idle events once and ignores another session', async () => {
+  let listener:any;
+  const callback=vi.fn(async()=>undefined);
+  const snap=vi.fn(async()=>({nativeSessionId:'native-session',status:'idle',turnId:'msg-final'}));
+  const register=createNoticePlaceCompletionRegistrar({subscribeEvents:cb=>{listener=cb;queueMicrotask(()=>cb({kind:'process.connected'}));return ()=>{};}},async()=>[{session_ref:'core-ref',address:{native_session_id:'native-session'}}],500,snap);
+  const sub=await register('core-ref',callback);
+  listener({kind:'session.updated',sessionId:'foreign',data:{nativeType:'session.idle'}});
+  listener({kind:'session.updated',sessionId:'native-session',data:{nativeType:'session.idle'}});
+  await vi.waitFor(()=>expect(callback).toHaveBeenCalledTimes(1));
+  listener({kind:'session.updated',sessionId:'native-session',data:{nativeType:'session.idle'}});
+  await new Promise(resolve=>setTimeout(resolve,20));
+  expect(callback).toHaveBeenCalledTimes(1);
+  expect(callback).toHaveBeenCalledWith({sessionRef:'core-ref',nativeSessionId:'native-session',turnId:'msg-final'});
+  sub.close();
+ });
+});
+
+
+describe('NoticePlace consumer native identity',()=>{
+ it('maps both public native IDs and historical core refs within the configured workspace',async()=>{
+  const list=vi.fn(async()=>[row]);const identity=createNoticePlaceSessionIdentity(list,'/srv/noticeplace');
+  expect(await identity.toCoreRef('native-session')).toBe('opaque-rust-ref');
+  expect(await identity.toCoreRef('opaque-rust-ref')).toBe('opaque-rust-ref');
+  expect(await identity.toNativeId('opaque-rust-ref')).toBe('native-session');
+  expect(await identity.toCoreRef('unrelated')).toBeNull();
+  expect(await createNoticePlaceSessionIdentity(list,'/other').toCoreRef('native-session')).toBeNull();
+  expect(await createNoticePlaceSessionIdentity(async()=>[row,row],'/srv/noticeplace').toCoreRef('native-session')).toBeNull();
+ });
 });

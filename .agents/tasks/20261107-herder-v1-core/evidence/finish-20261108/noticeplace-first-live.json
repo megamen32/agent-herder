@@ -1,0 +1,46 @@
+{
+  "checked_at": "2026-11-08T19:59:17.537736+00:00",
+  "result": "resolved_after_identity_reconciliation",
+  "not_clean_automatic_pass": true,
+  "source_commit": "41b4284731f4671c0b9a668165538d1d86861de9",
+  "incident_id": "inc_c2f37bfe20d448369d6a9218283ddcfc",
+  "core_session_ref": "session:66ecba3bf525a89f494b9f2c7ebc8421",
+  "native_session_id": "ses_e434b3fc0ffeNkQ5AJ1nuWLYgl",
+  "model": "minimax-coding-plan/MiniMax-M3.1-Flash",
+  "fixture": "/home/roomhacker/agents-projects/agent-herder/.tmp/v1-noticeplace-20261108-01a1bb0c",
+  "observed_health": {
+    "state": "healthy",
+    "repairs": 1
+  },
+  "source_verification": [
+    {
+      "incident_id": "inc_c2f37bfe20d448369d6a9218283ddcfc",
+      "request_id": "check_03f6132f51a94b27af76eca3bf3dccc2",
+      "generation": 1,
+      "observed_state": "healthy",
+      "observed_at": 1794167721.2337525
+    }
+  ],
+  "binding_correction": {
+    "status": "session_link_attached",
+    "event_id": "evt_d2ed88b682a14522b69d6d0e152a2d1e"
+  },
+  "archive": {
+    "archived": true,
+    "effect": "confirmed",
+    "session_ref": "session:66ecba3bf525a89f494b9f2c7ebc8421"
+  },
+  "human_deliveries": 0,
+  "original_403_no_native_admission": "GPTAdmin shell task33a6329019e35d7a9804270a5cfb94d7 returned definitive HTTP403 before Herderdispatch; retry used normal NoticePlace failed-job action. Same incident retained.",
+  "remaining": [
+    "consumer native ID mapping",
+    "native idle completion event",
+    "new clean installed consumer pass"
+  ],
+  "notes": [
+    "Existing secret store referenced read-only; no rotation or credential changes",
+    "Autopilot later confirmed enabled despite original helper timeout; disabled during cleanup",
+    "Native worker independently published an incident skill via existing NoticePlace workflow; not counted as acceptance evidence",
+    "No original mutation resent; attempted current-mode guidance got tool_error, source confirms current unsupported before admission; not retried"
+  ]
+}

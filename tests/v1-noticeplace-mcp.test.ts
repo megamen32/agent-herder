@@ -37,3 +37,11 @@ describe('NoticePlace scoped Rust MCP port', () => {
     expect(client.callTool).toHaveBeenCalledTimes(2);
   });
 });
+
+
+it('preserves a definitive Rust no-effect refusal instead of losing it as a transport error',async()=>{
+ const refusal={isError:true,structuredContent:{code:'human_stop_active',effect:'none'}};
+ const client:NoticePlaceMcpClient={connect:async()=>{},callTool:async()=>refusal,close:async()=>{}};
+ const port=new NoticePlaceMcpPort(async()=> 'fixture-only',()=>client,()=>({}));
+ expect(await port.call('deliver',{action:'session'})).toEqual(refusal);
+});

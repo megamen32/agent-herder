@@ -43,7 +43,7 @@ export class NoticePlaceMcpPort {
     const response = await (await this.connected()).callTool({ name: tool, arguments: args },{timeout});
     if (!response || typeof response !== 'object' || Array.isArray(response)) throw new Error('noticeplace_mcp_invalid_response');
     const result = response as Record<string, unknown>;
-    if (result.isError === true) throw new Error('noticeplace_mcp_tool_error');
+    if (result.isError === true) return result; // Keep the exact no-effect/refusal receipt; callers classify it.
     // One layer only: compat_task's status/taskId/result are in structuredContent.
     return result.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)
       ? result.structuredContent : response;
