@@ -356,6 +356,43 @@ impl ScopedAuthority {
         self.resolve_session_for_action(identity, grants, session, instance, Action::Read)
     }
 
+    /// Read the authoritative HumanStop state for one exact authorized session.
+    /// Native status is intentionally irrelevant: only the pinned store's
+    /// global, inherited and session scopes determine `held`.
+    pub fn human_stop_held(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        session: &SessionRef,
+        instance: &crate::domain::address::InstanceRef,
+    ) -> Result<bool, GateError> {
+        identity.authorize(grants, &PrivateResource::Session(session.clone()), Action::Read)
+            .map_err(|_| GateError::Invalid)?;
+        let (_gate, writer) = self.lock()?;
+        use crate::application::target::SessionRegistry;
+        let address = writer.resolve(session).map_err(|_| GateError::Store)?
+            .ok_or(GateError::Unavailable)?;
+        if address.instance != *instance { return Err(GateError::Invalid); }
+        let scope_generation: Option<String> = writer.connection().query_row(
+            "SELECT scope_generation FROM humanstop_sessions WHERE session_ref=?1 AND authority_generation=?2",
+            params![session.0, self.generation], |row| row.get(0),
+        ).optional().map_err(|_| GateError::Store)?;
+        let scope_generation = scope_generation.ok_or(GateError::Unavailable)?;
+        let Caller::Principal(principal) = identity.caller() else { return Err(GateError::Invalid) };
+        let principal_id = &principal.id.0;
+        let binding = ReceiptBinding {
+            intent_id: "human-stop-read",
+            principal: principal_id,
+            target_ref: &session.0,
+            request_key: "human-stop-read",
+            address: &address,
+        };
+        if !scope_identity_valid(writer.connection(), &binding, &scope_generation, &self.generation)? {
+            return Err(GateError::Unavailable);
+        }
+        scope_held(writer.connection(), &binding)
+    }
+
     fn resolve_session_for_action(
         &self,
         identity: &ConnectionIdentity,

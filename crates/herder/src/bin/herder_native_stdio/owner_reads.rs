@@ -23,7 +23,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use herder::{
     adapters::ahap_opencode::AhapOpenCode,
     application::scoped_stop::{ScopedAuthority, create_prompt::FreshSessionGrantPolicy},
-    auth::identity::{Caller, ConnectionIdentity},
+    auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::{
         adapter::ReadError,
         address::{InstanceRef, SessionAddress, SessionRef},
@@ -223,23 +223,21 @@ fn handle(
             }
             let corpus = registered(identity, policy, instance)?;
             let observed = observe(&corpus, native)?;
-            let sessions: Vec<_> = corpus
-                .sessions
-                .iter()
-                .filter_map(|(reference, address)| {
-                    let metadata = observed.get(&address.native_session_id);
-                    if project_ref
-                        .as_deref()
-                        .is_some_and(|p| metadata.and_then(project) != Some(p))
-                    {
-                        return None;
-                    }
-                    Some(
-                        json!({"session_ref":reference.0,"address":address,"native":metadata,
-                    "source":if metadata.is_some(){"registered_and_native"}else{"registered"}}),
-                    )
-                })
-                .collect();
+            let authority = ScopedAuthority::new(policy.db.clone(), policy.gate.clone(), policy.generation.clone())
+                .map_err(|_| "scope_unavailable")?;
+            let mut sessions = Vec::with_capacity(corpus.sessions.len());
+            for (reference, address) in &corpus.sessions {
+                let metadata = observed.get(&address.native_session_id);
+                if project_ref.as_deref().is_some_and(|p| metadata.and_then(project) != Some(p)) {
+                    continue;
+                }
+                let grant = session_read_grant(identity, policy, instance, reference)?;
+                let held = authority.human_stop_held(identity, &[grant], reference, instance)
+                    .map_err(|_| "scope_unavailable")?;
+                sessions.push(json!({"session_ref":reference.0,"address":address,"native":metadata,
+                    "human_stop":{"held":held},
+                    "source":if metadata.is_some(){"registered_and_native"}else{"registered"}}));
+            }
             let complete = !corpus.truncated
                 && (project_ref.is_none() || observed.len() == corpus.sessions.len());
             Ok(
@@ -403,13 +401,7 @@ fn authorize(
     instance: &InstanceRef,
     session: &SessionRef,
 ) -> ReadResult<SessionAddress> {
-    let Caller::Principal(principal) = identity.caller() else {
-        return Err("unauthorized");
-    };
-    let grant = policy
-        .session_read_grant(&principal.id, instance, session)
-        .map_err(|_| "policy_unavailable")?
-        .ok_or("unauthorized")?;
+    let grant = session_read_grant(identity, policy, instance, session)?;
     let authority = ScopedAuthority::new(
         policy.db.clone(),
         policy.gate.clone(),
@@ -420,6 +412,22 @@ fn authorize(
         .resolve_session_read(identity, &[grant], session, instance)
         .map(|(address, _)| address)
         .map_err(|_| "scope_unavailable")
+}
+
+fn session_read_grant(
+    identity: &ConnectionIdentity,
+    policy: &OwnerPolicy,
+    instance: &InstanceRef,
+    session: &SessionRef,
+) -> ReadResult<Grant> {
+    let Caller::Principal(principal) = identity.caller() else { return Err("unauthorized") };
+    let grant = policy.session_read_grant(&principal.id, instance, session)
+        .map_err(|_| "policy_unavailable")?.ok_or("unauthorized")?;
+    if grant.principal != principal.id || grant.action != Action::Read
+        || grant.resource != PrivateResource::Session(session.clone()) {
+        return Err("unauthorized");
+    }
+    Ok(grant)
 }
 
 /// Open a read snapshot only from the pinned, private authoritative store.
@@ -1013,16 +1021,67 @@ mod tests {
         f.create("alice", "other-node", &other, "native-owned");
         let result = payload(f.invoke(sessions(),|method,_| {
             assert_eq!(method,"listSessions");
-            Ok(json!([{"id":"native-owned","cwd":"/allowed"},{"id":"native-foreign","cwd":"/secret"},{"id":"unregistered","cwd":"/secret"}]))
+            Ok(json!([{"id":"native-owned","cwd":"/allowed","status":"stopped"},{"id":"native-foreign","cwd":"/secret"},{"id":"unregistered","cwd":"/secret"}]))
         }));
         assert_eq!(result["sessions"].as_array().unwrap().len(), 1);
         assert_eq!(result["sessions"][0]["session_ref"], "owned");
+        assert_eq!(result["sessions"][0]["human_stop"]["held"], false,
+            "native stopped/idle display must not substitute for the durable HumanStop store");
         assert!(!result.to_string().contains("secret"));
         assert_eq!(result["complete"], true);
         assert_eq!(
             payload(f.invoke(export("unregistered", catalog::ExportFormat::Native), never))["code"],
             "unauthorized"
         );
+    }
+
+    #[test]
+    fn sessions_list_reads_global_session_and_inherited_humanstop_fail_closed() {
+        let f = Fixture::new();
+        f.own();
+        let id = identity("alice");
+        let session = SessionRef("owned".into());
+        let grant = session_read_grant(&id, &f.policy, &f.policy.instance, &session).unwrap();
+        let authority = ScopedAuthority::new(f.policy.db.clone(), f.policy.gate.clone(), f.policy.generation.clone()).unwrap();
+        assert!(!authority.human_stop_held(&id, &[grant.clone()], &session, &f.policy.instance).unwrap());
+
+        // Legacy inherited holds are matched through the pinned session scope.
+        let db = Connection::open(&f.policy.db).unwrap();
+        db.create_scalar_function("herder_writer_version", 0, FunctionFlags::SQLITE_UTF8, |_| Ok(3)).unwrap();
+        db.execute("INSERT INTO holds(session_ref,reason,created_at,released_at) VALUES('session:owned','inherited fixture','now',NULL)", []).unwrap();
+        drop(db);
+        assert!(authority.human_stop_held(&id, &[grant.clone()], &session, &f.policy.instance).unwrap());
+
+        let session_only_address = f.create("alice", "session-only", &f.policy.instance, "native-session-only");
+        let session_only = SessionRef("session-only".into());
+        let session_only_grant = session_read_grant(&id, &f.policy, &f.policy.instance, &session_only).unwrap();
+        let stop_grants = vec![grant.clone(), Grant {
+            principal: PrincipalId("alice".into()), action: Action::Write,
+            resource: PrivateResource::Resource("humanstop:global".into()),
+        }, Grant {
+            principal: PrincipalId("alice".into()), action: Action::Write,
+            resource: PrivateResource::Session(session.clone()),
+        }];
+        let mut session_scope_grants = stop_grants.clone();
+        session_scope_grants.push(Grant { principal: PrincipalId("alice".into()), action: Action::Write,
+            resource: PrivateResource::Session(session_only.clone()) });
+        assert_eq!(authority.stop(&id, &session_scope_grants, "session:session-only", "fixture", "now").unwrap(),
+            herder::application::scoped_stop::StopDisposition::HeldBeforeHandoff);
+        assert!(authority.human_stop_held(&id, &[session_only_grant], &session_only, &f.policy.instance).unwrap());
+        assert_eq!(session_only_address.native_session_id, "native-session-only");
+
+        f.create("alice", "global-only", &f.policy.instance, "native-global-only");
+        assert_eq!(authority.stop(&id, &stop_grants, "global", "fixture", "now").unwrap(),
+            herder::application::scoped_stop::StopDisposition::HeldBeforeHandoff);
+        let held_row = payload(f.invoke(sessions(), |_, _| Ok(json!([{"id":"native-owned","status":"idle"}]))));
+        assert_eq!(held_row["sessions"][0]["human_stop"]["held"], true);
+
+        let bad_authority = ScopedAuthority::new(f.policy.db.clone(), f.policy.gate.clone(), "stale-generation".into()).unwrap();
+        assert!(bad_authority.human_stop_held(&id, &[grant.clone()], &session, &f.policy.instance).is_err(),
+            "stale authority must be UNKNOWN/error, never held=false");
+        assert!(authority.human_stop_held(&id, &[], &session, &f.policy.instance).is_err(),
+            "missing session authorization must fail closed");
+
     }
     #[test]
     fn stale_generation_and_replaced_gate_fail_closed() {
