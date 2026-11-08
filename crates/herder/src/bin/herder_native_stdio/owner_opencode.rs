@@ -7,6 +7,7 @@ use herder::{
     },
     application::scoped_stop::{
         ScopedAuthority,
+        automation::ScopedAutomationApplication,
         create_prompt::FreshSessionGrantPolicy,
         mcp_create::ScopedCreateApplication,
         mcp_deliver::ScopedDeliverApplication,
@@ -45,6 +46,7 @@ struct App {
     adapter: Arc<AhapOpenCode>,
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
+    automation: Arc<dyn ApplicationPort>,
 }
 impl ApplicationPort for App {
     fn call<'a>(
@@ -81,6 +83,9 @@ impl ApplicationPort for App {
             }
             if matches!(&request, catalog::Request::Deliver(_)) {
                 return self.deliver.call(identity, request).await;
+            }
+            if matches!(&request, catalog::Request::Automation(_)) {
+                return self.automation.call(identity, request).await;
             }
             let session = match &request {
                 catalog::Request::Session(catalog::Session::Messages { session_ref, .. } | catalog::Session::Archive { session_ref, .. })
@@ -280,6 +285,13 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
             .with_delivery_mode(delivery_mode).map_err(|_| "unsupported delivery mode")?
             .with_policy(policy.clone()),
     );
+    let automation = Arc::new(ScopedAutomationApplication::new(
+        authority.clone(), instance.clone(), grants.clone(), policy.clone(),
+        adapter.clone(), deliver.clone(), match delivery_mode {
+            SendMode::Queue => catalog::DeliveryMode::Queue,
+            _ => catalog::DeliveryMode::Start,
+        },
+    ));
     let app = Arc::new(App {
         instance: instance.clone(),
         harness,
@@ -288,6 +300,7 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
         adapter: adapter.clone(),
         create,
         deliver,
+        automation,
     });
     let reconciler = Arc::new(ScopedReceiptReconciler::new(authority.clone(), adapter));
     let server = ScopedTaskServer::new(identity, grants, authority, app)

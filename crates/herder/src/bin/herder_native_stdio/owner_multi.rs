@@ -50,12 +50,22 @@ impl ServerHandler for MultiOwner {
             let Ok(binding) = self.by_session(session) else { return Ok(denied("session_unavailable")); };
             return binding.server.call_tool(request, ctx).await;
         }
+        // A completion callback routes only through its exact registered child.
+        // The selected authority verifies the rule's parent/child binding.
+        if request.name.as_ref() == "automation"
+            && args.and_then(|a| a.get("action")).and_then(Value::as_str) == Some("reconcile") {
+            let Some(child) = args.and_then(|a| a.get("child_ref")).and_then(Value::as_str) else {
+                return Ok(denied("child_binding_required"));
+            };
+            let Ok(binding) = self.by_session(child) else { return Ok(denied("session_unavailable")); };
+            return binding.server.call_tool(request, ctx).await;
+        }
         // Only these read operations may fan out. Mutations never probe adapters.
         let action = args.and_then(|a| a.get("action")).and_then(Value::as_str).unwrap_or("");
         let field = match (request.name.as_ref(), action) {
             ("discover", "nodes") => "nodes", ("discover", "instances") => "instances",
             ("discover", "projects") => "projects", ("sessions", "list") => "sessions",
-            ("search", "search") => "hits", _ => return Ok(denied("instance_or_session_required")),
+            ("search", "search") => "hits", ("automation", "list") => "rules", _ => return Ok(denied("instance_or_session_required")),
         };
         let node = args.and_then(|a| a.get("node_ref")).and_then(Value::as_str);
         let mut rows = Vec::new();

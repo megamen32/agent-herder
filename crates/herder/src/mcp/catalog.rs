@@ -64,7 +64,7 @@ catalog! {
     "stop" => Stop(Stop) { read: [], mutate: ["stop"] },
     "search" => Search(Search) { read: ["search"], mutate: [] },
     "export" => Export(Export) { read: ["export"], mutate: [] },
-    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete"] },
+    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete", "reconcile"] },
     "resource" => Resource(Resource) { read: ["list", "get"], mutate: ["register", "update", "claim", "renew", "release", "declare"] },
     "configure" => Configure(Configure) { read: ["get"], mutate: ["set"] },
     "permission" => Permission(Permission) { read: ["get"], mutate: ["respond"] },
@@ -188,11 +188,16 @@ pub enum AutomationRule {
     Autopilot {
         instructions: String,
     },
+    ChildCompletion {
+        child_ref: String,
+        wake_message: String,
+    },
 }
 actions!(Automation {
-    List { session_ref: String, cursor: Option<String> },
+    List { session_ref: Option<String>, cursor: Option<String> },
     Get { rule_ref: String },
     Create { session_ref: String, rule: AutomationRule, request_key: String },
+    Reconcile { rule_ref: String, child_ref: String, event_id: String },
     Update { rule_ref: String, revision: u64, rule: AutomationRule },
     Pause { rule_ref: String, revision: u64 },
     Delete { rule_ref: String, revision: u64 },

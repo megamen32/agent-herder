@@ -113,6 +113,28 @@ impl AhapOpenCode {
         self.raw_call("getRawTranscript", json!({"id": address.native_session_id}))
     }
 
+    /// Confirm a lifecycle callback against the current native session snapshot.
+    /// The callback's event_id is treated as a claimed native turn ID, never as
+    /// proof by itself. Only an exact current turn with terminal `completed`
+    /// status is accepted; idle, failed, stale, absent or mismatched evidence is
+    /// a refusal.
+    pub fn confirms_completed_turn(
+        &self,
+        address: &SessionAddress,
+        event_id: &str,
+    ) -> Result<bool, ReadError> {
+        if !self.matches(address) || !valid_native_id(event_id) {
+            return Ok(false);
+        }
+        let session = self.raw_call("getSession", json!({"id": address.native_session_id}))?;
+        Ok(exact_completed_turn(
+            &session,
+            &address.native_session_id,
+            &self.policy.harness,
+            event_id,
+        ))
+    }
+
     fn advertises_mode(&self, mode: &str) -> bool {
         self.capabilities()
             .get("deliveryModes")
@@ -233,6 +255,32 @@ impl AhapOpenCode {
         }
         Ok(result)
     }
+}
+
+impl crate::application::scoped_stop::automation::CompletedTurnReader for AhapOpenCode {
+    fn confirms_completed_turn(
+        &self,
+        target: &crate::domain::address::SessionAddress,
+        event_id: &str,
+    ) -> Result<bool, ReadError> {
+        AhapOpenCode::confirms_completed_turn(self, target, event_id)
+    }
+}
+fn exact_completed_turn(session: &Value, session_id: &str, harness: &str, event_id: &str) -> bool {
+    if session.get("id").and_then(Value::as_str) != Some(session_id)
+        || session.get("harness").and_then(Value::as_str) != Some(harness)
+        || session.pointer("/meta/nativeStateObserved").and_then(Value::as_bool) == Some(false)
+        || session.pointer("/meta/nativeTurnStateUnavailable").and_then(Value::as_bool) == Some(true)
+    {
+        return false;
+    }
+    let turn = session
+        .pointer("/meta/nativeLastTurn")
+        .or_else(|| session.get("nativeLastTurn"));
+    turn.is_some_and(|turn| {
+        turn.get("turnId").and_then(Value::as_str) == Some(event_id)
+            && turn.get("status").and_then(Value::as_str) == Some("completed")
+    })
 }
 fn valid_native_id(v: &str) -> bool {
     !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control)
@@ -536,6 +584,37 @@ mod tests {
         os::unix::fs::PermissionsExt,
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn accepts_actual_codex_to_session_terminal_projection_without_synthetic_true_flag() {
+        // CodexAppServerAdapter.toSession projects nativeLastTurn into meta;
+        // it does not set nativeStateObserved=true on the successful path.
+        let session = serde_json::json!({
+            "id":"child-session",
+            "harness":"codex",
+            "status":"idle",
+            "meta":{"nativeSessionId":"child-session","nativeLastTurn":{"turnId":"turn-7","status":"completed"}}
+        });
+        assert!(exact_completed_turn(&session, "child-session", "codex", "turn-7"));
+        assert!(!exact_completed_turn(&session, "child-session", "codex", "turn-6"));
+        assert!(!exact_completed_turn(&session, "child-session", "opencode", "turn-7"));
+    }
+
+    #[test]
+    fn refuses_unavailable_or_failed_native_turn_projection() {
+        let unavailable = serde_json::json!({
+            "id":"child-session","harness":"codex",
+            "meta":{"nativeLastTurn":{"turnId":"turn-7","status":"completed"},"nativeTurnStateUnavailable":true}
+        });
+        let failed_observation = serde_json::json!({
+            "id":"child-session","harness":"codex",
+            "meta":{"nativeLastTurn":{"turnId":"turn-7","status":"completed"},"nativeStateObserved":false}
+        });
+        assert!(!exact_completed_turn(&unavailable, "child-session", "codex", "turn-7"));
+        assert!(!exact_completed_turn(&failed_observation, "child-session", "codex", "turn-7"));
+        let idle_only = serde_json::json!({"id":"child-session","harness":"codex","status":"idle","meta":{}});
+        assert!(!exact_completed_turn(&idle_only, "child-session", "codex", "turn-7"));
+    }
     struct Temp(PathBuf);
     impl Drop for Temp {
         fn drop(&mut self) {

@@ -15,6 +15,7 @@ pub mod create_recovery;
 pub mod create_prompt;
 pub mod create_task;
 pub mod mcp_read;
+pub mod automation;
 
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
 use crate::domain::address::SessionRef;
