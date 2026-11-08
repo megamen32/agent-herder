@@ -1,0 +1,61 @@
+{
+  "scope": "ChatGPT browser lane of Herder V1 CI; browser source/fixes, ChatGPT runtime, aggregate and sole V1 install",
+  "published_main": [
+    {"sha": "36534e37", "what": "own one marked tab per provider, keep it across renumbering"},
+    {"sha": "5cb94a16", "what": "prove the ChatGPT first-message route from the account history"},
+    {"sha": "9537f357", "what": "keep one owned tab and settle a finished chat for the follow-up delivery"},
+    {"sha": "2afa139f", "what": "prove the account scope of the passive startup listing; load durable drafts on read"},
+    {"sha": "e11a3fe3", "what": "poll the native receipt read-only when the provider stores the message late"},
+    {"sha": "f2b6dae8", "what": "prove a fresh rendered receipt id and take an honest DOM baseline"},
+    {"sha": "4c0a9fea", "what": "take the rendered baseline and the receipt from the exact conversation tab only"}
+  ],
+  "verified_source": "174 browser tests GREEN (6 suites) + independent final-browser-receipt-contract.test.ts GREEN on the same source",
+  "browser_lane_result": {
+    "state": "PARTIAL: two separate deliveries CONFIRMED with native receipts; the ordinary 7-check consumer case is not yet closed",
+    "proven": [
+      "first prompt: create confirmed, native receipt ahap-receipt:v1 message ecb24a28-1d4c-4200-a639-7543fd84f44e, outcome confirmed",
+      "second deliver into the same session: task mcp-delivery-task:e3590c2fbef9bdb10c0daecd4c87453c83f38db6da698f9538fd12a627c45f34, receipt cee6b64d-2e92-4060-ba06-f8c301e04b45 confirmed",
+      "session read through the public core shows user+assistant rows for BOTH prompts of session 49cb0a0f58c966bac480041f3c6db1eb",
+      "native route proof of the first message from the account history (remoteId 6af01048-8184-83ea-95ae-7d6c5e09dd19)"
+    ],
+    "open": "the same run's readback returned an empty page because the ChatGPT read API answered 429; the ChatGPT account is now rate-limited on /backend-api/conversation(s) until the cooldown expires"
+  },
+  "proved_defects_fixed_in_source": [
+    "SPA navigation drops the ?herder_owned marker: ownership now also lives in the page (window.name) so one tab per provider is kept and no tab explosion happens",
+    "route proof read conversation.mapping from /backend-api/conversations/<id> which answers with messages: the proof now reads messages",
+    "a finished chat stayed working forever and every follow-up delivery was refused: the state is now settled from the provider history",
+    "the account check refused to verify during a history cooldown although /api/auth/session answers 200: it no longer refuses",
+    "a receipt read that ran before the provider stored the message left the delivery permanently unknown: bounded READ-ONLY re-reads now settle it",
+    "a rate-limited tab failed the whole read although another tab of the same account answers: the read now skips it",
+    "an identical old prompt could be adopted as the receipt: the receipt must be a fresh id and the baseline comes from the exact conversation tab"
+  ],
+  "external_state_blocker": {
+    "what": "ChatGPT account b11f7b1c-c1ea-4553-bb07-57c0b330fbf9 (scope b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1) answers HTTP 429 on /backend-api/conversation(s)/<id> and /api/auth/session for the read path",
+    "observed": "both endpoints 429 on pages 1 and 3 at 2026-11-08 12:31Z; one plural request answered 200 with 4 messages right before",
+    "rule": "no new ChatGPT send while the account is rate-limited; the already delivered prompts keep their confirmed receipts and are never repeated"
+  },
+  "running_jobs": "none; the last background run (ci-chatgpt-v1-full2-78e747be) finished FAILED with 'Task did not reach a terminal status within 300s' and no open process remains",
+  "last_external_mutation": {
+    "what": "the second deliver of run ci-chatgpt-v1-full-78e747be / ci-chatgpt-v1-attempt-18 into session 49cb0a0f58c966bac480041f3c6db1eb",
+    "native_conversation": "6af0152b-acb8-83ea-a811-0e65a4589ea8",
+    "native_user_message_id": "cee6b64d-2e92-4060-ba06-f8c301e04b45",
+    "native_assistant_message_id": "f8c2f9a8-baa4-4540-9389-1eb0bdcc4914",
+    "core_receipt": "mcp-delivery-task:e3590c2fbef9bdb10c0daecd4c87453c83f38db6da698f9538fd12a627c45f34 confirmed",
+    "rule": "not repeated, not renamed; read-only reconciliation only"
+  },
+  "browser_state_on_mac_mini": {
+    "owned_tab_marker": "?herder_owned=chatgpt (page marker herder-owned:chatgpt survives SPA navigation)",
+    "pages": "1 and 3 are the ChatGPT tabs of the current CI runs; page 25 is a foreign Z.ai chat (exmanager) and was not touched",
+    "profile": "the persistent Chrome profile, login and history were preserved; only herder-owned tabs were used"
+  },
+  "install_contract_ready": {
+    "candidate": "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/manifest.json sha256 bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+    "ordinary_consumer_entry": "<candidate>/fixture/herder-compat --trusted-owner-profile <protected owner profile>",
+    "native_entry": "<candidate>/fixture/herder_native_stdio --trusted-owner-profile <protected owner profile>",
+    "profile_bootstrap": "<candidate>/fixture/ahap-owner-bootstrap <fresh protected home> then owner profile with database/gate/generation from the seed and owner.ahap_env allowlisted",
+    "protected_profile_location_to_use": "/home/roomhacker/herder-artifacts/install/v1-78e747befinal/owner-home (mode 0700, profile 0600)",
+    "activation": "NOT performed: the install stays behind the accepted five-lane matrix, no legacy current switch",
+    "readback_after_install": "run the same ordinary consumer through the packaged herder-compat against the installed profile and compare the native receipt of one fresh create+deliver"
+  },
+  "not_to_repeat": "all historical UNKNOWN receipts, the original a836/5ea ChatGPT tasks, and every already delivered prompt of this session"
+}
