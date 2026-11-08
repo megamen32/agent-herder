@@ -90,7 +90,8 @@ export function createNoticePlaceCompletionRegistrar(source:NoticePlaceCompletio
   };
 }
 
-export function createNoticePlaceRustAutopilotPort(port:{call(tool:string,args:Record<string,unknown>,operationKey?:string):Promise<unknown>},instanceRef:string,deliveryMode:'start'|'queue'='start'){
+export function createNoticePlaceRustAutopilotPort(port:{call(tool:string,args:Record<string,unknown>,operationKey?:string):Promise<unknown>},instanceRef:string,deliveryMode:'start'|'queue'){
+  if(deliveryMode!=='start'&&deliveryMode!=='queue')throw new Error('noticeplace_delivery_mode_required');
   const value=(value:unknown):Record<string,unknown>=>object(value);
   const listSessions=async()=>{
     const payload=value(await port.call('sessions',{action:'list',instance_ref:instanceRef}));
@@ -212,5 +213,5 @@ export async function createNoticePlaceRuntime(config:Config) {
     },
   };
   await service.restore();
-  return {policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead,identity:createNoticePlaceSessionIdentity(listSessions,instance.cwd),resume:port};
+  return {policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead,identity:createNoticePlaceSessionIdentity(listSessions,instance.cwd),resume:{...port,deliveryMode:instance.deliveryMode}};
 }

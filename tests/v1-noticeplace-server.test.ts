@@ -24,8 +24,9 @@ let resumeMode:'confirmed'|'human-stop'|'unknown'|'task-only'|'immediate-human-s
 let autopilotCalls:string[];
 let resumeTaskReads=0;
 let identityMode:'confirmed'|'null'|'throws'='confirmed';
+let deliveryMode:'start'|'queue'='queue';
 
-beforeEach(async () => { root = await mkdtemp(join(process.cwd(),'.tmp/noticeplace-v1-')); servers=[]; wireCalls=[]; wireMode='normal'; taskReads=0; ownerMode='confirmed'; sessionReadCalls=[]; resumeMode='confirmed'; autopilotCalls=[]; resumeTaskReads=0; identityMode='confirmed'; vi.stubEnv('NOTICEPLACE_HEALTH_LAUNCH_TOKEN',token); });
+beforeEach(async () => { root = await mkdtemp(join(process.cwd(),'.tmp/noticeplace-v1-')); servers=[]; wireCalls=[]; wireMode='normal'; taskReads=0; ownerMode='confirmed'; sessionReadCalls=[]; resumeMode='confirmed'; autopilotCalls=[]; resumeTaskReads=0; identityMode='confirmed'; deliveryMode='queue'; vi.stubEnv('NOTICEPLACE_HEALTH_LAUNCH_TOKEN',token); });
 afterEach(async () => { await Promise.all(servers.map(s=>new Promise<void>(resolve=>s.close(()=>resolve())))); vi.unstubAllEnvs(); await rm(root,{recursive:true,force:true}); });
 
 const policy = {
@@ -63,7 +64,7 @@ async function listen(): Promise<{server:Server;url:string}> {
   const policyStore=new AutomationLaunchPolicyStore(join(root,'policy.json'));
   await policyStore.replace(policy);
   const attempts=new ProjectLaunchAttemptLog(join(root,'attempts.json'));
-  const instance={instanceRef:'opencode-instance-test',harness:'opencode' as const,model:NOTICEPLACE_V1_MODEL,cwd:'/workspace/infra',deliveryMode:'start' as const};
+  const instance={instanceRef:'opencode-instance-test',harness:'opencode' as const,model:NOTICEPLACE_V1_MODEL,cwd:'/workspace/infra',deliveryMode};
   const runner=createNoticePlaceRustRunner({port:rust,instance,incidentRouter:createNoticePlaceIncidentRouter(join(root,'incident-bindings.json'),rust,instance)});
   const ownerState={async read():Promise<unknown>{
     if(ownerMode==='unknown') return {ok:false};
@@ -72,7 +73,7 @@ async function listen(): Promise<{server:Server;url:string}> {
   const autopilot={async get({sessionId}:{sessionId:string}){autopilotCalls.push(`get:${sessionId}`);return {enabled:false,sessionId};},async arm({sessionId,enabled}:{sessionId:string;enabled:boolean}){autopilotCalls.push(`arm:${sessionId}`);return {enabled,sessionId};}};
   const server=createV1NoticePlaceServer({policyStore,attempts,runner,ownerState,autopilot,
     identity:{async toCoreRef(id){return id===nativeId||id===coreRef?coreRef:null;},async toNativeId(ref){if(identityMode==='throws')throw new Error('identity lookup unavailable');return identityMode==='null'?null:ref===coreRef?nativeId:null;}},
-    resume:{async call(tool,args,key){wireCalls.push({tool,args,key});
+    resume:{deliveryMode,async call(tool,args,key){wireCalls.push({tool,args,key});
       if(tool==='deliver'&&resumeMode==='immediate-human-stop')return {isError:true,structuredContent:{code:'human_stop_active',effect:'none'}};
       if(tool==='deliver'&&resumeMode==='immediate-unsupported')return {isError:true,structuredContent:{code:'unsupported_mode',effect:'none'}};
       if(tool==='deliver')return {structuredContent:{task_ref:'resume-task-1'}};
@@ -118,14 +119,22 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     expect(wireCalls).toHaveLength(0);
   });
 
-  it('resumes the exact resolved core session and returns admission only with the native receipt',async()=>{
+  it.each(['queue','start'] as const)('resumes the exact session with configured %s mode and a native receipt',async(mode)=>{
+    deliveryMode=mode;
     const {url}=await listen();
     const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue the existing repair\nwith this follow-up',humanRequested:false,inputId:'resume-input-7'})});
     expect(response.status).toBe(200);
     const body=await response.json();
     expect(body).toMatchObject({ok:true,admitted:true,outcome:'accepted',sessionId:nativeId,core_session_ref:coreRef,inputId:'resume-input-7',native_receipt_id:'resume-receipt-1'});
     expect(body).toMatchObject({native_receipt:{outcome:'confirmed',native_receipt_id:'resume-receipt-1'}});
-    expect(wireCalls.filter(call=>call.tool==='deliver')).toEqual([{tool:'deliver',args:{action:'session',session_ref:coreRef,message:'continue the existing repair\nwith this follow-up',mode:'start',request_key:'resume-input-7'},key:'resume-input-7'}]);
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toEqual([{tool:'deliver',args:{action:'session',session_ref:coreRef,message:'continue the existing repair\nwith this follow-up',mode:deliveryMode,request_key:'resume-input-7'},key:'resume-input-7'}]);
+  });
+
+  it('does not invent a resume mode when its configured port is missing one',async()=>{
+    const call=vi.fn(async()=>({structuredContent:{task_ref:'must-not-submit'}}));
+    const result=await resumeNoticePlaceSession({coreSessionRef:coreRef,message:'continue',humanRequested:false,inputId:'resume-no-mode',port:{call} as never});
+    expect(result).toMatchObject({outcome:'not_sent',effect:'none',code:'unsupported_mode'});
+    expect(call).not.toHaveBeenCalled();
   });
 
   it('polls the same working task to completion without resending deliver',async()=>{
@@ -141,7 +150,7 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
   it('returns bounded UNKNOWN quickly when a task remains working',async()=>{
     const calls:string[]=[];
     const result=await resumeNoticePlaceSession({coreSessionRef:coreRef,message:'continue',humanRequested:false,inputId:'resume-timeout',pollIntervalMs:0,pollDeadlineMs:0,
-      port:{async call(tool){calls.push(tool);return tool==='deliver'
+      port:{deliveryMode:'queue',async call(tool){calls.push(tool);return tool==='deliver'
         ?{structuredContent:{task_ref:'resume-task-timeout'}}
         :{structuredContent:{resultType:'complete',taskId:'resume-task-timeout',status:'working'}};}}});
     expect(result).toMatchObject({outcome:'admission_unknown',task_ref:'resume-task-timeout',native_receipt:{taskId:'resume-task-timeout',status:'working'}});
@@ -161,6 +170,7 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     expect(body.admitted).toBe(false);
     expect(body.native_receipt_id).toBeUndefined();
     expect(body.native_receipt).toMatchObject(mode==='human-stop'?{code:'human_stop',effect:'none'}:mode==='unknown'?{taskId:'resume-task-1',status:'unknown'}:{});
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toEqual([expect.objectContaining({args:expect.objectContaining({mode:'queue'})})]);
   });
 
   it.each([
@@ -172,6 +182,7 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',humanRequested:false,inputId:`resume-${mode}`})});
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({outcome,ok:false,admitted:false,sessionId:nativeId,code,native_receipt:{code,effect:'none'}});
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toEqual([expect.objectContaining({args:expect.objectContaining({mode:'queue'})})]);
     expect(wireCalls.filter(call=>call.tool==='compat_task')).toHaveLength(0);
   });
 
@@ -277,7 +288,7 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     expect(wireCalls.filter(call=>call.tool==='create')).toHaveLength(1);
     expect(wireCalls.filter(call=>call.tool==='deliver')).toHaveLength(1);
     expect(wireCalls.filter(call=>call.tool==='create')[0]?.args.request_key).toBe('herder-launch:opencode:op-stable-42');
-    expect(wireCalls.filter(call=>call.tool==='deliver')[0]).toMatchObject({args:{session_ref:coreRef,mode:'start'},key:'herder-launch:opencode:op-stable-43'});
+    expect(wireCalls.filter(call=>call.tool==='deliver')[0]).toMatchObject({args:{session_ref:coreRef,mode:'queue'},key:'herder-launch:opencode:op-stable-43'});
     expect(Object.keys(wireCalls.filter(call=>call.tool==='deliver')[0]!.args).sort()).toEqual(['action','message','mode','request_key','session_ref']);
   });
 

@@ -1,4 +1,6 @@
 export interface NoticePlaceResumePort {
+  /** Exact instance mode from protected runtime configuration; never inferred or retried. */
+  deliveryMode: 'start' | 'queue';
   call(tool: 'deliver' | 'compat_task', args: Record<string, unknown>, operationKey?: string): Promise<unknown>;
 }
 const TASK_POLL_INTERVAL_MS=250;
@@ -31,13 +33,15 @@ export async function resumeNoticePlaceSession(input:{
 }):Promise<NoticePlaceResumeResult> {
   const base={core_session_ref:input.coreSessionRef,inputId:input.inputId};
   if(input.humanRequested!==false) return {...base,outcome:'not_sent',effect:'none',code:'human_intent_required'};
+  const deliveryMode=input.port.deliveryMode;
+  if(deliveryMode!=='start'&&deliveryMode!=='queue')return {...base,outcome:'not_sent',effect:'none',code:'unsupported_mode'};
   const pollIntervalMs=input.pollIntervalMs??TASK_POLL_INTERVAL_MS;
   const pollDeadlineMs=input.pollDeadlineMs??TASK_POLL_DEADLINE_MS;
   let taskRef:string|undefined;
   let deliveryReceipt:Record<string,unknown>|undefined;
   try {
     const rawDelivery=await input.port.call('deliver',{
-      action:'session',session_ref:input.coreSessionRef,message:input.message,mode:'start',request_key:input.inputId,
+      action:'session',session_ref:input.coreSessionRef,message:input.message,mode:deliveryMode,request_key:input.inputId,
     },input.inputId);
     const delivered=toolValue(rawDelivery);
     const immediateReceipt=object(delivered.structuredContent)??delivered;

@@ -83,7 +83,13 @@ describe('NoticePlace runtime composition ports', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('rechecks row+messages before exact Rust Deliver::Session and does not send on stale revision', async () => {
+  it('does not invent an automatic delivery mode when configuration is absent',()=>{
+    const port={call:vi.fn(async()=>({}))};
+    expect(()=>createNoticePlaceRustAutopilotPort(port,'opencode-noticeplace-local',undefined as never)).toThrow('noticeplace_delivery_mode_required');
+    expect(port.call).not.toHaveBeenCalled();
+  });
+
+  it.each(['queue','start'] as const)('keeps configured %s mode after the exact snapshot recheck and does not send on stale revision', async (deliveryMode) => {
     const calls:Array<{tool:string;args:Record<string,unknown>;key?:string}>=[];
     let currentMessages=messages;
     const port={async call(tool:string,args:Record<string,unknown>,key?:string){
@@ -93,7 +99,7 @@ describe('NoticePlace runtime composition ports', () => {
       if(tool==='deliver')return {task_ref:'delivery-task'};
       throw new Error('unexpected_tool');
     }};
-    const rust=createNoticePlaceRustAutopilotPort(port,'opencode-noticeplace-local');
+    const rust=createNoticePlaceRustAutopilotPort(port,'opencode-noticeplace-local',deliveryMode);
     const snapshot=await rust.snapshot('opaque-rust-ref');
     const input={sessionRef:'opaque-rust-ref',nativeSessionId:'native-session',message:'continue',requestKey:'stable-key',model:row.native.model,expectedRevision:snapshot.revision,turnId:snapshot.turnId};
     currentMessages={page:{messages:[...messages.page.messages,{role:'assistant',turnId:'later-turn',text:'changed'}]}};
@@ -101,8 +107,9 @@ describe('NoticePlace runtime composition ports', () => {
     expect(calls.filter(call=>call.tool==='deliver')).toHaveLength(0);
     currentMessages=messages;
     await rust.deliver(input);
+    expect(calls.filter(call=>call.tool==='deliver')).toHaveLength(1);
     const delivery=calls.find(call=>call.tool==='deliver')!;
-    expect(delivery.args).toEqual({action:'session',session_ref:'opaque-rust-ref',message:'continue',mode:'start',request_key:'stable-key'});
+    expect(delivery.args).toEqual({action:'session',session_ref:'opaque-rust-ref',message:'continue',mode:deliveryMode,request_key:'stable-key'});
     expect(delivery.key).toBe('stable-key');
   });
 });
