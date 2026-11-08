@@ -1,0 +1,61 @@
+{
+  "id": "SENDDIAG",
+  "kind": "task",
+  "parent": "S2",
+  "label": "Сохранять ограниченную причину browser отказа",
+  "status": "done",
+  "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "acceptance": "Sanitized allowlist reason/stage, no raw secrets, UNKNOWN semantics unchanged; RED/GREEN.",
+  "note": "Existing worker after CASETRACE; accepted native input01a1bbc6-1e4e-7132-ae9b-a3418f1e4b84, parent01a1bb0c.",
+  "created_at": "2026-11-08T18:28:29+03:00",
+  "updated_at": "2026-11-08T18:38:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T18:28:29+03:00",
+      "note": "",
+      "changes": {
+        "id": "SENDDIAG",
+        "kind": "task",
+        "parent": "S2",
+        "label": "Сохранять ограниченную причину browser отказа",
+        "status": "running",
+        "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "acceptance": "Sanitized allowlist reason/stage, no raw secrets, UNKNOWN semantics unchanged; RED/GREEN.",
+        "note": "Existing worker after CASETRACE; accepted native input01a1bbc6-1e4e-7132-ae9b-a3418f1e4b84, parent01a1bb0c."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:38:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Published54f93706. Exact whitelist stage/reason on AHAP browser send failures, no raw errors/secrets. UNKNOWN semantics unchanged.65testsPASS+tscPASS. Newcandidate54f93706-diagnostic manifest91610caa."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "Published54f93706. Exact whitelist stage/reason on AHAP browser send failures, no raw errors/secrets. UNKNOWN semantics unchanged.65testsPASS+tscPASS. Newcandidate54f93706-diagnostic manifest91610caa."
+}

@@ -1,12 +1,12 @@
 {
   "label": "Z.ai: выделенный scope через public core",
-  "owner": "CI",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
   "depends_on": [
     "R1"
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "blocked",
+  "status": "running",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NZAI",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:41:42+03:00",
+  "updated_at": "2026-11-08T18:02:30+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -87,8 +87,29 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:02:30+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "blocker": null,
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "result": "Нынешний preflight5ff PASS14tools. Старый capacity/UNKNOWN сохранён. Новый owned test draft f804 доказан pending до клика; исправлена native textarea selection aa111101 (RED/GREEN). Проверяется новый exactcandidate; старые prompts не повторяются.",
+        "note": "18:03МСК: реальная текущая работа integrator, не ожидание старого CI."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
-  "result": "14tools preflightPASS; sessioncreateconfirmed, promptUNKNOWN. Receipt CI/evidence/zai-a836-native-blocker.json; full lane notPASS.",
-  "blocker": "CI owns original Z.ai promptUNKNOWN after provider capacity refusal; no resend/model switch. Continue only exact native read/reconciliation or owner-approved new independent case."
+  "result": "Нынешний preflight5ff PASS14tools. Старый capacity/UNKNOWN сохранён. Новый owned test draft f804 доказан pending до клика; исправлена native textarea selection aa111101 (RED/GREEN). Проверяется новый exactcandidate; старые prompts не повторяются.",
+  "blocker": null,
+  "blocker_details": null,
+  "note": "18:03МСК: реальная текущая работа integrator, не ожидание старого CI."
 }

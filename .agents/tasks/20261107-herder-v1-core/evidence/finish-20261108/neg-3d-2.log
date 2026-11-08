@@ -1,0 +1,26 @@
+warning: fields `authority`, `database`, `gate`, and `generation` are never read
+  --> tests/../src/bin/herder_native_stdio/scoped_profile.rs:63:9
+   |
+62 | pub struct OpenedOwner {
+   |            ----------- fields in this struct
+63 |     pub authority: ScopedAuthority,
+   |         ^^^^^^^^^
+64 |     pub owner: OwnerProfile,
+65 |     pub database: PathBuf,
+   |         ^^^^^^^^
+66 |     pub gate: PathBuf,
+   |         ^^^^
+67 |     pub generation: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "launcher_scoped_profile") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running tests/launcher_scoped_profile.rs (crates/herder/target/debug/deps/launcher_scoped_profile-fc7dba0d39c1c78e)
+
+running 1 test
+test one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 4.16s
+

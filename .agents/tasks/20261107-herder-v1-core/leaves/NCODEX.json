@@ -6,7 +6,7 @@
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "blocked",
+  "status": "done",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NCODEX",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:20:20+03:00",
+  "updated_at": "2026-11-08T18:01:13+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -90,9 +90,56 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:50:05+03:00",
+      "note": "08.11 final integration review by01a1bb0c; use actual receipts, old blockers are historical.",
+      "changes": {
+        "status": "running",
+        "result": "Old launch blocker resolved9f4cd928, public ownedchild proofee6ed6e0. Integration guard be109a18+6237dca1 published:93adapter/route+49guard testsPASS,buildcore+tscPASS,actualchild checks6/6,effectiveCodex configread. Worker portablefullfixture377b28b0 ready. Next: Astra exactbundle then workerfullcase; historicalUNKNOWN retained."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:00:51+03:00",
+      "note": "08.11 16:00 MSK. Integration accepts exact candidate result; installed proof remains separate.",
+      "changes": {
+        "status": "done",
+        "result": "Exact78e747befinal fullconsumerPASS runcodex-v1-f2c3ff62c8224263bbb902959977b1cb:7checks,2nativeconfirmedturns,2modelrequests,export/search/projects/restart. Fullreceipt retained and published0c5eee51 finish-20261108/codex-78-result.json. Earlier fixture evidence-loss fixed98ef60fa; this is a fresh independent disposable run, not historical replay. Candidate only."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:01:13+03:00",
+      "note": "",
+      "changes": {
+        "result": "Exact candidate5ff02215 full CLIconsumer PASS incl archive,8checks; runcodex-5ff02215-d6831fbe; evidence finish-20261108/codex-5ff-result.json. Это candidate, installed отдельно."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
   "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NCODEX. Native result not yet ready. This is integration acceptance tracking, not a new dispatch.",
   "blocker": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance.",
-  "result": "Original create UNKNOWN; native RPC/stderr absent, root cause unproven. No replay. CI owns native lane; root owns typed refusal correction. Continue only exact reconciliation or separately authorized independent acceptance."
+  "result": "Exact candidate5ff02215 full CLIconsumer PASS incl archive,8checks; runcodex-5ff02215-d6831fbe; evidence finish-20261108/codex-5ff-result.json. Это candidate, installed отдельно."
 }

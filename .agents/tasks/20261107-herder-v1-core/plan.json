@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "01:00МСК: deadline00:38MISSED. CIauthorizedbrowserrepair/restart preservesprofile; clarified no-replay appliesexactoperation, NOT independent isolatedCLIregressions afterfix. CI assignedparallel new OpenCode/Codex/ZCode fixtures withlocalfake model andseparateauthority/instances; oldUNKNOWNunchanged. Latestcandidate5ea source/package/NEG5PASS+ChatGPTstartup14toolsPASS; fullnative/installed notdone. Singer soleDISARMrotation100/44/88 separateplan. Nextwake01:37MSKwaiting.",
-  "updated_at": "2026-11-08T00:57:57+03:00",
+  "current_progress": "08.11 18:31МСК: native Sol6.1×2/Terra6.1×1 работают; lead интеграция/browser/install. CHATDELTA+CASETRACE опубликованы82b91db9, compilePASS,59TS+6fakeRPCPASS. Candidate82b91db9-readfix manifestcff8e8dd; source/browser fixed, full live ещё INCOMPLETE. CLI previous candidate5ff PASS; ZCode archive raw receipt gap уточняется ZARCHPROOF, exact current NEG FINALMATRIX. Browser Zai original3d create confirmed/promptUNKNOWN, no remote route, cleanupINCOMPLETE; собственный no-click diagnostic проходит51s. ChatGPT original A readonly reconcile на новом adapter, затем archive. Next: browser full2profiles+Zai, NEG, soleV1install/readback. Старый deadline пропущен; ETA35–60min под риском, новый гарантированный срок не заявляется. Hourly отменён, токен оставить. C13/C14/FIXZ stale assigned lifecycle не является активной разработкой.",
+  "updated_at": "2026-11-08T18:30:34+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -32,6 +32,50 @@
         "source": "mcp_metadata"
       },
       "summary": "Без нового roadmap. Source→candidate выполнено; negative consumer gate выполнен. LHC native activity receipt сохранён только triage, не расширяет V1. Legacy NoticePlace release независим."
+    },
+    {
+      "at": "2026-11-08T15:09:42+03:00",
+      "reason": "Прямое поручение владельца 08.11 в сессии 01a1bb0c-4fd3-75e2-ae2a-2c18a99462de: завершить ночную работу двух существующих сессий и проверить реальную пригодность.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Существующий V1 scope сохраняется. Astra01a1b2b2: core/wrapper launch integration + final immutable candidate с актуальными TS adapters. CI01a1ac52: adapters/fixtures/native lanes/sole install. Текущая сессия: итоговая приёмка/согласование и узкая коррекция управляющих инструкций. Токен оставить текущим, ротаций/отката нет; hourly отменён. Новые native Rust adapters/GPTAdmin/другие проекты не входят. Latest verified candidate71b357f8core содержит старые adapters; full installed5/5 пока не доказан."
+    },
+    {
+      "at": "2026-11-08T17:26:58+03:00",
+      "reason": "Прямое поручение владельца: завершить самостоятельно, актуализировать план, два отдельных Chrome profiles как instances adapters одного Herder, native archive тестовых чатов.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Актуальный owned WIP найден в herder-final-acceptance (910ffa6e). Продолжаем его, не создаём новое ядро/план. Остаток: проверка двух профилей и изоляции; публикация и immutable bundle; live ChatGPT/Z.ai create→deliver→read→archive; установка и installed readback. CLI consumer на candidate уже доказан, это не installed PASS. Оценка рабочего остатка 60–90 минут при доступных браузерах; live provider ошибки остаются риском, исходный пропущенный дедлайн не переписывается."
+    },
+    {
+      "at": "2026-11-08T18:06:50+03:00",
+      "reason": "Прямое поручение обновить план и закончить самостоятельно; фактические source/candidate/consumer результаты",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Один core, два account-specific adapters, native archive. Browser fixes aa111101 опубликованы; CLI exact receipts подтверждены, browser/install ещё открыты. Нового roadmap, scheduler и rotation нет."
+    },
+    {
+      "at": "2026-11-08T18:26:53+03:00",
+      "reason": "Owner asks native Sol6.1 for complex, Terra for simple; refreshed actual workers and consumer failures",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Два Sol6.1: CHATDELTA sourcefix принят, далее ZCode archive evidence; CASETRACE test cleanup/trace. Terra6.1 FINALMATRIX нашла missing archive receipt и проверяет exact candidate NEG. Lead: Zai root cause, integration/install. Candidate3d767f28 Zai create confirmed/prompt unknown, draft pending, cleanup incomplete; no replay. ChatGPT old original task still working on readonly reconcile. Остаток browser2accounts+Zai, packaged NEG, soleV1 install/readback; готовность не подтверждена. Прежний ETA35–60min рискован: браузерный consumer всё ещё красный."
     }
   ]
 }

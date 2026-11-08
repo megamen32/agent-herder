@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder/tests/native/launch.py",
+    "--retain-on-failure",
+    "/home/roomhacker/herder-artifacts/ci-runs/zcode-5ff02215-63bcf20f",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles",
+    "--ro-bind",
+    "/tmp/herder-zcode-v1-runtime-recovered-6ad71fab",
+    "--ro-bind",
+    "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/dist",
+    "--ro-bind",
+    "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/node_modules/ws",
+    "--ro-bind",
+    "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/package.json",
+    "--",
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder/tests/native/v1_zcode_stand.py",
+    "--manifest",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/manifest.json",
+    "--manifest-sha256",
+    "9fc6f17e7b5c43b1a9208a2a60edc461d5d38c6357e19946892dbded50af1dfb",
+    "--runtime",
+    "/tmp/herder-zcode-v1-runtime-recovered-6ad71fab/runtime",
+    "--client-dist",
+    "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/dist",
+    "--run-case"
+  ],
+  "manifest_sha256": "9fc6f17e7b5c43b1a9208a2a60edc461d5d38c6357e19946892dbded50af1dfb",
+  "source_commit": "5ff022154aaef7a13ae41b4cd5d24d4353adc8ef"
+}

@@ -1,20 +1,20 @@
 {
   "label": "OpenCode: deliver/reopen/export/search/projects",
-  "owner": "CI: Existing stand Luna",
+  "owner": "Integration01a1bb0c",
   "depends_on": [
     "R1"
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "blocked",
+  "status": "done",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NOC",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T22:06:05+03:00",
-  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:20:20+03:00",
+  "updated_at": "2026-11-08T18:01:12+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -90,9 +90,88 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:20:21+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "owner": "Integration01a1bb0c",
+        "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "result": "Luna71b3 projects targetedPASS received. Current stand still snapshots projects before create and requires global complete=true contrary to CONTRACT authorized scope. Integration owns only stand+test fix and final full OpenCode scenario; CI keeps all other lanes/install. Previous failures retained as historical, not current blanket blocker."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:24:16+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Full native consumer on candidate71b357f8core PASS runbb0edc45-06c2-493a-a202-e8087690b16b: create→initial read→distinct second deliver→read both→full native export→search→projects→core restart/readback, exactly2 fake-model requests, same count after restart. Corrected stand23eca4b9 publishedmain805fd477 with strict post-registration/restart expected project/per-item provenance; complete=false/limitations retained. RED incomplete→32GREEN. Evidence finish-20261108/opencode-result.json; this is candidate proof, not installed/final rebuilt5lanes."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:50:05+03:00",
+      "note": "08.11 final integration review by01a1bb0c; use actual receipts, old blockers are historical.",
+      "changes": {
+        "result": "Full native PASS on805fd477final manifest93c2c25b run30660f7f; ordinary legacy-wire fullconsumer PASS with compat argvfix60365397 run36a8ca6f. Each2modelrequests,restart0resend. Published finish-20261108/opencode-final-result.json and compat-result.json. Not installed/Codex-model approval proof."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:00:51+03:00",
+      "note": "08.11 16:00 MSK. Integration accepts exact candidate result; installed proof remains separate.",
+      "changes": {
+        "result": "Exact78e747befinal manifestbf570d10 fullnativePASS runc1a03b9e and packagedlegacycompatPASS run600aaea1. Each2modelrequests/restart0resend. Published14ee7d4b finish-20261108/{opencode,compat}-78-result.json. Candidate only."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:01:12+03:00",
+      "note": "",
+      "changes": {
+        "result": "Exact candidate5ff02215 manifest9fc6f17e: OpenCode и ordinary compat полный consumer PASS включая archive; раздельные runs opencode-5ff02215-eca2e31b/compat-5ff02215-7146c225. Два модельных запроса каждый; restart без повторного send. Evidence finish-20261108/{opencode,compat}-5ff-result.json. Source/browser delta aa111101 не меняет CLI bytes; hashes сверяются при final candidate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
   "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NOC. Native result not yet ready. This is integration acceptance tracking, not a new dispatch.",
   "blocker": "Original accepted native answer logged, but fixture deleted disposable state. Task/input marker unrecoverable. No replay. CI owns fixture receipt retention/completion fix; full lane remains unproven.",
-  "result": "Original accepted native answer logged, but fixture deleted disposable state. Task/input marker unrecoverable. No replay. CI owns fixture receipt retention/completion fix; full lane remains unproven."
+  "result": "Exact candidate5ff02215 manifest9fc6f17e: OpenCode и ordinary compat полный consumer PASS включая archive; раздельные runs opencode-5ff02215-eca2e31b/compat-5ff02215-7146c225. Два модельных запроса каждый; restart без повторного send. Evidence finish-20261108/{opencode,compat}-5ff-result.json. Source/browser delta aa111101 не меняет CLI bytes; hashes сверяются при final candidate."
 }

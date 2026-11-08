@@ -2,11 +2,11 @@
   "label": "ChatGPT: выделенный scope через public core",
   "owner": "CI",
   "depends_on": [
-    "R1"
+    "FINALBUNDLE"
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "blocked",
+  "status": "pending",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NCHAT",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:55:53+03:00",
+  "updated_at": "2026-11-08T17:36:36+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -134,8 +134,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T17:36:36+03:00",
+      "note": "",
+      "changes": {
+        "status": "pending",
+        "blocker": null,
+        "result": "Историческая сеть восстановлена: 08.11 verified account двух страниц, visible empty composer есть. Full native create/deliver/read/archive ещё не принят. Старые UNKNOWN сохранены отдельно.",
+        "depends_on": [
+          "FINALBUNDLE"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
-  "result": "Publishedcandidate5ea realstartup14toolsPASS; page8 bootstrap22JS HTTP2_PING_FAILED, onescopedreload+afterreadsocket_timeout. Networktriage found staleMacchatgptVUSApin bypassLANfailover; underlyingHTTP2cause unproven. Repair nowauthorized; notPASS.",
-  "blocker": "Browser/gateway repair and exactMacclientroute recovery assignedsoleCI. Owner explicitly allows fixing/restarting browser; previousAstra no-reload restriction superseded. Persistentprofile/login/foreigndrafts preserved. Fullnativecase follows verifiedtarget/account/QAclaim; original modelUNKNOWN no replay."
+  "result": "Историческая сеть восстановлена: 08.11 verified account двух страниц, visible empty composer есть. Full native create/deliver/read/archive ещё не принят. Старые UNKNOWN сохранены отдельно.",
+  "blocker": null
 }

@@ -1,0 +1,8 @@
+{"tool":"list_pages","ms":2136}
+{"tool":"evaluate_script","page":1,"ms":2565}
+{"tool":"evaluate_script","page":1,"ms":2894}
+{"tool":"evaluate_script","page":1,"ms":3707}
+{"tool":"evaluate_script","page":1,"ms":3914}
+[agent-herder] chatgpt_request {"schema":"chatgpt_req_v1","utc":"2026-11-08T15:33:35.304Z","rid":"bc65f57ad4fc84b3","initiator":"herder_browser","executor":"herder_cdp","kind":"upstream_http","operation":"auth_session","endpoint":"/api/auth/session","http_status":200,"latency_ms":321,"retry_after_s":null,"backoff_ms":0,"retry_attempt":0,"cache_hit":false,"upstream_count":1}
+[agent-herder] chatgpt_request {"schema":"chatgpt_req_v1","utc":"2026-11-08T15:33:35.305Z","rid":"875ac382fe5da636","initiator":"herder_browser","executor":"herder_cdp","kind":"upstream_http","operation":"conversation_read","endpoint":"/backend-api/conversations/{id}","http_status":429,"latency_ms":362,"retry_after_s":4,"backoff_ms":4000,"retry_attempt":0,"cache_hit":false,"upstream_count":1}
+{"status":"ERROR","error":"Error: ChatGPT history unavailable: history_http_429"}

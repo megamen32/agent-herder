@@ -1,0 +1,23 @@
+{
+  "candidate": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser",
+  "source": "aa1111019d77503eabd05b8ac8bb1b826148c774",
+  "manifest_sha256": "bb4fdcb05e69fd3684274b6d2adcfe4f98a05ae11e85813e1d3c60300019bde1",
+  "components": {
+    "core": true,
+    "bootstrap": true,
+    "node": true,
+    "compat": true
+  },
+  "adapters": {
+    "opencode": true,
+    "codex": true,
+    "zcode": true
+  },
+  "evidence_sha256": {
+    "opencode-5ff-result.json": "ca8d6d36461d13ca4e144445656fb20f4a50c2a657df26544505eec6804facb4",
+    "codex-5ff-result.json": "91ac3033521e24dad8185666dbc1b1247392531b166b28655d6014ad188e6858",
+    "zcode-5ff-result.json": "9619809ea3529c9f18cbbd35310d4dd821656ae2621cd50a407e59086951d9e6",
+    "compat-5ff-result.json": "1b248c8adf98f917fc43ff4c98f0de491f73fece2a9616038e88383499dc1964"
+  },
+  "claim": "CLI candidate proofs reused only for identical packaged inputs; browser and installed not covered"
+}

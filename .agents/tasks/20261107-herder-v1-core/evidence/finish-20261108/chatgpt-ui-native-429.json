@@ -1,0 +1,15 @@
+{
+  "utc": "2026-11-08T15:36Z",
+  "page_id": 1,
+  "native_route": "/c/6af08fbd-7128-83e9-953e-911afbb106b4",
+  "action": "ordinary_reload",
+  "request_id": 1617,
+  "native_ui_request": "/backend-api/conversations/6af08fbd-7128-83e9-953e-911afbb106b4?num_turns=10&include_has_versions=true",
+  "http_status": 429,
+  "response": {
+    "detail": "Too many requests"
+  },
+  "retry_after_seconds": 23,
+  "native_model_sends": 0,
+  "result": "UI history unavailable too; not adapter-only failure"
+}

@@ -6,7 +6,7 @@
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "blocked",
+  "status": "running",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NZCODE",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:41:42+03:00",
+  "updated_at": "2026-11-08T18:37:49+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -106,9 +106,73 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:50:05+03:00",
+      "note": "08.11 final integration review by01a1bb0c; use actual receipts, old blockers are historical.",
+      "changes": {
+        "status": "running",
+        "result": "Adapter07d54220 published. Worker full2inputs/replies/nativeexport/search/projects/restart PASS on isolated oldcorecandidate; CI/evidence/zcode-v4-559749ac-native.json. Portablefixturepublished. Next: exactsharedartifact run with same adapterbytes; no installedproof yet."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:00:52+03:00",
+      "note": "08.11 16:00 MSK. Integration accepts exact candidate result; installed proof remains separate.",
+      "changes": {
+        "status": "done",
+        "result": "Exact78e747befinal fullconsumerPASS, workerstdoutSHA6ea8c0b2e994b5a05783c87c03009ed5c3042a323260d00f56aacfbfabd4d193. Independent audit verified bothinputs/replies, rawexport, searchsession, core readback. CI/evidence/zcode-v1-78e747be-output.jsonl; own audit finish-20261108/zcode-78-audit.json. Projects scoped completefalse honest. Candidate only; supervisorrestart not inferred."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:01:14+03:00",
+      "note": "",
+      "changes": {
+        "result": "Exact candidate5ff02215 full CLIconsumer PASS incl archive; runzcode-5ff02215-63bcf20f; evidence finish-20261108/zcode-5ff-result.json. Native official app-server с изолированной локальной лжемоделью. Installed отдельно."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:37:49+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "result": "82b91db9 local native ZCode fixture: create/deliver/read/export/search/projects/restartPASS; новый archive gate вернул unsupported_archive effectnone, поэтому fullcaseINCOMPLETE. Старый5ffPASS не проверялarchive. SolMaxwell чинит существующий native archive seam; retainedroot zcode-82b91db9-archive-ede4cb8ab457, no replays.",
+        "note": "Correction of earlier unqualified archivePASS; evidence zcode-82b-result.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
-  "note": "Observed existing CI canonical assignment23:24МСК, exactcandidate d66c9c07; source CI20261107 NZCODE. Native result not yet ready. This is integration acceptance tracking, not a new dispatch.",
+  "note": "Correction of earlier unqualified archivePASS; evidence zcode-82b-result.json.",
   "blocker": "Original ZCodecreateUNKNOWN remains. Fixture projectsetup is now fixed/published61503548 with7tests inclreal supervisor preflight. That does not reconcile originalmutation; CI owns exactnative recovery/no replay.",
-  "result": "OfficialWS preflight14toolsPASS; fixturesetup RED→GREEN7tests. OriginalUNKNOWN unchanged; full lane notPASS."
+  "result": "82b91db9 local native ZCode fixture: create/deliver/read/export/search/projects/restartPASS; новый archive gate вернул unsupported_archive effectnone, поэтому fullcaseINCOMPLETE. Старый5ffPASS не проверялarchive. SolMaxwell чинит существующий native archive seam; retainedroot zcode-82b91db9-archive-ede4cb8ab457, no replays."
 }

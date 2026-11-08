@@ -1,0 +1,39 @@
+{
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/manifest.json",
+  "manifest_sha256": "1875e6b03259d926fcd36300e400956050426ce5c374033974e315af4c925bca",
+  "core": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/herder_native_stdio",
+  "core_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+  "source_test": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/crates/herder/tests/launcher_scoped_profile.rs",
+  "source_test_sha256": "63c914004a074a275ca9a276617a155f7e17e2cb89dd4a8cee0ac2f1dd76b4c0",
+  "environment": {
+    "HERDER_V1_CANDIDATE_BINARY": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/herder_native_stdio"
+  },
+  "commands": [
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--manifest-path",
+      "crates/herder/Cargo.toml",
+      "--test",
+      "launcher_scoped_profile",
+      "trusted_owner_",
+      "--",
+      "--test-threads=1"
+    ],
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--manifest-path",
+      "crates/herder/Cargo.toml",
+      "--test",
+      "launcher_scoped_profile",
+      "one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart",
+      "--",
+      "--exact",
+      "--test-threads=1"
+    ]
+  ],
+  "scope": "fake AHAP only, no browser/native harness/model sends"
+}

@@ -1,0 +1,60 @@
+{
+  "time_utc": "2026-11-08T15:26:23.076024+00:00",
+  "manifest_sha256": "1875e6b03259d926fcd36300e400956050426ce5c374033974e315af4c925bca",
+  "core_sha256_before": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+  "core_sha256_after": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+  "source_test_sha256_after": "63c914004a074a275ca9a276617a155f7e17e2cb89dd4a8cee0ac2f1dd76b4c0",
+  "command_file_sha256": "5c0110a3970b0156bb998a0c45ad80ecaa96ea45fc9a22096f30647f0ed38629",
+  "runs": [
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "crates/herder/Cargo.toml",
+        "--test",
+        "launcher_scoped_profile",
+        "trusted_owner_",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/neg-3d-1.log",
+      "log_sha256": "3a7a19c2c046b8fbd8d65a2b284459d24d2aecf736b612f18df0f0d5089b7fe9"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "crates/herder/Cargo.toml",
+        "--test",
+        "launcher_scoped_profile",
+        "one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart",
+        "--",
+        "--exact",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/neg-3d-2.log",
+      "log_sha256": "2b79631ca413697e65466816f81d2ab469806bab0f86f597e55d37d9a643088a"
+    }
+  ],
+  "status": "PASS",
+  "note": "fake AHAP only; multicore two-account isolation test is distinct from per-harness negative checks; no live/native/model requests",
+  "checks": {
+    "wrong_instance_before_send": "PASS: foreign instance create rejected and fake send absent in each AHAP family",
+    "request_key_dedup": "PASS: repeat returns same task and fake send count unchanged",
+    "request_key_payload_conflict": "PASS: idempotency_conflict and fake send count unchanged",
+    "unknown_restart": "PASS: outcome_unknown after restart, retry forbidden, repeat returns same task without fake resend",
+    "human_stop": "PASS: active hold rejects deliver without fake send",
+    "multicore_isolation": "PASS: two profiles under one core; same native ID and keys; isolated messages, task restart, archive isolation and foreign instance rejection"
+  },
+  "limitations": [
+    "Exact packaged core used by trusted_owner_opencode_ahap_create_start_task_and_read, trusted_owner_other_ahap_types_use_same_public_create_read_and_restart, and one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart; other filtered tests exercise local test components, not all exact binary.",
+    "Separate per-family negative tests use one profile; two-profile test does not exercise all negative cases cross-account or prove principal authorization isolation.",
+    "No actual browser/native harness/model, installed runtime, or production behavior tested."
+  ]
+}

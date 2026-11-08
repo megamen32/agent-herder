@@ -1,0 +1,9 @@
+{"tool":"list_pages","ms":5175}
+{"tool":"evaluate_script","page":1,"ms":3632}
+{"tool":"evaluate_script","page":11,"ms":3501}
+{"tool":"evaluate_script","page":11,"ms":4261}
+{"tool":"evaluate_script","page":11,"ms":5061}
+{"tool":"evaluate_script","page":11,"ms":3004}
+[agent-herder] chatgpt_request {"schema":"chatgpt_req_v1","utc":"2026-11-08T15:38:51.912Z","rid":"cf27c88d595059ec","initiator":"herder_browser","executor":"herder_cdp","kind":"upstream_http","operation":"auth_session","endpoint":"/api/auth/session","http_status":200,"latency_ms":492,"retry_after_s":null,"backoff_ms":0,"retry_attempt":0,"cache_hit":false,"upstream_count":1}
+[agent-herder] chatgpt_request {"schema":"chatgpt_req_v1","utc":"2026-11-08T15:38:51.913Z","rid":"50463bcbe151287a","initiator":"herder_browser","executor":"herder_cdp","kind":"upstream_http","operation":"conversation_read","endpoint":"/backend-api/conversations/{id}","http_status":200,"latency_ms":870,"retry_after_s":null,"backoff_ms":0,"retry_attempt":0,"cache_hit":false,"upstream_count":1}
+{"status":"READ","rows":[{"id":"34509429-60df-47df-885b-df39d4ad5f9f","role":"user","ownMarker":true},{"id":"369487a4-2fa8-57ae-8e05-4ab317fefc6d","role":"assistant","ownMarker":true}]}

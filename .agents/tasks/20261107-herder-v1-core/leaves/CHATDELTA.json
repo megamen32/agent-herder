@@ -1,0 +1,69 @@
+{
+  "id": "CHATDELTA",
+  "kind": "task",
+  "parent": "S2",
+  "label": "ChatGPT: текущая история и follow-up после native first turn",
+  "status": "done",
+  "owner": "01a1bbbe-3e3b-7680-9029-916cb6020b63",
+  "session": "01a1bbbe-3e3b-7680-9029-916cb6020b63",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "acceptance": "Локализовать exact sourcebug либо browser provider blocker, RED/fix/GREEN; livebrowser remains integrator.",
+  "note": "Native spawn accepted; parent01a1bb0c; owns ChatGPT driver/api functions/full-conversation and tests; disjoint Rust COREWAIT and Zai lead.",
+  "created_at": "2026-11-08T18:19:53+03:00",
+  "updated_at": "2026-11-08T18:26:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T18:19:53+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHATDELTA",
+        "kind": "task",
+        "parent": "S2",
+        "label": "ChatGPT: текущая история и follow-up после native first turn",
+        "status": "running",
+        "owner": "01a1bbbe-3e3b-7680-9029-916cb6020b63",
+        "session": "01a1bbbe-3e3b-7680-9029-916cb6020b63",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "acceptance": "Локализовать exact sourcebug либо browser provider blocker, RED/fix/GREEN; livebrowser remains integrator.",
+        "note": "Native spawn accepted; parent01a1bb0c; owns ChatGPT driver/api functions/full-conversation and tests; disjoint Rust COREWAIT and Zai lead."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:26:53+03:00",
+      "note": "Native worker completed, source diff reviewed. Следующий independent ZCode fixture receipt slice передан этому же Sol; live browser остаётся интегратору.",
+      "changes": {
+        "status": "done",
+        "result": "Sol6.1 Maxwell нашёл и исправил getSessionMessages(limit=200)→full export/read_cooldown. Reconcile теперь ordinary history; explicit export complete. Worker78testsPASS+tsc; lead reviewed diff, integrating. Live/provider429 этим ещё не доказан.",
+        "affected_files": [
+          "src/adapters/browser-chat.ts",
+          "tests/chatgpt-session-export.test.ts"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "Sol6.1 Maxwell нашёл и исправил getSessionMessages(limit=200)→full export/read_cooldown. Reconcile теперь ordinary history; explicit export complete. Worker78testsPASS+tsc; lead reviewed diff, integrating. Live/provider429 этим ещё не доказан.",
+  "affected_files": [
+    "src/adapters/browser-chat.ts",
+    "tests/chatgpt-session-export.test.ts"
+  ]
+}

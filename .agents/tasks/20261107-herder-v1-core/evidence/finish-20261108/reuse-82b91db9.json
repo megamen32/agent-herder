@@ -1,0 +1,291 @@
+{
+  "created_utc": "2026-11-08T15:33:23.031717+00:00",
+  "manifests": {
+    "3d": {
+      "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/manifest.json",
+      "sha256": "1875e6b03259d926fcd36300e400956050426ce5c374033974e315af4c925bca",
+      "source_commit": "3d767f28d6dfcd6bc114b16839ce516bf06435ec"
+    },
+    "82b": {
+      "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/manifest.json",
+      "sha256": "cff8e8dd19dd61358d0df1a4ec9d94f1fef0431f8af91f3b40eef74f437cd6b1",
+      "source_commit": "82b91db91c784ec60161c2d8b336bd561c81773e"
+    },
+    "5ff": {
+      "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/manifest.json",
+      "sha256": "9fc6f17e7b5c43b1a9208a2a60edc461d5d38c6357e19946892dbded50af1dfb",
+      "source_commit": "5ff022154aaef7a13ae41b4cd5d24d4353adc8ef"
+    },
+    "aa": {
+      "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/manifest.json",
+      "sha256": "bb4fdcb05e69fd3684274b6d2adcfe4f98a05ae11e85813e1d3c60300019bde1",
+      "source_commit": "aa1111019d77503eabd05b8ac8bb1b826148c774"
+    }
+  },
+  "components": {
+    "core": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/herder_native_stdio",
+        "manifest_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+        "actual_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/herder_native_stdio",
+        "manifest_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+        "actual_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/herder_native_stdio",
+        "manifest_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+        "actual_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/herder_native_stdio",
+        "manifest_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+        "actual_sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+      },
+      "match_all": true
+    },
+    "bootstrap": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-owner-bootstrap",
+        "manifest_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+        "actual_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-owner-bootstrap",
+        "manifest_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+        "actual_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-owner-bootstrap",
+        "manifest_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+        "actual_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-owner-bootstrap",
+        "manifest_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+        "actual_sha256": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e"
+      },
+      "match_all": true
+    },
+    "node": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/node",
+        "manifest_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+        "actual_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/node",
+        "manifest_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+        "actual_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/node",
+        "manifest_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+        "actual_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/node",
+        "manifest_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+        "actual_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+      },
+      "match_all": true
+    },
+    "compat": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/herder-compat",
+        "manifest_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+        "actual_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/herder-compat",
+        "manifest_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+        "actual_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/herder-compat",
+        "manifest_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+        "actual_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/herder-compat",
+        "manifest_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+        "actual_sha256": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3"
+      },
+      "match_all": true
+    },
+    "adapter": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "match_all": true
+    },
+    "adapters.opencode": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-opencode-runner.mjs",
+        "manifest_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+        "actual_sha256": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed"
+      },
+      "match_3d_82b": true
+    },
+    "adapters.zcode": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-zcode-runner.mjs",
+        "manifest_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+        "actual_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-zcode-runner.mjs",
+        "manifest_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+        "actual_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-zcode-runner.mjs",
+        "manifest_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+        "actual_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-zcode-runner.mjs",
+        "manifest_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+        "actual_sha256": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7"
+      },
+      "match_3d_82b": true
+    },
+    "adapters.browser": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b",
+        "actual_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410",
+        "actual_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+        "actual_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+        "actual_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b"
+      },
+      "match_3d_82b": false
+    },
+    "adapters.codex": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-codex-runner.mjs",
+        "manifest_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+        "actual_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-codex-runner.mjs",
+        "manifest_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+        "actual_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-codex-runner.mjs",
+        "manifest_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+        "actual_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-codex-runner.mjs",
+        "manifest_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+        "actual_sha256": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c"
+      },
+      "match_3d_82b": true
+    },
+    "adapters.chatgpt": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b",
+        "actual_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410",
+        "actual_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+        "actual_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+        "actual_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b"
+      },
+      "match_3d_82b": false
+    },
+    "adapters.zai": {
+      "3d": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-3d767f28-foreground/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b",
+        "actual_sha256": "0a965dbcc5ef9c66bd42e578302fc64ef16c559f6582a01159122d8eea9f128b"
+      },
+      "82b": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410",
+        "actual_sha256": "b7d2ecbf37814c615bc7f1cf162b38cd8f4d1486419a0c27f6864637f3e32410"
+      },
+      "5ff": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+        "actual_sha256": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031"
+      },
+      "aa": {
+        "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/fixture/ahap-browser-runner.mjs",
+        "manifest_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+        "actual_sha256": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b"
+      },
+      "match_3d_82b": false
+    }
+  },
+  "reuse": {
+    "cli_5ff_via_aa": "CLI OpenCode, Codex, ZCode and compat consumer proofs only under same recorded fixture/config, matching component hashes; ZCode archive raw proof not found. Does not prove installed.",
+    "neg_3d": "Exact packaged core 3d NEG accepted by owner; same binary sha256 on 82b, reuse only the fake-AHAP cases recorded in neg-3d-result.json; two-profile scenario does not prove every cross-account negative.",
+    "browser": "browser adapter bytes changed; no browser PASS reuse from prior candidates",
+    "installed": "incomplete; no installation/readback evidence"
+  },
+  "evidence": [
+    "cli-aa111101-exact-reuse.json",
+    "neg-3d-result.json"
+  ],
+  "limits": "manifest source commit is caller-supplied provenance; hash matching does not prove live browser or installed behavior"
+}

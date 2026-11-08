@@ -1,0 +1,336 @@
+{
+  "as_of_utc": "2026-11-08T15:18:50.537479+00:00",
+  "scope": "read-only evidence synthesis; no tests, browser, models, installer, commit or push",
+  "contract": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/CONTRACT.md",
+  "plan": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/plan.json",
+  "finish": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/FINISH-20261108.md",
+  "source": {
+    "candidate_source_commit": "aa1111019d77503eabd05b8ac8bb1b826148c774",
+    "provenance_note": "manifest calls source commit caller-supplied provenance for prebuilt inputs; not proof all built from this source",
+    "source_tests": "plan reports multi-profile and browser targeted tests; not candidate consumer or installed proof"
+  },
+  "candidate": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-aa111101-browser/manifest.json",
+    "manifest_sha256": "bb4fdcb05e69fd3684274b6d2adcfe4f98a05ae11e85813e1d3c60300019bde1",
+    "installed": false
+  },
+  "previous": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/manifest.json",
+    "manifest_sha256": "9fc6f17e7b5c43b1a9208a2a60edc461d5d38c6357e19946892dbded50af1dfb",
+    "source_commit": "5ff022154aaef7a13ae41b4cd5d24d4353adc8ef"
+  },
+  "components": {
+    "core": {
+      "5ff": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+      "aa111101": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf",
+      "match": true
+    },
+    "bootstrap": {
+      "5ff": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+      "aa111101": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e",
+      "match": true
+    },
+    "node": {
+      "5ff": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "aa111101": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "match": true
+    },
+    "compat": {
+      "5ff": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+      "aa111101": "0987d70addacc790534a6079be2a7871f35808c25b34b66faa0aebf1aaf3bec3",
+      "match": true
+    }
+  },
+  "adapters": {
+    "opencode": {
+      "5ff": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+      "aa111101": "fc979e24434590a86f0496f5c772da918b487a89e9ecc071a969ec39a44813ed",
+      "match": true
+    },
+    "zcode": {
+      "5ff": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+      "aa111101": "64966d048fc5e36a256558dc8acbb3287ce3cdd90278603638eac9a33df5f4a7",
+      "match": true
+    },
+    "browser": {
+      "5ff": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+      "aa111101": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+      "match": false
+    },
+    "codex": {
+      "5ff": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+      "aa111101": "423df84c83002831ad0605c395a86db428de057c686c2982e6a851b39234517c",
+      "match": true
+    },
+    "chatgpt": {
+      "5ff": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+      "aa111101": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+      "match": false
+    },
+    "zai": {
+      "5ff": "35e24a53e3a7146f82e4ee80b53f0abd08659310ce4631a53d415eb285f76031",
+      "aa111101": "78f8b7cc8626429ae0910b6f191822cbe421537ec7178462ce632eb03742572b",
+      "match": false
+    }
+  },
+  "actual_file_hashes": "both manifests: all core/bootstrap/node/compat and named adapter files checked against respective manifest SHA256; matched",
+  "criteria": [
+    "create",
+    "deliver",
+    "read",
+    "export",
+    "search",
+    "projects",
+    "restart",
+    "archive"
+  ],
+  "lanes": {
+    "opencode": {
+      "candidate": {
+        "create": "reused_pass",
+        "deliver": "reused_pass",
+        "read": "reused_pass",
+        "export": "reused_pass",
+        "search": "reused_pass",
+        "projects": "reused_pass",
+        "restart": "reused_pass",
+        "archive": "reused_pass"
+      },
+      "source_receipt": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/opencode-5ff-result.json",
+      "receipt_sha256": "ca8d6d36461d13ca4e144445656fb20f4a50c2a657df26544505eec6804facb4",
+      "source_status": "PASS",
+      "proof": "5ff consumer on same packaged CLI component bytes; not new aa111101 execution",
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "codex": {
+      "candidate": {
+        "create": "reused_pass",
+        "deliver": "reused_pass",
+        "read": "reused_pass",
+        "export": "reused_pass",
+        "search": "reused_pass",
+        "projects": "reused_pass",
+        "restart": "reused_pass",
+        "archive": "reused_pass"
+      },
+      "source_receipt": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/codex-5ff-result.json",
+      "receipt_sha256": "91ac3033521e24dad8185666dbc1b1247392531b166b28655d6014ad188e6858",
+      "source_status": "PASS",
+      "proof": "5ff consumer on same packaged CLI component bytes; not new aa111101 execution",
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "zcode": {
+      "candidate": {
+        "create": "reused_pass",
+        "deliver": "reused_pass",
+        "read": "reused_pass",
+        "export": "reused_pass",
+        "search": "reused_pass",
+        "projects": "reused_pass",
+        "restart": "reused_pass",
+        "archive": "unverified_no_receipt_not_failure"
+      },
+      "source_receipt": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-5ff-result.json",
+      "receipt_sha256": "9619809ea3529c9f18cbbd35310d4dd821656ae2621cd50a407e59086951d9e6",
+      "source_status": "PASS",
+      "proof": "5ff consumer on same packaged CLI component bytes; not new aa111101 execution",
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "compat": {
+      "candidate": {
+        "create": "reused_pass",
+        "deliver": "reused_pass",
+        "read": "reused_pass",
+        "export": "reused_pass",
+        "search": "reused_pass",
+        "projects": "reused_pass",
+        "restart": "reused_pass",
+        "archive": "reused_pass"
+      },
+      "source_receipt": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/compat-5ff-result.json",
+      "receipt_sha256": "1b248c8adf98f917fc43ff4c98f0de491f73fece2a9616038e88383499dc1964",
+      "source_status": "PASS",
+      "proof": "5ff consumer on same packaged CLI component bytes; not new aa111101 execution",
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "chatgpt-profile-0": {
+      "candidate": {
+        "create": "incomplete",
+        "deliver": "incomplete",
+        "read": "incomplete",
+        "export": "incomplete",
+        "search": "incomplete",
+        "projects": "incomplete",
+        "restart": "incomplete",
+        "archive": "incomplete"
+      },
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "chatgpt-profile-1": {
+      "candidate": {
+        "create": "partial_confirmed_create_and_first_prompt_no_complete_lane",
+        "deliver": "incomplete",
+        "read": "incomplete",
+        "export": "incomplete",
+        "search": "incomplete",
+        "projects": "incomplete",
+        "restart": "incomplete",
+        "archive": "incomplete"
+      },
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    },
+    "zai": {
+      "candidate": {
+        "create": "partial_session_ref_delivery_unknown",
+        "deliver": "incomplete",
+        "read": "incomplete",
+        "export": "incomplete",
+        "search": "incomplete",
+        "projects": "incomplete",
+        "restart": "incomplete",
+        "archive": "unknown_no_replay"
+      },
+      "installed": {
+        "create": "not_installed",
+        "deliver": "not_installed",
+        "read": "not_installed",
+        "export": "not_installed",
+        "search": "not_installed",
+        "projects": "not_installed",
+        "restart": "not_installed",
+        "archive": "not_installed"
+      }
+    }
+  },
+  "reuse_conditions": [
+    "CLI component bytes and four result hashes match; aa111101 deliberately reuses the original argv/config inputs, substituting candidate manifest/component paths and the manifest digest. The 5ff command receipts are available; no separate aa111101 execution or independently hashed aa config is represented.",
+    "Reuse is limited to the original fixture/config and observed operations; it does not prove installed runtime.",
+    "Browser adapter differs; 5ff browser live results do not establish aa111101 browser acceptance.",
+    "ZCode result reports PASS for the main scenario; archive is not present in the summary or run log. This is missing evidence, not a failure."
+  ],
+  "active_receipts": {
+    "multi-chatgpt-aa111101-1803": {
+      "path": "/home/roomhacker/herder-artifacts/ci-runs/multi-chatgpt-aa111101-1803/receipt.json",
+      "interpretation": "unfinished snapshot; profile-0 BLOCKED timeout; profile-1 create and first prompt confirmed but lane UNKNOWN; single-core discovery PASS"
+    },
+    "zai-aa111101-1806": {
+      "path": "/home/roomhacker/herder-artifacts/ci-runs/zai-aa111101-1806/receipt.json",
+      "interpretation": "unfinished snapshot; create-phase delivery UNKNOWN; archive outcome UNKNOWN, no replay"
+    }
+  },
+  "gaps": [
+    "Full candidate consumer scenarios for both ChatGPT accounts and Z.ai, including exact native full export with multipage sample, search coverage, projects provenance, restart without resend and owned test-chat archive.",
+    "ZCode archive raw proof not located: 5ff stand PASS does not establish archive; no failure inferred.",
+    "Exact aa111101 multicore candidate NEG evidence remains needed, including cross-account/session isolation and negative controls for duplicate/conflict/UNKNOWN/HumanStop in multicore; source fixture coverage is documented separately.",
+    "Installation has not occurred; all installed consumer and readback proofs remain open.",
+    "Old assigned C13/C14/FIXZ statuses are bookkeeping gaps, not active development."
+  ],
+  "memory": "AgentMemory project recall returned one unrelated historical observation; no relevant decision found, no fallback used.",
+  "cli_input_comparison": {
+    "intent": "aa111101 uses the same original CLI inputs, with manifest/component paths and expected manifest hash substituted",
+    "inspected_5ff_command_files": [
+      ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/opencode-5ff-command.json",
+      ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/compat-5ff-command.json",
+      ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/codex-5ff-command.json",
+      ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-5ff-command.json"
+    ],
+    "evidence": "cli-aa111101-exact-reuse.json and verified component hashes",
+    "limitation": "No independent aa111101 CLI command/config receipt was found or claimed; no fresh aa run."
+  },
+  "zcode_archive": {
+    "status": "unverified_not_failed",
+    "run_log": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-5ff-run.log",
+    "run_log_sha256": "db60058e0bf744112983a38a758f78685782c5e3d13be673f081d98e8534a015",
+    "command": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-5ff-command.json",
+    "command_sha256": "1ba223c304186895d6a757557b973fee400fce2b36b4a9022626fe53dff429ec",
+    "retained_root": "/home/roomhacker/herder-artifacts/ci-runs/zcode-5ff02215-63bcf20f",
+    "retained_root_state": "absent at inspection; launcher uses --retain-on-failure and removes root on successful return",
+    "detail": "No archive operation/receipt in run log; occurrences of archives refer to generic environment instructions. Current stand source emits PASS after restart and does not contain archive call. FINISH/plan claim archive PASS but raw result not located; no actual failure established."
+  },
+  "negative_gate": {
+    "evidence": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/multi-core-regression.log",
+    "evidence_sha256": "101501dcb539c5a6873a1ac59df35d1dd2baf7fc9706e52c29de3346b60f5e4d",
+    "result": "19 passed, 1 ignored",
+    "stage": "source launcher regression with fake AHAP; log identifies debug test executable, no candidate digest recorded",
+    "covered": [
+      "wrong instance create rejected before fake send; spoofed principal/unauthorized scoped mutation yields effect none and no intent",
+      "duplicate delivery key gives same task with no second fake send",
+      "same key with changed payload produces idempotency_conflict and no extra fake send",
+      "lost native admission remains outcome_unknown after restart, retry forbidden and duplicate task does not resend",
+      "HumanStop blocks new deliver with no extra fake send",
+      "two-profile single core routes separate accounts even with same native session ID/request keys, restores task/read after restart, rejects foreign create; archive of first fixture stays isolated from second",
+      "same archive key twice makes one fake native archive call",
+      "profile/authority rejection: unscoped imported mapping, injected environment, foreign writable runner, unsafe configuration/generation/schema/gate"
+    ],
+    "limitations": [
+      "Source/fake-AHAP regression is not an exact aa111101 candidate public NEG receipt and does not prove native/browser/installed behavior.",
+      "The two-profile test does not explicitly cover every negative case across both accounts, especially cross-account principal/session authorization, same-account key conflict/replay, lost admission after restart and HumanStop on the multicore route.",
+      "One real SDK test is ignored. Older 805/78 or 5ea NEG applies to different core bytes and cannot automatically transfer to new multicore core."
+    ]
+  },
+  "historical_snapshot_note": "Existing candidate and browser lanes describe aa111101; not evidence of 82b browser outcomes.",
+  "latest_candidate_82b": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-82b91db9-readfix/manifest.json",
+    "manifest_sha256": "cff8e8dd19dd61358d0df1a4ec9d94f1fef0431f8af91f3b40eef74f437cd6b1",
+    "component_reuse": "reuse-82b91db9.json",
+    "package_verification": "package-82b-result.json",
+    "cli": "reuse matching 5ff via aa under same fixture/config; zcode archive unverified without raw receipt",
+    "negative": "owner accepted neg-3d-result.json; identical exact core, preserve fake-AHAP coverage limits",
+    "browser": "incomplete; changed adapter, no PASS reuse",
+    "installed": "incomplete; no installed consumer proof"
+  }
+}

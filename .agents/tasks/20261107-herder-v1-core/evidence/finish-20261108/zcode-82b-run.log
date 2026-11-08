@@ -1,0 +1,15 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/herder-artifacts/ci-runs/zcode-82b91db9-archive-ede4cb8ab457
+{"models": {"resultType": "complete", "content": [{"type": "text", "text": "{\"code\":\"unsupported\",\"effect\":\"none\",\"message\":\"operation is not connected\"}"}], "structuredContent": {"code": "unsupported", "effect": "none", "message": "operation is not connected"}, "isError": true}, "projects": {"resultType": "complete", "content": [{"type": "text", "text": "{\"complete\":false,\"limitations\":[\"No native project observed for the authorized registered corpus.\"],\"projects\":[],\"scope\":\"authorized_registered_sessions\"}"}], "structuredContent": {"complete": false, "limitations": ["No native project observed for the authorized registered corpus."], "projects": [], "scope": "authorized_registered_sessions"}, "isError": false}}
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/v1_zcode_stand.py", line 503, in <module>
+    main()
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/v1_zcode_stand.py", line 499, in main
+    run(args)
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/v1_zcode_stand.py", line 197, in run
+    run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt, instance)
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/v1_zcode_stand.py", line 236, in run_public
+    exercise(client, protected, seed, tools, instance, home, args.manifest_sha256, manifest['core'], profile)
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/v1_zcode_stand.py", line 441, in exercise
+    raise RuntimeError('test chat archive not confirmed; evidence preserved, do not replay')
+RuntimeError: test chat archive not confirmed; evidence preserved, do not replay
+ISOLATED_FAILURE_RETAINED /home/roomhacker/herder-artifacts/ci-runs/zcode-82b91db9-archive-ede4cb8ab457
