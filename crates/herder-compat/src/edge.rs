@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashSet, sync::{Arc, RwLock}};
+use std::{borrow::Cow, collections::HashSet};
 
 use rmcp::{
     ErrorData, Peer, RoleClient, RoleServer, ServerHandler,
@@ -17,12 +17,11 @@ use crate::{LEGACY_TOOLS, contract::{CompatChanges, CompatSkill, CompatTask}};
 #[derive(Clone)]
 pub struct LegacyEdge {
     upstream: Peer<RoleClient>,
-    discovered_tools: Arc<RwLock<HashSet<String>>>,
 }
 
 impl LegacyEdge {
     pub fn new(upstream: Peer<RoleClient>) -> Self {
-        Self { upstream, discovered_tools: Arc::new(RwLock::new(HashSet::new())) }
+        Self { upstream }
     }
 
     fn upstream_capabilities(&self) -> Option<rmcp::model::ServerCapabilities> {
@@ -74,15 +73,10 @@ impl ServerHandler for LegacyEdge {
     }
 
     async fn list_tools(&self, cursor: Option<PaginatedRequestParams>, _: RequestContext<RoleServer>) -> Result<ListToolsResult, ErrorData> {
-        let first_page = cursor.is_none();
         let mut listing = self.upstream.list_tools(cursor).await.map_err(|_| ErrorData::internal_error("Native tool discovery failed", None))?;
         let names = listing.tools.iter().map(|tool| tool.name.to_string()).collect::<HashSet<_>>();
         if names.iter().any(|name| LEGACY_TOOLS.contains(&name.as_str())) {
             return Err(ErrorData::internal_error("Native discovery collides with a reserved compatibility tool", None));
-        }
-        if let Ok(mut known) = self.discovered_tools.write() {
-            if first_page { known.clear(); }
-            known.extend(names);
         }
         if listing.next_cursor.is_none() {
             listing.tools.extend(LEGACY_TOOLS.iter().filter(|name| self.helper_available(name)).map(|name| helper_tool(name)));
@@ -130,7 +124,10 @@ impl ServerHandler for LegacyEdge {
                     }
                 }
             }
-            name if self.discovered_tools.read().is_ok_and(|known| known.contains(name)) => {
+            // A reconnecting client may retain its catalog and call a native
+            // tool before tools/list. Discovery is not authorization: preserve
+            // the native endpoint as the authority for non-compat tool names.
+            name => {
                 let mut params = CallToolRequestParams::new(Cow::Owned(name.to_owned())).with_arguments(args);
                 params.meta = Some(serde_json::from_value(json!({"task":{"ttl":60000}})).expect("valid task metadata"));
                 match self.upstream.call_tool_once(params).await.map_err(|_| ErrorData::internal_error("Native operation failed; reconcile its receipt before retrying", None))? {
@@ -140,7 +137,6 @@ impl ServerHandler for LegacyEdge {
                     _ => Err(ErrorData::internal_error("Unsupported native response; reconcile its receipt before retrying", None)),
                 }
             }
-            _ => Err(ErrorData::invalid_params("Unknown compatibility operation", None)),
         }
     }
 
