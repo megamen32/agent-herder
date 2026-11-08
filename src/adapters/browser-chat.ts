@@ -49,8 +49,9 @@ export interface BrowserChatDriver {
   /** One bounded re-read of the turn state of one chat from the
    * provider's own API, merging the fresh result into the durable
    * inventory. Used by the browser turn observer when a running turn's
-   * inventory froze. */
-  refreshTurnState?(chatId: string): Promise<boolean>;
+   * inventory froze. Foreground-only consumers may explicitly inspect their
+   * exact owned session while background polling is paused. */
+  refreshTurnState?(chatId: string, options?: { foreground: boolean }): Promise<boolean>;
   /** SHA-256 browser account ID; never a token, cookie or display name. */
   getAccountScope?(): string | undefined;
   sendMessage(
@@ -357,7 +358,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
       ?? this.driver.getKnownChat?.(native)?.working;
     if (observedBusy) {
       try {
-        if (await this.refreshSession(native)) {
+        if (await this.driver.refreshTurnState?.(native, { foreground: this.foregroundOnly })) {
           // The refreshed state replaces the stale one in the inventory too.
           const settled = this.driver.getKnownChat?.(native);
           if (settled) this.inventory.set(native, settled);

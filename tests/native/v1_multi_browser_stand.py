@@ -96,6 +96,10 @@ def wait_task(client, task_id, item, save, timeout=150):
 def run(manifest_path, scopes, root, *, stage):
     if stage not in ('candidate', 'installed'):
         raise ValueError('stage must be candidate or installed')
+    if not scopes or len(set(scopes)) != len(scopes):
+        raise ValueError('distinct verified account scopes required')
+    if any(len(scope) != 64 or any(c not in '0123456789abcdef' for c in scope) for scope in scopes):
+        raise ValueError('verified account scope required')
     manifest = json.loads(manifest_path.read_text())
     for key in ('core', 'node', 'bootstrap'):
         assert hashlib.sha256(Path(manifest[key]).read_bytes()).hexdigest() == manifest['sha256'][key]

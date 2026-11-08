@@ -122,6 +122,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
+  private expectedAccountScope: string | undefined;
   /** The one tab this driver owns, remembered by its own URL path. */
   private ownedTabPath?: string;
   getAccountScope(): string | undefined { return this.accountScope; }
@@ -141,6 +142,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   }
 
   async verifyPinnedAccountScope(expectedScope: string): Promise<void> {
+    this.expectedAccountScope = expectedScope;
     this.accountScope = undefined;
     const page = await this.page();
     const scope = await verifyNewChatAccountScope(this.tools, "zai", page.id);
@@ -444,7 +446,9 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   async createChat(input: { title?: string }): Promise<BrowserChat> {
     return this.exclusive(async () => {
       const ownerPage=await this.page();
-      this.accountScope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
+      const scope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
+      if (this.expectedAccountScope && scope !== this.expectedAccountScope) throw new Error("pinned browser account scope mismatch");
+      this.accountScope=scope;
       await this.drafts.useScope(this.accountScope);
       const title = input.title && !/^zai-\d{12,}/i.test(input.title)
         ? input.title : undefined;
@@ -644,14 +648,45 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   }
 
 
-  /** One bounded re-read of the account's chat list from Z.ai's own API,
+  /** Foreground consumers inspect their exact existing target without navigation.
+   * Background observers re-read the account's chat list from Z.ai's own API,
    * merging fresh turn state into the durable inventory — the same call the
    * enabled poller makes, without waiting for the next list tick. The
    * browser turn observer uses it to un-freeze a running turn whose
    * inventory stopped advancing. Read-only: never navigates or clicks. */
-  async refreshTurnState(chatId: string): Promise<boolean> {
-    // The owner's runtime switch governs every request of the herder's own;
-    // a paused harness never refreshes actively.
+  async refreshTurnState(chatId: string, options?: { foreground: boolean }): Promise<boolean> {
+    if (options?.foreground) {
+      return this.exclusive(async () => {
+        // Explicit activity read: inspect only the existing exact owned target.
+        // Never open/select a tab or resume the paused background poller.
+        const remote = this.drafts.get(chatId)?.remoteId ?? chatId;
+        if (!remote.startsWith("route:") || !this.accountScope) return false;
+        const nativeId = remote.slice(6);
+        if (!/^[a-f0-9-]{12,80}$/i.test(nativeId)) return false;
+        const expectedScope = this.accountScope;
+        try {
+          const pages = parseZaiPages(await this.tools.call("list_pages"))
+            .filter(page => zaiTabPath(page.url) === "/c/" + nativeId);
+          const page = pages.find(page => page.id === this.pinnedPageId)
+            ?? await resolveOwnedTab(this.tools, "zai", pages, expectedScope);
+          if (!page) return false;
+          if (await verifyNewChatAccountScope(this.tools, "zai", page.id) !== expectedScope) return false;
+          const state = await this.snapshot(page.id);
+          if (state.path !== "/c/" + nativeId || state.phase === "unknown" || state.securityVerification) return false;
+          const known = this.cache.get(remote);
+          if (!known) return false;
+          const settled = { ...known, working: this.busy(state), stopVisible: state.phase === "generating" };
+          this.cache.set(remote, settled);
+          this.inventoryCache.setAccountScope(expectedScope);
+          if (!this.inventoryLoaded) { await this.inventoryCache.load(); this.inventoryLoaded = true; }
+          this.inventoryCache.merge([{ id: nativeId, title: settled.title,
+            lastRunStatus: settled.working ? "running" : "completed", seenAt: Date.now() }]);
+          await this.inventoryCache.save();
+          return true;
+        } catch { return false; }
+      });
+    }
+    // The owner's runtime switch still gates the background observer path.
     if (!liveHarnessPollingEnabled("zai")) return false;
     let nativeId = chatId.startsWith("route:") ? chatId.slice(6) : "";
     if (!nativeId && chatId.startsWith("sidebar:")) {
@@ -715,7 +750,9 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       if (!text.trim() || text.length > MAX_MESSAGE_CHARS) throw new Error("Invalid ZAI message size");
       if (chatId.startsWith("draft:")) {
         const ownerPage=await this.page();
-        this.accountScope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
+        const scope=await verifyNewChatAccountScope(this.tools,"zai",ownerPage.id);
+        if (this.expectedAccountScope && scope !== this.expectedAccountScope) throw new Error("pinned browser account scope mismatch");
+        this.accountScope=scope;
         await this.drafts.useScope(this.accountScope);
         const draft = await this.drafts.startSend(chatId);
         if (draft.remoteId) {

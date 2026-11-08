@@ -69,16 +69,21 @@ export async function resolveOwnedTab(
   if (scope && marked.length > 1) throw new Error("duplicate_owned_browser_tabs");
   if (marked[0]) return marked[0];
   const script = ownedTabProbeScript(provider, scope);
+  const discovered: OwnedTabCandidate[] = [];
   for (const page of pages) {
     try {
       const raw = await tools.call("evaluate_script", { pageId: page.id, function: script });
       const fence = "```", start = raw.indexOf(fence + "json"), end = raw.lastIndexOf(fence);
       if (start < 0 || end <= start) continue;
       const parsed = JSON.parse(raw.slice(start + 7, end).trim()) as { owned?: boolean };
-      if (parsed.owned === true) return page;
+      if (parsed.owned === true) {
+        if (!scope) return page;
+        discovered.push(page);
+      }
     } catch { /* an unreadable tab is never owned and never closed */ }
   }
-  return undefined;
+  if (discovered.length > 1) throw new Error("duplicate_owned_browser_tabs");
+  return discovered[0];
 }
 
 /** Claim the given page for this provider, in the page itself. The claim is
