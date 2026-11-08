@@ -474,6 +474,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return order.length ? order : [await this.page()];
   }
 
+  /** The tab that shows exactly this conversation, if one is open. */
+  private async exactRoutePage(nativeId: string): Promise<Page | undefined> {
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    return pages.find(page => {
+      try { return new URL(page.url).pathname === "/c/" + nativeId; }
+      catch { return false; }
+    });
+  }
+
   /** The tab list is the source of truth: new_page reports its own navigation
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
@@ -991,8 +1000,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     let nativeId = chatId;
     if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
     if (!NATIVE_CHAT_ID.test(nativeId)) return null;
-    const pages = await this.readablePages();
-    for (const page of pages) {
+    // ONLY the tab that shows THIS conversation can prove the effect of a
+    // send into it. Another chat of the same account proves nothing.
+    const page = await this.exactRoutePage(nativeId);
+    if (!page) return null;
+    {
       try {
         await this.verifyCurrentPinnedAccountScope(page.id);
         const result = parseChromeEvaluation<{ id?: string }>(
@@ -1017,7 +1029,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
               return {error:"message_not_rendered"};
             }` }));
         if (typeof result.id === "string" && result.id) return result.id;
-      } catch { /* the next tab of the same account is tried */ }
+      } catch { /* the rendered message is not readable here */ }
     }
     return null;
   }
@@ -1030,31 +1042,33 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     let nativeId = chatId;
     if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
     if (!NATIVE_CHAT_ID.test(nativeId)) return [];
-    const pages = await this.readablePages();
-    for (const page of pages) {
-      try {
-        await this.verifyCurrentPinnedAccountScope(page.id);
-        const result = parseChromeEvaluation<{ ids?: string[] }>(
-          await this.tools.call("evaluate_script", { pageId: page.id, function:
-            `() => {
-              if (location.pathname !== ${JSON.stringify("/c/" + nativeId)}) return {ids:[]};
-              const ids = new Set();
-              for (const bubble of [...document.querySelectorAll('[data-user-message-bubble]')].slice(-30)) {
-                const raw = bubble.closest('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids') || '';
-                for (const id of (raw.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ig) || [])) ids.add(id);
-                const own = bubble.getAttribute('data-message-id') || bubble.closest('[data-message-id]')?.getAttribute('data-message-id') || '';
-                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) ids.add(own);
-              }
-              for (const node of [...document.querySelectorAll('[data-message-id]')].slice(-30)) {
-                const id = node.getAttribute('data-message-id') || '';
-                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) ids.add(id);
-              }
-              return {ids: [...ids]};
-            }` }));
-        if (Array.isArray(result.ids)) return result.ids;
-      } catch { /* the next tab of the same account is tried */ }
+    // ONLY the tab that shows THIS conversation can prove what existed
+    // before the send. Another chat of the same account proves nothing, and
+    // a route mismatch is an error, not an empty history.
+    const page = await this.exactRoutePage(nativeId);
+    if (!page) throw new Error("ChatGPT rendered history unavailable: exact conversation not open");
+    await this.verifyCurrentPinnedAccountScope(page.id);
+    const result = parseChromeEvaluation<{ ids?: string[]; error?: string }>(
+      await this.tools.call("evaluate_script", { pageId: page.id, function:
+        `() => {
+          if (location.pathname !== ${JSON.stringify("/c/" + nativeId)}) return {error:"route_changed"};
+          const ids = new Set();
+          for (const bubble of [...document.querySelectorAll('[data-user-message-bubble]')].slice(-30)) {
+            const raw = bubble.closest('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids') || '';
+            for (const id of (raw.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ig) || [])) ids.add(id);
+            const own = bubble.getAttribute('data-message-id') || bubble.closest('[data-message-id]')?.getAttribute('data-message-id') || '';
+            if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) ids.add(own);
+          }
+          for (const node of [...document.querySelectorAll('[data-message-id]')].slice(-30)) {
+            const id = node.getAttribute('data-message-id') || '';
+            if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) ids.add(id);
+          }
+          return {ids: [...ids]};
+        }` }));
+    if (result.error || !Array.isArray(result.ids)) {
+      throw new Error("ChatGPT rendered history unavailable: " + (result.error || "unexpected response"));
     }
-    return [];
+    return result.ids;
   }
 
   private async readComposerDraft(pageId: number): Promise<string> {
