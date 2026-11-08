@@ -1,0 +1,35 @@
+{
+  "claim": "source and targeted tests only; no native archive executed",
+  "official_contract": {
+    "artifact": "/tmp/herder-zcode-v1-runtime-recovered-6ad71fab/runtime/server-core.js",
+    "sha256": "0bab21780816e6db2a6a3da566b447688f93bfca96555a722fab36fb6179a0bf",
+    "archive": "zcode-task.archiveTask([{workspacePath,workspaceIdentity,taskId}]) -> task metadata",
+    "readback": "zcode-task.listArchivedTasks([{workspacePath,workspaceIdentity}]) -> task metadata[]",
+    "locations": {
+      "updateTaskState": 137763,
+      "listArchivedTasks": 151133,
+      "archiveTask": 151566
+    },
+    "semantics": "official tasks-index archived=true, no delete; metadata has no archived field"
+  },
+  "red": {
+    "command": "npx vitest run --config vitest.config.ts tests/zcode-archive.test.ts tests/ahap-zcode-runner.test.ts",
+    "failed": 5,
+    "passed": 11,
+    "reason": "adapter archiveSession missing; AHAP archiveSession absent"
+  },
+  "green": {
+    "command": "npx vitest run --config vitest.config.ts tests/zcode-archive.test.ts tests/ahap-zcode-runner.test.ts tests/zcode-adapter.test.ts",
+    "passed": 124,
+    "failed": 0
+  },
+  "typecheck": "npx tsc --noEmit --pretty false: exit 0",
+  "diff_check": "PASS",
+  "owned_sha256": {
+    "src/adapters/zcode.ts": "b7951a107ac8206ac957fdde36bdd7521b48768e2d483bd2d699ec2a1dad001d",
+    "src/ahap-zcode-runner.ts": "bf0006e17c2b5465bfab16d56dd28334363601ff38d2b97928bdf8ec78868e55",
+    "tests/zcode-archive.test.ts": "b91b14f60202f36997097fb9b796f0c8b81b2d2f685c86e3ca586d774775719d",
+    "tests/ahap-zcode-runner.test.ts": "cdc97a032e4510491d135d07ffbdc3525b8138308da8b7099cdf7eb4cec30420"
+  },
+  "remaining": "new exact candidate required before retained-session archive; no model resend, no core/sharedCargo changes, no commit/push"
+}

@@ -2668,6 +2668,33 @@ export class ZcodeAdapter implements HarnessAdapter {
     return { ok: false, error: lastError };
   }
 
+  /** Official task-shell archive preserves native session history. */
+  async archiveSession(id: string): Promise<ControlResult> {
+    if (!id.trim() || id.length > 4096 || /[\u0000-\u001f\u007f]/u.test(id)) {
+      return { ok: false, error: "ZCode archive requires an exact session id" };
+    }
+    const workspace = this.sessionWorkspaces.get(id) || this.workspace();
+    const snapshot = sessionInfoFromPayload(await this.readSnapshot(id, workspace, 1));
+    if (snapshot?.sessionId !== id || snapshot.workspace?.workspacePath !== workspace.workspacePath
+        || (snapshot.workspace.workspaceIdentity && snapshot.workspace.workspaceIdentity !== workspace.workspaceIdentity)) {
+      return { ok: false, error: "ZCode archive target identity mismatch" };
+    }
+    // zcode-task.archiveTask commits archived=true in the official tasks index
+    // and returns task metadata. Metadata has no archived flag, so confirm
+    // membership via the same service's archived list rather than invent one.
+    const archived = record(await this.callTask("archiveTask", { ...workspace, taskId: id }));
+    const matches = (task: Record<string, unknown>) => task.taskId === id
+      && task.workspacePath === workspace.workspacePath
+      && (!task.workspaceIdentity || task.workspaceIdentity === workspace.workspaceIdentity);
+    if (!matches(archived)) throw new Error("ZCode archive acknowledgement identity mismatch; outcome unknown");
+    const list = await this.callTask("listArchivedTasks", workspace);
+    if (!Array.isArray(list) || !list.some(task => matches(record(task)))) {
+      throw new Error("ZCode archive not confirmed by native archived list; outcome unknown");
+    }
+    this.createdSessions.delete(id);
+    return { ok: true, sessionId: id };
+  }
+
   async stopSession(id: string): Promise<ControlResult> {
     return this.stopGeneration(id);
   }

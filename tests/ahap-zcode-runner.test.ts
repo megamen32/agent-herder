@@ -21,6 +21,33 @@ async function run(adapter: Partial<ZcodeAdapter>, requests: unknown[]) {
 
 const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "zcode", ahapVersion: "0.1" } };
 
+it("advertises native archive only when implemented and forwards the exact session once", async () => {
+  const archiveSession = vi.fn(async (id: string) => ({ ok: true, sessionId: id }));
+  const replies = await run({ archiveSession }, [initialize,
+    { jsonrpc: "2.0", id: 2, method: "archiveSession", params: { id: "owned-fixture" } },
+    { jsonrpc: "2.0", id: 3, method: "archiveSession", params: { id: "\n" } },
+  ]);
+  expect(replies[0].result.capabilities.methods).toContain("archiveSession");
+  expect(replies[1].result).toEqual({ ok: true, sessionId: "owned-fixture" });
+  expect(replies[2].error.code).toBe(-32602);
+  expect(archiveSession).toHaveBeenCalledExactlyOnceWith("owned-fixture");
+  const absent = await run({}, [initialize, { jsonrpc: "2.0", id: 2, method: "archiveSession", params: { id: "owned" } }]);
+  expect(absent[0].result.capabilities.methods).not.toContain("archiveSession");
+  expect(absent[1].error.code).toBe(-32601);
+});
+
+it("preserves archive refusal and classifies a lost mutation reply as unknown without retry", async () => {
+  const refused = await run({ archiveSession: async () => ({ ok: false, error: "target absent" }) },
+    [initialize, { jsonrpc: "2.0", id: 2, method: "archiveSession", params: { id: "owned" } }]);
+  expect(refused[1].result).toEqual({ ok: false, error: "target absent" });
+  const archiveSession = vi.fn(async () => { throw new Error("private native diagnostic"); });
+  const failed = await run({ archiveSession }, [initialize,
+    { jsonrpc: "2.0", id: 2, method: "archiveSession", params: { id: "owned" } }]);
+  expect(failed[1].error.data).toMatchObject({ outcome: "unknown", retryable: false });
+  expect(JSON.stringify(failed)).not.toContain("private native diagnostic");
+  expect(archiveSession).toHaveBeenCalledTimes(1);
+});
+
 function offlineAdapter(native: { sessionId: string; inputId: string; userMessageId?: string; turnId?: string }) {
   const directory = mkdtempSync(join(tmpdir(), "ahap-zcode-receipt-"));
   const dbPath = join(directory, "native.sqlite");
