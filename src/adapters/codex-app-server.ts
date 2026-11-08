@@ -3016,8 +3016,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const provider = localProviderId(effective);
       if (!provider || (threadProvider && threadProvider !== provider)
           || (scoped.modelProvider !== undefined && scoped.modelProvider !== provider)) return false;
-      return this.child === child && this.transportGeneration === generation
-        && await isCredentialFreeLocalChild(child, this.codexBin, this.appServerDataHome);
+      const stillOwned = await isCredentialFreeLocalChild(child, this.codexBin, this.appServerDataHome);
+      return stillOwned && this.child === child && this.transportGeneration === generation;
     } catch { return false; }
   }
 

@@ -1,0 +1,52 @@
+{
+  "argv": [
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/launch.py",
+    "--retain-on-failure",
+    "/home/roomhacker/herder-artifacts/ci-runs/opencode-78-7932d249",
+    "--ro-bind",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/manifest.json",
+    "--ro-bind",
+    "/usr/bin/python3.10",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/node",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/ahap-owner-bootstrap",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/herder_native_stdio",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/ahap-opencode-runner.mjs",
+    "--ro-bind",
+    "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+    "--",
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/ahap_opencode_stand.py",
+    "--core",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/herder_native_stdio",
+    "--runner",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/ahap-opencode-runner.mjs",
+    "--opencode",
+    "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+    "--node",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/node",
+    "--bootstrap",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/fixture/ahap-owner-bootstrap",
+    "--instance",
+    "opencode-78-7932d249"
+  ],
+  "identities": {
+    "source_commit": "78e747bef373d9ec2188f44c51e7422fc5bf88a4",
+    "sha256": {
+      "core": "c1952779c9ca812345d7ba4929a12b727ed87dc24d2a06d08852330c90bcc368",
+      "adapter": "5602c6290d2c44c3a034c80ef50558930aa28c064bfc06a00434345ac4c912bf",
+      "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+      "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "bootstrap": "21d7002c71689c4302e3d9724786e016ae4872ef7a7e0c7753da86cceb38312e"
+    },
+    "os": "linux",
+    "arch": "x86_64",
+    "backend": "linux-netns-bwrap"
+  }
+}
