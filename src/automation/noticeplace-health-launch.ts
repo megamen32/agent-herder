@@ -8,6 +8,7 @@ export const NOTICEPLACE_HEALTH_AUTHORIZED: unique symbol = Symbol("noticeplace.
 /** Exact owner-approved NoticePlace incident routes; the GLM route remains available. */
 export const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   healthModelForHarness("opencode", INCIDENT_EXECUTION),
+  "minimax-coding-plan/MiniMax-M3.1-Flash",
   "omniroute/minimax-combo-m3.1",
 ]);
 

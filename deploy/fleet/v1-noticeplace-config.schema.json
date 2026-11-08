@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Herder NoticePlace v1 protected runtime references",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "noticeplaceBearerEnv", "noticeplaceEnvFile", "gptadmin", "policyPath", "stateDirectory", "cwd", "instance", "bind"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "noticeplaceBearerEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$", "description": "Environment variable NAME only; bearer value is injected by the protected service environment." },
+    "noticeplaceEnvFile": { "const": "/home/roomhacker/.config/agent-herder/herder.env", "description": "Existing mode-0600 herder.env; launcher reads only NOTICEPLACE_HEALTH_LAUNCH_TOKEN and never prints it." },
+    "gptadmin": {
+      "type": "object", "additionalProperties": false, "required": ["target", "profileFile"],
+      "properties": {
+        "target": { "const": "mcp:shell:roomhacker-server-100:AgentHerder" },
+        "profileFile": { "type": "string", "const": "/home/roomhacker/herder-artifacts/installed-v1/noticeplace/gptadmin-profile.json", "description": "Existing user-owned mode-0600 profile file containing endpoint and authorization; values are never logged." }
+      }
+    },
+    "policyPath": { "type": "string", "const": "/home/roomhacker/.local/state/agent-herder/autopilot-live/automation-launch-policy.json" },
+    "stateDirectory": { "type": "string", "const": "/home/roomhacker/.local/state/agent-herder/v1-noticeplace" },
+    "cwd": { "type": "string", "minLength": 1 },
+    "instance": {
+      "type": "object", "additionalProperties": false, "required": ["instanceRef", "harness", "model", "deliveryMode", "baseUrl"],
+      "properties": {
+        "instanceRef": { "const": "opencode-noticeplace-local" },
+        "harness": { "const": "opencode" },
+        "model": { "const": "minimax-coding-plan/MiniMax-M3.1-Flash" },
+        "deliveryMode": { "enum": ["start", "queue"] }
+        ,"baseUrl": { "const": "http://127.0.0.1:4095" }
+        ,"passwordEnv": { "const": "OPENCODE_SERVER_PASSWORD" }
+      }
+    },
+    "bind": { "type": "object", "additionalProperties": false, "required": ["host", "port"], "properties": { "host": { "const": "127.0.0.1" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } }
+  }
+}

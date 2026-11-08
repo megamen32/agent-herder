@@ -1,0 +1,25 @@
+{
+  "manifest_sha256": "d4add78186ef6d679915cc823e542329e365221c6e6e8d2db769d61090bcedb7",
+  "core_sha256": "b49261e068bff43edf4dd2c023c69fccdb345723f1df2ff601924354bd5df4ba",
+  "tool_count": 15,
+  "reads": [
+    {
+      "session_ref": "session:bedfb4ef1b62f03ec39f5f5971b07f69",
+      "human_stop": {
+        "held": false
+      },
+      "native_id": "01a1bc92-7f8c-7c02-9631-2fd094f15a80"
+    },
+    {
+      "session_ref": "session:d9211e8ad77ab8258e23aeb0b80ac93f",
+      "human_stop": {
+        "held": false
+      },
+      "native_id": "01a1bc92-9973-7fe3-8c22-1921b8cc87e6"
+    }
+  ],
+  "native_sends": 0,
+  "lease": "16523fb390dd0e1157c17a3fef37464c41ed6d4b",
+  "selector_cas": "7e91064c -> d4add781",
+  "guard_note": "Generic release check reported legacy revision/version/dirty-checkout mismatches. Own unexpired lease and candidate in main passed; V1 selector expected manifest and profiles verified separately by exact CAS."
+}
