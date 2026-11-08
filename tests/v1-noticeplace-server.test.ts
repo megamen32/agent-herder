@@ -5,11 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutomationLaunchPolicyStore } from '../src/automation-launch-policy.js';
 import { dispatchProjectLaunch, ProjectLaunchAttemptLog } from '../src/automation/project-launch-dispatch.js';
 import { createNoticePlaceIncidentRouter, createNoticePlaceRustRunner, type NoticePlaceRustToolPort } from '../src/automation/v1-noticeplace-rust.js';
+import { resumeNoticePlaceSession } from '../src/automation/v1-noticeplace-resume.js';
 import { NOTICEPLACE_V1_MODEL } from '../src/automation/v1-noticeplace-launch.js';
 import { createV1NoticePlaceServer } from '../src/v1-noticeplace-server.js';
 import { noticePlaceOwnerNodeStatus, validateNoticePlaceOwnerState } from '../src/automation/v1-noticeplace-owner-state.js';
 
 const token = 'test-only-noticeplace-token';
+const coreRef='session:66ecba3bf525a89f494b9f2c7ebc8421';
+const nativeId='ses_e434b3fc0ffeNkQ5AJ1nuWLYgl';
 let root: string;
 let servers: Server[];
 let wireCalls: Array<{tool:string,args:Record<string,unknown>;key?:string}>;
@@ -17,8 +20,12 @@ let wireMode: 'normal'|'delayed-complete'|'unknown-create'|'partial-create'|'nes
 let taskReads = 0;
 let ownerMode: 'confirmed'|'unknown'|'stopped' = 'confirmed';
 let sessionReadCalls:Array<{sessionRef:string;kind:'progress'|'details'}>;
+let resumeMode:'confirmed'|'human-stop'|'unknown'|'task-only'|'immediate-human-stop'|'immediate-unsupported'|'working-then-completed'='confirmed';
+let autopilotCalls:string[];
+let resumeTaskReads=0;
+let identityMode:'confirmed'|'null'|'throws'='confirmed';
 
-beforeEach(async () => { root = await mkdtemp(join(process.cwd(),'.tmp/noticeplace-v1-')); servers=[]; wireCalls=[]; wireMode='normal'; taskReads=0; ownerMode='confirmed'; sessionReadCalls=[]; vi.stubEnv('NOTICEPLACE_HEALTH_LAUNCH_TOKEN',token); });
+beforeEach(async () => { root = await mkdtemp(join(process.cwd(),'.tmp/noticeplace-v1-')); servers=[]; wireCalls=[]; wireMode='normal'; taskReads=0; ownerMode='confirmed'; sessionReadCalls=[]; resumeMode='confirmed'; autopilotCalls=[]; resumeTaskReads=0; identityMode='confirmed'; vi.stubEnv('NOTICEPLACE_HEALTH_LAUNCH_TOKEN',token); });
 afterEach(async () => { await Promise.all(servers.map(s=>new Promise<void>(resolve=>s.close(()=>resolve())))); vi.unstubAllEnvs(); await rm(root,{recursive:true,force:true}); });
 
 const policy = {
@@ -39,13 +46,13 @@ function fakeRust(): NoticePlaceRustToolPort & { calls: Array<{tool:string,args:
       if (wireMode==='delayed-complete' && taskReads===1) return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'working'}};
       if (args.task_ref==='delivery-task-2') return {structuredContent:{resultType:'complete',taskId:'delivery-task-2',status:'completed',result:{isError:wireMode==='human-stop',structuredContent:wireMode==='human-stop'?{code:'human_stop',effect:'none'}:{outcome:'confirmed',native_receipt_id:'native-receipt-2'}}}};
       if (wireMode==='unknown-create') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:true,structuredContent:{create:{effect:'unknown'},prompt:{effect:'unknown',code:'outcome_unknown'}}}}};
-      if (wireMode==='partial-create'||wireMode==='iserror-create-unknown') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:true,structuredContent:{create:{effect:'confirmed',session_ref:'session-ref-1'},prompt:{effect:'unknown',code:'outcome_unknown'}}}}};
-      if (wireMode==='nested-create-prompt-unknown') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:'session-ref-1',metadata:{state:'confirmed'}},prompt:{effect:'unknown',code:'outcome_unknown',metadata:{admitted:true,state:'confirmed'}}}}}};
-      if (wireMode==='human-stop') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:true,structuredContent:{create:{effect:'confirmed',session_ref:'session-ref-1'},prompt:{code:'human_stop',effect:'none'}}}}};
-      if (wireMode==='completed-without-admission') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:'session-ref-1'},prompt:{}}}}};
-      return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:'session-ref-1'},prompt:{outcome:'confirmed',native_receipt_id:'native-receipt-1'}}}}};
+      if (wireMode==='partial-create'||wireMode==='iserror-create-unknown') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:true,structuredContent:{create:{effect:'confirmed',session_ref:coreRef},prompt:{effect:'unknown',code:'outcome_unknown'}}}}};
+      if (wireMode==='nested-create-prompt-unknown') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:coreRef,metadata:{state:'confirmed'}},prompt:{effect:'unknown',code:'outcome_unknown',metadata:{admitted:true,state:'confirmed'}}}}}};
+      if (wireMode==='human-stop') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:true,structuredContent:{create:{effect:'confirmed',session_ref:coreRef},prompt:{code:'human_stop',effect:'none'}}}}};
+      if (wireMode==='completed-without-admission') return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:coreRef},prompt:{}}}}};
+      return {structuredContent:{resultType:'complete',taskId:'task-create-1',status:'completed',result:{isError:false,structuredContent:{create:{effect:'confirmed',session_ref:coreRef},prompt:{outcome:'confirmed',native_receipt_id:'native-receipt-1'}}}}};
     }
-    if (tool==='sessions') return {structuredContent:{sessions:[{session_ref:'session-ref-1',native:{status:'stopped',title:'repair'}}],complete:true,next_cursor:null}};
+    if (tool==='sessions') return {structuredContent:{sessions:[{session_ref:coreRef,native:{session_id:nativeId,status:'stopped',title:'repair'}}],complete:true,next_cursor:null}};
     if (tool==='deliver') return {structuredContent:{task_ref:'delivery-task-2',status:'working',native_task:true}};
     throw new Error(`unexpected tool ${tool}`);
   }};
@@ -62,8 +69,24 @@ async function listen(): Promise<{server:Server;url:string}> {
     if(ownerMode==='unknown') return {ok:false};
     return {ok:true,state:{disarmed:ownerMode==='confirmed'?false:true,records:[{scope:'*',forbidden:ownerMode==='stopped'}]},nodes:['server-100','server-44','server-88'].map(hostId=>({hostId,status:'confirmed'}))};
   }};
-  const autopilot={async get({sessionId}:{sessionId:string}){return {enabled:false,sessionId};},async arm({sessionId,enabled}:{sessionId:string;enabled:boolean}){return {enabled,sessionId};}};
-  const server=createV1NoticePlaceServer({policyStore,attempts,runner,ownerState,autopilot,sessionRead:{async read(sessionRef,kind){sessionReadCalls.push({sessionRef,kind});return kind==='progress'?{session:{id:sessionRef},progress:{items:['legacy-progress-shape']}}:{session:{id:sessionRef},details:{messages:['legacy-details-shape']}};}}});
+  const autopilot={async get({sessionId}:{sessionId:string}){autopilotCalls.push(`get:${sessionId}`);return {enabled:false,sessionId};},async arm({sessionId,enabled}:{sessionId:string;enabled:boolean}){autopilotCalls.push(`arm:${sessionId}`);return {enabled,sessionId};}};
+  const server=createV1NoticePlaceServer({policyStore,attempts,runner,ownerState,autopilot,
+    identity:{async toCoreRef(id){return id===nativeId||id===coreRef?coreRef:null;},async toNativeId(ref){if(identityMode==='throws')throw new Error('identity lookup unavailable');return identityMode==='null'?null:ref===coreRef?nativeId:null;}},
+    resume:{async call(tool,args,key){wireCalls.push({tool,args,key});
+      if(tool==='deliver'&&resumeMode==='immediate-human-stop')return {isError:true,structuredContent:{code:'human_stop_active',effect:'none'}};
+      if(tool==='deliver'&&resumeMode==='immediate-unsupported')return {isError:true,structuredContent:{code:'unsupported_mode',effect:'none'}};
+      if(tool==='deliver')return {structuredContent:{task_ref:'resume-task-1'}};
+      if(tool==='compat_task'){
+        resumeTaskReads++;
+        if(resumeMode==='working-then-completed'&&resumeTaskReads===1)return {structuredContent:{resultType:'complete',taskId:'resume-task-1',status:'working'}};
+        if(resumeMode==='task-only')return {structuredContent:{resultType:'complete',taskId:'resume-task-1',status:'completed',result:{isError:false,structuredContent:{}}}};
+        if(resumeMode==='unknown')return {structuredContent:{resultType:'complete',taskId:'resume-task-1',status:'unknown'}};
+        if(resumeMode==='human-stop')return {structuredContent:{resultType:'complete',taskId:'resume-task-1',status:'completed',result:{isError:true,structuredContent:{code:'human_stop',effect:'none'}}}};
+        return {structuredContent:{resultType:'complete',taskId:'resume-task-1',status:'completed',result:{isError:false,structuredContent:{outcome:'confirmed',native_receipt_id:'resume-receipt-1'}}}};
+      }
+      throw new Error(`unexpected resume tool ${tool}`);
+    }},
+    sessionRead:{async read(sessionRef,kind){sessionReadCalls.push({sessionRef,kind});return kind==='progress'?{session:{id:sessionRef},progress:{items:['legacy-progress-shape']}}:{session:{id:sessionRef},details:{messages:['legacy-details-shape']}};}}});
   servers.push(server);
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const address=server.address(); if(!address||typeof address==='string')throw new Error('missing local test address');
@@ -73,21 +96,99 @@ async function listen(): Promise<{server:Server;url:string}> {
 describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
   it('can disarm only the addressed test session after repair',async()=>{
     const {url}=await listen();
-    const response=await fetch(`${url}/api/autopilot/sessions/opencode/session-ref-1`,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({enabled:false,cwd:'/workspace/infra'})});
+    const response=await fetch(`${url}/api/autopilot/sessions/opencode/${nativeId}`,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({enabled:false,cwd:'/workspace/infra'})});
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({enabled:false,sessionId:'session-ref-1'});
+    expect(await response.json()).toMatchObject({enabled:false,sessionId:nativeId,core_session_ref:coreRef});
+    expect(autopilotCalls).toEqual([`arm:${coreRef}`]);
+    const read=await fetch(`${url}/api/autopilot/sessions/opencode/${coreRef}?cwd=%2Fworkspace%2Finfra`);
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({sessionId:nativeId,core_session_ref:coreRef,enabled:false});
+    expect(autopilotCalls).toEqual([`arm:${coreRef}`,`get:${coreRef}`]);
     expect(wireCalls).toHaveLength(0);
   });
   it('serves the installed OpenCode progress/details paths through the injected legacy-shape reader',async()=>{
     const {url}=await listen();
-    const progress=await fetch(`${url}/api/sessions/opencode/session-ref-1/progress?limit=5&history=auto`);
-    const details=await fetch(`${url}/api/sessions/opencode/session-ref-1/details?limit=1&history=auto`);
+    const progress=await fetch(`${url}/api/sessions/opencode/${nativeId}/progress?limit=5&history=auto`);
+    const details=await fetch(`${url}/api/sessions/opencode/${coreRef}/details?limit=1&history=auto`);
     expect(progress.status).toBe(200);
-    expect(await progress.json()).toEqual({session:{id:'session-ref-1'},progress:{items:['legacy-progress-shape']}});
+    expect(await progress.json()).toEqual({session:{id:nativeId},progress:{items:['legacy-progress-shape']}});
     expect(details.status).toBe(200);
-    expect(await details.json()).toEqual({session:{id:'session-ref-1'},details:{messages:['legacy-details-shape']}});
-    expect(sessionReadCalls).toEqual([{sessionRef:'session-ref-1',kind:'progress'},{sessionRef:'session-ref-1',kind:'details'}]);
+    expect(await details.json()).toEqual({session:{id:nativeId},details:{messages:['legacy-details-shape']}});
+    expect(sessionReadCalls).toEqual([{sessionRef:coreRef,kind:'progress'},{sessionRef:coreRef,kind:'details'}]);
     expect(wireCalls).toHaveLength(0);
+  });
+
+  it('resumes the exact resolved core session and returns admission only with the native receipt',async()=>{
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue the existing repair\nwith this follow-up',humanRequested:false,inputId:'resume-input-7'})});
+    expect(response.status).toBe(200);
+    const body=await response.json();
+    expect(body).toMatchObject({ok:true,admitted:true,outcome:'accepted',sessionId:nativeId,core_session_ref:coreRef,inputId:'resume-input-7',native_receipt_id:'resume-receipt-1'});
+    expect(body).toMatchObject({native_receipt:{outcome:'confirmed',native_receipt_id:'resume-receipt-1'}});
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toEqual([{tool:'deliver',args:{action:'session',session_ref:coreRef,message:'continue the existing repair\nwith this follow-up',mode:'start',request_key:'resume-input-7'},key:'resume-input-7'}]);
+  });
+
+  it('polls the same working task to completion without resending deliver',async()=>{
+    resumeMode='working-then-completed';
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',humanRequested:false,inputId:'resume-working'})});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ok:true,admitted:true,outcome:'accepted',sessionId:nativeId,inputId:'resume-working',native_receipt_id:'resume-receipt-1'});
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toHaveLength(1);
+    expect(wireCalls.filter(call=>call.tool==='compat_task')).toHaveLength(2);
+  });
+
+  it('returns bounded UNKNOWN quickly when a task remains working',async()=>{
+    const calls:string[]=[];
+    const result=await resumeNoticePlaceSession({coreSessionRef:coreRef,message:'continue',humanRequested:false,inputId:'resume-timeout',pollIntervalMs:0,pollDeadlineMs:0,
+      port:{async call(tool){calls.push(tool);return tool==='deliver'
+        ?{structuredContent:{task_ref:'resume-task-timeout'}}
+        :{structuredContent:{resultType:'complete',taskId:'resume-task-timeout',status:'working'}};}}});
+    expect(result).toMatchObject({outcome:'admission_unknown',task_ref:'resume-task-timeout',native_receipt:{taskId:'resume-task-timeout',status:'working'}});
+    expect(calls).toEqual(['deliver','compat_task']);
+  });
+
+  it.each(['human-stop','unknown','task-only'] as const)('keeps resume %s distinct from accepted',async(mode)=>{
+    resumeMode=mode;
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${coreRef}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',humanRequested:false,inputId:`resume-${mode}`})});
+    expect(response.status).toBe(mode==='human-stop'?409:503);
+    const body=await response.json();
+    expect(body.outcome).toBe(mode==='human-stop'?'human_hold':'admission_unknown');
+    expect(body.sessionId).toBe(nativeId);
+    expect(body.inputId).toBe(`resume-${mode}`);
+    expect(body.ok).toBe(false);
+    expect(body.admitted).toBe(false);
+    expect(body.native_receipt_id).toBeUndefined();
+    expect(body.native_receipt).toMatchObject(mode==='human-stop'?{code:'human_stop',effect:'none'}:mode==='unknown'?{taskId:'resume-task-1',status:'unknown'}:{});
+  });
+
+  it.each([
+    ['immediate-human-stop','human_hold','human_stop_active'],
+    ['immediate-unsupported','not_sent','unsupported_mode'],
+  ] as const)('preserves immediate Rust refusal %s without task polling',async(mode,outcome,code)=>{
+    resumeMode=mode;
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',humanRequested:false,inputId:`resume-${mode}`})});
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({outcome,ok:false,admitted:false,sessionId:nativeId,code,native_receipt:{code,effect:'none'}});
+    expect(wireCalls.filter(call=>call.tool==='compat_task')).toHaveLength(0);
+  });
+
+  it('rejects resume without the consumer humanRequested:false contract before a Rust call',async()=>{
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',inputId:'resume-invalid'})});
+    expect(response.status).toBe(400);
+    expect(wireCalls).toHaveLength(0);
+  });
+
+  it('keeps owner STOP in front of resume and performs zero native delivery',async()=>{
+    ownerMode='stopped';
+    const {url}=await listen();
+    const response=await fetch(`${url}/api/sessions/opencode/${nativeId}/resume`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'continue',humanRequested:false,inputId:'resume-stopped'})});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ok:false,admitted:false,outcome:'human_hold',code:'human_stop_active',inputId:'resume-stopped'});
+    expect(wireCalls.filter(call=>call.tool==='deliver'||call.tool==='compat_task')).toHaveLength(0);
   });
 
   it('rejects other harnesses and non-installed read query shapes without touching the reader',async()=>{
@@ -109,10 +210,33 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     wireMode='delayed-complete';
     const {url}=await listen();
     const response=await fetch(`${url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(input)});
-    expect(await response.json()).toMatchObject({outcome:'accepted',sessionId:'session-ref-1'});
+    expect(await response.json()).toMatchObject({outcome:'accepted',sessionId:nativeId,session_id:nativeId,core_session_ref:coreRef});
     expect(wireCalls.filter(call=>call.tool==='create')).toHaveLength(1);
     expect(wireCalls.filter(call=>call.tool==='compat_task')).toHaveLength(2);
   });
+  it.each(['null','throws'] as const)('keeps unavailable native identity %s UNKNOWN without leaking core IDs or repeating create',async(mode)=>{
+    identityMode=mode;
+    const {url}=await listen();
+    const post=()=>fetch(`${url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(input)});
+    for(let read=0;read<2;read++){
+      const response=await post();
+      expect(response.status).toBe(503);
+      const body=await response.json();
+      expect(body).toMatchObject({outcome:'admission_unknown',core_session_ref:coreRef,identity:'unknown'});
+      expect(body.sessionId).toBeUndefined();
+      expect(body.session_id).toBeUndefined();
+      expect(body.attempts[0]).toMatchObject({core_session_ref:coreRef,identity:'unknown',result:{core_session_ref:coreRef,identity:'unknown'}});
+      for(const attempt of body.attempts){
+        expect(attempt.sessionId).toBeUndefined();
+        expect(attempt.session_id).toBeUndefined();
+        expect(attempt.result.sessionId).toBeUndefined();
+        expect(attempt.result.session_id).toBeUndefined();
+      }
+    }
+    expect(wireCalls.filter(call=>call.tool==='create')).toHaveLength(1);
+    expect(wireCalls.filter(call=>call.tool==='deliver')).toHaveLength(0);
+  });
+
   it.each(['unknown','stopped'] as const)('exposes fail-closed fleet disarm state and blocks launch for %s',async(mode)=>{
     ownerMode=mode;
     const {url}=await listen();
@@ -136,22 +260,24 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     const post=()=>fetch(`${first.url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(input)});
     const admitted=await post();
     expect(admitted.status).toBe(200);
-    expect(await admitted.json()).toMatchObject({incidentId:facts.id,operationId:input.operation_id,outcome:'accepted',sessionId:'session-ref-1'});
+    const admittedBody=await admitted.json();
+    expect(admittedBody).toMatchObject({incidentId:facts.id,operationId:input.operation_id,outcome:'accepted',session_id:nativeId,core_session_ref:coreRef,sessionId:nativeId});
+    expect(admittedBody.attempts[0]).toMatchObject({sessionId:nativeId,core_session_ref:coreRef,result:{sessionId:nativeId,session_id:nativeId,core_session_ref:coreRef}});
     await new Promise<void>(resolve=>first.server.close(()=>resolve()));
     servers=servers.filter(s=>s!==first.server);
 
     const second=await listen();
     // Same operation survives restart as a receipt read; no Rust mutation is replayed.
     const replay=await (await fetch(`${second.url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(input)})).json();
-    expect(replay).toMatchObject({outcome:'accepted',sessionId:'session-ref-1'});
+    expect(replay).toMatchObject({outcome:'accepted',session_id:nativeId,core_session_ref:coreRef});
     // New operation in the same source group delivers to the exact retained Rust session.
     const followup=await fetch(`${second.url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({...input,operation_id:'op-stable-43',message:`follow-up\n${JSON.stringify(facts)}`})});
     const followupResult=await followup.json();
-    expect(followupResult,JSON.stringify({followupResult,wireCalls})).toMatchObject({outcome:'accepted',sessionId:'session-ref-1'});
+    expect(followupResult,JSON.stringify({followupResult,wireCalls})).toMatchObject({outcome:'accepted',session_id:nativeId,core_session_ref:coreRef});
     expect(wireCalls.filter(call=>call.tool==='create')).toHaveLength(1);
     expect(wireCalls.filter(call=>call.tool==='deliver')).toHaveLength(1);
     expect(wireCalls.filter(call=>call.tool==='create')[0]?.args.request_key).toBe('herder-launch:opencode:op-stable-42');
-    expect(wireCalls.filter(call=>call.tool==='deliver')[0]).toMatchObject({args:{session_ref:'session-ref-1',mode:'start'},key:'herder-launch:opencode:op-stable-43'});
+    expect(wireCalls.filter(call=>call.tool==='deliver')[0]).toMatchObject({args:{session_ref:coreRef,mode:'start'},key:'herder-launch:opencode:op-stable-43'});
     expect(Object.keys(wireCalls.filter(call=>call.tool==='deliver')[0]!.args).sort()).toEqual(['action','message','mode','request_key','session_ref']);
   });
 
@@ -190,9 +316,9 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
       const {url}=await listen();
       const post=(operation_id:string)=>fetch(`${url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({...input,operation_id})});
       const first=await (await post('op-partial')).json();
-      expect(first).toMatchObject({outcome:'admission_unknown',sessionId:'session-ref-1'});
+      expect(first).toMatchObject({outcome:'admission_unknown',sessionId:nativeId,session_id:nativeId,core_session_ref:coreRef});
       const bindings=JSON.parse(await readFile(join(root,'incident-bindings.json'),'utf8'));
-      expect(Object.values(bindings.groups)).toContainEqual(expect.objectContaining({sessionId:'session-ref-1',pending:'herder-launch:opencode:op-partial'}));
+      expect(Object.values(bindings.groups)).toContainEqual(expect.objectContaining({sessionId:coreRef,pending:'herder-launch:opencode:op-partial'}));
       // Same unchanged source group is still fenced; it cannot create a replacement.
       const second=await (await post('op-new-after-partial')).json();
       expect(second).toMatchObject({outcome:'admission_unknown'});
@@ -204,7 +330,7 @@ describe('V1 NoticePlace HTTP → Rust MCP consumer',()=>{
     wireMode='human-stop';
     const {url}=await listen();
     const result=await (await fetch(`${url}/api/automation/project-launch`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(input)})).json();
-    expect(result).toMatchObject({outcome:'human_hold',sessionId:'session-ref-1'});
+    expect(result).toMatchObject({outcome:'human_hold',sessionId:nativeId,session_id:nativeId,core_session_ref:coreRef});
     expect(wireCalls.filter(call=>call.tool==='create')).toHaveLength(1);
   });
 });
