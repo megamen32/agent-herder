@@ -35,6 +35,10 @@ export interface BrowserChatDriver {
   getKnownChat?(chatId: string): BrowserChat | null;
   /** Authenticated read-only owner API; no navigation or model turn. */
   getMessages?(chatId: string): Promise<SessionMessageView[] | null>;
+  /** The native id of the user's own message in the rendered conversation.
+   * Ordinary confirmation of the effect when the provider's read API is
+   * rate-limited; it never sends and never navigates. */
+  getMessageIdFromDom?(chatId: string, text: string): Promise<string | null>;
   /** Passive background observation; never triggers a provider request. */
   getObservedMessages?(chatId: string): Promise<SessionMessageView[] | null>;
   /** Optional throttled visit for a completed ChatGPT turn without visible history. */
@@ -467,6 +471,16 @@ export class BrowserChatAdapter implements HarnessAdapter {
             }
             if (matches && matches.length > 1) break;
           } catch { /* A read failure after the click is not a pre-send refusal. */ }
+          // The provider's read API can be rate-limited while the very same
+          // conversation is rendered in the tab. The native id of the user's
+          // own message in the DOM is ordinary confirmation of the effect and
+          // needs no new send and no repeated API call.
+          const fromDom = await this.driver.getMessageIdFromDom?.(nativeId, options.message)
+            .catch(() => null);
+          if (fromDom) {
+            return { ok: true, admitted: true, admission: "accepted",
+              inputId: options.inputId, nativeInputMessageId: fromDom };
+          }
           if (attempt + 1 < BrowserChatAdapter.RECEIPT_READ_ATTEMPTS) {
             await new Promise(resolve => setTimeout(resolve, BrowserChatAdapter.RECEIPT_READ_GAP_MS));
           }
