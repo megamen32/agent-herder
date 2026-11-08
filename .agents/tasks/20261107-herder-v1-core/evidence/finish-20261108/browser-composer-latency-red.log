@@ -1,0 +1,53 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/chatgpt-two-accounts.test.ts (2 tests | 1 failed) 15ms
+   × reads the owned account before probing unrelated Chrome profiles 9ms
+ ❯ tests/browser-chat-create.test.ts (49 tests | 1 failed) 7543ms
+   × clears a restored owned draft after the editor mounts, without another tab or send 2115ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-chat-create.test.ts > clears a restored owned draft after the editor mounts, without another tab or send
+AssertionError: promise rejected "Error: chatgpt owned tab could not be ret…" instead of resolving
+ ❯ tests/browser-chat-create.test.ts:787:63
+    785|   throw Error('unexpected '+name);
+    786|  }};
+    787|  await expect(openOwnedBlankChatPage(tools,'chatgpt',ACCOUNT)).resolve…
+       |                                                               ^
+    788|  expect(clears).toBe(2);
+    789| });
+
+Caused by: Error: chatgpt owned tab could not be returned to a blank chat; no message submitted
+ ❯ openOwnedBlankChatPage src/adapters/browser-chat-new-page.ts:163:11
+ ❯ tests/browser-chat-create.test.ts:787:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/chatgpt-two-accounts.test.ts > reads the owned account before probing unrelated Chrome profiles
+AssertionError: expected [ 2 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   2,
++ ]
+
+ ❯ tests/chatgpt-two-accounts.test.ts:44:24
+     42|  }};
+     43|  expect(await new ChatGptMacCdpDriver(tools,undefined,0,scope).getMess…
+     44|  expect(foreignChecks).toEqual([]);
+       |                        ^
+     45| });
+     46|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 49 passed (51)
+   Start at  17:56:25
+   Duration  8.69s (transform 1.24s, setup 105ms, import 1.34s, tests 7.56s, environment 0ms)
+

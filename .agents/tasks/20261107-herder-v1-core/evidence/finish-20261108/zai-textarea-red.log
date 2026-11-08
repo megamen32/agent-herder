@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/browser-chat-create.test.ts (50 tests | 1 failed | 49 skipped) 2134ms
+   × clears a textarea value using its text selection, not a DOM Range 2132ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-chat-create.test.ts > clears a textarea value using its text selection, not a DOM Range
+AssertionError: promise rejected "Error: zai owned tab composer could not b…" instead of resolving
+ ❯ tests/browser-chat-create.test.ts:805:51
+    803|   throw Error('unexpected '+name);
+    804|  }};
+    805|  await expect(openOwnedBlankChatPage(tools,'zai')).resolves.toBe(7);
+       |                                                   ^
+    806|  expect(value).toBe('');
+    807| });
+
+Caused by: Error: zai owned tab composer could not be cleared; no message submitted
+ ❯ openOwnedBlankChatPage src/adapters/browser-chat-new-page.ts:140:11
+ ❯ tests/browser-chat-create.test.ts:805:2
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 49 skipped (50)
+   Start at  17:59:08
+   Duration  3.86s (transform 1.39s, setup 54ms, import 1.48s, tests 2.13s, environment 0ms)
+

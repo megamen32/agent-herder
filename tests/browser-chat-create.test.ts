@@ -769,3 +769,39 @@ describe("chatgpt first message route proof", () => {
     expect(receipt.remoteId).toBe(GPT_NATIVE);
   });
 });
+
+it('clears a restored owned draft after the editor mounts, without another tab or send', async()=>{
+ let mounted=false,empty=false,clears=0;
+ const tools:ChromePageTools={call:async(name,args={})=>{
+  if(name==='list_pages')return '7: ChatGPT (https://chatgpt.com/c/'+GPT_NATIVE+')';
+  if(name==='navigate_page')return '';
+  if(name==='evaluate_script'){
+   const source=String(args.function);
+   if(source.includes('window.name ==='))return json({owned:true});
+   if(source.includes('/api/auth/session'))return json({scope:ACCOUNT});
+   if(source.includes("execCommand('delete')")){clears++;if(mounted)empty=true;return json({cleared:empty});}
+   if(source.includes('ready:!!editor')){mounted=true;return json({origin:'https://chatgpt.com',path:'/',ready:true,empty});}
+  }
+  throw Error('unexpected '+name);
+ }};
+ await expect(openOwnedBlankChatPage(tools,'chatgpt',ACCOUNT)).resolves.toBe(7);
+ expect(clears).toBe(2);
+});
+
+it('clears a textarea value using its text selection, not a DOM Range',async()=>{
+ let value='retained test draft',selected=false;
+ const editor={get value(){return value},tagName:'TEXTAREA',focus(){},select(){selected=true}};
+ const document={querySelector:()=>editor,createRange:()=>({selectNodeContents(){}}),execCommand:()=>{if(selected)value='';return selected}};
+ const window={getSelection:()=>({removeAllRanges(){},addRange(){}})};
+ const tools:ChromePageTools={call:async(name,args={})=>{
+  if(name==='list_pages')return '7: Z.ai (https://chat.z.ai/?herder_owned=zai)';
+  if(name==='evaluate_script'){
+   const source=String(args.function);
+   if(source.includes("execCommand('delete')"))return json(runInNewContext('('+source+')()', {document,window}));
+   if(source.includes('ready:!!editor'))return json({origin:'https://chat.z.ai',path:'/',ready:true,empty:!value});
+  }
+  throw Error('unexpected '+name);
+ }};
+ await expect(openOwnedBlankChatPage(tools,'zai')).resolves.toBe(7);
+ expect(value).toBe('');
+});

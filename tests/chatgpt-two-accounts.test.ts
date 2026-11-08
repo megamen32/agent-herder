@@ -24,3 +24,22 @@ it('selects each account on a shared listing, survives renumbering, and never cl
  }
  expect(writes).toEqual([]);
 });
+
+it('reads the owned account before probing unrelated Chrome profiles',async()=>{
+ const scope='a'.repeat(64), foreignChecks:number[]=[];
+ const id='6ada477c-7014-83ed-82ae-7881dbe3e109';
+ const tools:ChromePageTools={call:async(name,args={})=>{
+  if(name==='list_pages')return `1: Owned (https://chatgpt.com/?herder_owned=chatgpt%3A${scope})\n2: Foreign (https://chatgpt.com/)`;
+  if(name==='evaluate_script'){
+   const source=String(args.function);
+   if(source.includes('/api/auth/session')&&!source.includes('conversation_read')){
+    if(args.pageId===2)foreignChecks.push(2);
+    return json({scope:args.pageId===1?scope:'b'.repeat(64)});
+   }
+   if(source.includes('conversation_read'))return json({messages:[{id:'message1',role:'user',text:'owned'}]});
+  }
+  throw Error('unexpected '+name);
+ }};
+ expect(await new ChatGptMacCdpDriver(tools,undefined,0,scope).getMessages(id)).toMatchObject([{text:'owned'}]);
+ expect(foreignChecks).toEqual([]);
+});

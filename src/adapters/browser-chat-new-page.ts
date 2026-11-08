@@ -85,11 +85,14 @@ async function clearComposer(tools:ChromePageTools,pageId:number,site:BrowserCha
         :'textarea[placeholder="Send a Message"]')});
       if(!editor)return {cleared:false};
       editor.focus();
-      const range=document.createRange();
-      range.selectNodeContents(editor);
-      const selection=window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
+      if(editor.tagName==='TEXTAREA')editor.select();
+      else {
+        const range=document.createRange();
+        range.selectNodeContents(editor);
+        const selection=window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
       document.execCommand('delete');
       return {cleared:!(editor.innerText||editor.value||editor.textContent||'').trim()};
     }`});
@@ -130,7 +133,10 @@ export async function openOwnedBlankChatPage(
               ready:!!editor&&editor.getClientRects().length>0,
               empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
           }`}));
-        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return owned.id;
+        if(state.origin===origin&&state.path==="/"&&state.ready){
+          if(state.empty)return owned.id;
+          await clearComposer(tools,owned.id,site);
+        }
       }catch{ /* retried below */ }
       await new Promise(resolve=>setTimeout(resolve,300));
     }
@@ -143,7 +149,7 @@ export async function openOwnedBlankChatPage(
   if (claimed) {
     if (scope && await verifyNewChatAccountScope(tools,site,claimed.id) !== scope)
       throw new Error("New-chat account identity could not be verified");
-    await navigateToRoot(tools,claimed.id,site);
+    if(new URL(claimed.url).pathname!=="/")await navigateToRoot(tools,claimed.id,site);
     await clearComposer(tools,claimed.id,site);
     for(let attempt=0;attempt<7;attempt++){
       try{
@@ -156,7 +162,11 @@ export async function openOwnedBlankChatPage(
               ready:!!editor&&editor.getClientRects().length>0,
               empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
           }`}));
-        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return claimed.id;
+        if(state.origin===origin&&state.path==="/"&&state.ready){
+          if(state.empty)return claimed.id;
+          // The SPA may mount the editor and restore its draft after navigation.
+          await clearComposer(tools,claimed.id,site);
+        }
       }catch{ /* retried below */ }
       await new Promise(resolve=>setTimeout(resolve,300));
     }

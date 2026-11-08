@@ -480,34 +480,25 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return this.openChatGptTab();
   }
 
-  /** The tab used for an authenticated READ of the provider's API.
-   * A tab can be rate-limited on reads while another tab of the same
-   * account answers normally. The owned tab is preferred, but a tab whose
-   * read cooldown is active is skipped instead of failing the whole read. */
-  private async readablePage(): Promise<Page> {
-    return (await this.readablePages())[0]!;
-  }
-
-  /** The tabs that may serve an authenticated READ of the provider's API,
-   * owned tab first. A tab whose read is rate-limited is skipped instead of
-   * failing the whole read. */
-  private async readablePages(): Promise<Page[]> {
-    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+  /** Read the owned account first. Probe alternate profiles only if that read
+   * actually needs a fallback; eager account scans can exhaust the AHAP budget. */
+  private async *readablePages(): AsyncGenerator<Page> {
     if (this.expectedAccountScope) {
       const first = await this.page();
-      if (this.pinnedPageId !== undefined) return [first];
-      const readable = [first];
+      yield first;
+      if (this.pinnedPageId !== undefined) return;
+      const pages = parseChatGptPages(await this.tools.call("list_pages"));
       for (const page of pages) {
         if (page.id === first.id) continue;
         const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id).catch(() => undefined);
-        if (scope === this.expectedAccountScope) readable.push(page);
+        if (scope === this.expectedAccountScope) yield page;
       }
-      return readable;
+      return;
     }
-    if (!pages.length) return [await this.page()];
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (!pages.length) { yield await this.page(); return; }
     const owned = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
-    const order = [...owned, ...pages.filter(page => !owned.includes(page))];
-    return order.length ? order : [await this.page()];
+    yield* [...owned, ...pages.filter(page => !owned.includes(page))];
   }
 
   /** The tab that shows exactly this conversation, if one is open. */
@@ -1010,16 +1001,13 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       chatId = draft.remoteId;
     }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
-    const pages = await this.readablePages();
     let result: { error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
       timestamp?: string; model?: string }> } = { error: "no_readable_tab" };
-    let page = pages[0]!;
-    for (const candidate of pages) {
+    for await (const candidate of this.readablePages()) {
       await this.verifyCurrentPinnedAccountScope(candidate.id);
       result = parseChromeEvaluation(await this.tools.call("evaluate_script",
         { pageId: candidate.id, function: chatgptMessagesApiScript(chatId) }));
       await this.verifyCurrentPinnedAccountScope(candidate.id);
-      page = candidate;
       // A rate-limited tab must not fail the read: another tab of the same
       // account answers normally. The same request is never repeated on the
       // same tab.
