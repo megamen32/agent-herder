@@ -39,6 +39,9 @@ export interface BrowserChatDriver {
    * Ordinary confirmation of the effect when the provider's read API is
    * rate-limited; it never sends and never navigates. */
   getMessageIdFromDom?(chatId: string, text: string): Promise<string | null>;
+  /** The native ids of the rendered messages of one conversation. Used as an
+   * honest partial baseline when the provider's read API is rate-limited. */
+  getMessageIdsFromDom?(chatId: string): Promise<string[]>;
   /** Passive background observation; never triggers a provider request. */
   getObservedMessages?(chatId: string): Promise<SessionMessageView[] | null>;
   /** Optional throttled visit for a completed ChatGPT turn without visible history. */
@@ -433,7 +436,19 @@ export class BrowserChatAdapter implements HarnessAdapter {
       // Snapshot first so an older identical prompt cannot become the receipt.
       let beforeIds: Set<string> | undefined;
       if (options.inputId) {
-        const before = await this.driver.getMessages?.(nativeId);
+        let before: SessionMessageView[] | null | undefined;
+        try { before = await this.driver.getMessages?.(nativeId); }
+        catch { before = undefined; }
+        if (!Array.isArray(before)) {
+          // The provider's read API can be rate-limited BEFORE the send as
+          // well. The rendered conversation still carries the ids that
+          // existed before the click, so the baseline stays honest and
+          // partial instead of missing.
+          const rendered = await this.driver.getMessageIdsFromDom?.(nativeId).catch(() => undefined);
+          before = Array.isArray(rendered)
+            ? rendered.map(id => ({ id, role: "user" as const, text: "", parts: [] }))
+            : undefined;
+        }
         if (!Array.isArray(before)) {
           return { ok: false, notSubmitted: true, nonRetryable: true,
             error: "Native message baseline unavailable; no message submitted" };
@@ -477,7 +492,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
           // needs no new send and no repeated API call.
           const fromDom = await this.driver.getMessageIdFromDom?.(nativeId, options.message)
             .catch(() => null);
-          if (fromDom) {
+          // A message that was already rendered before this send is not this
+          // send's receipt, and an older identical prompt must never become
+          // one. The baseline holds every id that existed before the click.
+          if (fromDom && !beforeIds.has(fromDom)) {
             return { ok: true, admitted: true, admission: "accepted",
               inputId: options.inputId, nativeInputMessageId: fromDom };
           }

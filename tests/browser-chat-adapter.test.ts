@@ -146,4 +146,41 @@ describe("bounded read-only receipt polling", () => {
     expect(result).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "dom-native-id" });
     expect(sends).toBe(1);
   });
+
+  it("never accepts a rendered message that was already there before the send", async () => {
+    // An older identical prompt must never become the receipt of this send.
+    let sends = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      getMessages: async () => { throw new Error("history unavailable: read_cooldown"); },
+      getMessageIdsFromDom: async () => ["old-id"],
+      getMessageIdFromDom: async () => "old-id",
+      sendMessage: async () => { sends += 1; return {}; },
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const result = await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(result).toMatchObject({ ok: false, admissionUnknown: true, nonRetryable: true });
+    expect(sends).toBe(1);
+  });
+
+  it("takes the baseline from the rendered conversation when the API read is rate-limited", async () => {
+    // The provider's read API can be rate-limited BEFORE the send as well.
+    // The rendered conversation still carries the ids that existed before
+    // the click, so the baseline is honest and partial instead of missing.
+    let sends = 0;
+    let domCalls = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      getMessages: async () => { throw new Error("history unavailable: read_cooldown"); },
+      getMessageIdsFromDom: async () => { domCalls += 1; return ["old-id"]; },
+      getMessageIdFromDom: async () => "old-id",
+      sendMessage: async () => { sends += 1; return {}; },
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const result = await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(result).toMatchObject({ ok: false, admissionUnknown: true, nonRetryable: true });
+    expect(result.notSubmitted).not.toBe(true);
+    expect(domCalls).toBeGreaterThan(0);
+    expect(sends).toBe(1);
+  });
 });

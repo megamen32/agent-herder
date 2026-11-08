@@ -994,26 +994,67 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pages = await this.readablePages();
     for (const page of pages) {
       try {
+        await this.verifyCurrentPinnedAccountScope(page.id);
         const result = parseChromeEvaluation<{ id?: string }>(
           await this.tools.call("evaluate_script", { pageId: page.id, function:
             `() => {
               const wanted = ${JSON.stringify(text.trim())};
               if (location.pathname !== ${JSON.stringify("/c/" + nativeId)}) return {error:"route_changed"};
               const bubbles = [...document.querySelectorAll('[data-user-message-bubble]')];
+              const found = new Set();
               for (const bubble of bubbles.slice(-6)) {
                 if ((bubble.innerText || '').trim() !== wanted) continue;
                 const raw = bubble.closest('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids') || '';
                 const ids = raw.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ig) || [];
-                if (ids.length === 1) return {id: ids[0]};
+                if (ids.length === 1) { found.add(ids[0]); continue; }
                 const own = bubble.getAttribute('data-message-id') || bubble.closest('[data-message-id]')?.getAttribute('data-message-id') || '';
-                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) return {id: own};
+                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) found.add(own);
               }
+              // Two identical bubbles are ambiguous: the receipt of this send
+              // must be a single new native id, never a guess.
+              if (found.size === 1) return {id: [...found][0]};
+              if (found.size > 1) return {error:"ambiguous_messages"};
               return {error:"message_not_rendered"};
             }` }));
         if (typeof result.id === "string" && result.id) return result.id;
       } catch { /* the next tab of the same account is tried */ }
     }
     return null;
+  }
+
+  /** The native ids of the rendered messages of one conversation. An honest
+   * PARTIAL baseline for the case that the provider's read API is
+   * rate-limited: it proves which ids already existed, never the whole
+   * history and never the native export. */
+  async getMessageIdsFromDom(chatId: string): Promise<string[]> {
+    let nativeId = chatId;
+    if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(nativeId)) return [];
+    const pages = await this.readablePages();
+    for (const page of pages) {
+      try {
+        await this.verifyCurrentPinnedAccountScope(page.id);
+        const result = parseChromeEvaluation<{ ids?: string[] }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function:
+            `() => {
+              if (location.pathname !== ${JSON.stringify("/c/" + nativeId)}) return {ids:[]};
+              const ids = new Set();
+              for (const bubble of [...document.querySelectorAll('[data-user-message-bubble]')].slice(-30)) {
+                const raw = bubble.closest('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids') || '';
+                for (const id of (raw.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ig) || [])) ids.add(id);
+                const own = bubble.getAttribute('data-message-id') || bubble.closest('[data-message-id]')?.getAttribute('data-message-id') || '';
+                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) ids.add(own);
+              }
+              for (const node of [...document.querySelectorAll('[data-message-id]')].slice(-30)) {
+                const id = node.getAttribute('data-message-id') || '';
+                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) ids.add(id);
+              }
+              return {ids: [...ids]};
+            }` }));
+        if (Array.isArray(result.ids)) return result.ids;
+      } catch { /* the next tab of the same account is tried */ }
+    }
+    return [];
   }
 
   private async readComposerDraft(pageId: number): Promise<string> {
