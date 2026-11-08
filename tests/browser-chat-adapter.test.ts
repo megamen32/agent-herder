@@ -120,4 +120,30 @@ describe("bounded read-only receipt polling", () => {
     await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
     expect(sends).toBe(1);
   });
+
+  it("confirms the receipt from the rendered conversation when the API is rate-limited", async () => {
+    // The provider's read API can be rate-limited while the very same
+    // conversation is rendered in the tab. The native message id of the
+    // user's own message is then ordinary confirmation of the effect and
+    // needs no new send and no repeated API call.
+    let sends = 0;
+    let apiReads = 0;
+    const driver: BrowserChatDriver = {
+      listChats: async () => [],
+      // The baseline read succeeds; the read right after the click is the
+      // one that hits the provider's rate limit.
+      getMessages: async () => {
+        apiReads += 1;
+        if (apiReads === 1) return [];
+        throw new Error("history unavailable: read_cooldown");
+      },
+      getMessageIdFromDom: async (_id: string, text: string) =>
+        text === "hello" ? "dom-native-id" : null,
+      sendMessage: async () => { sends += 1; return {}; },
+    };
+    const adapter = new BrowserChatAdapter(driver, { id: "chatgpt", name: "chatgpt", harness: "chatgpt", cwd: "/tmp/browser" });
+    const result = await adapter.sendMessage("c1", { message: "hello", inputId: "request-1" });
+    expect(result).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "dom-native-id" });
+    expect(sends).toBe(1);
+  });
 });

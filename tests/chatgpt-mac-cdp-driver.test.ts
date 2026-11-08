@@ -626,6 +626,42 @@ describe("ChatGPT owned tab ownership", () => {
 });
 
 describe("ChatGPT one owned tab", () => {
+  it("does not read the history of a tab whose rate-limit cooldown is active", async () => {
+    const scope = "a".repeat(64);
+    const readPages: number[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") {
+        return [
+          "48: ChatGPT (https://chatgpt.com/c/" + ID + ")",
+          "49: ChatGPT (https://chatgpt.com/c/22222222-2222-4222-8222-222222222222)",
+        ].join("\n");
+      }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        if (source.includes("conversation_read")) {
+          readPages.push(Number(args.pageId));
+          // The first owned tab is rate-limited on reads; the second one
+          // answers. A read must not fail because of the tab it picked.
+          if (Number(args.pageId) === 48) return json({ error: "read_cooldown" });
+          return json({ messages: [{ id: "m1", role: "user", text: "question" }] });
+        }
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase: "idle", draftPresent: false, chats: [],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    const messages = await driver.getMessages(ID);
+    expect(messages).toMatchObject([{ id: "m1", role: "user", text: "question" }]);
+    // The rate-limited tab is tried once and then skipped; the read is
+    // served by the next tab of the same account, never repeated on the
+    // same tab.
+    expect(readPages).toEqual([48, 49]);
+  });
+
   it("keeps the verified account scope after the passive startup listing", async () => {
     const scope = "a".repeat(64);
     const tools: ChromePageTools = { call: async (name, args = {}) => {

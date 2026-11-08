@@ -455,6 +455,25 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return this.openChatGptTab();
   }
 
+  /** The tab used for an authenticated READ of the provider's API.
+   * A tab can be rate-limited on reads while another tab of the same
+   * account answers normally. The owned tab is preferred, but a tab whose
+   * read cooldown is active is skipped instead of failing the whole read. */
+  private async readablePage(): Promise<Page> {
+    return (await this.readablePages())[0]!;
+  }
+
+  /** The tabs that may serve an authenticated READ of the provider's API,
+   * owned tab first. A tab whose read is rate-limited is skipped instead of
+   * failing the whole read. */
+  private async readablePages(): Promise<Page[]> {
+    const pages = parseChatGptPages(await this.tools.call("list_pages"));
+    if (!pages.length) return [await this.page()];
+    const owned = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
+    const order = [...owned, ...pages.filter(page => !owned.includes(page))];
+    return order.length ? order : [await this.page()];
+  }
+
   /** The tab list is the source of truth: new_page reports its own navigation
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
@@ -933,14 +952,21 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       chatId = draft.remoteId;
     }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
-    const page = await this.page();
-    await this.verifyCurrentPinnedAccountScope(page.id);
-    const result = parseChromeEvaluation<{
-      error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
-        timestamp?: string; model?: string }>;
-    }>(await this.tools.call("evaluate_script",
-      { pageId: page.id, function: chatgptMessagesApiScript(chatId) }));
-    await this.verifyCurrentPinnedAccountScope(page.id);
+    const pages = await this.readablePages();
+    let result: { error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
+      timestamp?: string; model?: string }> } = { error: "no_readable_tab" };
+    let page = pages[0]!;
+    for (const candidate of pages) {
+      await this.verifyCurrentPinnedAccountScope(candidate.id);
+      result = parseChromeEvaluation(await this.tools.call("evaluate_script",
+        { pageId: candidate.id, function: chatgptMessagesApiScript(chatId) }));
+      await this.verifyCurrentPinnedAccountScope(candidate.id);
+      page = candidate;
+      // A rate-limited tab must not fail the read: another tab of the same
+      // account answers normally. The same request is never repeated on the
+      // same tab.
+      if (result.error !== "read_cooldown") break;
+    }
     this.requestTrace.ingestBrowserHttp(result.trace);
     this.feedBackoff(result.trace);
     if (result.error || !Array.isArray(result.messages)) {
@@ -957,6 +983,39 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   /** Read the user's own unsent draft so the herder's send can restore it
    * after submission instead of clobbering it. */
+  /** The native id of the user's own message in the rendered conversation.
+   * Ordinary confirmation of the effect when the provider's read API is
+   * rate-limited: the page already shows the message, so its own id proves
+   * the effect without a new send and without another API request. */
+  async getMessageIdFromDom(chatId: string, text: string): Promise<string | null> {
+    let nativeId = chatId;
+    if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(nativeId)) return null;
+    const pages = await this.readablePages();
+    for (const page of pages) {
+      try {
+        const result = parseChromeEvaluation<{ id?: string }>(
+          await this.tools.call("evaluate_script", { pageId: page.id, function:
+            `() => {
+              const wanted = ${JSON.stringify(text.trim())};
+              if (location.pathname !== ${JSON.stringify("/c/" + nativeId)}) return {error:"route_changed"};
+              const bubbles = [...document.querySelectorAll('[data-user-message-bubble]')];
+              for (const bubble of bubbles.slice(-6)) {
+                if ((bubble.innerText || '').trim() !== wanted) continue;
+                const raw = bubble.closest('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids') || '';
+                const ids = raw.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/ig) || [];
+                if (ids.length === 1) return {id: ids[0]};
+                const own = bubble.getAttribute('data-message-id') || bubble.closest('[data-message-id]')?.getAttribute('data-message-id') || '';
+                if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(own)) return {id: own};
+              }
+              return {error:"message_not_rendered"};
+            }` }));
+        if (typeof result.id === "string" && result.id) return result.id;
+      } catch { /* the next tab of the same account is tried */ }
+    }
+    return null;
+  }
+
   private async readComposerDraft(pageId: number): Promise<string> {
     const result = parseChromeEvaluation<{ value: string }>(
       await this.tools.call("evaluate_script", { pageId, function: `() => {
