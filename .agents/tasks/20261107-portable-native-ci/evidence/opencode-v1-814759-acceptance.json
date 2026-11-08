@@ -121,5 +121,79 @@
       "tests/native/test_ahap_opencode_stand.py": "9a83e0b7ed59be08d89905196f647a3d62ab01dd99ef18b3f2b32e9d215c3a9d"
     }
   },
-  "next": "Core-owned projects discovery must supply complete attributable data or explicit partial/unsupported status before full acceptance."
+  "next": "Core-owned projects discovery must supply complete attributable data or explicit partial/unsupported status before full acceptance.",
+  "reconciled_prior_disposable_runs": [
+    {
+      "run_id": "12972b5d-f618-4b34-a531-f5571a435607",
+      "instance": "opencode-814759-accept-814759a9",
+      "request_keys": [
+        "ahap-opencode-create-b53cb3e55c52479ea489ab5ef870ac9d",
+        "ahap-opencode-deliver-9df9c04feeae42b49a31e4fd567b0ada"
+      ],
+      "user_ids": [
+        "msg_1b8eb9dd8001N38CdRqiZ4DSOz",
+        "msg_1b8eba10a0019s3fSKVjv2x9FP"
+      ],
+      "assistant_ids": [
+        "msg_1b8eb9e2900154EqO1nrg1Rd8W",
+        "msg_1b8eba129001EGERMQUMOlcRab"
+      ],
+      "model_requests": 2,
+      "effect": "both Task intents and native replies read-only reconciled; no replay"
+    },
+    {
+      "run_id": "0a1b5fab-8921-4e4c-8f40-5be55e7d21cc",
+      "instance": "opencode-814759-accept-retry-c48d2091",
+      "request_keys": [
+        "ahap-opencode-create-f654b812c00d46909207f511c60b0c19",
+        "ahap-opencode-deliver-1191a2b712f347c19d5ed261cc42a13f"
+      ],
+      "user_ids": [
+        "msg_1b8f1d013001WTZyRPlR7uzLjx",
+        "msg_1b8f1d2f2001YM1Sta9Gmth2z5"
+      ],
+      "assistant_ids": [
+        "msg_1b8f1d048001zIwxPyx2AebMkV",
+        "msg_1b8f1d30c001jYlr7NT5JEJFtD"
+      ],
+      "model_requests": 2,
+      "effect": "both Task intents and native replies read-only reconciled; no replay"
+    },
+    {
+      "run_id": "8ceda407-8cd9-450b-b5b9-201275a75685",
+      "instance": "opencode-814759-final-278b8430",
+      "request_keys": [
+        "ahap-opencode-create-3f88c4ddb6cb47c0b1f00b0f01267182",
+        "ahap-opencode-deliver-8ddc48e342754915b6498e464d5e9473"
+      ],
+      "user_ids": [
+        "msg_1b8f42c1b001Dxn41ixkzPHH1X",
+        "msg_1b8f42f19001spCriqiO0Jpm6Q"
+      ],
+      "assistant_ids": [
+        "msg_1b8f42c58001pjw5skpzEcmeXt",
+        "msg_1b8f42f38001nMzVZqE9l2Ub0X"
+      ],
+      "model_requests": 2,
+      "effect": "both deliveries confirmed; stopped at export correlation; no replay"
+    },
+    {
+      "run_id": "b8d2267a-fccc-4fd0-9bf6-c086a622d67c",
+      "instance": "opencode-814759-final2-76d4154a",
+      "request_keys": [
+        "ahap-opencode-create-954e8de5dccd42a5b1dd07f93161d4f5",
+        "ahap-opencode-deliver-489a0111f6b54b768afc102804d578d8"
+      ],
+      "user_ids": [
+        "msg_1b8f58955001ADGghRDwIlHVJH",
+        "msg_1b8f58c930017sBnaOPX1F9t3C"
+      ],
+      "assistant_ids": [
+        "msg_1b8f58992001fvNBqHVsn7yCnO",
+        "msg_1b8f58cd60015aFmRNu4k4j2yZ"
+      ],
+      "model_requests": 2,
+      "effect": "both deliveries and native export confirmed; typed no-effect Common rejection misclassified; no replay"
+    }
+  ]
 }
