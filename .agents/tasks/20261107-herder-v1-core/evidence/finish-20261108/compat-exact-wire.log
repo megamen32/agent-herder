@@ -1,0 +1,10 @@
+   Compiling herder-compat v0.1.0 (/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/crates/herder-compat)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.73s
+     Running tests/handshakes.rs (crates/herder-compat/target/debug/deps/handshakes-cc8e1571ee42b1f3)
+
+running 2 tests
+test native_and_legacy_handshakes_keep_their_explicit_protocol_versions ... ok
+test real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

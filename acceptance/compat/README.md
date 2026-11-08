@@ -1,26 +1,40 @@
-# Compatibility wire probe
+# Legacy MCP entrypoint
 
-`cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes`
-checks the pinned RMCP server/client handshake in both directions: the native
-upstream negotiates `2026-07-28`, and the legacy-facing endpoint negotiates
-`2025-06-18`. It uses an in-memory SDK server solely as a protocol probe. It is
-not evidence that Codex, the installed translator, the real Herder handlers,
-caller authentication, or durable Tasks work.
+The existing standalone RMCP translator serves MCP 2025-06-18 and forwards
+to native Herder 2026-07-28. It has no separate task store and does not change
+native tool handlers or caller authorization.
 
-The executable endpoint uses `HERDER_NATIVE_COMMAND` to launch one native MCP
-process per downstream stdio connection. It exits before serving the legacy
-client unless the upstream negotiated the pinned native version. It only
-advertises `compat_task`, `compat_skill`, and `compat_changes` when the
-corresponding upstream Tasks, Skills, and Resources capabilities exist.
+Build and launch one process for one trusted caller:
 
-## Caller boundary
+```sh
+cargo build --locked --manifest-path crates/herder-compat/Cargo.toml --bin herder-compat
+HERDER_NATIVE_COMMAND=/absolute/release/fixture/herder_native_stdio   /absolute/herder-compat --trusted-owner-profile /protected/profile.json
+```
 
-`clientInfo`, tool arguments, task refs, resource refs, and claimed sender IDs
-from the legacy peer are never identity evidence. The stdio process must be
-bound to exactly one caller by the trusted launcher/authentication boundary;
-sharing one upstream identity across downstream callers is forbidden. This
-crate does not yet have a verified-caller transport hook. The current native
-stdio endpoint therefore remains `Caller::Unknown` and rejects operations as
-unsupported with `effect=none`. T003 stays open until the native core provides
-an authenticated per-connection binding and ACL checks. The wire probe records
-protocol behavior only and does not satisfy that identity acceptance.
+The native launcher validates the owner profile. Arguments are passed as
+literal argv, never shell text or values supplied by MCP clients. Do not
+share one owner's profile among untrusted callers.
+
+Native clients connect directly. Legacy clients discover the forwarded tools
+and available compat_task/compat_skill/compat_changes helpers. A long-running
+operation returns structuredContent.task_ref; read it with
+compat_task(action=get, task_ref=...). Completion is not implied by acceptance.
+
+## Evidence and limits
+
+The original translator was already preserved in main. The November 8 fix
+only forwards launcher argv, which previously prevented using the new trusted
+owner profile. The regression fails against the original launcher and passes
+with the fix. Exact native SDK handshake tests also pass.
+
+acceptance/compat/opencode_consumer.py reuses the complete OpenCode business
+stand, but its downstream wire uses legacy initialize, ordinary tools/call,
+and compat_task reads only. On candidate805fd477final it proved two distinct
+messages, both replies, full native export, search, registered projects, and
+restart without another model request. Receipt:
+.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/compat-result.json.
+
+This proves a real legacy-wire consumer through the translator and native
+harness. It does not prove Codex model tool selection or its approval UI.
+The historical Codex approval refusal is retained and was not bypassed.
+The translator is not yet included in the shared installed artifact.
