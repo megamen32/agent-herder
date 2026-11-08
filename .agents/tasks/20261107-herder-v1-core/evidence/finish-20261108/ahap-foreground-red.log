@@ -1,0 +1,38 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/ahap-browser-foreground.test.ts (1 test | 1 failed) 18ms
+   × AHAP init and explicit reads never prewarm unrelated history or return stale cache 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/ahap-browser-foreground.test.ts > AHAP init and explicit reads never prewarm unrelated history or return stale cache
+AssertionError: expected "prewarm" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st prewarm call:
+
+    Array [
+      Array [],
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/ahap-browser-foreground.test.ts:17:22
+     15|  const adapter=makeConfiguredAdapter({AHAP_HARNESS:'zai',AHAP_BROWSER_…
+     16|  await adapter.verifyPinnedAccountScope();await adapter.init();
+     17|  expect(prewarm).not.toHaveBeenCalled();
+       |                      ^
+     18|  adapter.close?.();
+     19| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  18:16:07
+   Duration  793ms (transform 484ms, setup 36ms, import 549ms, tests 18ms, environment 0ms)
+

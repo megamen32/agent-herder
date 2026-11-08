@@ -153,6 +153,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly provider: BrowserChatProvider,
     private readonly cwd = provider.cwd,
     private readonly scopedIds = false,
+    private readonly foregroundOnly = false,
   ) {
     this.pollingHarness = provider.id === "zai" ? "zai" : "chatgpt";
     this.historyCache = new BrowserChatHistoryCache(
@@ -232,7 +233,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     for (const chat of chats) this.inventory.set(chat.id, chat);
     this.inventoryAt = Date.now();
     this.historyCache.setAccountScope(this.driver.getAccountScope?.());
-    if (prewarm) this.historyCache.prewarm(chats.map(chat => ({ id: chat.id, revision: chat.updatedAtSemantics === "remote-update-time" ? chat.updatedAt : undefined })));
+    if (prewarm && !this.foregroundOnly) this.historyCache.prewarm(chats.map(chat => ({ id: chat.id, revision: chat.updatedAtSemantics === "remote-update-time" ? chat.updatedAt : undefined })));
   }
 
   async listBackgroundSessions(): Promise<AgentSession[]> {
@@ -267,7 +268,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     if (this.inventory.size) {
       // Cached titles and session identity are also stale-while-revalidate.
       // Never block selected-chat details on an unrelated 100-chat API list.
-      if (revalidating && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
+      if (!this.foregroundOnly && revalidating && Date.now() - this.inventoryAt > 60_000 && !this.inventoryRefresh) {
         this.inventoryRefresh = this.driver.listChats().then(chats => {
           this.updateInventory(chats);
         }).catch(() => undefined).finally(() => { this.inventoryRefresh = undefined; });
@@ -384,7 +385,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
       return raw ? chatgptConversationMessages(raw).slice(-Math.max(1, limit)) : null;
     }
     if (!this.driver.getMessages) return null;
-    if (this.historyCache.available) return this.historyCache.messages(native, limit);
+    if (!this.foregroundOnly && this.historyCache.available) return this.historyCache.messages(native, limit);
     const live = await this.driver.getMessages(native);
     return live?.slice(-Math.max(1, limit)) ?? null;
   }

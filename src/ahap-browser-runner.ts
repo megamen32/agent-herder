@@ -281,7 +281,7 @@ export function makeConfiguredAdapter(
     ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope)
     : new ZaiCdpDriver(pageTools, undefined, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
-  const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true);
+  const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
   let verifiedAccountScope: string | undefined;
   return Object.assign(adapter, {
     getAccountScope: () => driver.getAccountScope?.() ?? verifiedAccountScope,
