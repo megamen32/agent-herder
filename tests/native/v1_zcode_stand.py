@@ -306,7 +306,8 @@ def emit_success(evidence):
     allowed = ('phase','result','manifest_sha256','instance','create_key','first_marker',
                'create_response','create_task','create_task_id','session_ref','prompt_receipt',
                'second_key','second_marker','second_response','second_task','second_outcome',
-               'messages','model_before','model_after','export','search','discover','reopen','no_resend','tools')
+               'messages','model_before','model_after','export','search','discover','reopen','no_resend','tools',
+               'archive_attempted','archive_key','archive')
     safe = {key:evidence[key] for key in allowed if key in evidence}
     print(json.dumps({'status':'PASS','evidence':safe},sort_keys=True),flush=True)
 
@@ -426,7 +427,19 @@ def exercise(client, protected, seed, tools, instance, home, manifest_sha256, co
                     or not any(r.get('role')=='user' and r.get('text')==second_marker for r in rows)
                     or sum(r.get('role')=='assistant' and r.get('text')=='HERDER_TEST_MODEL_OK' for r in rows)<2):
                 raise RuntimeError('reopened public session missing exact messages')
-            evidence.update(phase='complete',result='PASS',reopen=after,no_resend=True)
+            evidence.update(phase='before_archive',result='PARTIAL',reopen=after,no_resend=True,
+                            archive_attempted=True,archive_key=request_key+'-archive',
+                            archive={'effect':'unknown'})
+            persist_evidence(evidence_path,evidence)
+            cleanup=rpc_tool(reopened,'session',{'action':'archive','session_ref':session,
+                             'request_key':evidence['archive_key']})
+            evidence['archive']=cleanup
+            persist_evidence(evidence_path,evidence)
+            archived=cleanup.get('structuredContent',{})
+            if (cleanup.get('isError') or archived.get('archived') is not True
+                    or archived.get('effect')!='confirmed' or archived.get('session_ref')!=session):
+                raise RuntimeError('test chat archive not confirmed; evidence preserved, do not replay')
+            evidence.update(phase='complete',result='PASS')
             persist_evidence(evidence_path,evidence)
             emit_success(evidence)
         finally:

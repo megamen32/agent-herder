@@ -1,11 +1,14 @@
 import json
+import base64
+import contextlib
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import v1_zcode_stand as stand
 
@@ -98,6 +101,77 @@ class SuccessReceipt(unittest.TestCase):
         self.assertEqual(body['evidence']['prompt_receipt']['native_receipt_id'],'msg:1')
         self.assertTrue(body['evidence']['export']['structuredContent']['complete'])
         self.assertNotIn('secret-value',output.getvalue())
+
+    def run_fixture(self, root, archive_reply):
+        tag='archive-fixture'
+        session='session:fixture'
+        rows=[{'role':role,'text':text} for role,text in [
+            ('user','HERDER_ZCODE_FIRST_'+tag),('assistant','HERDER_TEST_MODEL_OK'),
+            ('user','HERDER_ZCODE_SECOND_'+tag),('assistant','HERDER_TEST_MODEL_OK')]]
+        messages={'structuredContent':{'page':{'messages':rows}}}
+        receipt={'outcome':'confirmed','native_receipt_id':'msg:first'}
+        tasks=[{'status':'completed','result':{'structuredContent':{
+            'create':{'effect':'confirmed','session_ref':session},'prompt':receipt}}},
+            {'status':'completed','result':{'structuredContent':{
+                'outcome':'confirmed','native_receipt_id':'msg:second'}}}]
+        calls=[]
+        def rpc(client, name, args):
+            calls.append((name,args))
+            if name in ('create','deliver'): return {'resultType':'task','taskId':name}
+            if name=='session' and args['action']=='messages': return messages
+            if name=='export': return {'structuredContent':{'complete':True,'bytes_base64':
+                base64.b64encode(json.dumps(rows).encode()).decode()}}
+            if name=='search': return {'structuredContent':{'complete':True,'hits':[{'session_ref':session}]}}
+            if name=='discover': return {'structuredContent':{'projects':[
+                {'project_ref':'/herder-owner-home/work','source':'authorized_native_session'}]}}
+            if name=='session' and args['action']=='archive':
+                saved=json.loads((root/'zcode-v1-receipt.json').read_text())
+                self.assertTrue(saved['archive_attempted'])
+                self.assertEqual(saved['archive_key'],args['request_key'])
+                self.assertNotEqual(saved['result'],'PASS')
+                if isinstance(archive_reply,Exception): raise archive_reply
+                return archive_reply
+            self.fail((name,args))
+        output=io.StringIO()
+        with patch.dict(os.environ,{'HERDER_TEST_MODEL_BASE_URL':'http://127.0.0.1:1/v1'}), \
+                patch.object(stand.uuid,'uuid4',return_value=Mock(hex=tag)), \
+                patch.object(stand.urllib.request,'urlopen',side_effect=lambda *a,**kw:io.StringIO('{"requests":2}')), \
+                patch.object(stand,'rpc_tool',side_effect=rpc), \
+                patch.object(stand,'wait_task',side_effect=tasks), \
+                patch.object(stand,'RpcProcess',return_value=Mock()), contextlib.redirect_stdout(output):
+            try:
+                stand.exercise(Mock(),root,{},[], 'fixture',root,'a'*64,'core','profile')
+            except RuntimeError:
+                return calls,output.getvalue(),json.loads((root/'zcode-v1-receipt.json').read_text())
+        return calls,output.getvalue(),json.loads((root/'zcode-v1-receipt.json').read_text())
+
+    def test_archive_receipt_survives_success_root_cleanup_in_stdout_report(self):
+        reply={'resultType':'complete','isError':False,'content':[{'type':'text','text':'native archive reply'}],
+               'structuredContent':{'archived':True,'effect':'confirmed','session_ref':'session:fixture'}}
+        with tempfile.TemporaryDirectory() as tmp:
+            calls,output,saved=self.run_fixture(Path(tmp),reply)
+            self.assertEqual([a for n,a in calls if a.get('action')=='archive'],[
+                {'action':'archive','session_ref':'session:fixture','request_key':'zcode-v1-create-archive-fixture-archive'}])
+            self.assertEqual(calls[-1][1]['action'],'archive')
+            self.assertEqual(saved['archive'],reply)
+        report=json.loads(output)
+        self.assertEqual(report['status'],'PASS')
+        self.assertEqual(report['evidence']['archive'],reply)
+        self.assertTrue(report['evidence']['archive_attempted'])
+        self.assertEqual(report['evidence']['archive_key'],'zcode-v1-create-archive-fixture-archive')
+
+    def test_unconfirmed_archive_never_passes_and_is_not_retried(self):
+        for reply in [
+            {'isError':True,'structuredContent':{'effect':'unknown','archived':False}},
+            {'structuredContent':{'effect':'confirmed','archived':True,'session_ref':'session:other'}},
+            RuntimeError('archive transport outcome unknown')]:
+            with self.subTest(reply=reply), tempfile.TemporaryDirectory() as tmp:
+                calls,output,saved=self.run_fixture(Path(tmp),reply)
+                self.assertEqual(sum(a.get('action')=='archive' for n,a in calls),1)
+                self.assertEqual(output,'')
+                self.assertNotEqual(saved['result'],'PASS')
+                self.assertIn('archive',saved)
+                self.assertIn('error',saved)
 
 
 class PublicRuntimeRegression(unittest.TestCase):

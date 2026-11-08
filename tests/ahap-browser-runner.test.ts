@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import type { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
+import { AhapReadError } from "../src/ahap-legacy-read.js";
 
 const scope = "a".repeat(64);
 const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { harness: "chatgpt", ahapVersion: "0.1" } };
@@ -432,4 +433,99 @@ it("advertises and routes archive only when the browser driver implements it", a
   expect(result[2]!.result).toEqual({ok:true,sessionId:"chatgpt::native"});expect(ids).toEqual(["chatgpt::native"]);
   const unsupported=await run({...adapter,supportsArchive:()=>false},[initialize,{jsonrpc:"2.0",id:4,method:"archiveSession",params:{id:"chatgpt::native"}}]);
   expect((unsupported[0]!.result as any).capabilities.methods).not.toContain("archiveSession");expect(unsupported[1]!.error).toMatchObject({code:-32601});expect(ids.length).toBe(1);
+});
+
+describe("bounded send failure diagnostics", () => {
+  const send = { jsonrpc: "2.0", id: 3, method: "sendMessage", params: {
+    id: "chatgpt::PRIVATE_SESSION", options: { message: "PRIVATE_PROMPT", queue: true },
+  } };
+  const known = [
+    ["ChatGPT submission rejected before click: draft_changed", "preclick", "draft_changed"],
+    ["ZAI submission blocked before click: send_not_ready", "preclick", "send_not_ready"],
+    ["ChatGPT first message not submitted: draft_changed", "preclick", "draft_changed"],
+    ["pinned browser account scope mismatch", "account_check", "account_scope_mismatch"],
+    ["ChatGPT pinned account scope mismatch; no read data returned", "account_check", "account_scope_mismatch"],
+    ["Mac mini Chrome operation timeout; do not replay an uncertain write", "transport", "transport_timeout"],
+    ["direct_cdp_timeout:Runtime.evaluate; operation outcome may be unknown; do not retry", "transport", "transport_timeout"],
+    ["ZAI submission admission unknown: do not retry automatically", "native_admission", "native_admission_unknown"],
+    ["Message submitted but unique native message receipt unavailable; read history before any retry", "native_admission", "native_admission_unknown"],
+    ["ChatGPT history unavailable: read_cooldown", "readback", "read_failed"],
+    ["Z.ai history unavailable: history_http_429", "readback", "read_failed"],
+  ] as const;
+  it("sanitizes typed errors on the send path without changing their code", async () => {
+    const replies = await run({
+      type: "chatgpt", name: "fixture", browserFeatures: {},
+      getAccountScope: () => scope, async init() {},
+      async sendMessage() { throw new AhapReadError(-32001, "PRIVATE_TOKEN=sk-private PRIVATE_PROMPT"); },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }, send]);
+    expect(replies[2].error).toMatchObject({ code: -32001, data: {
+      outcome: "unknown", retryable: false, stage: "send", reason: "unknown",
+    } });
+    expect(JSON.stringify(replies[2])).not.toContain("PRIVATE");
+  });
+  for (const mode of ["return", "throw"] as const) {
+    for (const [message, stage, reason] of known) {
+      it(`${mode} maps only the known send failure ${stage}/${reason}`, async () => {
+        let sends = 0;
+        const replies = await run({
+          type: "chatgpt", name: "fixture", browserFeatures: {},
+          getAccountScope: () => scope, async init() {},
+          async sendMessage() {
+            sends++;
+            if (mode === "throw") throw new Error(message);
+            return { ok: false, error: message, notSubmitted: true };
+          },
+        }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }, send]);
+        expect(replies[2].error).toMatchObject({ code: -32000, data: {
+          method: "sendMessage", outcome: "unknown", retryable: false, stage, reason,
+        } });
+        expect(sends).toBe(1);
+        const output = JSON.stringify(replies[2]);
+        for (const secret of [message, "PRIVATE_PROMPT", "PRIVATE_SESSION", scope]) expect(output).not.toContain(secret);
+        expect(output.length).toBeLessThan(1000);
+        expect(output).not.toContain('"effect":"none"');
+      });
+    }
+    for (const message of [
+      "ChatGPT submission rejected before click: draft_changed PRIVATE_TOKEN=sk-private",
+      "direct_cdp_timeout:Runtime.evaluate PRIVATE_TOKEN; operation outcome may be unknown; do not retry",
+      "ChatGPT history unavailable: PRIVATE_TOKEN https://private.example/account",
+      "pinned browser account scope mismatch " + scope,
+      "PRIVATE_PROMPT " + "secret".repeat(10000),
+    ]) {
+      it(`${mode} never copies raw send errors or classifies arbitrary suffixes`, async () => {
+        const replies = await run({
+          type: "chatgpt", name: "fixture", browserFeatures: {},
+          getAccountScope: () => scope, async init() {},
+          async sendMessage() {
+            if (mode === "throw") throw new Error(message);
+            return { ok: false, error: message, notSubmitted: true };
+          },
+        }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" }, send]);
+        expect(replies[2].error).toMatchObject({ data: {
+          outcome: "unknown", retryable: false, stage: "send", reason: "unknown",
+        } });
+        const output = JSON.stringify(replies[2]);
+        for (const secret of [message, "PRIVATE", "sk-private", "https://", scope, "secret"])
+          expect(output).not.toContain(secret);
+        expect(output.length).toBeLessThan(1000);
+      });
+    }
+  }
+  it("reports the pre-dispatch account guard without calling send", async () => {
+    let sends = 0;
+    let current = scope;
+    const replies = await run({
+      type: "chatgpt", name: "fixture", browserFeatures: {},
+      getAccountScope: () => current,
+      async init() {},
+      async getSession() { current = "b".repeat(64); return null; },
+      async sendMessage() { sends++; return { ok: true }; },
+    }, [initialize, { jsonrpc: "2.0", id: 2, method: "init" },
+      { jsonrpc: "2.0", id: 4, method: "getSession", params: { id: "chatgpt::x" } }, send]);
+    expect(replies[3].error).toMatchObject({ data: {
+      outcome: "unknown", retryable: false, stage: "account_check", reason: "account_scope_mismatch",
+    } });
+    expect(sends).toBe(0);
+  });
 });

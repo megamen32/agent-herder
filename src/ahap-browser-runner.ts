@@ -46,6 +46,44 @@ const INIT_REASONS = new Map<string, string>([
   ["Chrome MCP response exceeds bound", "response_too_large"],
 ]);
 
+type SendDiagnostic = { stage: "preclick" | "account_check" | "transport" | "native_admission" | "readback" | "send"; reason: string };
+// Match the entire known adapter literal, never a prefix or raw suffix. All
+// output values are constants; these labels are diagnostic, not no-effect proof.
+const SEND_REASONS = new Map<string, SendDiagnostic>();
+for (const prefix of ["ChatGPT submission rejected before click: ", "ZAI submission blocked before click: ",
+  "ChatGPT first message not submitted: ", "ZAI first message not submitted: "]) {
+  for (const reason of ["draft_changed", "send_not_ready"]) {
+    SEND_REASONS.set(prefix + reason, { stage: "preclick", reason });
+  }
+}
+for (const message of ["pinned browser account scope mismatch", "ChatGPT pinned account scope mismatch; no read data returned"]) {
+  SEND_REASONS.set(message, { stage: "account_check", reason: "account_scope_mismatch" });
+}
+for (const message of ["Mac mini Chrome operation timeout; do not replay an uncertain write", "direct_cdp_connect_timeout",
+  "direct_cdp_timeout:Runtime.evaluate; operation outcome may be unknown; do not retry",
+  "direct_cdp_timeout:Runtime.callFunctionOn; operation outcome may be unknown; do not retry"]) {
+  SEND_REASONS.set(message, { stage: "transport", reason: "transport_timeout" });
+}
+for (const prefix of ["ChatGPT submission outcome unknown: ", "ZAI submission outcome unknown: ",
+  "ZAI submission admission unknown: "]) {
+  for (const suffix of ["do not retry automatically", "no native route",
+    "First-message click outcome unknown; do not retry", "First message sent but native chat ID not yet verified; do not retry"]) {
+    SEND_REASONS.set(prefix + suffix, { stage: "native_admission", reason: "native_admission_unknown" });
+  }
+}
+SEND_REASONS.set("Message submitted but unique native message receipt unavailable; read history before any retry",
+  { stage: "native_admission", reason: "native_admission_unknown" });
+for (const prefix of ["ChatGPT history unavailable: ", "Z.ai history unavailable: "]) {
+  for (const suffix of ["read_cooldown", "history_http_429", "auth_http_401", "account_unavailable", "unexpected response"]) {
+    SEND_REASONS.set(prefix + suffix, { stage: "readback", reason: "read_failed" });
+  }
+}
+function sendFailureContext(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : undefined;
+  const diagnostic = typeof message === "string" && message.length <= 1024 ? SEND_REASONS.get(message) : undefined;
+  return { ...adapterFailureContext("sendMessage", true), ...(diagnostic ?? { stage: "send", reason: "unknown" }) };
+}
+
 
 /** Run the bounded browser BrowserChatAdapter surface over AHAP v0.1 stdio. */
 export async function serveBrowserChatAhap(
@@ -164,7 +202,7 @@ export async function serveBrowserChatAhap(
           result = await adapter.sendMessage(params.id, params.options);
           const receipt = result as { admissionUnknown?: boolean; nonRetryable?: boolean };
           if (receipt.admissionUnknown || (result as { ok?: boolean }).ok === false) {
-            error(id, -32000, "Browser send outcome unconfirmed", adapterFailureContext("sendMessage", true));
+            error(id, -32000, "Browser send outcome unconfirmed", sendFailureContext((result as { error?: unknown }).error));
             continue;
           }
           break;
@@ -192,12 +230,17 @@ export async function serveBrowserChatAhap(
         continue;
       }
       if (cause instanceof AhapReadError) {
-        error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
+        if (request.method === "sendMessage") {
+          error(id, cause.code, "Browser adapter call failed", sendFailureContext(cause));
+        } else {
+          error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "createSession") : undefined);
+        }
         continue;
       }
       const mutation = request.method === "sendMessage" || request.method === "createSession"
         || request.method === "archiveSession" || request.method === "stopTurn" || request.method === "changeModel";
-      error(id, -32000, "Browser adapter call failed", adapterFailureContext(request.method, mutation));
+      error(id, -32000, "Browser adapter call failed", request.method === "sendMessage"
+        ? sendFailureContext(cause) : adapterFailureContext(request.method, mutation));
     }
   }
 }
