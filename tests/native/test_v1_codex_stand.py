@@ -129,6 +129,17 @@ class PublicEvidenceTest(unittest.TestCase):
         self.assertFalse(stand.correlated_pairs(rows[:-1], ['first','second'], [r1,r2]))
         self.assertFalse(stand.correlated_pairs(rows[::-1], ['first','second'], [r1,r2]))
 
+    def test_codex_turn_receipt_matches_native_turn_not_synthetic_message_id(self):
+        r1 = {'outcome':'confirmed','native_receipt_id':'ahap-receipt:v1:{"kind":"turn","native_id":"turn-1"}'}
+        r2 = {'outcome':'confirmed','native_receipt_id':'ahap-receipt:v1:{"kind":"turn","native_id":"turn-2"}'}
+        rows = [{'role':'user','id':'session:record:1','turnId':'turn-1','text':'first'},
+                {'role':'assistant','id':'session:record:2','turnId':'turn-1','text':'HERDER_TEST_MODEL_OK'},
+                {'role':'user','id':'session:record:3','turnId':'turn-2','text':'second'},
+                {'role':'assistant','id':'session:record:4','turnId':'turn-2','text':'HERDER_TEST_MODEL_OK'}]
+        self.assertTrue(stand.correlated_pairs(rows, ['first','second'], [r1,r2]))
+        rows[3]['turnId'] = 'foreign'
+        self.assertFalse(stand.correlated_pairs(rows, ['first','second'], [r1,r2]))
+
     def test_complete_export_and_search_require_real_content(self):
         import base64
         result = {'structuredContent': {'complete': True, 'source': {'harness':'codex'},

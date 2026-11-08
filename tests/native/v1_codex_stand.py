@@ -171,18 +171,28 @@ def confirmed_receipt(task):
     return found[0] if isinstance(task, dict) and task.get('status') == 'completed' and len(found) == 1 else None
 
 
+def receipt_reference(value):
+    prefix = 'ahap-receipt:v1:'
+    if not isinstance(value, str) or not value: return None
+    if not value.startswith(prefix): return ('message', value)
+    try:
+        parsed = json.loads(value[len(prefix):])
+    except (ValueError, TypeError): return None
+    if not isinstance(parsed, dict) or set(parsed) != {'kind', 'native_id'} or parsed['kind'] not in ('message', 'turn') or not isinstance(parsed['native_id'], str) or not parsed['native_id']:
+        return None
+    return (parsed['kind'], parsed['native_id'])
+
+
 def correlated_pairs(rows, markers, receipts):
-    if len(markers) != 2 or len(receipts) != 2 or not all(isinstance(r, dict) and r.get('outcome') == 'confirmed' and isinstance(r.get('native_receipt_id'), str) and r['native_receipt_id'] for r in receipts):
-        return False
-    ids = [r['native_receipt_id'] for r in receipts]
-    if ids[0] == ids[1] or markers[0] == markers[1]: return False
+    if len(markers) != 2 or len(receipts) != 2 or not all(isinstance(r, dict) and r.get('outcome') == 'confirmed' for r in receipts): return False
+    refs = [receipt_reference(r.get('native_receipt_id')) for r in receipts]
+    if None in refs or refs[0] == refs[1] or markers[0] == markers[1]: return False
     cursor = 0
-    for marker, receipt_id in zip(markers, ids):
-        user = next((i for i in range(cursor, len(rows)) if rows[i].get('role') == 'user' and rows[i].get('text') == marker and rows[i].get('id') == receipt_id), None)
+    for marker, (kind, native_id) in zip(markers, refs):
+        user = next((i for i in range(cursor, len(rows)) if rows[i].get('role') == 'user' and rows[i].get('text') == marker and (rows[i].get('turnId') == native_id if kind == 'turn' else rows[i].get('id') == native_id)), None)
         if user is None: return False
-        assistant = next((i for i in range(user + 1, len(rows)) if rows[i].get('role') == 'assistant' and rows[i].get('text') == 'HERDER_TEST_MODEL_OK' and isinstance(rows[i].get('id'), str) and rows[i]['id']), None)
-        if assistant is None or any(rows[i].get('role') == 'user' for i in range(user + 1, assistant)):
-            return False
+        assistant = next((i for i in range(user + 1, len(rows)) if rows[i].get('role') == 'assistant' and rows[i].get('text') == 'HERDER_TEST_MODEL_OK' and isinstance(rows[i].get('id'), str) and rows[i]['id'] and (kind != 'turn' or rows[i].get('turnId') == native_id)), None)
+        if assistant is None or any(rows[i].get('role') == 'user' for i in range(user + 1, assistant)): return False
         cursor = assistant + 1
     return True
 
@@ -225,7 +235,8 @@ def wait_readback(core, session, markers, receipts, timeout=75):
         wire = rpc_tool(core, 'session', {'action': 'messages', 'session_ref': session})
         rows = message_records(wire)
         if len(markers) == 1:
-            ok = any(row.get('role') == 'user' and row.get('text') == markers[0] and row.get('id') == receipts[0]['native_receipt_id'] for row in rows) and any(row.get('role') == 'assistant' and row.get('text') == 'HERDER_TEST_MODEL_OK' for row in rows)
+            ref = receipt_reference(receipts[0].get('native_receipt_id'))
+            ok = bool(ref) and any(row.get('role') == 'user' and row.get('text') == markers[0] and (row.get('turnId') == ref[1] if ref[0] == 'turn' else row.get('id') == ref[1]) for row in rows) and any(row.get('role') == 'assistant' and row.get('text') == 'HERDER_TEST_MODEL_OK' and (ref[0] != 'turn' or row.get('turnId') == ref[1]) for row in rows)
         else:
             ok = correlated_pairs(rows, markers, receipts)
         if ok: return wire, rows
@@ -347,6 +358,7 @@ def main():
         if len(answer_ids) != 2 or len(set(answer_ids)) != 2:
             raise RuntimeError('two distinct assistant responses not confirmed')
         ids = [receipt['native_receipt_id'], second_receipt['native_receipt_id']]
+        native_ids = [receipt_reference(value)[1] for value in ids]
         evidence.update(phase='both_read', second_receipt=second_receipt, public_read=wire,
                         checks={'create':'PASS','second_deliver_same_session':'PASS','read_both':'PASS',
                                 'export_native_complete':'UNKNOWN','search_with_coverage':'UNKNOWN',
@@ -356,7 +368,7 @@ def main():
         exported = rpc_tool(core, 'export', export_args)
         evidence['native_export'] = exported
         persist_evidence(evidence_path, evidence)
-        if not export_matches(exported, [marker, second, *ids, *answer_ids]):
+        if not export_matches(exported, [marker, second, *native_ids]):
             raise RuntimeError('native export lacks complete source or correlated transcript identities')
         evidence['checks']['export_native_complete'] = 'PASS'
         search_args = {'action':'search', 'query':second}
@@ -387,7 +399,7 @@ def main():
         if any(confirmed_receipt(t) is None for t in after_tasks) or [confirmed_receipt(t)['native_receipt_id'] for t in after_tasks] != ids:
             raise RuntimeError('restart did not preserve exact confirmed receipts')
         export_after = rpc_tool(core, 'export', export_args)
-        if not export_matches(export_after, [marker, second, *ids, *answer_ids]):
+        if not export_matches(export_after, [marker, second, *native_ids]):
             raise RuntimeError('restart lost native export evidence')
         before_payload = exported.get('structuredContent', {})
         after_payload = export_after.get('structuredContent', {})
