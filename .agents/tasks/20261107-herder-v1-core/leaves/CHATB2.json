@@ -1,0 +1,63 @@
+{
+  "id": "CHATB2",
+  "label": "ChatGPT B: полный сценарий после follow-up исправления",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "model": "gpt-6.1-sol",
+  "acceptance": "Two inputs/replies, export/search/projects/restart/archive on packaged1ae; full receipt.",
+  "note": "Fresh root chatgpt-b-1ae8b85f-1900, exec38580.",
+  "kind": "task",
+  "parent": "S2",
+  "status": "blocked",
+  "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "created_at": "2026-11-08T18:55:36+03:00",
+  "updated_at": "2026-11-08T19:04:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T18:55:36+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHATB2",
+        "label": "ChatGPT B: полный сценарий после follow-up исправления",
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "model": "gpt-6.1-sol",
+        "acceptance": "Two inputs/replies, export/search/projects/restart/archive on packaged1ae; full receipt.",
+        "note": "Fresh root chatgpt-b-1ae8b85f-1900, exec38580.",
+        "kind": "task",
+        "parent": "S2",
+        "status": "running",
+        "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "harness": "codex",
+        "estimate_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T19:04:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Owner requested browser stop and5minute quiet investigation of429; original create task outcome preserved, no replay.",
+        "result": "Fresh1ae consumer stopped before public task response; retained authority and receipt root chatgpt-b-1ae8b85f-1900/owner-pause.json. Do not claimPASS or repeat."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Owner requested browser stop and5minute quiet investigation of429; original create task outcome preserved, no replay.",
+  "result": "Fresh1ae consumer stopped before public task response; retained authority and receipt root chatgpt-b-1ae8b85f-1900/owner-pause.json. Do not claimPASS or repeat."
+}

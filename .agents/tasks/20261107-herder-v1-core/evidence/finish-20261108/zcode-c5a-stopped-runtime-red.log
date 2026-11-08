@@ -1,0 +1,28 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+(node:1087464) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/zcode-archive.test.ts (5 tests | 1 failed | 4 skipped) 9ms
+   × archives a retained indexed task without starting or reading a stopped agent runtime 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zcode-archive.test.ts > archives a retained indexed task without starting or reading a stopped agent runtime
+Error: ZCode Agent runtime is not running.
+ ❯ tests/zcode-archive.test.ts:32:28
+     30| it("archives a retained indexed task without starting or reading a sto…
+     31|   const f = fixture();
+     32|   f.read.mockRejectedValue(new Error("ZCode Agent runtime is not runni…
+       |                            ^
+     33|   expect(await f.adapter.archiveSession!("fixture-session")).toEqual({…
+     34|   expect(f.read).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+   Start at  18:50:46
+   Duration  1.14s (transform 844ms, setup 34ms, import 939ms, tests 9ms, environment 0ms)
+

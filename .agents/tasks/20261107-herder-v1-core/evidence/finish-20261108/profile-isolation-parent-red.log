@@ -1,0 +1,96 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/browser-profile-isolation-regression.test.ts (4 tests | 3 failed) 197ms
+   × two-account consumer fixture rejects duplicate account scopes before native bootstrap 169ms
+   × ChatGPT rejects duplicate account window markers after SPA removed both URL markers 4ms
+   × configured Zai create refuses account drift instead of rebinding its draft to another profile 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-profile-isolation-regression.test.ts > two-account consumer fixture rejects duplicate account scopes before native bootstrap
+AssertionError: expected { error: 'RuntimeError', …(1) } to deeply equal { error: 'ValueError', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "bootstrap_calls": 0,
+-   "error": "ValueError",
++   "bootstrap_calls": 1,
++   "error": "RuntimeError",
+  }
+
+ ❯ tests/browser-profile-isolation-regression.test.ts:40:18
+     38| `;
+     39|   const result = JSON.parse(execFileSync("python3", ["-I", "-c", scrip…
+     40|   expect(result).toEqual({ error: "ValueError", bootstrap_calls: 0 });
+       |                  ^
+     41| });
+     42|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/browser-profile-isolation-regression.test.ts > ChatGPT rejects duplicate account window markers after SPA removed both URL markers
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ tests/browser-profile-isolation-regression.test.ts:77:91
+     75|     throw new Error("unexpected " + name);
+     76|   } };
+     77|   await expect(new ChatGptMacCdpDriver(tools, undefined, 0, A).verifyP…
+       |                                                                                           ^
+     78|     .rejects.toThrow("duplicate_owned_browser_tabs");
+     79|   expect(scopesRead).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/browser-profile-isolation-regression.test.ts > configured Zai create refuses account drift instead of rebinding its draft to another profile
+AssertionError: expected { …(9) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "cwd": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder",
+  "harness": "zai",
+  "hostId": "roomhacker-server-100",
+  "id": "zai::draft%3A2aea19b4-415c-4c29-8021-b6f8688295aa",
+  "lastActivity": "2026-11-08T16:02:05.669Z",
+  "meta": {
+    "browserProvider": "zai",
+    "pendingRemoteCreation": true,
+    "stopVisible": false,
+    "timestampSemantics": "local-draft",
+    "transport": "owned-chat-page",
+    "unread": false,
+  },
+  "needsPermission": false,
+  "status": "idle",
+  "title": "must remain account A",
+}
+
+ ❯ tests/browser-profile-isolation-regression.test.ts:115:29
+    113|   const replies = text.trim().split("\n").map(line => JSON.parse(line)…
+    114|   expect(replies[1].error).toBeUndefined();
+    115|   expect(replies[2].result).toBeUndefined();
+       |                             ^
+    116|   expect(replies[2].error).toBeDefined();
+    117| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 12 passed (15)
+   Start at  19:02:03
+   Duration  1.77s (transform 2.36s, setup 125ms, import 2.45s, tests 301ms, environment 0ms)
+

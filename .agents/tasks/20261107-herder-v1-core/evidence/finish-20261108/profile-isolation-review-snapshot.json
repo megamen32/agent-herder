@@ -1,0 +1,27 @@
+{
+  "argv": [
+    "npx",
+    "vitest",
+    "run",
+    "--config",
+    "vitest.config.ts",
+    "tests/browser-profile-isolation-regression.test.ts"
+  ],
+  "exit_code": 0,
+  "utc": "2026-11-08T16:03:32Z",
+  "source_sha256_before": {
+    "tests/browser-profile-isolation-regression.test.ts": "f2c040d46981d31079d14b9d691b9c60630cc19c933b1ebecf3874202f6e120c",
+    "src/adapters/browser-owned-tab.ts": "298804f71f54bca65b74152b65b4d6ed5a156b5c91066bb9d4ac9c9f800189cb",
+    "tests/native/v1_multi_browser_stand.py": "95b767f3a6639cfeb7c12d7f13a1f5bf7d2dc7ad6e418f437fdf3e76fa093f0b",
+    "src/ahap-browser-runner.ts": "cab1f825e25f3b30e17e2e935c2bd0c37bcf9e8a3ce625bf17f5836ecc107818",
+    "src/adapters/zai-cdp-driver.ts": "034d660e24dc8172bd37d442855ad7fe89eef1ecbfad4c1cb3f549e8c6e2980c"
+  },
+  "source_sha256_after": {
+    "tests/browser-profile-isolation-regression.test.ts": "f2c040d46981d31079d14b9d691b9c60630cc19c933b1ebecf3874202f6e120c",
+    "src/adapters/browser-owned-tab.ts": "298804f71f54bca65b74152b65b4d6ed5a156b5c91066bb9d4ac9c9f800189cb",
+    "tests/native/v1_multi_browser_stand.py": "95b767f3a6639cfeb7c12d7f13a1f5bf7d2dc7ad6e418f437fdf3e76fa093f0b",
+    "src/ahap-browser-runner.ts": "cab1f825e25f3b30e17e2e935c2bd0c37bcf9e8a3ce625bf17f5836ecc107818",
+    "src/adapters/zai-cdp-driver.ts": "034d660e24dc8172bd37d442855ad7fe89eef1ecbfad4c1cb3f549e8c6e2980c"
+  },
+  "changed_during_run": false
+}

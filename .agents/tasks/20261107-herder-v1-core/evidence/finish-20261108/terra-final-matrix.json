@@ -146,7 +146,7 @@
         "search": "reused_pass",
         "projects": "reused_pass",
         "restart": "reused_pass",
-        "archive": "unverified_no_receipt_not_failure"
+        "archive": "unsupported_effect_none_on_newer_82b_full_case_incomplete"
       },
       "source_receipt": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-5ff-result.json",
       "receipt_sha256": "9619809ea3529c9f18cbbd35310d4dd821656ae2621cd50a407e59086951d9e6",
@@ -332,5 +332,58 @@
     "negative": "owner accepted neg-3d-result.json; identical exact core, preserve fake-AHAP coverage limits",
     "browser": "incomplete; changed adapter, no PASS reuse",
     "installed": "incomplete; no installed consumer proof"
+  },
+  "latest_candidate_54f": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-54f93706-diagnostic/manifest.json",
+    "manifest_sha256": "91610caa9295935ef51a019b2de8bfc106718f2ae75d9990249dd9f897e8d861",
+    "package_verification": "package54f-result.json",
+    "component_reuse": "reuse54f.json",
+    "CLI": "same component bytes as 82b and earlier CLI; preserve fixture scope; ZCode archive unsupported in newer 82b proof; full case incomplete",
+    "NEG": "same core, owner accepted 3d fake-AHAP proof subject to original coverage limits",
+    "browser": "changed adapter; incomplete, no PASS transfer",
+    "installed": "incomplete"
+  },
+  "new_zcode_82b_receipt": {
+    "path": "/home/roomhacker/herder-artifacts/ci-runs/zcode-82b91db9-archive-ede4cb8ab457/home/zcode-v1-receipt.json",
+    "sha256": "cd4273b57ab15caf5a9f65e1385120fb0fc323098fe4dd7a61b02a0c7b7f0269",
+    "manifest_sha256": "cff8e8dd19dd61358d0df1a4ec9d94f1fef0431f8af91f3b40eef74f437cd6b1",
+    "archive": {
+      "code": "unsupported_archive",
+      "effect": "none"
+    },
+    "full_case": "INCOMPLETE",
+    "fix_ownership": "SolMaxwell (owner-provided)"
+  },
+  "owner_live_update": {
+    "chatgpt_A": "native UI reload 16:17 HTTP 429 Too many requests, retryAfter 23",
+    "chatgpt_B": "readonly HTTP 200; full case being pursued by lead",
+    "zai": "direct diagnostic being pursued by lead",
+    "verification": "owner-reported; not independently repeated",
+    "browser_pass": false
+  },
+  "latest_candidate_1ae": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-1ae8b85f-followup/manifest.json",
+    "manifest_sha256": "a344d43799c467f9b59136022a1a76e4c5772d10e5545e40457c0a3f052ec2e9",
+    "package_verification": "terra-package-1ae-result.json",
+    "component_reuse": "terra-reuse-1ae8b85f.json",
+    "zcode": "fresh c5a full PASS including archive, same core/bootstrap/node/compat/zcode adapter, same fixture/config only",
+    "chatgpt": "source 1ae fix no native PASS",
+    "browser": "changed adapter; no browser PASS transfer",
+    "installed": "INCOMPLETE"
+  },
+  "latest_zcode_c5a": {
+    "fresh": {
+      "file": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-c5a-full-result.json",
+      "sha256": "d60cd6bf001f8ad5ecaf2d1b31e94c2ec9da8248dc055f3c6753c1ddf8cb3e77",
+      "status": "PASS",
+      "archive": "confirmed",
+      "manifest_sha256": "bcdd172d52d7728f6bb9fa3ce225d873c08056e5d98fd7c11bfcbbb5dc399937"
+    },
+    "retained_separate": {
+      "file": ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-c5a-retained-result.json",
+      "sha256": "a738418bf6db39591dfac5bbf1a87105c446b562351ac57a5b2f0f810c6cbd92",
+      "status": "UNKNOWN",
+      "no_replay": true
+    }
   }
 }

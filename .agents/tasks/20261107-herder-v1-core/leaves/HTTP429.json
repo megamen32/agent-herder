@@ -1,0 +1,44 @@
+{
+  "id": "HTTP429",
+  "label": "Сократить лишние запросы и проверить общий cooldown ChatGPT",
+  "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "model": "gpt-6.1-sol",
+  "acceptance": "RED/GREEN account-scoped pre-request cooldown; no cross-tab retry storm; preserve account checks; live separate.",
+  "note": "Accepted01a1bbe5-2b16-74a3-a5bf-513ff26d1d69; scope driver+tests.",
+  "kind": "task",
+  "parent": "S2",
+  "status": "running",
+  "estimate_minutes": 15,
+  "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "harness": "codex",
+  "created_at": "2026-11-08T19:05:01+03:00",
+  "updated_at": "2026-11-08T19:05:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T19:05:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "HTTP429",
+        "label": "Сократить лишние запросы и проверить общий cooldown ChatGPT",
+        "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "model": "gpt-6.1-sol",
+        "acceptance": "RED/GREEN account-scoped pre-request cooldown; no cross-tab retry storm; preserve account checks; live separate.",
+        "note": "Accepted01a1bbe5-2b16-74a3-a5bf-513ff26d1d69; scope driver+tests.",
+        "kind": "task",
+        "parent": "S2",
+        "status": "running",
+        "estimate_minutes": 15,
+        "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ]
+}

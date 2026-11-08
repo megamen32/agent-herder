@@ -1,0 +1,61 @@
+{
+  "id": "FOLLOWUPFILL",
+  "kind": "task",
+  "parent": "S2",
+  "label": "ChatGPT follow-up: fill readback и действующий label",
+  "status": "done",
+  "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "estimate_minutes": 15,
+  "acceptance": "One click after exact fill readback even if ack lost; fresh textbox label; target/account/saved draft preserved, RED/GREEN.",
+  "note": "Native accepted01a1bbd6-d1d6-79e1-aed2-193ba7793d73; parent owns liveB and sourcehelper.",
+  "created_at": "2026-11-08T18:46:50+03:00",
+  "updated_at": "2026-11-08T18:55:15+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T18:46:50+03:00",
+      "note": "",
+      "changes": {
+        "id": "FOLLOWUPFILL",
+        "kind": "task",
+        "parent": "S2",
+        "label": "ChatGPT follow-up: fill readback и действующий label",
+        "status": "running",
+        "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "session": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "estimate_minutes": 15,
+        "acceptance": "One click after exact fill readback even if ack lost; fresh textbox label; target/account/saved draft preserved, RED/GREEN.",
+        "note": "Native accepted01a1bbd6-d1d6-79e1-aed2-193ba7793d73; parent owns liveB and sourcehelper."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:55:15+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Published1ae8b85f: ChatGPT fill ACK readback + Russian editor, foreign drafts preserved, no repeated click. Worker55/lead109 tests PASS, tscPASS; live B full now running fresh root chatgpt-b-1ae8b85f-1900, no livePASS yet."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "Published1ae8b85f: ChatGPT fill ACK readback + Russian editor, foreign drafts preserved, no repeated click. Worker55/lead109 tests PASS, tscPASS; live B full now running fresh root chatgpt-b-1ae8b85f-1900, no livePASS yet."
+}

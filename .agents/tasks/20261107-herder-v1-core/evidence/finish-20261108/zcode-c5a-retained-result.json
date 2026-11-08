@@ -1,0 +1,178 @@
+{
+  "archive": {
+    "content": [
+      {
+        "text": "{\"archived\":false,\"code\":\"archive_outcome_unknown\",\"effect\":\"unknown\",\"session_ref\":\"session:f7c76a9a837f13ef424b7629045ace8f\"}",
+        "type": "text"
+      }
+    ],
+    "isError": true,
+    "resultType": "complete",
+    "structuredContent": {
+      "archived": false,
+      "code": "archive_outcome_unknown",
+      "effect": "unknown",
+      "session_ref": "session:f7c76a9a837f13ef424b7629045ace8f"
+    }
+  },
+  "archive_key": "zcode-v1-create-988107ac2f334cc28e20d469abfe2d08-archive",
+  "error": "archive not confirmed; no replay",
+  "instance": "zcode-ci-efe4ed61bb37432db33109e1cfccf355",
+  "manifest_sha256": "bcdd172d52d7728f6bb9fa3ce225d873c08056e5d98fd7c11bfcbbb5dc399937",
+  "model_sends": 0,
+  "native_session_id": "sess_e06e622c-7d06-4e15-a168-5da6bfb93fa4",
+  "network": "isolated namespace, loopback only, no model server",
+  "phase": "before_archive",
+  "previous_archive": {
+    "content": [
+      {
+        "text": "{\"code\":\"unsupported_archive\",\"effect\":\"none\"}",
+        "type": "text"
+      }
+    ],
+    "isError": true,
+    "resultType": "complete",
+    "structuredContent": {
+      "code": "unsupported_archive",
+      "effect": "none"
+    }
+  },
+  "profile": "/herder-owner-home/authority/zcode-c5a-profile.json",
+  "readback": {
+    "content": [
+      {
+        "text": "{\"page\":{\"complete\":false,\"limitations\":[\"\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041f\u0440\u0435\u0436\u043d\u0438\u0439 API \u043d\u0435 \u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u043a\u0443\u0440\u0441\u043e\u0440 \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u043e\u043b\u043d\u043e\u0442\u044b \u0438\u0441\u0442\u043e\u0440\u0438\u0438.\"],\"messages\":[{\"id\":\"msg_mw7ztxu1_89a4b3ec-8e0f-464b-bcf2-101d3527ef41\",\"parts\":[{\"text\":\"HERDER_ZCODE_FIRST_988107ac2f334cc28e20d469abfe2d08\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"HERDER_ZCODE_FIRST_988107ac2f334cc28e20d469abfe2d08\",\"timestamp\":\"2026-11-08T15:34:51.538Z\"},{\"id\":\"msg_mw7ztxus_501d8e7c-b22d-475e-a5b8-623e4268ef22\",\"parts\":[{\"text\":\"# Environment\\nYou have been invoked in the following environment: \\n - Primary working directory: /herder-owner-home/work\\n - Is a git repository: false\\n - Platform: linux\\n - Shell: zsh\\n - OS Version: linux 6.8.0-138-generic x64\\n - Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"# Environment\\nYou have been invoked in the following environment: \\n - Primary working directory: /herder-owner-home/work\\n - Is a git repository: false\\n - Platform: linux\\n - Shell: zsh\\n - OS Version: linux 6.8.0-138-generic x64\\n - Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.\",\"timestamp\":\"2026-11-08T15:34:51.556Z\"},{\"id\":\"msg_mw7ztxvq_a0315a1f-2f1d-47e0-b4d4-43c2518be75c\",\"parts\":[{\"text\":\"You are powered by the model named fixture/herder-test.\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"You are powered by the model named fixture/herder-test.\",\"timestamp\":\"2026-11-08T15:34:51.590Z\"},{\"id\":\"msg_mw7ztxwo_ca4285c6-71a7-428c-8189-bedf80043b23\",\"parts\":[{\"text\":\"Available agent types for the Agent tool:\\n- Explore: Read-only search agent for broad fan-out searches \u2014 when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn't review or audit it. Specify search breadth: \\\"medium\\\" for moderate exploration, \\\"very thorough\\\" for multiple locations and naming conventions. (Tools: Read, Bash, WebFetch, WebSearch, TodoWrite)\\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\\n\\nWhen you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"Available agent types for the Agent tool:\\n- Explore: Read-only search agent for broad fan-out searches \u2014 when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn't review or audit it. Specify search breadth: \\\"medium\\\" for moderate exploration, \\\"very thorough\\\" for multiple locations and naming conventions. (Tools: Read, Bash, WebFetch, WebSearch, TodoWrite)\\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\\n\\nWhen you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.\",\"timestamp\":\"2026-11-08T15:34:51.624Z\"},{\"id\":\"msg_mw7ztxyr_d0fe5b3d-3b05-4d6c-9f4e-306c6b8793c8\",\"parts\":[{\"text\":\"Today's date is 2026-11-08.\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"Today's date is 2026-11-08.\",\"timestamp\":\"2026-11-08T15:34:51.699Z\"},{\"id\":\"msg_mw7zty0b_962cc479-af9e-4f06-8772-5a62c30d0160\",\"parts\":[{\"text\":\"HERDER_TEST_MODEL_OK\",\"type\":\"text\"}],\"role\":\"assistant\",\"text\":\"HERDER_TEST_MODEL_OK\",\"timestamp\":\"2026-11-08T15:34:51.756Z\"},{\"id\":\"msg_mw7ztyxk_a29af8f8-7e24-4013-bc23-38c92ab8d124\",\"parts\":[{\"text\":\"HERDER_ZCODE_SECOND_988107ac2f334cc28e20d469abfe2d08\",\"type\":\"text\"}],\"role\":\"user\",\"text\":\"HERDER_ZCODE_SECOND_988107ac2f334cc28e20d469abfe2d08\",\"timestamp\":\"2026-11-08T15:34:52.955Z\"},{\"id\":\"msg_mw7ztyy7_324bb453-3d60-4d64-bfb4-2a565fc547b8\",\"parts\":[{\"text\":\"HERDER_TEST_MODEL_OK\",\"type\":\"text\"}],\"role\":\"assistant\",\"text\":\"HERDER_TEST_MODEL_OK\",\"timestamp\":\"2026-11-08T15:34:52.975Z\"}],\"next_cursor\":null},\"session_ref\":\"session:f7c76a9a837f13ef424b7629045ace8f\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "page": {
+        "complete": false,
+        "limitations": [
+          "\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f. \u041f\u0440\u0435\u0436\u043d\u0438\u0439 API \u043d\u0435 \u043f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u043a\u0443\u0440\u0441\u043e\u0440 \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u043e\u043b\u043d\u043e\u0442\u044b \u0438\u0441\u0442\u043e\u0440\u0438\u0438."
+        ],
+        "messages": [
+          {
+            "id": "msg_mw7ztxu1_89a4b3ec-8e0f-464b-bcf2-101d3527ef41",
+            "parts": [
+              {
+                "text": "HERDER_ZCODE_FIRST_988107ac2f334cc28e20d469abfe2d08",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "HERDER_ZCODE_FIRST_988107ac2f334cc28e20d469abfe2d08",
+            "timestamp": "2026-11-08T15:34:51.538Z"
+          },
+          {
+            "id": "msg_mw7ztxus_501d8e7c-b22d-475e-a5b8-623e4268ef22",
+            "parts": [
+              {
+                "text": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /herder-owner-home/work\n - Is a git repository: false\n - Platform: linux\n - Shell: zsh\n - OS Version: linux 6.8.0-138-generic x64\n - Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /herder-owner-home/work\n - Is a git repository: false\n - Platform: linux\n - Shell: zsh\n - OS Version: linux 6.8.0-138-generic x64\n - Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.",
+            "timestamp": "2026-11-08T15:34:51.556Z"
+          },
+          {
+            "id": "msg_mw7ztxvq_a0315a1f-2f1d-47e0-b4d4-43c2518be75c",
+            "parts": [
+              {
+                "text": "You are powered by the model named fixture/herder-test.",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "You are powered by the model named fixture/herder-test.",
+            "timestamp": "2026-11-08T15:34:51.590Z"
+          },
+          {
+            "id": "msg_mw7ztxwo_ca4285c6-71a7-428c-8189-bedf80043b23",
+            "parts": [
+              {
+                "text": "Available agent types for the Agent tool:\n- Explore: Read-only search agent for broad fan-out searches \u2014 when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn't review or audit it. Specify search breadth: \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions. (Tools: Read, Bash, WebFetch, WebSearch, TodoWrite)\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n\nWhen you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "Available agent types for the Agent tool:\n- Explore: Read-only search agent for broad fan-out searches \u2014 when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn't review or audit it. Specify search breadth: \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions. (Tools: Read, Bash, WebFetch, WebSearch, TodoWrite)\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n\nWhen you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
+            "timestamp": "2026-11-08T15:34:51.624Z"
+          },
+          {
+            "id": "msg_mw7ztxyr_d0fe5b3d-3b05-4d6c-9f4e-306c6b8793c8",
+            "parts": [
+              {
+                "text": "Today's date is 2026-11-08.",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "Today's date is 2026-11-08.",
+            "timestamp": "2026-11-08T15:34:51.699Z"
+          },
+          {
+            "id": "msg_mw7zty0b_962cc479-af9e-4f06-8772-5a62c30d0160",
+            "parts": [
+              {
+                "text": "HERDER_TEST_MODEL_OK",
+                "type": "text"
+              }
+            ],
+            "role": "assistant",
+            "text": "HERDER_TEST_MODEL_OK",
+            "timestamp": "2026-11-08T15:34:51.756Z"
+          },
+          {
+            "id": "msg_mw7ztyxk_a29af8f8-7e24-4013-bc23-38c92ab8d124",
+            "parts": [
+              {
+                "text": "HERDER_ZCODE_SECOND_988107ac2f334cc28e20d469abfe2d08",
+                "type": "text"
+              }
+            ],
+            "role": "user",
+            "text": "HERDER_ZCODE_SECOND_988107ac2f334cc28e20d469abfe2d08",
+            "timestamp": "2026-11-08T15:34:52.955Z"
+          },
+          {
+            "id": "msg_mw7ztyy7_324bb453-3d60-4d64-bfb4-2a565fc547b8",
+            "parts": [
+              {
+                "text": "HERDER_TEST_MODEL_OK",
+                "type": "text"
+              }
+            ],
+            "role": "assistant",
+            "text": "HERDER_TEST_MODEL_OK",
+            "timestamp": "2026-11-08T15:34:52.975Z"
+          }
+        ],
+        "next_cursor": null
+      },
+      "session_ref": "session:f7c76a9a837f13ef424b7629045ace8f"
+    }
+  },
+  "session_ref": "session:f7c76a9a837f13ef424b7629045ace8f",
+  "status": "UNKNOWN",
+  "exit_code": 1,
+  "read_only_diagnostic": {
+    "probe_exit_code": 0,
+    "probe_stdout": "{\"operation\":\"readSession\",\"ok\":false,\"error\":\"ZCode Agent runtime is not running.\"}\n{\"operation\":\"listArchivedTasks\",\"ok\":true,\"targetPresent\":false}\n",
+    "probe_stderr": ""
+  },
+  "native_index_readback": [
+    [
+      "sess_e06e622c-7d06-4e15-a168-5da6bfb93fa4",
+      "/herder-owner-home/work",
+      "/herder-owner-home/work",
+      0,
+      0
+    ]
+  ],
+  "no_retry_unknown": true,
+  "remaining_cause": "archive preflight readSession(existing-only) requires a running agent; retained runtime stopped. Native archive transaction never reached."
+}

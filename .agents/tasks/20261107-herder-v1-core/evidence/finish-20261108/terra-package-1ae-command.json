@@ -1,0 +1,8 @@
+{
+  "argv": [
+    "python3",
+    "deploy/fleet/test-build-v1-core.py",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-1ae8b85f-followup/manifest.json"
+  ],
+  "manifest_sha256": "a344d43799c467f9b59136022a1a76e4c5772d10e5545e40457c0a3f052ec2e9"
+}

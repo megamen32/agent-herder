@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "/usr/bin/python3.10",
+    "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-c5a-retained-archive.py"
+  ],
+  "script_sha256": "95c071e95843a203286e0da43f6c6214a0b1cc8382df3759bcadb112db36e149",
+  "manifest_sha256": "bcdd172d52d7728f6bb9fa3ce225d873c08056e5d98fd7c11bfcbbb5dc399937",
+  "mode": "retained exact session archive only, no model server/send"
+}

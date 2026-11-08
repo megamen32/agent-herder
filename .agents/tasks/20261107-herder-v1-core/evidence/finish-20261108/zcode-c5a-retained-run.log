@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/zcode-c5a-retained-archive.py", line 69, in <module>
+    assert not reply.get('isError') and body.get('archived') is True and body.get('effect')=='confirmed' and body.get('session_ref')==SESSION,'archive not confirmed; no replay'
+AssertionError: archive not confirmed; no replay

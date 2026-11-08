@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "08.11 18:31МСК: native Sol6.1×2/Terra6.1×1 работают; lead интеграция/browser/install. CHATDELTA+CASETRACE опубликованы82b91db9, compilePASS,59TS+6fakeRPCPASS. Candidate82b91db9-readfix manifestcff8e8dd; source/browser fixed, full live ещё INCOMPLETE. CLI previous candidate5ff PASS; ZCode archive raw receipt gap уточняется ZARCHPROOF, exact current NEG FINALMATRIX. Browser Zai original3d create confirmed/promptUNKNOWN, no remote route, cleanupINCOMPLETE; собственный no-click diagnostic проходит51s. ChatGPT original A readonly reconcile на новом adapter, затем archive. Next: browser full2profiles+Zai, NEG, soleV1install/readback. Старый deadline пропущен; ETA35–60min под риском, новый гарантированный срок не заявляется. Hourly отменён, токен оставить. C13/C14/FIXZ stale assigned lifecycle не является активной разработкой.",
-  "updated_at": "2026-11-08T18:30:34+03:00",
+  "current_progress": "08.11 19:00МСК: Sol6.1 Kierkegaard чинит foreground Zai draft state, Sol6.1 Maxwell проверяет profile isolation, Terra6.1 Dirac проверяет exact1ae package/reuse. Parent интегрирует stopped-runtime archive, сохраняет raw fixture replies и ведёт новый ChatGPTB full. Published1ae8b85f; candidate manifest a344d437. CLI fullPASS на прежних exactcomponent receipts; c5a ZCode archive fullPASS. Browser firstZai and firstChatGPTB+archivePASS, second full pending. AccountA ordinaryUI429 after RetryAfter — external blocker. No installedV1, no all5PASS; deadline missed. Next concrete checkpoint25–40min, full two-profile ETA depends on A recovery. Hourly cancelled; token unchanged.",
+  "updated_at": "2026-11-08T18:59:50+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -76,6 +76,28 @@
         "source": "mcp_metadata"
       },
       "summary": "Два Sol6.1: CHATDELTA sourcefix принят, далее ZCode archive evidence; CASETRACE test cleanup/trace. Terra6.1 FINALMATRIX нашла missing archive receipt и проверяет exact candidate NEG. Lead: Zai root cause, integration/install. Candidate3d767f28 Zai create confirmed/prompt unknown, draft pending, cleanup incomplete; no replay. ChatGPT old original task still working on readonly reconcile. Остаток browser2accounts+Zai, packaged NEG, soleV1 install/readback; готовность не подтверждена. Прежний ETA35–60min рискован: браузерный consumer всё ещё красный."
+    },
+    {
+      "at": "2026-11-08T18:55:17+03:00",
+      "reason": "Уточнение владельца: Sol6.1 сложное, Terra простое; актуализация по реальным consumer receipts",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Переиспользованы3 nativeworkers с независимыми ownership; source fixes accepted, remaining Zai state/ChatGPTB full/ChatGPTA429 отдельно; parent sole installer."
+    },
+    {
+      "at": "2026-11-08T18:59:50+03:00",
+      "reason": "Прямое указание владельца: остановить запросы, закрыть все вкладки, 5min пауза, выяснить429 и изучить предоставленный MV3",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Live ChatGPT1ae остановлен, originalUNKNOWN сохранён. Sol offline Zai statefix и MV3 assessment; Terra audit request sources; parent pause actual polling/tabs and measured quiet interval. Source9e1353d7 published, installedV1 ещёнет. Расширение не установлено."
     }
   ]
 }
