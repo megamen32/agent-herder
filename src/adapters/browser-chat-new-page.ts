@@ -408,21 +408,30 @@ export async function submitFirstChatMessage(
     ? /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Работайте с ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i
     : /uid=([\w-]+) textbox "Send a Message"/i;
   try {
-    const a11y=await tools.call("take_snapshot",{pageId});
-    const uid=a11y.match(editorLabel)?.[1];
-    if(!uid) {
-      await closeOwnedPage();
-      return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
-    }
-    // The site may restore its own composer draft over our text. Write the
-    // message and verify what the composer actually holds; a restored draft
-    // is cleared and the write is repeated.
+    // A fill can apply its text and then lose the transport acknowledgement.
+    // Read the actual composer before deciding it failed. Each unapplied
+    // attempt obtains a fresh snapshot: another browser instance may have
+    // invalidated the old accessibility reference in the shared gateway.
+    let written = false;
     for (let attempt = 0; attempt < 5; attempt++) {
       await clearComposer(tools, pageId, site);
-      await tools.call("fill", { pageId, uid, value: text });
-      const written = await composerValue(tools, pageId, site);
-      if (written === text.trim()) break;
+      const a11y=await tools.call("take_snapshot",{pageId});
+      const uid=a11y.match(editorLabel)?.[1];
+      if(!uid) {
+        await closeOwnedPage();
+        return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
+      }
+      try { await tools.call("fill", { pageId, uid, value: text }); }
+      catch { /* fill is not send; exact readback below decides whether it applied */ }
+      if (await composerValue(tools, pageId, site) === text.trim()) {
+        written = true;
+        break;
+      }
       await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    if (!written) {
+      await closeOwnedPage();
+      return {clicked:false,uncertain:false,reason:"Cannot fill new-chat composer; no click attempted"};
     }
   }catch(error){
     await closeOwnedPage();

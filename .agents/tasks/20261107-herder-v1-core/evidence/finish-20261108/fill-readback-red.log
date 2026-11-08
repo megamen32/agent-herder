@@ -1,0 +1,57 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/browser-chat-create.test.ts (54 tests | 4 failed) 5754ms
+     × chatgpt verifies a filled composer after the transport lost its acknowledgement 11ms
+     × chatgpt refreshes the snapshot before retrying an unapplied fill 1ms
+     × zai verifies a filled composer after the transport lost its acknowledgement 1ms
+     × zai refreshes the snapshot before retrying an unapplied fill 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-chat-create.test.ts > first-message fill acknowledgement recovery > chatgpt verifies a filled composer after the transport lost its acknowledgement
+ FAIL  tests/browser-chat-create.test.ts > first-message fill acknowledgement recovery > zai verifies a filled composer after the transport lost its acknowledgement
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/browser-chat-create.test.ts:822:30
+    820|       const tools = new AppliedTimeout(site);
+    821|       const result = await submitFirstChatMessage(tools,site,"Unique o…
+    822|       expect(result.clicked).toBe(true);
+       |                              ^
+    823|       expect(tools.calls.filter(x=>x.name === "fill")).toHaveLength(1);
+    824|       expect(tools.calls.filter(x=>x.name === "evaluate_script" && Str…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/browser-chat-create.test.ts > first-message fill acknowledgement recovery > chatgpt refreshes the snapshot before retrying an unapplied fill
+ FAIL  tests/browser-chat-create.test.ts > first-message fill acknowledgement recovery > zai refreshes the snapshot before retrying an unapplied fill
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/browser-chat-create.test.ts:839:96
+    837|       }
+    838|       const tools = new StaleSnapshot(site);
+    839|       expect((await submitFirstChatMessage(tools,site,"Unique owned pr…
+       |                                                                                                ^
+    840|       expect(snapshots).toBe(2); expect(fills).toBe(2);
+    841|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 50 passed (54)
+   Start at  18:42:33
+   Duration  7.02s (transform 925ms, setup 57ms, import 1.01s, tests 5.75s, environment 0ms)
+

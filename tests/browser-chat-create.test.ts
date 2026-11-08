@@ -553,16 +553,17 @@ for (const site of ["chatgpt", "zai"] as const) {
 describe("one marked tab per provider", () => {
   it("submits the first message in the already owned marked tab instead of opening another one", async () => {
     const opened: string[] = [];
+    let composer = "leftover draft";
     const listing = "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
     const tools: ChromePageTools = { call: async (name, args = {}) => {
       if (name === "list_pages") return listing;
       if (name === "new_page") { opened.push(String(args.url)); return ""; }
       if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
-      if (name === "fill") return "ok";
+      if (name === "fill") { composer=String(args.value); return "ok"; }
       if (name === "evaluate_script") {
         const source = String(args.function);
         if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
-        if (source.includes("return {value:")) return json({ value: "leftover draft" });
+        if (source.includes("return {value:")) return json({ value: composer });
         if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
         if (source.includes("send_not_ready")) return json({ submitted: true });
         if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
@@ -612,6 +613,7 @@ describe("owned tab with a leftover composer", () => {
       if (name === "evaluate_script") {
         const source = String(args.function);
         if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) return json({value:fills.at(-1)||"leftover"});
         if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
         if (source.includes("send_not_ready")) return json({ submitted: true });
         if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
@@ -804,4 +806,40 @@ it('clears a textarea value using its text selection, not a DOM Range',async()=>
  }};
  await expect(openOwnedBlankChatPage(tools,'zai')).resolves.toBe(7);
  expect(value).toBe('');
+});
+
+
+describe("first-message fill acknowledgement recovery", () => {
+  for (const site of ["chatgpt", "zai"] as const) {
+    it(site + " verifies a filled composer after the transport lost its acknowledgement", async () => {
+      class AppliedTimeout extends NewChatPageFixture {
+        override async call(name: string,args: Record<string, unknown> = {}): Promise<string> {
+          const result = await super.call(name,args);
+          if (name === "fill") throw new Error("fill acknowledgement lost after applying text");
+          return result;
+        }
+      }
+      const tools = new AppliedTimeout(site);
+      const result = await submitFirstChatMessage(tools,site,"Unique owned prompt",ACCOUNT);
+      expect(result.clicked).toBe(true);
+      expect(tools.calls.filter(x=>x.name === "fill")).toHaveLength(1);
+      expect(tools.calls.filter(x=>x.name === "evaluate_script" && String(x.args.function).includes("send_not_ready"))).toHaveLength(1);
+    });
+    it(site + " refreshes the snapshot before retrying an unapplied fill", async () => {
+      let snapshots=0, fills=0;
+      class StaleSnapshot extends NewChatPageFixture {
+        override async call(name: string,args: Record<string, unknown> = {}): Promise<string> {
+          if (name === "take_snapshot") { snapshots++; return 'uid='+snapshots+'_42 textbox "'+(site === 'zai' ? 'Send a Message' : 'Спросить ChatGPT')+'" multiline'; }
+          if (name === "fill") {
+            fills++; if (fills === 1) throw new Error("stale uid");
+            expect(args.uid).toBe("2_42");
+          }
+          return super.call(name,args);
+        }
+      }
+      const tools = new StaleSnapshot(site);
+      expect((await submitFirstChatMessage(tools,site,"Unique owned prompt",ACCOUNT)).clicked).toBe(true);
+      expect(snapshots).toBe(2); expect(fills).toBe(2);
+    });
+  }
 });
