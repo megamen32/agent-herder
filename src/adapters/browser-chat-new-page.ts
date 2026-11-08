@@ -47,6 +47,25 @@ function pages(text:string): Array<{id:number;url:string}> {
  * new_page sometimes reports navigation timeout despite creating the tab.
  * Never reuse a random existing tab or change the human-selected chat.
  */
+
+/** Replace the whole composer content. A fill on a rich editor appends to
+ * whatever the site restored, so the previous value is selected and
+ * replaced instead of merely emptied. */
+async function clearComposer(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<void> {
+  try {
+    await tools.call("evaluate_script",{pageId,function:`() => {
+      const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+        ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+        :'textarea[placeholder="Send a Message"]')});
+      if(!editor)return {cleared:false};
+      editor.focus();
+      document.execCommand('selectAll');
+      document.execCommand('insertText',false,'');
+      return {cleared:true};
+    }`});
+  } catch { /* the fill below still writes the user's own text */ }
+}
+
 export async function openOwnedBlankChatPage(
   tools:ChromePageTools,site:BrowserChatSite,
 ):Promise<number> {
@@ -252,10 +271,10 @@ export async function submitFirstChatMessage(
       await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
     }
-    // The site may restore a leftover composer value into a reused tab. The
-    // empty-state probe above already read it, so one clearing fill is enough
-    // to make the first message exactly the user's own text.
-    await tools.call("fill",{pageId,uid,value:""});
+    // The site may restore a leftover composer value into a reused tab, and a
+    // fill on a rich editor appends to it. Replace the whole content so the
+    // first message is exactly the user's own text.
+    await clearComposer(tools,pageId,site);
     await tools.call("fill",{pageId,uid,value:text});
   }catch(error){
     await closeOwnedPage();

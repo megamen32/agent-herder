@@ -127,6 +127,9 @@ class NewChatPageFixture implements ChromePageTools {
         source.includes("/api/v1/chats/?page=")) {
         return json({scope:ACCOUNT,chats:[]});
       }
+      if(source.includes("execCommand('selectAll')")){
+        return json({cleared:true});
+      }
       if(source.includes("ready:!!editor")){
         return json({origin:this.origin,path:"/",ready:true,empty:!this.inheritedDraft});
       }
@@ -204,10 +207,8 @@ describe("browser first-message admission",()=>{
       expect(receipt).toMatchObject({clicked:true,uncertain:false,
         remoteId:site==="chatgpt"?GPT_NATIVE:"route:"+ZAI_NATIVE});
       expect(tools.calls.filter(x=>x.name==="new_page")).toHaveLength(1);
-      // The composer is cleared before the first message, so the sent text is
-      // exactly the user's own words.
-      expect(tools.calls.filter(x=>x.name==="fill")).toHaveLength(2);
-      expect(tools.calls.filter(x=>x.name==="fill").map(x=>x.args.value)).toEqual(["", "User-written prompt"]);
+      expect(tools.calls.filter(x=>x.name==="fill")).toHaveLength(1);
+      expect(tools.calls.filter(x=>x.name==="fill").map(x=>x.args.value)).toEqual(["User-written prompt"]);
       expect(tools.calls.filter(x=>x.name==="evaluate_script"&&
         String(x.args.function).includes("send_not_ready"))).toHaveLength(1);
       expect(tools.closed).toBe(false);
@@ -345,11 +346,10 @@ describe("driver integration: draft to native conversation, no synthetic prompt"
       expect(tools.calls.some(c=>c.name==="new_page")).toBe(false);
       const out=await d.sendMessage({chatId:first.id,text:"User-written prompt"});
       expect(out).toEqual({});
-      // The clearing fill is not a submission; only the user's text is sent.
-      expect(tools.sends).toEqual(["", "User-written prompt"]);
+      expect(tools.sends).toEqual(["User-written prompt"]);
       expect(tools.calls.filter(c=>c.name==="new_page")).toHaveLength(1);
-      expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(2);
-      expect(tools.calls.filter(c=>c.name==="fill").map(c=>c.args.value)).toEqual(["", "User-written prompt"]);
+      expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(1);
+      expect(tools.calls.filter(c=>c.name==="fill").map(c=>c.args.value)).toEqual(["User-written prompt"]);
       const created=d.getKnownChat?.(first.id);
       expect(created).toMatchObject({pendingRemoteCreation:false});
       const store=new BrowserChatDraftStore(site,p);
@@ -458,7 +458,7 @@ describe("native provider rejection after first Send",()=>{
     expect(receipt).toMatchObject({clicked:true,uncertain:true});
     expect(receipt.remoteId).toBeUndefined();
     expect(receipt.reason).toContain("concurrent_conversation_limit");
-    expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(2);
+    expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(1);
     expect(tools.closed).toBe(false);
   });
   it("recognizes the site's observed red concurrency error without reading other chats",()=>{
@@ -537,7 +537,6 @@ for (const site of ["chatgpt", "zai"] as const) {
     await driver.sendMessage({chatId:draft.id,text:"owned fixture input"});
     expect(tools.calls.some(call => call.name === "new_page")).toBe(false);
     expect(tools.calls.filter(call => call.name === "fill")).toEqual([
-      {name:"fill",args:expect.objectContaining({pageId:9,value:""})},
       {name:"fill",args:expect.objectContaining({pageId:9,value:"owned fixture input"})},
     ]);
   });
@@ -588,7 +587,55 @@ describe("first message composer content", () => {
       throw new Error("unexpected action " + name);
     } };
     await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
-    expect(fills[0]).toBe("");
-    expect(fills[1]).toBe("User prompt");
+    // The composer is cleared by replacing its content, then the user's own
+    // text is written once.
+    expect(fills).toEqual(["User prompt"]);
+  });
+});
+
+describe("owned tab with a leftover composer", () => {
+  it("clears the leftover value of its own marked tab instead of refusing to send", async () => {
+    const fills: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline value="leftover"';
+      if (name === "fill") { fills.push(String(args.value)); return "ok"; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: false });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(fills).toEqual(["User prompt"]);
+  });
+});
+
+describe("first message composer replacement", () => {
+  it("replaces the whole composer content instead of appending to it", async () => {
+    const scripts: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline value="leftover"';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        scripts.push(source);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    const replace = scripts.find(source => source.includes("selectAll") && source.includes("insertText"));
+    expect(replace).toBeTruthy();
   });
 });
