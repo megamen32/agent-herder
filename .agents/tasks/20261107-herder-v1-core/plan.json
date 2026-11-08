@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "08.11 19:00МСК: Sol6.1 Kierkegaard чинит foreground Zai draft state, Sol6.1 Maxwell проверяет profile isolation, Terra6.1 Dirac проверяет exact1ae package/reuse. Parent интегрирует stopped-runtime archive, сохраняет raw fixture replies и ведёт новый ChatGPTB full. Published1ae8b85f; candidate manifest a344d437. CLI fullPASS на прежних exactcomponent receipts; c5a ZCode archive fullPASS. Browser firstZai and firstChatGPTB+archivePASS, second full pending. AccountA ordinaryUI429 after RetryAfter — external blocker. No installedV1, no all5PASS; deadline missed. Next concrete checkpoint25–40min, full two-profile ETA depends on A recovery. Hourly cancelled; token unchanged.",
-  "updated_at": "2026-11-08T18:59:50+03:00",
+  "current_progress": "08.11 19:13МСК: owner5minquiet выполнена300.203751s, exactChromePIDs всеresumed; проверка16:12:27Z suspended_remaining0. d08a68ae source/pacakged manifest5e21be1d verifierPASS; unchangedcore/CLIreuse, ZCode/browser changed→nativefullнепереносится. Cooldown fix70parent+82workerPASS/tsc;3profileguards54PASS. MV3assessment reuse UserIOtabs_list/eval/Dots, sync15min up to12HTTP/accountguard gaps. Browserpostpausecheck blocked: MacMiniCDP50260 launchd explicitlydisabled, localVibe8788 Notconnectedtorelay; ChromePIDs опятьсменились, активныйbrowseroperator неустановлен. CI audit runtime sources active, permission/refusalнеобходится. Native sends stopped, installedV1нет,429clearedнеclaimed; next exacttransport handoff then oneobservedread.",
+  "updated_at": "2026-11-08T19:13:18+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",

@@ -1,0 +1,185 @@
+{
+  "argv": [
+    "python3",
+    "deploy/fleet/test-build-v1-core.py",
+    "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-cooldown/manifest.json"
+  ],
+  "exit_code": 0,
+  "manifest_sha256": "5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39",
+  "stdout_sha256": "cb2e61d1b69921988fad9050e6100ea8c2bd4dd94e69f34a5a3a66628a84a7c3",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "result": {
+    "result": "PASS",
+    "manifest_sha256": "5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39",
+    "checks": [
+      "all-component-hashes",
+      "duplicate-refusal-unchanged-bytes",
+      "five-harness-initialize",
+      "zero-native-executable-launches",
+      "zero-native-mutations",
+      "zero-browser-connections",
+      "compat-forwards-trusted-profile-argv"
+    ],
+    "capabilities": {
+      "opencode": {
+        "methods": [
+          "init",
+          "createSession",
+          "sendMessage",
+          "getSession",
+          "getSessionMessages",
+          "listSessions",
+          "getRawTranscript",
+          "archiveSession"
+        ],
+        "deliveryModes": [
+          "queue",
+          "steer",
+          "start"
+        ],
+        "nativeProtocol": "v2",
+        "controlCapabilities": {
+          "cancelTurn": false,
+          "detach": false,
+          "resume": false,
+          "terminate": false,
+          "recover": false,
+          "fork": false,
+          "modelSwitch": false,
+          "subagents": false,
+          "events": false,
+          "steer": false
+        }
+      },
+      "zcode": {
+        "deliveryModes": [
+          "queue",
+          "sync",
+          "steer"
+        ],
+        "methods": [
+          "init",
+          "createSession",
+          "sendMessage",
+          "getSession",
+          "getSessionMessages",
+          "listSessions",
+          "getRawTranscript",
+          "listProjects",
+          "archiveSession"
+        ],
+        "controlCapabilities": {
+          "cancelTurn": false,
+          "detach": false,
+          "resume": false,
+          "terminate": false,
+          "recover": false,
+          "fork": false,
+          "modelSwitch": false,
+          "subagents": false,
+          "events": false,
+          "steer": false
+        }
+      },
+      "codex": {
+        "deliveryModes": [
+          "queue",
+          "sync",
+          "steer"
+        ],
+        "methods": [
+          "init",
+          "createSession",
+          "sendMessage",
+          "getSession",
+          "getSessionMessages",
+          "listSessions",
+          "getRawTranscript",
+          "archiveSession"
+        ],
+        "controlCapabilities": {
+          "cancelTurn": false,
+          "detach": false,
+          "resume": false,
+          "terminate": false,
+          "recover": false,
+          "fork": false,
+          "modelSwitch": false,
+          "subagents": false,
+          "events": false,
+          "steer": false
+        }
+      },
+      "chatgpt": {
+        "deliveryModes": [
+          "queue"
+        ],
+        "methods": [
+          "init",
+          "listSessions",
+          "getSession",
+          "getSessionMessages",
+          "sendMessage",
+          "createSession",
+          "archiveSession",
+          "getRawTranscript",
+          "listProjects"
+        ],
+        "controlCapabilities": {
+          "cancelTurn": false,
+          "detach": false,
+          "resume": false,
+          "terminate": false,
+          "recover": false,
+          "fork": false,
+          "modelSwitch": false,
+          "subagents": false,
+          "events": false,
+          "steer": false
+        },
+        "browserFeatures": {
+          "nativeConversationIds": true,
+          "queueAfterGeneration": true,
+          "chatCreation": true,
+          "accountArchiveViaCdp": true,
+          "projects": true
+        }
+      },
+      "zai": {
+        "deliveryModes": [
+          "queue"
+        ],
+        "methods": [
+          "init",
+          "listSessions",
+          "getSession",
+          "getSessionMessages",
+          "sendMessage",
+          "createSession",
+          "archiveSession",
+          "getRawTranscript",
+          "listProjects"
+        ],
+        "controlCapabilities": {
+          "cancelTurn": false,
+          "detach": false,
+          "resume": false,
+          "terminate": false,
+          "recover": false,
+          "fork": false,
+          "modelSwitch": false,
+          "subagents": false,
+          "events": false,
+          "steer": false
+        },
+        "browserFeatures": {
+          "nativeConversationIds": false,
+          "queueAfterGeneration": true,
+          "chatCreation": true,
+          "accountArchiveViaCdp": true,
+          "projects": true
+        }
+      }
+    }
+  }
+}

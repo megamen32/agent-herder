@@ -385,5 +385,29 @@
       "status": "UNKNOWN",
       "no_replay": true
     }
+  },
+  "latest_candidate_d08": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-cooldown/manifest.json",
+    "manifest_sha256": "5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39",
+    "package_verification": "terra-package-d08-result.json",
+    "component_reuse": "terra-reuse-d08.json",
+    "matching_components": [
+      "core",
+      "bootstrap",
+      "node",
+      "compat",
+      "opencode",
+      "codex"
+    ],
+    "changed_components": [
+      "zcode",
+      "browser",
+      "chatgpt",
+      "zai"
+    ],
+    "zcode": "changed adapter; earlier c5a full native proof not automatically reusable",
+    "browser": "changed adapter; native full proof not automatically reusable",
+    "negative": "owner accepted fake-AHAP NEG for identical core subject to original limits",
+    "installed": "not tested"
   }
 }

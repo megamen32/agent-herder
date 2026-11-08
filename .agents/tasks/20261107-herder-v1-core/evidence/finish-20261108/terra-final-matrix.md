@@ -1,5 +1,9 @@
 # Terra: матрица финальной приёмки Herder V1
 
+**Текущий candidate d08a68ae:** manifest SHA-256 `5e21be1d8fb7ee50654e0823db4dcaec5955f3469527c10daa2bf448c5663f39`; локальный package verifier PASS (`terra-package-d08-result.json`), сравнение полных хешей — `terra-reuse-d08.json`. Core, bootstrap, node, compat, OpenCode и Codex adapters совпадают с 1ae; ZCode и browser adapters изменились. Прежний ZCode c5a full native PASS и browser proofs не переносятся автоматически на изменённые adapters; новые полные native-проверки остаются открыты. Принятый fake-AHAP NEG переносим на идентичный core в пределах его исходных условий и ограничений. Installed не проверен.
+
+Ниже исторические срезы предшествующих candidates.
+
 **Текущий candidate 1ae8b85f:** manifest SHA-256 `a344d43799c467f9b59136022a1a76e4c5772d10e5545e40457c0a3f052ec2e9`; package verifier PASS для exact bytes и локального initialize (`terra-package-1ae-result.json`); полные хеши и условия reuse — `terra-reuse-1ae8b85f.json`. Core, bootstrap, node, compat и CLI adapters совпадают с c5a. Browser adapter отличается: source ChatGPT fix 1ae ещё без native PASS; никаких browser PASS на 1ae не переносим. Installed остаётся **INCOMPLETE**.
 
 **ZCode:** свежий изолированный полный сценарий c5a PASS, archive подтверждён (`zcode-c5a-full-result.json`, SHA-256 `d60cd6bf001f8ad5ecaf2d1b31e94c2ec9da8248dc055f3c6753c1ddf8cb3e77`); core и ZCode adapter 1ae совпадают, поэтому доказательство применимо в исходных fixture/config. Это отдельная операция от retained archive UNKNOWN (`zcode-c5a-retained-result.json`, SHA-256 `a738418bf6db39591dfac5bbf1a87105c446b562351ac57a5b2f0f810c6cbd92`), её исход не исправляется и не повторяется благодаря новому PASS. Старый результат 82b unsupported сохранён как исторический.
