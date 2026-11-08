@@ -1,0 +1,27 @@
+{
+  "at": "2026-11-08T19:22:02.933Z",
+  "host": "server-44",
+  "native_method": "hooks/list",
+  "canary_run": "c82d5bd9179f53dabd0724d2301854d0",
+  "state": "native_review_required",
+  "hooks": [
+    {
+      "key": "/home/roomhacker/.codex/hooks.json:subagent_stop:0:0",
+      "eventName": "subagentStop",
+      "enabled": true,
+      "currentHash": "sha256:0c5d076229c1bd5b1ff13f123eb6d2288da90dd794de56be4872b321cc7c05f1",
+      "trustStatus": "untrusted",
+      "isManaged": false
+    },
+    {
+      "key": "/home/roomhacker/.codex/hooks.json:stop:0:0",
+      "eventName": "stop",
+      "enabled": true,
+      "currentHash": "sha256:5368b267d0a3a651c2f0227eff0a83398554665c2fabd2353ea78b84c76f5f4e",
+      "trustStatus": "untrusted",
+      "isManaged": false
+    }
+  ],
+  "model_sends": 0,
+  "manual_reconcile": 0
+}
