@@ -89,6 +89,7 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     let scopeReads = 0;
     const tools: ChromePageTools = { call: async (name, args = {}) => {
       if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && String(args.function).includes("cooldownUntil")) return json({ cooldownUntil: 0 });
       if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) {
         return json({ scope: ++scopeReads === 1 ? "a".repeat(64) : "b".repeat(64) });
       }
@@ -105,6 +106,7 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     let scopeReads = 0;
     const tools: ChromePageTools = { call: async (name, args = {}) => {
       if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "evaluate_script" && String(args.function).includes("cooldownUntil")) return json({ cooldownUntil: 0 });
       if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) {
         scopeReads += 1;
         return json({ scope: "a".repeat(64) });
@@ -720,7 +722,7 @@ describe("ChatGPT owned tab ownership", () => {
 
 describe("ChatGPT one owned tab", () => {
   it("does not read the history of a tab whose rate-limit cooldown is active", async () => {
-    const scope = "a".repeat(64);
+    const scope = "c".repeat(64);
     const readPages: number[] = [];
     const tools: ChromePageTools = { call: async (name, args = {}) => {
       if (name === "list_pages") {
@@ -734,8 +736,7 @@ describe("ChatGPT one owned tab", () => {
         if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
         if (source.includes("conversation_read")) {
           readPages.push(Number(args.pageId));
-          // The first owned tab is rate-limited on reads; the second one
-          // answers. A read must not fail because of the tab it picked.
+          // A different tab of this same account must not evade the cooldown.
           if (Number(args.pageId) === 48) return json({ error: "read_cooldown" });
           return json({ messages: [{ id: "m1", role: "user", text: "question" }] });
         }
@@ -747,12 +748,8 @@ describe("ChatGPT one owned tab", () => {
       throw new Error("unexpected action " + name);
     } };
     const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
-    const messages = await driver.getMessages(ID);
-    expect(messages).toMatchObject([{ id: "m1", role: "user", text: "question" }]);
-    // The rate-limited tab is tried once and then skipped; the read is
-    // served by the next tab of the same account, never repeated on the
-    // same tab.
-    expect(readPages).toEqual([48, 49]);
+    await expect(driver.getMessages(ID)).rejects.toThrow("read_cooldown");
+    expect(readPages).toEqual([48]);
   });
 
   it("keeps the verified account scope after the passive startup listing", async () => {

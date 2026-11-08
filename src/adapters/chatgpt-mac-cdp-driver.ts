@@ -23,6 +23,9 @@ const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
 const CHATGPT_EDITOR_UID = /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Работайте с ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i;
+// Shared by driver instances of the same verified account in this process.
+// Keep server Retry-After even when it exceeds the estimator's adaptive cap.
+const historyRetryUntil = new Map<string, number>();
 /** How long a chat we last saw generating stays marked working after the
  *  hosting tab navigates away. The chatgpt site's async_status is not a
  *  reliable background-running signal, so without this grace window the
@@ -225,6 +228,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
+  private readonly historyInFlight = new Map<string, Promise<SessionMessageView[] | null>>();
   /** Chats recently observed with phase=generating while their tab was
    *  selected. The ChatGPT site's /backend-api/conversations often returns
    *  an empty items list (or omits async_status), so the only reliable
@@ -620,15 +624,32 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       const status = entry.http_status;
       if (typeof status !== "number") continue;
       const target = entry.operation === "conversation_list" ? BAYES_TARGET_CHATGPT_LIST
-        : entry.operation === "conversation_read" ? BAYES_TARGET_CHATGPT_HISTORY : null;
+        : entry.operation === "conversation_read" ? this.historyBackoffTarget() : null;
       if (!target) continue;
       if (status === 429) {
         const retry = typeof entry.retry_after_s === "number" && Number.isFinite(entry.retry_after_s)
           ? entry.retry_after_s : undefined;
         backoff.record429(target, undefined, retry);
+        if (entry.operation === "conversation_read") {
+          historyRetryUntil.set(target, Math.max(historyRetryUntil.get(target) ?? 0,
+            Date.now() + Math.max(60_000, (retry ?? 0) * 1000), backoff.cooldownUntilMs(target)));
+        }
       } else if (status >= 200 && status < 400) {
         backoff.recordSuccess(target);
       }
+    }
+  }
+
+  private historyBackoffTarget(): string {
+    const scope = this.expectedAccountScope ?? this.accountScope;
+    return scope ? `${BAYES_TARGET_CHATGPT_HISTORY}:${scope}` : BAYES_TARGET_CHATGPT_HISTORY;
+  }
+
+  private assertHistoryReady(): void {
+    const backoff = getChatGptBayesBackoff();
+    if (Date.now() < Math.max(backoff.cooldownUntilMs(BAYES_TARGET_CHATGPT_HISTORY),
+      backoff.cooldownUntilMs(this.historyBackoffTarget()), historyRetryUntil.get(this.historyBackoffTarget()) ?? 0)) {
+      throw new Error("ChatGPT history unavailable: read_cooldown");
     }
   }
 
@@ -951,6 +972,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   }
 
   async getRawConversation(chatId: string): Promise<unknown | null> {
+    this.assertHistoryReady();
     if (chatId.startsWith("draft:")) {
       // Revalidate account ownership before resolving an admitted draft.
       if (!await this.getChat(chatId)) return null;
@@ -980,6 +1002,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   /** Authenticated read-only conversation API; never navigate to load history. */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
+    this.assertHistoryReady(); // before page lookup, draft recovery or account HTTP
+    const key = `${this.expectedAccountScope ?? this.accountScope ?? "unverified"}:${chatId}`;
+    const pending = this.historyInFlight.get(key);
+    if (pending) return pending;
+    // Same promise-map pattern as BrowserChatHistoryCache; no completed cache
+    // or stale result is retained for the next foreground request.
+    const read = this.readMessages(chatId);
+    this.historyInFlight.set(key, read);
+    try { return await read; }
+    finally { this.historyInFlight.delete(key); }
+  }
+
+  private async readMessages(chatId: string): Promise<SessionMessageView[] | null> {
     if (chatId.startsWith("draft:")) {
       let draft = this.drafts.get(chatId);
       if (!draft) {
@@ -1005,17 +1040,34 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     let result: { error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
       timestamp?: string; model?: string }> } = { error: "no_readable_tab" };
     for await (const candidate of this.readablePages()) {
+      this.assertHistoryReady();
+      const localCooldown = parseChromeEvaluation<{ cooldownUntil?: number }>(await this.tools.call("evaluate_script", {
+        pageId: candidate.id, function: `() => ({cooldownUntil: Math.max(globalThis.__herderChatGptReadCooldownUntil || 0, globalThis.__herderPassiveCooldownUntil || 0)})`,
+      })).cooldownUntil;
+      if (typeof localCooldown === "number" && Number.isFinite(localCooldown) && localCooldown > Date.now()) {
+        const target = this.historyBackoffTarget();
+        historyRetryUntil.set(target, Math.max(historyRetryUntil.get(target) ?? 0, localCooldown));
+        this.assertHistoryReady();
+      }
       await this.verifyCurrentPinnedAccountScope(candidate.id);
       result = parseChromeEvaluation(await this.tools.call("evaluate_script",
         { pageId: candidate.id, function: chatgptMessagesApiScript(chatId) }));
+      this.requestTrace.ingestBrowserHttp(result.trace);
+      this.feedBackoff(result.trace);
+      if (result.error === "read_cooldown") {
+        // The page may have observed the site's own 429. Promote its existing
+        // cooldown to the verified account; never evade it via another tab.
+        const until = parseChromeEvaluation<{ cooldownUntil?: number }>(await this.tools.call("evaluate_script", {
+          pageId: candidate.id, function: `() => ({cooldownUntil: Math.max(globalThis.__herderChatGptReadCooldownUntil || 0, globalThis.__herderPassiveCooldownUntil || 0)})`,
+        })).cooldownUntil;
+        const target = this.historyBackoffTarget();
+        historyRetryUntil.set(target, Math.max(historyRetryUntil.get(target) ?? 0,
+          typeof until === "number" && Number.isFinite(until) && until > Date.now() ? until : Date.now() + 60_000));
+      }
+      if (result.error) break; // errors return no data and need no post-read auth fetch
       await this.verifyCurrentPinnedAccountScope(candidate.id);
-      // A rate-limited tab must not fail the read: another tab of the same
-      // account answers normally. The same request is never repeated on the
-      // same tab.
-      if (result.error !== "read_cooldown") break;
+      break;
     }
-    this.requestTrace.ingestBrowserHttp(result.trace);
-    this.feedBackoff(result.trace);
     if (result.error || !Array.isArray(result.messages)) {
       throw new Error("ChatGPT history unavailable: " + (result.error || "unexpected response"));
     }
