@@ -8,6 +8,105 @@ for five-minute quiet. These facts were supplied by the owner, not independently
 probed here. Installation is now reported present; which worker issued the 429
 request remains unproven. No browser reopen or network probe by this reviewer.
 
+## Concrete existing enqueue/result contract: offline follow-up
+
+Parent reports profile regressions repaired/published in `f7007b93` (54 PASS).
+This follow-up made only filesystem/source reads; no HTTP requests, secret reads,
+browser actions, extension execution, installation or implementation.
+
+**Owner source:** `/home/roomhacker/agents-projects/universal-userio`, repository
+`megamen32/universal-userio`; local inspected HEAD `0bad386`. ZIP
+`README.md:28` and `lib/config.js:5` point to `https://msg.bezrabotnyi.com`;
+README names `extensions/vk-inbox/`, the extension folder in this checkout.
+Stored extension options can override the endpoint; actual saved settings were
+not read. The source tree verifies the API contract, not currently deployed bytes.
+
+Exact server implementation:
+
+- `src/universal_userio/http_api.py:1568-1573`: enqueue/result POST routes.
+- `src/universal_userio/http_api.py:2245-2266`: poll/results/status GET routes.
+- `src/universal_userio/agent_channel.py:43-177`: queue and result shapes.
+- `tests/test_agent_channel.py:52-87`: existing roundtrip test (read, not run).
+- `extensions/vk-inbox/lib/agent.js` / ZIP same member: extension dispatcher.
+
+All operations are scoped by the authenticated UserIO username. The extension
+must authenticate as the same UserIO principal as the caller and use the exact
+agent_id configured for that browser profile. No token was retrieved here.
+
+| Existing operation | Request and actual response |
+|---|---|
+| Enqueue | `POST /v1/agent/commands` with `{agent_id,action,args}` -> HTTP 202 `{queued:true,id:"<agent>:<sequence>",agent_id,action}` |
+| Extension dequeue | `GET /v1/agent/poll?agent_id=<agent>&wait=20` -> HTTP 200 `{command:{id,agent_id,action,args,queued_at,user}}` or `{command:null}`; wait clamped 0..30s |
+| Extension result POST | `POST /v1/agent/results` with `{id,agent_id,action,result:{...}}` -> HTTP 202 `{accepted:true}` |
+| Caller result read | `GET /v1/agent/results?agent_id=<agent>&limit=20` -> HTTP 200 `{results:[...]}`, newest first, limit clamped 1..200. No command-id query filter; select exact id+agent_id+action locally |
+| Agent status | `GET /v1/agent/status` -> `{agents:[{agent_id,pending,last_poll_at,seconds_since_poll}]}` where fields exist |
+
+Stored result rows are
+`{type:"universal.agent.result.v1",id,agent_id,action,result,user,received_at}`.
+`result` is a dictionary; max serialized row size is 4,000,000 bytes. Pending
+queue bound is 32 per `(user,agent_id)`. Enqueue accepts any nonempty action;
+the installed extension dispatcher decides whether that action is supported.
+
+Request examples are documentation only; none was sent:
+
+```json
+{"agent_id":"<verified-profile-agent>","action":"tabs_list","args":{}}
+{"agent_id":"<verified-profile-agent>","action":"eval","args":{"tab_id":7,"world":"MAIN","expression":"(() => ({url:location.href}))()"}}
+{"agent_id":"<verified-profile-agent>","action":"dot_action","args":{"operation":"snapshot","url":"https://chatgpt.com/dots/<room-route>","room":"<exact-room-id>","after":"<known-native-cursor>"}}
+```
+
+`eval` returns `{ok:true,value:<JSON>}` or `{ok:false,error}`. A driver function
+string can be invoked as `(<function>)()` using the same action and exact tab_id.
+Dots snapshot returns `{ok:true,room,messages,cursor}` or e.g.
+`cursor_not_visible,resync_required:true`; exactly one URL-matching tab is
+required (`lib/agent.js:572-579`, `lib/dot.js:2-75`). Source checkout's extension
+is older here and has no dot_action case; that action is verified in the supplied
+0.9.11 ZIP, not assumed present in every installed build. Owner reports 0.9.11
+installed, but its actual bytes/capability response remain unprobed.
+
+**Correction to the initial survey:** ZIP `lib/agent.js:454-456` already has
+`tabs_list`; there is no need to invent tab enumeration or a new server route.
+
+| ChromePageTools call | Existing reuse | Missing contract |
+|---|---|---|
+| `list_pages` | `tabs_list` -> `{ok:true,tabs:[{id,url,title}]}`; format tab IDs into existing driver's page-list text | selected flag and durable browser-generation identity are not returned; expected account must still be checked by existing driver |
+| `evaluate_script` | `eval` with exact tab_id and MAIN world; unwrap value and format the JSON fence expected by parseChromeEvaluation | No new eval engine required; transport must preserve errors and exact command ID |
+| `take_snapshot` | No corresponding action in 0.9.11 | No accessibility tree / snapshot UID map used by the ChatGPT driver |
+| `fill` | No UID-based fill action | Existing gpt_send/dot_action send are whole operations, not equivalent to filling the driver's selected UID |
+| `click` | No UID-based click action | eval can execute a DOM click, but is not a compatible snapshot-ref click API and must not be advertised as one |
+
+Additional driver dependencies: `close_tab` exists; `navigate` exists but uses
+ensureTab/url-prefix selection, not an explicit target tab ID. It is not a safe
+drop-in for `navigate_page(pageId,...)`; there is no guaranteed-fresh `new_page`
+action. These differences block an unchanged full ChatGPT driver over this queue.
+
+### Bounded 2–3-file seam, no new generic adapter or ledger
+
+Read-only reuse needs two Herder seams: (1) a small
+`src/adapters/userio-command-page-tools.ts` transport wrapper for the **existing**
+enqueue/results API and just `list_pages`/`evaluate_script`, rejecting unsupported
+calls; (2) `src/ahap-browser-runner.ts` factory selection/injection. Keep the
+existing BrowserChatAdapter and account-aware driver. These are proposed paths,
+not files created by this assessment. No UserIO server change is needed.
+
+If full legacy driver compatibility is required, the third seam is the owning
+UserIO `extensions/vk-inbox/lib/agent.js`: explicit owned-tab snapshot/fill and
+targeted navigation capabilities must be supplied there, with their real UID
+semantics tested. This is remaining implementation, not an already working
+transport. Prefer existing Dots snapshot commands for a read-only Dots journey;
+do not route it through gpt_send(auto), cookie export or a new generic adapter.
+
+No replacement ledger is proposed. Important existing queue limits must remain
+visible: `_PENDING`, `_WAITING` and `_SEQ` are process memory; JSONL is audit,
+not automatic queue restoration. Sequence IDs reset on server restart, and
+enqueue has no supplied request_key/dedupe field. On missing results or restart,
+do not re-enqueue a mutation; report UNKNOWN and use retained existing receipts.
+Server `agent_channel.call()` is an internal Python helper, not an additional
+HTTP blocking RPC endpoint; use the documented command/results routes from TS.
+
+This resolves the earlier server-enqueue unknown. It does not reopen the browser,
+verify a running agent, or attribute 429 to a particular installed worker.
+
 ## Verdict
 
 Reuse the existing UserIO command transport and exact-room Dots DOM functions.

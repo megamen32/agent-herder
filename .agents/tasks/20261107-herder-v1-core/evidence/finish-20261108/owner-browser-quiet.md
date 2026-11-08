@@ -5,3 +5,7 @@
 Chrome quit удался, но приложение запустилось снова (PID23535→30892). В16:03:20UTC exact9Chrome PIDs приостановлены SIGSTOP; запись для обязательного SIGCONT /tmp/herder-owner-browser-quiet-20261108.json наMacMini. В16:04:02 все9имелиstateT. До16:08:20UTC не возобновлять.
 Herder shared browser polling уже былfalse с05.11; подтверждено штатнымStore. Заданы также zai promptPolling=false/prewarm0. Tokens/STOP/hooks не менялись.
 Installed extension Default: UniversalUserIO0.9.11, path /Users/roomhacker/Downloads/Universal-UserIO-Agent-0.9.11. СтатическийZIP audit выявил отдельный15min sync до12HTTP; это потенциальныйисточник, не доказательство причинности429.
+
+## Итог паузы
+
+Все9точныхPID возобновлены16:08:20.525570UTC, elapsed300.203751s. AppleScript послеresume подтверждает0Chrome windows/tabs. Vibe managed страницы также закрыты доabout:blank. Gateway50260connectionrefused; launchdchrome-devtools-personal/guard/consent-approver явноdisabled вgui501 иuser501. Это отдельная актуальнаяколлизия, не результат429. LocalVibe8788initializePASS, list_pagesвозвращаетNotconnectedtorelay. Поэтомуpostpause providerread не выполнен, устранение429не заявлено.
