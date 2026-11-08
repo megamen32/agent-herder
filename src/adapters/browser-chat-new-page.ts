@@ -10,7 +10,10 @@ const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as c
  * Auth material remains in the browser and never crosses CDP. */
 export const CHATGPT_CREATE_SCOPE_SCRIPT = `async () => {
   if(location.origin!=="https://chatgpt.com")return {error:"wrong_origin"};
-  if(Date.now()<(globalThis.__herderChatGptReadCooldownUntil||0))return {error:"read_cooldown"};
+  // The account check reads /api/auth/session, which the site answers during
+  // a history cooldown. Refusing to verify the account here would fail every
+  // startup of a rate-limited instance and lose the account proof that the
+  // readback needs.
   const abort=new AbortController();const timer=setTimeout(()=>abort.abort(),10000);
   try{
     const response=await fetch('/api/auth/session',{credentials:'same-origin',cache:'no-store',signal:abort.signal});
