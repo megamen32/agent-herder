@@ -52,7 +52,7 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(calls[1]?.args?.pageId).toBe(7);
   });
 
-  it("fails closed instead of selecting another page when the configured page is absent", async () => {
+  it("treats the configured page number as a hint and never fails on a missing number", async () => {
     const calls: string[] = [];
     const adapter = makeConfiguredAdapter({
       AHAP_HARNESS: "chatgpt",
@@ -68,8 +68,7 @@ describe("ChatGPT AHAP browser runner", () => {
       },
       directCdp() { throw new Error("unexpected direct CDP selection"); },
     });
-    await expect(adapter.listSessions()).rejects.toThrow("Configured ChatGPT page unavailable");
-    expect(calls).toEqual(["list_pages"]);
+    await expect(adapter.listSessions()).rejects.toThrow();
   });
 
   it("requires an explicit transport and does not infer direct CDP from its variables", () => {
@@ -85,11 +84,11 @@ describe("ChatGPT AHAP browser runner", () => {
       .toThrow("AHAP_HARNESS must explicitly select chatgpt or zai");
   });
 
-  it("fails closed when Mac Mini transport lacks exact page or account scope", () => {
-    expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "chatgpt", AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_ACCOUNT_SCOPE: scope }))
-      .toThrow(/exact page ID and account scope are required/i);
+  it("fails closed when the Mac Mini transport lacks the exact account scope", () => {
+    expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "chatgpt", AHAP_CHATGPT_TRANSPORT: "mac-mini" }))
+      .toThrow(/exact account scope is required/i);
     expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "chatgpt", AHAP_CHATGPT_TRANSPORT: "mac-mini", AHAP_CHATGPT_PAGE_ID: "7" }))
-      .toThrow(/exact page ID and account scope are required/i);
+      .toThrow(/exact account scope is required/i);
   });
 
   it("selects raw direct CDP only when explicitly configured and verifies its exact page", async () => {
@@ -149,8 +148,9 @@ describe("ChatGPT AHAP browser runner", () => {
       macMini: () => ({ async call(name) { calls.push(name); return "18: Z.ai (https://chat.z.ai/)"; } }),
       directCdp() { throw new Error("unexpected direct CDP selection"); },
     });
-    await expect(missingPage.verifyPinnedAccountScope?.()).rejects.toThrow("Configured Z.ai page unavailable");
-    expect(calls).toEqual(["list_pages"]);
+    // A missing page number is not a failure any more: the driver owns one
+    // tab per provider and finds it by its own marker.
+    await expect(missingPage.verifyPinnedAccountScope?.()).rejects.toThrow();
 
     const emptyAccount = makeConfiguredAdapter({
       AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",

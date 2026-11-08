@@ -5,6 +5,7 @@ import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatg
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
+import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 import { chatgptPassiveHistoryScript } from "./chatgpt-passive-history.js";
 import { ChatGptBackgroundBudget } from "./chatgpt-background-budget.js";
 import { ChatGptBackgroundNavigator } from "./chatgpt-background-navigator.js";
@@ -69,6 +70,11 @@ export function pickChatGptPage(pages: Page[]): Page {
   return pages.find(page => page.selected)
     ?? pages.find(page => page.conversation)
     ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
+}
+
+/** The identity of a ChatGPT tab: its conversation route, or its root. */
+export function chatGptTabPath(url: string): string {
+  try { return new URL(url).pathname; } catch { return url; }
 }
 
 /** A read-only page snapshot, using the live ChatGPT sidebar's native /c/ URLs.
@@ -359,6 +365,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     private readonly expectedAccountScope?: string,
   ) {}
 
+  /** The one tab this driver owns, remembered by its own URL path. */
+  private ownedTabPath?: string;
+  /** Duplicates of our own tab that were already closed. */
+  private readonly closedOwnedTabs = new Set<number>();
+
   private requirePinnedAccountScope(scope: string): void {
     if (this.expectedAccountScope && scope !== this.expectedAccountScope) {
       throw new Error("ChatGPT pinned account scope mismatch; no read data returned");
@@ -393,7 +404,54 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
     if (pinned?.conversation) return pinned;
-    if (pages.length) return pickChatGptPage(pages);
+    // One owned tab per provider. The tab is identified by its own URL, not
+    // by a page number: a gateway restart renumbers everything, and a number
+    // would either break the driver or make it grab a foreign tab.
+    const marked = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
+    if (marked.length) {
+      // Exactly one owned tab: prefer the selected one, then the lowest id.
+      // Duplicates of our own tab are closed so the browser keeps one page
+      // per provider instead of one per run.
+      const owned = marked.find(page => page.selected) ?? [...marked].sort((a, b) => a.id - b.id)[0]!;
+      for (const duplicate of marked.filter(page => page.id !== owned.id)) {
+        if (this.closedOwnedTabs.has(duplicate.id)) continue;
+        this.closedOwnedTabs.add(duplicate.id);
+        await this.tools.call("close_page", { pageId: duplicate.id }).catch(() => undefined);
+      }
+      // Claim the tab in the page itself: the site drops the URL marker on
+      // its own navigation, and only the page marker survives that.
+      await claimOwnedTab(this.tools, "chatgpt", owned.id);
+      this.ownedTabPath = chatGptTabPath(owned.url);
+      return owned;
+    }
+    // The site rewrites the URL of its own navigation, so the marker of our
+    // tab can be gone while the tab itself is still ours. The page keeps the
+    // ownership marker, so an already-owned tab is found there instead of a
+    // second one being opened. A driver that owned no tab yet still adopts
+    // one existing tab on its first use.
+    if (this.ownedTabPath) {
+      // Only a plain chat route or the root can be our own tab; a workspace
+      // dashboard such as /dots/… belongs to the human and is never probed.
+      const claimed = await resolveOwnedTab(this.tools, "chatgpt",
+        pages.filter(page => page.conversation || new URL(page.url).pathname === "/"));
+      if (claimed) {
+        this.ownedTabPath = chatGptTabPath(claimed.url);
+        return claimed;
+      }
+    }
+    if (this.ownedTabPath) {
+      const owned = pages.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
+      if (owned) return owned;
+      // The owned tab is closed: open exactly one replacement of our own
+      // instead of taking a foreign tab over.
+      return this.openChatGptTab();
+    }
+    if (pages.length) {
+      // First use: adopt one existing tab instead of opening another one.
+      const adopted = pickChatGptPage(pages);
+      this.ownedTabPath = chatGptTabPath(adopted.url);
+      return adopted;
+    }
     return this.openChatGptTab();
   }
 
@@ -401,12 +459,17 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
     try {
-      await this.tools.call("new_page", { url: ORIGIN + "/" });
+      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt") });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
-    return pickChatGptPage(pages);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt")) ?? pickChatGptPage(pages);
+    // Claim the replacement in the page itself: its URL marker is dropped by
+    // the site's own navigation, and only the page marker survives that.
+    if (isOwnedTabUrl(opened.url, "chatgpt")) await claimOwnedTab(this.tools, "chatgpt", opened.id);
+    this.ownedTabPath = chatGptTabPath(opened.url);
+    return opened;
   }
 
   private async snapshot(pageId: number): Promise<Snapshot> {
@@ -691,6 +754,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   async listObservedChats(): Promise<readonly BrowserChat[]> {
     return this.exclusive(async () => {
+      // The passive listing carries no scope of its own. The account of the
+      // owned tab is still proved here, so that every later read of this
+      // instance is served as the pinned account instead of an unknown one.
+      await this.verifyCurrentPinnedAccountScope();
       const native = await this.listUnlocked(true);
       await this.drafts.useScope(this.accountScope);
       return this.drafts.merge(native);
@@ -728,6 +795,12 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
       const draft = this.drafts.get(id);
       if (draft) {
+        // A draft that already delivered its first message has a native
+        // route. Its running flag comes from the moment of the delivery and
+        // would otherwise stay true forever, so every later delivery to the
+        // same chat is refused as if the model were still answering. One
+        // bounded read of the provider's own history settles the real state.
+        if (draft.remoteId) await this.refreshTurnState(draft.remoteId).catch(() => undefined);
         const result = this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
         await this.verifyCurrentPinnedAccountScope();
         return result;
@@ -776,6 +849,27 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return freshVisit ? agreed : null;
   }
 
+  /** One bounded re-read of the turn state of one chat from the provider's
+   * own history. The newest assistant message is the proof that the turn of
+   * this chat is over: without it the chat stays marked as running and every
+   * later delivery is refused as if the model were still answering. The read
+   * is authenticated and read-only; it never navigates or sends. */
+  async refreshTurnState(chatId: string): Promise<boolean> {
+    let nativeId = chatId;
+    if (nativeId.startsWith("draft:")) nativeId = this.drafts.get(nativeId)?.remoteId || "";
+    if (!NATIVE_CHAT_ID.test(nativeId)) return false;
+    let messages: SessionMessageView[] | null;
+    try { messages = await this.getMessages(nativeId); }
+    catch { return false; }
+    if (!Array.isArray(messages) || !messages.length) return false;
+    const known = this.cache.get(nativeId);
+    if (known && known.working && messages[messages.length - 1]!.role === "assistant") {
+      this.cache.set(nativeId, { ...known, working: false, stopVisible: false });
+      this.recentlyGenerating.delete(nativeId);
+    }
+    return true;
+  }
+
   async visitBackgroundChat(id: string): Promise<void> {
     if (id.startsWith("draft:")) id = this.drafts.get(id)?.remoteId || "";
     if (!NATIVE_CHAT_ID.test(id)) return;
@@ -818,7 +912,22 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   /** Authenticated read-only conversation API; never navigate to load history. */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
     if (chatId.startsWith("draft:")) {
-      const draft = this.drafts.get(chatId);
+      let draft = this.drafts.get(chatId);
+      if (!draft) {
+        // A fresh process knows no draft yet. The durable store of the
+        // verified account is loaded here, otherwise the read of a delivered
+        // draft fails and its follow-up delivery can never be confirmed.
+        const page = await this.page().catch(() => undefined);
+        if (page) {
+          try {
+            const scope = await verifyNewChatAccountScope(this.tools, "chatgpt", page.id);
+            this.requirePinnedAccountScope(scope);
+            this.accountScope = scope;
+            await this.drafts.useScope(scope);
+          } catch { /* the store stays unloaded when the account is unknown */ }
+        }
+        draft = this.drafts.get(chatId);
+      }
       if (!draft) return null;
       if (!draft.remoteId) return [];
       chatId = draft.remoteId;

@@ -1,5 +1,6 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
+import { isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -42,16 +43,113 @@ function pages(text:string): Array<{id:number;url:string}> {
   });
 }
 
+/** Return our own tab to the blank chat route of the provider. Only the tab
+ * this provider owns is touched; a foreign tab is never navigated. */
+async function navigateToRoot(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<void> {
+  try {
+    await tools.call("navigate_page",{pageId,type:"url",url:SITE_ORIGIN[site]+"/"});
+  } catch { /* the blank state is verified by the caller */ }
+}
+
 /** One NEW background tab, identified by exact page-ID set difference.
  * new_page sometimes reports navigation timeout despite creating the tab.
  * Never reuse a random existing tab or change the human-selected chat.
  */
+
+
+/** The exact text the composer currently holds. */
+async function composerValue(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<string> {
+  try {
+    const value=parseChromeEvaluation<{value:string}>(
+      await tools.call("evaluate_script",{pageId,function:`() => {
+        const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+          ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+          :'textarea[placeholder="Send a Message"]')});
+        return {value:(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+      }`}));
+    return typeof value?.value==="string"?value.value.trim():"";
+  } catch { return ""; }
+}
+
+/** Replace the whole composer content. A fill on a rich editor appends to
+ * whatever the site restored, so the previous value is selected and
+ * replaced instead of merely emptied. */
+async function clearComposer(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<void> {
+  try {
+    await tools.call("evaluate_script",{pageId,function:`() => {
+      const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+        ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+        :'textarea[placeholder="Send a Message"]')});
+      if(!editor)return {cleared:false};
+      editor.focus();
+      const range=document.createRange();
+      range.selectNodeContents(editor);
+      const selection=window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand('delete');
+      return {cleared:!(editor.innerText||editor.value||editor.textContent||'').trim()};
+    }`});
+  } catch { /* the fill below still writes the user's own text */ }
+}
+
 export async function openOwnedBlankChatPage(
   tools:ChromePageTools,site:BrowserChatSite,
 ):Promise<number> {
   const origin=SITE_ORIGIN[site];
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
-  try { await tools.call("new_page",{url:origin+"/",background:true,timeout:12_000}); }
+  // One tab per provider: the marked tab that the driver already owns is
+  // reused, so a first message never opens a second tab.
+  const listing=pages(await tools.call("list_pages"));
+  const owned=listing.find(p=>isOwnedTabUrl(p.url,site));
+  if (owned) {
+    // Our own tab may still hold a composer value from an earlier run. Clear
+    // it here so the first message starts from a clean composer; a draft the
+    // human wrote in a foreign tab is never touched.
+    await clearComposer(tools,owned.id,site);
+    for(let attempt=0;attempt<7;attempt++){
+      try{
+        const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
+          await tools.call("evaluate_script",{pageId:owned.id,function:`() => {
+            const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+              ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+              :'textarea[placeholder="Send a Message"]')});
+            return {origin:location.origin,path:location.pathname,
+              ready:!!editor&&editor.getClientRects().length>0,
+              empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+          }`}));
+        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return owned.id;
+      }catch{ /* retried below */ }
+      await new Promise(resolve=>setTimeout(resolve,300));
+    }
+    throw new Error(site+" owned tab composer could not be cleared; no message submitted");
+  }
+  // Our own tab may have navigated into a conversation and lost its URL
+  // marker. It is still ours: the page keeps the ownership marker, and such
+  // a tab is reused instead of opening another one.
+  const claimed=await resolveOwnedTab(tools,site,listing);
+  if (claimed) {
+    await navigateToRoot(tools,claimed.id,site);
+    await clearComposer(tools,claimed.id,site);
+    for(let attempt=0;attempt<7;attempt++){
+      try{
+        const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
+          await tools.call("evaluate_script",{pageId:claimed.id,function:`() => {
+            const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+              ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+              :'textarea[placeholder="Send a Message"]')});
+            return {origin:location.origin,path:location.pathname,
+              ready:!!editor&&editor.getClientRects().length>0,
+              empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+          }`}));
+        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return claimed.id;
+      }catch{ /* retried below */ }
+      await new Promise(resolve=>setTimeout(resolve,300));
+    }
+    throw new Error(site+" owned tab could not be returned to a blank chat; no message submitted");
+  }
+  void before;
+  try { await tools.call("new_page",{url:ownedTabUrl(origin,site),background:true,timeout:12_000}); }
   catch { /* require new unique page in authoritative list instead */ }
   const now=pages(await tools.call("list_pages"));
   const created=now.filter(p=>!before.has(p.id)&&new URL(p.url).origin===origin);
@@ -130,6 +228,45 @@ export function newChatPostClickProbe(site:BrowserChatSite):string {
         : /usage (?:cap|limit)|quota (?:exceeded|exhausted)|лимит.{0,25}исчерпан/i.test(errors)
           ? 'usage_limit' : undefined;
     return {origin:location.origin,path:location.pathname,rejection};
+  }`;
+}
+
+/** Verify the native route of a ChatGPT first message from the account's own
+ * conversation list. The site does not always navigate the tab to /c/<id>
+ * after the first message, so the route is proven by the stored message. */
+export function chatGptNewChatMessageProbe(text:string,scope?:string):string {
+  return `async () => {
+    const herderChatGptNewChatVerify=true, text=${JSON.stringify(text.trim())}, scope=${JSON.stringify(scope||"")};
+    if(location.origin!=='https://chatgpt.com')return {verified:false,reason:'route_changed'};
+    const session=await(await fetch('/api/auth/session',{credentials:'same-origin',cache:'no-store'})).json();
+    if(!session.accessToken||!session.account?.id)return {verified:false,reason:'history_unavailable'};
+    if(scope){
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(session.account.id)));
+      const actual=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+      if(actual!==scope)return {verified:false,reason:'native_history_mismatch'};
+    }
+    const list=await fetch('/backend-api/conversations?offset=0&limit=20&order=updated',{
+      headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},credentials:'same-origin'});
+    if(!list.ok)return {verified:false,reason:'history_unavailable'};
+    const data=await list.json();
+    const items=(data.items||[]).filter(x=>x&&x.id&&!x.is_archived&&!x.is_temporary_chat);
+    for(const item of items.slice(0,10)){
+      const read=await fetch('/backend-api/conversations/'+encodeURIComponent(item.id)+'?num_turns=20&include_has_versions=true',{
+        headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},credentials:'same-origin'});
+      if(!read.ok)continue;
+      const conversation=await read.json();
+      if(conversation.conversation_id!==item.id)continue;
+      // The conversation list endpoint answers with a messages array; the
+      // mapping tree belongs to the single-conversation endpoint. Reading
+      // the wrong field here hides the submitted message forever.
+      const rows=Array.isArray(conversation.messages)?conversation.messages:[];
+      const users=rows.filter(message=>message&&message.author&&message.author.role==='user')
+        .map(message=>((message.content&&message.content.parts)||[])
+          .map(part=>typeof part==='string'?part:'').join('').trim())
+        .filter(value=>value.length>0);
+      if(users.length===1&&users[0]===text)return {verified:true,id:item.id};
+    }
+    return {verified:false,reason:'history_unavailable'};
   }`;
 }
 
@@ -246,7 +383,16 @@ export async function submitFirstChatMessage(
       await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
     }
-    await tools.call("fill",{pageId,uid,value:text});
+    // The site may restore its own composer draft over our text. Write the
+    // message and verify what the composer actually holds; a restored draft
+    // is cleared and the write is repeated.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await clearComposer(tools, pageId, site);
+      await tools.call("fill", { pageId, uid, value: text });
+      const written = await composerValue(tools, pageId, site);
+      if (written === text.trim()) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
   }catch(error){
     await closeOwnedPage();
     return {clicked:false,uncertain:false,reason:"Cannot fill new-chat composer; no click attempted"};
@@ -272,6 +418,18 @@ export async function submitFirstChatMessage(
       if(observed.rejection)return {clicked:true,uncertain:true,reason:
         site+" rejected the first message: "+observed.rejection+"; no automatic retry"};
       const id=observed.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
+      if(!id&&site==="chatgpt"&&observed.origin===origin){
+        // The site keeps the tab on the root after the first message, so the
+        // native route is proven by the stored message itself.
+        const proof=parseChromeEvaluation<{verified?:boolean;id?:string;reason?:string}>(
+          await tools.call("evaluate_script",{pageId,function:chatGptNewChatMessageProbe(text,expectedScope)}));
+        if(proof.verified&&typeof proof.id==="string")
+          return {clicked:true,uncertain:false,remoteId:proof.id};
+        if(proof.reason==="native_history_mismatch")
+          return {clicked:true,uncertain:true,reason:"New-chat native history did not match the submitted message; do not retry"};
+        await new Promise(resolve=>setTimeout(resolve,350));
+        continue;
+      }
       if(observed.origin===origin&&id){
         if(site==="zai" && existingZaiIds.has(id))
           return {clicked:true,uncertain:true,reason:"New-chat route was already in the account inventory; do not retry"};

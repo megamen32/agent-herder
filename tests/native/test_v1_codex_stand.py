@@ -69,6 +69,12 @@ class ManifestTest(unittest.TestCase):
                 stand.main()
             spawn.assert_not_called()
 
+    def test_fixture_declares_no_openai_auth_and_loopback_endpoint(self):
+        config = stand.fixture_config('http://127.0.0.1:12345/v1')
+        self.assertIn('model_provider = "fixture"', config)
+        self.assertIn('requires_openai_auth = false', config)
+        self.assertIn('base_url = "http://127.0.0.1:12345/v1"', config)
+
     def test_bin_transport_uses_exact_codex_and_no_socket(self):
         env = stand.adapter_transport('bin', '/fixture/codex', '/fixture/codex.sock', '/fixture/work', '/fixture/home')
         self.assertEqual(env['AHAP_CODEX_BIN'], '/fixture/codex')

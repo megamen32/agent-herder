@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { createNamedSession } from "../src/named-session.js";
-import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
+import { openOwnedBlankChatPage, submitFirstChatMessage, newChatPostClickProbe, zaiNewChatMessageProbe, chatGptNewChatMessageProbe } from "../src/adapters/browser-chat-new-page.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
@@ -105,6 +105,7 @@ class NewChatPageFixture implements ChromePageTools {
   nativeRoute=true;
   rejection:string|undefined;
   chatgptEditorLabel="Спросить ChatGPT";
+  composerValue="";
   constructor(readonly site:"chatgpt"|"zai",readonly timeoutOnOpen=false) {}
   get origin(){return this.site==="chatgpt"?"https://chatgpt.com":"https://chat.z.ai"}
   get remoteRoute(){return "/c/"+(this.site==="chatgpt"?GPT_NATIVE:ZAI_NATIVE)}
@@ -115,7 +116,7 @@ class NewChatPageFixture implements ChromePageTools {
         +(this.created ? "20: New blank chat ("+this.origin+"/)\n" : "");
     }
     if(name==="new_page"){
-      expect(args).toMatchObject({background:true,url:this.origin+"/"});
+      expect(args).toMatchObject({background:true,url:this.origin+"/?herder_owned="+this.site});
       this.created=true;
       if(this.timeoutOnOpen)throw Error("Navigation timeout");
       return "Opened new page";
@@ -127,8 +128,14 @@ class NewChatPageFixture implements ChromePageTools {
         source.includes("/api/v1/chats/?page=")) {
         return json({scope:ACCOUNT,chats:[]});
       }
+      if(source.includes("execCommand('selectAll')")){
+        return json({cleared:true});
+      }
       if(source.includes("ready:!!editor")){
         return json({origin:this.origin,path:"/",ready:true,empty:!this.inheritedDraft});
+      }
+      if(source.includes("return {value:")){
+        return json({value:this.composerValue});
       }
       if(source.includes("send_not_ready")){
         if(this.ambiguousClick)throw Error("transport lost after click");
@@ -146,7 +153,7 @@ class NewChatPageFixture implements ChromePageTools {
         ? `uid=1_42 textbox "${this.chatgptEditorLabel}" focusable multiline`
         : 'uid=1_44 textbox "Send a Message" focusable multiline';
     }
-    if(name==="fill")return "ok";
+    if(name==="fill"){this.composerValue=String(args.value);return "ok";}
     if(name==="close_page"){this.closed=true;return "Closed";}
     throw Error("unexpected tool:"+name);
   }
@@ -205,6 +212,7 @@ describe("browser first-message admission",()=>{
         remoteId:site==="chatgpt"?GPT_NATIVE:"route:"+ZAI_NATIVE});
       expect(tools.calls.filter(x=>x.name==="new_page")).toHaveLength(1);
       expect(tools.calls.filter(x=>x.name==="fill")).toHaveLength(1);
+      expect(tools.calls.filter(x=>x.name==="fill").map(x=>x.args.value)).toEqual(["User-written prompt"]);
       expect(tools.calls.filter(x=>x.name==="evaluate_script"&&
         String(x.args.function).includes("send_not_ready"))).toHaveLength(1);
       expect(tools.closed).toBe(false);
@@ -345,6 +353,7 @@ describe("driver integration: draft to native conversation, no synthetic prompt"
       expect(tools.sends).toEqual(["User-written prompt"]);
       expect(tools.calls.filter(c=>c.name==="new_page")).toHaveLength(1);
       expect(tools.calls.filter(c=>c.name==="fill")).toHaveLength(1);
+      expect(tools.calls.filter(c=>c.name==="fill").map(c=>c.args.value)).toEqual(["User-written prompt"]);
       const created=d.getKnownChat?.(first.id);
       expect(created).toMatchObject({pendingRemoteCreation:false});
       const store=new BrowserChatDraftStore(site,p);
@@ -531,6 +540,214 @@ for (const site of ["chatgpt", "zai"] as const) {
     const draft = await driver.createChat({title:"Owned test"});
     await driver.sendMessage({chatId:draft.id,text:"owned fixture input"});
     expect(tools.calls.some(call => call.name === "new_page")).toBe(false);
-    expect(tools.calls.filter(call => call.name === "fill")).toEqual([{name:"fill",args:expect.objectContaining({pageId:9,value:"owned fixture input"})}]);
+    expect(tools.calls.filter(call => call.name === "fill")).toEqual([
+      {name:"fill",args:expect.objectContaining({pageId:9,value:"owned fixture input"})},
+    ]);
   });
 }
+
+describe("one marked tab per provider", () => {
+  it("submits the first message in the already owned marked tab instead of opening another one", async () => {
+    const opened: string[] = [];
+    const listing = "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return listing;
+      if (name === "new_page") { opened.push(String(args.url)); return ""; }
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) return json({ value: "leftover draft" });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "hello", ACCOUNT);
+    expect(opened).toEqual([]);
+    expect(receipt.clicked).toBe(true);
+  });
+});
+
+describe("first message composer content", () => {
+  it("clears a leftover composer value before filling the first message", async () => {
+    const fills: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline value=""';
+      if (name === "fill") { fills.push(String(args.value)); return "ok"; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) return json({ value: "leftover draft" });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    // The composer is cleared by replacing its content, then the user's own
+    // text is written; the write is verified against the composer.
+    expect(fills.every(value => value === "User prompt")).toBe(true);
+    expect(fills.length).toBeGreaterThan(0);
+  });
+});
+
+describe("owned tab with a leftover composer", () => {
+  it("clears the leftover value of its own marked tab instead of refusing to send", async () => {
+    const fills: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline value="leftover"';
+      if (name === "fill") { fills.push(String(args.value)); return "ok"; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(fills.every(value => value === "User prompt")).toBe(true);
+    expect(fills.length).toBeGreaterThan(0);
+  });
+});
+
+describe("first message composer replacement", () => {
+  it("replaces the whole composer content instead of appending to it", async () => {
+    const scripts: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline value="leftover"';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        scripts.push(source);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    const replace = scripts.find(source => source.includes("execCommand('delete')"));
+    expect(replace).toBeTruthy();
+  });
+});
+
+describe("first message composer write", () => {
+  it("retries the write when the site restores its own draft over the message", async () => {
+    const fills: string[] = [];
+    let reads = 0;
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") { fills.push(String(args.value)); return "ok"; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) {
+          reads += 1;
+          return json({ value: reads === 1 ? "restored draft" : "User prompt" });
+        }
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(fills.filter(value => value === "User prompt").length).toBe(2);
+  });
+});
+
+describe("chatgpt first message route proof", () => {
+  it("reads the conversation messages of the account history endpoint", async () => {
+    // The ChatGPT conversation list endpoint answers with a `messages` array,
+    // not with the `mapping` tree of the single-conversation endpoint. A
+    // proof that reads `mapping` there can never see the submitted message.
+    const requested: string[] = [];
+    const fetch = async (url: string) => {
+      requested.push(url);
+      if (url.includes("/api/auth/session")) {
+        return { ok: true, json: async () => ({ accessToken: "token", account: { id: "account-1" } }) };
+      }
+      if (url.includes("/backend-api/conversations?")) {
+        return { ok: true, json: async () => ({ items: [{ id: GPT_NATIVE }] }) };
+      }
+      return { ok: true, json: async () => ({
+        conversation_id: GPT_NATIVE,
+        messages: [
+          { id: "m1", author: { role: "user" }, content: { parts: ["User prompt"] } },
+          { id: "m2", author: { role: "assistant" }, content: { parts: ["User prompt"] } },
+        ],
+      }) };
+    };
+    const fn = runInNewContext("(" + chatGptNewChatMessageProbe("User prompt", ACCOUNT) + ")", {
+      location: { origin: "https://chatgpt.com" },
+      fetch, JSON, encodeURIComponent, TextEncoder, Uint8Array, Date,
+      crypto: { subtle: { digest: async () => new Uint8Array(32).fill(0xaa).buffer } },
+    }) as () => Promise<{ verified?: boolean; id?: string; reason?: string }>;
+    expect(await fn()).toMatchObject({ verified: true, id: GPT_NATIVE });
+    expect(requested.some(url => url.includes("/backend-api/conversations/"))).toBe(true);
+  });
+
+  it("does not accept a conversation whose user message is not the submitted one", async () => {
+    const fetch = async (url: string) => {
+      if (url.includes("/api/auth/session")) {
+        return { ok: true, json: async () => ({ accessToken: "token", account: { id: "account-1" } }) };
+      }
+      if (url.includes("/backend-api/conversations?")) {
+        return { ok: true, json: async () => ({ items: [{ id: GPT_NATIVE }] }) };
+      }
+      return { ok: true, json: async () => ({
+        conversation_id: GPT_NATIVE,
+        messages: [{ id: "m1", author: { role: "user" }, content: { parts: ["another prompt"] } }],
+      }) };
+    };
+    const fn = runInNewContext("(" + chatGptNewChatMessageProbe("User prompt", ACCOUNT) + ")", {
+      location: { origin: "https://chatgpt.com" },
+      fetch, JSON, encodeURIComponent, TextEncoder, Uint8Array, Date,
+      crypto: { subtle: { digest: async () => new Uint8Array(32).fill(0xaa).buffer } },
+    }) as () => Promise<{ verified?: boolean; reason?: string }>;
+    expect(await fn()).toMatchObject({ verified: false });
+  });
+
+  it("confirms the native route from the message history when the tab stays on the root", async () => {
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("herderChatGptNewChatVerify")) {
+          return json({ verified: true, id: GPT_NATIVE });
+        }
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) return json({ value: "User prompt" });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/" });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(receipt.uncertain).toBe(false);
+    expect(receipt.remoteId).toBe(GPT_NATIVE);
+  });
+});

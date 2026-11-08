@@ -218,14 +218,66 @@ def public_export_readiness(result, expected_format="native"):
 
 
 def public_common_export_status(result):
-    if _unsupported_receipt(result):
+    payload = _structured_content(result)
+    if (_unsupported_receipt(result)
+            or isinstance(payload, dict) and payload.get("code") == "unsupported_format"
+            and payload.get("effect") == "none"):
         return {"status": "unsupported", "expected": True,
-                "receipt": _structured_content(result)}
+                "receipt": payload}
     if isinstance(result, dict) and result.get("isError") is True:
         return {"status": "unexpected_error", "expected": False,
                 "receipt": _structured_content(result)}
     return {"status": "unexpectedly_supported", "expected": False,
             "receipt": _structured_content(result)}
+
+
+def public_projects_readiness(result):
+    """Require complete, attributable projects data before calling it confirmed."""
+    if not isinstance(result, dict) or result.get("isError") is True:
+        return {"status": "error", "complete": False, "provenance": None}
+    payload = _structured_content(result)
+    if not isinstance(payload, dict):
+        return {"status": "unverified", "complete": False, "provenance": None}
+    complete = payload.get("complete") is True
+    provenance = payload.get("source", payload.get("provenance", payload.get("scope")))
+    has_provenance = isinstance(provenance, (str, dict, list)) and bool(provenance)
+    projects = payload.get("projects")
+    projects_valid = isinstance(projects, list)
+    return {"status": "confirmed" if complete and has_provenance and projects_valid else "incomplete",
+            "complete": payload.get("complete"), "provenance": provenance,
+            "projects_count": len(projects) if projects_valid else None,
+            "limitations": payload.get("limitations")}
+
+
+def native_export_correlates(raw_bytes, expected_pairs):
+    """Correlate full native export rows with decoded Task and completion IDs."""
+    try:
+        rows = json.loads(raw_bytes)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(rows, list):
+        return False
+    by_id = {row.get("id"): row for row in rows
+             if isinstance(row, dict) and isinstance(row.get("id"), str)}
+    for marker, receipt, completion in expected_pairs:
+        user_id = native_message_id_from_receipt(receipt["native_receipt_id"])
+        user = by_id.get(user_id)
+        assistant = by_id.get(completion.get("assistant_message_id"))
+        if not isinstance(user, dict) or user.get("type") != "user" or user.get("text") != marker:
+            return False
+        if not isinstance(assistant, dict) or assistant.get("type") != "assistant":
+            return False
+        content = assistant.get("content")
+        text = "".join(part.get("text", "") for part in content
+                       if isinstance(part, dict) and part.get("type") == "text") \
+            if isinstance(content, list) else assistant.get("text")
+        time_info = assistant.get("time")
+        if (text != ANSWER or assistant.get("finish") != "stop"
+                or not isinstance(time_info, dict)
+                or not isinstance(time_info.get("completed"), (int, float))
+                or time_info["completed"] <= 0):
+            return False
+    return True
 
 
 def search_marker_coverage(result, marker):
@@ -879,9 +931,10 @@ def run_case(args):
                                      "status": evidence["scenarios"]["projects"]}
             persist_evidence(evidence_path, evidence)
             raise RuntimeError(f"V1 projects discovery failed before mutation: {projects_wire}")
-        evidence["scenarios"]["projects"] = "PASS"
+        projects_check = public_projects_readiness(projects_wire)
+        evidence["scenarios"]["projects"] = projects_check["status"].upper()
         evidence.update({"phase": "v1_readiness_complete", "projects": {
-            "request": projects_arguments, "status": "confirmed", "wire": projects_wire},
+            "request": projects_arguments, **projects_check, "wire": projects_wire},
             "v1_schema_audit": v1_schema_audit})
         persist_evidence(evidence_path, evidence)
         if args.preflight_only:
@@ -902,7 +955,7 @@ def run_case(args):
                               "v1_public_contract": True,
                               "run_id": run_id, "stage": identity["stage"],
                               "artifact": identity, "instance_ref": args.instance,
-                              "projects_discovery": "confirmed",
+                "projects_discovery": projects_check,
                               "native_mutations": 0, "model_requests_preflight": requests_during_init,
                               "opencode_sha256": evidence["opencode_sha256"],
                               "read_only_http_probes": probe_shapes,
@@ -917,7 +970,7 @@ def run_case(args):
         request_two = "ahap-opencode-deliver-" + uuid.uuid4().hex
         evidence.update({"phase": "create_submitted", "inputs": [marker_one, marker_two],
                          "request_keys": [request_one, request_two], "mutation_started": True,
-                         "scenarios": {"projects": "PASS", "create_deliver_read": "UNKNOWN",
+                         "scenarios": {"projects": projects_check["status"].upper(), "create_deliver_read": "UNKNOWN",
                              "second_same_session_deliver": "UNKNOWN", "export_native": "UNKNOWN",
                              "export_common": "UNKNOWN", "search_marker_coverage": "UNKNOWN",
                              "restart_no_resend": "UNKNOWN"},
@@ -960,8 +1013,10 @@ def run_case(args):
         native_read = rpc_tool(core, "session", {"action": "messages", "session_ref": session})
         native_rows = [row for row in message_records(native_read)
                        if row.get("role") in ("user", "assistant")]
-        expected_pairs = [(marker_one, receipt_one["native_receipt_id"], completion_one),
-                          (marker_two, receipt_two["native_receipt_id"], completion_two)]
+        expected_pairs = [
+            (marker_one, native_message_id_from_receipt(receipt_one["native_receipt_id"]), completion_one),
+            (marker_two, native_message_id_from_receipt(receipt_two["native_receipt_id"]), completion_two),
+        ]
         native_pairs = []
         for marker, user_id, completion in expected_pairs:
             user_row = next((row for row in native_rows if row.get("role") == "user"
@@ -991,10 +1046,9 @@ def run_case(args):
         evidence["scenarios"]["export_native"] = export_result["status"].upper()
         persist_evidence(evidence_path, evidence)
         if (export_result["status"] != "confirmed" or export_bytes is None
-                or not all(value.encode("utf-8") in export_bytes for value in
-                           [marker_one, marker_two, receipt_one["native_receipt_id"],
-                            receipt_two["native_receipt_id"], completion_one["assistant_message_id"],
-                            completion_two["assistant_message_id"]])):
+                or not native_export_correlates(export_bytes, [
+                    (marker_one, receipt_one, completion_one),
+                    (marker_two, receipt_two, completion_two)])):
             export_check["status"] = "unverified"
             export_check["transcript_correlated"] = False
             raise RuntimeError(f"native export is incomplete or does not contain exact native transcript identities: {export_check}")
@@ -1067,11 +1121,11 @@ def run_case(args):
         if requests_after_restart != requests_before_restart:
             raise RuntimeError("core restart caused a replayed model send")
         evidence["scenarios"]["restart_no_resend"] = "PASS"
-        case_status = "PASS"
+        case_status = "PASS" if projects_check["status"] == "confirmed" else "PARTIAL"
         evidence.update({"phase": "completed", "result": case_status,
                          "report_schema": "ahap-opencode-v1",
                          "run_id": run_id, "stage": identity["stage"], "artifact": identity,
-                         "scenarios": {"projects": "PASS", "create_deliver_read": "PASS",
+                         "scenarios": {"projects": projects_check["status"].upper(), "create_deliver_read": "PASS",
                              "second_same_session_deliver": "PASS", "export_native": "PASS",
                              "export_common": "UNSUPPORTED", "search_marker_coverage": "PASS",
                              "restart_no_resend": "PASS"},

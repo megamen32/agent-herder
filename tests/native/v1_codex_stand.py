@@ -99,6 +99,17 @@ def classify_create(task):
     return 'UNKNOWN'
 
 
+def fixture_config(base):
+    url = urllib.parse.urlsplit(base)
+    if (url.scheme != 'http' or url.hostname != '127.0.0.1' or not url.port
+            or url.path != '/v1' or url.query or url.fragment or url.username or url.password):
+        raise ValueError('isolated fixture endpoint required')
+    return ('model = "herder-test"\nmodel_provider = "fixture"\n'
+            '[model_providers.fixture]\nname = "fixture"\n'
+            f'base_url = "{base}"\nwire_api = "responses"\n'
+            'requires_openai_auth = false\n')
+
+
 def adapter_transport(mode, codex, socket, project, codex_home):
     if mode not in ('bin', 'socket'):
         raise ValueError('unsupported Codex transport')
@@ -131,10 +142,7 @@ def main():
     protected = Path('/herder-owner-home')
     project = protected / 'work'; project.mkdir(mode=0o700)
     codex_home = protected / 'codex'; codex_home.mkdir(mode=0o700)
-    (codex_home / 'config.toml').write_text(
-        'model = "herder-test"\nmodel_provider = "fixture"\n'
-        '[model_providers.fixture]\nname = "fixture"\n'
-        f'base_url = "{base}"\nwire_api = "responses"\n')
+    (codex_home / 'config.toml').write_text(fixture_config(base))
     socket = protected / 'codex.sock'
     native = None
     if args.transport == 'socket':

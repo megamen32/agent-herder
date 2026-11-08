@@ -12,6 +12,8 @@ from ahap_opencode_stand import (
     completed_message_pair,
     detect_opencode_api_family,
     message_texts,
+    native_message_id_from_receipt,
+    native_export_correlates,
     native_api_read,
     native_session_for,
     parse_fresh_seed,
@@ -19,6 +21,7 @@ from ahap_opencode_stand import (
     public_export_readiness,
     artifact_identity,
     public_common_export_status,
+    public_projects_readiness,
     search_marker_coverage,
     require_runner_route_compat,
     rpc_tool,
@@ -39,6 +42,24 @@ class FakeRpc:
 
 
 class AhapOpenCodeStandTest(unittest.TestCase):
+    def test_projects_requires_completeness_and_provenance(self):
+        partial = {"structuredContent": {"complete": False, "projects": [],
+                    "limitations": ["not observed"]}}
+        self.assertEqual(public_projects_readiness(partial)["status"], "incomplete")
+        complete_without_provenance = {"structuredContent": {
+            "complete": True, "projects": [{"id": "p1"}]}}
+        self.assertEqual(public_projects_readiness(complete_without_provenance)["status"],
+                         "incomplete")
+        complete = {"structuredContent": {"complete": True, "projects": [{"id": "p1"}],
+                    "source": {"scope": "authorized_registered_sessions"}}}
+        readiness = public_projects_readiness(complete)
+        self.assertEqual(readiness["status"], "confirmed")
+        self.assertEqual(readiness["projects_count"], 1)
+        scoped_partial = public_projects_readiness({"structuredContent": {
+            "complete": False, "projects": [], "scope": "authorized_registered_sessions"}})
+        self.assertEqual(scoped_partial["status"], "incomplete")
+        self.assertEqual(scoped_partial["provenance"], "authorized_registered_sessions")
+
     def test_artifact_identity_is_bound_to_manifest_and_runtime_hashes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -135,6 +156,14 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         self.assertEqual(readiness["status"], "unsupported")
         self.assertTrue(readiness["expected"])
         self.assertEqual(readiness["receipt"]["effect"], "none")
+
+    def test_public_common_export_accepts_typed_unsupported_format_no_effect(self):
+        result = {"isError": True, "structuredContent": {
+            "code": "unsupported_format", "effect": "none",
+            "message": "normalized Common export is unavailable"}}
+        readiness = public_common_export_status(result)
+        self.assertEqual(readiness["status"], "unsupported")
+        self.assertTrue(readiness["expected"])
 
     def test_public_export_readiness_keeps_unknown_and_error_distinct(self):
         self.assertEqual(public_export_readiness({})["status"], "unknown")
@@ -388,6 +417,26 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         pair = completed_message_pair(rows, "fixture marker", receipt)
         self.assertEqual(pair["status"], "confirmed")
         self.assertEqual(pair["user_message_id"], "msg_user_exact")
+
+    def test_public_readback_compares_native_id_decoded_from_task_receipt(self):
+        receipt = 'ahap-receipt:v1:' + json.dumps(
+            {"kind": "message", "native_id": "msg_user_exact"}, separators=(",", ":"))
+        self.assertEqual(native_message_id_from_receipt(receipt), "msg_user_exact")
+
+    def test_native_export_correlates_raw_rows_with_versioned_task_receipts(self):
+        receipt = {"native_receipt_id": 'ahap-receipt:v1:' + json.dumps(
+            {"kind": "message", "native_id": "msg_user_exact"}, separators=(",", ":"))}
+        completion = {"assistant_message_id": "msg_assistant_exact"}
+        raw = json.dumps([
+            {"id": "msg_user_exact", "type": "user", "text": "fixture marker"},
+            {"id": "msg_assistant_exact", "type": "assistant", "finish": "stop",
+             "time": {"completed": 1234}, "content": [
+                 {"type": "text", "text": "HERDER_TEST_MODEL_OK"}]},
+        ]).encode()
+        self.assertTrue(native_export_correlates(raw, [
+            ("fixture marker", receipt, completion)]))
+        self.assertFalse(native_export_correlates(raw, [
+            ("wrong marker", receipt, completion)]))
 
     def test_transcript_projection_extracts_only_user_and_assistant_text(self):
         rows = {"page": {"messages": [

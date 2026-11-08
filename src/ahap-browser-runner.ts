@@ -6,6 +6,7 @@ import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
 import { verifyNewChatAccountScope } from "./adapters/browser-chat-new-page.js";
+import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
 import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
 
@@ -218,6 +219,15 @@ const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
   macMini: () => new MacMiniChromeTransport(),
 };
 
+
+/** The page number of the one tab this provider owns. */
+async function ownedPageId(pageTools: ChromePageTools): Promise<number> {
+  const listing = await pageTools.call("list_pages");
+  const id = listing.split("\n").map(line => line.match(/^\s*(\d+):/)?.[1]).find(Boolean);
+  if (!id) throw new Error("Owned browser tab unavailable; no page fallback allowed");
+  return Number(id);
+}
+
 export function makeConfiguredAdapter(
   env: NodeJS.ProcessEnv = process.env,
   factories: BrowserChatRunnerTransportFactories = DEFAULT_TRANSPORT_FACTORIES,
@@ -228,11 +238,14 @@ export function makeConfiguredAdapter(
   if (transport !== "direct-cdp" && transport !== "mac-mini") {
     throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini");
   }
+  // The page number is only a first-use hint. The driver owns exactly one
+  // tab per provider and finds it by its own marker, so a gateway restart or
+  // a closed tab never breaks the route and never opens a tab per call.
   const rawPageId = (env.AHAP_BROWSER_PAGE_ID ?? env.AHAP_CHATGPT_PAGE_ID ?? env.AGENT_HERDER_ZAI_PAGE_ID)?.trim();
-  const pageId = rawPageId && /^[1-9][0-9]*$/u.test(rawPageId) ? Number(rawPageId) : Number.NaN;
+  const pageId = rawPageId && /^[1-9][0-9]*$/u.test(rawPageId) ? Number(rawPageId) : undefined;
   const expectedScope = (env.AHAP_BROWSER_ACCOUNT_SCOPE ?? env.AHAP_CHATGPT_ACCOUNT_SCOPE)?.trim();
-  if (!Number.isSafeInteger(pageId) || pageId < 1 || !expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
-    throw new Error("Exact page ID and account scope are required");
+  if (!expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
+    throw new Error("Exact account scope is required");
   }
 
   let selectedTransport: ChromePageTools;
@@ -247,22 +260,29 @@ export function makeConfiguredAdapter(
     }
     selectedTransport = factories.directCdp({ endpoint, contextId, targetId });
   }
-  // Restrict the existing provider driver to one exact page. A stale pin
-  // cannot trigger its ordinary tab discovery or tab-opening behavior.
+  // The driver owns exactly one tab per provider and finds it by its own
+  // marker, so a gateway restart or a closed tab never breaks the route.
   const pageTools: ChromePageTools = {
     async call(name, args = {}) {
       const result = await selectedTransport.call(name, args);
       if (name !== "list_pages") return result;
       const origin = harness === "chatgpt" ? "chatgpt\\.com" : "chat\\.z\\.ai";
       const exactPagePattern = new RegExp(`^\\s*${pageId}\\s*:.*?\\(https://${origin}(?:/[^)]*)?\\)`);
-      const exactPage = result.split("\n").find(line => exactPagePattern.test(line));
-      if (!exactPage) throw new Error(`Configured ${harness === "zai" ? "Z.ai" : "ChatGPT"} page unavailable; no page fallback allowed`);
-      return exactPage;
+      const originPattern = new RegExp(`\(https://${origin}(?:/[^)]*)?\)`);
+      const candidates = result.split("\n").filter(line => originPattern.test(line));
+      if (!candidates.length) return "";
+      // The driver owns exactly one tab per provider and finds it by its own
+      // marker. Hiding the other tabs of the same site here would make that
+      // ownership unverifiable, so the marked tab comes first and the rest
+      // stay visible for the driver to probe read-only.
+      const marked = candidates.filter(line => isOwnedTabUrl(line.match(originPattern)![0]!.slice(1, -1), harness));
+      const rest = candidates.filter(line => !marked.includes(line));
+      return [...marked, ...rest].join("\n");
     },
   };
   const driver = harness === "chatgpt"
-    ? new ChatGptMacCdpDriver(pageTools, pageId, 0, expectedScope)
-    : new ZaiCdpDriver(pageTools, pageId, 0);
+    ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope)
+    : new ZaiCdpDriver(pageTools, undefined, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
   const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true);
   let verifiedAccountScope: string | undefined;
@@ -273,7 +293,7 @@ export function makeConfiguredAdapter(
       if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
       else {
         await pageTools.call("list_pages");
-        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId);
+        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId ?? (await ownedPageId(pageTools)));
         if (observedScope !== expectedScope) {
           throw new Error("pinned browser account scope mismatch");
         }

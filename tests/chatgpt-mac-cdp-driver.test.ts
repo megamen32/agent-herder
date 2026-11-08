@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 import { CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
+import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
 // The driver now owns a durable inventory cache; every test keeps its own
 // private root so nothing ever touches the state directory of the host.
 let _invDir: string;
@@ -566,5 +567,235 @@ describe("ChatGPT idle detection without a voice control", () => {
       document, location: { origin: "https://chatgpt.com", pathname: "/c/" + ID },
     }) as { phase: string; composer: boolean };
     expect(result).toMatchObject({ phase: "idle", composer: true });
+  });
+});
+
+describe("ChatGPT owned tab ownership", () => {
+  const scope = "a".repeat(64);
+  function tool(opened: string[]): ChromePageTools {
+    let listing = "";
+    const set = (value: string) => { listing = value; };
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      opened.push(name + ":" + JSON.stringify(args));
+      if (name === "list_pages") return listing;
+      if (name === "new_page") {
+        const url = String(args.url);
+        set(url.includes("herder_owned=chatgpt")
+          ? "7: ChatGPT (" + url + ")\n9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)"
+          : listing);
+        return "";
+      }
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+      if (name === "evaluate_script") return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      throw new Error("unexpected action " + name);
+    } };
+    return Object.assign(tools, { set });
+  }
+  it("uses its own marked tab and never opens a second one", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)\n9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
+  });
+  it("opens exactly one replacement when its own tab is closed", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    tools.set("9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    await driver.listChats();
+    const opened_pages = opened.filter(a => a.startsWith("new_page"));
+    expect(opened_pages.length).toBe(1);
+    expect(opened_pages[0]).toContain("herder_owned=chatgpt");
+  });
+  it("adopts one existing tab on first use instead of opening another one", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
+  });
+});
+
+describe("ChatGPT one owned tab", () => {
+  it("keeps the verified account scope after the passive startup listing", async () => {
+    const scope = "a".repeat(64);
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        if (source === CHATGPT_LIST_API_PASSIVE_SCRIPT) return json({ scope: "", chats: [], source: "passive" });
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase: "idle", draftPresent: false, chats: [{ id: ID, title: "Fixture chat" }],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    // The startup listing is passive and carries no scope of its own. The
+    // driver must still prove the account it belongs to, otherwise every
+    // later read of the same instance is refused as an unknown account.
+    await driver.listObservedChats();
+    expect(driver.getAccountScope()).toBe(scope);
+  });
+
+  it("reads the history of a draft session before the inventory was listed", async () => {
+    const scope = "a".repeat(64);
+    const disk = mkdtempSync(join(tmpdir(), "chatgpt-draft-"));
+    process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT = disk;
+    try {
+      const store = new BrowserChatDraftStore("chatgpt", disk);
+      await store.useScope(scope);
+      const draft = await store.create("Fixture draft");
+      await store.startSend(draft.id);
+      await store.admit(draft.id, ID);
+      const tools: ChromePageTools = { call: async (name, args = {}) => {
+        if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+        if (name === "evaluate_script") {
+          const source = String(args.function);
+          if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+          if (source.includes("conversation_read")) {
+            return json({ messages: [{ id: "m1", role: "user", text: "question" }] });
+          }
+          return json({
+            origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+            composer: true, phase: "idle", draftPresent: false, chats: [],
+          });
+        }
+        throw new Error("unexpected action " + name);
+      } };
+      const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+      // A fresh process knows no draft yet: the read must resolve the account
+      // scope and load the durable drafts itself. A reader that only knows
+      // the draft after a listing never confirms the follow-up delivery.
+      const messages = await driver.getMessages(draft.id);
+      expect(messages).toMatchObject([{ id: "m1", role: "user", text: "question" }]);
+    } finally {
+      rmSync(disk, { recursive: true, force: true });
+      delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+    }
+  });
+
+  it("clears the running flag of a chat whose answer already arrived", async () => {
+    const scope = "a".repeat(64);
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        if (source.includes("conversation_read")) {
+          return json({ messages: [
+            { id: "m1", role: "user", text: "question" },
+            { id: "m2", role: "assistant", text: "answer" },
+          ] });
+        }
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase: "idle", draftPresent: false, chats: [],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    // The first delivery marked the chat as running.
+    (driver as unknown as { cache: Map<string, { working: boolean }> }).cache.set(ID, {
+      id: ID, title: "Fixture chat", unread: false, working: true,
+      updatedAt: new Date().toISOString(),
+    });
+    expect(driver.getKnownChat?.(ID)?.working).toBe(true);
+    // The model answered: the follow-up delivery must not see a busy chat.
+    await driver.refreshTurnState?.(ID);
+    expect(driver.getKnownChat?.(ID)?.working).toBe(false);
+  });
+
+  it("reports an idle chat as idle after its first answer arrived", async () => {
+    const scope = "a".repeat(64);
+    let phase: "idle" | "generating" = "generating";
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/c/" + ID + ")";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        if (source === CHATGPT_LIST_API_SCRIPT) {
+          return json({ scope, chats: [{ id: ID, title: "Fixture chat", updatedAt: 1 }] });
+        }
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase, draftPresent: false, chats: [{ id: ID, title: "Fixture chat" }],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    // The tab still shows the generating state of the first turn.
+    const running = (await driver.listChats()).find(chat => chat.id === ID);
+    expect(running?.working).toBe(true);
+    // The model answered and the tab went back to idle. A later delivery to
+    // the same chat must see it idle, otherwise every follow-up message is
+    // refused as if the chat were still generating.
+    phase = "idle";
+    const idle = (await driver.listChats()).find(chat => chat.id === ID);
+    expect(idle?.working).toBe(false);
+  });
+
+  it("reuses its own tab after the site dropped the URL marker on navigation", async () => {
+    const scope = "a".repeat(64);
+    const opened: string[] = [];
+    let listing = "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return listing;
+      if (name === "new_page") { opened.push(String(args.url)); return ""; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("herder-owned:chatgpt")) {
+          return json({ owned: Number(args.pageId) === 7, already: true });
+        }
+        if (source === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+        return json({
+          origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+          composer: true, phase: "idle", draftPresent: false, chats: [],
+        });
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    // The site navigated our own tab into a conversation and dropped the
+    // URL marker. The next run must find that same tab, not open another.
+    listing = "7: ChatGPT (https://chatgpt.com/c/" + ID + ")\n9: Other (https://chatgpt.com/)";
+    await driver.listChats();
+    expect(opened).toEqual([]);
+  });
+
+  it("closes its own duplicate tabs and keeps exactly one", async () => {
+    const scope = "a".repeat(64);
+    const closed: number[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return [
+        "29: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)",
+        "30: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)",
+        "31: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)",
+      ].join("\n");
+      if (name === "close_page") { closed.push(Number(args.pageId)); return ""; }
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+      if (name === "evaluate_script") return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    expect(closed).toEqual([30]);
   });
 });
