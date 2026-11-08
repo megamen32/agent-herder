@@ -285,6 +285,9 @@ def assemble(sha: str, worktree: Path, catalog: Path) -> Path:
     # release, and a copy over it would change the bytes of that release.
     free_destination(release / "dist")
     shutil.copytree(worktree / "dist", release / "dist", dirs_exist_ok=True)
+    source_checker = worktree / "deploy" / "noticeplace"
+    if source_checker.is_dir():
+        shutil.copytree(source_checker, release / "deploy" / "noticeplace", dirs_exist_ok=True)
     # The node release carries the workspace packages and the lock files too:
     # the runtime resolves the agent-resume workspace from the release.
     for name in ("package.json", "package-lock.json"):

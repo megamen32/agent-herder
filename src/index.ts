@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createAutostartSourceVerifierTick } from "./autopilot/autostart-source-verifier.js";
 import { isMainEntrypoint } from "./main-entrypoint.js";
 import { resumePendingProjectIntegrations } from "./project-integration.js";
 import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
@@ -1174,6 +1175,7 @@ async function main() {
     autopilotPolicyStore,
     autopilotSessionStore,
     notify: createUnfinishedSessionNotifier(),
+    sourceVerifierTick: createAutostartSourceVerifierTick({ autopilotStateDir }),
     cacheHandoff,
     judge: unfinishedJudge,
   });
