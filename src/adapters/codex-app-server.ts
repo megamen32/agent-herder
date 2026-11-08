@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
+import { isCredentialFreeLocalChild, localProviderId } from "./codex-owned-provider.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
@@ -2994,6 +2995,32 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return model;
   }
 
+  private async ownedLocalProviderOperation(method: string, params: unknown): Promise<boolean> {
+    if (this.socketPath) return false;
+    const child = this.child;
+    const generation = this.transportGeneration;
+    if (!await isCredentialFreeLocalChild(child, this.codexBin, this.appServerDataHome)) return false;
+    try {
+      const scoped = params as { cwd?: unknown; threadId?: unknown; modelProvider?: unknown };
+      let cwd = typeof scoped.cwd === "string" ? scoped.cwd : this.cwd;
+      let threadProvider: string | undefined;
+      if (method !== "thread/start") {
+        if (typeof scoped.threadId !== "string") return false;
+        const value = await this.request("thread/read", { threadId: scoped.threadId, includeTurns: false }) as { thread?: CodexThread };
+        if (value.thread?.id !== scoped.threadId) return false;
+        threadProvider = value.thread.modelProvider;
+        if (!threadProvider) return false;
+        cwd = value.thread.cwd || cwd;
+      }
+      const effective = await this.request("config/read", { cwd, includeLayers: false });
+      const provider = localProviderId(effective);
+      if (!provider || (threadProvider && threadProvider !== provider)
+          || (scoped.modelProvider !== undefined && scoped.modelProvider !== provider)) return false;
+      return this.child === child && this.transportGeneration === generation
+        && await isCredentialFreeLocalChild(child, this.codexBin, this.appServerDataHome);
+    } catch { return false; }
+  }
+
   private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
@@ -3005,7 +3032,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const model = typeof scoped?.model === "string" ? scoped.model
         : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model
         : method === "thread/start" ? await this.defaultCodexModel() : undefined;
-      if (!codexQuotaExemptModel(model)) {
+      if (!codexQuotaExemptModel(model) && !await this.ownedLocalProviderOperation(method, params)) {
         await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
       }
       this.assertLifecycleActive();
