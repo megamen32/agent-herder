@@ -470,6 +470,98 @@ describe("ChatGPT draft preservation", () => {
   });
 });
 
+describe("ChatGPT follow-up fill recovery", () => {
+  function fixture(options: { label?: string; fillThrows?: boolean; afterFill?: "wrong_text" | "read_failed" | "origin" | "path" | "busy" | "account"; clickResponseLost?: boolean } = {}) {
+    const scope = "a".repeat(64);
+    const text = "follow-up exact text";
+    const saved = "human's saved draft";
+    const fills: string[] = [];
+    let composer = saved, scopeReads = 0, composerReads = 0, clicks = 0, submitCalls = 0;
+    const location = { origin: "https://chatgpt.com", pathname: "/c/" + ID };
+    const form = { contains: () => true };
+    const editor = { get innerText() { return composer; }, get textContent() { return composer; }, closest: () => form };
+    const send = { type: "submit", disabled: false, getClientRects: () => [1],
+      getAttribute: (name: string) => name === "data-testid" ? "send-button" : "Send message",
+      click() { clicks++; composer = ""; } };
+    const stop = { getClientRects: () => [1], getAttribute: () => "stop-button" };
+    const tools: ChromePageTools = { async call(name, args = {}) {
+      if (name === "list_pages") return `7: ChatGPT (https://chatgpt.com/c/${ID})`;
+      if (name === "take_snapshot") return `uid=1_42 textbox "${options.label ?? "Спросить ChatGPT"}" focusable multiline`;
+      if (name === "fill") {
+        fills.push(String(args.value));
+        composer = fills.length === 1 && options.afterFill === "wrong_text" ? "different text" : String(args.value);
+        if (fills.length === 1) {
+          if (options.afterFill === "origin") location.origin = "https://other.invalid";
+          if (options.afterFill === "path") location.pathname = "/c/other";
+          if (options.fillThrows) throw new Error("fill transport acknowledgement lost");
+        }
+        return "ok";
+      }
+      if (name === "evaluate_script") {
+        const fn = String(args.function);
+        if (fn === CHATGPT_CREATE_SCOPE_SCRIPT) {
+          scopeReads++;
+          return json({ scope: fills.length && options.afterFill === "account" ? "b".repeat(64) : scope });
+        }
+        if (fn === CHATGPT_MAC_SNAPSHOT) return json({ origin: location.origin, path: location.pathname,
+          authenticated: true, composer: true, phase: "idle", draftPresent: !!composer, chats: [] });
+        const submitting = fn.includes("const expected =");
+        if (submitting) submitCalls++;
+        else {
+          composerReads++;
+          if (fills.length && options.afterFill === "read_failed") throw new Error("composer read failed");
+        }
+        const result = await runInNewContext(`(${fn})()`, { location,
+          setTimeout: (callback: () => void) => { callback(); return 1; },
+          document: { querySelector: () => editor,
+            querySelectorAll: () => options.afterFill === "busy" && fills.length ? [send, stop] : [send] },
+        });
+        if (submitting && options.clickResponseLost) throw new Error("click response lost");
+        return json(result);
+      }
+      throw new Error("unexpected follow-up tool: " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, 7, 0, scope);
+    // Known exact conversation: no inventory/history HTTP needed to exercise send.
+    (driver as unknown as { cache: Map<string, unknown> }).cache.set(ID, { id: ID, title: "fixture", working: false });
+    return { driver, text, saved, fills, inspect: () => ({ composer, clicks, submitCalls, scopeReads, composerReads }) };
+  }
+
+  it("recovers an applied fill with lost acknowledgement by readback and one click", async () => {
+    const f = fixture({ fillThrows: true });
+    await expect(f.driver.sendMessage({ chatId: ID, text: f.text })).resolves.toEqual({});
+    expect(f.fills).toEqual([f.text, f.saved]);
+    expect(f.inspect()).toMatchObject({ clicks: 1, submitCalls: 1, composer: f.saved, composerReads: 2, scopeReads: 2 });
+  });
+
+  it("supports Работайте с ChatGPT for both send and saved-draft restoration", async () => {
+    const f = fixture({ label: "Работайте с ChatGPT" });
+    await expect(f.driver.sendMessage({ chatId: ID, text: f.text })).resolves.toEqual({});
+    expect(f.fills).toEqual([f.text, f.saved]);
+    expect(f.inspect()).toMatchObject({ clicks: 1, composer: f.saved, composerReads: 1, scopeReads: 1 });
+  });
+
+  it.each(["wrong_text", "read_failed", "origin", "path", "busy", "account"] as const)(
+    "does not click after ambiguous fill when %s changed", async afterFill => {
+      const f = fixture({ fillThrows: true, afterFill });
+      await expect(f.driver.sendMessage({ chatId: ID, text: f.text })).rejects.toThrow();
+      expect(f.inspect().clicks).toBe(0);
+      expect(f.fills.filter(value => value === f.text)).toHaveLength(1);
+      if (["origin", "path", "account"].includes(afterFill)) {
+        expect(f.fills).toEqual([f.text]); // never restore the original draft into another target/account
+      } else {
+        expect(f.fills).toEqual([f.text, f.saved]);
+      }
+    });
+
+  it("never retries a click after recovery if its response is lost", async () => {
+    const f = fixture({ fillThrows: true, clickResponseLost: true });
+    await expect(f.driver.sendMessage({ chatId: ID, text: f.text })).rejects.toThrow(/outcome unknown/);
+    expect(f.inspect()).toMatchObject({ clicks: 1, submitCalls: 1, composer: f.saved });
+    expect(f.fills).toEqual([f.text, f.saved]);
+  });
+});
+
 describe("bounded list failure diagnostics", () => {
   it.each([
     ["list_http_429", "list_http_429"],

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+
+ Test Files  2 passed (2)
+      Tests  109 passed (109)
+   Start at  18:49:58
+   Duration  4.85s (transform 1.07s, setup 76ms, import 1.29s, tests 3.88s, environment 0ms)
+

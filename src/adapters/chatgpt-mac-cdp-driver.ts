@@ -22,6 +22,7 @@ import { liveHarnessPollingEnabled, liveHarnessPromptPollingEnabled } from "../h
 const ORIGIN = "https://chatgpt.com";
 const MAX_MESSAGE = 16_000;
 const POST_SEND_GUARD_MS = 1_800;
+const CHATGPT_EDITOR_UID = /uid=([\w-]+) textbox "(?:Спросить ChatGPT|Работайте с ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i;
 /** How long a chat we last saw generating stays marked working after the
  *  hosting tab navigates away. The chatgpt site's async_status is not a
  *  reliable background-running signal, so without this grace window the
@@ -1124,7 +1125,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   private async restoreComposerDraft(pageId: number, draft: string): Promise<void> {
     try {
       const snapshot = await this.tools.call("take_snapshot", { pageId });
-      const uid = snapshot.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
+      const uid = snapshot.match(CHATGPT_EDITOR_UID)?.[1];
       if (uid) await this.tools.call("fill", { pageId, uid, value: draft });
     } catch { /* composer not editable mid-generation */ }
   }
@@ -1216,12 +1217,22 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       }
       if (!ready) throw new Error("ChatGPT target or idle state not confirmed; message not sent");
       const accessibility = await this.tools.call("take_snapshot", { pageId: page.id });
-      const textbox = accessibility.match(/uid=([\w-]+) textbox "(?:Спросить ChatGPT|Ask ChatGPT|Ask anything|Message ChatGPT)"/i)?.[1];
+      const textbox = accessibility.match(CHATGPT_EDITOR_UID)?.[1];
       if (!textbox) throw new Error("ChatGPT editor unavailable; message not sent");
       // Preserve any user draft across the herder's send and restore it after.
       const savedDraft = await this.readComposerDraft(page.id);
+      let restoreDraft = true;
       try {
-        await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
+        try {
+          await this.tools.call("fill", { pageId: page.id, uid: textbox, value: text });
+        } catch (cause) {
+          // Fill may apply and lose only its acknowledgement. Read the exact
+          // composer instead of filling again; the transaction below still
+          // checks origin, path, text and busy state before its single click.
+          try { await this.verifyCurrentPinnedAccountScope(page.id); }
+          catch (error) { restoreDraft = false; throw error; }
+          if ((await this.readComposerDraft(page.id)).trim() !== text) throw cause;
+        }
 
       // A single browser-side check+click: Enter can accidentally stop a turn
       // if the UI transitions between the separate fill and submit RPCs.
@@ -1261,13 +1272,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         throw new Error("ChatGPT submission outcome unknown: do not retry automatically");
       }
       if (!receipt.submitted) {
+        if (receipt.reason === "target_changed") restoreDraft = false;
         if (receipt.reason === "busy") throw new Error("prompt is already running; browser queue must wait");
         throw new Error("ChatGPT submission rejected before click: " + (receipt.reason || "unknown"));
       }
       this.lastSubmittedAt = Date.now();
       return {};
       } finally {
-        await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
+        if (restoreDraft) await this.restoreComposerDraft(page.id, savedDraft).catch(() => undefined);
       }
     });
   }
