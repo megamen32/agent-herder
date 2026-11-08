@@ -56,7 +56,9 @@ def run(config, run_case=False):
     manifest, runner = verify_inputs(config)
     helpers = load_helpers(config['consumer_helpers'])
     class BrowserRpc(helpers.RpcProcess):
-        def request(self, method, params, timeout=90):
+        # A create composes two bounded 120s AHAP operations. The consumer must
+        # not kill the core before its durable receipt can be returned.
+        def request(self, method, params, timeout=300):
             return super().request(method, params, timeout=timeout)
     root = Path(config['run_root'])
     if not root.is_absolute() or root.exists():
@@ -121,14 +123,14 @@ def run(config, run_case=False):
             record['task_ids'] = tasks
             save()
             task = helpers.wait_task(core, task_id, timeout=120)
-            if task.get('status') != 'completed':
-                raise RuntimeError('browser task not completed; do not replay')
             content = task.get('result', {}).get('structuredContent', {})
             if index == 0:
                 session = content.get('create', {}).get('session_ref')
                 if not session:
                     raise RuntimeError('create receipt omitted session_ref')
                 record['session_ref'] = session
+            if task.get('status') != 'completed':
+                raise RuntimeError('browser task not completed; evidence preserved')
             receipt = helpers.task_delivery_receipt(task)
             record.setdefault('delivery_receipts', []).append(receipt)
             save()

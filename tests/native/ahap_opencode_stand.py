@@ -1176,6 +1176,12 @@ def run_case(args):
                          "cleanup": {"opencode_server_shutdown": "finally",
                                      "disposable_fixture_cleanup_owner": "launcher"}})
         persist_evidence(evidence_path, evidence)
+        archive = rpc_tool(reopened, "session", {"action":"archive", "session_ref":session,
+                           "request_key":run_id+"-archive"})
+        evidence["cleanup"]["archive"] = archive
+        persist_evidence(evidence_path, evidence)
+        if archive.get("structuredContent", {}).get("archived") is not True:
+            raise RuntimeError("test chat archive not confirmed; transcript evidence preserved")
         print(json.dumps({"status": case_status, "harness": "opencode", "native_tools": available_tools,
             "report_schema": "ahap-opencode-v1",
             "api_family": api_family, "runner_protocol": runner_protocol,

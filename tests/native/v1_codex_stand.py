@@ -423,6 +423,8 @@ def main():
         evidence.update(phase='completed', result='PASS', reopen_read=after_wire,
                         requests_before_restart=before_restart, requests_after_restart=after_restart)
         persist_evidence(evidence_path, evidence)
+        evidence['archive_attempted'] = True
+        persist_evidence(evidence_path, evidence)
         cleanup = rpc_tool(core, 'session', {'action':'archive','session_ref':session,'request_key':run_id+'-archive'})
         evidence['archive'] = cleanup
         persist_evidence(evidence_path, evidence)
@@ -432,6 +434,16 @@ def main():
         persist_evidence(evidence_path, evidence)
         print(json.dumps(success_receipt(evidence), sort_keys=True), flush=True)
     finally:
+        # A failed case keeps its evidence and still cleans up its known chat.
+        if 'evidence' in locals() and evidence.get('session_ref') and not evidence.get('archive_attempted'):
+            evidence['archive_attempted'] = True
+            persist_evidence(evidence_path, evidence)
+            try:
+                evidence['archive'] = rpc_tool(core, 'session', {'action':'archive',
+                    'session_ref':evidence['session_ref'],'request_key':run_id+'-archive'})
+            except Exception as error:
+                evidence['archive'] = {'effect':'unknown','error':str(error)[:500]}
+            persist_evidence(evidence_path, evidence)
         core.close()
         if native is not None and native.poll() is None:
             native.terminate()
