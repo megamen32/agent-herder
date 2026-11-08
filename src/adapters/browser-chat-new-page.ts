@@ -198,6 +198,47 @@ export function newChatPostClickProbe(site:BrowserChatSite):string {
   }`;
 }
 
+/** Verify the native route of a ChatGPT first message from the account's own
+ * conversation list. The site does not always navigate the tab to /c/<id>
+ * after the first message, so the route is proven by the stored message. */
+export function chatGptNewChatMessageProbe(text:string,scope?:string):string {
+  return `async () => {
+    const herderChatGptNewChatVerify=true, text=${JSON.stringify(text.trim())}, scope=${JSON.stringify(scope||"")};
+    if(location.origin!=='https://chatgpt.com')return {verified:false,reason:'route_changed'};
+    const session=await(await fetch('/api/auth/session',{credentials:'same-origin',cache:'no-store'})).json();
+    if(!session.accessToken||!session.account?.id)return {verified:false,reason:'history_unavailable'};
+    if(scope){
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(session.account.id)));
+      const actual=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+      if(actual!==scope)return {verified:false,reason:'native_history_mismatch'};
+    }
+    const list=await fetch('/backend-api/conversations?offset=0&limit=20&order=updated',{
+      headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},credentials:'same-origin'});
+    if(!list.ok)return {verified:false,reason:'history_unavailable'};
+    const data=await list.json();
+    const items=(data.items||[]).filter(x=>x&&x.id&&!x.is_archived&&!x.is_temporary_chat);
+    for(const item of items.slice(0,10)){
+      const read=await fetch('/backend-api/conversations/'+encodeURIComponent(item.id)+'?num_turns=20&include_has_versions=true',{
+        headers:{authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id},credentials:'same-origin'});
+      if(!read.ok)continue;
+      const conversation=await read.json();
+      if(conversation.conversation_id!==item.id)continue;
+      const mapping=conversation.mapping||{};
+      const users=[];
+      for(const key of Object.keys(mapping)){
+        const node=mapping[key];
+        const message=node&&node.message;
+        if(!message||!message.author||message.author.role!=='user')continue;
+        const parts=(message.content&&message.content.parts)||[];
+        const value=parts.map(p=>typeof p==='string'?p:'').join('').trim();
+        if(value)users.push(value);
+      }
+      if(users.length===1&&users[0]===text)return {verified:true,id:item.id};
+    }
+    return {verified:false,reason:'history_unavailable'};
+  }`;
+}
+
 export interface NewChatSubmitReceipt {
   /** True means the site's own Send button was clicked exactly once. */
   clicked:boolean;
@@ -346,6 +387,18 @@ export async function submitFirstChatMessage(
       if(observed.rejection)return {clicked:true,uncertain:true,reason:
         site+" rejected the first message: "+observed.rejection+"; no automatic retry"};
       const id=observed.path.match(/^\/c\/([a-f0-9-]{12,80})$/i)?.[1];
+      if(!id&&site==="chatgpt"&&observed.origin===origin){
+        // The site keeps the tab on the root after the first message, so the
+        // native route is proven by the stored message itself.
+        const proof=parseChromeEvaluation<{verified?:boolean;id?:string;reason?:string}>(
+          await tools.call("evaluate_script",{pageId,function:chatGptNewChatMessageProbe(text,expectedScope)}));
+        if(proof.verified&&typeof proof.id==="string")
+          return {clicked:true,uncertain:false,remoteId:proof.id};
+        if(proof.reason==="native_history_mismatch")
+          return {clicked:true,uncertain:true,reason:"New-chat native history did not match the submitted message; do not retry"};
+        await new Promise(resolve=>setTimeout(resolve,350));
+        continue;
+      }
       if(observed.origin===origin&&id){
         if(site==="zai" && existingZaiIds.has(id))
           return {clicked:true,uncertain:true,reason:"New-chat route was already in the account inventory; do not retry"};

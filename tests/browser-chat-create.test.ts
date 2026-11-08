@@ -673,3 +673,30 @@ describe("first message composer write", () => {
     expect(fills.filter(value => value === "User prompt").length).toBe(2);
   });
 });
+
+describe("chatgpt first message route proof", () => {
+  it("confirms the native route from the message history when the tab stays on the root", async () => {
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("herderChatGptNewChatVerify")) {
+          return json({ verified: true, id: GPT_NATIVE });
+        }
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) return json({ value: "User prompt" });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/" });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(receipt.uncertain).toBe(false);
+    expect(receipt.remoteId).toBe(GPT_NATIVE);
+  });
+});
