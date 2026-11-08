@@ -4,6 +4,23 @@ import { chatgptFullConversationApiScript, chatgptConversationMessages } from '.
 import vm from 'node:vm';
 
 describe('ChatGPT full session export', () => {
+  it('reconciles 200 messages without invoking full export, while explicit export stays complete', async () => {
+    const id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
+    const messages=[{id:'input',role:'user',text:'question'},{id:'reply',role:'assistant',text:'answer'}];
+    const getMessages=vi.fn(async()=>messages);
+    const getRawConversation=vi.fn<(...args: string[]) => Promise<unknown>>(async()=>{throw new Error('ChatGPT history unavailable: read_cooldown');});
+    const adapter=new BrowserChatAdapter({listChats:async()=>[],sendMessage:async()=>({}),getMessages,getRawConversation} as any,
+      {id:'chatgpt',name:'ChatGPT',harness:'chatgpt',cwd:'/tmp/chatgpt'}, '/tmp/chatgpt', false, true);
+    expect(await adapter.getSessionMessages(id,200)).toEqual(messages);
+    expect(getMessages).toHaveBeenCalledWith(id);
+    expect(getRawConversation).not.toHaveBeenCalled();
+    const data={conversation_id:id,mapping:Object.fromEntries(Array.from({length:240},(_,i)=>[String(i),{message:{id:String(i)}}]))};
+    getRawConversation.mockImplementation(async()=>data);
+    const raw=await adapter.getRawTranscript(id);
+    expect(raw?.complete).toBe(true);
+    expect(Object.keys(JSON.parse(Buffer.from(raw!.bytes).toString()).mapping)).toHaveLength(240);
+    expect(getRawConversation).toHaveBeenCalledExactlyOnceWith(id);
+  });
   it('retrieves the full native mapping without the recent-turn truncation', async () => {
     const id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
     const mapping=Object.fromEntries(Array.from({length:240},(_,i)=>[String(i),{message:{id:String(i)}}]));
@@ -57,7 +74,8 @@ it('reads an admitted draft through its verified native conversation', async () 
     const drafts=new BrowserChatDraftStore('chatgpt',root);await drafts.useScope(scope);
     const draft=await drafts.create('fixture');await drafts.startSend(draft.id);await drafts.admit(draft.id,id);
     const mapping={first:{message:{id:'m1',author:{role:'user'},content:{parts:['question']}}},last:{message:{id:'m2',author:{role:'assistant'},content:{parts:['answer']}}}};
-    const fetch=async(url:string)=>({ok:true,status:200,json:async()=>url==='/api/auth/session'?{accessToken:'fixture'}:{conversation_id:id,mapping}});
+    const fetch=async(url:string)=>({ok:true,status:200,json:async()=>url==='/api/auth/session'?{accessToken:'fixture',account:{id:'fixture'}}:
+      url.startsWith('/backend-api/conversations/')?{conversation_id:id,messages:Object.values(mapping).map(node=>node.message)}:{conversation_id:id,mapping}});
     const context=vm.createContext({location:{origin:'https://chatgpt.com'},fetch,JSON,encodeURIComponent,Date,Object});
     const tools:any={call:async(name:string,args:any)=>{
       if(name==='list_pages')return '1: ChatGPT (https://chatgpt.com/)';

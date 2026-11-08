@@ -9,20 +9,101 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import time
 import uuid
 import ahap_opencode_stand as h
 
 
-def run(manifest_path, scopes, root):
+def recover_created_session(item, task_id):
+    """Read the exact aggregate from its owner DB; never infer or reissue create."""
+    profile = json.loads(Path(item['profile']).read_text())
+    owner = profile['owner']
+    uri = Path(profile['database']).resolve().as_uri() + '?mode=ro'
+    with sqlite3.connect(uri, uri=True, timeout=2) as connection:
+        row = connection.execute('SELECT result_json FROM tasks WHERE task_id=? AND principal=?',
+                                 (task_id, owner['principal'])).fetchone()
+        if not row or not row[0]:
+            return None
+        record = json.loads(row[0])
+        if (record.get('kind') != 'fresh_create_prompt_v1' or
+                record.get('instance') != {'node': owner['node'], 'instance_id': owner['instance']}):
+            raise ValueError('create operation owner binding mismatch')
+        session = record.get('session_ref')
+        if not isinstance(session, str) or not session:
+            return None
+        binding = connection.execute('SELECT node_ref,instance_id FROM session_bindings WHERE session_ref=?',
+                                     (session,)).fetchone()
+        if binding != (owner['node'], owner['instance']):
+            raise ValueError('created session instance binding mismatch')
+        return session
+
+
+def retain_created_session(item, save):
+    task_id = item.get('create_task_id')
+    if not task_id:
+        return
+    attempt = {'task_id': task_id}
+    started = time.monotonic()
+    try:
+        session = recover_created_session(item, task_id)
+        if session:
+            if item.get('session_ref') not in (None, session):
+                raise ValueError('created session changed; cleanup identity uncertain')
+            item['session_ref'] = session
+            attempt['session_ref'] = session
+            attempt['source'] = 'owner_sqlite_create_operation_readonly'
+    except Exception as error:
+        attempt['error'] = str(error)[:1000]
+    finally:
+        attempt['duration_ms'] = (time.monotonic() - started) * 1000
+        item.setdefault('session_recovery', []).append(attempt)
+        save()
+
+
+def wait_task(client, task_id, item, save, timeout=150):
+    """Persist every Tasks read before returning or raising, including timeouts."""
+    deadline = time.monotonic() + timeout
+    while (remaining := deadline - time.monotonic()) > 0:
+        started = time.monotonic()
+        poll = {'task_id': task_id, 'timeout_s': remaining,
+                'started_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        item.setdefault('task_polls', []).append(poll)
+        save()
+        try:
+            response = client.request('tasks/get', {'_meta': h.inline_client_meta(), 'taskId': task_id},
+                                      timeout=remaining)
+            poll['response'] = response
+        except Exception as error:
+            poll['error'] = str(error)[:1000]
+            if isinstance(error, TimeoutError):
+                # A late response can still arrive on this JSONL stream. Never
+                # send another request through it, including cleanup.
+                client.task_read_timed_out = True
+            raise
+        finally:
+            poll['duration_ms'] = (time.monotonic() - started) * 1000
+            save()
+        if response.get('status') in ('completed', 'failed', 'cancelled'):
+            return response
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.25, remaining))
+    raise TimeoutError(f'Task did not reach a terminal status within {timeout}s')
+
+
+def run(manifest_path, scopes, root, *, stage):
+    if stage not in ('candidate', 'installed'):
+        raise ValueError('stage must be candidate or installed')
     manifest = json.loads(manifest_path.read_text())
     for key in ('core', 'node', 'bootstrap'):
         assert hashlib.sha256(Path(manifest[key]).read_bytes()).hexdigest() == manifest['sha256'][key]
     runner = manifest['adapters']['chatgpt']
     assert hashlib.sha256(Path(runner).read_bytes()).hexdigest() == manifest['sha256']['adapters']['chatgpt']
     root.mkdir(mode=0o700)  # never replay an existing run
-    state = {'stage': 'candidate', 'manifest': str(manifest_path), 'source': manifest['source_commit'],
+    state = {'stage': stage, 'manifest': str(manifest_path), 'source': manifest['source_commit'],
+             'manifest_sha256': hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
              'status': 'PREPARING', 'instances': [], 'checks': {}, 'native_send_attempts': 0}
     def save():
         h.persist_evidence(root/'receipt.json', state)
@@ -53,6 +134,8 @@ def run(manifest_path, scopes, root):
         def __init__(self):
             argv = [manifest['core']]
             for path in profiles: argv += ['--trusted-owner-profile', str(path)]
+            state.setdefault('core_commands', []).append(argv)
+            save()
             self.process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True, bufsize=1)
             self.next_id = 0; self.buffer = ''
@@ -84,10 +167,17 @@ def run(manifest_path, scopes, root):
                     task_id = reply.get('taskId')
                     if not task_id: raise RuntimeError('missing task receipt; retained, no resend')
                     item['task_ids'].append(task_id); save()
-                    task = h.wait_task(core, task_id, timeout=150)
+                    if turn == 0:
+                        item['create_task_id'] = task_id
+                        retain_created_session(item, save)
+                    task = wait_task(core, task_id, item, save, timeout=150)
                     item.setdefault('tasks', []).append(task)
                     if turn == 0:
-                        item['session_ref'] = task.get('result', {}).get('structuredContent', {}).get('create', {}).get('session_ref')
+                        session = task.get('result', {}).get('structuredContent', {}).get('create', {}).get('session_ref')
+                        if session:
+                            if item.get('session_ref') not in (None, session):
+                                raise RuntimeError('create task session identity mismatch')
+                            item['session_ref'] = session
                     save()
                     receipt = h.task_delivery_receipt(task)
                     if not receipt or receipt.get('outcome') != 'confirmed': raise RuntimeError('native delivery not confirmed')
@@ -102,6 +192,8 @@ def run(manifest_path, scopes, root):
                     item['checks']['turn_'+str(turn)] = 'PASS'; item['status'] = 'READ_CONFIRMED'; save()
                 except Exception as error:
                     item['status'] = 'BLOCKED'; item['error'] = str(error)[:1000]; save()
+                    if getattr(core, 'task_read_timed_out', False):
+                        raise  # do not continue RPC on a stream with an outstanding response
         for item in state['instances']:
             if item['status'] == 'BLOCKED': continue
             exported = h.public_export_readiness(h.rpc_tool(core,'export',{'action':'export','session_ref':item['session_ref'],'format':'native'}), 'native')
@@ -124,6 +216,18 @@ def run(manifest_path, scopes, root):
     except Exception as error:
         state['status'] = 'INCOMPLETE'; state['error'] = str(error)[:1000]; save()
     finally:
+        # Recovery is local/read-only and still works if the core has died.
+        for item in state['instances']:
+            if not item.get('session_ref'):
+                retain_created_session(item, save)
+        if core and getattr(core, 'task_read_timed_out', False):
+            core.close(); core = None
+            try:
+                core = MultiRpc(); core.preflight()
+            except Exception as error:
+                state['cleanup_recovery_error'] = str(error)[:1000]; save()
+                if core:
+                    core.close(); core = None
         if core:
             for item in state['instances']:
                 if not item.get('session_ref'): continue
@@ -144,7 +248,8 @@ if __name__ == '__main__':
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--scope', action='append', required=True)
     parser.add_argument('--run-root', type=Path, required=True)
+    parser.add_argument('--stage', choices=('candidate', 'installed'), required=True)
     args = parser.parse_args()
-    result = run(args.manifest, args.scope, args.run_root)
+    result = run(args.manifest, args.scope, args.run_root, stage=args.stage)
     print(json.dumps({'status':result['status'], 'receipt':str(args.run_root/'receipt.json')}))
     raise SystemExit(0 if result['status']=='PASS' else 1)

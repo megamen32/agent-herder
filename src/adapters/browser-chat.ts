@@ -1,4 +1,3 @@
-import { chatgptConversationMessages } from "./chatgpt-full-conversation.js";
 import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, RawTranscriptExport, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
@@ -380,10 +379,9 @@ export class BrowserChatAdapter implements HarnessAdapter {
 
   async getSessionMessages(id: string, limit = 100): Promise<SessionMessageView[] | null> {
     const native = this.nativeId(id);
-    if (this.provider.id === "chatgpt" && limit > 100 && this.driver.getRawConversation) {
-      const raw = await this.driver.getRawConversation(native);
-      return raw ? chatgptConversationMessages(raw).slice(-Math.max(1, limit)) : null;
-    }
+    // Message reconciliation uses the ordinary history path regardless of
+    // the requested limit. Full native export belongs to getRawTranscript:
+    // it can require additional reads and a chunked transfer.
     if (!this.driver.getMessages) return null;
     if (!this.foregroundOnly && this.historyCache.available) return this.historyCache.messages(native, limit);
     const live = await this.driver.getMessages(native);
