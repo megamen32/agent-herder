@@ -8,6 +8,23 @@ import v1_browser_stand as stand
 
 
 class BrowserStandGuardTest(unittest.TestCase):
+    def test_mutation_rejection_is_saved_before_task_validation(self):
+        record = {}
+        saved = []
+        rejection = {'isError': True, 'structuredContent': {'code': 'session_busy'}}
+        with self.assertRaisesRegex(RuntimeError, 'saved response'):
+            stand.retain_mutation_reply(record, rejection,
+                lambda: saved.append(json.loads(json.dumps(record))))
+        self.assertEqual(saved[0]['mutation_replies'], [rejection])
+
+    def test_task_reply_is_saved_and_exact_id_returned(self):
+        record = {}
+        saved = []
+        response = {'resultType': 'task', 'taskId': 'exact-task'}
+        self.assertEqual(stand.retain_mutation_reply(record, response,
+            lambda: saved.append(json.loads(json.dumps(record)))), 'exact-task')
+        self.assertEqual(saved[0]['mutation_replies'], [response])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

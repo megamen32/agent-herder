@@ -52,6 +52,17 @@ def verify_inputs(config):
     return manifest, runner
 
 
+def retain_mutation_reply(record, response, save):
+    # A definitive admission refusal must not disappear behind a generic
+    # missing-task error. Preserve the public reply before interpreting it.
+    record.setdefault('mutation_replies', []).append(response)
+    save()
+    task_id = response.get('taskId')
+    if response.get('resultType') != 'task' or not task_id:
+        raise RuntimeError('mutation returned no task; inspect saved response before determining outcome')
+    return task_id
+
+
 def run(config, run_case=False):
     manifest, runner = verify_inputs(config)
     helpers = load_helpers(config['consumer_helpers'])
@@ -116,13 +127,13 @@ def run(config, run_case=False):
             call = helpers.rpc_tool(core, 'create' if index == 0 else 'deliver',
                 {'action':'create','instance_ref':config['instance'],'prompt':prompt,'request_key':keys[index]}
                 if index == 0 else {'action':'session','session_ref':session,'message':prompt,'mode':'queue','request_key':keys[index]})
-            task_id = call.get('taskId')
-            if call.get('resultType') != 'task' or not task_id:
-                raise RuntimeError('mutation returned no task; outcome unknown, do not replay')
+            task_id = retain_mutation_reply(record, call, save)
             tasks.append(task_id)
             record['task_ids'] = tasks
             save()
             task = helpers.wait_task(core, task_id, timeout=120)
+            record.setdefault('task_results', []).append(task)
+            save()
             content = task.get('result', {}).get('structuredContent', {})
             if index == 0:
                 session = content.get('create', {}).get('session_ref')

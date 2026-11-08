@@ -21,22 +21,27 @@ it("archives exactly one native task through the official task service and reads
   const f = fixture();
   expect(await f.adapter.archiveSession!("fixture-session")).toEqual({ ok: true, sessionId: "fixture-session" });
   expect(f.call.mock.calls).toEqual([
-    ["zcode-agent", "readSession", [{ workspacePath: "/fixture", workspaceIdentity: "/fixture", workspaceKey: "/fixture", runtimePolicy: "existing-only", sessionId: "fixture-session", messageLimit: 1 }]],
     ["zcode-task", "archiveTask", [{ workspacePath: "/fixture", workspaceIdentity: "/fixture", workspaceKey: "/fixture", taskId: "fixture-session" }]],
     ["zcode-task", "listArchivedTasks", [{ workspacePath: "/fixture", workspaceIdentity: "/fixture", workspaceKey: "/fixture" }]],
   ]);
 });
 
-it("refuses an invalid or mismatched native target before archive", async () => {
+it("archives a retained indexed task without starting or reading a stopped agent runtime", async () => {
+  const f = fixture();
+  f.read.mockRejectedValue(new Error("ZCode Agent runtime is not running."));
+  expect(await f.adapter.archiveSession!("fixture-session")).toEqual({ ok: true, sessionId: "fixture-session" });
+  expect(f.read).not.toHaveBeenCalled();
+  expect(f.archive).toHaveBeenCalledTimes(1);
+});
+
+it("refuses invalid ids and preserves native exact-target rejection without retry", async () => {
   const f = fixture();
   expect((await f.adapter.archiveSession!("\n")).ok).toBe(false);
   expect(f.call).not.toHaveBeenCalled();
-  f.read.mockResolvedValue({ session: { sessionId: "other", workspace: { taskId: "other", workspacePath: "/fixture", workspaceIdentity: "/fixture" } } });
-  expect((await f.adapter.archiveSession!("fixture-session")).ok).toBe(false);
-  expect(f.archive).not.toHaveBeenCalled();
-  f.read.mockResolvedValue({ session: { sessionId: "fixture-session", workspace: { taskId: "fixture-session", workspacePath: "/other", workspaceIdentity: "/other" } } });
-  expect((await f.adapter.archiveSession!("fixture-session")).ok).toBe(false);
-  expect(f.archive).not.toHaveBeenCalled();
+  f.archive.mockRejectedValue(new Error("task index missing exact workspace/task"));
+  await expect(f.adapter.archiveSession!("fixture-session")).rejects.toThrow("missing exact workspace/task");
+  expect(f.archive).toHaveBeenCalledTimes(1);
+  expect(f.archived).not.toHaveBeenCalled();
 });
 
 it("does not confirm absent archived membership or repeat an uncertain native mutation", async () => {

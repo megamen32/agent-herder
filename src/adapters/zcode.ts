@@ -2674,11 +2674,10 @@ export class ZcodeAdapter implements HarnessAdapter {
       return { ok: false, error: "ZCode archive requires an exact session id" };
     }
     const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-    const snapshot = sessionInfoFromPayload(await this.readSnapshot(id, workspace, 1));
-    if (snapshot?.sessionId !== id || snapshot.workspace?.workspacePath !== workspace.workspacePath
-        || (snapshot.workspace.workspaceIdentity && snapshot.workspace.workspaceIdentity !== workspace.workspaceIdentity)) {
-      return { ok: false, error: "ZCode archive target identity mismatch" };
-    }
+    // Task-shell archive must also work after the agent runtime stopped.
+    // The official archiveTask transaction looks up this exact workspace/task
+    // key and refuses missing/deleted rows before writing; readSession would
+    // incorrectly require an active model runtime for this index operation.
     // zcode-task.archiveTask commits archived=true in the official tasks index
     // and returns task metadata. Metadata has no archived flag, so confirm
     // membership via the same service's archived list rather than invent one.
