@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "session_ref": "session:252919efe23cabd6148929f0b9a3c808",
+  "model_sends": 0,
+  "instance_found": true,
+  "checks": {
+    "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_1": {
+      "prompt": true,
+      "response": true
+    },
+    "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_2": {
+      "prompt": true,
+      "response": true
+    }
+  },
+  "page_complete": false,
+  "limitations": [
+    "Показаны последние сообщения. Прежний API не предоставляет курсор для проверки полноты истории."
+  ]
+}

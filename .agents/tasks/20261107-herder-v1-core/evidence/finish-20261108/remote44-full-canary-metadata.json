@@ -1,0 +1,75 @@
+{
+  "status": "PASS",
+  "node": "server-44",
+  "instance": "codex-44",
+  "manifest_sha256": "203decf5178c80e3c12a44f7e7c64aeec3c0d2cfc05b36c8d3614e4c62147d22",
+  "selector": "/home/roomhacker/herder-artifacts/installed-v1/restore-selector-3ee99555.json",
+  "remote_runner": "/home/roomhacker/.local/share/agent-herder/v1-remote-model-6eb3f8f3b1fa/runner.mjs",
+  "remote_runner_sha256": "6eb3f8f3b1fa30e46261c16730c929545f609f36c7d2bd072c62d825335a4d2c",
+  "script_sha256_current": "9cd1af36b8ea2e0975a204c9a6b0d370bfc1fb0d6127d4a70584112aa32f9b61",
+  "receipt_absolute": "/home/roomhacker/herder-artifacts/ci-runs/remote44-3ee-terra-once/receipt.json",
+  "receipt_sha256": "fe504c34c78b30b3942cb6f746479cd24673d2066b10a13c86a117a53dd73d12",
+  "restart_readonly_absolute": "/home/roomhacker/herder-artifacts/ci-runs/remote44-3ee-terra-once/restart-readonly.json",
+  "restart_readonly_sha256": "74be0f61ec417ce96ca7255db69c6cec5f15181806d312eda53ef0309746bc29",
+  "session_ref": "session:252919efe23cabd6148929f0b9a3c808",
+  "native_session_id": "01a1bc76-5e10-71f2-8c18-636742486e88",
+  "create_task": "create-operation:fb1a0758a6ac82a03de7a9d0dde118e8",
+  "deliver_task": "mcp-delivery-task:638d2d8ab5b391a0e82201445ca53b3c42a5bcd98b489823e9646b144e38bd90",
+  "first_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"turn\",\"native_id\":\"01a1bc76-67a6-7920-bb48-fce4036ebae8\"}",
+    "outcome": "confirmed"
+  },
+  "second_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"turn\",\"native_id\":\"01a1bc76-8558-71d2-9237-e37ffb04fc90\"}",
+    "outcome": "confirmed"
+  },
+  "archive": {
+    "archived": true,
+    "effect": "confirmed",
+    "session_ref": "session:252919efe23cabd6148929f0b9a3c808"
+  },
+  "markers": [
+    "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_1",
+    "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_2"
+  ],
+  "restart_readonly": {
+    "status": "PASS",
+    "session_ref": "session:252919efe23cabd6148929f0b9a3c808",
+    "checks": {
+      "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_1": {
+        "prompt": true,
+        "response": true
+      },
+      "HERDER_REMOTE44_cc0b674826ca405785f99c37fbe08e45_2": {
+        "prompt": true,
+        "response": true
+      }
+    },
+    "page_complete": false,
+    "limitations": [
+      "Показаны последние сообщения. Прежний API не предоставляет курсор для проверки полноты истории."
+    ],
+    "archive_confirmed_in_prior_receipt": true,
+    "tool_count": 15
+  },
+  "native_model_readback": {
+    "path": "/home/roomhacker/.codex/archived_sessions/rollout-2026-11-08T21-40-36-01a1bc76-5e10-71f2-8c18-636742486e88.jsonl",
+    "host": "server-44",
+    "source": "retained native turn_context",
+    "turns": {
+      "01a1bc76-67a6-7920-bb48-fce4036ebae8": "gpt-6.1-terra",
+      "01a1bc76-8558-71d2-9237-e37ffb04fc90": "gpt-6.1-terra"
+    }
+  },
+  "limitations": [
+    "Checkpoint mutation state fields remain UNKNOWN despite separately confirmed task receipts and archive admission.",
+    "Restart messages page reports complete=false; both canary exchanges are present.",
+    "Current script hash includes subsequent offline response normalization changes."
+  ],
+  "shared_gptadmin_readonly": {
+    "status": "PASS",
+    "evidence_absolute": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/remote44-shared-gptadmin-readonly.json",
+    "evidence_sha256": "5a27b70cdb8b4f71fdda65827c44a86727ff4b200df9799111437fa34d2bc541",
+    "model_sends": 0
+  }
+}
