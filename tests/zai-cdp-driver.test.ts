@@ -208,6 +208,22 @@ describe("Mac mini CDP ZAI provider", () => {
     expect(tools.attempts).toBeGreaterThanOrEqual(2);
     expect(tools.actions.filter(x => String(x.args.function).includes("const expected ="))).toHaveLength(1);
   });
+  it("uses exact composer readback when fill applied before a transport timeout", async () => {
+    class AppliedFillTimeout extends MockChromeTools {
+      fills = 0;
+      override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+        const result = await super.call(name,args);
+        if (name === "fill" && this.fills++ === 0) throw new Error("Mac mini Chrome operation timeout; do not replay an uncertain write");
+        return result;
+      }
+    }
+    const tools = new AppliedFillTimeout();
+    const driver = new ZaiCdpDriver(tools);
+    await driver.listChats();
+    await driver.sendMessage({chatId:"sidebar:Test%20fixture",text:"fixture-only"});
+    expect(tools.sent).toEqual(["fixture-only"]);
+    expect(tools.actions.filter(x=>x.name==='fill'&&x.args.value==='fixture-only')).toHaveLength(1);
+  });
   it("preserves a draft changed by the user while the composer reference expires", async () => {
     class ChangedComposerTools extends MockChromeTools {
       override async call(name: string, args: Record<string, unknown> = {}): Promise<string> {

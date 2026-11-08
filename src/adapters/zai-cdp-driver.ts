@@ -788,11 +788,12 @@ export class ZaiCdpDriver implements BrowserChatDriver {
         } catch (error) {
           // A stale snapshot reference can fail before the send click. Re-read
           // both target and draft before one new fill; never replay a click.
-          if (!(error instanceof Error) || !/element did not become interactive/i.test(error.message)) throw error;
+          const staleReference = error instanceof Error && /element did not become interactive/i.test(error.message);
           const refreshed = await this.snapshot(page.id);
           if (!this.isSelected(chatId, known, refreshed) || this.busy(refreshed)) throw new Error("prompt is already running; ZAI queue must wait");
           const currentDraft = await this.readComposerDraft(page.id);
           if (currentDraft !== text) {
+            if (!staleReference) throw error;
             if (currentDraft !== savedDraft) throw new Error("ZAI composer draft changed; message not sent");
             const freshSnapshot = await this.tools.call("take_snapshot", { pageId: page.id });
             const freshUid = freshSnapshot.match(/uid=([\w-]+) textbox "Send a Message"/)?.[1];

@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/zai-cdp-driver.test.ts (33 tests | 1 failed) 77ms
+     × uses exact composer readback when fill applied before a transport timeout 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zai-cdp-driver.test.ts > Mac mini CDP ZAI provider > uses exact composer readback when fill applied before a transport timeout
+Error: Mac mini Chrome operation timeout; do not replay an uncertain write
+ ❯ AppliedFillTimeout.call tests/zai-cdp-driver.test.ts:216:58
+    214|       override async call(name: string, args: Record<string, unknown> …
+    215|         const result = await super.call(name,args);
+    216|         if (name === "fill" && this.fills++ === 0) throw new Error("Ma…
+       |                                                          ^
+    217|         return result;
+    218|       }
+ ❯ src/adapters/zai-cdp-driver.ts:787:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 32 passed (33)
+   Start at  18:47:37
+   Duration  709ms (transform 320ms, setup 33ms, import 428ms, tests 77ms, environment 0ms)
+
