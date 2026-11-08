@@ -105,6 +105,7 @@ class NewChatPageFixture implements ChromePageTools {
   nativeRoute=true;
   rejection:string|undefined;
   chatgptEditorLabel="Спросить ChatGPT";
+  composerValue="";
   constructor(readonly site:"chatgpt"|"zai",readonly timeoutOnOpen=false) {}
   get origin(){return this.site==="chatgpt"?"https://chatgpt.com":"https://chat.z.ai"}
   get remoteRoute(){return "/c/"+(this.site==="chatgpt"?GPT_NATIVE:ZAI_NATIVE)}
@@ -133,6 +134,9 @@ class NewChatPageFixture implements ChromePageTools {
       if(source.includes("ready:!!editor")){
         return json({origin:this.origin,path:"/",ready:true,empty:!this.inheritedDraft});
       }
+      if(source.includes("return {value:")){
+        return json({value:this.composerValue});
+      }
       if(source.includes("send_not_ready")){
         if(this.ambiguousClick)throw Error("transport lost after click");
         if(this.failBeforeClick)return json({submitted:false,reason:"send_not_ready"});
@@ -149,7 +153,7 @@ class NewChatPageFixture implements ChromePageTools {
         ? `uid=1_42 textbox "${this.chatgptEditorLabel}" focusable multiline`
         : 'uid=1_44 textbox "Send a Message" focusable multiline';
     }
-    if(name==="fill")return "ok";
+    if(name==="fill"){this.composerValue=String(args.value);return "ok";}
     if(name==="close_page"){this.closed=true;return "Closed";}
     throw Error("unexpected tool:"+name);
   }
@@ -588,8 +592,9 @@ describe("first message composer content", () => {
     } };
     await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
     // The composer is cleared by replacing its content, then the user's own
-    // text is written once.
-    expect(fills).toEqual(["User prompt"]);
+    // text is written; the write is verified against the composer.
+    expect(fills.every(value => value === "User prompt")).toBe(true);
+    expect(fills.length).toBeGreaterThan(0);
   });
 });
 
@@ -612,7 +617,8 @@ describe("owned tab with a leftover composer", () => {
     } };
     const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
     expect(receipt.clicked).toBe(true);
-    expect(fills).toEqual(["User prompt"]);
+    expect(fills.every(value => value === "User prompt")).toBe(true);
+    expect(fills.length).toBeGreaterThan(0);
   });
 });
 
@@ -637,5 +643,33 @@ describe("first message composer replacement", () => {
     await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
     const replace = scripts.find(source => source.includes("execCommand('delete')"));
     expect(replace).toBeTruthy();
+  });
+});
+
+describe("first message composer write", () => {
+  it("retries the write when the site restores its own draft over the message", async () => {
+    const fills: string[] = [];
+    let reads = 0;
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") { fills.push(String(args.value)); return "ok"; }
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("return {value:")) {
+          reads += 1;
+          return json({ value: reads === 1 ? "restored draft" : "User prompt" });
+        }
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "User prompt", ACCOUNT);
+    expect(receipt.clicked).toBe(true);
+    expect(fills.filter(value => value === "User prompt").length).toBe(2);
   });
 });

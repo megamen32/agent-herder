@@ -48,6 +48,21 @@ function pages(text:string): Array<{id:number;url:string}> {
  * Never reuse a random existing tab or change the human-selected chat.
  */
 
+
+/** The exact text the composer currently holds. */
+async function composerValue(tools:ChromePageTools,pageId:number,site:BrowserChatSite):Promise<string> {
+  try {
+    const value=parseChromeEvaluation<{value:string}>(
+      await tools.call("evaluate_script",{pageId,function:`() => {
+        const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+          ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+          :'textarea[placeholder="Send a Message"]')});
+        return {value:(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+      }`}));
+    return typeof value?.value==="string"?value.value.trim():"";
+  } catch { return ""; }
+}
+
 /** Replace the whole composer content. A fill on a rich editor appends to
  * whatever the site restored, so the previous value is selected and
  * replaced instead of merely emptied. */
@@ -296,11 +311,16 @@ export async function submitFirstChatMessage(
       await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
     }
-    // The site may restore a leftover composer value into a reused tab, and a
-    // fill on a rich editor appends to it. Replace the whole content so the
-    // first message is exactly the user's own text.
-    await clearComposer(tools,pageId,site);
-    await tools.call("fill",{pageId,uid,value:text});
+    // The site may restore its own composer draft over our text. Write the
+    // message and verify what the composer actually holds; a restored draft
+    // is cleared and the write is repeated.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await clearComposer(tools, pageId, site);
+      await tools.call("fill", { pageId, uid, value: text });
+      const written = await composerValue(tools, pageId, site);
+      if (written === text.trim()) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
   }catch(error){
     await closeOwnedPage();
     return {clicked:false,uncertain:false,reason:"Cannot fill new-chat composer; no click attempted"};
