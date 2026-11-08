@@ -135,8 +135,8 @@ describe("ChatGPT AHAP browser runner", () => {
     expect(adapter.type).toBe("zai");
     expect(adapter.name).toBe("Z.ai browser");
     await adapter.verifyPinnedAccountScope?.();
-    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script"]);
-    expect(calls[1]?.args?.pageId).toBe(17);
+    expect(calls.map(call => call.name)).toEqual(["list_pages", "evaluate_script", "evaluate_script"]);
+    expect(calls[2]?.args?.pageId).toBe(17);
   });
 
   it("fails closed for Z.ai when exact page or current account proof is unavailable", async () => {

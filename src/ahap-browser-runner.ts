@@ -5,7 +5,6 @@ import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
-import { verifyNewChatAccountScope } from "./adapters/browser-chat-new-page.js";
 import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
 import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
@@ -220,14 +219,6 @@ const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
 };
 
 
-/** The page number of the one tab this provider owns. */
-async function ownedPageId(pageTools: ChromePageTools): Promise<number> {
-  const listing = await pageTools.call("list_pages");
-  const id = listing.split("\n").map(line => line.match(/^\s*(\d+):/)?.[1]).find(Boolean);
-  if (!id) throw new Error("Owned browser tab unavailable; no page fallback allowed");
-  return Number(id);
-}
-
 export function makeConfiguredAdapter(
   env: NodeJS.ProcessEnv = process.env,
   factories: BrowserChatRunnerTransportFactories = DEFAULT_TRANSPORT_FACTORIES,
@@ -292,13 +283,8 @@ export function makeConfiguredAdapter(
       verifiedAccountScope = undefined;
       if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
       else {
-        await pageTools.call("list_pages");
-        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId ?? (await ownedPageId(pageTools)));
-        if (observedScope !== expectedScope) {
-          throw new Error("pinned browser account scope mismatch");
-        }
-        // Z.ai's explicit verifier returns evidence without filling the driver's cache.
-        verifiedAccountScope = observedScope;
+        await (driver as ZaiCdpDriver).verifyPinnedAccountScope(expectedScope);
+        verifiedAccountScope = driver.getAccountScope();
       }
     },
     close: () => {

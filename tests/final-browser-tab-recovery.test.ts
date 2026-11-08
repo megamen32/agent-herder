@@ -3,6 +3,7 @@ import { ChatGptMacCdpDriver, CHATGPT_MAC_SNAPSHOT } from "../src/adapters/chatg
 import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT } from "../src/adapters/zai-cdp-driver.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 import { openOwnedBlankChatPage } from "../src/adapters/browser-chat-new-page.js";
+import { makeConfiguredAdapter } from "../src/ahap-browser-runner.js";
 
 const json = (x: unknown) => "```json\n" + JSON.stringify(x) + "\n```";
 const id = "123e4567-e89b-12d3-a456-426614174000";
@@ -30,6 +31,28 @@ it.each(["chatgpt", "zai"] as const)("%s finds its existing page after a process
   await make().listChats();
   expect(snapshots).toEqual([2, 20]);
   expect(opened).toBe(0);
+});
+
+it("the production Z.ai wrapper verifies the recovered page rather than a stale configured number", async () => {
+  const scope = "a".repeat(64);
+  const authPages: number[] = [];
+  const tools: ChromePageTools = { call: async (name, args = {}) => {
+    if (name === "list_pages") return "17: Z.ai (https://chat.z.ai/?herder_owned=zai)";
+    if (name === "evaluate_script" && String(args.function).includes("herder-owned:")) return json({ owned: true });
+    if (name === "evaluate_script") {
+      authPages.push(Number(args.pageId));
+      if (args.pageId !== 17) throw new Error("No page found");
+      return json({ scope, chats: [] });
+    }
+    throw new Error(`unexpected ${name}`);
+  } };
+  const adapter = makeConfiguredAdapter({ AHAP_HARNESS: "zai", AHAP_BROWSER_TRANSPORT: "mac-mini",
+    AHAP_BROWSER_PAGE_ID: "9", AHAP_BROWSER_ACCOUNT_SCOPE: scope }, {
+    macMini: () => tools, directCdp: () => { throw new Error("unexpected transport"); },
+  });
+  await adapter.verifyPinnedAccountScope?.();
+  expect(authPages).toEqual([17]);
+  expect(adapter.getAccountScope()).toBe(scope);
 });
 
 it("persists the ownership of a newly created blank before the site drops its URL marker", async () => {

@@ -125,6 +125,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   private ownedTabPath?: string;
   getAccountScope(): string | undefined { return this.accountScope; }
 
+  async verifyPinnedAccountScope(expectedScope: string): Promise<void> {
+    this.accountScope = undefined;
+    const page = await this.page();
+    const scope = await verifyNewChatAccountScope(this.tools, "zai", page.id);
+    if (scope !== expectedScope) throw new Error("pinned browser account scope mismatch");
+    this.accountScope = scope;
+  }
+
 
   constructor(private readonly tools: ChromePageTools, private readonly pinnedPageId?: number, private readonly openWaitMs = 5_000) {}
 
