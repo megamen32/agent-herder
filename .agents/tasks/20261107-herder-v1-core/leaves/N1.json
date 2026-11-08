@@ -74,6 +74,21 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T14:55:00+03:00",
+      "note": "Candidate 71b357f8core registered with projects fix; NEG 5/5; consumer recheck dispatched to OpenCode lane.",
+      "changes": {
+        "result": "Core fix published: 7ee42db7 owner_reads projects authorized_registered_sessions semantics. Registered in immutable cand"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -114,6 +129,6 @@
     ]
   },
   "assignment_history": [],
-  "result": "Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
+  "result": "Core fix published: 7ee42db7 owner_reads projects authorized_registered_sessions semantics. Registered in immutable candidate 71b357f8core (manifest SHA256 a451e1088169419913f6010306f3611767042b0fdaa1da85c87fb62226cfa0c4), packaged NEG 5/5 PASS, live core proof count=1 source authorized_native_session after registration. OpenCode consumer recheck assigned on the new candidate; execution-lock behavior unchanged.",
   "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch."
 }
