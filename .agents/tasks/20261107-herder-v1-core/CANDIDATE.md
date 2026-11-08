@@ -1,4 +1,25 @@
-# Current candidate 5ea28f51
+# Current candidate 814759a9
+
+Published source 814759a9248df707f974168f8fb57ba56280ec6b. Immutable
+manifest /home/roomhacker/herder-artifacts/releases/herder-v1-814759a9248d/manifest.json,
+SHA256 83f5593155f11f7216dd6f36d81190025daef01fc73574fdda30b0e405977385.
+
+Includes browser adapter 2e446c4c native input correlation. Rust core includes
+the intervening reviewed fixes 1f586e2f, 561951cc and 508500ed; exact candidate
+core SHA256 is 3d21813f041f2388ed4f060d7df94f880ecbb6532e7e99da2a305aa59c3539ae.
+TypeScript build and test-build-v1-core.py with this manifest PASS. Exact
+packaged core negative gate: 5/5 PASS, run log
+evidence/candidate-negative-814759a9.log (SHA256
+83829757d2c31985fac4d05708dc946da4a19d50339d710077e004c36e53479b). Checks
+used the public stdio consumer with isolated fake AHAP; they are not native
+provider or installed proof. Candidate matrix remains incomplete: the second
+ChatGPT deliver on the retained test session was refused with effect:none before
+send (CI receipt /home/roomhacker/herder-artifacts/ci-runs/ci-chatgpt-native-5ea-0110/second-deliver-receipt.json,
+SHA256 97f8a28651db98d84a98d5a4839f8fd0930ac398a615a9fd36b06c325a0404eb).
+CI is fixing the ChatGPT runner state transition. No installation or runtime
+switch before exact-digest 5/5 native lanes plus NEG PASS.
+
+# Previous candidate 5ea28f51
 
 Published source `5ea28f51838fcfc3230006a8709090f08009a47f`. Manifest `/home/roomhacker/herder-artifacts/releases/herder-v1-5ea28f51838f/manifest.json`, SHA256 `a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998`.
 
