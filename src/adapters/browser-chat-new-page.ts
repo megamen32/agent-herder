@@ -1,6 +1,6 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
-import { isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
+import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -171,7 +171,12 @@ export async function openOwnedBlankChatPage(
         }`}));
       if(state.origin!==origin||state.path!=="/"||!state.empty)
         throw new Error("New chat page changed or contains a draft");
-      if(state.ready)return pageId;
+      if(state.ready) {
+        if (!await claimOwnedTab(tools,site,pageId)) {
+          throw new Error(site+" new chat ownership could not be retained; no message submitted");
+        }
+        return pageId;
+      }
     }catch(error){
       if(error instanceof Error&&error.message.includes("changed or contains")) throw error;
     }

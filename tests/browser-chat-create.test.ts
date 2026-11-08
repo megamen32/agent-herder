@@ -124,6 +124,7 @@ class NewChatPageFixture implements ChromePageTools {
     if(name==="evaluate_script"){
       const source=String(args.function);
       expect(() => new Function("return ("+source+")")).not.toThrow();
+      if(source.includes("window.name ="))return json({owned:args.pageId===20,already:false});
       if(source.includes("/api/auth/session") ||
         source.includes("/api/v1/chats/?page=")) {
         return json({scope:ACCOUNT,chats:[]});

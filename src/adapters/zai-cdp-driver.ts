@@ -140,19 +140,26 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const pages = parseZaiPages(await this.tools.call("list_pages"));
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
-    if (pinned) return pinned;
     // One owned tab per provider, identified by its own URL rather than by a
     // page number: a gateway restart renumbers everything.
     const marked = pages.find(page => isOwnedTabUrl(page.url, "zai"));
-    if (marked) { this.ownedTabPath = zaiTabPath(marked.url); return marked; }
+    if (marked) {
+      await claimOwnedTab(this.tools, "zai", marked.id);
+      this.ownedTabPath = zaiTabPath(marked.url);
+      return marked;
+    }
     // The site rewrites the URL of its own navigation, so the marker of our
     // tab can be gone while the tab itself is still ours. The page keeps the
     // ownership marker, so an already-owned tab is found there instead of a
     // second one being opened. A driver that owned no tab yet still adopts
     // one existing tab on its first use.
-    if (this.ownedTabPath) {
+    {
       const claimed = await resolveOwnedTab(this.tools, "zai", pages);
       if (claimed) { this.ownedTabPath = zaiTabPath(claimed.url); return claimed; }
+    }
+    if (pinned && !this.ownedTabPath) {
+      this.ownedTabPath = zaiTabPath(pinned.url);
+      return pinned;
     }
     if (this.ownedTabPath) {
       const owned = pages.find(page => zaiTabPath(page.url) === this.ownedTabPath);

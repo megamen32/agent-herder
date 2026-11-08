@@ -403,7 +403,6 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
-    if (pinned?.conversation) return pinned;
     // One owned tab per provider. The tab is identified by its own URL, not
     // by a page number: a gateway restart renumbers everything, and a number
     // would either break the driver or make it grab a foreign tab.
@@ -429,7 +428,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // ownership marker, so an already-owned tab is found there instead of a
     // second one being opened. A driver that owned no tab yet still adopts
     // one existing tab on its first use.
-    if (this.ownedTabPath) {
+    {
       // Only a plain chat route or the root can be our own tab; a workspace
       // dashboard such as /dots/… belongs to the human and is never probed.
       const claimed = await resolveOwnedTab(this.tools, "chatgpt",
@@ -438,6 +437,10 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
         this.ownedTabPath = chatGptTabPath(claimed.url);
         return claimed;
       }
+    }
+    if (pinned?.conversation && !this.ownedTabPath) {
+      this.ownedTabPath = chatGptTabPath(pinned.url);
+      return pinned;
     }
     if (this.ownedTabPath) {
       const owned = pages.find(page => chatGptTabPath(page.url) === this.ownedTabPath);

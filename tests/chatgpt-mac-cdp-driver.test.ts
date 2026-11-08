@@ -132,7 +132,8 @@ describe("ChatGPT on existing Mac mini CDP", () => {
     ) => ChatGptMacCdpDriver;
     const driver = new Driver(tools, 7, 0, "a".repeat(64));
     await expect(driver.createChat({ title: "must not be created" })).rejects.toThrow("pinned account scope mismatch");
-    expect(actions).toEqual(["list_pages", "evaluate_script"]);
+    // Resolve the surviving page marker, then verify the account. Both are reads.
+    expect(actions).toEqual(["list_pages", "evaluate_script", "evaluate_script"]);
   });
 
   it("parses only the official ChatGPT origin", () => {
