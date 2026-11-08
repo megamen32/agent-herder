@@ -38,7 +38,7 @@ def rows(v):
 
 def hook_matches(config, mapping):
     if config.get('endpoint') != ENDPOINT or config.get('mode') == 'capture' or not isinstance(config.get('bearer_file'), str) or not isinstance(config.get('children'), list): return False
-    matches = [x for x in config['children'] if isinstance(x,dict) and x.get('session_id') == mapping['session_id'] and x.get('child_native_id') == mapping['session_id'] and isinstance(x.get('parent_native_id'),str) and x.get('parent_native_id') and x.get('cwd') == mapping['cwd'] and isinstance(x.get('child_ref'),str) and isinstance(x.get('rule_ref'),str)]
+    matches = [x for x in config['children'] if isinstance(x,dict) and x.get('session_id') == mapping['session_id'] and x.get('child_native_id') == mapping['session_id'] and isinstance(x.get('parent_native_id'),str) and x.get('parent_native_id') and isinstance(x.get('parent_ref'),str) and x.get('parent_ref') and x.get('cwd') == mapping['cwd'] and isinstance(x.get('child_ref'),str) and isinstance(x.get('rule_ref'),str)]
     return len(matches)==1 and all(matches[0].get(k)==v for k,v in mapping.items())
 
 
@@ -177,7 +177,7 @@ def main():
             if not result.get('rule_ref'): raise RuntimeError('rule unconfirmed')
             state['rule_ref']=result['rule_ref'];state['wake_marker']='HERDER_WAKE_'+run+'_PARENT_WAKE';save(x.checkpoint,state)
             parent=native_id(profile['database'],state['parent_ref']);child=native_id(profile['database'],state['child_ref'])
-            mapping={'session_id':child,'child_native_id':child,'parent_native_id':parent,'cwd':remote_native_cwd(x.remote_host,child),'child_ref':state['child_ref'],'rule_ref':state['rule_ref']}
+            mapping={'session_id':child,'child_native_id':child,'parent_native_id':parent,'parent_ref':state['parent_ref'],'cwd':remote_native_cwd(x.remote_host,child),'child_ref':state['child_ref'],'rule_ref':state['rule_ref']}
             x.mapping.parent.mkdir(parents=True,exist_ok=True,mode=0o700);private_create(x.mapping,mapping)
             state['mapping_sha256']=hashlib.sha256(x.mapping.read_bytes()).hexdigest();state['status']='MAPPING_READY';save(x.checkpoint,state)
             print(json.dumps({'status':'MAPPING_READY','checkpoint':str(x.checkpoint),'mapping':str(x.mapping),'mapping_sha256':state['mapping_sha256']}));return

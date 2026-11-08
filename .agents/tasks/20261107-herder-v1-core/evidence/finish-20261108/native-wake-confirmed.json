@@ -1,0 +1,57 @@
+{
+  "effects": {
+    "archive_session:c3728b4c777e069e2ec9cf7c7169f30e": {
+      "state": "CONFIRMED",
+      "request_key": "native-wake-cleanup-session:c3728b4c777e069e2ec9cf7c7169f30e",
+      "admission": {
+        "archived": true,
+        "effect": "confirmed",
+        "session_ref": "session:c3728b4c777e069e2ec9cf7c7169f30e"
+      }
+    },
+    "archive_session:0da1539f738642194bf43e1258d1ec98": {
+      "state": "CONFIRMED",
+      "request_key": "native-wake-cleanup-session:0da1539f738642194bf43e1258d1ec98",
+      "admission": {
+        "archived": true,
+        "effect": "confirmed",
+        "session_ref": "session:0da1539f738642194bf43e1258d1ec98"
+      }
+    },
+    "archive_session:d9211e8ad77ab8258e23aeb0b80ac93f": {
+      "state": "CONFIRMED",
+      "request_key": "native-wake-cleanup-session:d9211e8ad77ab8258e23aeb0b80ac93f",
+      "admission": {
+        "archived": true,
+        "effect": "confirmed",
+        "session_ref": "session:d9211e8ad77ab8258e23aeb0b80ac93f"
+      }
+    },
+    "archive_session:bedfb4ef1b62f03ec39f5f5971b07f69": {
+      "state": "CONFIRMED",
+      "request_key": "native-wake-cleanup-session:bedfb4ef1b62f03ec39f5f5971b07f69",
+      "admission": {
+        "archived": true,
+        "effect": "confirmed",
+        "session_ref": "session:bedfb4ef1b62f03ec39f5f5971b07f69"
+      }
+    }
+  },
+  "original_failed_receipt": "/home/roomhacker/herder-artifacts/ci-runs/native-wake-trusted-3ddca5b3/receipt.json",
+  "config_fixed_receipt": "/home/roomhacker/herder-artifacts/ci-runs/native-wake-trusted-3ddca5b3/after-parent-binding.json",
+  "status": "PASS",
+  "parent_readback": {
+    "session_ref": "session:0da1539f738642194bf43e1258d1ec98",
+    "marker": "HERDER_WAKE_889a3f3779f939dcbb5e64bf4b5a5690_PARENT_WAKE",
+    "count": 1,
+    "turn_id": "01a1bca6-79a5-7191-8e14-aa9e01e864fb"
+  },
+  "child_readback": {
+    "session_ref": "session:c3728b4c777e069e2ec9cf7c7169f30e",
+    "marker": "HERDER_WAKE_889a3f3779f939dcbb5e64bf4b5a5690-parentbinding_CHILD_CONFIG_FIXED",
+    "count": 1,
+    "turn_id": "01a1bca6-6763-73f3-b00c-42833cd1a75b"
+  },
+  "manual_parent_send": false,
+  "manual_reconcile": false
+}

@@ -42,7 +42,7 @@ class Workflow(unittest.TestCase):
         class P: stdout=json.dumps(config)
         with patch.object(sys,'argv',self.argv+[mode]),patch.object(m,'MCP',return_value=self.fake),patch.object(m,'remote_native_cwd',return_value='/actual/native'),patch.object(m.subprocess,'run',return_value=P()),contextlib.redirect_stdout(io.StringIO()):m.main()
     def test_prepare_finish_and_no_replay(self):
-        self.run_mode('--prepare');state=json.loads(self.checkpoint.read_text());self.assertEqual(state['status'],'MAPPING_READY');mapping=json.loads(self.mapping.read_text());self.assertEqual(mapping['cwd'],'/actual/native');self.assertEqual(os.stat(self.mapping).st_mode&0o777,0o600)
+        self.run_mode('--prepare');state=json.loads(self.checkpoint.read_text());self.assertEqual(state['status'],'MAPPING_READY');mapping=json.loads(self.mapping.read_text());self.assertEqual(mapping['cwd'],'/actual/native');self.assertEqual(mapping['parent_ref'],state['parent_ref']);self.assertEqual(os.stat(self.mapping).st_mode&0o777,0o600)
         config={'endpoint':m.ENDPOINT,'bearer_file':'/private/ref','children':[mapping]}
         self.run_mode('--finish',config);state=json.loads(self.checkpoint.read_text());self.assertEqual(state['status'],'PASS')
         self.assertEqual(sum(name=='deliver' for name,args in self.fake.calls),1);self.assertFalse(any(name=='automation' and args.get('action')=='reconcile' for name,args in self.fake.calls))

@@ -11,7 +11,7 @@ async function fixture(run: (path: string, calls: unknown[]) => Promise<void>) {
   const path = join(dir, 'config.json');
   const tokenPath = join(dir, 'bearer');
   const config = { endpoint: MCP_ENDPOINT, bearer_file: tokenPath, children: [
-    { session_id: input.session_id, child_native_id: input.session_id, parent_native_id: 'native-parent-1',
+    { session_id: input.session_id, child_native_id: input.session_id, parent_native_id: 'native-parent-1', parent_ref: 'parent-ref',
       cwd: input.cwd, child_ref: 'child-ref', rule_ref: 'rule-ref' },
   ] };
   await writeFile(path, JSON.stringify(config), { mode: 0o600 });
