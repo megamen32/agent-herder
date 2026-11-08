@@ -367,6 +367,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
 
   /** The one tab this driver owns, remembered by its own URL path. */
   private ownedTabPath?: string;
+  /** Duplicates of our own tab that were already closed. */
+  private readonly closedOwnedTabs = new Set<number>();
 
   private requirePinnedAccountScope(scope: string): void {
     if (this.expectedAccountScope && scope !== this.expectedAccountScope) {
@@ -405,8 +407,20 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // One owned tab per provider. The tab is identified by its own URL, not
     // by a page number: a gateway restart renumbers everything, and a number
     // would either break the driver or make it grab a foreign tab.
-    const marked = pages.find(page => isOwnedTabUrl(page.url, "chatgpt"));
-    if (marked) { this.ownedTabPath = chatGptTabPath(marked.url); return marked; }
+    const marked = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
+    if (marked.length) {
+      // Exactly one owned tab: prefer the selected one, then the lowest id.
+      // Duplicates of our own tab are closed so the browser keeps one page
+      // per provider instead of one per run.
+      const owned = marked.find(page => page.selected) ?? [...marked].sort((a, b) => a.id - b.id)[0]!;
+      for (const duplicate of marked.filter(page => page.id !== owned.id)) {
+        if (this.closedOwnedTabs.has(duplicate.id)) continue;
+        this.closedOwnedTabs.add(duplicate.id);
+        await this.tools.call("close_page", { pageId: duplicate.id }).catch(() => undefined);
+      }
+      this.ownedTabPath = chatGptTabPath(owned.url);
+      return owned;
+    }
     if (this.ownedTabPath) {
       const owned = pages.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
       if (owned) return owned;

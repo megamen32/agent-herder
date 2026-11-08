@@ -623,3 +623,27 @@ describe("ChatGPT owned tab ownership", () => {
     expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
   });
 });
+
+describe("ChatGPT one owned tab", () => {
+  it("closes its own duplicate tabs and keeps exactly one", async () => {
+    const scope = "a".repeat(64);
+    const closed: number[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return [
+        "29: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)",
+        "30: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)",
+        "31: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)",
+      ].join("\n");
+      if (name === "close_page") { closed.push(Number(args.pageId)); return ""; }
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+      if (name === "evaluate_script") return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    expect(closed).toEqual([30]);
+  });
+});
