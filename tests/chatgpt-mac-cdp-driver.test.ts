@@ -547,3 +547,24 @@ describe("the passive list script of the paused harness", () => {
     expect(CHATGPT_LIST_API_PASSIVE_SCRIPT).not.toContain("await fetch(");
   });
 });
+
+describe("ChatGPT idle detection without a voice control", () => {
+  it("treats a visible composer without Stop as idle", () => {
+    const nav = { getAttribute: (key: string) => key === "href" ? "/c/" + ID : key === "aria-label" ? "Fixture chat" : null,
+      textContent: "Fixture chat" };
+    const editor = { getClientRects: () => [1], textContent: "" };
+    const profile = { getClientRects: () => [1], getAttribute: (key: string) => key === "aria-label" ? "Открыть меню профиля" : null };
+    const document = {
+      querySelectorAll: (sel: string) =>
+        sel.startsWith("a[data-interactive-row-link]") ? [nav]
+        : sel === "button" ? [profile] : [],
+      querySelector: (sel: string) =>
+        sel.startsWith('div[contenteditable=') ? editor
+        : sel.startsWith('button[aria-label="Открыть') ? profile : null,
+    };
+    const result = runInNewContext("(" + CHATGPT_MAC_SNAPSHOT + ")()", {
+      document, location: { origin: "https://chatgpt.com", pathname: "/c/" + ID },
+    }) as { phase: string; composer: boolean };
+    expect(result).toMatchObject({ phase: "idle", composer: true });
+  });
+});

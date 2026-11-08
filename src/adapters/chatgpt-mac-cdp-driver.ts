@@ -92,11 +92,11 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
       button.getAttribute('aria-label') || ''
     ) || button.getAttribute('data-testid') === 'stop-button'
   );
-  const voice = buttons.some(button =>
-    /^(Начать голосовой разговор|Start voice conversation|Start voice chat)$/i.test(
-      button.getAttribute('aria-label') || ''
-    )
-  );
+  // A visible composer without the Stop control means the site is not
+  // generating. The voice button is only one of several layouts and its
+  // absence must not turn an idle chat into an unknown one: an unknown
+  // phase makes every later delivery fail closed.
+  const idle = visible(editor) && !stop;
   // PerformanceResourceTiming is passive; entries can include both native page
   // traffic and our CDP fetches. They are NEVER counted as unique upstream calls.
   let pageResources=[];
@@ -168,7 +168,7 @@ export const CHATGPT_MAC_SNAPSHOT = `() => {
     origin:location.origin,path:location.pathname,
     authenticated:!!document.querySelector('button[aria-label="Открыть меню профиля"],button[aria-label="Open profile menu"]'),
     composer:visible(editor),
-    phase:stop?'generating':(visible(editor)&&voice?'idle':'unknown'),
+    phase:stop?'generating':(idle?'idle':'unknown'),
     draftPresent:!!(editor?.textContent||'').trim(),
     chats:chats.slice(0,300),
     pageResources:pageResources.slice(-40),
