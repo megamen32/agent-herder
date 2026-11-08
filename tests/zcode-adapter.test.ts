@@ -1644,6 +1644,23 @@ describe("ZCode adapter", () => {
     await adapter.dispose();
   });
 
+  it("returns the correlated native user message receipt for an admitted legacy prompt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-receipt-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table message (id text, session_id text, data text, sequence integer); create table turn_usage (turn_id text, status text, session_id text, user_message_id text, started_at integer)");
+    db.prepare("insert into message values (?,?,?,?)").run("actual-native-message", "session-1", JSON.stringify({role:"user", anchor:{sourceCommandId:"agent-herder:auto:exact-input"}}), 1);
+    db.close();
+    const client = new FakeClient();
+    const adapter = new ZcodeAdapter({ cwd:"/workspace", client, localDbPath:path });
+    try {
+      await adapter.init();
+      const result = await adapter.sendMessage("session-1", {message:"fixture", inputId:"exact-input"});
+      expect(result).toMatchObject({ok:true, admitted:true, inputId:"exact-input", nativeInputMessageId:"actual-native-message"});
+      expect(result.nativeInputMessageId).not.toBe("exact-input");
+    } finally { await adapter.dispose(); await rm(root, {recursive:true, force:true}); }
+  });
+
   it("returns only the native turn id proven by the exact legacy turn-start event", async () => {
     const client = new FakeClient();
     const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
@@ -2229,6 +2246,54 @@ describe("ZCode adapter", () => {
       await adapter.dispose();
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("recovers V4 queue receipt only from the exact promoted native input", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-v4-exact-receipt-"));
+    const path = join(root, "native.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec("create table message (id text, session_id text, data text, sequence integer); create table turn_usage (turn_id text, status text, session_id text, user_message_id text, started_at integer)");
+    class LostAckClient extends FakeClient {
+      override async call(channel:string, method:string, args:unknown[]):Promise<unknown> {
+        if (method === "sendConversationCommandV4") {
+          this.calls.push({channel,method,args});
+          const {envelope} = args[0] as {envelope:{commandId:string}};
+          db.prepare("insert into message values (?,?,?,?)").run("native-user-42","session-1",JSON.stringify({role:"user",anchor:{sourceCommandId:envelope.commandId}}),1);
+          throw new Error("reply lost after admission");
+        }
+        return super.call(channel,method,args);
+      }
+    }
+    const client = new LostAckClient();
+    const adapter = new ZcodeAdapter({cwd:"/workspace",client,localDbPath:path});
+    try {
+      await adapter.init();
+      const result = await adapter.sendMessage("session-1",{message:"fixture",queue:true,inputId:"v4-exact"});
+      expect(result).toMatchObject({ok:true,admitted:true,inputId:"v4-exact",nativeInputMessageId:"native-user-42"});
+      expect(client.calls.filter(c=>c.method==="sendConversationCommandV4")).toHaveLength(1);
+    } finally {await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  it("returns exact promoted receipt when non-durable V4 queue starts immediately", async () => {
+    const root=await mkdtemp(join(tmpdir(),"zcode-v4-start-proof-"));
+    const path=join(root,"native.sqlite"), db=new DatabaseSync(path);
+    db.exec("create table message (id text, session_id text, data text, sequence integer); create table turn_usage (turn_id text, status text, session_id text, user_message_id text, started_at integer)");
+    class NativeStart extends FakeClient {
+      override async call(channel:string, method:string, args:unknown[]):Promise<unknown> {
+        if(method==='sendConversationCommandV4') {
+          this.calls.push({channel,method,args});
+          const {envelope}=args[0] as {envelope:{commandId:string}};
+          db.prepare('insert into message values (?,?,?,?)').run('actual-user','session-1',JSON.stringify({role:'user',anchor:{sourceCommandId:envelope.commandId}}),1);
+          return {commandId:envelope.commandId,status:'accepted',result:{type:'inputAccepted',inputId:'queue-native',delivery:'startNow'}};
+        }
+        return super.call(channel,method,args);
+      }
+    }
+    const client=new NativeStart(), adapter=new ZcodeAdapter({cwd:'/workspace',client,localDbPath:path});
+    try {
+      await adapter.init();
+      expect(await adapter.sendMessage('session-1',{message:'fixture',queue:true,inputId:'exact-start'})).toMatchObject({ok:true,admitted:true,inputId:'exact-start',nativeInputMessageId:'actual-user'});
+    } finally {await adapter.dispose();db.close();await rm(root,{recursive:true,force:true});}
   });
 
   it("preserves an admitted-but-mismatched startNow receipt without replay", async () => {
@@ -2840,7 +2905,7 @@ it('uses exact native command receipts when strict event and message schemas rej
   await expect(adapter.getMessageAdmission(id,input)).resolves.toEqual({state:'admitted'});
   await expect(adapter.getMessageAdmission(id,'other-input')).resolves.toMatchObject({state:'unknown'});
   expect(client.calls.some(c=>['sendPrompt','sendConversationCommandV4','resumeSession','createSession'].includes(c.method))).toBe(false);
-  await expect(adapter.sendMessage(id,{message:'fixture only',inputId:'later-input'})).resolves.toEqual({ok:true});
+  await expect(adapter.sendMessage(id,{message:'fixture only',inputId:'later-input'})).resolves.toMatchObject({ok:true,admitted:true,inputId:'later-input',nativeInputMessageId:'later-user'});
   expect(client.calls.filter(c=>c.method==='sendPrompt')).toHaveLength(1);
   expect(client.calls.some(c=>['sendConversationCommandV4','resumeSession','createSession'].includes(c.method))).toBe(false);
  }finally{await adapter.dispose();db.close();await rm(dir,{recursive:true,force:true});}

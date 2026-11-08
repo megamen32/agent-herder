@@ -1,0 +1,35 @@
+{
+ "run_id": "astra-v1-negative-805fd477-20261108T1229",
+ "stage": "candidate",
+ "source_sha": "805fd477f19296c926863d8dabc3b25bc8390167",
+ "artifact_sha256": "93c2c25bbfcf3b7d91772dd98e942d2ab43ac4be7a8d16d81583d6a04c9d17fe",
+ "binary_sha256": "c1952779c9ca812345d7ba4929a12b727ed87dc24d2a06d08852330c90bcc368",
+ "scope": "public MCP core negative gate against isolated fakeAHAP, not native harness lanes",
+ "package_verification": {
+  "result": "PASS",
+  "manifest_sha256": "93c2c25bbfcf3b7d91772dd98e942d2ab43ac4be7a8d16d81583d6a04c9d17fe",
+  "checks": [
+   "all-component-hashes",
+   "duplicate-refusal-unchanged-bytes",
+   "five-harness-initialize",
+   "zero-native-executable-launches",
+   "zero-native-mutations",
+   "zero-browser-connections"
+  ]
+ },
+ "negative_checks": {
+  "wrong_instance_or_principal": "PASS",
+  "same_key_no_replay": "PASS",
+  "same_key_payload_conflict": "PASS",
+  "unknown_after_restart_no_replay": "PASS",
+  "human_stop_before_send": "PASS",
+  "codex_workload_isolation_exact_value_only": "PASS"
+ },
+ "evidence": {
+  "log": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/candidate-negative-805fd477.log",
+  "sha256": "9f60644182ade50e8fb66e38bf0396c546932a037d6b6cb87099eed0fcd0e990"
+ },
+ "command": "HERDER_V1_CANDIDATE_BINARY=/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/fixture/herder_native_stdio cargo test --locked --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_",
+ "native_lanes": null,
+ "installed": null
+}

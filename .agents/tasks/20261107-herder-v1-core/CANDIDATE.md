@@ -1,4 +1,26 @@
-# Current candidate 71b357f8core
+# Current candidate 805fd477final
+
+Published source 805fd477f19296c926863d8dabc3b25bc8390167 (origin/main;
+includes Codex scoped-profile AGENT_HERDER_WORKLOAD_ISOLATION=off 9f4cd928 and
+OpenCode CI projects fix 23eca4b9). Immutable manifest
+/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/manifest.json,
+SHA256 93c2c25bbfcf3b7d91772dd98e942d2ab43ac4be7a8d16d81583d6a04c9d17fe.
+Component SHA256: core c1952779c9ca812345d7ba4929a12b727ed87dc24d2a06d08852330c90bcc368,
+bootstrap e9f5ea6424794a42583a2c25352f1e30b5bfcf8453672b341855fb0da71c734c,
+node 81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90,
+adapters opencode 6c1b35ef44d743d46e0e1ba5db7bb0bf74ae542ea1041ea35a2cc12d58a9a09d,
+zcode 5e83cb32a575800546c0ed1dc32b0925d8189dfc655af59b16eba0f3035b8e1a,
+browser/chatgpt/zai b477dac08990bbfa64c99c6090090cd9c22c9b04fc8f1e84641e054c1f4c51e7,
+codex e7d4c31e68b137146fd7f0f5eff68454323dd0de64d0ae38e2ce88261af302a7.
+Fresh tsc bundle .tmp/v1-dist-805f-final; stale .tmp/v1-dist not used.
+Package verification PASS (all-component-hashes, duplicate-refusal-unchanged-bytes,
+five-harness-initialize, zero native launches/mutations/browser connections).
+Exact packaged core NEG 6/6 PASS including the new codex exact-value isolation
+check: evidence/candidate-negative-805fd477.json, log SHA256
+9f60644182ade50e8fb66e38bf0396c546932a037d6b6cb87099eed0fcd0e990.
+These are source/package checks, not native provider or installed proof.
+
+# Previous candidate 71b357f8core
 
 Published source 7ee42db728ed50f731e80e61c2a7bb7ef1a7328c (owner_reads
 projects discovery regression; supersedes the 814759a9 core for new

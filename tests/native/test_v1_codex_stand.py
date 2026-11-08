@@ -75,6 +75,16 @@ class ManifestTest(unittest.TestCase):
         self.assertIn('requires_openai_auth = false', config)
         self.assertIn('base_url = "http://127.0.0.1:12345/v1"', config)
 
+    def test_owned_process_check_fails_closed_without_proc_child(self):
+        with self.assertRaises((OSError, ValueError)):
+            stand.prove_owned_child(999999999, '/fixture/codex', '/fixture/work', '/fixture/home')
+
+    def test_bin_transport_explicitly_selects_direct_owned_child(self):
+        env = stand.adapter_transport('bin', '/fixture/codex', '/fixture/codex.sock', '/fixture/work', '/fixture/home')
+        self.assertEqual(env.get('AGENT_HERDER_WORKLOAD_ISOLATION'), 'off')
+        socket = stand.adapter_transport('socket', '/fixture/codex', '/fixture/codex.sock', '/fixture/work', '/fixture/home')
+        self.assertNotIn('AGENT_HERDER_WORKLOAD_ISOLATION', socket)
+
     def test_bin_transport_uses_exact_codex_and_no_socket(self):
         env = stand.adapter_transport('bin', '/fixture/codex', '/fixture/codex.sock', '/fixture/work', '/fixture/home')
         self.assertEqual(env['AHAP_CODEX_BIN'], '/fixture/codex')

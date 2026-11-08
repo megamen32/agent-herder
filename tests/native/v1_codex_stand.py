@@ -115,7 +115,44 @@ def adapter_transport(mode, codex, socket, project, codex_home):
         raise ValueError('unsupported Codex transport')
     return {('AHAP_CODEX_BIN' if mode == 'bin' else 'AHAP_CODEX_SOCKET'):
             codex if mode == 'bin' else socket,
-            'AHAP_CODEX_CWD': project, 'CODEX_HOME': codex_home}
+            'AHAP_CODEX_CWD': project, 'CODEX_HOME': codex_home,
+            **({'AGENT_HERDER_WORKLOAD_ISOLATION': 'off'} if mode == 'bin' else {})}
+
+
+def prove_owned_child(core_pid, codex, project, codex_home):
+    def children(pid):
+        path = Path('/proc') / str(pid) / 'task' / str(pid) / 'children'
+        return [int(value) for value in path.read_text().split()]
+    queue = [(core_pid, 0)]
+    found = []
+    while queue:
+        pid, depth = queue.pop(0)
+        if depth >= 4:
+            continue
+        for child in children(pid):
+            queue.append((child, depth + 1))
+            try:
+                executable = os.readlink('/proc/%d/exe' % child)
+            except OSError:
+                continue
+            if executable == codex:
+                found.append(child)
+    if len(found) != 1:
+        raise ValueError('exact owned Codex child not confirmed')
+    pid = found[0]
+    environ = dict(item.split(b'=', 1) for item in (Path('/proc') / str(pid) / 'environ').read_bytes().split(b'\0') if b'=' in item)
+    if (environ.get(b'HOME') != project.encode() or environ.get(b'CODEX_HOME') != codex_home.encode()
+            or b'OPENAI_API_KEY' in environ or b'OPENAI_API_KEY_ORG' in environ):
+        raise ValueError('Codex child environment invalid')
+    if Path(codex_home, 'auth.json').exists() or Path(project, '.codex/auth.json').exists():
+        raise ValueError('fixture auth file present')
+    child_ns = os.readlink('/proc/%d/ns/net' % pid)
+    if child_ns != os.readlink('/proc/self/ns/net'):
+        raise ValueError('Codex child namespace differs')
+    return {'core_pid': core_pid, 'child_pid': pid, 'executable': codex,
+            'home': project, 'codex_home': codex_home, 'network_namespace': child_ns,
+            'same_network_namespace': True, 'openai_api_key_present': False,
+            'openai_api_key_org_present': False, 'auth_files_present': False}
 
 
 def main():
@@ -173,12 +210,13 @@ def main():
     core = RpcProcess(args.core, profile_path, dict(os.environ))
     try:
         tools = probe_native_tools(core)
+        child_proof = prove_owned_child(core.process.pid, args.codex, str(project), str(codex_home)) if args.transport == 'bin' else None
         with urllib.request.urlopen(base[:-3] + '/_stats', timeout=5) as response:
             stats = json.load(response)
         if stats['requests'] != 0:
             raise RuntimeError('fixture was used before preflight; refusing mutation')
         print(json.dumps({'result': 'PREFLIGHT_READY', 'tools': tools, 'model_requests': stats['requests'],
-                          'native_sends': 0, **identity}, sort_keys=True), flush=True)
+                          'native_sends': 0, 'child_proof': child_proof, **identity}, sort_keys=True), flush=True)
         if not args.execute:
             return 0
         evidence_path = protected / 'v1-codex-evidence.json'
