@@ -1,0 +1,36 @@
+{
+  "at": "2026-11-08T17:14:36Z",
+  "selector": {
+    "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-compat-c52b44fe/manifest.json",
+    "manifest_sha256": "f0995dd347fe7d856281a8e60b39319ffbd5013e9b3ecaea04a0555a2211c49e",
+    "profiles": [
+      "/home/roomhacker/herder-artifacts/installed-v1/herder-owner-home/authority/codex-profile-compat-c52b44fe.json"
+    ]
+  },
+  "component_provenance": {
+    "unchanged_source_commit": "d08a68ae0f4afde92efd911ca21a4bf16de352ef",
+    "compat_source_commit": "eeba9ccfa9a09ae33a862fee1ef3bccf159efeb6"
+  },
+  "processes": [
+    {
+      "pid": 3160828,
+      "exe": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-compat-c52b44fe/fixture/herder-compat",
+      "sha256": "625bb0f6fbecdbcc533ad6da7cd4acb51b560bcbb260029183dddb3afaa5b2ea"
+    },
+    {
+      "pid": 3161349,
+      "exe": "/home/roomhacker/herder-artifacts/releases/herder-v1-d08a68ae-compat-c52b44fe/fixture/herder_native_stdio",
+      "sha256": "e82a83532d18025819b99a949774b209241178068c568f6c1882954bf4b48ddf"
+    }
+  ],
+  "legacy_units": "MainPID=0\nId=agent-herder.service\nActiveState=inactive\nUnitFileState=masked\n\nMainPID=0\nId=agent-herder-stand.service\nActiveState=inactive\nUnitFileState=disabled\n\nMainPID=0\nId=agent-herder-stand-l81.service\nActiveState=inactive\nUnitFileState=static\n\nMainPID=0\nId=agent-herder-fleet-tunnel44.service\nActiveState=inactive\nUnitFileState=disabled\n\nMainPID=0\nId=agent-herder-fleet-tunnel88.service\nActiveState=inactive\nUnitFileState=disabled\n\nMainPID=0\nId=agent-herder-fleet-tunnel-mac-mini.service\nActiveState=inactive\nUnitFileState=disabled\n\nMainPID=0\nId=agent-herder-fleet-tunnel-mac-m1.service\nActiveState=inactive\nUnitFileState=disabled\n",
+  "tests": {
+    "launcher": 7,
+    "compat": "4PASS1ignored",
+    "derived": "base integrity, unchanged source, replacement, immutable existing output checks PASS",
+    "cold_installed_runs": 2,
+    "http_readback": "PASS"
+  },
+  "model_sends": 0,
+  "approval": "Owner: old off now; restore missing functions later"
+}

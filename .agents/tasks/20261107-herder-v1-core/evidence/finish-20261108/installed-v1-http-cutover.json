@@ -1,0 +1,102 @@
+{
+  "at": "2026-11-08T17:12:05Z",
+  "endpoint": "https://mcp.bezrabotnyi.com/server/shell-roomhacker-server-100-agentherder/mcp",
+  "initialize": {
+    "capabilities": {
+      "prompts": {},
+      "resources": {},
+      "tools": {}
+    },
+    "instructions": "## GrepMesh search routing\n\n<!-- grepmesh-routing:begin -->\nFor a known project or corpus, use XERJ for ranked code/documentation retrieval and external reference implementations; inspect its map and index freshness first. For an exact local path, identifier or literal, use bounded `rg`. Use GrepMesh only to discover an unknown host or project/root location across the fleet. Once the host and root are known, switch to XERJ or host-local `rg`; do not fan out through GrepMesh for ordinary searches in a known project. An empty or stale XERJ index is not evidence that source is absent: index the narrow authorized source folder or verify it with `rg`. XERJ is available through GPTAdmin as `mcp:shell:roomhacker-server-100:XERJ`; native clients also have the `xerj` MCP. External Hub search covers selected packs, not all GitHub. Preserve GrepMesh partial/host failure information.\n<!-- grepmesh-routing:end -->\n\n<!-- gptadmin-shared-workflow -->\n## Shared engineering workflow (LHC + Agent Herder)\n\nApplies to engineering and project work, including clients without local plugins.\nPreserve the selected profile's domain/admin instructions and access restrictions.\nThis workflow grants no credentials, permissions or authority beyond the user's task.\n\n- Use the existing project plan/board, keep source, review, merge, installation and live verification distinct. Record branch, exact commit, PR and evidence. Put large-task plans in the existing LHC plan, not a competing tracker.\n- Each task uses its own branch and worktree from the verified integration target. Commit coherent changes (WIP included) and push the task branch freely: a branch is not a PR. Then deploy to the agreed or your own environment and manually exercise the real scenario. Open the PR ONLY after that scenario passed; it is the last step before integration. No early or draft PR for unfinished work; the plan link goes into the PR only then (check its audience/access first).\n- Integrate through PRs, not direct writes to shared main. Follow the owner's existing merge/deploy policy and repository checks; do not invent extra approval questions for already authorized steps or bypass genuine permission/security gates. The owner's existing request for a result or deploy already authorizes deploying to their own service within that request: do not ask again. Respect the owner's explicit exclusions, system/harness limits and third-party service boundaries.\n- Build candidates in an isolated staging area; do not move shared current/live pointers during build. Only the lease-admitted rollout changes live pointers. Use currently merged release scripts, not stale task-branch scripts that bypass guards.\n- Before changing a shared runtime use Agent Herder project_release_lease status/acquire/renew/check with canonical project identity, session owner, token and fence. Re-read the live revision and enforce expected-revision CAS. Never overwrite a newer release with a stale artifact. Release in finally; terminal lifecycle events release ownership and TTL handles crashes. Ordinary turn completion is not session end. If Herder is unavailable for 3 minutes, do not wait: use the fallback git-ref lease refs/lhc/release/<project> (LHC 1.11.0) with the same CAS discipline.\n- At terminal session end inventory project work and hand off unfinished integration. The last active worker owns whole-project integration, testing and cleanup. Use authoritative session state, not a guess from Git. Contact active owners through SendMessage.\n- When bounded lookup finds no active owner of existing work, take responsibility: preserve exact commits and dirty diffs, record the adoption in the existing plan, inspect/review/test it and finish integration. Ambiguous ownership is not inactivity, and owner absence is not proof the changes are correct. Recheck ownership before mutation.\n- Preserve active, dirty, conflicted, unmerged or unknown work. Clean up only verified merged, clean, inactive work under project coordination after rechecking HEAD and ownership. Never bulk-stash, reset foreign work, force-remove worktrees or blindly merge unknown branches.\n- Reuse existing components and supported native install/release paths. Verify the exact installed revision and a harmless real consumer operation; tests, HTTP 200 or a receipt alone do not prove live acceptance. Keep unsupported clients, missing lifecycle evidence and remaining blockers explicit.\n",
+    "protocolVersion": "2025-06-18",
+    "serverInfo": {
+      "name": "gptadmin-server-shell-roomhacker-server-100-agentherder",
+      "version": "1112"
+    }
+  },
+  "first_call_without_list": {
+    "content": [
+      {
+        "text": "{\"complete\":true,\"instances\":[{\"capabilities\":{\"controlCapabilities\":{\"cancelTurn\":false,\"detach\":false,\"events\":false,\"fork\":false,\"modelSwitch\":false,\"recover\":false,\"resume\":false,\"steer\":false,\"subagents\":false,\"terminate\":false},\"deliveryModes\":[\"queue\",\"sync\",\"steer\"],\"methods\":[\"init\",\"createSession\",\"sendMessage\",\"getSession\",\"getSessionMessages\",\"listSessions\",\"getRawTranscript\",\"archiveSession\"]},\"harness\":\"codex\",\"instance_ref\":\"codex-local\",\"node_ref\":\"roomhacker-server-100\"}],\"scope\":\"configured_owner_instance\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "complete": true,
+      "instances": [
+        {
+          "capabilities": {
+            "controlCapabilities": {
+              "cancelTurn": false,
+              "detach": false,
+              "events": false,
+              "fork": false,
+              "modelSwitch": false,
+              "recover": false,
+              "resume": false,
+              "steer": false,
+              "subagents": false,
+              "terminate": false
+            },
+            "deliveryModes": [
+              "queue",
+              "sync",
+              "steer"
+            ],
+            "methods": [
+              "init",
+              "createSession",
+              "sendMessage",
+              "getSession",
+              "getSessionMessages",
+              "listSessions",
+              "getRawTranscript",
+              "archiveSession"
+            ]
+          },
+          "harness": "codex",
+          "instance_ref": "codex-local",
+          "node_ref": "roomhacker-server-100"
+        }
+      ],
+      "scope": "configured_owner_instance"
+    }
+  },
+  "tools": [
+    "discover",
+    "sessions",
+    "session",
+    "create",
+    "deliver",
+    "resume",
+    "stop",
+    "search",
+    "export",
+    "automation",
+    "resource",
+    "configure",
+    "permission",
+    "human_request",
+    "compat_task"
+  ],
+  "projects": {
+    "content": [
+      {
+        "text": "{\"complete\":false,\"limitations\":[\"No native project observed for the authorized registered corpus.\"],\"projects\":[],\"scope\":\"authorized_registered_sessions\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "complete": false,
+      "limitations": [
+        "No native project observed for the authorized registered corpus."
+      ],
+      "projects": [],
+      "scope": "authorized_registered_sessions"
+    }
+  },
+  "model_sends": 0,
+  "result": "PASS"
+}
