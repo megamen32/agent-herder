@@ -4,6 +4,7 @@ import { chatgptConversationChunkScript, chatgptConversationCleanupScript } from
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
+import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
 import type { SessionMessageView } from "../types/index.js";
 import { ZAI_LIST_API_SCRIPT, ZAI_LIST_API_PASSIVE_SCRIPT, zaiMessagesApiScript, ZAI_LIST_PROJECTS_SCRIPT, zaiMoveToProjectScript } from "./browser-chat-api-scripts.js";
 import { BrowserChatInventoryCache } from "./browser-chat-inventory-cache.js";
@@ -40,6 +41,11 @@ export function parseZaiPages(text: string): BrowserPage[] {
         ? [{ id: Number(match[1]), url: url.toString(), ...(match[3] ? { selected: true } : {}) }] : [];
     } catch { return []; }
   });
+}
+
+/** The identity of a Z.ai tab: its path. */
+export function zaiTabPath(url: string): string {
+  try { return new URL(url).pathname; } catch { return url; }
 }
 
 /** Deterministic pick among open ZAI tabs: the selected tab first, then the lowest page ID. */
@@ -115,6 +121,8 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   private operation: Promise<void> = Promise.resolve();
   private lastSubmittedAt = 0;
   private accountScope: string | undefined;
+  /** The one tab this driver owns, remembered by its own URL path. */
+  private ownedTabPath?: string;
   getAccountScope(): string | undefined { return this.accountScope; }
 
 
@@ -133,7 +141,23 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
     if (pinned) return pinned;
-    if (pages.length) return pickZaiPage(pages);
+    // One owned tab per provider, identified by its own URL rather than by a
+    // page number: a gateway restart renumbers everything.
+    const marked = pages.find(page => isOwnedTabUrl(page.url, "zai"));
+    if (marked) { this.ownedTabPath = zaiTabPath(marked.url); return marked; }
+    if (this.ownedTabPath) {
+      const owned = pages.find(page => zaiTabPath(page.url) === this.ownedTabPath);
+      if (owned) return owned;
+      // The owned tab is closed: open exactly one replacement of our own
+      // instead of taking a foreign tab over.
+      return this.openZaiTab();
+    }
+    if (pages.length) {
+      // First use: adopt one existing tab instead of opening another one.
+      const adopted = pickZaiPage(pages);
+      this.ownedTabPath = zaiTabPath(adopted.url);
+      return adopted;
+    }
     return this.openZaiTab();
   }
 
@@ -141,12 +165,14 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openZaiTab(): Promise<BrowserPage> {
     try {
-      await this.tools.call("new_page", { url: ZAI_ORIGIN + "/" });
+      await this.tools.call("new_page", { url: ownedTabUrl(ZAI_ORIGIN, "zai") });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseZaiPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ZAI tab open in Mac mini Chrome and auto-open failed");
-    return pickZaiPage(pages);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "zai")) ?? pickZaiPage(pages);
+    this.ownedTabPath = zaiTabPath(opened.url);
+    return opened;
   }
 
   private async snapshot(pageId: number): Promise<ZaiSnapshot> {

@@ -568,3 +568,58 @@ describe("ChatGPT idle detection without a voice control", () => {
     expect(result).toMatchObject({ phase: "idle", composer: true });
   });
 });
+
+describe("ChatGPT owned tab ownership", () => {
+  const scope = "a".repeat(64);
+  function tool(opened: string[]): ChromePageTools {
+    let listing = "";
+    const set = (value: string) => { listing = value; };
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      opened.push(name + ":" + JSON.stringify(args));
+      if (name === "list_pages") return listing;
+      if (name === "new_page") {
+        const url = String(args.url);
+        set(url.includes("herder_owned=chatgpt")
+          ? "7: ChatGPT (" + url + ")\n9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)"
+          : listing);
+        return "";
+      }
+      if (name === "evaluate_script" && args.function === CHATGPT_CREATE_SCOPE_SCRIPT) return json({ scope });
+      if (name === "evaluate_script") return json({
+        origin: "https://chatgpt.com", path: "/c/" + ID, authenticated: true,
+        composer: true, phase: "idle", draftPresent: false, chats: [],
+      });
+      throw new Error("unexpected action " + name);
+    } };
+    return Object.assign(tools, { set });
+  }
+  it("uses its own marked tab and never opens a second one", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)\n9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
+  });
+  it("opens exactly one replacement when its own tab is closed", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    tools.set("9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    await driver.listChats();
+    const opened_pages = opened.filter(a => a.startsWith("new_page"));
+    expect(opened_pages.length).toBe(1);
+    expect(opened_pages[0]).toContain("herder_owned=chatgpt");
+  });
+  it("adopts one existing tab on first use instead of opening another one", async () => {
+    const opened: string[] = [];
+    const tools = tool(opened);
+    tools.set("9: Other (https://chatgpt.com/c/11111111-2222-3333-4444-555555555555)");
+    const driver = new ChatGptMacCdpDriver(tools, undefined, 0, scope);
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
+  });
+});

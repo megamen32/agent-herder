@@ -5,6 +5,7 @@ import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatg
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
+import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
 import { chatgptPassiveHistoryScript } from "./chatgpt-passive-history.js";
 import { ChatGptBackgroundBudget } from "./chatgpt-background-budget.js";
 import { ChatGptBackgroundNavigator } from "./chatgpt-background-navigator.js";
@@ -69,6 +70,11 @@ export function pickChatGptPage(pages: Page[]): Page {
   return pages.find(page => page.selected)
     ?? pages.find(page => page.conversation)
     ?? [...pages].sort((a, b) => a.id - b.id)[0]!;
+}
+
+/** The identity of a ChatGPT tab: its conversation route, or its root. */
+export function chatGptTabPath(url: string): string {
+  try { return new URL(url).pathname; } catch { return url; }
 }
 
 /** A read-only page snapshot, using the live ChatGPT sidebar's native /c/ URLs.
@@ -359,6 +365,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     private readonly expectedAccountScope?: string,
   ) {}
 
+  /** The one tab this driver owns, remembered by its own URL path. */
+  private ownedTabPath?: string;
+
   private requirePinnedAccountScope(scope: string): void {
     if (this.expectedAccountScope && scope !== this.expectedAccountScope) {
       throw new Error("ChatGPT pinned account scope mismatch; no read data returned");
@@ -393,7 +402,24 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     const pinned = this.pinnedPageId !== undefined
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
     if (pinned?.conversation) return pinned;
-    if (pages.length) return pickChatGptPage(pages);
+    // One owned tab per provider. The tab is identified by its own URL, not
+    // by a page number: a gateway restart renumbers everything, and a number
+    // would either break the driver or make it grab a foreign tab.
+    const marked = pages.find(page => isOwnedTabUrl(page.url, "chatgpt"));
+    if (marked) { this.ownedTabPath = chatGptTabPath(marked.url); return marked; }
+    if (this.ownedTabPath) {
+      const owned = pages.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
+      if (owned) return owned;
+      // The owned tab is closed: open exactly one replacement of our own
+      // instead of taking a foreign tab over.
+      return this.openChatGptTab();
+    }
+    if (pages.length) {
+      // First use: adopt one existing tab instead of opening another one.
+      const adopted = pickChatGptPage(pages);
+      this.ownedTabPath = chatGptTabPath(adopted.url);
+      return adopted;
+    }
     return this.openChatGptTab();
   }
 
@@ -401,12 +427,14 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
     try {
-      await this.tools.call("new_page", { url: ORIGIN + "/" });
+      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt") });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
-    return pickChatGptPage(pages);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt")) ?? pickChatGptPage(pages);
+    this.ownedTabPath = chatGptTabPath(opened.url);
+    return opened;
   }
 
   private async snapshot(pageId: number): Promise<Snapshot> {

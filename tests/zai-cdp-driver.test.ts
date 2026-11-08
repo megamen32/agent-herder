@@ -581,3 +581,24 @@ describe("the paused harness serves passive inventory", () => {
     }
   });
 });
+
+describe("ZAI owned tab ownership", () => {
+  it("reuses its own marked tab and opens exactly one replacement when it is gone", async () => {
+    let listing = "11: Z.ai (https://chat.z.ai/?herder_owned=zai)\n" +
+      "12: Other (https://chat.z.ai/c/123e4567-e89b-12d3-a456-426614174000)";
+    const opened: string[] = [];
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      opened.push(name + ":" + JSON.stringify(args));
+      if (name === "list_pages") return listing;
+      if (name === "new_page") { listing = listing.replace("^MISSING$", ""); return ""; }
+      if (name === "evaluate_script") return evalJson(state("/", ["Owned"], undefined, "idle"));
+      throw new Error("unexpected action " + name);
+    } };
+    const driver = new ZaiCdpDriver(tools, undefined, 0);
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(0);
+    listing = "12: Other (https://chat.z.ai/c/123e4567-e89b-12d3-a456-426614174000)";
+    await driver.listChats();
+    expect(opened.filter(a => a.startsWith("new_page")).length).toBe(1);
+  });
+});
