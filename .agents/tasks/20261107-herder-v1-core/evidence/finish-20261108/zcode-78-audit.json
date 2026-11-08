@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "manifest_sha256": "bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+  "source_receipt": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/zcode-v1-78e747be-output.jsonl",
+  "source_receipt_sha256": "6ea8c0b2e994b5a05783c87c03009ed5c3042a323260d00f56aacfbfabd4d193",
+  "session_ref": "session:579011e36acc12f865684957d967eef6",
+  "checks": [
+    "two distinct user inputs",
+    "two actual model replies",
+    "both inputs after core restart",
+    "complete native export contains both inputs",
+    "complete search finds exact session",
+    "no_resend reported by fixture"
+  ],
+  "raw_export_sha256": "f7359baae0f7c4a7c559d00e8b5bcabeb609e8a86edd5c7cc21f1681dceb3456",
+  "scope": "independent retained-evidence audit; no extra native send; supervisor restart not inferred",
+  "model_requests": 3
+}
