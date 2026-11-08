@@ -12,7 +12,7 @@ import type {
 } from "./types/index.js";
 
 type OpenCodePort = Pick<OpenCodeAdapter,
-  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages"> & LegacyReadPort;
+  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages"> & Partial<Pick<OpenCodeAdapter, "archiveSession">> & LegacyReadPort;
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
@@ -74,7 +74,7 @@ export async function serveOpenCodeAhap(
       write({ jsonrpc: "2.0", id, result: {
         harness: "opencode",
         name: "OpenCode bounded adapter",
-        capabilities: { methods: [...new Set([...METHODS, ...legacyReadMethods(adapter)])], deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"], nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { methods: [...new Set([...METHODS, ...legacyReadMethods(adapter), ...(family === "v2" && typeof adapter.archiveSession === "function" ? ["archiveSession"] : [])])], deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"], nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -145,6 +145,11 @@ export async function serveOpenCodeAhap(
         case "listProjects":
           result = await legacyRead(adapter, request.method, params);
           break;
+        case "archiveSession":
+          if (family !== "v2" || typeof adapter.archiveSession !== "function") { error(id, -32601, "method not implemented"); continue; }
+          if (typeof params.id !== "string" || !/^ses_[A-Za-z0-9]+$/u.test(params.id)) { error(id, -32602, "archiveSession requires exact session id"); continue; }
+          result = await adapter.archiveSession(params.id);
+          break;
         case "getSession":
           if (typeof params.id !== "string" || !params.id.trim()) {
             error(id, -32602, "getSession requires session id");
@@ -170,7 +175,7 @@ export async function serveOpenCodeAhap(
         error(id, cause.code, cause.message, cause.code === -32001 ? adapterFailureContext(request.method, request.method === "sendMessage" || request.method === "createSession") : undefined);
         continue;
       }
-      const mutation = request.method === "createSession" || request.method === "sendMessage";
+      const mutation = request.method === "createSession" || request.method === "sendMessage" || request.method === "archiveSession";
       error(id, -32000, "OpenCode adapter call failed", adapterFailureContext(request.method, mutation));
     }
   }

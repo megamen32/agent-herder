@@ -349,6 +349,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   private readonly client: OpenCodeClient;
   /** URL of the same OpenCode server the core client talks to. */
   private readonly baseUrl: string;
+  private readonly archiveV2Configured: boolean;
   /** Basic authorization of that server, when it is protected. */
   private readonly authorization: string | undefined;
   /** Native v2 emits the inbox delivery before execution.started, whose frame has no input ID. */
@@ -391,6 +392,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         // server degrades to a durable current-turn context reservation.
         steer: true,
       };
+    this.archiveV2Configured = config.protocol === "v2";
     this.baseUrl = resolveOpenCodeBaseUrl(config.baseUrl);
     const password = config.password ?? process.env.OPENCODE_SERVER_PASSWORD;
     const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
@@ -398,6 +400,20 @@ export class OpenCodeAdapter implements HarnessAdapter {
     this.integratorSessionBindingStore = config.integratorSessionBindingStore;
     this.integratorReservation = config.integratorReservation;
     this.modelProviderResolverConfig = config.modelProviderResolver ?? {};
+  }
+
+  /** Archive through the native v2 update route; a transport failure is uncertain. */
+  async archiveSession(id: string): Promise<{ ok: true; sessionId: string }> {
+    if (!/^ses_[A-Za-z0-9]+$/u.test(id)) throw new Error("Invalid OpenCode session id");
+    if (!this.archiveV2Configured && !this.client.isV2) throw new Error("OpenCode archive route is unsupported");
+    const response = await fetch(`${this.baseUrl}/api/session/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(this.authorization ? { Authorization: this.authorization } : {}) },
+      body: JSON.stringify({ archived: true }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error(`OpenCode archive HTTP ${response.status}`);
+    return { ok: true, sessionId: id };
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
