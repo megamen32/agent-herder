@@ -219,6 +219,15 @@ const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
   macMini: () => new MacMiniChromeTransport(),
 };
 
+
+/** The page number of the one tab this provider owns. */
+async function ownedPageId(pageTools: ChromePageTools): Promise<number> {
+  const listing = await pageTools.call("list_pages");
+  const id = listing.split("\n").map(line => line.match(/^\s*(\d+):/)?.[1]).find(Boolean);
+  if (!id) throw new Error("Owned browser tab unavailable; no page fallback allowed");
+  return Number(id);
+}
+
 export function makeConfiguredAdapter(
   env: NodeJS.ProcessEnv = process.env,
   factories: BrowserChatRunnerTransportFactories = DEFAULT_TRANSPORT_FACTORIES,
@@ -282,7 +291,7 @@ export function makeConfiguredAdapter(
       if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
       else {
         await pageTools.call("list_pages");
-        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId);
+        const observedScope = await verifyNewChatAccountScope(pageTools, "zai", pageId ?? (await ownedPageId(pageTools)));
         if (observedScope !== expectedScope) {
           throw new Error("pinned browser account scope mismatch");
         }
