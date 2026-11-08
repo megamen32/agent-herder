@@ -115,7 +115,7 @@ class NewChatPageFixture implements ChromePageTools {
         +(this.created ? "20: New blank chat ("+this.origin+"/)\n" : "");
     }
     if(name==="new_page"){
-      expect(args).toMatchObject({background:true,url:this.origin+"/"});
+      expect(args).toMatchObject({background:true,url:this.origin+"/?herder_owned="+this.site});
       this.created=true;
       if(this.timeoutOnOpen)throw Error("Navigation timeout");
       return "Opened new page";
@@ -534,3 +534,28 @@ for (const site of ["chatgpt", "zai"] as const) {
     expect(tools.calls.filter(call => call.name === "fill")).toEqual([{name:"fill",args:expect.objectContaining({pageId:9,value:"owned fixture input"})}]);
   });
 }
+
+describe("one marked tab per provider", () => {
+  it("submits the first message in the already owned marked tab instead of opening another one", async () => {
+    const opened: string[] = [];
+    const listing = "7: ChatGPT (https://chatgpt.com/?herder_owned=chatgpt)";
+    const tools: ChromePageTools = { call: async (name, args = {}) => {
+      if (name === "list_pages") return listing;
+      if (name === "new_page") { opened.push(String(args.url)); return ""; }
+      if (name === "take_snapshot") return 'uid=1_42 textbox "Спросить ChatGPT" multiline';
+      if (name === "fill") return "ok";
+      if (name === "evaluate_script") {
+        const source = String(args.function);
+        if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
+        if (source.includes("send_not_ready")) return json({ submitted: true });
+        if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
+        return json({});
+      }
+      throw new Error("unexpected action " + name);
+    } };
+    const receipt = await submitFirstChatMessage(tools, "chatgpt", "hello", ACCOUNT);
+    expect(opened).toEqual([]);
+    expect(receipt.clicked).toBe(true);
+  });
+});

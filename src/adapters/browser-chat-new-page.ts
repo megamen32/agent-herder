@@ -1,5 +1,6 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
+import { isOwnedTabUrl, ownedTabUrl } from "./browser-owned-tab.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -51,7 +52,12 @@ export async function openOwnedBlankChatPage(
 ):Promise<number> {
   const origin=SITE_ORIGIN[site];
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
-  try { await tools.call("new_page",{url:origin+"/",background:true,timeout:12_000}); }
+  // One tab per provider: the marked tab that the driver already owns is
+  // reused, so a first message never opens a second tab.
+  const owned=pages(await tools.call("list_pages")).find(p=>isOwnedTabUrl(p.url,site));
+  if (owned) return owned.id;
+  void before;
+  try { await tools.call("new_page",{url:ownedTabUrl(origin,site),background:true,timeout:12_000}); }
   catch { /* require new unique page in authoritative list instead */ }
   const now=pages(await tools.call("list_pages"));
   const created=now.filter(p=>!before.has(p.id)&&new URL(p.url).origin===origin);
