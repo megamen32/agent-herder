@@ -1,0 +1,62 @@
+{
+  "schema": "v1",
+  "kind": "quiet-period-429-tab-attribution",
+  "at": "2026-11-08T20:30:00+03:00",
+  "author_session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "scope": "Read-only attribution of the two tabs that appeared on the Mac Mini Chrome gateway during the owner's 5-minute quiet period. No tab was opened, closed or navigated by this investigation; no ChatGPT/Z.ai request was sent.",
+  "question": "Name the exact source of the newly appearing tabs (gateway page 14 = connection-principal, page 15 = chat.z.ai).",
+  "findings": [
+    {
+      "page": 14,
+      "url": "https://msg.bezrabotnyi.com/v1/connection-principal",
+      "attribution": "UserIO MV3 browser extension 'Universal UserIO Agent' 0.9.11 installed in the Mac Mini Chrome profile, executing a navigate command delivered through the UserIO agent command channel.",
+      "command_id": "vk-browser:249",
+      "queued_at_msk": "2026-11-08 18:57:49",
+      "queued_at_utc": "2026-11-08T15:57:49Z",
+      "evidence": [
+        "/var/lib/universal-userio/agent-commands.jsonl: command id vk-browser:249, action navigate, args.url https://msg.bezrabotnyi.com/v1/connection-principal",
+        "Mac Chrome History (Default/History visits): visit of https://msg.bezrabotnyi.com/v1/connection-principal at 2026-11-08 15:57:49 UTC, transition 0x30000000, no referrer - in-page navigation, not a typed URL",
+        "nginx /var/log/nginx/access.log: 08/Nov/2026:18:57:49 +0300 GET /v1/connection-principal from peer 192.168.2.1 (the Mac), Chrome/156.0.0.0 UA; next line GET /favicon.ico with Referer https://msg.bezrabotnyi.com/v1/connection-principal",
+        "Extension implements the navigate action: /Users/roomhacker/Downloads/Universal-UserIO-Agent-0.9.11/lib/agent.js case navigate -> cmdNavigate -> ensureTab(url) -> chrome.tabs.create/update",
+        "Extension is installed in the Mac Chrome profile: Secure Preferences aoigpennaaneniokbkochaojddgifamc = /Users/roomhacker/Downloads/Universal-UserIO-Agent-0.9.11; manifest permissions tabs + host_permissions http/https */*"
+      ],
+      "confidence": "proven - exact command id, exact second, exact URL, matching server access log"
+    },
+    {
+      "page": 15,
+      "url": "https://chat.z.ai/",
+      "attribution": "NOT the UserIO extension and NOT this session. The only mechanism in the estate that opens exactly this URL is the legacy Agent Herder fleet runtime's zai-cdp-driver openZaiTab() new_page call (ZAI_ORIGIN + '/'). Issuing process for page 15 is not yet named exactly.",
+      "candidate_source": "Legacy Agent Herder fleet runtime on server-100 (PID 4151979, release 3b2cf4d64df8043993847947e160dd75d99ed471) - dist/adapters/zai-cdp-driver.js openZaiTab() -> tools.call('new_page', {url: 'https://chat.z.ai/'})",
+      "excluded_sources": [
+        "UserIO extension - zero z.ai entries in the command queue and results",
+        "this session 01a1ac52 - zero vibe tab MCP calls in the window",
+        "parent session 01a1bb0c - only close_page 1,3,4,5,6 + navigate page 11 to about:blank + close_page 14,15; never a new_page for chat.z.ai",
+        "Vibe MCP relay on Mac 127.0.0.1:8788 - drives a separate managed browser, no 50260 tab creation observed"
+      ],
+      "corroboration": [
+        "Zero z.ai entries in /var/lib/universal-userio/agent-commands.jsonl and agent-results.jsonl for 2026-11-08",
+        "This session issued zero vibe new_page/navigate_page/close_page McpToolCall items in the 15:30-16:20Z window (all McpToolCall items of the 2026-11-05 rollout scanned)",
+        "Mac Chrome History: chat.z.ai root at 18:58:24 and 18:59:58 MSK (transition 0x38000001 - reload/replaced class) and 17:18:54 MSK (0x38000001), plus 18:46:39 TYPED https://z.ai/ -> chat.z.ai",
+        "Parent session 01a1bb0c closed tabs 1,3,4,5,6 and blanked page 11 at 15:58:19-15:58:51Z; the list_pages result at 15:58:51Z already showed page 14 = connection-principal and page 15 = https://chat.z.ai/",
+        "Legacy fleet runtime on server-100 (PID 4151979, release 3b2cf4d64df8043993847947e160dd75d99ed471) dist/adapters/zai-cdp-driver.js: openZaiTab() calls tools.call(new_page, {url: ZAI_ORIGIN + '/'}) with ZAI_ORIGIN = https://chat.z.ai (line 10 and 136); same release ships chatgpt-background-navigator.js and browser-chat-new-page.js",
+        "The current canonical source tree still contains the same zai-cdp-driver openZaiTab new_page path",
+        "Unreleased QA claim still owned: resource qa-zai-blank-page2-20261108, claim_id bc0aa3cc-0bd4-4f24-a378-a77be3e518db, purpose zai-shadow-20261108 exact Z.ai page2 blank first full case, acquired 2026-11-08 16:48:58 MSK, external_ref mac-mini-2012.lan/gateway50260/pid58712/page2/chat.z.ai"
+      ],
+      "confidence": "mechanism identified and consistent, exact issuing process NOT proven - the 50260 gateway does not log tool calls (personal_gateway.py log_message is a no-op) and its chrome-personal-mcp.log ends at 08:03"
+    }
+  ],
+  "side_effects_of_this_investigation": [
+    "read-only only: ps/lsof/ss/pgrep, nginx access logs, copy of Chrome History, sqlite/JSONL reads of agent-commands.jsonl, grep of extension and legacy release source",
+    "no tab opened, closed, navigated or reloaded; no ChatGPT or Z.ai request sent; no service restarted or stopped; no secret/token/profile/cookie touched"
+  ],
+  "open_items": [
+    "page 15 issuing process still not named exactly; needs either a 50260 gateway request log (absent by design) or a live observer of the legacy runtime's browser calls",
+    "stale QA claim qa-zai-blank-page2-20261108 (bc0aa3cc-0bd4-4f24-a378-a77be3e518db) is still held; not released by this investigation - releasing it is a separate owner decision",
+    "legacy fleet runtime PID 4151979 still running on server-100; owner decision of 2026-11-08 says legacy units stay off and must not be restarted - recorded, not acted on"
+  ],
+  "related_evidence": [
+    ".agents/tasks/20261107-portable-native-ci/evidence/zai-v1-78e-ownership-handoff.json",
+    ".agents/tasks/20261107-portable-native-ci/evidence/zai-v1-78e-target-collision.json",
+    ".agents/tasks/20261107-herder-v1-core/evidence/finish-20261108/owner-browser-quiet-receipt.json"
+  ]
+}
