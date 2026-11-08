@@ -77,8 +77,11 @@ def measure(group,paths,*,host_id,clock=time.time):
         checked[path]=before
         return json.loads(data)
     try:
-        records=read_json(paths.autopilot/'unfinished-sessions.json')['sessions']
-        exact=[r for r in records if identity(r)==group.get('correlation_id')]
+        state=read_json(paths.autopilot/'unfinished-sessions.json')
+        # Retained source episode is authoritative after the work item is removed/rearmed.
+        exact=[r for r in state.get('sourceBindings',[]) if identity(r)==group.get('correlation_id')]
+        if not exact:
+            exact=[r for r in state['sessions'] if identity(r)==group.get('correlation_id')]
         if len(exact)!=1:return result('unknown','exact-episode-unavailable')
         record=exact[0];sid=record['sessionId'];cwd=os.path.normpath(record['cwd'])
         if (record['harness']!='codex' or record.get('recoveryCause') not in

@@ -22,6 +22,8 @@ class SourceTests(unittest.TestCase):
  def save(self):self.rollout.write_text(''.join(json.dumps(x)+'\n' for x in self.events))
  def paths(self):return adapter.SourcePaths(self.state,self.stop,self.codex)
  def measure(self,group=None):return adapter.measure(group or GROUP,self.paths(),host_id=HOST,clock=lambda:NOW)
+ def test_retained_failed_episode_survives_work_record_removal(self):
+  self.write(self.state/'unfinished-sessions.json',{'sessions':[],'sourceBindings':[RECORD]});self.assertEqual(self.measure()['observed_state'],'healthy')
  def test_exact_native_continuation_is_healthy_and_readonly(self):
   before={str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()};result=self.measure()
   self.assertEqual(result['observed_state'],'healthy');self.assertEqual(result['observed_at'],NOW)
