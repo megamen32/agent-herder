@@ -603,7 +603,7 @@ describe("owned tab with a leftover composer", () => {
       if (name === "evaluate_script") {
         const source = String(args.function);
         if (source.includes("/api/auth/session")) return json({ scope: ACCOUNT });
-        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: false });
+        if (source.includes("ready:!!editor")) return json({ origin: "https://chatgpt.com", path: "/", ready: true, empty: true });
         if (source.includes("send_not_ready")) return json({ submitted: true });
         if (source.includes("path:location.pathname")) return json({ origin: "https://chatgpt.com", path: "/c/" + GPT_NATIVE });
         return json({});

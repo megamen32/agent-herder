@@ -74,7 +74,28 @@ export async function openOwnedBlankChatPage(
   // One tab per provider: the marked tab that the driver already owns is
   // reused, so a first message never opens a second tab.
   const owned=pages(await tools.call("list_pages")).find(p=>isOwnedTabUrl(p.url,site));
-  if (owned) return owned.id;
+  if (owned) {
+    // Our own tab may still hold a composer value from an earlier run. Clear
+    // it here so the first message starts from a clean composer; a draft the
+    // human wrote in a foreign tab is never touched.
+    await clearComposer(tools,owned.id,site);
+    for(let attempt=0;attempt<7;attempt++){
+      try{
+        const state=parseChromeEvaluation<{origin:string;path:string;ready:boolean;empty:boolean}>(
+          await tools.call("evaluate_script",{pageId:owned.id,function:`() => {
+            const editor=document.querySelector(${JSON.stringify(site==="chatgpt"
+              ?'div[contenteditable="true"][role="textbox"][data-composer-markdown]'
+              :'textarea[placeholder="Send a Message"]')});
+            return {origin:location.origin,path:location.pathname,
+              ready:!!editor&&editor.getClientRects().length>0,
+              empty:!(editor?.innerText||editor?.value||editor?.textContent||'').trim()};
+          }`}));
+        if(state.origin===origin&&state.path==="/"&&state.ready&&state.empty)return owned.id;
+      }catch{ /* retried below */ }
+      await new Promise(resolve=>setTimeout(resolve,300));
+    }
+    throw new Error(site+" owned tab composer could not be cleared; no message submitted");
+  }
   void before;
   try { await tools.call("new_page",{url:ownedTabUrl(origin,site),background:true,timeout:12_000}); }
   catch { /* require new unique page in authoritative list instead */ }
