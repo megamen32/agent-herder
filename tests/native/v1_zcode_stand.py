@@ -300,6 +300,17 @@ def reconcile_unknown(seed, home, session_ref):
             'source_command_id':source_id, 'native_input':admission, 'native_assistant':assistant, 'no_replay':True}
 
 
+def emit_success(evidence):
+    # Only the test circuit's generated records and public consumer results are
+    # exported. Do not emit environment, profile, supervisor status or tokens.
+    allowed = ('phase','result','manifest_sha256','instance','create_key','first_marker',
+               'create_response','create_task','create_task_id','session_ref','prompt_receipt',
+               'second_key','second_marker','second_response','second_task','second_outcome',
+               'messages','model_before','model_after','export','search','discover','reopen','no_resend','tools')
+    safe = {key:evidence[key] for key in allowed if key in evidence}
+    print(json.dumps({'status':'PASS','evidence':safe},sort_keys=True),flush=True)
+
+
 def exercise(client, protected, seed, tools, instance, home, manifest_sha256, core, profile):
     evidence_path = protected / 'zcode-v1-receipt.json'
     model_origin = os.environ['HERDER_TEST_MODEL_BASE_URL'][:-3]
@@ -417,9 +428,7 @@ def exercise(client, protected, seed, tools, instance, home, manifest_sha256, co
                 raise RuntimeError('reopened public session missing exact messages')
             evidence.update(phase='complete',result='PASS',reopen=after,no_resend=True)
             persist_evidence(evidence_path,evidence)
-            print(json.dumps({'status':'PASS','session_ref':session,'evidence':evidence},sort_keys=True),flush=True)
-            # launch.py retains the protected root only on nonzero exit.
-            raise SystemExit(3)
+            emit_success(evidence)
         finally:
             reopened.close()
     except Exception as exc:
