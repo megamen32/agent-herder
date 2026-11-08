@@ -231,8 +231,8 @@ def public_common_export_status(result):
             "receipt": _structured_content(result)}
 
 
-def public_projects_readiness(result):
-    """Require complete, attributable projects data before calling it confirmed."""
+def public_projects_readiness(result, expected_project=None):
+    """Verify usable project attribution without claiming global inventory coverage."""
     if not isinstance(result, dict) or result.get("isError") is True:
         return {"status": "error", "complete": False, "provenance": None}
     payload = _structured_content(result)
@@ -243,7 +243,20 @@ def public_projects_readiness(result):
     has_provenance = isinstance(provenance, (str, dict, list)) and bool(provenance)
     projects = payload.get("projects")
     projects_valid = isinstance(projects, list)
-    return {"status": "confirmed" if complete and has_provenance and projects_valid else "incomplete",
+    limitations = payload.get("limitations")
+    scoped = (payload.get("complete") is False
+              and payload.get("scope") == "authorized_registered_sessions"
+              and isinstance(limitations, list) and bool(limitations)
+              and all(isinstance(item, str) and item.strip() for item in limitations)
+              and projects_valid and bool(projects)
+              and all(isinstance(item, dict)
+                      and isinstance(item.get("project_ref"), str) and item["project_ref"].strip()
+                      and item.get("source") == "authorized_native_session" for item in projects))
+    expected_found = expected_project is None or (projects_valid and any(
+        isinstance(item, dict) and item.get("project_ref") == expected_project
+        and item.get("source") == "authorized_native_session" for item in projects))
+    confirmed = ((complete and has_provenance and projects_valid) or scoped) and expected_found
+    return {"status": "confirmed" if confirmed else "incomplete",
             "complete": payload.get("complete"), "provenance": provenance,
             "projects_count": len(projects) if projects_valid else None,
             "limitations": payload.get("limitations")}
@@ -1075,6 +1088,16 @@ def run_case(args):
         persist_evidence(evidence_path, evidence)
         if search_result["status"] != "confirmed":
             raise RuntimeError(f"search did not prove complete marker coverage: {search_result}")
+        # The fresh authority has no registered sessions during preflight. Check
+        # projects after create/deliver, against the actual native fixture cwd.
+        projects_wire = rpc_tool(core, "discover", projects_arguments)
+        projects_check = public_projects_readiness(projects_wire, expected_project=str(project))
+        evidence["projects_before_registration"] = evidence["projects"]
+        evidence["projects"] = {"request": projects_arguments, **projects_check, "wire": projects_wire}
+        evidence["scenarios"]["projects"] = projects_check["status"].upper()
+        if projects_check["status"] != "confirmed":
+            persist_evidence(evidence_path, evidence)
+            raise RuntimeError(f"registered native project missing or unattributed: {projects_check}")
         evidence.update({"phase": "public_v1_readback", "session_ref": session,
                          "task_ids": [task_id_one, task_id_two], "receipts": [receipt_one, receipt_two],
                          "native_pairs": native_pairs, "native_completion": [completion_one, completion_two],
@@ -1116,6 +1139,11 @@ def run_case(args):
         search_after = search_marker_coverage(rpc_tool(reopened, "search", search_arguments), marker_two)
         if search_after["status"] != "confirmed":
             raise RuntimeError(f"search lost marker coverage after restart: {search_after}")
+        projects_after = public_projects_readiness(
+            rpc_tool(reopened, "discover", projects_arguments), expected_project=str(project))
+        evidence["projects_after_restart"] = projects_after
+        if projects_after["status"] != "confirmed":
+            raise RuntimeError(f"registered project lost after core restart: {projects_after}")
         with urllib.request.urlopen(stats_url, timeout=3) as response:
             requests_after_restart = json.loads(response.read(4096)).get("requests") - model_requests_before
         if requests_after_restart != requests_before_restart:

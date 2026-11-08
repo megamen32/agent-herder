@@ -1,0 +1,23 @@
+   Compiling herder-compat v0.1.0 (/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/crates/herder-compat)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.64s
+     Running tests/launcher.rs (crates/herder-compat/target/debug/deps/launcher-3ff8dc72729479df)
+
+running 1 test
+Error: ConnectionClosed("discover response")
+test trusted_launcher_arguments_reach_native_process_verbatim ... FAILED
+
+failures:
+
+---- trusted_launcher_arguments_reach_native_process_verbatim stdout ----
+
+thread 'trusted_launcher_arguments_reach_native_process_verbatim' (511310) panicked at tests/launcher.rs:25:56:
+native received trusted argv: ConnectionClosed("initialize response")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    trusted_launcher_arguments_reach_native_process_verbatim
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test launcher`

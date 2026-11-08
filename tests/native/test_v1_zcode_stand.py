@@ -68,20 +68,35 @@ class UnknownReconciliation(unittest.TestCase):
             self.assertIsNone(stand.read_promoted_input(db, 'native-a', 'other'))
 
 
+class PortableConfig(unittest.TestCase):
+    def test_rejects_unisolated_backend_before_launch(self):
+        with self.assertRaisesRegex(ValueError, 'linux-netns-bwrap'):
+            stand.config_argv({'capabilities':{'os':'linux','backend':'host'}})
+
+    def test_expected_manifest_hash_must_be_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'manifest.json'
+            path.write_text('{}')
+            for invalid in ('', 'a'*63, 'g'*64):
+                with self.assertRaisesRegex(ValueError, 'manifest digest'):
+                    stand.validate_manifest(path,invalid)
+
+
 class PublicRuntimeRegression(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get('ZCODE_V1_RUNTIME') and os.environ.get('ZCODE_V1_MANIFEST'),
+    @unittest.skipUnless(os.environ.get('ZCODE_V1_RUNTIME') and os.environ.get('ZCODE_V1_MANIFEST') and os.environ.get('ZCODE_V1_CLIENT_DIST'),
                          'set ZCODE_V1_RUNTIME and ZCODE_V1_MANIFEST for isolated public integration')
     def test_official_runtime_initializes_public_core(self):
         manifest = Path(os.environ['ZCODE_V1_MANIFEST']).resolve(strict=True)
         runtime = Path(os.environ['ZCODE_V1_RUNTIME']).resolve(strict=True)
+        client_dist = Path(os.environ['ZCODE_V1_CLIENT_DIST']).resolve(strict=True)
         native = Path(__file__).resolve().parent
         command = [sys.executable, str(native / 'launch.py'),
                    '--ro-bind', str(manifest.parent), '--ro-bind', str(runtime.parent),
-                   '--ro-bind', str(stand.OFFICIAL_CLIENT_DIST),
-                   '--ro-bind', str(stand.OFFICIAL_CLIENT_DIST.parent / 'node_modules/ws'),
-                   '--ro-bind', str(stand.OFFICIAL_CLIENT_DIST.parent / 'package.json'), '--',
+                   '--ro-bind', str(client_dist),
+                   '--ro-bind', str(client_dist.parent / 'node_modules/ws'),
+                   '--ro-bind', str(client_dist.parent / 'package.json'), '--',
                    sys.executable, str(native / 'v1_zcode_stand.py'),
-                   '--manifest', str(manifest), '--runtime', str(runtime)]
+                   '--manifest', str(manifest), '--manifest-sha256',stand.digest(manifest), '--client-dist',str(client_dist), '--runtime', str(runtime)]
         result = subprocess.run(command, text=True, capture_output=True, timeout=45)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads(result.stdout.strip().splitlines()[-1])
@@ -96,7 +111,7 @@ class ManifestValidation(unittest.TestCase):
             path = Path(tmp) / 'manifest.json'
             path.write_text('{}')
             with self.assertRaisesRegex(ValueError, 'manifest digest'):
-                stand.validate_manifest(path)
+                stand.validate_manifest(path, '0' * 64)
 
     def test_rejects_changed_candidate_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,9 +123,8 @@ class ManifestValidation(unittest.TestCase):
                     'sha256':{'core':'bad','bootstrap':'bad','node':'bad','adapters':{'zcode':'bad'}}}
             path = root / 'manifest.json'
             path.write_text(json.dumps(data))
-            with patch.object(stand, 'MANIFEST_SHA', stand.digest(path)):
-                with self.assertRaisesRegex(ValueError, 'artifact mismatch'):
-                    stand.validate_manifest(path)
+            with self.assertRaisesRegex(ValueError, 'artifact mismatch'):
+                stand.validate_manifest(path, stand.digest(path))
 
 
 if __name__ == '__main__':

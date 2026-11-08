@@ -1,0 +1,11 @@
+
+running 6 tests
+test trusted_owner_codex_profile_accepts_only_exact_isolation_off ... ok
+test trusted_owner_runner_rejects_process_injection_and_cross_family_environment ... ok
+test trusted_owner_profiles_bind_all_v1_types_to_legacy_runners ... ok
+test trusted_owner_launcher_wires_create_and_scoped_read_over_stdio ... ok
+test trusted_owner_opencode_ahap_create_start_task_and_read ... ok
+test trusted_owner_other_ahap_types_use_same_public_create_read_and_restart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 14.05s
+

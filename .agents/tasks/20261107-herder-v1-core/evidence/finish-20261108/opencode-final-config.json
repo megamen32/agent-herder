@@ -1,0 +1,16 @@
+{
+  "python": "/usr/bin/python3",
+  "node": "/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/fixture/node",
+  "bootstrap": "/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/fixture/ahap-owner-bootstrap",
+  "stand": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/ahap_opencode_stand.py",
+  "launcher": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/launch.py",
+  "artifact_root": "/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final",
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/manifest.json",
+  "capabilities": {
+    "os": "linux",
+    "arch": "x86_64",
+    "backend": "linux-netns-bwrap"
+  },
+  "opencode": "/home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/opencode",
+  "opencode_sha256": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+}

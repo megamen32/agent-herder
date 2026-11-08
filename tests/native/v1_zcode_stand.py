@@ -4,6 +4,8 @@
 Run only via launch.py; no create or send is performed by this preflight.
 """
 import argparse
+import base64
+import re
 import hashlib
 import json
 import os
@@ -20,16 +22,16 @@ import sys
 
 from ahap_opencode_stand import RpcProcess, parse_fresh_seed, persist_evidence, validate_stand_isolation, rpc_tool, wait_task, message_texts
 
-MANIFEST_SHA = 'a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998'
+
 
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def validate_manifest(path):
+def validate_manifest(path, expected_sha):
     path = Path(path)
-    if digest(path) != MANIFEST_SHA:
+    if not re.fullmatch(r'[0-9a-f]{64}', expected_sha) or digest(path) != expected_sha:
         raise ValueError('unexpected candidate manifest digest')
     data = json.loads(path.read_text())
     root = Path(data['artifact_root']).resolve(strict=True)
@@ -96,7 +98,7 @@ def require_exact_project(tree, root):
 
 
 # Existing Herder protocol client used by the retained official ZCode probe.
-OFFICIAL_CLIENT_DIST = Path('/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/dist')
+
 OFFICIAL_PROJECT_JS = r"""
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -117,7 +119,7 @@ try {
 """
 
 
-def setup_official_project(node, home, project, protected):
+def setup_official_project(node, home, project, protected, client_dist):
     evidence_path = protected / 'zcode-v1-project-setup.json'
     record = {'phase':'before_project_save', 'project_root':str(project),
               'result':'UNKNOWN', 'no_replay':True}
@@ -125,7 +127,7 @@ def setup_official_project(node, home, project, protected):
     env = dict(os.environ, HOME=str(home))
     try:
         result = subprocess.run([str(node), '--input-type=module', '-e', OFFICIAL_PROJECT_JS,
-                                 str(OFFICIAL_CLIENT_DIST), str(project)], env=env, cwd=project,
+                                 str(client_dist), str(project)], env=env, cwd=project,
                                 text=True, capture_output=True, timeout=30, check=False)
         if result.returncode:
             raise RuntimeError('official project setup failed: ' + result.stderr[-1200:])
@@ -142,7 +144,7 @@ def setup_official_project(node, home, project, protected):
 
 
 def run(args):
-    manifest = validate_manifest(args.manifest)
+    manifest = validate_manifest(args.manifest, args.manifest_sha256)
     runtime = Path(args.runtime).resolve(strict=True)
     node, entry = runtime / 'node', runtime / 'zcode.cjs'
     if not all(p.is_file() for p in (node, entry, runtime / 'server-cli.js', runtime / 'server-core.js')):
@@ -154,7 +156,7 @@ def run(args):
     if not protected.is_dir() or protected.stat().st_mode & 0o077:
         raise ValueError('protected fixture home missing')
     instance = 'zcode-ci-' + uuid.uuid4().hex
-    persist_evidence(protected / 'zcode-v1-run-identity.json', {'instance':instance, 'manifest_sha256':MANIFEST_SHA, 'phase':'before_project_setup', 'network':'loopback_only'})
+    persist_evidence(protected / 'zcode-v1-run-identity.json', {'instance':instance, 'manifest_sha256':args.manifest_sha256, 'phase':'before_project_setup', 'network':'loopback_only'})
     project = protected / 'work'
     project.mkdir(mode=0o700)
     links = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show']))
@@ -191,7 +193,7 @@ def run(args):
             time.sleep(.1)
         else:
             raise RuntimeError('official supervisor readiness timeout')
-        project_receipt = setup_official_project(node, home, project, protected)
+        project_receipt = setup_official_project(node, home, project, protected, Path(args.client_dist))
         run_public(args, manifest, protected, project, home, runtime, server_root, project_receipt, instance)
     finally:
         try:
@@ -227,15 +229,16 @@ def run_public(args, manifest, protected, project, home, runtime, server_root, p
         models = rpc_tool(client, 'discover', {'action':'models', 'instance_ref':instance})
         projects = rpc_tool(client, 'discover', {'action':'projects', 'instance_ref':instance})
         persist_evidence(protected / 'zcode-v1-receipt.json', {'phase':'read_only', 'models':models,
-                            'projects':projects, 'session_mutations':0, 'project_saves':1, 'manifest_sha256':MANIFEST_SHA})
+                            'projects':projects, 'session_mutations':0, 'project_saves':1, 'manifest_sha256':args.manifest_sha256})
         print(json.dumps({'models':models, 'projects':projects}, ensure_ascii=False), flush=True)
         if args.run_case:
             require_exact_project(project_receipt['native_project_tree'], str(project))
-            exercise(client, protected, seed, tools, instance, home)
+            exercise(client, protected, seed, tools, instance, home, args.manifest_sha256, manifest['core'], profile)
+            return
 
     finally:
         client.close()
-    result = {'status':'PREFLIGHT_ONLY', 'manifest_sha256':MANIFEST_SHA,
+    result = {'status':'PREFLIGHT_ONLY', 'manifest_sha256':args.manifest_sha256,
               'runtime_node_sha256':digest(node), 'runtime_entry_sha256':digest(entry),
               'mcp_tools':tools, 'session_mutations':0, 'project_saves':1, 'model_requests':'not measured',
               'project_receipt':project_receipt,
@@ -297,7 +300,7 @@ def reconcile_unknown(seed, home, session_ref):
             'source_command_id':source_id, 'native_input':admission, 'native_assistant':assistant, 'no_replay':True}
 
 
-def exercise(client, protected, seed, tools, instance, home):
+def exercise(client, protected, seed, tools, instance, home, manifest_sha256, core, profile):
     evidence_path = protected / 'zcode-v1-receipt.json'
     model_origin = os.environ['HERDER_TEST_MODEL_BASE_URL'][:-3]
     def stats():
@@ -308,7 +311,7 @@ def exercise(client, protected, seed, tools, instance, home):
     request_key = 'zcode-v1-create-' + tag
     evidence = {'phase':'before_create', 'result':'UNKNOWN', 'mutation_started': True,
                 'first_marker':marker, 'create_key':request_key, 'instance':instance,
-                'model_before':stats(), 'manifest_sha256':MANIFEST_SHA, 'tools':tools}
+                'model_before':stats(), 'manifest_sha256':manifest_sha256, 'tools':tools}
     persist_evidence(evidence_path, evidence)
     try:
         created = rpc_tool(client, 'create', {'action':'create', 'instance_ref':instance,
@@ -346,7 +349,7 @@ def exercise(client, protected, seed, tools, instance, home):
         deadline = time.monotonic()+45
         while time.monotonic() < deadline:
             messages = rpc_tool(client, 'session', {'action':'messages', 'session_ref':session})
-            if marker in json.dumps(messages) and 'HERDER_TEST_MODEL_OK' in json.dumps(messages):
+            if ('user', marker) in message_texts(messages) and ('assistant', 'HERDER_TEST_MODEL_OK') in message_texts(messages):
                 break
             time.sleep(.5)
         else:
@@ -355,19 +358,122 @@ def exercise(client, protected, seed, tools, instance, home):
             raise RuntimeError('initial assistant response not confirmed; do not resend')
         evidence.update(phase='initial_read_confirmed', messages=messages, model_after=stats(), result='PARTIAL')
         persist_evidence(evidence_path, evidence)
-        raise RuntimeError('first exchange confirmed; subsequent scenario not yet implemented; retain root')
+        second_marker = 'HERDER_ZCODE_SECOND_' + tag
+        second_key = 'zcode-v1-second-' + tag
+        evidence.update(phase='before_second_send', second_marker=second_marker, second_key=second_key, result='UNKNOWN')
+        persist_evidence(evidence_path, evidence)
+        second = rpc_tool(client, 'deliver', {'action':'session', 'session_ref':session,
+                          'message':second_marker, 'mode':'queue', 'request_key':second_key})
+        evidence.update(phase='second_response', second_response=second)
+        persist_evidence(evidence_path, evidence)
+        if second.get('resultType') != 'task' or not second.get('taskId'):
+            raise RuntimeError('second delivery missing task; do not replay')
+        second_task = wait_task(client, second['taskId'])
+        evidence.update(phase='second_terminal', second_task=second_task)
+        persist_evidence(evidence_path, evidence)
+        outcome = second_task.get('result', {}).get('structuredContent', {})
+        if second_task.get('status') != 'completed' or second_task.get('result', {}).get('isError') or outcome.get('outcome') != 'confirmed' or not outcome.get('native_receipt_id') or outcome.get('native_receipt_id') == prompt.get('native_receipt_id'):
+            raise RuntimeError('second delivery not confirmed; do not replay')
+        deadline=time.monotonic()+45
+        while time.monotonic()<deadline:
+            messages=rpc_tool(client,'session',{'action':'messages','session_ref':session})
+            records=messages.get('structuredContent',{}).get('page',{}).get('messages',[])
+            if (any(r.get('role')=='user' and r.get('text')==marker for r in records)
+                and any(r.get('role')=='user' and r.get('text')==second_marker for r in records)
+                and sum(r.get('role')=='assistant' and r.get('text')=='HERDER_TEST_MODEL_OK' for r in records)>=2):
+                break
+            time.sleep(.5)
+        else:
+            raise RuntimeError('second native answer not confirmed; do not replay')
+        evidence.update(phase='both_read', messages=messages, second_outcome=outcome, model_after=stats())
+        persist_evidence(evidence_path,evidence)
+        for name,arguments in [('export',{'action':'export','session_ref':session,'format':'native'}),
+                               ('search',{'action':'search','query':marker}),
+                               ('discover',{'action':'projects','instance_ref':instance})]:
+            result=rpc_tool(client,name,arguments)
+            evidence[name]=result
+            persist_evidence(evidence_path,evidence)
+        exported=evidence['export'].get('structuredContent', {})
+        decoded=base64.b64decode(exported.get('bytes_base64',''), validate=True).decode()
+        if exported.get('complete') is not True or marker not in decoded or second_marker not in decoded:
+            raise RuntimeError('native export incomplete or missing exact messages')
+        search=evidence['search'].get('structuredContent', {})
+        if search.get('complete') is not True or not any(hit.get('session_ref') == session for hit in search.get('hits', [])):
+            raise RuntimeError('search coverage or session hit missing')
+        project_view=evidence['discover'].get('structuredContent', {})
+        if not any(row.get('project_ref') == '/herder-owner-home/work' and row.get('source') == 'authorized_native_session' for row in project_view.get('projects', [])):
+            raise RuntimeError('authorized project provenance missing')
+        evidence.update(phase='read_checks_completed', result='PARTIAL')
+        persist_evidence(evidence_path,evidence)
+        client.close()
+        reopened=RpcProcess(core, profile, dict(os.environ))
+        try:
+            reopened.preflight()
+            after=rpc_tool(reopened,'session',{'action':'messages','session_ref':session})
+            rows=after.get('structuredContent',{}).get('page',{}).get('messages',[])
+            if (not any(r.get('role')=='user' and r.get('text')==marker for r in rows)
+                    or not any(r.get('role')=='user' and r.get('text')==second_marker for r in rows)
+                    or sum(r.get('role')=='assistant' and r.get('text')=='HERDER_TEST_MODEL_OK' for r in rows)<2):
+                raise RuntimeError('reopened public session missing exact messages')
+            evidence.update(phase='complete',result='PASS',reopen=after,no_resend=True)
+            persist_evidence(evidence_path,evidence)
+            print(json.dumps({'status':'PASS','session_ref':session,'evidence':evidence},sort_keys=True),flush=True)
+            # launch.py retains the protected root only on nonzero exit.
+            raise SystemExit(3)
+        finally:
+            reopened.close()
     except Exception as exc:
         evidence['error'] = str(exc)
         persist_evidence(evidence_path, evidence)
         raise
 
 
+def config_argv(config):
+    from runner_config import ConfigError, file_path, required_string
+    capabilities = config.get('capabilities', {})
+    if capabilities.get('os') != 'linux' or capabilities.get('backend') != 'linux-netns-bwrap':
+        raise ConfigError('ZCode fixture requires linux-netns-bwrap')
+    import platform
+    if platform.system().lower() != 'linux' or capabilities.get('arch','').lower() != platform.machine().lower():
+        raise ConfigError('configured host architecture does not match')
+    for binary in ('unshare', 'bwrap', 'ip'):
+        if not shutil.which(binary):
+            raise ConfigError('missing isolation tool: ' + binary)
+    python=file_path(required_string(config,'python','config'),'python',executable=True)
+    launcher=file_path(required_string(config,'launcher','config'),'launcher')
+    stand=file_path(required_string(config,'stand','config'),'stand')
+    manifest=file_path(required_string(config,'manifest','config'),'manifest')
+    expected=required_string(config,'manifest_sha256','config')
+    data=validate_manifest(manifest,expected)
+    runtime=Path(required_string(config,'zcode_runtime','config')).resolve(strict=True)
+    client=Path(required_string(config,'zcode_client_dist','config')).resolve(strict=True)
+    for p in (runtime/'node',runtime/'zcode.cjs',runtime/'server-cli.js',runtime/'server-core.js',client/'adapters/zcode-protocol.js',client/'adapters/zcode-server-control.js',client.parent/'package.json',client.parent/'node_modules/ws'):
+        if not p.exists(): raise ConfigError('required ZCode fixture component missing: '+str(p))
+    retained=Path(required_string(config,'retain_root','config'))
+    if not retained.is_absolute() or retained.exists() or retained.is_symlink():
+        raise ConfigError('retain_root must be an unused absolute path')
+    argv=[python,launcher,'--retain-on-failure',str(retained)]
+    for path in (Path(data['artifact_root']),runtime.parent,client,client.parent/'node_modules/ws',client.parent/'package.json'):
+        argv.extend(['--ro-bind',str(path)])
+    argv.extend(['--',python,stand,'--manifest',manifest,'--manifest-sha256',expected,'--runtime',str(runtime),'--client-dist',str(client),'--run-case'])
+    return {'argv':argv,'manifest_sha256':expected,'source_commit':data.get('source_commit')}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--manifest', required=True)
-    parser.add_argument('--runtime', required=True)
+    parser.add_argument('--config')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--manifest')
+    parser.add_argument('--runtime')
+    parser.add_argument('--manifest-sha256')
+    parser.add_argument('--client-dist')
     parser.add_argument('--run-case', action='store_true')
     args = parser.parse_args()
+    if args.config and args.dry_run:
+        print(json.dumps(config_argv(json.loads(Path(args.config).read_text())),sort_keys=True))
+        return
+    if not all((args.manifest,args.manifest_sha256,args.runtime,args.client_dist)):
+        parser.error('manifest, manifest-sha256, runtime and client-dist are required')
     run(args)
 
 

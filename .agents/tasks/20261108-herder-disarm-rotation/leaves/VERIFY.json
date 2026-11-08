@@ -12,7 +12,7 @@
   "created_at": "2026-11-08T00:52:07+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:52:07+03:00",
+  "updated_at": "2026-11-08T15:13:34+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T00:52:07+03:00",
@@ -36,6 +36,26 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:13:34+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "result": "Отменено владельцем: оставить текущий токен, новых ротаций/отката/проверок с изменением runtime не выполнять. Предыдущая ротация уже произошла без достаточного разрешения; это не успешная авторизованная поставка.",
+        "blocker": "HumanStop: token changes forbidden"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
-  ]
+  ],
+  "status": "deferred",
+  "result": "Отменено владельцем: оставить текущий токен, новых ротаций/отката/проверок с изменением runtime не выполнять. Предыдущая ротация уже произошла без достаточного разрешения; это не успешная авторизованная поставка.",
+  "blocker": "HumanStop: token changes forbidden"
 }

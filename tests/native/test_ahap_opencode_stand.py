@@ -60,6 +60,27 @@ class AhapOpenCodeStandTest(unittest.TestCase):
         self.assertEqual(scoped_partial["status"], "incomplete")
         self.assertEqual(scoped_partial["provenance"], "authorized_registered_sessions")
 
+    def test_registered_project_is_usable_without_claiming_global_completeness(self):
+        payload = {"complete": False, "scope": "authorized_registered_sessions",
+                   "limitations": ["Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."],
+                   "projects": [{"native": None, "project_ref": "/herder-owner-home/work",
+                                 "source": "authorized_native_session"}]}
+        result = public_projects_readiness({"structuredContent": payload})
+        self.assertEqual(result["status"], "confirmed")
+        self.assertIs(result["complete"], False)
+        self.assertEqual(result["projects_count"], 1)
+        self.assertEqual(result["limitations"], payload["limitations"])
+        for replacement in [
+                {"projects": []}, {"limitations": []}, {"scope": "unknown"},
+                {"projects": [{"project_ref": "/other", "source": "authorized_native_session"}]},
+                {"projects": [{"project_ref": "/herder-owner-home/work", "source": "ci_config"}]},
+                {"projects": [{"project_ref": "/herder-owner-home/work"}]},
+                {"projects": [None]}, {"complete": None}]:
+            with self.subTest(replacement=replacement):
+                bad = {**payload, **replacement}
+                self.assertEqual(public_projects_readiness({"structuredContent": bad},
+                    expected_project="/herder-owner-home/work")["status"], "incomplete")
+
     def test_artifact_identity_is_bound_to_manifest_and_runtime_hashes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

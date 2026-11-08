@@ -9,7 +9,11 @@ use tokio::process::Command;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = env::var("HERDER_NATIVE_COMMAND")
         .map_err(|_| "HERDER_NATIVE_COMMAND must name the native Herder MCP executable")?;
-    let transport = TokioChildProcess::new(Command::new(command))?;
+    // Launcher-controlled arguments, never MCP arguments or shell text. One
+    // translator process retains exactly one trusted native caller profile.
+    let mut native_command = Command::new(command);
+    native_command.args(env::args_os().skip(1));
+    let transport = TokioChildProcess::new(native_command)?;
     let config = ClientConfig::new(
         ClientCapabilities::builder().enable_tasks().build(),
         Implementation::new("herder-compat", env!("CARGO_PKG_VERSION")),

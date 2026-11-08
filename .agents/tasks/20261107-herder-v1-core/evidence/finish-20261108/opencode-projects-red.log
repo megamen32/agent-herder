@@ -1,0 +1,16 @@
+.....................F..........
+======================================================================
+FAIL: test_registered_project_is_usable_without_claiming_global_completeness (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_ahap_opencode_stand.py", line 69, in test_registered_project_is_usable_without_claiming_global_completeness
+    self.assertEqual(result["status"], "confirmed")
+AssertionError: 'incomplete' != 'confirmed'
+- incomplete
++ confirmed
+
+
+----------------------------------------------------------------------
+Ran 32 tests in 0.150s
+
+FAILED (failures=1)

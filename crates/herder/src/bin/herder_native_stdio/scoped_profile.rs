@@ -47,7 +47,7 @@ pub struct OwnerProfile {
 fn allowed_adapter_env(kind: &str, name: &str) -> bool {
     match kind {
         "opencode" => matches!(name, "AHAP_OPENCODE_PASSWORD" | "OPENCODE_SERVER_USERNAME"),
-        "codex" => matches!(name, "AHAP_CODEX_SOCKET" | "AHAP_CODEX_BIN" | "AHAP_CODEX_CWD" | "CODEX_HOME"),
+        "codex" => matches!(name, "AHAP_CODEX_SOCKET" | "AHAP_CODEX_BIN" | "AHAP_CODEX_CWD" | "CODEX_HOME" | "AGENT_HERDER_WORKLOAD_ISOLATION"),
         "zcode" => matches!(name, "AHAP_ZCODE_SERVER_NODE" | "AHAP_ZCODE_SERVER_ENTRY" | "AHAP_ZCODE_CWD" | "AHAP_ZCODE_TRANSPORT"),
         "chatgpt" | "zai" => matches!(name,
             "AHAP_BROWSER_TRANSPORT" | "AHAP_BROWSER_PAGE_ID" | "AHAP_BROWSER_ACCOUNT_SCOPE"
@@ -138,6 +138,10 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
                     "ahap_base_url belongs to opencode; configure the selected adapter through ahap_env").into());
             }
             for (key, value) in &owner.ahap_env {
+                if key == "AGENT_HERDER_WORKLOAD_ISOLATION" && value != "off" {
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                        "AGENT_HERDER_WORKLOAD_ISOLATION only accepts the exact value \"off\" (direct-child launch without the isolation wrapper)").into());
+                }
                 if !allowed_adapter_env(&owner.kind, key) || value.contains('\0') || value.len() > 8192 {
                     return Err(io::Error::new(io::ErrorKind::InvalidInput,
                         format!("unsupported adapter environment key {key}; use the documented keys for owner.kind, without process loader or identity overrides")).into());
