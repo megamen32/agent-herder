@@ -252,6 +252,10 @@ export async function submitFirstChatMessage(
       await closeOwnedPage();
       return {clicked:false,uncertain:false,reason:"New-chat textbox not found"};
     }
+    // The site may restore a leftover composer value into a reused tab. The
+    // empty-state probe above already read it, so one clearing fill is enough
+    // to make the first message exactly the user's own text.
+    await tools.call("fill",{pageId,uid,value:""});
     await tools.call("fill",{pageId,uid,value:text});
   }catch(error){
     await closeOwnedPage();
