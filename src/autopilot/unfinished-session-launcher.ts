@@ -3614,18 +3614,20 @@ export class UnfinishedSessionLauncher {
           continue;
         }
       }
+      let rearmed = false;
       if (record.state === "exhausted") {
         // Exhausted is not a dead end: the refusal that exhausted the record
         // is reversible, so a restored thread re-arms the record and the
         // interrupted turn continues instead of being stranded.
-        const rearmed = await this.rearmExhaustedReversibleRecord(adapter, record, session);
-        if (!rearmed) {
+        const restored = await this.rearmExhaustedReversibleRecord(adapter, record, session);
+        if (!restored) {
           // A blocked admission is not a native failure and must never be
           // reported as one.
           if (!isQuotaGuardRefusal(record.lastError ?? "")) await this.notifyExhausted(record);
           continue;
         }
-        record = rearmed;
+        record = restored;
+        rearmed = true;
       }
       const urgent = this.urgentSessions.has(recordKey) || this.urgentSessions.has(sessionKey(record.harness, record.sessionId));
       if (record.nonRetryableAdmission) {
@@ -3683,7 +3685,7 @@ export class UnfinishedSessionLauncher {
         await this.options.store.markStarted(session, this.generationId);
         continue;
       }
-      if (!urgent && record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) {
+      if (!urgent && !rearmed && record.generationId === this.generationId && Date.now() - Date.parse(record.updatedAt) < this.discoveryIdleMs) {
         await this.pinActiveSession(adapter, record.sessionId, runtimeSettings);
         continue;
       }
@@ -6175,6 +6177,8 @@ export class UnfinishedSessionLauncher {
     quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null },
   ): Promise<void> {
     if (!this.options.notify || record.notifiedAt) return;
+    // Persist before the existing send: UNKNOWN ingress must not lose the source binding.
+    await this.options.store.retainSourceBinding(record);
     const harness = displayHarness(record.harness);
     const body = quotaBlock
       ? `${harness}: восстановление прерванного хода отложено — защита лимита Codex. Запрос к Codex не отправлялся (причина: ${quotaBlock.reason}${quotaBlock.remainingPercent === null ? "" : `, остаток ${quotaBlock.remainingPercent}%`}). Это локальная политика резерва аккаунта, а не сбой нативного хода. Прерванный ход остаётся в очереди восстановления и продолжится сам, когда лимит восстановится. Настройка: Автоматизация / Запуск сессий / Защита лимита Codex.`

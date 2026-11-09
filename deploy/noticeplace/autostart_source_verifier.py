@@ -18,6 +18,11 @@ import time
 PROJECT='agent-herder'
 SOURCE='agent-herder-autostart'
 SIGNAL='unfinished-session-autostart-failed'
+# A refusal that was never submitted is a deferral, not a native failure. The
+# producer emits it under its own signal type, and the source owns that class
+# exactly like the exhausted one: it must be able to answer for it.
+DEFERRAL_SIGNALS=('unfinished-session-quota-blocked','unfinished-session-not-submitted')
+OWNED_SIGNALS=(SIGNAL,)+DEFERRAL_SIGNALS
 MAX_JSON=8*1024*1024
 MAX_TAIL=4*1024*1024
 # The server gives a due check a deadline of 300 seconds. The source answers
@@ -48,6 +53,24 @@ def identity(record):
     return f"unfinished-{record['harness']}:{record['sessionId']}:{workspace}-{record['startedAt']}"
 
 
+def failed_root_of(controls,interrupted_turn):
+    """The native root turn of the interrupted turn.
+
+    The record names the interrupted TURN, not the root it belongs to. A
+    continuation runs under the root of the turn it continues, so the root is
+    resolved from the native rollout itself instead of being assumed.
+    """
+    roots={event['payload'].get('root_turn_id') for _,event in controls
+           if event['payload'].get('turn_id')==interrupted_turn and event['payload'].get('root_turn_id')}
+    if len(roots)==1:return roots.pop()
+    if roots:return None
+    # The interrupted turn is the thread's own root: its own event may have
+    # left the tail while the later turns still carry its root.
+    if any(event['payload'].get('root_turn_id')==interrupted_turn for _,event in controls):
+        return interrupted_turn
+    return None
+
+
 def signature(path):
     st=path.stat()
     return st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns
@@ -73,8 +96,9 @@ def measure(group,paths,*,host_id,clock=time.time):
     def result(state,reason):
         return {'observed_state':state,'observed_at':clock(),
                 'evidence_refs':['herder-autostart:'+reason]}
-    if any(group.get(k)!=v for k,v in {'project':PROJECT,'source_id':SOURCE,'host_id':host_id,
-                                      'signal_type':SIGNAL,'problem_type':SIGNAL}.items()):
+    if (any(group.get(k)!=v for k,v in {'project':PROJECT,'source_id':SOURCE,'host_id':host_id}.items())
+            or group.get('signal_type') not in OWNED_SIGNALS
+            or group.get('problem_type')!=group.get('signal_type')):
         return result('unknown','foreign-or-unsupported-source')
     checked={}
     def read_json(path):
@@ -98,8 +122,8 @@ def measure(group,paths,*,host_id,clock=time.time):
             return result('unknown','native-recovery-binding-unavailable')
         failed=stamp(record['notifiedAt'])
         if not stamp(record['startedAt'])<=failed<=observed:return result('unknown','invalid-episode-time')
-        failed_turn=record.get('recoveryContinuationRootTurnId') or record.get('recoveryTurnId')
-        if not failed_turn:return result('unknown','failed-native-turn-unavailable')
+        interrupted_turn=record.get('recoveryTurnId')
+        if not interrupted_turn:return result('unknown','failed-native-turn-unavailable')
         stops=read_json(paths.human_stops)['sessions']
         if any(r.get('harness')=='codex' and r.get('id')==sid and r.get('active') is not False for r in stops):
             return result('unknown','human-stop')
@@ -130,13 +154,18 @@ def measure(group,paths,*,host_id,clock=time.time):
         controls=[(i,e) for i,e in enumerate(events) if e.get('type')=='event_msg'
                   and e.get('payload',{}).get('type') in {'task_started','task_complete','turn_aborted','task_failed'}]
         if not controls:return result('unknown','native-terminal-unavailable')
+        # The record names the interrupted turn. The proof is the ROOT turn it
+        # belongs to: a continuation of that root is the same execution, and a
+        # turn of another root is not.
+        failed_root=failed_root_of(controls,interrupted_turn)
+        if not failed_root:return result('unknown','failed-native-root-unavailable')
         index,last=controls[-1];terminal=last['payload'];turn=terminal.get('turn_id')
         if terminal.get('type')!='task_complete':return result('unknown','native-not-completed')
-        if (not turn or turn==failed_turn or terminal.get('root_turn_id')!=failed_turn
+        if (not turn or turn==interrupted_turn or terminal.get('root_turn_id')!=failed_root
             or not failed<stamp(last.get('timestamp'))<=observed):
             return result('unknown','unrelated-or-old-native-completion')
         starts=[e for _,e in controls[:-1] if e['payload'].get('type')=='task_started'
-                and e['payload'].get('turn_id')==turn and e['payload'].get('root_turn_id')==failed_turn]
+                and e['payload'].get('turn_id')==turn and e['payload'].get('root_turn_id')==failed_root]
         if len(starts)!=1 or not failed<stamp(starts[0].get('timestamp'))<=stamp(last.get('timestamp')):
             return result('unknown','continuation-start-unproven')
         for event in events[index+1:]:
@@ -160,8 +189,8 @@ def run_tick(paths,*,host_id,base_url,token,state_dir,transport=None):
     return verifier.tick(lambda group:measure(group,paths,host_id=host_id),
                          max_checks=MAX_CHECKS_PER_TICK,
                          deadline_seconds=TICK_DEADLINE_SECONDS,
-                         accept_group=lambda g:g.get('signal_type')==SIGNAL
-                         and g.get('problem_type')==SIGNAL)
+                         accept_group=lambda g:g.get('signal_type') in OWNED_SIGNALS
+                         and g.get('problem_type')==g.get('signal_type'))
 
 
 def main():

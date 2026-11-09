@@ -1290,6 +1290,37 @@ describe("original task completion evidence", () => {
         }
     });
 
+    it("continues a re-armed record in the same cycle, not after the idle window", async () => {
+        // The re-arm refreshes the record, so the discovery-idle guard would
+        // otherwise suppress the very attempt the re-arm just authorized.
+        const root = await mkdtemp(join(tmpdir(), "quota-guard-rearm-idle-"));
+        try {
+            const current = fixture("error", "codex", "quota-guard-rearm-idle");
+            const calls = { resumes: 0, messages: [] as string[] };
+            const adapter = fakeAdapter(() => current, calls);
+            const store = new UnfinishedSessionStore(join(root, "state.json"));
+            await store.markRecoveryEligible(current, "turn.failed", { turnId: "t1" });
+            const quotaRefusal = "codex_quota_guard: below_reserve; remaining=16%; request was not submitted.";
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const reserved = await store.beginAttempt("codex", current.id, 3, 0, new Date(), current.cwd);
+                if (!reserved) break;
+                await store.markFailure("codex", current.id, quotaRefusal, 3, new Date(), current.cwd);
+            }
+            const launcher = new UnfinishedSessionLauncher({
+                adapters: new Map([["codex", adapter]]), store,
+                settingsStore: new SessionAutostartStore(join(root, "settings.json"), {}),
+                // The idle window is wide enough to cover the whole re-arm, so
+                // only the re-arm itself can unblock the attempt.
+                discoveryIdleMs: 60_000,
+            });
+            await launcher.recoverPending();
+            expect(calls.messages).toHaveLength(1);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
     it("keeps an exhausted quota-blocked record exhausted without a native failure notice", async () => {
         const root = await mkdtemp(join(tmpdir(), "quota-guard-still-blocked-"));
         try {
