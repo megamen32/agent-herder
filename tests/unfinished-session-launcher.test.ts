@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { JudgeRequestError } from "../src/autopilot/judge-request.js";
@@ -1183,6 +1183,9 @@ describe("original task completion evidence", () => {
 
     it("re-arms an exhausted archived record and continues the interrupted turn", async () => {
         const root = await mkdtemp(join(tmpdir(), "archived-exhausted-"));
+        const now = Date.now();
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(now);
         try {
             const current = fixture("error", "codex", "archived-exhausted");
             const calls = { resumes: 0, messages: [] as string[] };
@@ -1204,12 +1207,18 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
-            // The restored thread is resumable again, so the exhausted record
-            // returns to the armed state and the turn continues.
+            // Rearming refreshes updatedAt; cross the configured idle window
+            // explicitly instead of depending on how long persistence takes.
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(0);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            vi.setSystemTime(now + 1);
+            await launcher.recoverPending();
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
         } finally {
+            vi.useRealTimers();
             await rm(root, { recursive: true, force: true });
         }
     });
@@ -1259,6 +1268,9 @@ describe("original task completion evidence", () => {
 
     it("re-arms an exhausted quota-blocked record and continues the interrupted turn", async () => {
         const root = await mkdtemp(join(tmpdir(), "quota-guard-exhausted-"));
+        const now = Date.now();
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(now);
         try {
             const current = fixture("error", "codex", "quota-guard-exhausted");
             const calls = { resumes: 0, messages: [] as string[] };
@@ -1280,12 +1292,19 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
-            // The guard admits the native resume again, so the exhausted record
-            // returns to the armed state and the interrupted turn continues.
+            // Rearming stamps updatedAt in this generation. The ordinary recovery
+            // waits for discoveryIdleMs, even when persistence takes less than 1 ms.
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(0);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            vi.setSystemTime(now + 1);
+            await launcher.recoverPending();
+            // Once the idle window has elapsed, the interrupted turn continues once.
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
         } finally {
+            vi.useRealTimers();
             await rm(root, { recursive: true, force: true });
         }
     });
