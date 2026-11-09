@@ -82,13 +82,14 @@ def http_status(url: str, timeout: float = 8.0):
 def canonical_mcp_bearer(unit: str) -> str:
     """Resolve the existing runtime credential; never provision a new one.
 
-    Darwin's watchdog starts the normal runtime, whose loadSecretEnvironment
-    resolves herder.env fingerprints through the protected secret store.
-    Linux continues to use the effective running process environment.
+    The runtime keeps the fingerprint marker of its secret in the environment
+    and reads the secret itself from the protected store. A probe that sends
+    the marker is not authenticated: on a node whose credential is a marker the
+    readiness check would read the answer 401 as a refusal of the release and
+    roll a healthy release back. The marker is therefore resolved here on
+    every platform; the live process environment stays the fallback for a node
+    that keeps no protected files.
     """
-    if sys.platform != "darwin":
-        return process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN").strip()
-
     def protected_text(path: Path) -> str:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
         with os.fdopen(fd, "r", encoding="utf-8") as handle:
@@ -104,24 +105,29 @@ def canonical_mcp_bearer(unit: str) -> str:
             return content
 
     base = Path.home() / ".config" / "agent-herder"
-    marker = ""
-    for line in protected_text(base / "herder.env").splitlines():
-        match = re.fullmatch(r"\s*(?:export\s+)?AGENT_HERDER_HTTP_TOKEN\s*=\s*(.*?)\s*", line)
-        if match:
-            parts = shlex.split(match.group(1), comments=True, posix=True)
-            if len(parts) != 1:
-                raise ValueError("canonical_mcp_credential_invalid")
-            marker = parts[0]
-    if not marker:
-        raise ValueError("canonical_mcp_credential_missing")
-    if not re.fullmatch(r"sha256:[0-9a-f]{16}", marker):
-        return marker
-    store = json.loads(protected_text(base / "secrets.json"))
-    token = store.get("secrets", {}).get("AGENT_HERDER_HTTP_TOKEN")
-    if (not isinstance(token, str) or not token
-            or "sha256:" + hashlib.sha256(token.encode()).hexdigest()[:16] != marker):
-        raise ValueError("canonical_mcp_credential_fingerprint_mismatch")
-    return token
+    try:
+        marker = ""
+        for line in protected_text(base / "herder.env").splitlines():
+            match = re.fullmatch(r"\s*(?:export\s+)?AGENT_HERDER_HTTP_TOKEN\s*=\s*(.*?)\s*", line)
+            if match:
+                parts = shlex.split(match.group(1), comments=True, posix=True)
+                if len(parts) != 1:
+                    raise ValueError("canonical_mcp_credential_invalid")
+                marker = parts[0]
+        if not marker:
+            raise ValueError("canonical_mcp_credential_missing")
+        if not re.fullmatch(r"sha256:[0-9a-f]{16}", marker):
+            return marker
+        store = json.loads(protected_text(base / "secrets.json"))
+        token = store.get("secrets", {}).get("AGENT_HERDER_HTTP_TOKEN")
+        if (not isinstance(token, str) or not token
+                or "sha256:" + hashlib.sha256(token.encode()).hexdigest()[:16] != marker):
+            raise ValueError("canonical_mcp_credential_fingerprint_mismatch")
+        return token
+    except FileNotFoundError:
+        # The node keeps no protected files: the live process environment is
+        # the only source of the credential.
+        return process_environment_value(unit, "AGENT_HERDER_HTTP_TOKEN").strip()
 
 
 def mcp_status(port: int, timeout: float = 10.0, unit: str = "agent-herder-fleet.service", input_id: str = "", canonical_bearer: str | None = None):
@@ -1347,7 +1353,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
             raise ValueError("launchagent_handoff_invalid")
         stopped_generation.consume(fleet, arguments.launchd_label, arguments.previous_sha)
     try:
-        readiness_bearer = canonical_mcp_bearer(arguments.unit) if sys.platform == "darwin" else None
+        readiness_bearer = canonical_mcp_bearer(arguments.unit)
     except (OSError, ValueError, TypeError):
         print("canonical MCP credential could not be verified; nothing was switched")
         return 1

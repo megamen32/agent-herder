@@ -32,6 +32,7 @@ The checks are the acceptance of the owner:
   * the working directory and the entrypoint are the ones of this node.
 """
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -64,13 +65,30 @@ def http_status(url: str, timeout: float = 20.0) -> int:
         return 0
 
 
-def mcp_status(port: int, timeout: float = 20.0) -> int:
+def canonical_bearer(unit: str) -> str:
+    """The runtime credential of the node, resolved from the protected store.
+
+    The runtime keeps the fingerprint marker of its secret in the environment
+    and reads the secret itself from the protected store. A probe that sends
+    the marker is not authenticated: the management would answer 401 and the
+    acceptance would report a healthy node as silent.
+    """
+    spec = importlib.util.spec_from_file_location("fleet_rollout_owned", HERE / "rollout-node.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.canonical_mcp_bearer(unit)
+
+
+def mcp_status(port: int, timeout: float = 20.0, bearer: str = "") -> int:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                                   "clientInfo": {"name": "acceptance", "version": "1"}}}).encode()
+    headers = {"Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream"}
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
     request = urllib.request.Request(f"http://127.0.0.1:{port}/mcp", data=body, method="POST",
-                                     headers={"Content-Type": "application/json",
-                                              "Accept": "application/json, text/event-stream"})
+                                     headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response.read(256)
@@ -1013,12 +1031,20 @@ def panel_session_creation(release: Path) -> dict:
     return {"panel_creates_sessions": bool(hits), "hits": hits[:10]}
 
 
-def management_check(port: int, kind: str) -> dict:
+def management_check(port: int, kind: str, unit: str = "") -> dict:
     base = f"http://127.0.0.1:{port}"
+    bearer = ""
+    if unit:
+        try:
+            bearer = canonical_bearer(unit)
+        except (OSError, ValueError, TypeError):
+            # An unverified credential is not a refusal of the management: the
+            # answer stays unknown and the check names it.
+            bearer = ""
     result = {
         "sessions": http_status(f"{base}/api/sessions?quick=1&limit=1"),
         "launch_policy": http_status(f"{base}/api/automation/launch-policy"),
-        "mcp": mcp_status(port),
+        "mcp": mcp_status(port, bearer=bearer),
     }
     if kind == "owner":
         result["settings"] = http_status(f"{base}/api/settings")
@@ -1070,7 +1096,7 @@ def main() -> int:
     imports = import_check(release, arguments.node_bin)
     workspace = import_check_workspace(release, store_modules, arguments.node_bin)
     dependencies = dependency_check(release, store_modules)
-    management = management_check(arguments.port, arguments.kind)
+    management = management_check(arguments.port, arguments.kind, arguments.unit)
     reachability = peer_reachability(arguments.port, arguments.peer_host) if arguments.peer_host else {}
     confirmation = fleet_confirmation(arguments.port)
     guard = guard_policy(release, arguments.node_bin, state_dir)
