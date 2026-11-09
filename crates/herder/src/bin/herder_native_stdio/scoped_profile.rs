@@ -58,7 +58,7 @@ fn allowed_adapter_env(kind: &str, name: &str) -> bool {
             | "AHAP_BROWSER_VIBE_RELAY_PORT" | "AHAP_BROWSER_VIBE_STATE_DIR"
             | "AHAP_BROWSER_MCP_URL" | "AHAP_BROWSER_MCP_PROFILE_FILE"
             | "AHAP_USERIO_ENDPOINT" | "AHAP_USERIO_AGENT_ID" | "AHAP_USERIO_INSTANCE_ID"
-            | "AHAP_USERIO_ACCOUNT_SCOPE" | "AHAP_USERIO_ACCESS_TOKEN_FILE"),
+            | "AHAP_USERIO_ACCOUNT_SCOPE" | "AHAP_USERIO_ACCESS_TOKEN_FILE" | "AHAP_USERIO_TOKEN_FILE"),
         _ => false,
     }
 }
@@ -175,7 +175,12 @@ fn validate_userio_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
     if browser_scope.is_none() && userio_scope.is_none() {
         return Err(invalid_browser_binding());
     }
-    let token_file = get("AHAP_USERIO_ACCESS_TOKEN_FILE").ok_or_else(invalid_browser_binding)?;
+    let access_token_file = get("AHAP_USERIO_ACCESS_TOKEN_FILE");
+    let legacy_token_file = get("AHAP_USERIO_TOKEN_FILE");
+    if access_token_file.is_some() && legacy_token_file.is_some() && access_token_file != legacy_token_file {
+        return Err(invalid_browser_binding());
+    }
+    let token_file = access_token_file.or(legacy_token_file).ok_or_else(invalid_browser_binding)?;
     validate_userio_token_file(token_file)?;
     let forbidden = [
         "AHAP_BROWSER_PAGE_ID", "AHAP_BROWSER_CDP_WS_URL", "AHAP_BROWSER_CDP_CONTEXT_ID",
@@ -192,7 +197,7 @@ fn validate_userio_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
 fn validate_browser_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
     let userio_keys = [
         "AHAP_USERIO_ENDPOINT", "AHAP_USERIO_AGENT_ID", "AHAP_USERIO_INSTANCE_ID",
-        "AHAP_USERIO_ACCOUNT_SCOPE", "AHAP_USERIO_ACCESS_TOKEN_FILE",
+        "AHAP_USERIO_ACCOUNT_SCOPE", "AHAP_USERIO_ACCESS_TOKEN_FILE", "AHAP_USERIO_TOKEN_FILE",
     ];
     if env.get("AHAP_BROWSER_TRANSPORT").map(String::as_str) == Some("userio")
         || userio_keys.iter().any(|key| env.contains_key(*key))
