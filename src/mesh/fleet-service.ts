@@ -227,15 +227,16 @@ export class FleetCabinetService {
   // Sharing only within this immutable profile/user scope. Each request applies its own output window.
   let all:FleetView;
   if(options.refresh&&options.hostId)all=await this.refresh(options.hostId);
-  else if(this.pending)all=await this.pending;
   else if(!options.refresh&&this.lastReadAt!==null&&this.now()-this.lastReadAt<(this.deps.ttlMs??60000)&&[...this.cache.values()].every(r=>!['ready','metadata_only'].includes(r.host.state)||(r.host.expiresAt??0)>this.now())){
    all=this.memoryView();
   }else if(!options.refresh&&this.staleServeMs>0&&await this.staleSnapshot()){
    // Serve the recent snapshot instantly and refresh in the background: an
-   // open browser must never wait for the slow fleet discovery again.
+   // open browser must never wait for the slow fleet discovery again — not
+   // even behind a discovery that is already running for another caller.
    if(!this.pending)this.pending=this.refresh().finally(()=>{this.pending=undefined;});
    all=this.memoryView();
-  }else{this.pending=this.refresh().finally(()=>{this.pending=undefined;});all=await this.pending;}
+  }else if(this.pending)all=await this.pending;
+  else{this.pending=this.refresh().finally(()=>{this.pending=undefined;});all=await this.pending;}
   const hosts=all.hosts.filter(h=>!options.hostId||h.hostId===options.hostId);
   const sessions=all.sessions.filter(s=>!options.hostId||s.address.hostId===options.hostId);
   const limited=all.limited||sessions.length>limit;
