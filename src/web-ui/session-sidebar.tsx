@@ -54,6 +54,8 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, can
   const [position, setPosition] = React.useState({left:0, top:0});
   const id = React.useId();
   const context = sidebarContext(session, statusOverride);
+  const nativeId = !session.remote && typeof session.meta?.nativeSessionId === 'string' ? session.meta.nativeSessionId : session.id;
+  const nativeSessionId = nativeId && !nativeId.startsWith('session:') ? nativeId : undefined;
   const machine = machineName(session.hostId, session.hostLabel);
   // Время в строке: три сессии с одинаковым названием без времени неразличимы.
   const when = relativeTimeRu(session.lastActivity);
@@ -80,6 +82,8 @@ export function SessionSidebarRow({session, title, selected, pinned, canPin, can
     onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAnchor(null);}}
     onKeyDown={event => {if (event.key === 'Escape') {setAnchor(null); event.stopPropagation();}}}>
     <button className={`session-row ${selected ? 'selected' : ''}`} aria-label={`${title}, ${subtitle}, ${context.status}`}
+      data-native-session-id={nativeSessionId} data-harness={session.harness}
+      data-status={session.status} data-host-id={session.hostId || undefined}
       aria-describedby={anchor ? id : undefined} onClick={onSelect}>
       <span className={`status-dot status-${statusClass}`} aria-hidden="true" />
       <span className="session-copy"><strong>{title}</strong>{autopilotOn && <svg className="session-autopilot-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" role="img" aria-label="Сессия на автопилоте"><path d="M2 12l9-2 1-7 2 1-1 6 7 3v1l-7-1-2 5-2-1 1-4-7-1z" /></svg>}<small className="session-identity">{subtitle}</small>{context.goal && context.goal !== title ? <small className="session-goal">Цель: {context.goal}</small> : null}</span>

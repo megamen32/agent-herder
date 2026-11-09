@@ -1,0 +1,54 @@
+{
+  "schema": "agent-herder.ci-visible-foundation.v1",
+  "observed_at": "2026-11-09T01:05:34.117549+00:00",
+  "base_commit": "fd99743bcc1875879315ff508b551e5e722b63cc",
+  "source_status": "PASS",
+  "installed_acceptance": "IN_PROGRESS",
+  "shared_runtime_changed": false,
+  "source_files": {
+    "src/v1-noticeplace-server.ts": "ae0643823a2c1b648fc8c722a3551c9b6636f8c040472375f0e89f2d096861fd",
+    "src/automation/v1-noticeplace-runtime.ts": "dac2202a81ada78245b9a4fc55e93bc9348ed5cca0bbb1a000ffcb103acc8f00",
+    "src/automation/v1-noticeplace-ui-read.ts": "1e41642169baa9a7c7d70390c5508844ad964e328784cb0dd89150039878c708",
+    "src/automation/v1-noticeplace-ui-session.ts": "ae07b34250afd30c97d45534d00dc2891fd0ae80a305ea00c0e3c0b30d06300d",
+    "src/automation/v1-ui-registered-read.ts": "4c8225a076c405dafc1e15b8456272afd77248e3ed9bb3f2b6e7585876a40cfd",
+    "tests/v1-noticeplace-ui-read.test.ts": "3fae6ed8aef1199c24dfeb60a538e15e1ec5d351493f840d4921f9701159c0ed",
+    "tests/v1-noticeplace-ui-read-model.test.ts": "9a6dfd8ca20278fbf70240bef5954219a13058b63ffafc3efc0f4b71451d8e9e",
+    "tests/v1-noticeplace-ui-session.test.ts": "02aa5eb52722dc25434dcb9e7abb20ac3e676f6bf954714475fb46d4fbfbc15a",
+    "tests/v1-ui-registered-read.test.ts": "e9516fd5d2d07e859eb3586e292519040aa5a912a2a66c88b72f512df4d67940",
+    "src/web-ui/main.tsx": "6188364dd42c980811f64816ec45bbcf8785a882a87e104ce548c4e698a8a246",
+    "src/web-ui/fleet/RemoteSessionView.tsx": "c9c19e081d1104ffde7f67fd438cd5618fd0b17db48910bc84b3ffc71a0f834d",
+    "src/web-ui/session-detail-identity.ts": "eaf4421cecb203c997feb28fdf934a21f62778dd3068ded4b010ec7fed653a58",
+    "tests/session-detail-identity.test.ts": "2105d8826aff77e380534f9df4d8270daf3e50a602bd1d965d52c9b67694b7f5",
+    "src/web-ui/session-sidebar.tsx": "03bc0b70a2e69724e152a024af83ebd011853d0f6484be13d83b35953d39707d",
+    "tests/session-sidebar.test.tsx": "af162fa850972ce11184036d144ae32848810707051d832b5fcc022c4e77b569",
+    "vitest.config.ts": "355c9084b64479fda12baa0bd519e7337025a2b6ac808ef1f672372e67f771b6",
+    "deploy/fleet/ci-browser-fixture.mjs": "46a621e1b0c6772b27269bab4ff426cd38df923b457aa4e1cdc0db18d189f000",
+    "tests/native/ci-browser-fixture.test.mjs": "3ebd085dcbc646c70ca4f3212f8cb24c92e8fb80875f576d4fdfc06ed0a73603",
+    "deploy/fleet/ci-browser-fixture.service": "ee00e368008fe25f85466104827b9e5346c2a23c6eda607623fb07048dbc06fa",
+    "deploy/fleet/ci-browser-fixture.relay.service": "1836265fe43c7eb65f060b425b92d1ffb1d7f64c06f0de3b0f920fb563900e43",
+    "deploy/fleet/ci-browser-fixture.config.example.json": "51cbbc7b3223f48af23d6bf9b6fc1348b27a14cd1cf857d949466d905fa37ff2",
+    "deploy/fleet/ci-browser-fixture.md": "852d73cbb179e4a62cde1bbf0ff5ff6b062a40c7e32f10c17b25087be1f2a1d8"
+  },
+  "checks": {
+    "ui_read": {
+      "files": 13,
+      "passed": 174,
+      "exit_code": 0,
+      "typecheck_exit_code": 0
+    },
+    "detail_identity": {
+      "passed": 19,
+      "failed": 0,
+      "exit_code": 0
+    },
+    "isolated_browser_manager": {
+      "passed": 17,
+      "source_status": "PASS"
+    }
+  },
+  "limitations": [
+    "This source checkpoint is not an all-five installed canary result.",
+    "The existing shared runtime release lease remains untouched.",
+    "Global native inventory coverage is not inferred from registered rows."
+  ]
+}

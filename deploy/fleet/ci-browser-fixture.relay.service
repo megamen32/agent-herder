@@ -1,0 +1,24 @@
+[Unit]
+Description=Agent Herder dedicated CI Vibe relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=roomhacker
+Group=roomhacker
+WorkingDirectory=/home/roomhacker
+Environment=HOME=/home/roomhacker
+Environment=VIBE_MCP_AGENT_PORT=19898
+Environment=VIBE_MCP_EXTENSION_PORT=19899
+Environment=VIBE_MCP_STATE_DIR=/home/roomhacker/.local/state/agent-herder/ci-vibe-relay-20261109
+ExecStart=/usr/local/bin/node /home/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/relay-daemon.js
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

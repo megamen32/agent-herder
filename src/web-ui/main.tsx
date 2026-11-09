@@ -1,3 +1,4 @@
+import { detailQuery, resolveDetailHost, verifiedDetailAttributes } from './session-detail-identity.js';
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
 import type { AgentActivityStatistics, DistributionSummary as StatisticsDistribution } from "../session-statistics.js";
@@ -819,6 +820,8 @@ function App() {
   React.useEffect(()=>{void viewCache.prune();},[viewCache]);
   const changeCacheSettings=(next:ViewCacheSettings)=>{setViewCacheSettings(next);try{writeViewCacheSettings(window.localStorage,next);}catch{}void viewCache.prune();};
   const [sessions, setSessions] = React.useState<HerderSession[]>([]);
+  const sessionCatalogRef = React.useRef(sessions);
+  sessionCatalogRef.current = sessions;
   /** The window the panel asks the server for; the counter of the whole list. */
   const sessionLimitRef = React.useRef(SESSION_LIST_WINDOW);
   /** Срез статуса и среда, по которым сервер отбирает сессии для списка. */
@@ -1294,6 +1297,7 @@ function App() {
     if (requestId === undefined) return;
     const { harness, id } = splitKey(key);
     const base = `/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/details`;
+    const runtimeHostId = resolveDetailHost(sessionCatalogRef.current, harness, id, directory.localHostId);
     setDetailsError(undefined);
     if(hydrateFull){setDetailsVerified(false);if(directory.scope&&directory.localHostId){void viewCache.get<SessionDetails>(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id}).then(r=>{if(r&&r.value.session?.id===id&&r.value.session?.harness===harness&&detailsReadGateRef.current.isCurrent(requestId)&&!liveLoaded){setDetails({...r.value,messages:normalizeSessionMessages(r.value.messages)});setCachedDetails(true);setDetailsLoading(false);}});}}
     let liveLoaded=false;
@@ -1311,10 +1315,10 @@ function App() {
     }
     try {
       const latestStartedAt = performance.now();
-      const latest = await api<SessionDetails>(`${base}?limit=12&quick=1`);
+      const latest = await api<SessionDetails>(`${base}?${detailQuery(12, true, runtimeHostId)}`);
       latest.messages = normalizeSessionMessages(latest.messages);
       if (!detailsReadGateRef.current.isCurrent(requestId)) return;
-      if(latest.session?.id!==id||latest.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
+      if(latest.session?.id!==id||latest.session?.harness!==harness||(runtimeHostId!==undefined&&latest.session?.hostId!==runtimeHostId))throw new Error('Не удалось подтвердить выбранную сессию');
       liveLoaded=true;setCachedDetails(false);setDetailsVerified(true);
       if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},latest);
       setLatestTimingMs(performance.now() - latestStartedAt);
@@ -1329,11 +1333,11 @@ function App() {
       setDetailsHydrating(true);
       await new Promise((resolve) => window.setTimeout(resolve, 40));
       const hydrateStartedAt = performance.now();
-      const full = await api<SessionDetails>(`${base}?limit=50`);
+      const full = await api<SessionDetails>(`${base}?${detailQuery(50, false, runtimeHostId)}`);
       full.messages = normalizeSessionMessages(full.messages);
       if (!detailsReadGateRef.current.isCurrent(requestId)) return;
       setHydrateTimingMs(performance.now() - hydrateStartedAt);
-      if(full.session?.id!==id||full.session?.harness!==harness)throw new Error('Не удалось подтвердить выбранную сессию');
+      if(full.session?.id!==id||full.session?.harness!==harness||(runtimeHostId!==undefined&&full.session?.hostId!==runtimeHostId))throw new Error('Не удалось подтвердить выбранную сессию');
       setDetails(full);
       setDetailsFullVerified(true);
       if(directory.scope&&directory.localHostId)void viewCache.put(directory.scope,{hostId:directory.localHostId,harness,nativeSessionId:id},full);
@@ -1427,6 +1431,11 @@ function App() {
     return () => { cancelAnimationFrame(frame); if (secondFrame) cancelAnimationFrame(secondFrame); };
   }, [activeKey, details?.messages.length, details?.children?.length, outbox, showReasoning, showTools, jsonRendering]);
 
+  const detailTarget = activeKey ? splitKey(activeKey) : undefined;
+  const detailAttributes = verifiedDetailAttributes(
+    detailTarget ? { ...detailTarget, hostId: resolveDetailHost(sessions, detailTarget.harness, detailTarget.id, directory.localHostId) } : undefined,
+    details?.session, detailsVerified && detailsFullVerified && !cachedDetails && !detailsError && !detailsLoading && !detailsHydrating,
+  );
   const activeSessionBase = details?.session && keyOf(details.session) === activeKey ? details.session : sessions.find((session) => keyOf(session) === activeKey);
   // The header of the chat shows the activity the inventory proves, not the
   // status of the catalog, so a working session is not read as idle.
@@ -2531,7 +2540,7 @@ function App() {
 {showSearch && <RagSearchView initialQuery={advancedSearchQuery} onInitialQueryApplied={consumeAdvancedSearchInitialQuery} onOpenSession={(harness, id) => { setShowSearch(false); setShowFleet(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); selectSession(`${harness}:${id}`); setMobileView("chat"); }} />}
 {showFleet && <div className="fleet-overlay" role="region" aria-label="Машины флота"><div className="fleet-overlay-panel"><button className="fleet-overlay-close quiet-button" aria-label="Закрыть машины флота" onClick={() => setShowFleet(false)}>Закрыть</button><FleetCabinet creationMode={fleetCreationMode} defaultHostId={selectedCreationHostId} onSelectedHostChange={setSelectedCreationHostId} activityRows={activity.snapshot.confirmed} /></div></div>}
     {remoteSelection&&directory.hosts.find(h=>h.hostId===remoteSelection.hostId)&&<RemoteSessionView key={JSON.stringify(remoteSelection)+cacheEpoch} renderMessage={message=>!hasVisibleMessage(message,showReasoning,showTools)?null:serviceNoteLabel(message)?<ServiceNote label={serviceNoteLabel(message)!} message={message}/>:<CollapsibleMessage message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages} groupThinkingTools={groupThinkingTools}/>} address={remoteSelection} host={directory.hosts.find(h=>h.hostId===remoteSelection.hostId)!} scope={directory.scope} cache={viewCache} onClose={()=>{setRemoteSelection(undefined);setMobileView("sessions");}}/>}
-    <section className="chat-pane" style={remoteSelection||showSearch||showProjects?{display:'none'}:undefined}>
+    <section className="chat-pane" {...detailAttributes} style={remoteSelection||showSearch||showProjects?{display:'none'}:undefined}>
       {cachedDetails&&<p className="cached-view-notice" role="status">Сохранённая переписка. Обновляем сообщения с сайта; отправка станет доступна после проверки соединения.</p>}
       {!cachedDetails && ["chatgpt", "zai"].includes(activeSession?.harness || "") && (
         detailsLoading || detailsHydrating || details?.history?.source === "live-cache"

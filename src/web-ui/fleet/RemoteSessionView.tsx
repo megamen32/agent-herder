@@ -1,3 +1,4 @@
+import { verifiedDetailAttributes } from '../session-detail-identity.js';
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import type {MeshAddress} from '../../mesh/protocol.js';
 import type {FleetHost} from '../../mesh/fleet-contract.js';
@@ -11,7 +12,7 @@ import {remoteSessionStorage} from './session-control.js';
 import {fleetSessionStatus} from './session-labels.js';
 import {readStoredOutbox,writeStoredOutbox,appendOutboxEntry,updateOutboxEntry,newInputId,classifyMessageDelivery,reconcileMessageStatus,deliveryConnectionFailure,outboxStatusLabel,readDefaultDeliveryMode,type OutboxEntry,type DeliveryMode} from '../composer-delivery.js';
 import {projectDeliveredChat} from '../delivered-chat.js';
-type View={hostId:string;details:{session:{id:string;harness:string;title?:string;cwd?:string;model?:string;status?:string};historyUnavailable?:boolean;messages?:SessionMessageView[]}};
+type View={hostId:string;details:{session:{id:string;harness:string;hostId?:string;title?:string;cwd?:string;model?:string;status?:string};historyUnavailable?:boolean;messages?:SessionMessageView[]}};
 export type TranscriptView={scope:{hostId:string;harness:string;nativeSessionId:string};events:NativeTranscriptEvent[];totalEvents:number;nextCursor:string|null;complete:boolean;source:string};
 type TranscriptRouteResponse={session:{id:string;harness:string;status:string;lastActivity:string};transcript:TranscriptView;steerEndpoint:string};
 type DisplayMessage={message:SessionMessageView;attribution:string;visualRole:string};
@@ -179,7 +180,7 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
  const fresh=async()=>{
   if(reading.current)return;reading.current=true;
   try{const response=await client.control!(captured,{operation:'details'});if(response.status!==200)throw new Error('Свежая история выбранной сессии пока недоступна.');
-   const details=response.body as View['details'];if(details?.session?.id!==captured.nativeSessionId||details.session.harness!==captured.harness)throw new Error('Не удалось подтвердить выбранную сессию.');
+   const details=response.body as View['details'];if(details?.session?.id!==captured.nativeSessionId||details.session.harness!==captured.harness||(details.session.hostId!==undefined&&details.session.hostId!==captured.hostId))throw new Error('Не удалось подтвердить выбранную сессию.');
    if(alive.current){const next={hostId:captured.hostId,details};setView(next);setCached(false);setError('');void cache.put(scope,captured,next);}
   }catch{if(alive.current){setCached(true);setError('Нет свежего подключения. Сохранённая история доступна, команды не отправляются.');}}
   finally{reading.current=false;if(alive.current)setLoading(false);}
@@ -247,7 +248,7 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
   finally{busy.current=false;if(alive.current){setAction(undefined);void fresh();}}
  };
  const link=fleetSessionLink(host,captured),session=currentView?.details.session;
- return <section className="chat-pane remote-chat-pane" aria-label="Чат удалённой сессии">
+ return <section className="chat-pane remote-chat-pane" {...verifiedDetailAttributes({id:captured.nativeSessionId,harness:captured.harness,hostId:captured.hostId},currentView?.details.session,available&&!error)} aria-label="Чат удалённой сессии">
   <header className="chat-header"><button className="quiet-button mobile-back" type="button" onClick={onClose}>← Сессии</button><div className="chat-heading"><h2>{session?.title??captured.nativeSessionId}</h2><span className="chat-session-state" title={session?.cwd}>{host.label} · {captured.harness} · {fleetSessionStatus(session?.status??'unknown')} {session?.model?`· ${session.model}`:''}</span></div><div className="header-actions"><button type="button" className="quiet-button" onClick={refresh}>Обновить</button><button type="button" className="quiet-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('resume')}>{action==='resume'?'Продолжаю…':'Продолжить'}</button><button type="button" className="danger-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('stop')}>{action==='stop'?'Останавливаю…':'Остановить'}</button>{link&&<details><summary aria-label="Дополнительно">•••</summary><a href={link}>Отдельный кабинет ↗</a></details>}</div></header>
   {cached&&<p className="cached-view-notice" role="status">Сохранённая история · команды доступны после восстановления связи</p>}{error&&<p role="alert" className="remote-chat-error">{error}</p>}{actionUnknown&&<p role="status" className="remote-chat-error">Результат предыдущей команды не подтверждён. Повторные команды управления заблокированы; история и проверка доставки доступны.</p>}
   <div className="chat-scroll" ref={scroll}>{loading&&!currentView&&<p role="status">Загрузка истории…</p>}{displayMessages.length===0&&currentView?.details.historyUnavailable&&<p>История пока недоступна.</p>}{transcriptError&&<p role="alert" className="remote-chat-error">{transcriptError}</p>}{displayMessages.map(({message:m,attribution,visualRole},i)=>{const body=renderMessage?renderMessage(m):<div className="message-body"><pre>{m.text??payloadText(m.parts.map(part=>part.input??part.output).find(value=>value!==undefined)??'')??''}</pre></div>;if(body==null)return null;return <article className={`message ${visualRole}`} key={m.id??i}><div className="message-meta"><strong>{attribution}</strong>{m.timestamp&&<time>{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>}</div>{body}</article>;})}{currentTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={loadingMore} onClick={()=>void readTranscript(currentTranscript.nextCursor??undefined)}>{loadingMore?'Загружаю…':'Загрузить следующую страницу истории'}</button>}</div>

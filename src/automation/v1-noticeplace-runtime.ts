@@ -1,3 +1,5 @@
+import { createV1NativeSessionRead } from './v1-noticeplace-ui-session.js';
+import { createV1RegisteredUiRead } from './v1-ui-registered-read.js';
 import { isSecretMarker } from '../web/settings-store.js';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -17,6 +19,10 @@ import { ChoiceRegistry } from '../autopilot/choice-registry.js';
 import { PendingQuestionGate } from '../autopilot/pending-question-gate.js';
 import { createIncidentUpdateSink, deliverIncidentQuestion, type HealthPlanId } from '../autopilot/notice-incident.js';
 import { createNoticePlaceSink } from '../autopilot/index.js';
+import { createV1NativeUiRead } from './v1-noticeplace-ui-read.js';
+import { localSessionHostId } from '../types/index.js';
+import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from '../autopilot/policy-store.js';
+import { resolveAutopilotStateDir } from '../autopilot/state-dir.js';
 
 type Config = {
   incidentProgressPlanId?:HealthPlanId;
@@ -216,5 +222,19 @@ export async function createNoticePlaceRuntime(config:Config) {
     },
   };
   await service.restore();
-  return {policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead,identity:createNoticePlaceSessionIdentity(listSessions,instance.cwd),resume:{...port,deliveryMode:instance.deliveryMode}};
+  // Project the already-open native reader and existing durable stores; do not import sessions or start a second owner.
+  const existingAutopilotPolicy = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(resolveAutopilotStateDir()));
+  const nativeProvider = {instanceRef:instance.instanceRef,harness:instance.harness,hostId:localSessionHostId(),source:'opencode-native-api',adapter:openCode};
+  const registeredUiRead = createV1RegisteredUiRead({ port: { call: (tool, args) => mcp.call(tool, args) } });
+  const nativeSessionRead = createV1NativeSessionRead([nativeProvider], registeredUiRead);
+  const uiRead = createV1NativeUiRead({
+    providers:[nativeProvider],registered:registeredUiRead,
+    scope:'noticeplace-runtime',completeScope:false,jobs,choices:choiceRegistry,autopilot:store,
+    readPolicy:async()=>{
+      const loaded=await existingAutopilotPolicy.load();
+      if(loaded.kind!=='valid')throw new Error('existing_autopilot_policy_unavailable');
+      return {enabled:loaded.state.policy.enabled,harnesses:loaded.state.policy.harnesses};
+    },
+  });
+  return {uiRead,nativeSessionRead,policyStore,attempts,runner,ownerState:createExistingNoticePlaceOwnerStateProvider(),autopilot,sessionRead,identity:createNoticePlaceSessionIdentity(listSessions,instance.cwd),resume:{...port,deliveryMode:instance.deliveryMode}};
 }

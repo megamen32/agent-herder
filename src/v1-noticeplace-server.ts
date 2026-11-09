@@ -1,3 +1,4 @@
+import type { V1NativeSessionReadPort } from './automation/v1-noticeplace-ui-session.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { dispatchProjectLaunch, ProjectLaunchAttemptLog, type ProjectLaunchRunner } from './automation/project-launch-dispatch.js';
 import { AutomationLaunchPolicyStore } from './automation-launch-policy.js';
@@ -6,6 +7,7 @@ import { incidentSessionPolicy } from './automation/incident-session-router.js';
 import { NOTICEPLACE_V1_MODEL } from './automation/v1-noticeplace-launch.js';
 import { validateNoticePlaceOwnerState, type NoticePlaceOwnerStateProvider } from './automation/v1-noticeplace-owner-state.js';
 import { resumeNoticePlaceSession, type NoticePlaceResumePort } from './automation/v1-noticeplace-resume.js';
+import { V1_UI_READ_PATHS, type V1UiReadPort, type V1UiReadPath } from './automation/v1-noticeplace-ui-read.js';
 
 const POLICY_PATH = '/api/automation/launch-policy';
 const LAUNCH_PATH = '/api/automation/project-launch';
@@ -34,6 +36,8 @@ export type NoticePlaceAutopilotPort = {
 };
 
 export type V1NoticePlaceServerOptions = {
+  /** Native read model is independent of control registration and legacy daemon startup. */
+  uiRead?: V1UiReadPort;
   policyStore: AutomationLaunchPolicyStore;
   attempts: ProjectLaunchAttemptLog;
   runner: ProjectLaunchRunner;
@@ -43,6 +47,7 @@ export type V1NoticePlaceServerOptions = {
   autopilot?: NoticePlaceAutopilotPort;
   /** Read-only compatibility adapter supplied by the session-read owner. */
   sessionRead?: NoticePlaceSessionReadPort;
+  nativeSessionRead?: V1NativeSessionReadPort;
   /** Exact scoped identity lookup; required for all consumer-facing session IDs. */
   identity: NoticePlaceSessionIdentityPort;
   /** Authenticated Rust facade tool port used only for exact-session resume. */
@@ -98,7 +103,13 @@ function incidentIdentity(body: Record<string, unknown>, message: string): strin
 export function createV1NoticePlaceServer(options: V1NoticePlaceServerOptions): Server {
   return createServer((request, response) => {
     void (async () => {
-      const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      const path = url.pathname;
+      if (request.method === 'GET' && (V1_UI_READ_PATHS as readonly string[]).includes(path)) {
+        if (!options.uiRead) return send(response, 503, {error:'native UI read model is unavailable', coverage:{scope:'noticeplace-runtime',complete:false}});
+        const result = await options.uiRead.read(path as V1UiReadPath, url.searchParams);
+        return send(response, result.status, result.body);
+      }
       const resumeMatch=path.match(SESSION_RESUME_PATH);
       if(request.method==='POST'&&resumeMatch){
         let harness:string,sessionId:string;
@@ -120,18 +131,34 @@ export function createV1NoticePlaceServer(options: V1NoticePlaceServerOptions): 
       }
       const sessionReadMatch=path.match(SESSION_READ_PATH);
       if(request.method==='GET'&&sessionReadMatch){
-        if(!options.sessionRead)return send(response,503,{error:'Session read provider is unavailable'});
         let harness:string,sessionRef:string;
         try{harness=decodeURIComponent(sessionReadMatch[1]!);sessionRef=decodeURIComponent(sessionReadMatch[2]!);}catch{return send(response,400,{error:'invalid session reference'});}
-        if(harness!=='opencode'||!sessionRef||sessionRef.length>512||/[\/\r\n\0]/u.test(sessionRef))return send(response,400,{error:'unsupported harness or invalid session reference'});
-        const url=new URL(request.url??'/', 'http://127.0.0.1');
+        if(!['opencode','codex','chatgpt','zai','zcode'].includes(harness)||(harness!=='opencode'&&!options.nativeSessionRead)
+          ||!sessionRef||sessionRef.length>512||/[\/\r\n\0]/u.test(sessionRef))return send(response,400,{error:'unsupported harness or invalid session reference'});
         const kind=sessionReadMatch[3] as 'progress'|'details';
-        const expectedLimit=kind==='progress'?'5':'1';
-        if(url.searchParams.get('limit')!==expectedLimit||url.searchParams.get('history')!=='auto')return send(response,400,{error:'unsupported session read options'});
+        const rawLimit=url.searchParams.get('limit'),history=url.searchParams.get('history'),quick=url.searchParams.get('quick');
+        const limit=rawLimit&&/^\d+$/u.test(rawLimit)?Number(rawLimit):0;
+        if(limit<1||limit>50||(history!==null&&history!=='auto')||(quick!==null&&!['0','1'].includes(quick))
+          ||(kind==='progress'&&(limit!==5||history!=='auto'))||(kind==='details'&&history==='auto'&&limit!==1))return send(response,400,{error:'unsupported session read options'});
+        const legacy=(kind==='progress'||limit===1)&&history==='auto';
+        const hostId=url.searchParams.get('runtimeHostId')??url.searchParams.get('hostId')??undefined;
+        const nativeRead=async(nativeId:string)=>{
+          if(!options.nativeSessionRead)return send(response,503,{error:'Native session read provider is unavailable',coverage:{complete:false}});
+          const result=await options.nativeSessionRead.read({harness,nativeId,kind,limit,...(hostId?{hostId}:{})});
+          return send(response,result.status,result.body);
+        };
         try{
+          // UI reads use the exact native provider directly. No registration or authority import is required.
+          if((!legacy||harness!=='opencode')&&!sessionRef.startsWith('session:'))return await nativeRead(sessionRef);
+          if(harness!=='opencode')return send(response,404,{error:'native session identity is required'});
+          if(!options.sessionRead&&!options.nativeSessionRead)return send(response,503,{error:'Session read provider is unavailable'});
           const coreRef=await options.identity.toCoreRef(sessionRef);
           const nativeId=coreRef?await options.identity.toNativeId(coreRef):null;
-          if(!coreRef||!nativeId)return send(response,404,{error:'session identity is not present in the configured scope'});
+          if(!coreRef||!nativeId){
+            if(options.nativeSessionRead&&!sessionRef.startsWith('session:'))return await nativeRead(sessionRef);
+            return send(response,404,{error:'session identity is not present in the configured scope'});
+          }
+          if(!legacy||!options.sessionRead)return await nativeRead(nativeId);
           const value=await options.sessionRead.read(coreRef,kind);
           if(value&&typeof value==='object'&&!Array.isArray(value)){
             const payload=value as Record<string,unknown>,session=payload.session;

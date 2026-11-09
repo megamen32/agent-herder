@@ -1,0 +1,30 @@
+{
+  "schema": "agent-herder.ci-browser-fixture.v1",
+  "runtime_uid": 1000,
+  "runtime_gid": 1000,
+  "owner_home": "/home/roomhacker",
+  "state_dir": "/var/lib/agent-herder-ci-smoke/browser-fixture",
+  "ui_url": "https://agent.bezrabotnyi.com/",
+  "browser": {
+    "executable": "/home/roomhacker/.npm-global/lib/node_modules/agent-browser/bin/agent-browser-linux-x64",
+    "executable_sha256": "REPLACE_WITH_REVIEWED_SHA256",
+    "chrome_executable": "/home/roomhacker/.agent-browser/browsers/chrome-154.0.8037.92/chrome",
+    "chrome_sha256": "REPLACE_WITH_REVIEWED_SHA256",
+    "profile_path": "/home/roomhacker/.local/state/agent-herder/ci-ui-browser-20261109",
+    "extensions_path": "/home/roomhacker/.local/share/vibebrowser/extension-20261031",
+    "session": "herderci1109",
+    "namespace": "herderci1109",
+    "idle_timeout_ms": 0
+  },
+  "relay": {
+    "systemd_unit": "agent-herder-ci-vibe.service",
+    "agent_port": 19898,
+    "extension_port": 19899,
+    "state_dir": "/home/roomhacker/.local/state/agent-herder/ci-vibe-relay-20261109",
+    "session_id": "session_1",
+    "node_executable": "/usr/local/bin/node",
+    "node_sha256": "REPLACE_WITH_REVIEWED_SHA256",
+    "script_path": "/home/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/relay-daemon.js",
+    "script_sha256": "REPLACE_WITH_REVIEWED_SHA256"
+  }
+}
