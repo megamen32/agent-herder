@@ -62,6 +62,16 @@ impl ServerHandler for MultiOwner {
         }
         // Only these read operations may fan out. Mutations never probe adapters.
         let action = args.and_then(|a| a.get("action")).and_then(Value::as_str).unwrap_or("");
+        if request.name.as_ref() == "session" && action == "context" {
+            // A shared account can invoke this core from several conversations.
+            // Neither the first configured profile nor a previous registration
+            // is proof of the current caller's conversation.
+            return Ok(CallToolResult::structured_error(json!({
+                "code":"self_binding_required","effect":"none",
+                "message":"The caller conversation is not bound to this connection.",
+                "correction":"Register the exact native session and pass its session_ref to session.context."
+            })).into());
+        }
         let field = match (request.name.as_ref(), action) {
             ("discover", "nodes") => "nodes", ("discover", "instances") => "instances",
             ("discover", "projects") => "projects", ("sessions", "list") => "sessions",

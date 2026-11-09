@@ -120,8 +120,11 @@ impl ServerHandler for HttpServer {
         .map_err(|_| ErrorData::invalid_params("unknown tool or invalid arguments", None))?;
         if matches!(
             &parsed.request,
-            catalog::Request::Session(catalog::Session::Context {})
+            catalog::Request::Session(catalog::Session::Context { session_ref: None })
         ) {
+            // OAuth identifies the account, not the conversation that invoked
+            // the tool. An explicit target is authorized by the application;
+            // it must not become a transport-verified self binding.
             return Ok(CallToolResult::structured_error(
                 json!({"code":"self_binding_required","effect":"none"}),
             )

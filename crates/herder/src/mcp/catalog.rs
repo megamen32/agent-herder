@@ -57,7 +57,7 @@ pub enum DispatchError {
 catalog! {
     "discover" => Discover(Discover) { read: ["nodes", "instances", "models", "projects"], mutate: [] },
     "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
-    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: ["archive"] },
+    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: ["archive", "register", "workspace"] },
     "create" => Create(Create) { read: [], mutate: ["create"] },
     "deliver" => Deliver(Deliver) { read: [], mutate: ["session", "reply_to"] },
     "resume" => Resume(Resume) { read: [], mutate: ["resume"] },
@@ -147,11 +147,23 @@ actions!(Discover {
 actions!(Sessions {
     List { project_ref: Option<String>, node_ref: Option<String>, instance_ref: Option<String>, cursor: Option<String> },
 });
+/// An advertised working location. This declaration does not acquire filesystem
+/// ownership, change the delivery route, or prove the caller's session identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SessionWorkspace {
+    pub node_ref: String,
+    pub path: String,
+    pub project_ref: Option<String>,
+    pub purpose: Option<String>,
+}
 actions!(Session {
     Archive { session_ref: String, request_key: String },
     Recent { session_ref: String, cursor: Option<String> },
-    Context {},
+    Context { session_ref: Option<String> },
     Messages { session_ref: String, cursor: Option<String> },
+    Register { instance_ref: String, native_session_id: String, workspace: Option<SessionWorkspace>, request_key: String },
+    Workspace { session_ref: String, workspace: Option<SessionWorkspace>, request_key: String },
 });
 actions!(Create {
     Create { instance_ref: String, project_ref: Option<String>, prompt: String, request_key: String },
@@ -289,6 +301,22 @@ mod tests {
                 Access::Read,
             ),
             ("session", json!({"action":"context"}), Access::Read),
+            ("session", json!({"action":"context","session_ref":"s"}), Access::Read),
+            (
+                "session",
+                json!({"action":"archive","session_ref":"s","request_key":"archive"}),
+                Access::Mutate,
+            ),
+            (
+                "session",
+                json!({"action":"register","instance_ref":"browser-profile","native_session_id":"conversation","request_key":"registration"}),
+                Access::Mutate,
+            ),
+            (
+                "session",
+                json!({"action":"workspace","session_ref":"s","workspace":{"node_ref":"n","path":"/work/project"},"request_key":"workspace"}),
+                Access::Mutate,
+            ),
             (
                 "session",
                 json!({"action":"messages","session_ref":"s"}),
@@ -357,6 +385,11 @@ mod tests {
             (
                 "automation",
                 json!({"action":"delete","rule_ref":"r","revision":1}),
+                Access::Mutate,
+            ),
+            (
+                "automation",
+                json!({"action":"reconcile","rule_ref":"r","child_ref":"child","event_id":"event"}),
                 Access::Mutate,
             ),
             ("resource", json!({"action":"list"}), Access::Read),

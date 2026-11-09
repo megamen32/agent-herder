@@ -5,7 +5,8 @@
 //! - `sessions/list`: only registered principal+instance bindings, optionally
 //!   enriched by matching native IDs. `project_ref` is the observed native cwd.
 //! - `session/messages|recent`: bounded legacy message tail, `complete:false`;
-//!   `session/context`: requires verified self binding, exposes proven root lineage.
+//!   `session/context`: explicit targets use exact ACL; implicit self requires
+//!   a verified binding. Native registrations never imply native root ancestry.
 //! - `export/native`: exact `bytes_base64`, `source`, `complete`,
 //!   `timestampCoverage`, `limitations`; indexing failure cannot lose the export.
 //!   `export/common` explicitly returns `unsupported_format` in V1.
@@ -18,11 +19,11 @@
 //! Registry scan is bounded at 256, search results at 50; unsupported cursors are
 //! rejected and incomplete coverage is explicit. Provisioner owns v4 migration.
 //! Errors carry code, message, expected, correction, effect. Parent owns wiring.
-use super::owner_policy::{self, OwnerPolicy};
+use super::owner_policy::OwnerPolicy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use herder::{
     adapters::ahap_opencode::AhapOpenCode,
-    application::scoped_stop::{ScopedAuthority, create_prompt::FreshSessionGrantPolicy},
+    application::scoped_stop::{ScopedAuthority, create_prompt::FreshSessionGrantPolicy, registration},
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::{
         adapter::ReadError,
@@ -53,13 +54,22 @@ pub async fn call(
     policy: &Arc<OwnerPolicy>,
     instance: &InstanceRef,
 ) -> Option<CallToolResult> {
-    handle(identity, request, policy, instance, &|method, params| {
+    let mut result = handle(identity, request, policy, instance, &|method, params| {
         use herder::application::scoped_stop::BoundedFreshRootCreate;
         if adapter.instance() != instance {
             return Err(ReadError("AHAP instance mismatch".into()));
         }
         adapter.raw_call(method, params)
-    })
+    });
+    if matches!(request, catalog::Request::Session(catalog::Session::Context { .. }))
+        && let Some(result) = result.as_mut()
+        && result.is_error != Some(true)
+        && let Some(value) = result.structured_content.as_mut()
+    {
+        value["harness"] = json!(registration::BoundedSessionProbe::harness(adapter.as_ref()));
+        value["delivery_modes"] = adapter.capabilities().get("deliveryModes").cloned().unwrap_or(Value::Null);
+    }
+    result
 }
 
 fn error(code: &str) -> CallToolResult {
@@ -132,7 +142,7 @@ fn handle(
         Request::Sessions(_)
             | Request::Export(_)
             | Request::Search(_)
-            | Request::Session(Session::Recent { .. } | Session::Context {} | Session::Messages { .. })
+            | Request::Session(Session::Recent { .. } | Session::Context { .. } | Session::Messages { .. })
             | Request::Discover(Discover::Projects { .. })
     ) {
         return None;
@@ -195,15 +205,33 @@ fn handle(
                     "complete":false,"limitations":["Показаны последние сообщения. Прежний API не предоставляет курсор для проверки полноты истории."]}}),
             )
         }
-        Request::Session(Session::Context {}) => {
-            let session = identity
-                .require_self(None)
-                .map_err(|_| "self_binding_required")?;
-            let address = authorize(identity, policy, instance, session)?;
-            // OwnerPolicy currently admits only proven fresh roots. Do not infer
-            // ancestors from names, native IDs, or request-supplied metadata.
+        Request::Session(Session::Context { session_ref }) => {
+            let session = match session_ref {
+                Some(reference) => SessionRef(reference.clone()),
+                None => identity.require_self(None).map_err(|_| "self_binding_required")?.clone(),
+            };
+            let address = authorize(identity, policy, instance, &session)?;
+            let db = read_store(policy)?;
+            let source = registration::membership_source_for_harness(&db, &principal.id.0, instance,
+                &policy.generation, &session, &policy.harness).map_err(|_| "scope_unavailable")?
+                .ok_or("unauthorized")?;
+            let workspace = registration::read_workspace(&db, &session).map_err(|_| "scope_unavailable")?;
+            let is_self = identity.require_self(Some(&session)).is_ok();
+            let grant = session_read_grant(identity, policy, instance, &session)?;
+            let authority = ScopedAuthority::new(policy.db.clone(), policy.gate.clone(), policy.generation.clone())
+                .map_err(|_| "scope_unavailable")?;
+            let held = authority.human_stop_held(identity, &[grant], &session, instance)
+                .map_err(|_| "scope_unavailable")?;
             Ok(json!({"session_ref":session.0,"address":address,
-                "lineage":{"parent_ref":null,"source":"verified_fresh_root_receipt"}}))
+                "instance_ref":instance.instance_id,"node_ref":instance.node.0,
+                "principal_ref":principal.id.0,"is_self":is_self,
+                "identity_source":if is_self {"verified_connection_binding"} else {"authorized_explicit_session_ref"},
+                "workspace":workspace.workspace,"workspace_revision":workspace.revision,
+                "workspace_updated_at":workspace.updated_at,"workspace_source":"session_declaration",
+                "human_stop":{"held":held},
+                "message_target":{"tool":"deliver","action":"session","session_ref":session.0},
+                "lineage":{"parent_ref":null,"source":source,
+                    "native_ancestry_known":source=="verified_fresh_root_receipt"}}))
         }
         Request::Sessions(Sessions::List {
             project_ref,
@@ -225,16 +253,21 @@ fn handle(
             let observed = observe(&corpus, native)?;
             let authority = ScopedAuthority::new(policy.db.clone(), policy.gate.clone(), policy.generation.clone())
                 .map_err(|_| "scope_unavailable")?;
+            let db = read_store(policy)?;
             let mut sessions = Vec::with_capacity(corpus.sessions.len());
             for (reference, address) in &corpus.sessions {
                 let metadata = observed.get(&address.native_session_id);
-                if project_ref.as_deref().is_some_and(|p| metadata.and_then(project) != Some(p)) {
+                let workspace = registration::read_workspace(&db, reference).map_err(|_| "scope_unavailable")?;
+                if project_ref.as_deref().is_some_and(|p| metadata.and_then(project) != Some(p)
+                    && !workspace.workspace.as_ref().is_some_and(|w| w.project_ref.as_deref() == Some(p) || w.path == p)) {
                     continue;
                 }
                 let grant = session_read_grant(identity, policy, instance, reference)?;
                 let held = authority.human_stop_held(identity, &[grant], reference, instance)
                     .map_err(|_| "scope_unavailable")?;
                 sessions.push(json!({"session_ref":reference.0,"address":address,"native":metadata,
+                    "workspace":workspace.workspace,"workspace_revision":workspace.revision,
+                    "workspace_updated_at":workspace.updated_at,"workspace_source":"session_declaration",
                     "human_stop":{"held":held},
                     "source":if metadata.is_some(){"registered_and_native"}else{"registered"}}));
             }
@@ -312,13 +345,7 @@ fn handle(
             // here would observe a different snapshot and restore the race.
             let mut allowed = Vec::new();
             for (session, address) in &allowed_rows {
-                if !owner_policy::is_member(
-                    &db,
-                    &policy.principal.0,
-                    instance,
-                    &policy.generation,
-                    session,
-                )
+                if !policy.is_member(&db, session)
                 .map_err(|_| "scope_unavailable")?
                 {
                     continue;
@@ -497,13 +524,7 @@ fn registered(
     let truncated = candidates.len() > CORPUS_LIMIT;
     let mut sessions = Vec::new();
     for (session, native) in candidates.into_iter().take(CORPUS_LIMIT) {
-        if !owner_policy::is_member(
-            &db,
-            &policy.principal.0,
-            instance,
-            &policy.generation,
-            &session,
-        )
+        if !policy.is_member(&db, &session)
         .map_err(|_| "scope_unavailable")?
         {
             continue;
@@ -817,6 +838,7 @@ mod tests {
                 root,
                 policy: OwnerPolicy {
                     principal: PrincipalId("alice".into()),
+                    harness: "opencode".into(),
                     instance: InstanceRef {
                         node: NodeRef("node".into()),
                         instance_id: "instance".into(),
@@ -1355,6 +1377,7 @@ for line in sys.stdin:
         };
         let policy = Arc::new(OwnerPolicy {
             principal: f.policy.principal.clone(),
+            harness: f.policy.harness.clone(),
             instance: f.policy.instance.clone(),
             generation: f.policy.generation.clone(),
             db: f.policy.db.clone(),
@@ -1522,7 +1545,7 @@ for line in sys.stdin:
     fn context_requires_verified_self_and_only_claims_proven_root_lineage() {
         let f = Fixture::new();
         f.own();
-        let request = catalog::Request::Session(catalog::Session::Context {});
+        let request = catalog::Request::Session(catalog::Session::Context { session_ref: None });
         assert_eq!(
             payload(f.invoke(request.clone(), never))["code"],
             "self_binding_required"

@@ -34,6 +34,22 @@ pub struct AhapPortPolicy {
     pub harness: String,
     pub initial_delivery_mode: SendMode,
 }
+impl crate::application::scoped_stop::registration::BoundedSessionProbe for AhapOpenCode {
+    fn instance(&self) -> &InstanceRef {
+        &self.instance
+    }
+    fn harness(&self) -> &str {
+        &self.policy.harness
+    }
+    fn probe_session(&self, native_session_id: &str) -> Result<SessionSnapshot, ()> {
+        // read_snapshot verifies both id and harness through the configured,
+        // account-pinned AHAP transport. No create or send is performed.
+        self.read_snapshot(&SessionAddress {
+            instance: self.instance.clone(),
+            native_session_id: native_session_id.to_owned(),
+        }).map_err(|_| ())
+    }
+}
 impl AhapOpenCode {
     pub fn new(
         client: Arc<AhapClient>,
