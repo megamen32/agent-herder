@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {createHash} from 'node:crypto';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {NativeWorkerPort} from './native/installed-browser-bindings.js';
@@ -52,7 +52,7 @@ export function makeConfiguredAdapter(){return {
 async function withWorker(harness: 'chatgpt' | 'opencode' | 'zcode', flags: Record<string, string>, run: (value: {
   worker: NativeWorkerPort; binding: OwnedCanaryBinding; logs: () => Promise<string[]>;
 }) => Promise<void>, timeouts: Partial<Record<'readSession' | 'close',number>> = {}) {
-  const dir=await mkdtemp(join(tmpdir(),'ci-native-worker-')), module=join(dir,'adapter.mjs'), log=join(dir,'calls.log');
+  const dir=await realpath(await mkdtemp(join(tmpdir(),'ci-native-worker-'))), module=join(dir,'adapter.mjs'), log=join(dir,'calls.log');
   await writeFile(module,moduleSource);await writeFile(log,'');
   const worker=new NativeWorkerPort(harness+'-instance',harness,'own-host',module,
     createHash('sha256').update(moduleSource).digest('hex'),
