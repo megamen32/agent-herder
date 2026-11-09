@@ -120,7 +120,7 @@ async fn wire_connections_enforce_target_acl_and_self_before_application() {
                         }
                         Some(CallToolResult::structured(json!({"target":session_ref})))
                     }
-                    catalog::Request::Session(catalog::Session::Context {}) => {
+                    catalog::Request::Session(catalog::Session::Context { session_ref: None }) => {
                         self.contexts.fetch_add(1, Ordering::SeqCst);
                         Some(CallToolResult::structured(
                             json!({"self":identity.require_self(None).unwrap().0}),

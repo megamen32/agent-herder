@@ -71,7 +71,7 @@ impl OAuthRequestGate {
         };
         if matches!(
             &request,
-            catalog::Request::Session(catalog::Session::Context {})
+            catalog::Request::Session(catalog::Session::Context { session_ref: None })
         ) {
             return CallToolResult::structured_error(
                 json!({"code":"self_binding_required", "effect":"none", "message":"verified self-session binding required"}),
@@ -244,7 +244,7 @@ impl ServerHandler for NativeServer {
             .map_err(|_| ErrorData::invalid_params("unknown tool or invalid arguments", None))?;
         if matches!(
             &parsed.request,
-            catalog::Request::Session(catalog::Session::Context {})
+            catalog::Request::Session(catalog::Session::Context { session_ref: None })
         ) {
             if let Err(error) = self.identity.require_self(None) {
                 let (code, message) = match error {

@@ -39,6 +39,7 @@ impl ScopedMessageReader for Messages {
     }
 }
 struct App {
+    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     harness: String,
     grants: Vec<Grant>,
@@ -73,6 +74,10 @@ impl ApplicationPort for App {
                     _ => unreachable!(),
                 };
                 return Some(rmcp::model::CallToolResult::structured(value));
+            }
+            if let Some(result) = super::owner_registration::call(identity, &request,
+                &self.adapter, &self.policy, &self.instance, &self.authority, &self.grants) {
+                return Some(result);
             }
             if let Some(result) = super::owner_reads::call(identity, &request,
                 &self.adapter, &self.policy, &self.instance).await {
@@ -258,6 +263,7 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
     let policy = Arc::new(OwnerPolicy {
         principal,
         instance: instance.clone(),
+        harness: harness.clone(),
         generation: opened.generation,
         db: opened.database,
         gate: opened.gate,
@@ -293,6 +299,7 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
         },
     ));
     let app = Arc::new(App {
+        authority: authority.clone(),
         instance: instance.clone(),
         harness,
         grants: grants.clone(),

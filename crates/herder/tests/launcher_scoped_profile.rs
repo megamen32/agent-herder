@@ -730,6 +730,7 @@ fn trusted_owner_profiles_bind_all_v1_types_to_legacy_runners() {
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     for kind in ["opencode", "codex", "zcode", "chatgpt", "zai"] {
         let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
             "kind":kind,"principal":"owner","node":"node","instance":format!("{kind}-one"),
@@ -747,6 +748,7 @@ fn trusted_owner_runner_rejects_process_injection_and_cross_family_environment()
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     for name in ["NODE_OPTIONS", "LD_PRELOAD", "HOME", "AHAP_HARNESS", "AHAP_BROWSER_PAGE_ID"] {
         let profile=serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
             "kind":"opencode","principal":"owner","node":"node","instance":"one",
@@ -762,6 +764,7 @@ fn trusted_owner_codex_profile_accepts_only_exact_isolation_off() {
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     let executable = fs::canonicalize("/usr/bin/python3").unwrap();
     let write_profile = |env: serde_json::Value, kind: &str| {
         let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
@@ -831,6 +834,7 @@ for line in sys.stdin:
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":kind,"principal":"owner","node":"node","instance":"opencode-fixture","executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,"ahap_base_url":if kind=="opencode" {Some("http://127.0.0.1:3456")} else {None},"code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, profile.to_string()).unwrap();
     let mut child = Command::new(&binary)
@@ -1001,6 +1005,7 @@ for line in sys.stdin:
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "#).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
             "kind":"chatgpt","principal":"owner","node":"node","instance":format!("chatgpt-{i}"),
             "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
@@ -1023,6 +1028,8 @@ for line in sys.stdin:
         };
         let discover=call("tools/call",serde_json::json!({"name":"discover","arguments":{"action":"instances"}}));
         assert_eq!(discover["result"]["structuredContent"]["instances"].as_array().unwrap().len(),2,"{discover}");
+        let implicit=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context"}}));
+        assert_eq!(implicit["result"]["structuredContent"]["code"],"self_binding_required","{implicit}");
         for f in [&a, &b] { assert_eq!(fs::read_to_string(f.root.join("parent-pid")).unwrap(), child.id().to_string()); }
         for i in 0..2 {
             if !restart {
@@ -1040,6 +1047,10 @@ for line in sys.stdin:
             let read=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"messages","session_ref":sessions[i]}}));
             let rows=read["result"]["structuredContent"]["page"]["messages"].as_array().expect("messages");
             assert_eq!(rows.len(),2,"{read}");assert_eq!(rows[0]["text"],format!("account-{i}"));assert_eq!(rows[1]["text"],format!("follow-{i}"));
+            let context=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context","session_ref":sessions[i]}}));
+            assert_eq!(context["result"]["structuredContent"]["session_ref"],sessions[i],"{context}");
+            assert_eq!(context["result"]["structuredContent"]["address"]["instance"]["instance_id"],format!("chatgpt-{i}"),"{context}");
+            assert_eq!(context["result"]["structuredContent"]["is_self"],false,"{context}");
         }
         let archive=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"archive","session_ref":sessions[0],"request_key":"archive-first"}}));
         assert_eq!(archive["result"]["structuredContent"]["archived"],true,"{archive}");

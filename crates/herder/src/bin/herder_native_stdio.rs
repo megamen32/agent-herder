@@ -14,6 +14,10 @@ mod owner_multi;
 mod owner_reads;
 
 #[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_registration.rs"]
+mod owner_registration;
+
+#[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/owner_launch.rs"]
 mod owner_launch;
 
