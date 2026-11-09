@@ -65,6 +65,20 @@ def http_status(url: str, timeout: float = 20.0) -> int:
         return 0
 
 
+def management_bearer(unit: str) -> str:
+    """The credential of the node, or an empty string when it is unknown.
+
+    An unverified credential is not a refusal of the management: the answer
+    stays unknown and the check names it.
+    """
+    if not unit:
+        return ""
+    try:
+        return canonical_bearer(unit)
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
 def canonical_bearer(unit: str) -> str:
     """The runtime credential of the node, resolved from the protected store.
 
@@ -836,14 +850,17 @@ def budget_check(releases_root: Path, rollback_root: Path) -> dict:
     }
 
 
-def mcp_call(port: int, tool: str, arguments: dict, timeout: float = 30.0) -> dict:
+def mcp_call(port: int, tool: str, arguments: dict, timeout: float = 30.0, bearer: str = "") -> dict:
     """One tool call of the node itself, over its own MCP."""
     base = f"http://127.0.0.1:{port}/mcp"
+    headers = {"Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream"}
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
 
     def post(payload):
         request = urllib.request.Request(base, data=json.dumps(payload).encode(), method="POST",
-                                         headers={"Content-Type": "application/json",
-                                                  "Accept": "application/json, text/event-stream"})
+                                         headers=headers)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read(200000).decode(errors="replace")
         for line in body.splitlines():
@@ -890,7 +907,7 @@ def mesh_peer_hosts(answer: dict) -> list:
     return sorted(hosts)
 
 
-def peer_reachability(port: int, peer_host: str) -> dict:
+def peer_reachability(port: int, peer_host: str, bearer: str = "") -> dict:
     """From this node to the second node: the calls the guard does not touch.
 
     The name of the local node is not a proof that the peer is reached. The
@@ -902,7 +919,7 @@ def peer_reachability(port: int, peer_host: str) -> dict:
     for tool, arguments in (("fleet_node_info", {}), ("fleet_session_page", {"limit": 5}),
                             ("mesh_discover", {"limit": 12})):
         try:
-            answer = mcp_call(port, tool, arguments)
+            answer = mcp_call(port, tool, arguments, bearer=bearer)
         except Exception as error:
             result["tools"][tool] = {"error": str(error)[:160]}
             continue
@@ -1033,14 +1050,7 @@ def panel_session_creation(release: Path) -> dict:
 
 def management_check(port: int, kind: str, unit: str = "") -> dict:
     base = f"http://127.0.0.1:{port}"
-    bearer = ""
-    if unit:
-        try:
-            bearer = canonical_bearer(unit)
-        except (OSError, ValueError, TypeError):
-            # An unverified credential is not a refusal of the management: the
-            # answer stays unknown and the check names it.
-            bearer = ""
+    bearer = management_bearer(unit)
     result = {
         "sessions": http_status(f"{base}/api/sessions?quick=1&limit=1"),
         "launch_policy": http_status(f"{base}/api/automation/launch-policy"),
@@ -1097,7 +1107,8 @@ def main() -> int:
     workspace = import_check_workspace(release, store_modules, arguments.node_bin)
     dependencies = dependency_check(release, store_modules)
     management = management_check(arguments.port, arguments.kind, arguments.unit)
-    reachability = peer_reachability(arguments.port, arguments.peer_host) if arguments.peer_host else {}
+    bearer = management_bearer(arguments.unit)
+    reachability = peer_reachability(arguments.port, arguments.peer_host, bearer) if arguments.peer_host else {}
     confirmation = fleet_confirmation(arguments.port)
     guard = guard_policy(release, arguments.node_bin, state_dir)
     panel = panel_session_creation(release)
