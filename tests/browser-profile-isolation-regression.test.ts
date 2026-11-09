@@ -79,6 +79,83 @@ it("ChatGPT rejects duplicate account window markers after SPA removed both URL 
   expect(scopesRead).toEqual([]);
 });
 
+it("ChatGPT removes only verified same-account Herder tab duplicates across old namespaces", async () => {
+  const closed:number[]=[], scopesRead:number[]=[];
+  const accountByPage=new Map([[5,A],[7,A],[9,A],[11,B],[13,A]]);
+  const urls=new Map([
+    [5,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+A+":vibe-worker")],
+    [7,"https://chatgpt.com/?herder_owned=chatgpt"],
+    [9,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+A+":old-worker")],
+    [11,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+B+":vibe-worker")],
+    [13,"https://chatgpt.com/"],
+  ]);
+  const active=new Set(urls.keys());
+  const tools:ChromePageTools={
+    ownedTabNamespace:"vibe-worker",ownedTabAccountScope:A,
+    call:async(name,args={})=>{
+      if(name==="list_pages")return [...active].map(id=>String(id)+": Page ("+urls.get(id)+")").join("\n");
+      if(name==="evaluate_script"&&args.function===CHATGPT_CREATE_SCOPE_SCRIPT){
+        const page=Number(args.pageId);scopesRead.push(page);return json({scope:accountByPage.get(page)});
+      }
+      if(name==="close_page"){const page=Number(args.pageId);closed.push(page);active.delete(page);return "closed";}
+      throw new Error("unexpected "+name);
+    },
+  };
+  await new ChatGptMacCdpDriver(tools,undefined,0,A).verifyPinnedAccountScope();
+  expect(closed).toEqual([7,9]);
+  expect(active.has(11)).toBe(true);
+  expect(active.has(13)).toBe(true);
+  expect(scopesRead).toEqual([5,7,9,11,5]);
+});
+
+it("ChatGPT pinned human page closes verified same-account owned background tabs", async () => {
+  const closed:number[]=[];
+  const accountByPage=new Map([[5,A],[7,A],[11,B],[13,A]]);
+  const urls=new Map([
+    [5,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+A+":vibe-worker")],
+    [7,"https://chatgpt.com/?herder_owned=chatgpt"],
+    [11,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+B+":vibe-worker")],
+    [13,"https://chatgpt.com/"],
+  ]);
+  const active=new Set(urls.keys());
+  const tools:ChromePageTools={
+    ownedTabNamespace:"vibe-worker",ownedTabAccountScope:A,
+    call:async(name,args={})=>{
+      if(name==="list_pages")return [...active].map(id=>String(id)+": Page ("+urls.get(id)+")").join("\n");
+      if(name==="evaluate_script"&&args.function===CHATGPT_CREATE_SCOPE_SCRIPT)
+        return json({scope:accountByPage.get(Number(args.pageId))});
+      if(name==="close_page"){const page=Number(args.pageId);closed.push(page);active.delete(page);return "closed";}
+      throw new Error("unexpected "+name);
+    },
+  };
+  await new ChatGptMacCdpDriver(tools,13,0,A).verifyPinnedAccountScope();
+  expect(closed).toEqual([5,7]);
+  expect(active.has(11)).toBe(true);
+  expect(active.has(13)).toBe(true);
+});
+
+it("ChatGPT never closes an unreadable Herder-marked tab", async () => {
+  const closed:number[]=[];
+  const urls=new Map([
+    [5,"https://chatgpt.com/?herder_owned="+encodeURIComponent("chatgpt:"+A+":vibe-worker")],
+    [7,"https://chatgpt.com/?herder_owned=chatgpt"],
+  ]);
+  const tools:ChromePageTools={
+    ownedTabNamespace:"vibe-worker",ownedTabAccountScope:A,
+    call:async(name,args={})=>{
+      if(name==="list_pages")return [...urls].map(([id,url])=>String(id)+": Page ("+url+")").join("\n");
+      if(name==="evaluate_script"&&args.function===CHATGPT_CREATE_SCOPE_SCRIPT){
+        if(Number(args.pageId)===7)throw new Error("renderer unavailable");
+        return json({scope:A});
+      }
+      if(name==="close_page"){closed.push(Number(args.pageId));return "closed";}
+      throw new Error("unexpected "+name);
+    },
+  };
+  await new ChatGptMacCdpDriver(tools,undefined,0,A).verifyPinnedAccountScope();
+  expect(closed).toEqual([]);
+});
+
 it("configured Zai create refuses account drift instead of rebinding its draft to another profile", async () => {
   const root = await mkdtemp(join(tmpdir(), "profile-isolation-drafts-"));
   temporary.push(root);

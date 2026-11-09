@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runInNewContext } from "node:vm";
 import {
   isOwnedTabUrl,
+  isProviderOwnedTabUrl,
   ownedTabClaimScript,
   ownedTabProbeScript,
   ownedTabUrl,
@@ -15,6 +16,15 @@ describe("owned browser tab marker", () => {
     expect(isOwnedTabUrl("https://chatgpt.com/?herder_owned=chatgpt", "chatgpt")).toBe(true);
     expect(isOwnedTabUrl("https://chatgpt.com/?herder_owned=zai", "chatgpt")).toBe(false);
     expect(isOwnedTabUrl("https://chatgpt.com/c/6ada477c-7014-83ed-82ae-7881dbe3e109", "chatgpt")).toBe(false);
+  });
+
+  it("recognizes legacy, account and worker markers without treating human tabs as owned", () => {
+    const account="a".repeat(64);
+    expect(isProviderOwnedTabUrl("https://chatgpt.com/?herder_owned=chatgpt","chatgpt")).toBe(true);
+    expect(isProviderOwnedTabUrl(ownedTabUrl("https://chatgpt.com","chatgpt",account),"chatgpt")).toBe(true);
+    expect(isProviderOwnedTabUrl(ownedTabUrl("https://chatgpt.com","chatgpt",account,"worker"),"chatgpt")).toBe(true);
+    expect(isProviderOwnedTabUrl("https://chatgpt.com/?herder_owned=zai","chatgpt")).toBe(false);
+    expect(isProviderOwnedTabUrl("https://chatgpt.com/","chatgpt")).toBe(false);
   });
 
   it("keeps ownership in the page itself when the site drops the URL marker", () => {

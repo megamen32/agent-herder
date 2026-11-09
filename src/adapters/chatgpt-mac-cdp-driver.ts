@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { chatgptFullConversationApiScript, chatgptConversationChunkScript, chatgptConversationCleanupScript } from "./chatgpt-full-conversation.js";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
-import { submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
-import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
+import { dedupeVerifiedChatGptOwnedTabs, submitFirstChatMessage, verifyNewChatAccountScope } from "./browser-chat-new-page.js";
+import { claimOwnedTab, isOwnedTabUrl, isProviderOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 import { chatgptPassiveHistoryScript } from "./chatgpt-passive-history.js";
 import { ChatGptBackgroundBudget } from "./chatgpt-background-budget.js";
 import { ChatGptBackgroundNavigator } from "./chatgpt-background-navigator.js";
@@ -409,8 +409,19 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       // A configured target is a routing hint; callers still verify its actual
       // account before and after reading. Do not require a marker to read it.
       const pinned = pages.find(page => page.id === this.pinnedPageId);
+      let candidates = pages.filter(page => page.conversation || new URL(page.url).pathname === "/");
+      const deduped = this.tools.ownedTabNamespace
+        ? await dedupeVerifiedChatGptOwnedTabs(
+          this.tools,candidates,this.expectedAccountScope,pinned?.id,
+        )
+        : {closedPageIds:[]};
+      if(deduped.closedPageIds.length){
+        const closed=new Set(deduped.closedPageIds);
+        candidates=parseChatGptPages(await this.tools.call("list_pages"))
+          .filter(page=>!closed.has(page.id)&&(page.conversation||new URL(page.url).pathname==="/"));
+      }
       if (pinned) return pinned;
-      const candidates = pages.filter(page => page.conversation || new URL(page.url).pathname === "/");
+      if (deduped.page) { this.ownedTabPath = chatGptTabPath(deduped.page.url); return deduped.page; }
       const owned = await resolveOwnedTab(this.tools, "chatgpt", candidates, this.expectedAccountScope);
       if (owned) { this.ownedTabPath = chatGptTabPath(owned.url); return owned; }
       const previous = candidates.find(page => chatGptTabPath(page.url) === this.ownedTabPath);
@@ -419,9 +430,11 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       // Legacy provider-only markers are not proof of an account. Verify before
       // adopting; never close another account's page as a supposed duplicate.
       for (const candidate of candidates) {
+        if(this.tools.ownedTabNamespace&&isProviderOwnedTabUrl(candidate.url,"chatgpt"))continue;
         const scope = await verifyNewChatAccountScope(this.tools,"chatgpt",candidate.id).catch(() => undefined);
         if (scope !== this.expectedAccountScope) continue;
-        await claimOwnedTab(this.tools,"chatgpt",candidate.id,scope);
+        const claimed=await claimOwnedTab(this.tools,"chatgpt",candidate.id,scope);
+        if(this.tools.ownedTabNamespace&&!claimed)continue;
         // A marker helps recovery, but is not the authority for an account read.
         this.ownedTabPath = chatGptTabPath(candidate.url);
         return candidate;

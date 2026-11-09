@@ -27,6 +27,17 @@ export function isOwnedTabUrl(url: string, provider: "chatgpt" | "zai", scope?: 
   } catch { return false; }
 }
 
+
+/** True for every URL explicitly marked as Herder-owned by this provider,
+ * regardless of legacy/account/worker namespace. The marker is only an
+ * ownership hint: callers MUST verify the browser account before closing it. */
+export function isProviderOwnedTabUrl(url: string, provider: "chatgpt" | "zai"): boolean {
+  try {
+    const marker = new URL(url).searchParams.get(OWNED_TAB_QUERY);
+    return marker === provider || marker?.startsWith(provider + ":") === true;
+  } catch { return false; }
+}
+
 /** The window name of the tab this provider owns. The site rewrites the
  * URL of its own SPA navigation, so the URL marker alone is lost as soon as
  * the tab opens a conversation. The window name survives that navigation and
