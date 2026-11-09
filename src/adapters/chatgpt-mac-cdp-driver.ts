@@ -433,7 +433,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // One owned tab per provider. The tab is identified by its own URL, not
     // by a page number: a gateway restart renumbers everything, and a number
     // would either break the driver or make it grab a foreign tab.
-    const marked = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
+    const marked = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt", this.tools.ownedTabNamespace ? this.expectedAccountScope : undefined, this.tools.ownedTabNamespace));
     if (marked.length) {
       // Exactly one owned tab: prefer the selected one, then the lowest id.
       // Duplicates of our own tab are closed so the browser keeps one page
@@ -502,7 +502,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) { yield await this.page(); return; }
-    const owned = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt"));
+    const owned = pages.filter(page => isOwnedTabUrl(page.url, "chatgpt", this.tools.ownedTabNamespace ? this.expectedAccountScope : undefined, this.tools.ownedTabNamespace));
     yield* [...owned, ...pages.filter(page => !owned.includes(page))];
   }
 
@@ -519,15 +519,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openChatGptTab(): Promise<Page> {
     try {
-      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt", this.expectedAccountScope) });
+      await this.tools.call("new_page", { url: ownedTabUrl(ORIGIN, "chatgpt", this.expectedAccountScope, this.tools.ownedTabNamespace) });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseChatGptPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ChatGPT tab in Mac mini Chrome and auto-open failed");
-    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt", this.expectedAccountScope)) ?? pickChatGptPage(pages);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "chatgpt", this.expectedAccountScope, this.tools.ownedTabNamespace)) ?? pickChatGptPage(pages);
     // Claim the replacement in the page itself: its URL marker is dropped by
     // the site's own navigation, and only the page marker survives that.
-    if (isOwnedTabUrl(opened.url, "chatgpt", this.expectedAccountScope)) await claimOwnedTab(this.tools, "chatgpt", opened.id, this.expectedAccountScope);
+    if (isOwnedTabUrl(opened.url, "chatgpt", this.expectedAccountScope, this.tools.ownedTabNamespace)) await claimOwnedTab(this.tools, "chatgpt", opened.id, this.expectedAccountScope);
     this.ownedTabPath = chatGptTabPath(opened.url);
     return opened;
   }

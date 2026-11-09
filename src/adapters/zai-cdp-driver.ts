@@ -167,7 +167,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
       ? pages.find(page => page.id === this.pinnedPageId) : undefined;
     // One owned tab per provider, identified by its own URL rather than by a
     // page number: a gateway restart renumbers everything.
-    const marked = pages.find(page => isOwnedTabUrl(page.url, "zai"));
+    const marked = pages.find(page => isOwnedTabUrl(page.url, "zai", this.tools.ownedTabNamespace ? this.tools.ownedTabAccountScope : undefined, this.tools.ownedTabNamespace));
     if (marked) {
       await claimOwnedTab(this.tools, "zai", marked.id);
       this.ownedTabPath = zaiTabPath(marked.url);
@@ -206,13 +206,13 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    * timeout even when the tab actually opened, so that error is tolerated. */
   private async openZaiTab(): Promise<BrowserPage> {
     try {
-      await this.tools.call("new_page", { url: ownedTabUrl(ZAI_ORIGIN, "zai") });
+      await this.tools.call("new_page", { url: ownedTabUrl(ZAI_ORIGIN, "zai", this.tools.ownedTabNamespace ? this.tools.ownedTabAccountScope : undefined, this.tools.ownedTabNamespace) });
     } catch { /* presence is verified by the re-list below */ }
     await new Promise(resolve => setTimeout(resolve, this.openWaitMs));
     const pages = parseZaiPages(await this.tools.call("list_pages"));
     if (!pages.length) throw new Error("No ZAI tab open in Mac mini Chrome and auto-open failed");
-    const opened = pages.find(page => isOwnedTabUrl(page.url, "zai")) ?? pickZaiPage(pages);
-    if (isOwnedTabUrl(opened.url, "zai")) await claimOwnedTab(this.tools, "zai", opened.id);
+    const opened = pages.find(page => isOwnedTabUrl(page.url, "zai", this.tools.ownedTabNamespace ? this.tools.ownedTabAccountScope : undefined, this.tools.ownedTabNamespace)) ?? pickZaiPage(pages);
+    if (isOwnedTabUrl(opened.url, "zai", this.tools.ownedTabNamespace ? this.tools.ownedTabAccountScope : undefined, this.tools.ownedTabNamespace)) await claimOwnedTab(this.tools, "zai", opened.id);
     this.ownedTabPath = zaiTabPath(opened.url);
     return opened;
   }
@@ -526,10 +526,25 @@ export class ZaiCdpDriver implements BrowserChatDriver {
     throw new Error("ZAI conversation identity not confirmed; message not sent");
   }
 
+  /** A new AHAP process must hydrate only the currently verified account's
+   * durable draft store before resolving a stable control handle. This exact
+   * read must not depend on an account-wide history listing. */
+  private async readScopedDraft(id: string) {
+    const page = await this.page();
+    const scope = await verifyNewChatAccountScope(this.tools, "zai", page.id);
+    const expected = this.expectedAccountScope ?? this.tools.ownedTabAccountScope;
+    if (expected && scope !== expected) throw new Error("pinned browser account scope mismatch");
+    this.accountScope = scope;
+    await this.drafts.useScope(scope);
+    return this.drafts.get(id);
+  }
+
   async getChat(id: string): Promise<BrowserChat | null> {
     return this.exclusive(async () => {
-      const draft = this.drafts.get(id);
-      if (draft) return this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined);
+      if (id.startsWith("draft:")) {
+        const draft = await this.readScopedDraft(id);
+        return draft ? this.drafts.asChat(draft, draft.remoteId ? this.cache.get(draft.remoteId) : undefined) : null;
+      }
       // Don't return the old cached working=false value: a queued delivery
       // polls this method until the site's square Stop disappears.
       const page = await this.page();
@@ -572,7 +587,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
   /** Full exact-session export for explicit transcript requests only. */
   async getRawConversation(chatId: string): Promise<unknown | null> {
     if (chatId.startsWith("draft:")) {
-      const draft = this.drafts.get(chatId);
+      const draft = await this.readScopedDraft(chatId);
       if (!draft?.remoteId) return null;
       chatId = draft.remoteId;
     }
@@ -617,7 +632,7 @@ export class ZaiCdpDriver implements BrowserChatDriver {
    */
   async getMessages(chatId: string): Promise<SessionMessageView[] | null> {
     if (chatId.startsWith("draft:")) {
-      const draft = this.drafts.get(chatId);
+      const draft = await this.readScopedDraft(chatId);
       if (!draft) return null;
       if (!draft.remoteId) return [];
       chatId = draft.remoteId;

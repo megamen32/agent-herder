@@ -114,6 +114,34 @@ const BROWSER_RUNTIME_CAPS: HarnessRuntimeCapabilities = { autopilotDispatch: "r
 registerHarnessRuntimeCapabilities("chatgpt", BROWSER_RUNTIME_CAPS);
 registerHarnessRuntimeCapabilities("zai", BROWSER_RUNTIME_CAPS);
 registerHarnessRuntimeCapabilities("browser-chat", { ...BROWSER_RUNTIME_CAPS, autopilotEligible: false });
+/** Existing browser ID normalization shared by the adapter and exact canary reads. */
+export function browserChatNativeId(id: string, providerId: string, scopedIds = true): string {
+  if (!scopedIds) return id;
+  const prefix = `${providerId}::`;
+  if (id.startsWith(prefix)) {
+    let nativeId: string;
+    try { nativeId = decodeURIComponent(id.slice(prefix.length)); }
+    catch { throw new Error("Invalid encoded browser session"); }
+    if (!nativeId) throw new Error("Empty native browser session");
+    return nativeId;
+  }
+  // An id carrying another provider's scoped prefix must still be
+  // refused: cross-provider leaks cannot become possible via the
+  // fallback path.
+  if (id.includes("::")) throw new Error("Browser session belongs to another provider");
+  // Accept a raw native id directly: HTTP routes like
+  // /api/sessions/<harness>/<native-id>/<action> and MCP callers do not
+  // know the scoped-id convention. The ZAI driver keys deep-link chats
+  // by a `route:` prefix (its listChats emits id="route:<uuid>"), so a
+  // raw native uuid must be normalized to that form for inventory and
+  // driver lookups to resolve. The ChatGPT driver uses native ids
+  // directly and needs no prefix.
+  if (providerId === "zai" && !id.startsWith("route:") && !id.startsWith("sidebar:") && !id.includes(":")) {
+    return "route:" + id;
+  }
+  return id;
+}
+
 export class BrowserChatAdapter implements HarnessAdapter {
   /** Bounded READ-ONLY re-reads that settle a native receipt after a click.
    * The provider stores the accepted message a moment after the click, so a
@@ -195,30 +223,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
   }
 
   private nativeId(id: string): string {
-    if (!this.scopedIds) return id;
-    const prefix = `${this.provider.id}::`;
-    if (id.startsWith(prefix)) {
-      let nativeId: string;
-      try { nativeId = decodeURIComponent(id.slice(prefix.length)); }
-      catch { throw new Error("Invalid encoded browser session"); }
-      if (!nativeId) throw new Error("Empty native browser session");
-      return nativeId;
-    }
-    // An id carrying another provider's scoped prefix must still be
-    // refused: cross-provider leaks cannot become possible via the
-    // fallback path.
-    if (id.includes("::")) throw new Error("Browser session belongs to another provider");
-    // Accept a raw native id directly: HTTP routes like
-    // /api/sessions/<harness>/<native-id>/<action> and MCP callers do not
-    // know the scoped-id convention. The ZAI driver keys deep-link chats
-    // by a `route:` prefix (its listChats emits id="route:<uuid>"), so a
-    // raw native uuid must be normalized to that form for inventory and
-    // driver lookups to resolve. The ChatGPT driver uses native ids
-    // directly and needs no prefix.
-    if (this.provider.id === "zai" && !id.startsWith("route:") && !id.startsWith("sidebar:") && !id.includes(":")) {
-      return "route:" + id;
-    }
-    return id;
+    return browserChatNativeId(id, this.provider.id, this.scopedIds);
   }
 
   /** Preserve the caller's id form so HTTP identity checks pass whether

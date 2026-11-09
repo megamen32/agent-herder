@@ -5,6 +5,8 @@ import { spawn } from "node:child_process";
  * another Chrome DevTools socket, starts Chrome, or accesses browser secrets.
  */
 export interface ChromePageTools {
+  readonly ownedTabNamespace?: string;
+  readonly ownedTabAccountScope?: string;
   call(name: string, args?: Record<string, unknown>): Promise<string>;
 }
 

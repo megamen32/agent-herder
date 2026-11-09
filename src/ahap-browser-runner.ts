@@ -2,18 +2,21 @@ import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, Ah
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
-import { BrowserChatAdapter } from "./adapters/browser-chat.js";
-import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
-import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
-import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
+import { BrowserChatAdapter, browserChatNativeId } from "./adapters/browser-chat.js";
+import { ChatGptMacCdpDriver, CHATGPT_MAC_SNAPSHOT, parseChatGptPages } from "./adapters/chatgpt-mac-cdp-driver.js";
+import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages } from "./adapters/zai-cdp-driver.js";
+import { claimOwnedTab, isOwnedTabUrl, OWNED_TAB_QUERY, ownedTabProbeScript, ownedTabUrl, resolveOwnedTab } from "./adapters/browser-owned-tab.js";
+import { verifyNewChatAccountScope } from "./adapters/browser-chat-new-page.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
-import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
+import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
+import { VibeChromeTransport, isVibePageOwnershipRefusal, vibeCreatedPageId, vibeOperationReceipt, vibeOwnershipNamespace, vibeStdioParameters, vibeTextBody, type VibeChromeConfig } from "./adapters/vibe-chrome-transport.js";
+import type { AgentSession, SessionMessageView } from "./types/index.js";
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
+  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; getOwnedPageNamespace?(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; prepareCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryViewReceipt>; getCanaryViewReceipt?(): unknown; closeCanaryObservation?(): Promise<{ page_id?: number; closed: boolean }>; readCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryObservation>; close?(): void | Promise<void> };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -44,6 +47,13 @@ const INIT_REASONS = new Map<string, string>([
   ["direct_cdp_evaluate_no_value", "evaluation_invalid"],
   ["direct_cdp_target_context_mismatch", "target_context_mismatch"],
   ["Chrome MCP response exceeds bound", "response_too_large"],
+  ["vibe_mcp_connection_failed", "transport_disconnected"],
+  ["vibe_mcp_closed", "transport_disconnected"],
+  ["vibe_mcp_outcome_unknown", "transport_outcome_unknown"],
+  ["vibe_tool_refused", "transport_refused"],
+  ["vibe_operation_pending", "transport_pending"],
+  ["vibe_evaluation_pending", "transport_pending"],
+  ["vibe_evaluation_invalid", "evaluation_invalid"],
 ]);
 
 type SendDiagnostic = { stage: "preclick" | "account_check" | "transport" | "native_admission" | "readback" | "send"; reason: string };
@@ -73,6 +83,9 @@ for (const prefix of ["ChatGPT submission outcome unknown: ", "ZAI submission ou
 }
 SEND_REASONS.set("Message submitted but unique native message receipt unavailable; read history before any retry",
   { stage: "native_admission", reason: "native_admission_unknown" });
+SEND_REASONS.set("vibe_mcp_outcome_unknown", { stage: "transport", reason: "native_admission_unknown" });
+SEND_REASONS.set("vibe_operation_pending", { stage: "transport", reason: "native_admission_unknown" });
+SEND_REASONS.set("vibe_evaluation_pending", { stage: "transport", reason: "native_admission_unknown" });
 for (const prefix of ["ChatGPT history unavailable: ", "Z.ai history unavailable: "]) {
   for (const suffix of ["read_cooldown", "history_http_429", "auth_http_401", "account_unavailable", "unexpected response"]) {
     SEND_REASONS.set(prefix + suffix, { stage: "readback", reason: "read_failed" });
@@ -81,7 +94,12 @@ for (const prefix of ["ChatGPT history unavailable: ", "Z.ai history unavailable
 function sendFailureContext(cause: unknown) {
   const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : undefined;
   const diagnostic = typeof message === "string" && message.length <= 1024 ? SEND_REASONS.get(message) : undefined;
-  return { ...adapterFailureContext("sendMessage", true), ...(diagnostic ?? { stage: "send", reason: "unknown" }) };
+  return { ...adapterFailureContext("sendMessage", true), ...(diagnostic ?? { stage: "send", reason: "unknown" }), ...transportReceiptContext(cause) };
+}
+
+function transportReceiptContext(cause: unknown) {
+  const receipt = vibeOperationReceipt(cause);
+  return receipt ? { transport_receipt: receipt } : {};
 }
 
 
@@ -226,6 +244,7 @@ export async function serveBrowserChatAhap(
         error(id, -32000, "Browser adapter initialization failed", {
           ...adapterFailureContext("init", false), stage: initStage,
           reason: cause instanceof Error ? INIT_REASONS.get(cause.message) ?? "unknown" : "unknown",
+          ...transportReceiptContext(cause),
         });
         continue;
       }
@@ -240,7 +259,7 @@ export async function serveBrowserChatAhap(
       const mutation = request.method === "sendMessage" || request.method === "createSession"
         || request.method === "archiveSession" || request.method === "stopTurn" || request.method === "changeModel";
       error(id, -32000, "Browser adapter call failed", request.method === "sendMessage"
-        ? sendFailureContext(cause) : adapterFailureContext(request.method, mutation));
+        ? sendFailureContext(cause) : { ...adapterFailureContext(request.method, mutation), ...transportReceiptContext(cause) });
     }
   }
 }
@@ -257,15 +276,168 @@ function isCreateOptions(value: unknown): value is Parameters<BrowserChatAdapter
   return typeof options.name === "string" && !!options.name.trim()
     && typeof options.cwd === "string" && options.cwd.startsWith("/");
 }
+type OwnedCanaryDom = {
+  origin: string; path: string; url: string; phase: "generating" | "idle" | "unknown";
+  authenticated: boolean; composer: boolean; securityVerification: boolean;
+};
+
+export interface BrowserCanaryViewReceipt {
+  native_session_id: string;
+  native_conversation_id: string;
+  owned_page_id: number;
+  owned_page_namespace: string;
+  source_route: string;
+  creation_receipt: string;
+  navigation_receipt: string;
+  observedAt: string;
+}
+
+export interface BrowserCanaryObservation {
+  /** Completeness is limited to this exact owned current conversation. */
+  complete: true;
+  observedAt: string;
+  session: AgentSession;
+  proof: {
+    capability: "owned-current-conversation";
+    account_scope_sha256: string;
+    native_session_id: string;
+    native_conversation_id: string;
+    owned_page_id: number;
+    owned_page_url: string;
+    owned_page_namespace: string | null;
+    owned_view_receipt?: BrowserCanaryViewReceipt;
+    canonical_status: "running" | "idle";
+    native_messages_receipt: { native_session_id: string; native_conversation_id: string; observedAt: string; window_limit: number; messages: SessionMessageView[] };
+    dom_generation_state_receipt: { observedAt: string; source: "owned-current-dom"; raw: OwnedCanaryDom };
+  };
+}
+
+/** Read only the already selected owned canary. It never navigates or surveys account-wide activity. */
+export async function readBrowserCanaryObservation(options: {
+  harness: "chatgpt" | "zai";
+  nativeSessionId: string;
+  accountScope: string;
+  tools: ChromePageTools;
+  adapter: Pick<BrowserChatAdapter, "getSession" | "getSessionMessages">;
+  verifyAccount(pageId: number): Promise<string | undefined>;
+}): Promise<BrowserCanaryObservation> {
+  const { harness, nativeSessionId, accountScope, tools, adapter } = options;
+  if (!ACCOUNT_SCOPE.test(accountScope) || !nativeSessionId) throw new Error("browser_canary_identity_required");
+  // This is the adapter's existing normalization, including provider isolation.
+  const nativeId = browserChatNativeId(nativeSessionId, harness, true);
+  let routeId = harness === "zai" && nativeId.startsWith("route:") ? nativeId.slice(6) : nativeId;
+  let expectedPath = nativeId.startsWith("draft:") ? undefined : `/c/${routeId}`;
+  const origin = harness === "chatgpt" ? "https://chatgpt.com" : "https://chat.z.ai";
+  const isConversationPath = (path: unknown): path is string => typeof path === "string"
+    && path.startsWith("/c/") && path.length > 3 && !path.slice(3).includes("/");
+  const verifyAccount = async (pageId: number) => {
+    if (await options.verifyAccount(pageId) !== accountScope) throw new Error("browser_canary_account_mismatch");
+  };
+  const ownedPage = async () => {
+    const listing = await tools.call("list_pages");
+    const pages = harness === "chatgpt" ? parseChatGptPages(listing) : parseZaiPages(listing);
+    const page = await resolveOwnedTab(tools, harness, pages, accountScope);
+    if (!page) throw new Error("browser_canary_owned_page_unavailable");
+    return page;
+  };
+  const dom = async (pageId: number): Promise<OwnedCanaryDom> => {
+    const source = harness === "chatgpt" ? CHATGPT_MAC_SNAPSHOT : ZAI_ACTIVITY_SCRIPT;
+    const raw = parseChromeEvaluation<OwnedCanaryDom>(await tools.call("evaluate_script", {
+      pageId, function: `() => { const s=(${source})(); return {
+        origin:s.origin,path:s.path,url:location.href,phase:s.phase,
+        authenticated:${harness === "chatgpt" ? "s.authenticated" : "s.loggedIn"},
+        composer:s.composer,securityVerification:s.securityVerification===true}; }`,
+    }));
+    if (!raw || raw.origin !== origin || !isConversationPath(raw.path) || (expectedPath !== undefined && raw.path !== expectedPath)) throw new Error("browser_canary_current_conversation_mismatch");
+    let url: URL;
+    try { url = new URL(raw.url); } catch { throw new Error("browser_canary_current_url_invalid"); }
+    if (url.origin !== origin || url.pathname !== raw.path || url.username || url.password) throw new Error("browser_canary_current_url_invalid");
+    if (raw.authenticated !== true || raw.composer !== true || raw.securityVerification || !["generating", "idle"].includes(raw.phase)) {
+      throw new Error("browser_canary_dom_state_unverified");
+    }
+    return raw;
+  };
+  const beforePage = await ownedPage();
+  const beforeDom = await dom(beforePage.id); // Refuse a different current conversation before reading its messages.
+  await verifyAccount(beforePage.id);
+  const session = await adapter.getSession(nativeSessionId);
+  if (!session || session.id !== nativeSessionId || session.harness !== harness) throw new Error("browser_canary_native_session_mismatch");
+  if (nativeId.startsWith("draft:")) {
+    // First-message admission binds the stable control handle to sourceRoute.
+    // Keep using that handle; never make the caller replace its session ID.
+    if (session.meta?.pendingRemoteCreation !== false || typeof session.meta.sourceRoute !== "string") throw new Error("browser_canary_native_binding_unverified");
+    let route: URL;
+    try { route = new URL(session.meta.sourceRoute); } catch { throw new Error("browser_canary_native_binding_unverified"); }
+    if (route.origin !== origin || !isConversationPath(route.pathname) || route.username || route.password || route.search || route.hash) throw new Error("browser_canary_native_binding_unverified");
+    expectedPath = route.pathname;
+    routeId = route.pathname.slice(3);
+    if (beforeDom.path !== expectedPath) throw new Error("browser_canary_current_conversation_mismatch");
+  }
+  const messages = await adapter.getSessionMessages(nativeSessionId, 200);
+  if (!Array.isArray(messages) || messages.length >= 200) throw new Error("browser_canary_message_window_unverified");
+  const messagesAt = new Date().toISOString();
+  const afterPage = await ownedPage();
+  if (beforePage.id !== afterPage.id) throw new Error("browser_canary_owned_page_changed");
+  await verifyAccount(afterPage.id);
+  const raw = await dom(afterPage.id);
+  const observedAt = new Date().toISOString();
+  const status = raw.phase === "generating" ? "running" : "idle";
+  return {
+    complete: true, observedAt,
+    // Deliberately replace the inventory's cached/heuristic activity status with
+    // the verified current DOM phase. This is not an account-wide status claim.
+    session: { ...session, status },
+    proof: {
+      capability: "owned-current-conversation", account_scope_sha256: accountScope,
+      native_session_id: nativeSessionId, owned_page_id: afterPage.id, owned_page_url: raw.url,
+      native_conversation_id: routeId,
+      owned_page_namespace: tools.ownedTabNamespace ?? null,
+      canonical_status: status,
+      native_messages_receipt: { native_session_id: nativeSessionId, native_conversation_id: routeId, observedAt: messagesAt, window_limit: 200, messages },
+      dom_generation_state_receipt: { observedAt, source: "owned-current-dom", raw },
+    },
+  };
+}
+
 export interface BrowserChatRunnerTransportFactories {
   directCdp(config: DirectCdpConfig): ChromePageTools;
   macMini(): ChromePageTools;
+  vibe?(config: VibeChromeConfig): ChromePageTools;
 }
 
 const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
   directCdp: config => new DirectCdpPageTools(config),
   macMini: () => new MacMiniChromeTransport(),
+  vibe: config => new VibeChromeTransport(config),
 };
+
+/** Restrict every driver branch to this exact Vibe binding. Known foreign URL
+ * markers are excluded without scripting. After SPA navigation, only the
+ * window.name equality boolean is read, never account data or chat history. */
+export async function filterVibeOwnedPages(
+  tools: ChromePageTools, listing: string, harness: "chatgpt" | "zai", accountScope: string, namespace: string,
+): Promise<string> {
+  const keep: string[] = [];
+  for (const line of listing.split("\n")) {
+    const page = (harness === "chatgpt" ? parseChatGptPages(line) : parseZaiPages(line))[0];
+    if (!page) continue;
+    const url = new URL(page.url);
+    if (url.searchParams.has(OWNED_TAB_QUERY)) {
+      if (!isOwnedTabUrl(page.url, harness, accountScope, namespace)) continue;
+    }
+    if (url.pathname !== "/" && !/^\/c\/[^/]+$/u.test(url.pathname)) continue;
+    try {
+      const probe = parseChromeEvaluation<{ owned: boolean }>(await tools.call("evaluate_script", {
+        pageId: page.id, function: ownedTabProbeScript(harness, accountScope, namespace),
+      }));
+      if (typeof probe?.owned !== "boolean") throw new Error("owned_tab_probe_invalid");
+      if (probe.owned) keep.push(line);
+    } catch (error) {
+      if (!isVibePageOwnershipRefusal(error, page.id)) throw error;
+    }
+  }
+  return keep.join("\n");
+}
 
 
 export function makeConfiguredAdapter(
@@ -275,8 +447,8 @@ export function makeConfiguredAdapter(
   const harness = env.AHAP_HARNESS?.trim();
   if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
   const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
-  if (transport !== "direct-cdp" && transport !== "mac-mini") {
-    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini");
+  if (transport !== "direct-cdp" && transport !== "mac-mini" && transport !== "vibe") {
+    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini or vibe");
   }
   // The page number is only a first-use hint. The driver owns exactly one
   // tab per provider and finds it by its own marker, so a gateway restart or
@@ -289,8 +461,24 @@ export function makeConfiguredAdapter(
   }
 
   let selectedTransport: ChromePageTools;
+  let ownedPageNamespace: string | undefined;
   if (transport === "mac-mini") {
     selectedTransport = factories.macMini();
+  } else if (transport === "vibe") {
+    const target = env.AHAP_BROWSER_VIBE_TARGET?.trim();
+    const sessionId = env.AHAP_BROWSER_VIBE_SESSION_ID?.trim();
+    if (!target || !sessionId) throw new Error("Exact Vibe target and browser session are required");
+    const rawPort = env.AHAP_BROWSER_VIBE_RELAY_PORT?.trim();
+    if (rawPort && !/^[0-9]+$/u.test(rawPort)) throw new Error("vibe_invalid_relay_port");
+    const relayStateDir = env.AHAP_BROWSER_VIBE_STATE_DIR?.trim();
+    const config: VibeChromeConfig = { target, sessionId,
+      ...(rawPort ? { relayPort: Number(rawPort) } : {}),
+      ...(relayStateDir ? { relayStateDir } : {}),
+    };
+    vibeStdioParameters(config);
+    ownedPageNamespace = vibeOwnershipNamespace(config);
+    if (!factories.vibe) throw new Error("vibe_transport_factory_unavailable");
+    selectedTransport = factories.vibe(config);
   } else {
     const endpoint = (env.AHAP_BROWSER_CDP_WS_URL ?? env.AHAP_CHATGPT_CDP_WS_URL)?.trim();
     const contextId = (env.AHAP_BROWSER_CDP_CONTEXT_ID ?? env.AHAP_CHATGPT_CDP_CONTEXT_ID)?.trim();
@@ -302,15 +490,24 @@ export function makeConfiguredAdapter(
   }
   // The driver owns exactly one tab per provider and finds it by its own
   // marker, so a gateway restart or a closed tab never breaks the route.
+  let canaryView: { control: string; pageId: number; creation: string; receipt?: BrowserCanaryViewReceipt;
+    status?: "idle" | "running"; closeAttempted?: boolean; closed?: boolean } | undefined;
   const pageTools: ChromePageTools = {
+    ...(ownedPageNamespace ? { ownedTabNamespace: ownedPageNamespace, ownedTabAccountScope: expectedScope } : {}),
     async call(name, args = {}) {
+      if (ownedPageNamespace && name === "new_page") return (await openOwnedVibePage(args)).receipt;
       const result = await selectedTransport.call(name, args);
       if (name !== "list_pages") return result;
       const origin = harness === "chatgpt" ? "chatgpt\\.com" : "chat\\.z\\.ai";
       const exactPagePattern = new RegExp(`^\\s*${pageId}\\s*:.*?\\(https://${origin}(?:/[^)]*)?\\)`);
       const originPattern = new RegExp(`\(https://${origin}(?:/[^)]*)?\)`);
-      const candidates = result.split("\n").filter(line => originPattern.test(line));
+      let candidates = result.split("\n").filter(line => originPattern.test(line));
+      if (canaryView && !canaryView.closed) {
+        candidates = candidates.filter(line => new RegExp(`^\\s*${canaryView!.pageId}\\s*:`).test(line));
+        if (!candidates.length) throw new Error("browser_canary_prepared_page_unavailable");
+      }
       if (!candidates.length) return "";
+      if (ownedPageNamespace) return filterVibeOwnedPages(selectedTransport, candidates.join("\n"), harness, expectedScope, ownedPageNamespace);
       // The driver owns exactly one tab per provider and finds it by its own
       // marker. Hiding the other tabs of the same site here would make that
       // ownership unverifiable, so the marked tab comes first and the rest
@@ -320,24 +517,104 @@ export function makeConfiguredAdapter(
       return [...marked, ...rest].join("\n");
     },
   };
+  const openOwnedVibePage = async (args: Record<string, unknown>, onCreated?: (pageId: number, receipt: string) => void) => {
+    if (!ownedPageNamespace || typeof args.url !== "string"
+      || !isOwnedTabUrl(args.url, harness, expectedScope, ownedPageNamespace)) throw new Error("browser_canary_owned_creation_required");
+    const origin = harness === "chatgpt" ? "https://chatgpt.com" : "https://chat.z.ai";
+    if (new URL(args.url).origin !== origin) throw new Error("browser_canary_owned_creation_required");
+    const receipt = await selectedTransport.call("new_page", args);
+    const pageId = vibeCreatedPageId(receipt);
+    onCreated?.(pageId, receipt);
+    const actual = parseChromeEvaluation<{ origin: string }>(await selectedTransport.call("evaluate_script", {
+      pageId, function: "() => ({origin:location.origin})",
+    }));
+    if (actual?.origin !== origin) throw new Error("browser_canary_owned_creation_origin_mismatch");
+    // Claim the native returned ID before re-listing. A site's SPA can remove
+    // the URL query during load, before list_pages can see our marker.
+    await claimOwnedTab(pageTools, harness, pageId, expectedScope);
+    return { pageId, receipt };
+  };
   const driver = harness === "chatgpt"
     ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope)
     : new ZaiCdpDriver(pageTools, undefined, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
   const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
   let verifiedAccountScope: string | undefined;
+  const verifyPinnedAccountScope = async () => {
+    verifiedAccountScope = undefined;
+    if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
+    else {
+      await (driver as ZaiCdpDriver).verifyPinnedAccountScope(expectedScope);
+      verifiedAccountScope = driver.getAccountScope();
+    }
+  };
+  const sendMessage = adapter.sendMessage.bind(adapter);
   return Object.assign(adapter, {
-    getAccountScope: () => driver.getAccountScope?.() ?? verifiedAccountScope,
-    verifyPinnedAccountScope: async () => {
-      verifiedAccountScope = undefined;
-      if (harness === "chatgpt") await (driver as ChatGptMacCdpDriver).verifyPinnedAccountScope();
-      else {
-        await (driver as ZaiCdpDriver).verifyPinnedAccountScope(expectedScope);
-        verifiedAccountScope = driver.getAccountScope();
-      }
+    sendMessage: (...args: Parameters<BrowserChatAdapter["sendMessage"]>) => {
+      // A previous idle read cannot authorize closing a view after a new send,
+      // including a dispatch whose outcome is unknown.
+      if (canaryView) canaryView.status = undefined;
+      return sendMessage(...args);
     },
-    close: () => {
-      if ("close" in selectedTransport && typeof selectedTransport.close === "function") selectedTransport.close();
+    getAccountScope: () => driver.getAccountScope?.() ?? verifiedAccountScope,
+    getOwnedPageNamespace: () => ownedPageNamespace,
+    verifyPinnedAccountScope,
+    prepareCanaryObservation: async (nativeSessionId: string): Promise<BrowserCanaryViewReceipt> => {
+      if (!ownedPageNamespace) throw new Error("browser_canary_vibe_view_required");
+      browserChatNativeId(nativeSessionId, harness, true); // Reject foreign handles before effects.
+      if (canaryView) {
+        if (canaryView.control === nativeSessionId && canaryView.receipt && !canaryView.closed) return canaryView.receipt;
+        throw new Error("browser_canary_view_already_prepared");
+      }
+      const origin = harness === "chatgpt" ? "https://chatgpt.com" : "https://chat.z.ai";
+      const created = await openOwnedVibePage({ url: ownedTabUrl(origin, harness, expectedScope, ownedPageNamespace), background: true },
+        (pageId, creation) => { canaryView = { control: nativeSessionId, pageId, creation }; });
+      if (await verifyNewChatAccountScope(pageTools, harness, created.pageId) !== expectedScope) throw new Error("browser_canary_account_mismatch");
+      const session = await adapter.getSession(nativeSessionId);
+      if (!session || session.id !== nativeSessionId || session.harness !== harness || session.meta?.pendingRemoteCreation !== false
+        || typeof session.meta.sourceRoute !== "string") throw new Error("browser_canary_native_binding_unverified");
+      let route: URL;
+      try { route = new URL(session.meta.sourceRoute); } catch { throw new Error("browser_canary_native_binding_unverified"); }
+      if (route.origin !== origin || !route.pathname.startsWith("/c/") || route.pathname.length <= 3 || route.pathname.slice(3).includes("/")
+        || route.username || route.password || route.search || route.hash) throw new Error("browser_canary_native_binding_unverified");
+      const navigation = await selectedTransport.call("navigate_page", { pageId: created.pageId, type: "url", url: route.href });
+      await claimOwnedTab(pageTools, harness, created.pageId, expectedScope);
+      if (await verifyNewChatAccountScope(pageTools, harness, created.pageId) !== expectedScope) throw new Error("browser_canary_account_mismatch");
+      const receipt: BrowserCanaryViewReceipt = { native_session_id: nativeSessionId, native_conversation_id: route.pathname.slice(3),
+        owned_page_id: created.pageId, owned_page_namespace: ownedPageNamespace, source_route: route.href,
+        creation_receipt: created.receipt, navigation_receipt: vibeTextBody(navigation), observedAt: new Date().toISOString() };
+      canaryView = { control: nativeSessionId, pageId: created.pageId, creation: created.receipt, receipt };
+      return receipt;
+    },
+    getCanaryViewReceipt: () => canaryView ? { ...canaryView } : undefined,
+    closeCanaryObservation: async () => {
+      if (!canaryView) return { closed: true };
+      const view = canaryView;
+      if (view.closed) return { page_id: view.pageId, closed: true };
+      if (view.receipt && view.status !== "idle") throw new Error("browser_canary_view_not_terminal");
+      if (!view.closeAttempted) {
+        view.closeAttempted = true;
+        try { await selectedTransport.call("close_page", { pageId: view.pageId }); } catch { /* Reconcile without another close dispatch. */ }
+      }
+      const pages = await selectedTransport.call("list_pages");
+      if (pages.split("\n").some(line => new RegExp(`^\\s*${view.pageId}\\s*:`).test(line))) throw new Error("browser_canary_view_close_unconfirmed");
+      view.closed = true;
+      return { page_id: view.pageId, closed: true };
+    },
+    readCanaryObservation: async (nativeSessionId: string) => {
+      const observed = await readBrowserCanaryObservation({
+        harness, nativeSessionId, accountScope: expectedScope, tools: pageTools, adapter,
+        verifyAccount: pageId => verifyNewChatAccountScope(pageTools, harness, pageId),
+      });
+      if (canaryView?.control === nativeSessionId && canaryView.receipt) {
+        observed.proof.owned_view_receipt = canaryView.receipt;
+        canaryView.status = observed.session.status === "idle" ? "idle" : "running";
+      }
+      return observed;
+    },
+    close: async () => {
+      if (driver instanceof ChatGptMacCdpDriver) driver.stopPromptPolling();
+      if ("close" in selectedTransport && typeof selectedTransport.close === "function") await selectedTransport.close();
     },
   });
 }

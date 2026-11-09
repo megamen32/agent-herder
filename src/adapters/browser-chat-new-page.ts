@@ -25,12 +25,25 @@ export const CHATGPT_CREATE_SCOPE_SCRIPT = `async () => {
   }finally{clearTimeout(timer)}
 }`;
 
+export const ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT = `async () => {
+  if(location.origin!=="https://chat.z.ai")return {error:"wrong_origin"};
+  const abort=new AbortController();const timer=setTimeout(()=>abort.abort(),10000);
+  try{
+    const response=await fetch('/api/v1/auths/',{credentials:'same-origin',cache:'no-store',signal:abort.signal});
+    if(!response.ok)return {error:'auth_http_'+response.status};
+    const user=await response.json();
+    if(typeof user.id!=='string'||!user.id)return {error:'account_unavailable'};
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(user.id));
+    return {scope:[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+  }finally{clearTimeout(timer)}
+}`;
+
 export async function verifyNewChatAccountScope(
   tools:ChromePageTools,site:BrowserChatSite,pageId:number,
 ):Promise<string> {
   const data=parseChromeEvaluation<{scope?:string;error?:string}>(
     await tools.call('evaluate_script',{pageId,function:
-      site==='chatgpt'?CHATGPT_CREATE_SCOPE_SCRIPT:ZAI_LIST_API_SCRIPT}));
+      site==='chatgpt'?CHATGPT_CREATE_SCOPE_SCRIPT:ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT}));
   if(typeof data.scope!=='string'||!/^[a-f0-9]{64}$/.test(data.scope))
     throw new Error(site+' account verification unavailable: '+(data.error||'unverified'));
   return data.scope;
@@ -103,12 +116,14 @@ export async function openOwnedBlankChatPage(
   tools:ChromePageTools,site:BrowserChatSite,scope?:string,onCreated?:(pageId:number)=>void,
 ):Promise<number> {
   const origin=SITE_ORIGIN[site];
+  const namespace=tools.ownedTabNamespace;
+  scope ??= namespace ? tools.ownedTabAccountScope : undefined;
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
   // One tab per provider: the marked tab that the driver already owns is
   // reused, so a first message never opens a second tab.
   const listing=pages(await tools.call("list_pages"));
-  let owned=listing.find(p=>isOwnedTabUrl(p.url,site,scope));
-  if (!owned && scope) {
+  let owned=listing.find(p=>isOwnedTabUrl(p.url,site,scope,namespace));
+  if (!owned && scope && !namespace) {
     for (const page of listing.filter(p=>isOwnedTabUrl(p.url,site))) {
       if (await verifyNewChatAccountScope(tools,site,page.id).catch(()=>undefined) !== scope) continue;
       await claimOwnedTab(tools,site,page.id,scope);
@@ -173,7 +188,7 @@ export async function openOwnedBlankChatPage(
     throw new Error(site+" owned tab could not be returned to a blank chat; no message submitted");
   }
   void before;
-  try { await tools.call("new_page",{url:ownedTabUrl(origin,site,scope),background:true,timeout:12_000}); }
+  try { await tools.call("new_page",{url:ownedTabUrl(origin,site,scope,namespace),background:true,timeout:12_000}); }
   catch { /* require new unique page in authoritative list instead */ }
   const now=pages(await tools.call("list_pages"));
   const created=now.filter(p=>!before.has(p.id)&&new URL(p.url).origin===origin);
