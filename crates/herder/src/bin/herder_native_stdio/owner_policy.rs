@@ -3,21 +3,9 @@
 //! using this read-only resolver. A receipt is evidence, never itself a grant.
 use herder::domain::address::{InstanceRef, SessionRef};
 use rusqlite::{Connection, params};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CreateReceipt {
-    version: u8,
-    request_key: String,
-    instance: InstanceRef,
-    native_session_id: String,
-    session_ref: String,
-    parent_ref: Option<String>,
-}
-
-/// True only for one consistent, atomically recorded fresh root belonging to
-/// this principal and instance under the currently pinned authority generation.
+/// True only for one consistent native-create or native-registration proof.
+/// Both paths retain the pinned authority, exact principal, immutable mapping
+/// and sealed HumanStop checks; registration is not a native-create claim.
 pub fn is_member(
     db: &Connection,
     principal: &str,
@@ -25,62 +13,9 @@ pub fn is_member(
     generation: &str,
     session: &SessionRef,
 ) -> rusqlite::Result<bool> {
-    if [
-        principal,
-        generation,
-        &session.0,
-        &instance.node.0,
-        &instance.instance_id,
-    ]
-    .iter()
-    .any(|s| s.is_empty() || s.len() > 4096 || s.chars().any(char::is_control))
-    {
-        return Ok(false);
-    }
-    let target = serde_json::to_string(instance).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    let mut stmt=db.prepare("SELECT i.request_key,i.native_receipt,b.native_session_id FROM intents i JOIN session_bindings b ON b.session_ref=?4 JOIN humanstop_sessions h ON h.session_ref=b.session_ref JOIN lineage l ON l.session_ref=b.session_ref JOIN humanstop_authority a ON a.singleton=1 WHERE i.principal=?1 AND i.target=?2 AND i.state IN ('admitted','confirmed') AND i.payload_hash LIKE 'create-v1:%' AND i.native_receipt IS NOT NULL AND b.node_ref=?5 AND b.instance_id=?6 AND h.authority_generation=?3 AND a.generation=?3 AND l.creator_ref=?1 AND l.parent_ref IS NULL AND EXISTS(SELECT 1 FROM humanstop_scopes x WHERE x.session_ref=b.session_ref AND x.scope_ref='global') AND EXISTS(SELECT 1 FROM humanstop_scopes x WHERE x.session_ref=b.session_ref AND x.scope_ref='session:'||b.session_ref)")?;
-    let rows = stmt.query_map(
-        params![
-            principal,
-            target,
-            generation,
-            session.0,
-            instance.node.0,
-            instance.instance_id
-        ],
-        |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        },
-    )?;
-    let mut matches = 0;
-    for row in rows {
-        let (key, raw, native) = row?;
-        if raw.len() > 65536 {
-            continue;
-        }
-        let Ok(receipt) = serde_json::from_str::<CreateReceipt>(&raw) else {
-            continue;
-        };
-        if receipt.version == 1
-            && receipt.request_key == key
-            && !key.is_empty()
-            && receipt.instance == *instance
-            && receipt.native_session_id == native
-            && !native.is_empty()
-            && receipt.session_ref == session.0
-            && receipt.parent_ref.is_none()
-        {
-            matches += 1;
-            if matches > 1 {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(matches == 1)
+    herder::application::scoped_stop::registration::is_owned_session(
+        db, principal, instance, generation, session,
+    )
 }
 
 /// This policy is constructed only by the explicit trusted-owner launcher.
@@ -88,11 +23,20 @@ pub fn is_member(
 pub struct OwnerPolicy {
     pub principal: herder::auth::identity::PrincipalId,
     pub instance: InstanceRef,
+    /// Provider selected by the protected owner profile. A registration proof
+    /// cannot follow an instance name that has been repointed to another harness.
+    pub harness: String,
     pub generation: String,
     pub db: std::path::PathBuf,
     pub gate: std::path::PathBuf,
 }
 impl OwnerPolicy {
+    pub fn is_member(&self, db: &Connection, session: &SessionRef) -> rusqlite::Result<bool> {
+        herder::application::scoped_stop::registration::is_owned_session_for_harness(
+            db, &self.principal.0, &self.instance, &self.generation, session, &self.harness,
+        )
+    }
+
     fn grant(
         &self,
         principal: &herder::auth::identity::PrincipalId,
@@ -125,8 +69,7 @@ impl OwnerPolicy {
             .map_err(|_| ())?;
         c.execute_batch("BEGIN").map_err(|_| ())?;
         let bound:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM humanstop_authority WHERE singleton=1 AND generation=?1 AND gate_device=?2 AND gate_inode=?3 AND database_device=?4 AND database_inode=?5)",params![self.generation,i64::try_from(gm.dev()).map_err(|_|())?,i64::try_from(gm.ino()).map_err(|_|())?,i64::try_from(dbm.dev()).map_err(|_|())?,i64::try_from(dbm.ino()).map_err(|_|())?],|r|r.get(0)).map_err(|_|())?;
-        let matches = bound
-            && is_member(&c, &principal.0, instance, &self.generation, session).map_err(|_| ())?;
+        let matches = bound && self.is_member(&c, session).map_err(|_| ())?;
         let named = std::fs::symlink_metadata(&self.db).map_err(|_| ())?;
         let gate_now = std::fs::symlink_metadata(&self.gate).map_err(|_| ())?;
         if !named.is_file()
@@ -215,5 +158,32 @@ mod tests {
         c.execute("INSERT INTO intents SELECT * FROM intents", [])
             .unwrap();
         assert!(!is_member(&c, "owner", &i, "g", &s).unwrap());
+    }
+
+    #[test]
+    fn registration_membership_does_not_follow_a_reconfigured_harness() {
+        use sha2::{Digest, Sha256};
+        let (c, instance, session) = setup();
+        let workspace: Option<herder::mcp::catalog::SessionWorkspace> = None;
+        let payload = serde_json::to_vec(&(1u8, &instance, "chatgpt", "native", &workspace)).unwrap();
+        let hash: String = Sha256::digest(payload).iter().map(|b| format!("{b:02x}")).collect();
+        let proof = serde_json::json!({
+            "version":1,"request_key":"k","instance":instance,
+            "native_session_id":"native","session_ref":session.0,
+            "harness":"chatgpt","authority_generation":"g","workspace":null
+        });
+        c.execute("UPDATE intents SET payload_hash=?1,native_receipt=?2",
+            params![format!("register-v1:{hash}"),proof.to_string()]).unwrap();
+        for (harness, expected) in [("chatgpt", true), ("zai", false), ("codex", false)] {
+            let policy = OwnerPolicy {
+                principal: herder::auth::identity::PrincipalId("owner".into()),
+                instance: instance.clone(),
+                harness: harness.into(),
+                generation: "g".into(),
+                db: std::path::PathBuf::new(),
+                gate: std::path::PathBuf::new(),
+            };
+            assert_eq!(policy.is_member(&c, &session).unwrap(), expected);
+        }
     }
 }

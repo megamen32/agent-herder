@@ -7,6 +7,7 @@ use herder::{
     },
     application::scoped_stop::{
         ScopedAuthority,
+        automation::ScopedAutomationApplication,
         create_prompt::FreshSessionGrantPolicy,
         mcp_create::ScopedCreateApplication,
         mcp_deliver::ScopedDeliverApplication,
@@ -38,6 +39,7 @@ impl ScopedMessageReader for Messages {
     }
 }
 struct App {
+    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     harness: String,
     grants: Vec<Grant>,
@@ -45,6 +47,7 @@ struct App {
     adapter: Arc<AhapOpenCode>,
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
+    automation: Arc<dyn ApplicationPort>,
 }
 impl ApplicationPort for App {
     fn call<'a>(
@@ -72,6 +75,10 @@ impl ApplicationPort for App {
                 };
                 return Some(rmcp::model::CallToolResult::structured(value));
             }
+            if let Some(result) = super::owner_registration::call(identity, &request,
+                &self.adapter, &self.policy, &self.instance, &self.authority, &self.grants) {
+                return Some(result);
+            }
             if let Some(result) = super::owner_reads::call(identity, &request,
                 &self.adapter, &self.policy, &self.instance).await {
                 return Some(result);
@@ -82,8 +89,11 @@ impl ApplicationPort for App {
             if matches!(&request, catalog::Request::Deliver(_)) {
                 return self.deliver.call(identity, request).await;
             }
+            if matches!(&request, catalog::Request::Automation(_)) {
+                return self.automation.call(identity, request).await;
+            }
             let session = match &request {
-                catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
+                catalog::Request::Session(catalog::Session::Messages { session_ref, .. } | catalog::Session::Archive { session_ref, .. })
                 | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
                 | catalog::Request::Deliver(catalog::Deliver::Session { session_ref, .. }) => {
                     SessionRef(session_ref.clone())
@@ -124,6 +134,18 @@ impl ApplicationPort for App {
                 )
             };
             match &request {
+                catalog::Request::Session(catalog::Session::Archive { session_ref, request_key }) => {
+                    let supported = self.adapter.capabilities().get("methods").and_then(serde_json::Value::as_array)
+                        .is_some_and(|m|m.iter().any(|v|v.as_str()==Some("archiveSession")));
+                    if !supported { return Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"unsupported_archive","effect":"none"}))); }
+                    let result = authority().and_then(|a| a.archive_session(identity,&grants,&SessionRef(session_ref.clone()),&self.instance,request_key,
+                        |id|self.adapter.raw_call("archiveSession",serde_json::json!({"id":id})).map_err(|_|())));
+                    Some(match result {
+                        Ok(value) if value.get("archived")==Some(&serde_json::Value::Bool(true)) => rmcp::model::CallToolResult::structured(value),
+                        Ok(value) => rmcp::model::CallToolResult::structured_error(value),
+                        Err(_) => rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"archive_unavailable","effect":"unknown"})),
+                    })
+                },
                 catalog::Request::Session(_) => match authority() {
                     Ok(a) => {
                         ScopedReadApplication::new(
@@ -150,7 +172,18 @@ impl ApplicationPort for App {
         })
     }
 }
+pub struct BoundOwner {
+    pub server: ScopedTaskServer,
+    pub policy: Arc<OwnerPolicy>,
+    pub instance: InstanceRef,
+}
+
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
+    build(opened)?.server.serve(rmcp::transport::stdio()).await?.waiting().await?;
+    Ok(())
+}
+
+pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Error>> {
     let instance = InstanceRef {
         node: NodeRef(opened.owner.node.clone()),
         instance_id: opened.owner.instance.clone(),
@@ -230,6 +263,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     let policy = Arc::new(OwnerPolicy {
         principal,
         instance: instance.clone(),
+        harness: harness.clone(),
         generation: opened.generation,
         db: opened.database,
         gate: opened.gate,
@@ -257,23 +291,27 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
             .with_delivery_mode(delivery_mode).map_err(|_| "unsupported delivery mode")?
             .with_policy(policy.clone()),
     );
+    let automation = Arc::new(ScopedAutomationApplication::new(
+        authority.clone(), instance.clone(), grants.clone(), policy.clone(),
+        adapter.clone(), deliver.clone(), match delivery_mode {
+            SendMode::Queue => catalog::DeliveryMode::Queue,
+            _ => catalog::DeliveryMode::Start,
+        },
+    ));
     let app = Arc::new(App {
-        instance,
+        authority: authority.clone(),
+        instance: instance.clone(),
         harness,
         grants: grants.clone(),
         policy: policy.clone(),
         adapter: adapter.clone(),
         create,
         deliver,
+        automation,
     });
     let reconciler = Arc::new(ScopedReceiptReconciler::new(authority.clone(), adapter));
     let server = ScopedTaskServer::new(identity, grants, authority, app)
-        .with_create_policy(policy)
+        .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
-    server
-        .serve(rmcp::transport::stdio())
-        .await?
-        .waiting()
-        .await?;
-    Ok(())
+    Ok(BoundOwner { server, policy, instance })
 }

@@ -312,7 +312,15 @@ mod tests {
                     .unwrap()
                     .as_nanos()
             ));
-            fs::create_dir_all(&root).unwrap();
+            // The offline CLI requires an owner-controlled authority root.
+            // Do not let a group-writable test-runner umask invalidate it.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+            }
+            #[cfg(not(unix))]
+            fs::create_dir(&root).unwrap();
             let root = fs::canonicalize(root).unwrap();
             let authority = StorageAuthority {
                 storage_id: StorageId("workspace-test-storage".into()),

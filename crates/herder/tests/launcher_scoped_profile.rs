@@ -730,12 +730,13 @@ fn trusted_owner_profiles_bind_all_v1_types_to_legacy_runners() {
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     for kind in ["opencode", "codex", "zcode", "chatgpt", "zai"] {
         let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
             "kind":kind,"principal":"owner","node":"node","instance":format!("{kind}-one"),
             "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
             "ahap_base_url":if kind=="opencode" {Some("http://127.0.0.1:3456")}else{None},
-            "ahap_env":if kind=="zcode" {serde_json::json!({"AHAP_ZCODE_TRANSPORT":"official-server"})} else {serde_json::json!({})},"code_home":f.root,"cwd":f.root}});
+            "ahap_env":match kind { "zcode" => serde_json::json!({"AHAP_ZCODE_TRANSPORT":"official-server"}), "codex" => serde_json::json!({"AHAP_CODEX_MODEL":"gpt-6-luna"}), "opencode" => serde_json::json!({"AHAP_OPENCODE_MODEL":"minimax-coding-plan/MiniMax-M3.1-Flash"}), _ => serde_json::json!({}) },"code_home":f.root,"cwd":f.root}});
         fs::write(&f.profile, profile.to_string()).unwrap();
         let opened = scoped_profile::open_owner(&f.profile);
         assert!(opened.is_ok(), "{kind} must accept its trusted TypeScript runner");
@@ -747,6 +748,7 @@ fn trusted_owner_runner_rejects_process_injection_and_cross_family_environment()
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     for name in ["NODE_OPTIONS", "LD_PRELOAD", "HOME", "AHAP_HARNESS", "AHAP_BROWSER_PAGE_ID"] {
         let profile=serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
             "kind":"opencode","principal":"owner","node":"node","instance":"one",
@@ -762,6 +764,7 @@ fn trusted_owner_codex_profile_accepts_only_exact_isolation_off() {
     let f = Fixture::new();
     let script = f.root.join("runner.js");
     fs::write(&script, "// trusted thin adapter runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     let executable = fs::canonicalize("/usr/bin/python3").unwrap();
     let write_profile = |env: serde_json::Value, kind: &str| {
         let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
@@ -810,7 +813,7 @@ def messages():
  return json.load(open(events)) if os.path.exists(events) else []
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
- if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','getRawTranscript','listSessions'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
+ if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','getRawTranscript','listSessions','archiveSession'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
  elif m=='init':v=None
  elif m=='createSession':v={'id':'sesABC','harness':harness}
  elif m=='getSession':v={'id':'sesABC','harness':harness,'status':'idle','cwd':home}
@@ -823,10 +826,15 @@ for line in sys.stdin:
   v={'ok':True,'admitted':True,'nativeInputMessageId':mid,'inputId':p['options']['inputId']}
   if p['options']['message']=='unknownmarker':v={'ok':True,'admitted':True}
  elif m=='getSessionMessages':v=messages()
+ elif m=='archiveSession':
+  assert p['id']=='sesABC'
+  with open(os.path.join(home,'archived'),'a') as out:out.write('1')
+  v={'ok':True,'sessionId':p['id']}
  elif m=='getRawTranscript':v={'bytes_base64':base64.b64encode(json.dumps(messages()).encode()).decode(),'complete':True,'source':{'kind':'native-api','location':'fixture-session','format':'json'},'timestampCoverage':'none'}
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     let profile = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"kind":kind,"principal":"owner","node":"node","instance":"opencode-fixture","executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,"ahap_base_url":if kind=="opencode" {Some("http://127.0.0.1:3456")} else {None},"code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, profile.to_string()).unwrap();
     let mut child = Command::new(&binary)
@@ -947,6 +955,13 @@ for line in sys.stdin:
         after_read["result"]["structuredContent"]["page"]["messages"][0]["text"], "ahap prompt",
         "{after_read}"
     );
+    // Archived test conversations preserve messages and receipts; repeating the
+    // exact archive key reads the core receipt instead of a second native call.
+    for archive_id in [201,202] {
+        let archived=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":archive_id,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"archive","session_ref":session_owned,"request_key":"cleanup-once"}}}));
+        assert_eq!(archived["result"]["structuredContent"]["archived"],true,"{archived}");
+    }
+    assert_eq!(fs::read_to_string(f.root.join("archived")).unwrap(),"1");
     let unresolved=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":103,"method":"tasks/get","params":{"_meta":meta,"taskId":unknown_task}}));
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["code"],"outcome_unknown","{unresolved}");
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["retry"],"forbidden","{unresolved}");
@@ -960,4 +975,88 @@ for line in sys.stdin:
     assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"111");
     drop(input);
     let _ = reopened.wait();
+}
+
+#[test]
+fn one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart() {
+    use std::io::{BufRead, BufReader, Write};
+    let a = Fixture::new(); let b = Fixture::new();
+    for (i, f) in [&a, &b].into_iter().enumerate() {
+        f.migrate_v4();
+        let script = f.root.join("adapter.py");
+        fs::write(&script, r#"import json,os,sys
+home=os.environ['HOME']; log=os.path.join(home,'messages.json')
+def messages():
+ return json.load(open(log)) if os.path.exists(log) else []
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','listSessions','archiveSession'],'deliveryModes':['queue']}}
+ elif m=='init':
+  open(os.path.join(home,'parent-pid'),'w').write(str(os.getppid()));v=None
+ elif m=='createSession':v={'id':'same-native-id','harness':'chatgpt'}
+ elif m=='getSession':v={'id':'same-native-id','harness':'chatgpt','status':'idle','cwd':home}
+ elif m=='listSessions':v=[{'id':'same-native-id','harness':'chatgpt','status':'idle','cwd':home}]
+ elif m=='getSessionMessages':v=messages()
+ elif m=='sendMessage':
+  rows=messages();mid='msg-'+str(len(rows));rows.append({'id':mid,'role':'user','text':p['options']['message']})
+  json.dump(rows,open(log,'w'));v={'ok':True,'admitted':True,'nativeInputMessageId':mid,'inputId':p['options']['inputId']}
+ elif m=='archiveSession':
+  open(os.path.join(home,'archived'),'a').write('1');v={'ok':True,'sessionId':p['id']}
+ else:raise Exception(m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+            "kind":"chatgpt","principal":"owner","node":"node","instance":format!("chatgpt-{i}"),
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
+            "code_home":f.root,"cwd":f.root}}).to_string()).unwrap();
+    }
+    let binary=std::env::var_os("HERDER_V1_CANDIDATE_BINARY").unwrap_or_else(||env!("CARGO_BIN_EXE_herder_native_stdio").into());
+    let meta=serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"two-profiles","version":"1"}});
+    let mut sessions=Vec::new(); let mut tasks=Vec::new();
+    for restart in [false,true] {
+        let mut child=Command::new(&binary).arg("--trusted-owner-profile").arg(&a.profile)
+            .arg("--trusted-owner-profile").arg(&b.profile)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap();
+        let mut input=child.stdin.take().unwrap();let mut output=BufReader::new(child.stdout.take().unwrap());
+        let mut seq=0;
+        let mut call=|method:&str,mut params:serde_json::Value| {
+            seq+=1;params["_meta"]=meta.clone();
+            writeln!(input,"{}",serde_json::json!({"jsonrpc":"2.0","id":seq,"method":method,"params":params})).unwrap();input.flush().unwrap();
+            let mut line=String::new(); output.read_line(&mut line).unwrap();
+            assert!(!line.is_empty(),"core exited before reply");serde_json::from_str::<serde_json::Value>(&line).unwrap()
+        };
+        let discover=call("tools/call",serde_json::json!({"name":"discover","arguments":{"action":"instances"}}));
+        assert_eq!(discover["result"]["structuredContent"]["instances"].as_array().unwrap().len(),2,"{discover}");
+        let implicit=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context"}}));
+        assert_eq!(implicit["result"]["structuredContent"]["code"],"self_binding_required","{implicit}");
+        for f in [&a, &b] { assert_eq!(fs::read_to_string(f.root.join("parent-pid")).unwrap(), child.id().to_string()); }
+        for i in 0..2 {
+            if !restart {
+                let create=call("tools/call",serde_json::json!({"name":"create","arguments":{"action":"create","instance_ref":format!("chatgpt-{i}"),"prompt":format!("account-{i}"),"request_key":"same-key"}}));
+                let task=create["result"]["taskId"].as_str().expect("create task").to_owned();
+                let receipt=call("tasks/get",serde_json::json!({"taskId":task}));
+                assert_eq!(receipt["result"]["status"],"completed","{receipt}");
+                sessions.push(receipt["result"]["result"]["structuredContent"]["create"]["session_ref"].as_str().unwrap().to_owned());tasks.push(task);
+                let deliver=call("tools/call",serde_json::json!({"name":"deliver","arguments":{"action":"session","session_ref":sessions[i],"message":format!("follow-{i}"),"mode":"queue","request_key":"same-deliver-key"}}));
+                assert!(deliver["result"]["taskId"].is_string(),"{deliver}");
+            } else {
+                let receipt=call("tasks/get",serde_json::json!({"taskId":tasks[i]}));
+                assert_eq!(receipt["result"]["status"],"completed","{receipt}");
+            }
+            let read=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"messages","session_ref":sessions[i]}}));
+            let rows=read["result"]["structuredContent"]["page"]["messages"].as_array().expect("messages");
+            assert_eq!(rows.len(),2,"{read}");assert_eq!(rows[0]["text"],format!("account-{i}"));assert_eq!(rows[1]["text"],format!("follow-{i}"));
+            let context=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context","session_ref":sessions[i]}}));
+            assert_eq!(context["result"]["structuredContent"]["session_ref"],sessions[i],"{context}");
+            assert_eq!(context["result"]["structuredContent"]["address"]["instance"]["instance_id"],format!("chatgpt-{i}"),"{context}");
+            assert_eq!(context["result"]["structuredContent"]["is_self"],false,"{context}");
+        }
+        let archive=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"archive","session_ref":sessions[0],"request_key":"archive-first"}}));
+        assert_eq!(archive["result"]["structuredContent"]["archived"],true,"{archive}");
+        assert_eq!(fs::read_to_string(a.root.join("archived")).unwrap(),"1");assert!(!b.root.join("archived").exists());
+        let foreign=call("tools/call",serde_json::json!({"name":"create","arguments":{"action":"create","instance_ref":"foreign","prompt":"never","request_key":"forbidden"}}));
+        assert_eq!(foreign["result"]["isError"],true);
+        child.kill().unwrap();let _=child.wait();
+    }
 }

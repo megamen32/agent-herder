@@ -4781,3 +4781,34 @@ async fn direct_queue_delivery_requires_trusted_composition_and_deduplicates() {
     assert_eq!(first.structured_content, second.structured_content);
     assert_eq!(sender.0.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn archive_is_scoped_durable_and_does_not_repeat_after_restart() {
+    use serde_json::json;
+    let f = Fixture::new(); create(&f);
+    let calls = AtomicUsize::new(0);
+    let archive = |id: &str| { calls.fetch_add(1, Ordering::SeqCst); Ok(json!({"ok":true,"sessionId":id})) };
+    let result = f.authority().archive_session(&identity(),&grants(),&SessionRef("issued".into()),&address().instance,"cleanup-1",archive).unwrap();
+    assert_eq!(result["archived"],true);
+    let again = f.authority().archive_session(&identity(),&grants(),&SessionRef("issued".into()),&address().instance,"cleanup-1",archive).unwrap();
+    assert_eq!(result,again); assert_eq!(calls.load(Ordering::SeqCst),1);
+    assert!(f.authority().archive_session(&identity(),&[],&SessionRef("issued".into()),&address().instance,"cleanup-2",archive).is_err());
+    let mut wrong = address().instance; wrong.instance_id = "other".into();
+    assert!(f.authority().archive_session(&identity(),&grants(),&SessionRef("issued".into()),&wrong,"cleanup-2",archive).is_err());
+    assert_eq!(calls.load(Ordering::SeqCst),1);
+}
+
+#[test]
+fn archive_preserves_unknown_and_respects_stop() {
+    use serde_json::json;
+    let f=Fixture::new();create(&f);
+    let s=SessionRef("issued".into());let i=address().instance;
+    let unknown=f.authority().archive_session(&identity(),&grants(),&s,&i,"unknown",|_|Err(())).unwrap();
+    assert_eq!(unknown["effect"],"unknown");
+    assert_eq!(f.authority().archive_session(&identity(),&grants(),&s,&i,"unknown",|_|panic!("replay")).unwrap(),unknown);
+    let stopped=Fixture::new();create(&stopped);
+    stopped.authority().stop(&identity(),&grants(),"global","test","t").unwrap();
+    assert_eq!(stopped.authority().archive_session(&identity(),&grants(),&s,&i,"held",|_|Ok(json!({"ok":true,"sessionId":"native-root"}))).unwrap()["code"],"human_stop");
+    let parsed=herder::mcp::catalog::dispatch("session",json!({"action":"archive","session_ref":"issued","request_key":"cleanup"})).unwrap();
+    assert_eq!(parsed.access,herder::mcp::catalog::Access::Mutate);
+}

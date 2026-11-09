@@ -6,8 +6,16 @@ use std::{env, io, sync::Arc};
 mod owner_opencode;
 
 #[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_multi.rs"]
+mod owner_multi;
+
+#[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/owner_reads.rs"]
 mod owner_reads;
+
+#[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_registration.rs"]
+mod owner_registration;
 
 #[cfg(target_os = "linux")]
 #[path = "herder_native_stdio/owner_launch.rs"]
@@ -44,12 +52,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "--trusted-owner-profile requires a path",
                 )
             })?;
-            if args.next().is_some() {
-                return Err(
-                    io::Error::new(io::ErrorKind::InvalidInput, "unexpected arguments").into(),
-                );
+            let mut profiles = vec![scoped_profile::open_owner(std::path::Path::new(&path))?];
+            while let Some(flag) = args.next() {
+                if flag != "--trusted-owner-profile" {
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected arguments").into());
+                }
+                let path = args.next().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput,
+                    "--trusted-owner-profile requires a path"))?;
+                profiles.push(scoped_profile::open_owner(std::path::Path::new(&path))?);
             }
-            owner_launch::serve(scoped_profile::open_owner(std::path::Path::new(&path))?).await
+            if profiles.len() == 1 {
+                owner_launch::serve(profiles.remove(0)).await
+            } else {
+                owner_multi::serve(profiles).await
+            }
         }
         Some(flag) if flag == "--config" => {
             let path = args.next().ok_or_else(|| {

@@ -249,6 +249,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     let policy = Arc::new(OwnerPolicy {
         principal,
         instance: instance.clone(),
+        harness: "codex".into(),
         generation: opened.generation,
         db: opened.database,
         gate: opened.gate,
