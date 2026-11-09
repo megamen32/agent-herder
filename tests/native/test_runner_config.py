@@ -14,7 +14,8 @@ class RunnerConfigTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name) / "artifact space"
+        self.tmp_root = Path(self.tmp.name).resolve()
+        self.root = self.tmp_root / "artifact space"
         self.root.mkdir()
         self.manifest = {"source_commit": "a" * 40, "launch": ["python", "stand", "--core", "{core}"], "sha256": {}}
         for name in ("core", "adapter", "opencode"):
@@ -28,11 +29,11 @@ class RunnerConfigTest(unittest.TestCase):
         self.config = {"artifact_root": str(self.root), "manifest": str(self.manifest_path),
                        "capabilities": {"os": "linux", "arch": "x86_64", "backend": "linux-netns-bwrap"}}
         for name in ("python", "node", "bootstrap", "stand", "launcher"):
-            path = Path(self.tmp.name) / name
+            path = self.tmp_root / name
             path.write_text(name)
             path.chmod(0o755)
             self.config[name] = str(path)
-        (Path(self.tmp.name) / "test-model-server.py").write_text("fixture")
+        (self.tmp_root / "test-model-server.py").write_text("fixture")
         self.system = patch.object(platform, "system", return_value="Linux")
         self.machine = patch.object(platform, "machine", return_value="x86_64")
         self.which = patch.object(runner_config.shutil, "which", return_value="/bin/tool")
@@ -85,7 +86,7 @@ class RunnerConfigTest(unittest.TestCase):
         self.assertIn(str(self.manifest_path), mounts)
 
     def test_v1_manifest_uses_explicit_hashed_external_opencode(self):
-        binary = Path(self.tmp.name) / "official-opencode"
+        binary = self.tmp_root / "official-opencode"
         binary.write_bytes(b"official-native")
         binary.chmod(0o755)
         self.manifest.pop("opencode")
