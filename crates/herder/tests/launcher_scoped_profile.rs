@@ -1049,3 +1049,93 @@ for line in sys.stdin:
         child.kill().unwrap();let _=child.wait();
     }
 }
+
+fn vibe_owner_profile(f: &Fixture, kind: &str, env: serde_json::Value) -> serde_json::Value {
+    let script = f.root.join("vibe-runner.js");
+    fs::write(&script, "// profile validation must never launch this runner").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o600)).unwrap();
+    serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "kind":kind,"principal":"owner","node":"node","instance":format!("{kind}-vibe"),
+        "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
+        "ahap_env":env,"code_home":f.root,"cwd":f.root}})
+}
+
+fn safe_vibe_env() -> serde_json::Value {
+    serde_json::json!({
+        "AHAP_BROWSER_TRANSPORT":"vibe",
+        "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64),
+        "AHAP_BROWSER_VIBE_TARGET":"mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+        "AHAP_BROWSER_VIBE_SESSION_ID":"session_1"
+    })
+}
+
+#[test]
+fn trusted_vibe_profile_accepts_exact_browser_binding_and_isolated_relay() {
+    let f = Fixture::new();
+    for kind in ["chatgpt", "zai"] {
+        for isolated in [false, true] {
+            let mut env = safe_vibe_env();
+            if isolated {
+                env["AHAP_BROWSER_VIBE_TARGET"] = "mcp:shell:roomhacker-server-100:VibeServer100Local".into();
+                env["AHAP_BROWSER_VIBE_RELAY_PORT"] = "19898".into();
+                env["AHAP_BROWSER_VIBE_STATE_DIR"] = "/home/roomhacker/.local/state/herder-ci-vibe".into();
+            }
+            fs::write(&f.profile, vibe_owner_profile(&f, kind, env.clone()).to_string()).unwrap();
+            let opened = scoped_profile::open_owner(&f.profile).unwrap();
+            assert_eq!(opened.owner.kind, kind);
+            assert_eq!(opened.owner.ahap_env.get("AHAP_BROWSER_VIBE_SESSION_ID").unwrap(), "session_1");
+            assert_eq!(opened.owner.ahap_env.len(), env.as_object().unwrap().len());
+        }
+    }
+}
+
+#[test]
+fn trusted_vibe_profile_rejects_missing_binding_before_runner_launch() {
+    let f = Fixture::new();
+    for missing in ["AHAP_BROWSER_VIBE_TARGET", "AHAP_BROWSER_VIBE_SESSION_ID", "AHAP_BROWSER_ACCOUNT_SCOPE"] {
+        let mut env = safe_vibe_env();
+        env.as_object_mut().unwrap().remove(missing);
+        fs::write(&f.profile, vibe_owner_profile(&f, "chatgpt", env).to_string()).unwrap();
+        assert!(scoped_profile::open_owner(&f.profile).is_err(), "missing {missing}");
+    }
+    let mut env = safe_vibe_env();
+    env["AHAP_BROWSER_VIBE_RELAY_PORT"] = "19898".into();
+    fs::write(&f.profile, vibe_owner_profile(&f, "zai", env).to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err(), "a custom relay needs isolated state");
+}
+
+#[test]
+fn trusted_vibe_profile_rejects_unsafe_binding_and_ambiguous_transport() {
+    let f = Fixture::new();
+    for (name, value) in [
+        ("AHAP_BROWSER_VIBE_TARGET", "mcp:shell:foreign:Vibe"),
+        ("AHAP_BROWSER_VIBE_SESSION_ID", "session_1;touch injected"),
+        ("AHAP_BROWSER_VIBE_SESSION_ID", ""),
+        ("AHAP_BROWSER_VIBE_RELAY_PORT", "1023"),
+        ("AHAP_BROWSER_VIBE_RELAY_PORT", "65535"),
+        ("AHAP_BROWSER_VIBE_RELAY_PORT", "19888;true"),
+        ("AHAP_BROWSER_VIBE_STATE_DIR", "relative/state"),
+        ("AHAP_BROWSER_VIBE_STATE_DIR", "/home/roomhacker/../other"),
+        ("AHAP_BROWSER_VIBE_STATE_DIR", "/home/roomhacker/state;true"),
+        ("AHAP_BROWSER_ACCOUNT_SCOPE", "not-an-account-hash"),
+        ("AHAP_BROWSER_TRANSPORT", "mac-mini"),
+    ] {
+        let mut env = safe_vibe_env();
+        env[name] = value.into();
+        fs::write(&f.profile, vibe_owner_profile(&f, "chatgpt", env).to_string()).unwrap();
+        assert!(scoped_profile::open_owner(&f.profile).is_err(), "invalid {name}");
+    }
+}
+
+#[test]
+fn trusted_vibe_profile_keeps_unknown_and_process_environment_rejected() {
+    let f = Fixture::new();
+    for name in ["AHAP_BROWSER_VIBE_COMMAND", "AHAP_BROWSER_VIBE_ARGS", "AHAP_BROWSER_VIBE_TOKEN", "NODE_OPTIONS", "HOME", "AHAP_HARNESS"] {
+        let mut env = safe_vibe_env();
+        env[name] = "invalid".into();
+        fs::write(&f.profile, vibe_owner_profile(&f, "zai", env).to_string()).unwrap();
+        assert!(scoped_profile::open_owner(&f.profile).is_err(), "must reject {name}");
+    }
+    fs::write(&f.profile, vibe_owner_profile(&f, "codex", safe_vibe_env()).to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err(), "Vibe keys cannot cross into Codex");
+}

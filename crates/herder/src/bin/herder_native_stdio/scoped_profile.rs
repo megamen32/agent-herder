@@ -51,10 +51,55 @@ fn allowed_adapter_env(kind: &str, name: &str) -> bool {
         "zcode" => matches!(name, "AHAP_ZCODE_SERVER_NODE" | "AHAP_ZCODE_SERVER_ENTRY" | "AHAP_ZCODE_CWD" | "AHAP_ZCODE_TRANSPORT"),
         "chatgpt" | "zai" => matches!(name,
             "AHAP_BROWSER_TRANSPORT" | "AHAP_BROWSER_PAGE_ID" | "AHAP_BROWSER_ACCOUNT_SCOPE"
-            | "AHAP_BROWSER_CDP_WS_URL" | "AHAP_BROWSER_CDP_CONTEXT_ID" | "AHAP_BROWSER_CDP_TARGET_ID"),
+            | "AHAP_BROWSER_CDP_WS_URL" | "AHAP_BROWSER_CDP_CONTEXT_ID" | "AHAP_BROWSER_CDP_TARGET_ID"
+            | "AHAP_BROWSER_VIBE_TARGET" | "AHAP_BROWSER_VIBE_SESSION_ID"
+            | "AHAP_BROWSER_VIBE_RELAY_PORT" | "AHAP_BROWSER_VIBE_STATE_DIR"),
         _ => false,
     }
 }
+
+/// Validate the fixed installed Vibe child binding before an AHAP process is
+/// started. No command, loader override, implicit session or transport fallback
+/// is accepted through the profile.
+fn validate_vibe_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
+    let bad = || io::Error::new(io::ErrorKind::InvalidInput, "invalid Vibe browser binding");
+    let get = |name: &str| env.get(name).map(String::as_str);
+    let keys = ["AHAP_BROWSER_VIBE_TARGET", "AHAP_BROWSER_VIBE_SESSION_ID",
+        "AHAP_BROWSER_VIBE_RELAY_PORT", "AHAP_BROWSER_VIBE_STATE_DIR"];
+    if get("AHAP_BROWSER_TRANSPORT") != Some("vibe") {
+        return if keys.iter().any(|key| env.contains_key(*key)) { Err(bad()) } else { Ok(()) };
+    }
+    if !matches!(get("AHAP_BROWSER_VIBE_TARGET"),
+        Some("mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal"
+            | "mcp:shell:roomhacker-server-100:VibeServer100Local")) {
+        return Err(bad());
+    }
+    let session = get("AHAP_BROWSER_VIBE_SESSION_ID").ok_or_else(bad)?;
+    if session.is_empty() || session.len() > 128 || !session.as_bytes()[0].is_ascii_alphanumeric()
+        || !session.bytes().all(|c| c.is_ascii_alphanumeric() || b"_.:-".contains(&c)) {
+        return Err(bad());
+    }
+    let scope = get("AHAP_BROWSER_ACCOUNT_SCOPE").ok_or_else(bad)?;
+    if scope.len() != 64 || !scope.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+        return Err(bad());
+    }
+    let port = match get("AHAP_BROWSER_VIBE_RELAY_PORT") {
+        None => 19888,
+        Some(raw) if !raw.is_empty() && raw.bytes().all(|c| c.is_ascii_digit()) =>
+            raw.parse::<u16>().map_err(|_| bad())?,
+        _ => return Err(bad()),
+    };
+    if !(1024..=65534).contains(&port) { return Err(bad()); }
+    match get("AHAP_BROWSER_VIBE_STATE_DIR") {
+        Some(state) if state.len() > 1 && state.starts_with('/')
+            && state.bytes().all(|c| c.is_ascii_alphanumeric() || b"_./-".contains(&c))
+            && !state.split('/').any(|part| part == "..") => (),
+        None if port == 19888 => (),
+        _ => return Err(bad()),
+    }
+    Ok(())
+}
+
 fn codex_kind() -> String {
     "codex".into()
 }
@@ -146,6 +191,9 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
                     return Err(io::Error::new(io::ErrorKind::InvalidInput,
                         format!("unsupported adapter environment key {key}; use the documented keys for owner.kind, without process loader or identity overrides")).into());
                 }
+            }
+            if matches!(owner.kind.as_str(), "chatgpt" | "zai") {
+                validate_vibe_binding(&owner.ahap_env)?;
             }
         }
         _ => return Err(invalid().into()),
