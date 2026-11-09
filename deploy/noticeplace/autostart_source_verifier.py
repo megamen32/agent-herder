@@ -20,6 +20,14 @@ SOURCE='agent-herder-autostart'
 SIGNAL='unfinished-session-autostart-failed'
 MAX_JSON=8*1024*1024
 MAX_TAIL=4*1024*1024
+# The server gives a due check a deadline of 300 seconds. The source answers
+# every due check of one sweep in one tick, because a check that waits behind
+# the others misses that deadline and the incident is delivered to an executor
+# again with the health of the source still unknown. The batch stays bounded:
+# the owning cycle gives the tick 30 seconds, so the admission of additional
+# checks stops before it.
+MAX_CHECKS_PER_TICK=8
+TICK_DEADLINE_SECONDS=18
 
 @dataclass(frozen=True)
 class SourcePaths:
@@ -149,8 +157,10 @@ def run_tick(paths,*,host_id,base_url,token,state_dir,transport=None):
     sys.path.insert(0,'/opt/noticeplace')
     from notification_center.consumer_lifecycle import SourceVerifier
     verifier=SourceVerifier(base_url,token,PROJECT,SOURCE,host_id,state_dir,transport=transport)
-    return verifier.tick(lambda group:measure(group,paths,host_id=host_id),max_checks=1,
-                         deadline_seconds=10,accept_group=lambda g:g.get('signal_type')==SIGNAL
+    return verifier.tick(lambda group:measure(group,paths,host_id=host_id),
+                         max_checks=MAX_CHECKS_PER_TICK,
+                         deadline_seconds=TICK_DEADLINE_SECONDS,
+                         accept_group=lambda g:g.get('signal_type')==SIGNAL
                          and g.get('problem_type')==SIGNAL)
 
 

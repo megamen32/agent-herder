@@ -60,4 +60,36 @@ class SourceTests(unittest.TestCase):
    with self.assertRaises(TimeoutError):tick()
    with self.assertRaises(RuntimeError):tick()
   self.assertEqual(order,['GET','READ_NATIVE','POST','GET']);self.assertEqual(len(posts),1);self.assertEqual(posts[0]['observed_state'],'healthy')
+ def test_one_tick_answers_the_whole_queue_inside_its_budget(self):
+  """A queue of due checks must not outlive the deadline of the server.
+
+  The source answers every due check of one sweep in one tick: a request that
+  waits behind the others would miss the deadline of the server, and the
+  incident would be delivered to an executor again with the health of the
+  source still unknown.
+  """
+  posts=[]
+  requests=[{'group':GROUP,'request_id':f'request-{index}','generation':1,'incident_id':f'inc_{index}'} for index in range(6)]
+  def http(method,path,body=None,key=None):
+   if method=='POST':posts.append(body);return {'generation':1,'incident_id':body.get('incident_id'),'observed_state':body.get('observed_state'),'request_id':body.get('request_id')}
+   if 'verification-requests' in path:return {'requests':requests}
+   return {'lifecycle':{}}
+  def probe(group,paths,**kwargs):return {'observed_state':'unknown','observed_at':NOW,'evidence_refs':['herder-autostart:native-not-completed']}
+  with patch.object(adapter,'measure',side_effect=probe):
+   receipts=adapter.run_tick(self.paths(),host_id=HOST,base_url='https://fixture.invalid',token='fixture',state_dir=self.root/'verifier',transport=http)
+  self.assertEqual(len(posts),len(requests))
+  self.assertEqual([post['request_id'] for post in posts],[request['request_id'] for request in requests])
+ def test_one_tick_stays_inside_the_budget_of_the_owning_cycle(self):
+  """The batch of one tick is bounded: the owning cycle gives it 30 seconds."""
+  posts=[]
+  requests=[{'group':GROUP,'request_id':f'request-{index}','generation':1,'incident_id':f'inc_{index}'} for index in range(200)]
+  def http(method,path,body=None,key=None):
+   if method=='POST':posts.append(body);return {'generation':1,'incident_id':body.get('incident_id'),'observed_state':body.get('observed_state'),'request_id':body.get('request_id')}
+   if 'verification-requests' in path:return {'requests':requests}
+   return {'lifecycle':{}}
+  def probe(group,paths,**kwargs):return {'observed_state':'unknown','observed_at':NOW,'evidence_refs':['herder-autostart:native-not-completed']}
+  with patch.object(adapter,'measure',side_effect=probe):
+   adapter.run_tick(self.paths(),host_id=HOST,base_url='https://fixture.invalid',token='fixture',state_dir=self.root/'verifier',transport=http)
+  self.assertLessEqual(len(posts),adapter.MAX_CHECKS_PER_TICK)
+  self.assertLess(adapter.TICK_DEADLINE_SECONDS,30)
 if __name__=='__main__':unittest.main()

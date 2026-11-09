@@ -26,7 +26,7 @@ python3 deploy/noticeplace/autostart_source_verifier.py \
   --check-group /path/to/existing-authoritative-group.json
 ```
 
-`run_tick()` or `--tick --verifier-state <dedicated-source-state>` is the supported one-shot SDK seam for the **existing owning cycle**, not a new timer. It uses the existing `NOTIFY_CENTER_EVENT_URL` and `NOTIFY_CENTER_TOKEN`; registration/grant is not created by this helper. One source check per call, bounded10s admission. Never invoke a live tick just to generate acceptance evidence.
+`run_tick()` or `--tick --verifier-state <dedicated-source-state>` is the supported one-shot SDK seam for the **existing owning cycle**, not a new timer. It uses the existing `NOTIFY_CENTER_EVENT_URL` and `NOTIFY_CENTER_TOKEN`; registration/grant is not created by this helper. One call answers the whole due queue of one sweep, bounded to `MAX_CHECKS_PER_TICK` checks and `TICK_DEADLINE_SECONDS` of admission, because the server gives a due check a deadline of 300 seconds: a check that waits behind the others misses it and the incident is delivered to an executor again with the health of the source still unknown. The batch stays inside the 30 seconds the owning cycle gives the tick. Never invoke a live tick just to generate acceptance evidence.
 
 ## Existing-cycle integration
 
