@@ -1,6 +1,7 @@
 import { writeAhapFrame, AHAP_MAX_FRAME_BYTES, legacyReadMethods, legacyRead, AhapReadError, adapterFailureContext, type LegacyReadPort } from "./ahap-legacy-read.js";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
@@ -8,12 +9,14 @@ import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
 import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
 import { MacMiniChromeTransport, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
+import { VibeChromePageTools, type VibeChromePageToolsOptions } from "./adapters/vibe-chrome-transport.js";
+import { readProtectedBrowserMcpToken, validateBrowserMcpUrl } from "./adapters/browser-mcp-profile.js";
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void };
+  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; close?(): void | Promise<void> };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -96,7 +99,6 @@ export async function serveBrowserChatAhap(
     throw new Error("AHAP_CHATGPT_ACCOUNT_SCOPE must be a pinned SHA-256 account scope");
   }
   const lines = createInterface({ input, crlfDelay: Infinity });
-  lines.once("close", () => adapter.close?.());
   let initialized = false;
   let accountVerified = false;
   let stopped = false;
@@ -114,6 +116,7 @@ export async function serveBrowserChatAhap(
     assertAccount();
   };
 
+  try {
   for await (const line of lines) {
     if (!line.trim() || stopped) continue;
     if (Buffer.byteLength(line, "utf8") + 1 > AHAP_MAX_FRAME_BYTES) { error(null, -32600, "Request exceeds 4 MiB AHAP frame limit; reduce input size"); continue; }
@@ -243,6 +246,10 @@ export async function serveBrowserChatAhap(
         ? sendFailureContext(cause) : adapterFailureContext(request.method, mutation));
     }
   }
+  } finally {
+    lines.close();
+    await adapter.close?.();
+  }
 }
 
 function isSendOptions(value: unknown): value is Parameters<BrowserChatAdapter["sendMessage"]>[1] {
@@ -260,11 +267,13 @@ function isCreateOptions(value: unknown): value is Parameters<BrowserChatAdapter
 export interface BrowserChatRunnerTransportFactories {
   directCdp(config: DirectCdpConfig): ChromePageTools;
   macMini(): ChromePageTools;
+  vibeMcp?(config: VibeChromePageToolsOptions): ChromePageTools & { close?(): void | Promise<void> };
 }
 
 const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
   directCdp: config => new DirectCdpPageTools(config),
   macMini: () => new MacMiniChromeTransport(),
+  vibeMcp: config => new VibeChromePageTools(config),
 };
 
 
@@ -275,8 +284,8 @@ export function makeConfiguredAdapter(
   const harness = env.AHAP_HARNESS?.trim();
   if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
   const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
-  if (transport !== "direct-cdp" && transport !== "mac-mini") {
-    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini");
+  if (transport !== "direct-cdp" && transport !== "mac-mini" && transport !== "vibe-mcp") {
+    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini or vibe-mcp");
   }
   // The page number is only a first-use hint. The driver owns exactly one
   // tab per provider and finds it by its own marker, so a gateway restart or
@@ -291,6 +300,22 @@ export function makeConfiguredAdapter(
   let selectedTransport: ChromePageTools;
   if (transport === "mac-mini") {
     selectedTransport = factories.macMini();
+  } else if (transport === "vibe-mcp") {
+    const url = env.AHAP_BROWSER_MCP_URL?.trim();
+    const profileFile = env.AHAP_BROWSER_MCP_PROFILE_FILE?.trim();
+    if (!url || !profileFile || !isAbsolute(profileFile)) {
+      throw new Error("Vibe MCP requires an exact endpoint and absolute protected profile file");
+    }
+    if (rawPageId || env.AHAP_BROWSER_CDP_WS_URL || env.AHAP_CHATGPT_CDP_WS_URL
+      || env.AHAP_BROWSER_CDP_CONTEXT_ID || env.AHAP_CHATGPT_CDP_CONTEXT_ID
+      || env.AHAP_BROWSER_CDP_TARGET_ID || env.AHAP_CHATGPT_CDP_TARGET_ID) {
+      throw new Error("Vibe MCP uses only pages created in this AHAP session");
+    }
+    if (!factories.vibeMcp) throw new Error("Vibe MCP transport factory unavailable");
+    selectedTransport = factories.vibeMcp({
+      url: validateBrowserMcpUrl(url), tokenProvider: () => readProtectedBrowserMcpToken(profileFile),
+      ownedPagesOnly: true,
+    });
   } else {
     const endpoint = (env.AHAP_BROWSER_CDP_WS_URL ?? env.AHAP_CHATGPT_CDP_WS_URL)?.trim();
     const contextId = (env.AHAP_BROWSER_CDP_CONTEXT_ID ?? env.AHAP_CHATGPT_CDP_CONTEXT_ID)?.trim();
@@ -321,7 +346,7 @@ export function makeConfiguredAdapter(
     },
   };
   const driver = harness === "chatgpt"
-    ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope)
+    ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope, { autoRespondToPrompts: false })
     : new ZaiCdpDriver(pageTools, undefined, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
   const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
@@ -336,8 +361,9 @@ export function makeConfiguredAdapter(
         verifiedAccountScope = driver.getAccountScope();
       }
     },
-    close: () => {
-      if ("close" in selectedTransport && typeof selectedTransport.close === "function") selectedTransport.close();
+    close: async () => {
+      if (driver instanceof ChatGptMacCdpDriver) driver.stopPromptPolling();
+      if ("close" in selectedTransport && typeof selectedTransport.close === "function") await selectedTransport.close();
     },
   });
 }

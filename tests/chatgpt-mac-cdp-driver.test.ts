@@ -112,12 +112,12 @@ describe("ChatGPT on existing Mac mini CDP", () => {
         return json({ scope: "a".repeat(64) });
       }
       if (name === "evaluate_script" && String(args.function).includes("conversation_read")) {
-        return json({ messages: [{ id: "m1", role: "assistant", text: "same account" }] });
+        return json({ messages: [{ id: "m1", role: "assistant", text: "same account", phase: "final", completionStatus: "in_progress", endTurn: false }] });
       }
       throw new Error(`unexpected tool ${name}`);
     } };
     const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
-    await expect(driver.getMessages(ID)).resolves.toMatchObject([{ id: "m1", text: "same account" }]);
+    await expect(driver.getMessages(ID)).resolves.toMatchObject([{ id: "m1", text: "same account", phase: "final", completionStatus: "in_progress", endTurn: false }]);
     expect(scopeReads).toBe(2);
   });
 

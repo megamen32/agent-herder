@@ -40,6 +40,8 @@ pub struct OwnerProfile {
     pub ahap_base_url: Option<String>,
     #[serde(default)]
     pub ahap_env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub existing_sessions: Vec<herder::application::scoped_stop::enroll::ExistingSessionApproval>,
 }
 
 /// Only adapter configuration crosses the process boundary. Process loader,
@@ -53,7 +55,8 @@ fn allowed_adapter_env(kind: &str, name: &str) -> bool {
             "AHAP_BROWSER_TRANSPORT" | "AHAP_BROWSER_PAGE_ID" | "AHAP_BROWSER_ACCOUNT_SCOPE"
             | "AHAP_BROWSER_CDP_WS_URL" | "AHAP_BROWSER_CDP_CONTEXT_ID" | "AHAP_BROWSER_CDP_TARGET_ID"
             | "AHAP_BROWSER_VIBE_TARGET" | "AHAP_BROWSER_VIBE_SESSION_ID"
-            | "AHAP_BROWSER_VIBE_RELAY_PORT" | "AHAP_BROWSER_VIBE_STATE_DIR"),
+            | "AHAP_BROWSER_VIBE_RELAY_PORT" | "AHAP_BROWSER_VIBE_STATE_DIR"
+            | "AHAP_BROWSER_MCP_URL" | "AHAP_BROWSER_MCP_PROFILE_FILE"),
         _ => false,
     }
 }
@@ -198,6 +201,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         }
         _ => return Err(invalid().into()),
     }
+    validate_existing_sessions(&owner)?;
     Ok(OpenedOwner {
         authority,
         owner,
@@ -205,6 +209,25 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         gate: profile.gate,
         generation: profile.generation,
     })
+}
+
+/// A protected profile grants only exact existing native identities in its
+/// pinned account. No wildcard, native draft alias, or cross-provider import.
+fn validate_existing_sessions(owner: &OwnerProfile) -> io::Result<()> {
+    if owner.existing_sessions.is_empty() { return Ok(()) }
+    if owner.kind != "chatgpt" || owner.ahap_script.is_none() || owner.existing_sessions.len() > 256 {
+        return Err(invalid());
+    }
+    let scope = owner.ahap_env.get("AHAP_BROWSER_ACCOUNT_SCOPE").ok_or_else(invalid)?;
+    let mut keys = std::collections::BTreeSet::new();
+    let mut natives = std::collections::BTreeSet::new();
+    for approval in &owner.existing_sessions {
+        if !approval.valid() || &approval.account_scope != scope
+            || !keys.insert(&approval.request_key) || !natives.insert(&approval.native_session_id) {
+            return Err(invalid());
+        }
+    }
+    Ok(())
 }
 
 fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::error::Error>> {
@@ -324,4 +347,54 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     let authority = ScopedAuthority::new(p.database.clone(), p.gate.clone(), p.generation.clone())
         .map_err(|_| invalid())?;
     Ok((authority, p))
+}
+
+#[cfg(test)]
+mod enrollment_tests {
+    use super::*;
+    use herder::application::scoped_stop::enroll::ExistingSessionApproval;
+    fn owner() -> OwnerProfile {
+        OwnerProfile {
+            principal:"owner".into(),node:"node".into(),instance:"profile".into(),
+            executable:"/usr/bin/node".into(),code_home:"/home/owner".into(),cwd:"/home/owner/project".into(),
+            kind:"chatgpt".into(),ahap_script:Some("/opt/herder/browser.js".into()),ahap_base_url:None,
+            ahap_env:BTreeMap::from([("AHAP_BROWSER_ACCOUNT_SCOPE".into(),"b".repeat(64))]),
+            existing_sessions:vec![ExistingSessionApproval{request_key:"k".into(),native_session_id:"native~conversation".into(),account_scope:"b".repeat(64)}],
+        }
+    }
+    #[test]
+    fn exact_profile_account_scope_is_required() {
+        let mut profile=owner();assert!(validate_existing_sessions(&profile).is_ok());
+        profile.existing_sessions[0].account_scope="a".repeat(64);assert!(validate_existing_sessions(&profile).is_err());
+        let mut profile=owner();profile.kind="zai".into();assert!(validate_existing_sessions(&profile).is_err());
+        let mut profile=owner();profile.ahap_script=None;assert!(validate_existing_sessions(&profile).is_err());
+    }
+    #[test]
+    fn duplicate_keys_natives_and_wildcards_are_not_grants() {
+        let mut profile=owner();profile.existing_sessions.push(profile.existing_sessions[0].clone());
+        assert!(validate_existing_sessions(&profile).is_err());
+        profile.existing_sessions[1].request_key="other".into();assert!(validate_existing_sessions(&profile).is_err());
+        profile.existing_sessions[1].native_session_id="other".into();assert!(validate_existing_sessions(&profile).is_ok());
+        profile.existing_sessions[1].request_key="k".into();assert!(validate_existing_sessions(&profile).is_err());
+        let mut profile=owner();profile.existing_sessions[0].native_session_id="*".into();assert!(validate_existing_sessions(&profile).is_err());
+    }
+    #[test]
+    fn vibe_route_references_are_browser_only() {
+        for key in ["AHAP_BROWSER_MCP_URL", "AHAP_BROWSER_MCP_PROFILE_FILE"] {
+            assert!(allowed_adapter_env("chatgpt", key));
+            assert!(allowed_adapter_env("zai", key));
+            assert!(!allowed_adapter_env("codex", key));
+            assert!(!allowed_adapter_env("opencode", key));
+            assert!(!allowed_adapter_env("zcode", key));
+        }
+        assert!(!allowed_adapter_env("chatgpt", "VIBE_REMOTE_URL"));
+        assert!(!allowed_adapter_env("chatgpt", "VIBE_EXTENSION_UUID"));
+        assert!(!allowed_adapter_env("chatgpt", "NODE_OPTIONS"));
+    }
+
+    #[test]
+    fn legacy_profile_without_enrollment_remains_valid() {
+        let mut profile=owner();profile.existing_sessions.clear();profile.kind="codex".into();
+        assert!(validate_existing_sessions(&profile).is_ok());
+    }
 }

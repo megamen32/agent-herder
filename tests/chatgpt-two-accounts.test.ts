@@ -32,6 +32,7 @@ it('reads the owned account before probing unrelated Chrome profiles',async()=>{
   if(name==='list_pages')return `1: Owned (https://chatgpt.com/?herder_owned=chatgpt%3A${scope})\n2: Foreign (https://chatgpt.com/)`;
   if(name==='evaluate_script'){
    const source=String(args.function);
+   if(source.includes('cooldownUntil: Math.max'))return json({cooldownUntil:0});
    if(source.includes('/api/auth/session')&&!source.includes('conversation_read')){
     if(args.pageId===2)foreignChecks.push(2);
     return json({scope:args.pageId===1?scope:'b'.repeat(64)});

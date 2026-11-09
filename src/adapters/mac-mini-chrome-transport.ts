@@ -44,7 +44,8 @@ export class MacMiniChromeTransport implements ChromePageTools {
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
         stdout += chunk;
-        if (stdout.length > 512 * 1024) fail("Chrome MCP response exceeds bound");
+        // Allow the 512 KiB complete latest pair plus nested JSON/MCP escaping.
+        if (stdout.length > 3 * 1024 * 1024) fail("Chrome MCP response exceeds bound");
       });
       child.stderr.on("data", (chunk: string) => {
         stderr += chunk;

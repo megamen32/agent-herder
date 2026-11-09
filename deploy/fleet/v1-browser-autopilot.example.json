@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "statePath": "/home/OWNER/.local/state/agent-herder/browser-autopilot.json",
+  "gptadminProfileFile": "/home/OWNER/.config/gptadmin/profile.json",
+  "pollIntervalMs": 60000,
+  "profiles": [
+    {
+      "instanceRef": "chatgpt-profile-1",
+      "nodeRef": "OWNER_BROWSER_NODE",
+      "label": "Profile 1",
+      "cwd": "/absolute/profile/cwd",
+      "sessionRefs": []
+    },
+    {
+      "instanceRef": "chatgpt-profile-2",
+      "nodeRef": "OWNER_BROWSER_NODE",
+      "label": "Profile 2",
+      "cwd": "/absolute/profile/cwd",
+      "sessionRefs": []
+    }
+  ],
+  "zai": {
+    "transport": "browser",
+    "accountScope": "0000000000000000000000000000000000000000000000000000000000000000",
+    "contextBytes": 131072,
+    "timeoutMs": 240000,
+    "browserMcpUrl": "https://mcp.bezrabotnyi.com/server/vibemacminilocal/mcp"
+  }
+}

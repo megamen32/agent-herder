@@ -1149,4 +1149,73 @@ fn trusted_vibe_profile_keeps_unknown_and_process_environment_rejected() {
     }
     fs::write(&f.profile, vibe_owner_profile(&f, "codex", safe_vibe_env()).to_string()).unwrap();
     assert!(scoped_profile::open_owner(&f.profile).is_err(), "Vibe keys cannot cross into Codex");
+#[test]
+fn owner_enrolls_exact_existing_chat_and_revokes_profile_membership_without_native_writes() {
+    use std::io::{BufRead, BufReader, Write};
+    let f=Fixture::new();f.migrate_v4();
+    let script=f.root.join("existing-adapter.py");
+    fs::write(&script,r#"import json,os,sys
+home=os.environ['HOME']; native='chatgpt::native~conversation'
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ with open(os.path.join(home,'native-methods'),'a') as out:out.write(m+'\n')
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','listSessions'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='listSessions':v=[{'id':native,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}]
+ elif m=='getSession':
+  assert p['id']==native
+  v={'id':native,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}
+ elif m=='getSessionMessages':
+  assert p['id']==native
+  v=[{'id':'human','role':'user','text':'existing request'},{'id':'answer','role':'assistant','text':'existing answer'}]
+ else:raise Exception('native writes forbidden in enrollment acceptance: '+m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&script,fs::Permissions::from_mode(0o600)).unwrap();
+    let mut profile=serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "kind":"chatgpt","principal":"owner","node":"node","instance":"chatgpt-existing",
+        "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
+        "code_home":f.root,"cwd":f.root,"ahap_env":{"AHAP_BROWSER_ACCOUNT_SCOPE":"b".repeat(64)},
+        "existing_sessions":[{"request_key":"approve-existing","native_session_id":"chatgpt::native~conversation","account_scope":"b".repeat(64)}]
+    }});
+    fs::write(&f.profile,profile.to_string()).unwrap();
+    let binary=env!("CARGO_BIN_EXE_herder_native_stdio");
+    let enroll=||Command::new(binary).args(["--enroll-existing-owner-profile"]).arg(&f.profile)
+        .args(["--request-key","approve-existing"]).output().unwrap();
+    let first=enroll();
+    assert!(first.status.success(),"{}",String::from_utf8_lossy(&first.stderr));
+    let receipt:serde_json::Value=serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(receipt["provenance"],"owner-explicit-existing-session");
+    let second=enroll();assert!(second.status.success(),"{}",String::from_utf8_lossy(&second.stderr));
+    assert_eq!(receipt,serde_json::from_slice::<serde_json::Value>(&second.stdout).unwrap());
+    let session=receipt["session_ref"].as_str().unwrap();
+    let read=|expected_visible:bool| {
+        let mut child=Command::new(binary).arg("--trusted-owner-profile").arg(&f.profile)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut input=child.stdin.take().unwrap();let mut output=BufReader::new(child.stdout.take().unwrap());
+        let meta=serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"enrollment-fixture","version":"1"}});
+        let mut call=|id:u64,name:&str,args:serde_json::Value|{
+            writeln!(input,"{}",serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":name,"arguments":args}})).unwrap();input.flush().unwrap();
+            let mut line=String::new();assert!(output.read_line(&mut line).unwrap()>0,"owner core exited before reply");
+            serde_json::from_str::<serde_json::Value>(&line).unwrap()
+        };
+        let adoption=call(0,"session",serde_json::json!({"action":"register","instance_ref":"chatgpt-existing",
+            "native_session_id":"chatgpt::native~conversation","request_key":"public-adopt-enrolled"}));
+        assert_eq!(adoption["result"]["isError"],true,"{adoption}");
+        assert_eq!(adoption["result"]["structuredContent"]["code"],"session_provenance_unavailable","{adoption}");
+        let list=call(1,"sessions",serde_json::json!({"action":"list","instance_ref":"chatgpt-existing"}));
+        assert_eq!(list["result"]["structuredContent"]["sessions"].as_array().unwrap().len(),usize::from(expected_visible),"{list}");
+        let messages=call(2,"session",serde_json::json!({"action":"messages","session_ref":session}));
+        if expected_visible {
+            assert_eq!(messages["result"]["structuredContent"]["page"]["messages"][0]["text"],"existing request","{messages}");
+        } else {assert_eq!(messages["result"]["isError"],true,"{messages}");}
+        drop(call);drop(input);assert!(child.wait().unwrap().success());
+    };
+    read(true);
+    profile["owner"]["existing_sessions"]=serde_json::json!([]);
+    fs::write(&f.profile,profile.to_string()).unwrap();
+    read(false);
+    let log=fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert!(!log.lines().any(|method|matches!(method,"createSession"|"sendMessage")),"{log}");
+    assert_eq!(Connection::open(&f.db).unwrap().query_row("SELECT count(*) FROM session_bindings",[],|r|r.get::<_,i64>(0)).unwrap(),1);
 }

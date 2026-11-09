@@ -1,0 +1,18 @@
+[Unit]
+Description=Agent Herder ChatGPT autopilot through Z.AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=/absolute/immutable/agent-herder-release
+ExecStart=/usr/bin/node /absolute/immutable/agent-herder-release/dist/browser-autopilot-main.js /absolute/protected/v1-browser-autopilot.json
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=45
+# Set this only when importing a nondefault existing generated-prompt ledger:
+# Environment=AGENT_HERDER_HUMAN_STOP_STORE=/absolute/existing/human-stops.json
+
+[Install]
+WantedBy=default.target

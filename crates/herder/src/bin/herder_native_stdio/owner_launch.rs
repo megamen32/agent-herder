@@ -247,6 +247,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         action: Action::Write,
     }];
     let policy = Arc::new(OwnerPolicy {
+        existing_sessions: Vec::new(),
         principal,
         instance: instance.clone(),
         harness: "codex".into(),
