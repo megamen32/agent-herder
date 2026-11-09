@@ -1,6 +1,6 @@
 import { parseChromeEvaluation, type ChromePageTools } from "./mac-mini-chrome-transport.js";
 import { ZAI_LIST_API_SCRIPT } from "./browser-chat-api-scripts.js";
-import { claimOwnedTab, isOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
+import { claimOwnedTab, isOwnedTabUrl, isProviderOwnedTabUrl, ownedTabUrl, resolveOwnedTab } from "./browser-owned-tab.js";
 
 export type BrowserChatSite = "chatgpt" | "zai";
 const SITE_ORIGIN = {chatgpt:"https://chatgpt.com",zai:"https://chat.z.ai"} as const;
@@ -47,6 +47,69 @@ export async function verifyNewChatAccountScope(
   if(typeof data.scope!=='string'||!/^[a-f0-9]{64}$/.test(data.scope))
     throw new Error(site+' account verification unavailable: '+(data.error||'unverified'));
   return data.scope;
+}
+
+
+export interface MarkedBrowserPage { id:number; url:string; selected?:boolean }
+export interface OwnedTabDedupeResult {
+  page?:MarkedBrowserPage;
+  closedPageIds:number[];
+}
+
+/** Remove stale Herder-owned ChatGPT tabs only after proving their account.
+ *
+ * URL markers alone never authorize a close. Human tabs, unreadable tabs and
+ * another account's tabs remain untouched. With a worker namespace, legacy or
+ * old-worker markers have no survivor: the exact current marker (or a verified
+ * pinned human page) is the only retained owner. */
+export async function dedupeVerifiedChatGptOwnedTabs(
+  tools:ChromePageTools,
+  listing:readonly MarkedBrowserPage[],
+  scope:string,
+  preferredPageId?:number,
+):Promise<OwnedTabDedupeResult> {
+  const namespace=tools.ownedTabNamespace;
+  // A provider-only marker does not identify which Herder instance owns it.
+  // Cleanup is therefore allowed only for an explicitly namespaced instance.
+  if(!namespace)return {closedPageIds:[]};
+  const marked=listing.filter(page=>isProviderOwnedTabUrl(page.url,"chatgpt"));
+  const exact=marked.filter(page=>isOwnedTabUrl(page.url,"chatgpt",scope,namespace));
+  if(marked.length===1&&exact.length===1
+      &&(preferredPageId===undefined||preferredPageId===exact[0]!.id))
+    return {page:exact[0],closedPageIds:[]};
+  if(!marked.length)return {closedPageIds:[]};
+
+  const preferred=preferredPageId===undefined?undefined:listing.find(page=>page.id===preferredPageId);
+  if(preferred){
+    const actual=await verifyNewChatAccountScope(tools,"chatgpt",preferred.id);
+    if(actual!==scope)throw new Error("ChatGPT pinned account scope mismatch; no read data returned");
+  }
+
+  const verified:MarkedBrowserPage[]=[];
+  for(const page of marked){
+    const actual=await verifyNewChatAccountScope(tools,"chatgpt",page.id).catch(()=>undefined);
+    if(actual===scope)verified.push(page);
+  }
+  if(!verified.length)return {page:preferred,closedPageIds:[]};
+
+  const ordered=(items:readonly MarkedBrowserPage[])=>
+    [...items].sort((a,b)=>Number(Boolean(b.selected))-Number(Boolean(a.selected))||a.id-b.id);
+  const preferredMarked=verified.find(page=>page.id===preferredPageId);
+  const exactVerified=verified.filter(page=>isOwnedTabUrl(page.url,"chatgpt",scope,namespace));
+  const survivor=preferredMarked
+    ?? (preferredPageId!==undefined?undefined
+      : namespace?ordered(exactVerified)[0]:ordered(exactVerified)[0]??ordered(verified)[0]);
+  const closedPageIds:number[]=[];
+  for(const page of verified){
+    if(page.id===survivor?.id)continue;
+    await tools.call("close_page",{pageId:page.id}).catch(()=>undefined);
+    closedPageIds.push(page.id);
+  }
+  if(survivor&&!isOwnedTabUrl(survivor.url,"chatgpt",scope,namespace)){
+    const claimed=await claimOwnedTab(tools,"chatgpt",survivor.id,scope);
+    if(namespace&&!claimed)throw new Error("owned_tab_claim_refused");
+  }
+  return {page:survivor??preferred,closedPageIds};
 }
 
 
@@ -121,11 +184,16 @@ export async function openOwnedBlankChatPage(
   const before=new Set(pages(await tools.call("list_pages")).map(p=>p.id));
   // One tab per provider: the marked tab that the driver already owns is
   // reused, so a first message never opens a second tab.
-  const listing=pages(await tools.call("list_pages"));
-  let owned=listing.find(p=>isOwnedTabUrl(p.url,site,scope,namespace));
+  let listing=pages(await tools.call("list_pages"));
+  let owned=site==="chatgpt"&&scope&&namespace
+    ? (await dedupeVerifiedChatGptOwnedTabs(tools,listing,scope)).page
+    : listing.find(p=>isOwnedTabUrl(p.url,site,scope,namespace));
+  if(site==="chatgpt"&&scope&&namespace)listing=pages(await tools.call("list_pages"));
   if (!owned && scope && !namespace) {
     for (const page of listing.filter(p=>isOwnedTabUrl(p.url,site))) {
       if (await verifyNewChatAccountScope(tools,site,page.id).catch(()=>undefined) !== scope) continue;
+      // Legacy callers predate per-instance namespaces. The verified account is
+      // authoritative there even when the page cannot persist window.name.
       await claimOwnedTab(tools,site,page.id,scope);
       owned=page;break;
     }
