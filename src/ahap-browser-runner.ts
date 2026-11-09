@@ -5,6 +5,7 @@ import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
+import { UserIoChatGptDriver } from "./adapters/chatgpt-userio-driver.js";
 import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
 import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
@@ -29,6 +30,9 @@ const ACCOUNT_SCOPE = /^[a-f0-9]{64}$/u;
 type InitStage = "adapter_init" | "verify_pinned_account" | "account_match";
 // Exact known literals only: never expose or classify arbitrary error suffixes.
 const INIT_REASONS = new Map<string, string>([
+  ["userio_profile_principal_mismatch", "profile_principal_mismatch"],
+  ["userio_token_unavailable", "authorization_unavailable"],
+  ["userio_transport_unavailable", "transport_disconnected"],
   ["pinned browser account scope mismatch", "account_scope_mismatch"],
   ["ChatGPT pinned account scope mismatch; no read data returned", "account_scope_mismatch"],
   ["Pinned ChatGPT page unavailable; no read data returned", "pinned_page_unavailable"],
@@ -284,9 +288,11 @@ export function makeConfiguredAdapter(
   const harness = env.AHAP_HARNESS?.trim();
   if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
   const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
-  if (transport !== "direct-cdp" && transport !== "mac-mini" && transport !== "vibe-mcp") {
-    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini or vibe-mcp");
+  if (!["direct-cdp","mac-mini","vibe-mcp","userio"].includes(transport ?? "")) {
+    throw new Error("AHAP_BROWSER_TRANSPORT must select direct-cdp, mac-mini, vibe-mcp or userio");
   }
+  if(harness==="chatgpt" && transport==="vibe-mcp")
+    throw new Error("Vibe is not permitted for ChatGPT owner sessions");
   // The page number is only a first-use hint. The driver owns exactly one
   // tab per provider and finds it by its own marker, so a gateway restart or
   // a closed tab never breaks the route and never opens a tab per call.
@@ -297,6 +303,25 @@ export function makeConfiguredAdapter(
     throw new Error("Exact account scope is required");
   }
 
+  if (transport === "userio") {
+    if(harness!=="chatgpt") throw new Error("UserIO transport supports only ChatGPT");
+    if(rawPageId||env.AHAP_BROWSER_CDP_WS_URL||env.AHAP_BROWSER_MCP_URL)
+      throw new Error("UserIO must not share another browser transport");
+    const driver=new UserIoChatGptDriver({
+      endpoint:env.AHAP_USERIO_ENDPOINT??"",
+      agentId:env.AHAP_USERIO_AGENT_ID??"",
+      instanceId:env.AHAP_USERIO_INSTANCE_ID??"",
+      accountScope:expectedScope,
+      tokenFile:env.AHAP_USERIO_ACCESS_TOKEN_FILE??""
+    });
+    const provider={id:"chatgpt",name:"ChatGPT UserIO",harness:"chatgpt",cwd:process.cwd()} as const;
+    const adapter=new BrowserChatAdapter(driver,provider,process.cwd(),true,true);
+    return Object.assign(adapter,{
+      getAccountScope:()=>driver.getAccountScope(),
+      verifyPinnedAccountScope:()=>driver.verifyPinnedAccountScope(),
+      close:async()=>undefined,
+    });
+  }
   let selectedTransport: ChromePageTools;
   if (transport === "mac-mini") {
     selectedTransport = factories.macMini();
