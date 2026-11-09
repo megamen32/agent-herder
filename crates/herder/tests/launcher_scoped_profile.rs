@@ -1219,3 +1219,176 @@ for line in sys.stdin:
     assert!(!log.lines().any(|method|matches!(method,"createSession"|"sendMessage")),"{log}");
     assert_eq!(Connection::open(&f.db).unwrap().query_row("SELECT count(*) FROM session_bindings",[],|r|r.get::<_,i64>(0)).unwrap(),1);
 }
+
+fn all_approved_enrollment_fixture() -> Fixture {
+    let f = Fixture::new();
+    f.migrate_v4();
+    let script = f.root.join("batch-existing-adapter.py");
+    fs::write(&script, r#"import json,os,sys,time
+home=os.environ['HOME']
+natives=['chatgpt::batch-one','chatgpt::batch-two','chatgpt::batch-three']
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ with open(os.path.join(home,'native-methods'),'a') as out:out.write(m+':'+p.get('id','')+'\n')
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','listSessions'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='listSessions':v=[{'id':n,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False} for n in natives]
+ elif m=='getSession':
+  assert p['id'] in natives
+  if p['id']==natives[1] and os.path.exists(os.path.join(home,'pause-second')):
+   started=time.monotonic()
+   while not os.path.exists(os.path.join(home,'continue-second')):
+    if time.monotonic()-started>20:raise Exception('fixture continuation timeout')
+    time.sleep(0.01)
+  v={'id':p['id'],'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}
+  if p['id']==natives[1] and os.path.exists(os.path.join(home,'refuse-second')):v['id']='chatgpt::different'
+ else:raise Exception('native writes forbidden in batch enrollment: '+m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o600)).unwrap();
+    let approvals = ["one", "two", "three"].map(|name| serde_json::json!({
+        "request_key":format!("approve-{name}"),
+        "native_session_id":format!("chatgpt::batch-{name}"),
+        "account_scope":"b".repeat(64),
+    }));
+    let profile = serde_json::json!({
+        "database":f.db, "gate":f.gate, "generation":"generation",
+        "owner":{
+            "kind":"chatgpt", "principal":"owner", "node":"node", "instance":"chatgpt-existing",
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(), "ahap_script":script,
+            "code_home":f.root, "cwd":f.root,
+            "ahap_env":{"AHAP_BROWSER_ACCOUNT_SCOPE":"b".repeat(64)},
+            "existing_sessions":approvals,
+        },
+    });
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    f
+}
+
+fn all_approved_receipts(bytes: &[u8]) -> Vec<serde_json::Value> {
+    std::str::from_utf8(bytes).unwrap().lines()
+        .map(|line| serde_json::from_str(line).unwrap()).collect()
+}
+
+fn run_all_approved(f: &Fixture) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--enroll-existing-owner-profile").arg(&f.profile)
+        .arg("--all-approved").output().unwrap()
+}
+
+#[test]
+fn owner_enroll_all_reuses_one_adapter_keeps_per_entry_reads_and_exact_replay() {
+    let f = all_approved_enrollment_fixture();
+    let first = run_all_approved(&f);
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    let receipts = all_approved_receipts(&first.stdout);
+    assert_eq!(receipts.len(), 3);
+    for (receipt, name) in receipts.iter().zip(["one", "two", "three"]) {
+        assert_eq!(receipt["request_key"], format!("approve-{name}"));
+        assert_eq!(receipt["native_session_id"], format!("chatgpt::batch-{name}"));
+        assert_eq!(receipt["provenance"], "owner-explicit-existing-session");
+    }
+    let first_calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    let expected = [
+        "initialize:", "init:",
+        "listSessions:", "getSession:chatgpt::batch-one",
+        "listSessions:", "getSession:chatgpt::batch-two",
+        "listSessions:", "getSession:chatgpt::batch-three",
+    ];
+    assert_eq!(first_calls.lines().collect::<Vec<_>>(), expected);
+    let second = run_all_approved(&f);
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+    assert_eq!(all_approved_receipts(&second.stdout), receipts);
+    let calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert_eq!(calls.lines().collect::<Vec<_>>(), expected.repeat(2));
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 3);
+}
+
+#[test]
+fn owner_enroll_all_stops_on_first_error_and_resumes_without_duplicate_binding() {
+    let f = all_approved_enrollment_fixture();
+    fs::write(f.root.join("refuse-second"), b"fixture").unwrap();
+    let failed = run_all_approved(&f);
+    assert!(!failed.status.success());
+    let prior = all_approved_receipts(&failed.stdout);
+    assert_eq!(prior.len(), 1);
+    assert_eq!(prior[0]["request_key"], "approve-one");
+    let calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert_eq!(calls.lines().collect::<Vec<_>>(), [
+        "initialize:", "init:", "listSessions:", "getSession:chatgpt::batch-one",
+        "listSessions:", "getSession:chatgpt::batch-two",
+    ]);
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    fs::remove_file(f.root.join("refuse-second")).unwrap();
+    let resumed = run_all_approved(&f);
+    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    let after = all_approved_receipts(&resumed.stdout);
+    assert_eq!(after.len(), 3);
+    assert_eq!(after[0], prior[0]);
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 3);
+}
+
+#[test]
+fn owner_enroll_all_rejects_mixed_selectors_and_empty_approval_before_adapter_open() {
+    let f = all_approved_enrollment_fixture();
+    for args in [
+        vec!["--all-approved", "--request-key", "approve-one"],
+        vec!["--request-key", "approve-one", "--all-approved"],
+        vec!["--all-approved", "--all-approved"],
+        vec!["--request-key", "not-approved"],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+            .arg("--enroll-existing-owner-profile").arg(&f.profile)
+            .args(args).output().unwrap();
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        assert!(!f.root.join("native-methods").exists());
+    }
+    let mut profile: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&f.profile).unwrap()).unwrap();
+    profile["owner"]["existing_sessions"] = serde_json::json!([]);
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let result = run_all_approved(&f);
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(!f.root.join("native-methods").exists());
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+}
+
+#[test]
+fn owner_enroll_all_flushes_receipt_before_later_native_verification_completes() {
+    use std::io::{BufRead, BufReader, Read};
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let f = all_approved_enrollment_fixture();
+    fs::write(f.root.join("pause-second"), b"fixture").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--enroll-existing-owner-profile").arg(&f.profile).arg("--all-approved")
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut output = BufReader::new(stdout);
+        let mut line = String::new();
+        let result = output.read_line(&mut line);
+        send.send((result, line, output)).unwrap();
+    });
+    // The second getSession cannot finish until this test observes the first
+    // receipt. Bound failure and release the fixture before any assertion.
+    let first = receive.recv_timeout(Duration::from_secs(10));
+    fs::write(f.root.join("continue-second"), b"fixture").unwrap();
+    let completion = child.wait_with_output().unwrap();
+    let (read, line, mut output) = first.expect("first confirmed receipt was not flushed");
+    assert!(read.unwrap() > 0);
+    assert!(completion.status.success(), "{}", String::from_utf8_lossy(&completion.stderr));
+    let receipt: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(receipt["request_key"], "approve-one");
+    let mut remaining = Vec::new();
+    output.read_to_end(&mut remaining).unwrap();
+    assert_eq!(all_approved_receipts(&remaining).len(), 2);
+    reader.join().unwrap();
+}

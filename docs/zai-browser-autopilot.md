@@ -72,6 +72,20 @@ herder_native_stdio --enroll-existing-owner-profile /absolute/path/profile-1.jso
 
 The command verifies the exact native session by listing and reading it through that profile's adapter. It never creates a replacement chat or sends a message. Its separate enrollment receipt and current allowlist grant establish membership. A fresh create receipt is never fabricated.
 
+To enroll every entry already present in that protected allowlist using one
+browser adapter connection, use the mutually exclusive batch option:
+
+~~~sh
+herder_native_stdio --enroll-existing-owner-profile /absolute/path/profile-1.json \
+  --all-approved
+~~~
+
+The batch checks each entry with the same native list/get verification and
+authority/HumanStop checks as the single-key action. It flushes a separate receipt
+after each success and stops on the first error. Keep the receipts in a private
+file; rerunning the same approvals is idempotent. It does not discover or authorize
+additional sessions.
+
 Retain the returned opaque session reference. Do not substitute a native conversation ID for a V1 session reference. Repeat for the currently selected recent chats in each verified profile. An enrollment grant alone does not clear HumanStop.
 
 Existing protected profile fields and the native V1 entry must also be configured according to the V1 owner-profile documentation. This enrollment extension is specific to existing ChatGPT sessions; it does not broaden other providers' membership.
