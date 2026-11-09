@@ -70,11 +70,11 @@ export function createZaiBrowserJudgeFetch(options: ZaiBrowserJudgeFetchOptions)
   const maxPromptBytes = boundedInteger(options.maxPromptBytes, HARD_PROMPT_BYTES, 1024, HARD_PROMPT_BYTES);
   const timeoutMs = boundedInteger(options.responseTimeoutMs, 180_000, 1000, 600_000);
   const pollMs = boundedInteger(options.pollIntervalMs, 2500, 100, 30_000);
-  const tools = options.tools ?? new MacMiniChromeTransport();
+  const tools = options.tools ?? (options.createSlot ? undefined : new MacMiniChromeTransport());
   const shutdown = new AbortController();
   const slots = ZAI_AUTOPILOT_MODELS.map((model, index) => ({
     model, busy: false,
-    port: options.createSlot?.(model, index) ?? new OwnedZaiJudgeSlot(tools, options.accountScope, pollMs),
+    port: options.createSlot?.(model, index) ?? new OwnedZaiJudgeSlot(tools!, options.accountScope, pollMs),
   }));
   let closed = false;
   const calls = new Set<Promise<unknown>>();

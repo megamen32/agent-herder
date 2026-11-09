@@ -8,7 +8,8 @@ import { UserStyleStore } from "../autopilot/user-style.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { createZaiBrowserJudgeFetch } from "../autopilot/zai-browser-judge.js";
 import { MacMiniChromeTransport } from "../adapters/mac-mini-chrome-transport.js";
-import { VibeChromePageTools } from "../adapters/vibe-chrome-transport.js";
+import { ZaiUserIoJudgeSlot } from "../autopilot/zai-userio-judge.js";
+import type { UserIoConfig } from "../adapters/userio-agent-channel.js";
 import { NoticePlaceMcpPort } from "./v1-noticeplace-mcp.js";
 import { V1BrowserAutopilot } from "./v1-browser-autopilot.js";
 
@@ -21,7 +22,8 @@ export type V1BrowserAutopilotConfig = {
   profiles: Array<{ instanceRef: string; nodeRef: string; label: string; cwd: string; sessionRefs: string[] }>;
   zai: (
     { transport: "browser"; accountScope: string; sshTarget?: string; browserMcpUrl?: string; browserMcpProfileFile?: string } |
-    { transport?: "api"; baseUrl: string; tokenEnv?: string; tokenFile?: string }
+    { transport: "userio"; profiles: Array<Omit<UserIoConfig, "fetcher">> } |
+    { transport: "api"; baseUrl: string; tokenEnv?: string; tokenFile?: string }
   ) & { contextBytes?: number; timeoutMs?: number };
 };
 type ConsumerPorts = ConstructorParameters<typeof V1BrowserAutopilot>[0];
@@ -76,7 +78,33 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
   const common={...(route.contextBytes===undefined?{}:{contextBytes:Number(route.contextBytes)}),
     ...(route.timeoutMs===undefined?{}:{timeoutMs:Number(route.timeoutMs)})};
   let zai:V1BrowserAutopilotConfig["zai"];
-  if(route.transport==="browser"){
+  if(route.transport==="userio"){
+    if(route.baseUrl!==undefined||route.tokenEnv!==undefined||route.tokenFile!==undefined
+      ||route.sshTarget!==undefined||route.browserMcpUrl!==undefined
+      ||route.browserMcpProfileFile!==undefined
+      ||!Array.isArray(route.profiles)||route.profiles.length<1||route.profiles.length>3)
+      throw new Error("browser_autopilot_zai_userio_profile_invalid");
+    const seen=new Set<string>();
+    const instances=route.profiles.map(value=>{
+      const p=object(value);
+      const endpoint=string(p.endpoint),agentId=string(p.agentId),
+        instanceId=string(p.instanceId),accountScope=string(p.accountScope),
+        tokenFile=string(p.tokenFile);
+      let url:URL;
+      try{url=new URL(endpoint);}catch{throw new Error("browser_autopilot_zai_userio_endpoint_invalid");}
+      const local=["localhost","127.0.0.1","[::1]"].includes(url.hostname);
+      if((url.protocol!=="https:" && !(local&&url.protocol==="http:"))
+        ||url.pathname!=="/"||url.search||url.hash||url.username||url.password
+        ||!/^[A-Za-z0-9_.:-]{1,128}$/u.test(agentId)
+        ||!/^browser-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(instanceId)
+        ||!/^[a-f0-9]{64}$/u.test(accountScope)||!isAbsolute(tokenFile)
+        ||seen.has(instanceId))
+        throw new Error("browser_autopilot_zai_userio_profile_invalid");
+      seen.add(instanceId);
+      return {endpoint:url.origin,agentId,instanceId,accountScope,tokenFile};
+    });
+    zai={transport:"userio",profiles:instances,...common};
+  } else if(route.transport==="browser"){
     const accountScope=string(route.accountScope);
     if(!/^[a-f0-9]{64}$/u.test(accountScope) || route.baseUrl!==undefined || route.tokenEnv!==undefined || route.tokenFile!==undefined)
       throw new Error("browser_autopilot_zai_browser_binding_invalid");
@@ -85,15 +113,9 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
       throw new Error("browser_autopilot_zai_browser_binding_invalid");
     const browserMcpUrl=route.browserMcpUrl===undefined?undefined:string(route.browserMcpUrl);
     const browserMcpProfileFile=route.browserMcpProfileFile===undefined?undefined:string(route.browserMcpProfileFile);
-    if(browserMcpUrl){
-      const endpoint=new URL(browserMcpUrl);
-      if(endpoint.protocol!=="https:" || endpoint.hostname!=="mcp.bezrabotnyi.com" || endpoint.port || endpoint.username || endpoint.password
-        || endpoint.search || endpoint.hash || !/^\/server\/[a-z0-9][a-z0-9_-]*\/mcp$/u.test(endpoint.pathname) || sshTarget!==undefined)
-        throw new Error("browser_autopilot_zai_browser_binding_invalid");
-    }
-    if(browserMcpProfileFile && (!browserMcpUrl || !isAbsolute(browserMcpProfileFile)))throw new Error("browser_autopilot_zai_browser_binding_invalid");
-    zai={transport:"browser",accountScope,...(sshTarget?{sshTarget}:{}),...(browserMcpUrl?{browserMcpUrl}:{}),
-      ...(browserMcpProfileFile?{browserMcpProfileFile}:{}),...common};
+    if(browserMcpUrl||browserMcpProfileFile)
+      throw new Error("browser_autopilot_zai_vibe_transport_disabled");
+    zai={transport:"browser",accountScope,...(sshTarget?{sshTarget}:{}),...common};
   } else {
     if(route.transport!==undefined && route.transport!=="api")throw new Error("browser_autopilot_zai_transport_invalid");
     const baseUrl=string(route.baseUrl);
@@ -289,33 +311,29 @@ export async function createV1BrowserAutopilotRuntime(input:unknown,options:{por
     port=new NoticePlaceMcpPort(async()=>token);
   }
   const zai=config.zai;
-  const token=zai.transport==="browser"?undefined:zai.tokenEnv ? env[zai.tokenEnv]
-    : config.enabled ? (await readProtectedBrowserAutopilotText(zai.tokenFile!)).trim() : undefined;
-  if(config.enabled && zai.transport!=="browser" && (!token?.trim() || /[\r\n]/u.test(token) || /^(?:secret:|secret_ref:|gptadmin-secret:)/u.test(token)))
+  const token=zai.transport==="api"?(zai.tokenEnv ? env[zai.tokenEnv]
+    : config.enabled ? (await readProtectedBrowserAutopilotText(zai.tokenFile!)).trim() : undefined)
+    :undefined;
+  if(config.enabled && zai.transport==="api" && (!token?.trim() || /[\r\n]/u.test(token) || /^(?:secret:|secret_ref:|gptadmin-secret:)/u.test(token)))
     throw new Error("browser_autopilot_zai_credential_unavailable");
-  const browserTools=zai.transport==="browser"?(zai.browserMcpUrl ? new VibeChromePageTools({
-    url:zai.browserMcpUrl,
-    tokenProvider:async()=>{
-      const profile=object(await readProtectedBrowserAutopilotJson(zai.browserMcpProfileFile??config.gptadminProfileFile));
-      const token=string(profile.authorization).replace(/^Bearer\s+/iu,"");
-      if(!token || /[\r\n]/u.test(token))throw new Error("browser_autopilot_native_credential_unavailable");
-      return token;
-    },
-  }):new MacMiniChromeTransport(zai.sshTarget)):undefined;
-  const browserPool=zai.transport==="browser"?createZaiBrowserJudgeFetch({
-    accountScope:zai.accountScope,tools:browserTools,
+  const browserTools=zai.transport==="browser"?new MacMiniChromeTransport(zai.sshTarget):undefined;
+  const browserPool=zai.transport==="api"?undefined:createZaiBrowserJudgeFetch({
+    accountScope:zai.transport==="userio"?zai.profiles[0]!.accountScope:zai.accountScope,
+    ...(browserTools?{tools:browserTools}:{}),
+    ...(zai.transport==="userio"?{createSlot:(_model:unknown,index:number)=>
+      new ZaiUserIoJudgeSlot(zai.profiles[index%zai.profiles.length]!)}:{}),
     maxPromptBytes:512*1024,responseTimeoutMs:zai.timeoutMs??240_000,
-  }):undefined;
+  });
   const native=createV1BrowserNativePorts(config,port);
   const service=new V1BrowserAutopilot({
-    statePath:resolve(config.statePath),holdUnfinishedJudgingOnRestart:zai.transport==="browser",...native,
+    statePath:resolve(config.statePath),holdUnfinishedJudgingOnRestart:zai.transport!=="api",...native,
     isGeneratedPrompt:async(target,message)=>{
       const snapshot=await native.read(target);
       return getHumanStopStore().isGeneratedPrompt("chatgpt",snapshot.nativeSessionId,
         {text:message.text,...(message.inputId?{turnId:message.inputId}:{})});
     },
     createJudge:({signal,shouldContinue})=>createOpenAICompatibleJudge({
-      baseUrl:zai.transport==="browser"?"https://chat.z.ai/autopilot":zai.baseUrl,
+      baseUrl:zai.transport==="api"?zai.baseUrl:"https://chat.z.ai/autopilot",
       model:"glm-5.3",token,retryPolicy:"zai-cycle",contextBytes:zai.contextBytes??128*1024,
       timeoutMs:zai.timeoutMs??(browserPool?240_000:90_000),signal,shouldContinue,
       ...(browserPool?{fetchImpl:browserPool.withGuard(shouldContinue)}:{}),
@@ -327,5 +345,5 @@ export async function createV1BrowserAutopilotRuntime(input:unknown,options:{por
     if(!configured.has(key(target)))await service.setEnabled(target,false);
   for(const profile of config.profiles)for(const sessionRef of profile.sessionRefs)
     await service.setEnabled({instanceRef:profile.instanceRef,sessionRef},config.enabled);
-  return {config,service,close:async()=>{service.stop();await service.settle();await browserPool?.close();if(browserTools instanceof VibeChromePageTools)await browserTools.close();await port?.close?.();}};
+  return {config,service,close:async()=>{service.stop();await service.settle();await browserPool?.close();await port?.close?.();}};
 }

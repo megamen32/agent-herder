@@ -6,6 +6,7 @@ import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter } from "./adapters/browser-chat.js";
 import { ChatGptMacCdpDriver } from "./adapters/chatgpt-mac-cdp-driver.js";
 import { UserIoChatGptDriver } from "./adapters/chatgpt-userio-driver.js";
+import { ZaiUserIoDriver } from "./adapters/zai-userio-driver.js";
 import { ZaiCdpDriver } from "./adapters/zai-cdp-driver.js";
 import { isOwnedTabUrl } from "./adapters/browser-owned-tab.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
@@ -291,8 +292,8 @@ export function makeConfiguredAdapter(
   if (!["direct-cdp","mac-mini","vibe-mcp","userio"].includes(transport ?? "")) {
     throw new Error("AHAP_BROWSER_TRANSPORT must select direct-cdp, mac-mini, vibe-mcp or userio");
   }
-  if(harness==="chatgpt" && transport==="vibe-mcp")
-    throw new Error("Vibe is not permitted for ChatGPT owner sessions");
+  if(transport==="vibe-mcp")
+    throw new Error("Vibe is not permitted for ChatGPT or Z.AI owner sessions");
   // The page number is only a first-use hint. The driver owns exactly one
   // tab per provider and finds it by its own marker, so a gateway restart or
   // a closed tab never breaks the route and never opens a tab per call.
@@ -304,21 +305,26 @@ export function makeConfiguredAdapter(
   }
 
   if (transport === "userio") {
-    if(harness!=="chatgpt") throw new Error("UserIO transport supports only ChatGPT");
-    if(rawPageId||env.AHAP_BROWSER_CDP_WS_URL||env.AHAP_BROWSER_MCP_URL)
+    if(rawPageId||env.AHAP_BROWSER_CDP_WS_URL||env.AHAP_BROWSER_MCP_URL
+       ||env.AHAP_CHATGPT_CDP_WS_URL||env.AHAP_BROWSER_CDP_CONTEXT_ID)
       throw new Error("UserIO must not share another browser transport");
-    const driver=new UserIoChatGptDriver({
+    const config={
       endpoint:env.AHAP_USERIO_ENDPOINT??"",
       agentId:env.AHAP_USERIO_AGENT_ID??"",
       instanceId:env.AHAP_USERIO_INSTANCE_ID??"",
       accountScope:expectedScope,
       tokenFile:env.AHAP_USERIO_ACCESS_TOKEN_FILE??""
-    });
-    const provider={id:"chatgpt",name:"ChatGPT UserIO",harness:"chatgpt",cwd:process.cwd()} as const;
+    };
+    const driver=harness==="chatgpt"?new UserIoChatGptDriver(config):new ZaiUserIoDriver(config);
+    const provider={id:harness,name:harness==="chatgpt"?"ChatGPT UserIO":"Z.AI UserIO",
+      harness,cwd:process.cwd()} as const;
     const adapter=new BrowserChatAdapter(driver,provider,process.cwd(),true,true);
     return Object.assign(adapter,{
       getAccountScope:()=>driver.getAccountScope(),
-      verifyPinnedAccountScope:()=>driver.verifyPinnedAccountScope(),
+      verifyPinnedAccountScope:async()=>{
+        if(driver instanceof ZaiUserIoDriver)await driver.verifyPinnedAccountScope(expectedScope);
+        else await driver.verifyPinnedAccountScope();
+      },
       close:async()=>undefined,
     });
   }
