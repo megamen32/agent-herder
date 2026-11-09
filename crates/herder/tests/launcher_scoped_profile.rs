@@ -1149,6 +1149,8 @@ fn trusted_vibe_profile_keeps_unknown_and_process_environment_rejected() {
     }
     fs::write(&f.profile, vibe_owner_profile(&f, "codex", safe_vibe_env()).to_string()).unwrap();
     assert!(scoped_profile::open_owner(&f.profile).is_err(), "Vibe keys cannot cross into Codex");
+}
+
 #[test]
 fn owner_enrolls_exact_existing_chat_and_revokes_profile_membership_without_native_writes() {
     use std::io::{BufRead, BufReader, Write};
