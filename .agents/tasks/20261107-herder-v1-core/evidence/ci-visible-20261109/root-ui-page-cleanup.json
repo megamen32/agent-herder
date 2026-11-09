@@ -1,0 +1,36 @@
+{
+  "closed": [
+    {
+      "isError": false,
+      "pageId": 1317325642,
+      "receipt": [
+        "Closed page 1317325642"
+      ],
+      "target": "cd95ca5a2a40e"
+    },
+    {
+      "isError": false,
+      "pageId": 895788144,
+      "receipt": [
+        "Closed page 895788144"
+      ],
+      "target": "ce1d3af1aed97"
+    }
+  ],
+  "verified_absent": [
+    {
+      "isError": false,
+      "listed": false,
+      "listingBytes": 811,
+      "pageId": 1317325642,
+      "target": "cd95ca5a2a40e"
+    },
+    {
+      "isError": false,
+      "listed": false,
+      "listingBytes": 1788,
+      "pageId": 895788144,
+      "target": "ce1d3af1aed97"
+    }
+  ]
+}

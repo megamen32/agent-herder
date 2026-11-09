@@ -1,0 +1,76 @@
+{
+  "mode": "installed-browser",
+  "stage": "installed",
+  "status": "FAIL",
+  "functional_status": "FAIL",
+  "global_inventory_status": "UNVERIFIED",
+  "phase": "preflight",
+  "error_code": "native_profiles_missing",
+  "model_effects": "NOT_SUBMITTED",
+  "identity": "UNKNOWN",
+  "browser_cleanup": "NOT_CREATED",
+  "missing_harnesses": [
+    "chatgpt",
+    "zai",
+    "zcode"
+  ],
+  "run_id": "gha-42554202875-1",
+  "source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "lanes": {
+    "chatgpt": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      }
+    },
+    "zai": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      }
+    },
+    "opencode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      }
+    },
+    "codex": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      }
+    },
+    "zcode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      }
+    }
+  }
+}

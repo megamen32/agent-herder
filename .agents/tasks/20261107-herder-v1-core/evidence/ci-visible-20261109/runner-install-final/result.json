@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "observed_at": "2026-11-09T03:12:48.229764+00:00",
+  "source_commit": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "infrastructure_status": "PASS",
+  "runner_id": 21,
+  "runner_name": "herder-installed-server100",
+  "runner_label": "agent-herder-installed-server100",
+  "service": "agent-herder-installed-ci.service",
+  "runner_online_verified": true,
+  "hosted_ubuntu_status": "PASS",
+  "hosted_macos_status": "PASS",
+  "installed_workflow_executed": true,
+  "installed_functional_status": "FAIL",
+  "global_inventory_status": "UNVERIFIED",
+  "installed_all_five_acceptance": false,
+  "workflow_results": [
+    {
+      "run_id": 42552768229,
+      "source_sha": "39ce86198b78b319bd38b152d02b7f058da9da1d",
+      "status": "FAIL",
+      "error_code": "native_profiles_missing",
+      "missing_harnesses": [
+        "chatgpt",
+        "zai",
+        "zcode"
+      ],
+      "model_effects": "NOT_SUBMITTED",
+      "owned_process_cleanup": "PASS"
+    },
+    {
+      "run_id": 42554202875,
+      "source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+      "status": "FAIL",
+      "error_code": "native_profiles_missing",
+      "missing_harnesses": [
+        "chatgpt",
+        "zai",
+        "zcode"
+      ],
+      "model_effects": "NOT_SUBMITTED",
+      "owned_process_cleanup": "PASS"
+    }
+  ],
+  "code_tests": {
+    "new_provision_tests": 12,
+    "independent_unprivileged_symlink_tmpdir_task": "959517175be7744349056b3859b910d2",
+    "actual_official_archive": "PASS",
+    "symlinks_preserved": 6,
+    "service_entry": "bin/runsvc.sh"
+  },
+  "cleanup": {
+    "workflow_owned_processes": "PASS",
+    "disposable_archive_test_directories": "REMOVED",
+    "managed_ci_services": "RUNNING_INTENTIONALLY"
+  },
+  "original_failed_attempt_retained": true,
+  "automatic_retry": false,
+  "registration_dispatches_after_original_extraction_failure": 1,
+  "credential_values_exposed": false,
+  "shared_runtime_selectors_or_profiles_changed": false,
+  "remaining_task": "CIINSTALLFINAL",
+  "evidence": {
+    "initial-failed-receipt.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/initial-failed-receipt.json",
+      "sha256": "17cbfe5634ab2e43c3f8ad408acc5605461f1ea531008d6189ad0ff5b2aea6d7"
+    },
+    "archive-validation-result.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/archive-validation-result.json",
+      "sha256": "daf695ab4632a3322d5574b4128aea25eef7123a4aa9aeff6e2f1fdc9ba36100"
+    },
+    "resume-plan.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/resume-plan.json",
+      "sha256": "79c5e1076f878ad02e136fd6017522ef28349ee96a80be9e0dd97ff006ae10cc"
+    },
+    "resume-execution-receipt.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/resume-execution-receipt.json",
+      "sha256": "50ef6a37097b583fb4bec45c11614ed1e0d4264c5dbcc922b8d2b721f2f42a8d"
+    },
+    "post-install-proof.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/post-install-proof.json",
+      "sha256": "5518096dfa924315aafd6ded67eb7e1fa8ea06a88d97e97621ddd5330e1ba299"
+    },
+    "credential-mode-adjustment.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/credential-mode-adjustment.json",
+      "sha256": "0af021f40ecd64e3f88ca25bda8cb11d3163df198646d6039c4d1ee45b0f9be2"
+    },
+    "install-manifest.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/install-manifest.json",
+      "sha256": "b65b46d2e746aabd6506e890deaa2b241bc1832009013114d7ec825b811d0a77"
+    },
+    "prior-workflow-report.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/prior-workflow-report.json",
+      "sha256": "9fc231396739f590582a893344b9cc56eb502d0987e63939fb78b7bcc2470a66"
+    },
+    "prior-workflow-lifecycle.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/prior-workflow-lifecycle.json",
+      "sha256": "2defe8738c74ba843d29b8dd6952c3a2afc172b16ab87a7226f4bb4cdb76d3bc"
+    },
+    "final-workflow-report.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/final-workflow-report.json",
+      "sha256": "aaac19419e5cde194495b2dad94249c279de8e6facfc303fc27221c9fa75110e"
+    },
+    "final-workflow-lifecycle.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/final-workflow-lifecycle.json",
+      "sha256": "2defe8738c74ba843d29b8dd6952c3a2afc172b16ab87a7226f4bb4cdb76d3bc"
+    },
+    "final-workflow-jobs.json": {
+      "path": "evidence/ci-visible-20261109/runner-install-final/final-workflow-jobs.json",
+      "sha256": "4d6134e6b318127cd15adea1bcd92b6c8d5714467cbf029d016656f0cc188e56"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "real-native-canary.v1",
+  "harness": "zcode",
+  "nativeId": "sess_b9f137c3-8dd3-4024-9664-11a6e50798b1",
+  "status": "PASS",
+  "cleanup": "ARCHIVED",
+  "readerDisposed": true,
+  "model": "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled",
+  "startedAt": "2026-11-09T01:16:37.344Z",
+  "finishedAt": "2026-11-09T01:17:13.765Z",
+  "exact_assistant_reply_count": 2,
+  "continuation": "same_native_session_id",
+  "official_server": {
+    "pid": 3014880,
+    "generation": 2
+  },
+  "coverage": "real_native_functional_baseline_only; installed_Vibe_UI_matrix_not_claimed",
+  "private_receipts": {
+    "result.json": {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-real-canary-v5-20261109/result.json",
+      "sha256": "c857c282573be371ddabcc7e15b83bb2a466bbe00f7601f616fdabe651f56fed"
+    },
+    "both-replies.json": {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-real-canary-v5-20261109/both-replies.json",
+      "sha256": "7df9e37f155f43a2b6bbcb0f01153bb9bfc83b1acae7578a80f100604c42ce3d"
+    },
+    "native-raw-success.json": {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-real-canary-v5-20261109/native-raw-success.json",
+      "sha256": "a6312402f39993e0e743fdde572b2d7fc2dec37e23d98dc25ea3b86ef6f26eb8"
+    },
+    "native-after.json": {
+      "path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-real-canary-v5-20261109/native-after.json",
+      "sha256": "122fb5f86e60356dd7e11ca2e989d48d57023dc756af281abae870eac984e630"
+    }
+  }
+}

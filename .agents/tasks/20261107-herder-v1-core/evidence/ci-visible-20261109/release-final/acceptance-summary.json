@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "scope": "source-build-and-release-candidate",
+  "source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "original_build_source_sha": "a06f6c655881958f2fcf4af8a65770520038f657",
+  "runtime_build_inputs_identical": true,
+  "reviewed_ci_only_delta_sha256": {
+    "tests/native/test_runner_config.py": "45d62a69ceb9c15629d410b25cc1553ebbb4ee8ccea1841d30cd84e20278654e",
+    "tests/installed-native-worker.test.ts": "fabc809718c6f1a906e5237e59ca9fbc732bd123aabcd2cba6a48de0add73c85",
+    "deploy/fleet/provision-installed-smoke-runner.py": "133aed7a6defc985e4985c42ff2d83b5b2e2fad7fabcd558daaf04db8b66261d",
+    "tests/native/test_installed_smoke_provision.py": "94ec40dd1259c21b0751ad7ed76c6badf0482c74312bb380a830bf62da151741",
+    ".github/workflows/fleet-session.yml": "a7e1ce26ffd1d577647bd41ae0f5cb689c453a863fe7d7c05217cc0d3a91675f"
+  },
+  "full_validation": {
+    "source_sha": "a06f6c655881958f2fcf4af8a65770520038f657",
+    "node": [
+      {
+        "label": "npm-build",
+        "exit_code": 0,
+        "summary": []
+      },
+      {
+        "label": "vitest-focused",
+        "exit_code": 0,
+        "summary": [
+          "Test Files  30 passed (30)",
+          "Tests  438 passed (438)"
+        ]
+      },
+      {
+        "label": "test_runner_config",
+        "exit_code": 0,
+        "summary": [
+          "Ran 8 tests in 0.041s"
+        ]
+      },
+      {
+        "label": "test_candidate_release_gate",
+        "exit_code": 0,
+        "summary": [
+          "Ran 37 tests in 0.071s"
+        ]
+      },
+      {
+        "label": "test_installed_smoke_helper",
+        "exit_code": 0,
+        "summary": [
+          "Ran 6 tests in 2.014s"
+        ]
+      },
+      {
+        "label": "manager-tests",
+        "exit_code": 0,
+        "summary": [
+          "# tests 23",
+          "# pass 23",
+          "# fail 0"
+        ]
+      }
+    ],
+    "rust": [
+      {
+        "label": "rust-core-release",
+        "exit_code": 0,
+        "summary": []
+      },
+      {
+        "label": "rust-bootstrap-release",
+        "exit_code": 0,
+        "summary": []
+      },
+      {
+        "label": "rust-compat-release",
+        "exit_code": 0,
+        "summary": []
+      },
+      {
+        "label": "rust-scoped-contracts",
+        "exit_code": 0,
+        "summary": [
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s",
+          "test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.05s"
+        ]
+      },
+      {
+        "label": "bootstrap-contracts",
+        "exit_code": 0,
+        "summary": []
+      }
+    ]
+  },
+  "final_regressions": [
+    {
+      "label": "runner-config-final-portability",
+      "exit_code": 0,
+      "summary": [
+        "Ran 8 tests in 1.152s"
+      ]
+    },
+    {
+      "label": "worker-fixture-final-portability",
+      "exit_code": 0,
+      "summary": [
+        "Test Files  1 passed (1)",
+        "Tests  7 passed (7)"
+      ]
+    },
+    {
+      "label": "provisioner-final-contracts",
+      "exit_code": 0,
+      "summary": [
+        "Ran 12 tests in 0.069s"
+      ]
+    }
+  ],
+  "final_regression_environment": {
+    "uid": 1000,
+    "python_tmpdir_alias": true,
+    "platform": "linux"
+  },
+  "artifact": {
+    "path": "/home/roomhacker/herder-artifacts/releases/herder-ci-final-f8f5d4141be4",
+    "manifest_sha256": "eb13efe02175a562628368b84208d937db805c0ca13d12d54258c2a09311ce29",
+    "source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+    "unique_component_files": 8,
+    "harnesses": [
+      "browser",
+      "chatgpt",
+      "codex",
+      "opencode",
+      "zai",
+      "zcode"
+    ],
+    "protected": true,
+    "installed": false
+  },
+  "artifact_modes": [
+    "0o400",
+    "0o500"
+  ],
+  "artifact_file_count": 9,
+  "evidence": {
+    "final_report": "/home/roomhacker/.codex/worktrees/herder-ci-final-f8f5d4141be4/agent-herder/.tmp/final-release-verification/final.json",
+    "final_report_sha256": "fa73d412e38561a52daba9c83e34fd28392bce4b01f07ded8ce0587071b13b79",
+    "original_reports": {
+      "node": {
+        "source_sha": "a06f6c655881958f2fcf4af8a65770520038f657",
+        "report": "/home/roomhacker/.codex/worktrees/herder-ci-final-a06f6c655881/agent-herder/.tmp/final-release-verification/node.json",
+        "sha256": "baa67c921921ad81a33b690ff07f4f1ad0755e46c12f84b056948d0cc5b5ad80",
+        "commands": [
+          {
+            "label": "npm-build",
+            "exit_code": 0,
+            "test_summary": []
+          },
+          {
+            "label": "vitest-focused",
+            "exit_code": 0,
+            "test_summary": [
+              "Test Files  30 passed (30)",
+              "Tests  438 passed (438)"
+            ]
+          },
+          {
+            "label": "test_runner_config",
+            "exit_code": 0,
+            "test_summary": [
+              "Ran 8 tests in 0.041s"
+            ]
+          },
+          {
+            "label": "test_candidate_release_gate",
+            "exit_code": 0,
+            "test_summary": [
+              "Ran 37 tests in 0.071s"
+            ]
+          },
+          {
+            "label": "test_installed_smoke_helper",
+            "exit_code": 0,
+            "test_summary": [
+              "Ran 6 tests in 2.014s"
+            ]
+          },
+          {
+            "label": "manager-tests",
+            "exit_code": 0,
+            "test_summary": [
+              "# tests 23",
+              "# pass 23",
+              "# fail 0"
+            ]
+          }
+        ]
+      },
+      "rust": {
+        "source_sha": "a06f6c655881958f2fcf4af8a65770520038f657",
+        "report": "/home/roomhacker/.codex/worktrees/herder-ci-final-a06f6c655881/agent-herder/.tmp/final-release-verification/rust.json",
+        "sha256": "f0410f0851222c161bd9b0810349efa61d2e2423d78a0ceebcd3c839dd040af0",
+        "commands": [
+          {
+            "label": "rust-core-release",
+            "exit_code": 0,
+            "test_summary": []
+          },
+          {
+            "label": "rust-bootstrap-release",
+            "exit_code": 0,
+            "test_summary": []
+          },
+          {
+            "label": "rust-compat-release",
+            "exit_code": 0,
+            "test_summary": []
+          },
+          {
+            "label": "rust-scoped-contracts",
+            "exit_code": 0,
+            "test_summary": [
+              "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s",
+              "test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 14.05s"
+            ]
+          },
+          {
+            "label": "bootstrap-contracts",
+            "exit_code": 0,
+            "test_summary": []
+          }
+        ]
+      }
+    }
+  },
+  "cleanup": {
+    "command_groups_checked": 17,
+    "remaining_owned_groups": {},
+    "owned_worktree_processes": []
+  },
+  "installed_runtime_changed": false,
+  "model_canaries_run": false,
+  "live_installed_acceptance": "NOT_PERFORMED_BY_THIS_VERIFIER",
+  "completed_at": "2026-11-09T03:04:55.242191+00:00"
+}

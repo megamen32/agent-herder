@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "repository": "megamen32/agent-herder",
+  "runtime_owner": "roomhacker",
+  "runner_id": 21,
+  "runner_name": "herder-installed-server100",
+  "runner_label": "agent-herder-installed-server100",
+  "runner_uid": 988,
+  "reviewed_source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "runner_version": "2.338.2",
+  "runner_sha256": "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40",
+  "files": {
+    "collector.cjs": "5aac0349a768948e437a2b1050c1956e6628bef3a6474f5aa16e6b5cdedfd4ef",
+    "bindings.cjs": "39671ca3efdfc501cd8408209a63e5428364b7a201ce5114c1a4f00fda49b2b2",
+    "candidate_release_gate.py": "1c046e773b69021812b356aacae434ab4fdd769c0013236c673275fd3eaf0397",
+    "installed-public-core.py": "655471cc805733784014908dd43936b811092bb96ac55c2fa8e4db310a9845e1",
+    "public-rust-consumer.py": "c9ae81c5494b855bc12b2873b62c74bac37f0945b2b4aab44f45744a18465451",
+    "ci-browser-fixture.mjs": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2"
+  },
+  "fixture_sha256": "decb4740c9af6f69748d033f84898282dfd2bd18da4678a322e8292a5e0c9e28"
+}

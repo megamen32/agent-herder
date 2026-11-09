@@ -1,0 +1,228 @@
+{
+  "audit_actions": {
+    "credential_values_read": false,
+    "helper_or_canary_invocations": 0,
+    "service_changes": 0,
+    "source_edits": 0,
+    "workflow_retries": 0
+  },
+  "final_source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "installed_ci": {
+    "collector_fixture_pin_matches": true,
+    "fixture_matches_manifest": true,
+    "fixture_sha256": "decb4740c9af6f69748d033f84898282dfd2bd18da4678a322e8292a5e0c9e28",
+    "helper_matches_final_source": true,
+    "input_pins": {
+      "bindings": true,
+      "bridge": true,
+      "consumer": true,
+      "manager": true,
+      "manager_config": true,
+      "node": true
+    },
+    "installed_file_checks": [
+      {
+        "hash_matches_manifest": true,
+        "name": "collector.cjs",
+        "root_owned_no_group_world_write": true
+      },
+      {
+        "hash_matches_manifest": true,
+        "name": "bindings.cjs",
+        "root_owned_no_group_world_write": true
+      },
+      {
+        "hash_matches_manifest": true,
+        "name": "candidate_release_gate.py",
+        "root_owned_no_group_world_write": true
+      },
+      {
+        "hash_matches_manifest": true,
+        "name": "installed-public-core.py",
+        "root_owned_no_group_world_write": true
+      },
+      {
+        "hash_matches_manifest": true,
+        "name": "public-rust-consumer.py",
+        "root_owned_no_group_world_write": true
+      },
+      {
+        "hash_matches_manifest": true,
+        "name": "ci-browser-fixture.mjs",
+        "root_owned_no_group_world_write": true
+      }
+    ],
+    "installed_files_checked": 6,
+    "manifest_path": "/etc/agent-herder-ci-smoke/install.json",
+    "manifest_sha256": "b65b46d2e746aabd6506e890deaa2b241bc1832009013114d7ec825b811d0a77",
+    "official_runner_archive_sha256": "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40",
+    "reviewed_source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+    "runner_version": "2.338.2"
+  },
+  "limits": [
+    "Runtime component identity and all five functional lanes remained UNKNOWN because preflight exited before execution.",
+    "A passing installation and hosted matrix do not constitute installed all-five acceptance."
+  ],
+  "no_dispatch_evidence": {
+    "browser_cleanup": "NOT_CREATED",
+    "collector_lifecycle_cleanup_verified": true,
+    "run_directories_contain_only_report_json": true,
+    "protected_reports": "NOT_SUBMITTED",
+    "reviewed_control_flow": "native_profiles_missing is raised in createInstalledSmokeBindings before browser verification, native ports, public core, Vibe transport, or executeInstalledBrowserSmoke"
+  },
+  "recorded_at": "2026-11-09T03:15:11.815403+00:00",
+  "resume": {
+    "exit_code": 0,
+    "receipt_path": "/var/lib/agent-herder-ci-provision/install-53cfe57f-20261109/resume-execution-receipt.json",
+    "receipt_sha256": "50ef6a37097b583fb4bec45c11614ed1e0d4264c5dbcc922b8d2b721f2f42a8d",
+    "status": "CONFIRMED"
+  },
+  "runner": {
+    "busy": false,
+    "expected_label": "agent-herder-installed-server100",
+    "expected_label_present": true,
+    "id": 21,
+    "name": "herder-installed-server100",
+    "status": "online",
+    "uid": 988
+  },
+  "runs": [
+    {
+      "all_five_lane_checks": "UNKNOWN",
+      "browser_cleanup": "NOT_CREATED",
+      "error_code": "native_profiles_missing",
+      "github_artifact": {
+        "id": 13646827392,
+        "member": "installed-browser-summary.json",
+        "member_sha256": "15158c1e466ab7c3849c445bf5045426d850f9993fb3f03471491c68264352fa",
+        "phase_intentionally_omitted_by_helper": true,
+        "status_error_effects_and_missing_harnesses_match_protected_report": true
+      },
+      "global_inventory_status": "UNVERIFIED",
+      "head_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+      "hosted_jobs": [
+        {
+          "conclusion": "success",
+          "id": 128956180629,
+          "name": "routing (macos-latest)"
+        },
+        {
+          "conclusion": "success",
+          "id": 128956180848,
+          "name": "routing (ubuntu-latest)"
+        }
+      ],
+      "installed_completed_at": "2026-11-09T03:08:42Z",
+      "installed_conclusion": "failure",
+      "installed_job_id": 128956411915,
+      "installed_started_at": "2026-11-09T03:08:27Z",
+      "installed_status": "completed",
+      "lifecycle": {
+        "cleanup_verified": true,
+        "descendants_terminated": false,
+        "effect_outcome": "FROM_PROTECTED_REPORT",
+        "returncode": 2,
+        "timed_out": false
+      },
+      "lifecycle_path": "/var/lib/agent-herder-ci-smoke/requests/gha-42554202875-1.lifecycle.json",
+      "missing_harnesses": [
+        "chatgpt",
+        "zai",
+        "zcode"
+      ],
+      "model_effects": "NOT_SUBMITTED",
+      "phase": "preflight",
+      "protected_report": {
+        "mode": "0600",
+        "path": "/var/lib/agent-herder-ci-smoke/runs/gha-42554202875-1/report.json",
+        "sha256": "aaac19419e5cde194495b2dad94249c279de8e6facfc303fc27221c9fa75110e",
+        "uid": 1000
+      },
+      "run_directory_files": [
+        "report.json"
+      ],
+      "run_id": 42554202875,
+      "runtime_identity": "UNKNOWN",
+      "workflow_conclusion": "failure",
+      "workflow_status": "completed"
+    },
+    {
+      "all_five_lane_checks": "UNKNOWN",
+      "browser_cleanup": "NOT_CREATED",
+      "error_code": "native_profiles_missing",
+      "github_artifact": {
+        "id": 13646318086,
+        "member": "installed-browser-summary.json",
+        "member_sha256": "cf4135dd7caf0fcd5ec038b7c25212cd0cd9c59ebbac6a6d540145e3af263754",
+        "phase_intentionally_omitted_by_helper": true,
+        "status_error_effects_and_missing_harnesses_match_protected_report": true
+      },
+      "global_inventory_status": "UNVERIFIED",
+      "head_sha": "39ce86198b78b319bd38b152d02b7f058da9da1d",
+      "hosted_jobs": [
+        {
+          "conclusion": "success",
+          "id": 128951774142,
+          "name": "routing (macos-latest)"
+        },
+        {
+          "conclusion": "success",
+          "id": 128951774502,
+          "name": "routing (ubuntu-latest)"
+        }
+      ],
+      "installed_completed_at": "2026-11-09T03:07:25Z",
+      "installed_conclusion": "failure",
+      "installed_job_id": 128951986553,
+      "installed_started_at": "2026-11-09T03:07:09Z",
+      "installed_status": "completed",
+      "lifecycle": {
+        "cleanup_verified": true,
+        "descendants_terminated": false,
+        "effect_outcome": "FROM_PROTECTED_REPORT",
+        "returncode": 2,
+        "timed_out": false
+      },
+      "lifecycle_path": "/var/lib/agent-herder-ci-smoke/requests/gha-42552768229-1.lifecycle.json",
+      "missing_harnesses": [
+        "chatgpt",
+        "zai",
+        "zcode"
+      ],
+      "model_effects": "NOT_SUBMITTED",
+      "phase": "preflight",
+      "protected_report": {
+        "mode": "0600",
+        "path": "/var/lib/agent-herder-ci-smoke/runs/gha-42552768229-1/report.json",
+        "sha256": "9fc231396739f590582a893344b9cc56eb502d0987e63939fb78b7bcc2470a66",
+        "uid": 1000
+      },
+      "run_directory_files": [
+        "report.json"
+      ],
+      "run_id": 42552768229,
+      "runtime_identity": "UNKNOWN",
+      "workflow_conclusion": "failure",
+      "workflow_status": "completed"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "independent read-only installed acceptance audit",
+  "service": {
+    "active_state": "active",
+    "enabled": true,
+    "exec_main_status": 0,
+    "main_pid": 1025572,
+    "sub_state": "running",
+    "unit": "agent-herder-installed-ci.service",
+    "user": "agent-herder-ci",
+    "working_directory": "/opt/agent-herder-ci-runner"
+  },
+  "verdict": {
+    "browser_pages": "NOT_CREATED",
+    "hosted_linux_macos_matrix": "PASS",
+    "installed_functional_acceptance": "FAIL",
+    "model_dispatch": "NOT_SUBMITTED",
+    "runner_installation": "PASS"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "agent-herder.ci-browser-live-install-proof.v1",
+  "observed_at": "2026-11-09T02:51:44.777Z",
+  "status": "PASS",
+  "code": null,
+  "generation": "0e01b3d1afaf62a34decf41aa1ad6f21cb8ef78a9746b6dbb012ee5b11dbe861",
+  "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+  "explicit_session": "session_1",
+  "page_id": 582518886,
+  "nonce": "5cbd3b1c-e8a2-4ca3-8a7e-45cabd3feb1e",
+  "actual_vibe_page_created": true,
+  "owned_page_closed": true,
+  "verified_after_cleanup": true,
+  "vibe_correlated": true,
+  "api_status": 200,
+  "api_content_type": "application/json; charset=utf-8",
+  "visible_family_status": [
+    {
+      "harness": null,
+      "status": null,
+      "count": 4
+    }
+  ],
+  "visible_session_rows": 4
+}

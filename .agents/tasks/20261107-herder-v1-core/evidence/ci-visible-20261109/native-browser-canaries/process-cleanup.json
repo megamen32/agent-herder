@@ -1,0 +1,40 @@
+{
+  "schema": "native-browser-process-cleanup-v1",
+  "observed_at": "2026-11-09T02:08:18.277382+00:00",
+  "scope": "Exact canary script root and fixed explicit Vibe SSH/stdio reader binding from original task launch arguments and reviewed factory",
+  "original_launch_tasks": [
+    "780ef2a5cc9f45b97c44c3a62263c8de",
+    "3191affdac61a36ecfda9712d746d6ac",
+    "5b4e0112949d20a7d600fcbe8b18a174"
+  ],
+  "server100": {
+    "host": "roomhacker-server-100",
+    "observed_at": "2026-11-09T02:07:16.494517+00:00",
+    "uid": 1000,
+    "owned_script_root": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/harness-native-audit-20261109/",
+    "owned_script_count": 0,
+    "owned_script_pids": [],
+    "exact_vibe_ssh_argv_sha256": "2a750ca70c5ef5b254c7081e74ab7f43916508d8ec2128c443a8108c86eeba67",
+    "exact_vibe_ssh_count": 0,
+    "exact_vibe_ssh_pids": [],
+    "matching_vibe_binding_ssh_count": 0,
+    "matching_vibe_binding_ssh_pids": [],
+    "killed": false
+  },
+  "macmini": {
+    "host": "mac-mini-2012.lan",
+    "observed_at": "2026-11-09T02:07:22.419203+00:00",
+    "uid": 501,
+    "exact_reader_binding": {
+      "cli_path": "/Users/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/cli.js",
+      "transport": "stdio",
+      "session": "session_1",
+      "port": 19888
+    },
+    "reader_count": 0,
+    "readers": [],
+    "killed": false
+  },
+  "status": "PASS",
+  "kill_dispatched": false
+}

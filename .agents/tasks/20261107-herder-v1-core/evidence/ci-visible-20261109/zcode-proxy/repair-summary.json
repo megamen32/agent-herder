@@ -1,0 +1,22 @@
+{
+  "schema": "agent-herder.zcode-proxy-repair-summary.v1",
+  "started_at": "2026-11-09T01:08:46.450Z",
+  "operations": [
+    {
+      "operation": "canonical-workspace-repair",
+      "status": "PASS",
+      "old_process_identity_gone": true,
+      "official_server_unchanged": true,
+      "native_outcome": "RECEIVED"
+    },
+    {
+      "operation": "owned-test-workspace-cleanup",
+      "status": "PASS",
+      "old_process_identity_gone": true,
+      "official_server_unchanged": true,
+      "native_outcome": "RECEIVED"
+    }
+  ],
+  "status": "PASS",
+  "completed_at": "2026-11-09T01:08:47.597Z"
+}

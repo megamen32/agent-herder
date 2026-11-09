@@ -1,0 +1,59 @@
+{
+  "observed_at": "2026-11-09T01:49:21.353800+00:00",
+  "source_sha256": {
+    "src/adapters/vibe-chrome-transport.ts": "a47ff1c5da2c38dda673d00c04fa76555b4dfc4b2cfe46bb8353848f747757c0",
+    "src/ahap-browser-runner.ts": "c17e2c8a3c1c643d26ccd183e15ef8438d6ae588f4e6c396754c9abe2b2f4b83",
+    "src/adapters/browser-chat.ts": "5ad37343263c715eda1f1e0156e00d0ef98e3a133f7b759314ea3ce76000e6b5",
+    "src/adapters/browser-chat-new-page.ts": "16a38ea8c89dbc70a1ddf49edfa83c790b2fc3d4b42d06f5e6a24692e2d547d4",
+    "src/adapters/browser-owned-tab.ts": "c80c122359d4e17714cad807df8ff4321c3261091ca0e2420337853494df8e8d",
+    "src/adapters/mac-mini-chrome-transport.ts": "2b96191dc28156be47c3827f9718ca149338b3a1f44ae2e923f3e7157b1841d6",
+    "src/adapters/chatgpt-mac-cdp-driver.ts": "31f72521d7649dc155853a2531a146c8b52565856fba261e75a1464b7c16b93e",
+    "src/adapters/zai-cdp-driver.ts": "1577879781647f25212471ade002ab8860b7951a32c6a100db92ed83ac8009c8",
+    "crates/herder/src/bin/herder_native_stdio/scoped_profile.rs": "9d2b8dd23a0e5d98cc6400557740821c624e2cda6cfcecc28645b612e81eb09c",
+    "crates/herder/tests/launcher_scoped_profile.rs": "7034030ba615690504bebc0bc4c08e621cc0edeef9a1fc17c9e1de429429140e",
+    "tests/browser-chat-create.test.ts": "bc8b30feed24eff2eda23460c5b152c59619ee5419e8d37001b2a615b72d7cf7",
+    "tests/browser-vibe-ownership.test.ts": "41f5943975a5381af8a1e0aefe0bff7908637d5fd0bdd90e0bdeb972fbed9ba1",
+    "tests/browser-canary-observation.test.ts": "69f7f369cc4c779f55f41b1451048941149ffdb28129601987bd85180ec8d28e",
+    "tests/vibe-chrome-transport.test.ts": "e83f19239bcecbf1d083ac26dbd197a78c167126929cf924ad918a064e059d0a",
+    "tests/vibe-async-evaluation.test.ts": "62e05666914b99c2e6e8bb8e2e30896f4f1393f6cdf7fda24a97a7216904d852",
+    "tests/ahap-browser-vibe-selection.test.ts": "7e6ec684a0895f2b19311fce034a1c6dcd7acbea13e8c1335ff42590b0454db2",
+    "tests/browser-canary-view.test.ts": "68a9b5559814edf00f62a091ab45ff567e2663272da07d5caabef01eed2a9449",
+    "tests/zai-durable-draft-read.test.ts": "03a9872be1a2fa986147748e091c16ab1124f7e8dc3de35760833a969740dd67"
+  },
+  "tests": "274 passed / 12 files",
+  "rust_tests": "23 passed / 1 existing ignored",
+  "candidate_build": "tsc exit 0 (durable-zai candidate)",
+  "candidate_tree_sha256": "b384dd438f05967583afa6ba2edfcba9d73f1e80861019bc118ffa26c1137ae2",
+  "final_refinement_tests": "84 passed / 3 files, includes stable control handle mapping",
+  "canary_script_sha256": "68cb114a94a7681a7a47d58b66558061970a709fcd241f0628520e8a187325cc",
+  "candidate_transitions": [
+    {
+      "from": "5800a63242014116262d55dc96528ea2224ef9134157e5b8432261f375e11a8e",
+      "to": "e7e5b47fd02c2c737e8fa5240a5032477c15bab5591b780877f5cd18d20485df",
+      "reason": "reviewed exact native ownership refusal envelope normalization",
+      "at": "2026-11-09T00:44:13.310129+00:00",
+      "first_dispatch_replayed": false
+    },
+    {
+      "from": "e7e5b47fd02c2c737e8fa5240a5032477c15bab5591b780877f5cd18d20485df",
+      "to": "63ce8b0a75a548ac0c30c3a1673f7d1cf93eaa3e44ab2d64331fdd0a060c6ad0",
+      "reason": "reviewed independent owned native view with exact maintained sourceRoute and receipt-first new-page claim",
+      "at": "2026-11-09T01:22:59.160374+00:00",
+      "first_dispatch_replayed": false
+    },
+    {
+      "from": "63ce8b0a75a548ac0c30c3a1673f7d1cf93eaa3e44ab2d64331fdd0a060c6ad0",
+      "to": "b384dd438f05967583afa6ba2edfcba9d73f1e80861019bc118ffa26c1137ae2",
+      "reason": "verified scoped durable Zai draft reads and pre-send cleanup proof invalidation",
+      "at": "2026-11-09T01:49:21.353800+00:00",
+      "first_dispatch_replayed": false
+    }
+  ],
+  "envelope_fix_tests": "26 passed / 2 files",
+  "candidate_path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/harness-native-audit-20261109/candidate-dist-durable-zai",
+  "fresh_view_tests": "106 passed / 5 files",
+  "rust_frozen_for_parent_merge": true,
+  "zai_durable_read_tests": "103 passed / 5 files",
+  "send_cleanup_invalidation_tests": "73 passed / 3 files",
+  "integration_head_at_pin": "0ebc4eb40d676bf55630f143fd0dfa2372cf15d5"
+}

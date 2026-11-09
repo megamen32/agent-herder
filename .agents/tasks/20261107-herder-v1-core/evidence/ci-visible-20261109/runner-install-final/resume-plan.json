@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "reviewed_source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "runner_uid": 988,
+  "failed_receipt_sha256": "17cbfe5634ab2e43c3f8ad408acc5605461f1ea531008d6189ad0ff5b2aea6d7",
+  "original_intent_sha256": "a2122fcded4cb26732161c941e89b9f2ba9ab7e17d3901ecf5047d1eebd45c43",
+  "partial_state": {
+    "runner_user": {
+      "name": "agent-herder-ci",
+      "uid": 988,
+      "gid": 987,
+      "home": "/var/lib/agent-herder-ci-runner",
+      "shell": "/usr/sbin/nologin"
+    },
+    "runner_tree_sha256": "ae7b7a665737455fc8df4514fc546b9ba7a5db19ec6645f5d972460576d70f08",
+    "installed_files": {
+      "collector.cjs": "5aac0349a768948e437a2b1050c1956e6628bef3a6474f5aa16e6b5cdedfd4ef",
+      "bindings.cjs": "39671ca3efdfc501cd8408209a63e5428364b7a201ce5114c1a4f00fda49b2b2",
+      "ci-browser-fixture.mjs": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2",
+      "candidate_release_gate.py": "1c046e773b69021812b356aacae434ab4fdd769c0013236c673275fd3eaf0397",
+      "installed-public-core.py": "655471cc805733784014908dd43936b811092bb96ac55c2fa8e4db310a9845e1",
+      "public-rust-consumer.py": "c9ae81c5494b855bc12b2873b62c74bac37f0945b2b4aab44f45744a18465451"
+    },
+    "helper_sha256": "f37d0553e52f32675921b1870b34ce43831b40cc01d3d7fbcb9e6dd8bb25ff20",
+    "fixture_sha256": "decb4740c9af6f69748d033f84898282dfd2bd18da4678a322e8292a5e0c9e28",
+    "registration_markers": []
+  },
+  "approved_provisioner_sha256": "133aed7a6defc985e4985c42ff2d83b5b2e2fad7fabcd558daaf04db8b66261d",
+  "archive_validation_sha256": "daf695ab4632a3322d5574b4128aea25eef7123a4aa9aeff6e2f1fdc9ba36100"
+}

@@ -1,0 +1,103 @@
+{
+  "schema": "native-browser-canaries-v1",
+  "observed_at": "2026-11-09T02:08:18.277382+00:00",
+  "scope": "native candidate adapters only; installed public owner and UI acceptance remain separate",
+  "result_label": "Zai original-handle resume and archive PASS",
+  "source_manifest": {
+    "path": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/native-browser-canaries/source-manifest.json",
+    "sha256": "28a02bf78faf81d7901b5de0914a22988c7b2a7652df5f1360f4ad101aaab3fa"
+  },
+  "native_transport": {
+    "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    "session_id": "session_1",
+    "relay_port": 19888
+  },
+  "zai": {
+    "functional_status": "PASS",
+    "original_control_handle": "zai::draft%3A354814e7-c030-48f6-ab2f-830453738273",
+    "native_conversation_id": "4cb2caba-d17e-4648-ac52-e16ee68ba7b8",
+    "manual_id_replacement": false,
+    "fresh_process_resume": true,
+    "model_dispatches": 2,
+    "model_dispatch_replays": 0,
+    "reply_tokens_present": [
+      true,
+      true
+    ],
+    "canonical_status": "idle",
+    "archive_status": "confirmed",
+    "owned_view_closed": true,
+    "proof": {
+      "capability": "owned-current-conversation",
+      "account_scope_sha256": "1aa02989cb1349edca3ce1f9edae68a068369e5de570e9a6be3a53916595df0a",
+      "native_session_id": "zai::draft%3A354814e7-c030-48f6-ab2f-830453738273",
+      "native_conversation_id": "4cb2caba-d17e-4648-ac52-e16ee68ba7b8",
+      "owned_page_id": 1115967661,
+      "owned_page_url": "https://chat.z.ai/c/4cb2caba-d17e-4648-ac52-e16ee68ba7b8",
+      "owned_page_namespace": "vibe-f2c4ec565e656a076832ebcc8162d6ebb344494e6a8f4f7f37ad6e2d78537ffe",
+      "canonical_status": "idle"
+    },
+    "raw_native_proof": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/zai-vibe/observation-1794189354339.json",
+      "sha256": "928b739f0c222fb02b961c49077d786bf37e20a9d6bbb076b328435a21620558"
+    },
+    "private_journal": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/zai-vibe/journal.json",
+      "sha256": "dc5954d277d97425ca767b4a8b69696de06a615883198f0b9f83a607e9051f37"
+    }
+  },
+  "chatgpt": {
+    "functional_status": "BLOCKED",
+    "reason": "authoritative exact conversation read returned HTTP 429 after Retry-After and with current-site bounded num_turns=1",
+    "original_control_handle": "chatgpt::draft%3Aa57ae54d-a61b-46f8-9f0c-e10a77d66144",
+    "native_conversation_id_from_admitted_metadata": "6af11571-0cb8-83ea-af60-26aa3cf0d509",
+    "model_dispatches": 1,
+    "model_dispatch_replays": 0,
+    "second_turn_sent": false,
+    "native_session_status": "UNKNOWN",
+    "native_session_archived": false,
+    "observer_cleanup_status": "observer_closed_session_unverified",
+    "observer_cleanup": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/chatgpt-vibe/observer-cleanup.json",
+      "sha256": "924b2394f2e29ccdc4acf60310b6b30b54d56d94c326bb49d85f9bc390675481"
+    },
+    "native_read_receipt": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/chatgpt-vibe/canonical-bounded-read-1794188684426.json",
+      "sha256": "4bc7e905781617b741be62ce0144b632da81d8deb87e0143cc3ae5f35177f44a"
+    },
+    "current_site_api_source": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/chatgpt-vibe/current-site-api-source-1794188434038.json",
+      "sha256": "d4495c147225ec9003386fae8901cf9d891f7847c990e6e993c50053ac2007e4"
+    },
+    "original_task_receipt_access": "403 after external caller profile transition; durable own journal preserved",
+    "private_journal": {
+      "path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/chatgpt-vibe/journal.json",
+      "sha256": "dbd1b568021fc156e7900cd27643cf65263b0f59898ddba04afafe96b2b041bf"
+    }
+  },
+  "validation": {
+    "durable_scoped_read": "103 passed / 5 files",
+    "send_cleanup_invalidation": "73 passed / 3 files",
+    "typescript_build": "exit 0",
+    "targeted_diff_check": "exit 0",
+    "current_owned_invocation_locks_absent": true
+  },
+  "limitations": [
+    "No installed selector, service or production owner profile changes were made by this agent.",
+    "Whole-account browser active inventory remains UNVERIFIED.",
+    "ChatGPT accepted first turn remains unconfirmed and unarchived; observer closure does not mean session cleanup PASS."
+  ],
+  "prior_bug_proof": {
+    "path": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/native-browser-canaries/result.json",
+    "sha256": "c2959ba26f23aac8b61b592d6df1e0d3739d7a068be42c349f8bf76b2c4553e6"
+  },
+  "process_cleanup": {
+    "status": "PASS",
+    "owned_canary_processes": 0,
+    "exact_ssh_readers": 0,
+    "exact_macmini_stdio_readers": 0,
+    "receipt_path": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/native-browser-canaries/process-cleanup.json",
+    "receipt_sha256": "aca1ef3771db72bfd257c86e28e47876e443222ffd8d0c17746eaae0dddd8f95",
+    "no_processes_killed": true
+  }
+}

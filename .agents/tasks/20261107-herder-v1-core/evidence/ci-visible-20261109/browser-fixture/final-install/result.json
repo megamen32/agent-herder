@@ -1,0 +1,125 @@
+{
+  "schema": "agent-herder.ci-browser-installed-acceptance.v1",
+  "observed_at": "2026-11-09T02:55:48.466247+00:00",
+  "status": "PASS",
+  "scope": "Only managed isolated CI browser lifecycle/authenticated Vibe attestation and own-page cleanup; all-five functional release remains outside this receipt.",
+  "source_content_commit": "a06f6c655881958f2fcf4af8a65770520038f657",
+  "source": {
+    "deploy/fleet/ci-browser-fixture.mjs": "f2a785b52e06205b2e40fa3567bacc3f96d5699f4fd04bb622fb9fe27219967f",
+    "tests/native/ci-browser-fixture.test.mjs": "613f0b95a2be5eb84a0ccd977a1d3a325e3824bf4050afa7042289376ce73805",
+    "deploy/fleet/ci-browser-fixture.md": "fc8ea4e9f2a55a82e9fdefbd9adb87fbd2d33d30f4a0d103ab2f74c5fd42ea06",
+    "deploy/fleet/ci-browser-fixture.service": "607637cba6149583818872229be84b4df61998db46fc84f1856a06dc8af92251"
+  },
+  "bundle_sha256": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2",
+  "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+  "tests": {
+    "pass": 23,
+    "fail": 0
+  },
+  "initial_generation": "2ce2ede315c9f574b7ebe68d671e67e49e4f9c88d131211af5801251f8598916",
+  "final_generation": "0e01b3d1afaf62a34decf41aa1ad6f21cb8ef78a9746b6dbb012ee5b11dbe861",
+  "processes": {
+    "daemon": {
+      "pid": 613402,
+      "start_ticks": "81319210"
+    },
+    "browser": {
+      "pid": 613637,
+      "start_ticks": "81319267"
+    },
+    "relay": {
+      "pid": 612164,
+      "start_ticks": "81318837"
+    }
+  },
+  "services": [
+    {
+      "MainPID": "612709",
+      "Id": "agent-herder-ci-browser.service",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "MainPID": "612164",
+      "Id": "agent-herder-ci-vibe.service",
+      "ActiveState": "active",
+      "SubState": "running"
+    }
+  ],
+  "explicit_vibe_session": "session_1",
+  "managed_idle_timeout_ms": 0,
+  "initial_page": {
+    "page_id": 582518746,
+    "nonce": "98f462b6-1608-4258-9d5f-3dd07e8b9160",
+    "closed": true
+  },
+  "restart_page": {
+    "page_id": 582518886,
+    "nonce": "5cbd3b1c-e8a2-4ca3-8a7e-45cabd3feb1e",
+    "closed": true
+  },
+  "api_status": 200,
+  "api_content_type": "application/json; charset=utf-8",
+  "actual_vibe_correlation": true,
+  "observed_ui": {
+    "visible_rows": 4,
+    "family_status": [
+      {
+        "harness": null,
+        "status": null,
+        "count": 4
+      }
+    ],
+    "identity_field_availability": {
+      "harness": 0,
+      "status": 0,
+      "host_id": 0,
+      "native_session_id": 0,
+      "runtime_key": 0,
+      "project_id": 0,
+      "row_key": 0
+    },
+    "families_identifiable_from_dom": false,
+    "all_five_harnesses_proven": false,
+    "raw_transcripts_or_titles_read": false
+  },
+  "cleanup": {
+    "own_test_pages_closed": true,
+    "prior_process_identities_gone": true,
+    "pending_start_intent": false,
+    "managed_services_kept_active_for_ci": true,
+    "profile_or_account_switches": 0,
+    "manual_session_id_edits": 0
+  },
+  "important_fixes": [
+    "HOME-scoped native namespace environment",
+    "paired dedicated relay before every browser start preserves explicit session_1",
+    "mixed systemd stop permits checked native close",
+    "bounded headers-only JSON API proof without awaited body cancel",
+    "health tick defers only ELOCKED during legitimate probe"
+  ],
+  "premutation_restart_preflight": {
+    "task_id": "6ec0a3e1a870cdbbfbd181a2a09c00e2",
+    "outcome": "REJECTED_BEFORE_MUTATION",
+    "reason": "reviewed provisioner copied same root-owned manager with0644; temporary guard still required0755",
+    "reconciled_by": "exact0644 and unchanged bundle/generation guards, then one authorized native restart"
+  },
+  "receipts": {
+    "source-release.json": "41057a3f87c6cb226a7d34c77adc1d2004ce6ccfff9db1ba682f824f94b492f3",
+    "source-tests.log": "7798acd29f4f23f571a1ee4c23cc9d47c4e4e590abed08794d1c7acbdb3b0aa1",
+    "headers-red-regression.log": "0797562805c47f7a490f124dcf69ce3377effc5fdd11560cc8d9c3da8006267f",
+    "installed-manager.json": "c24ef716dd19ed860be2820d8c297096a62f270bedb5714b51c1fc40cfb1931e",
+    "initial-live-proof.json": "5c0f4beeb47b1f0e2f715f0fe72f53f70b5cf1806fd5ed02c6c7d0ecd94c435e",
+    "initial-manager-attest.json": "6f52447e187dd66aaef70ea6c4b7250c4055213404e4aefbf6cc9df09ecabc9e",
+    "initial-cleanup.json": "9c609a8875f68dc20b66ea38101e4f26e50adb7fba4171ee5d1ce450f891b97d",
+    "controlled-restart.json": "53ebd1d6a96f40774e344d65f7bbe110e172852c4928b4acb1aec18ea41768c7",
+    "restart-live-proof.json": "182aa02a8351ffb8c1bcc0428d4ec5f22ed396907731e71276cbd425bb9a6732",
+    "restart-manager-attest.json": "4cbc693fd72a109d3b82dd8912bb5b81ccc72883a6f5739e89b1f40642b5a249",
+    "restart-final-verify.json": "701a3866f77687c02aae6af4ab7eca930ee432bcf9a3f552bba62cb1a9e4e572",
+    "restart-cleanup.json": "c171cbfc1f3492375d558a0f0830c99593dd7c76928af2fc276e5b587533bdab",
+    "visible-row-identities.json": "5ff98c1de29625d2f323dbd9bba486b0c4dcf0aca2a53615deb1fc6bc17b5afc",
+    "original-start-reconciliation.json": "839dc4be6e3a0aa72515d733b57962aa0f35c325d2e165d5bf67cff0602ccb95",
+    "old-stop-reconciliation.json": "3e3dba45645d114411588517d6feb4ef34a87a1faab857c332a0b974edcca83f",
+    "api-readiness-diagnostic.json": "8f23a151f4725d7eadddb658ac24f3046b9902d4bddfec96f1c1e4e24e155b33"
+  }
+}

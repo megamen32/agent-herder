@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "archive_sha256": "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40",
+  "valid_symlinks": 6,
+  "runner_payload_present": true,
+  "service_entry": "bin/runsvc.sh",
+  "working_directory": "runner_root",
+  "partial_install_unchanged": true,
+  "installed_manager_unchanged": true,
+  "runtime_invoked": false
+}

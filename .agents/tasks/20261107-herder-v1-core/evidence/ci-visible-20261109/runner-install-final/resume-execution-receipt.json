@@ -1,0 +1,13 @@
+{
+  "status": "CONFIRMED",
+  "observed_at": "2026-11-09T03:07:03.003952+00:00",
+  "exit_code": 0,
+  "timed_out": false,
+  "error_class": null,
+  "source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "plan_sha256": "79c5e1076f878ad02e136fd6017522ef28349ee96a80be9e0dd97ff006ae10cc",
+  "dispatch_sha256": "74277acffde62916674cd0cd62f07188a9379b560a2c98c97b3058bec22f445b",
+  "log_sha256": "9c809838607d975407f883d661432a99e04548e16472ecd12610a7be97b05453",
+  "install_manifest_exists": true,
+  "no_replay": true
+}

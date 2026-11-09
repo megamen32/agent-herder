@@ -1,0 +1,72 @@
+{
+  "schema": "agent-herder.native-canary-continuation.v1",
+  "run_id": "continuation-20261109T030011Z",
+  "observed_at": "2026-11-09T03:07:52.796084+00:00",
+  "native_task_id": "1f320c723baf47a47d41d1af09872366",
+  "source_head": "39ce86198b78b319bd38b152d02b7f058da9da1d",
+  "script_ref": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/harness-native-audit-20261109/continue-chatgpt-once-20261109T030011Z.mjs",
+  "script_sha256": "68ce35243c74e7591d483314475e3b63daa2cce9695dd9efee9daa42c799bd18",
+  "private_result_ref": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/chatgpt-vibe/continuation-20261109T030011Z/result.json",
+  "private_result_sha256": "9223e77a473a1ecb028a0486c6b184777afe2358f14584cf4c506eb367504b00",
+  "candidate_tree_sha256": "b384dd438f05967583afa6ba2edfcba9d73f1e80861019bc118ffa26c1137ae2",
+  "control_id": "chatgpt::draft%3Aa57ae54d-a61b-46f8-9f0c-e10a77d66144",
+  "native_conversation_id": "6af11571-0cb8-83ea-af60-26aa3cf0d509",
+  "account_scope_sha256": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1",
+  "owned_page_namespace": "vibe-f2c4ec565e656a076832ebcc8162d6ebb344494e6a8f4f7f37ad6e2d78537ffe",
+  "transport": {
+    "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    "session_id": "session_1",
+    "relay_port": 19888
+  },
+  "started_at": "2026-11-09T03:04:08.355Z",
+  "finished_at": "2026-11-09T03:04:36.775Z",
+  "status": "BLOCKED",
+  "reason": "upstream_HTTP_429",
+  "original_A": "accepted_prior_receipt_independent_completion_UNVERIFIED",
+  "B": "NOT_SUBMITTED",
+  "first_message_replayed": false,
+  "model_dispatch_count_before": 1,
+  "model_dispatch_count_after": 1,
+  "original_dispatch_array_unchanged": true,
+  "reconciliation_attempts": 1,
+  "stop_after_first_429": true,
+  "http": [
+    {
+      "phase": "reconcile_A",
+      "operation": "auth_session",
+      "endpoint": "/api/auth/session",
+      "http_status": 200,
+      "retry_after_s": null,
+      "backoff_ms": 0,
+      "observed_at": "2026-11-09T03:04:33.799Z"
+    },
+    {
+      "phase": "reconcile_A",
+      "operation": "conversation_read",
+      "endpoint": "/backend-api/conversations/{id}",
+      "http_status": 429,
+      "retry_after_s": 25,
+      "backoff_ms": 25000,
+      "observed_at": "2026-11-09T03:04:33.799Z"
+    }
+  ],
+  "native_archive_state": null,
+  "native_archive_attempted": false,
+  "native_session_cleanup": "UNVERIFIED_NOT_ARCHIVED",
+  "observer_cleanup": [
+    {
+      "page_id": 1115967699,
+      "role": "observer",
+      "close_dispatches": 1,
+      "outcome": "observer_closed_session_unverified",
+      "receipt": "Closed page 1115967699",
+      "closed": true
+    }
+  ],
+  "sdk_closed": true,
+  "operation_lock_absent": true,
+  "process_cleanup_ref": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/chatgpt-continuation-20261109T030011Z/process-cleanup.json",
+  "process_cleanup_sha256": "31e9eea4807c5274b5955ff1241ee30924976c2911169eddb4015dd1b4ba6973",
+  "source_or_profile_or_runtime_or_account_changes": false,
+  "previous_429_evidence_preserved": true
+}

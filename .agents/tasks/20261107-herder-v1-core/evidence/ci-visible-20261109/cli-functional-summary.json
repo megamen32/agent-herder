@@ -1,0 +1,40 @@
+{
+  "schema": "native-functional-summary.v1",
+  "observed_at": "2026-11-09T01:58:30.199943+00:00",
+  "coverage": "real_native_functional_baseline_only; installed_Vibe_UI_matrix_not_claimed",
+  "lanes": {
+    "codex": {
+      "harness": "codex",
+      "source_sha": "a2755b617c096137b2d5f45c525709348377c92a",
+      "nativeId": null,
+      "status": "BLOCKED",
+      "cleanup": "NOT_CREATED",
+      "readerCleanup": "DISPOSED",
+      "startedAt": "2026-11-09T01:44:21.340Z",
+      "finishedAt": "2026-11-09T01:44:22.727Z",
+      "private_result_path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/codex-real-baseline/result.json",
+      "private_result_sha256": "41705aee7cf797a8460ff0e62d1d7489a45166a135b607b634c9203d7c5cb9a6",
+      "parent_exit_code": 1,
+      "remaining_owned_process_ids": [],
+      "reason": "codex_quota_guard_below_reserve",
+      "remaining_percent": 14,
+      "model_effects": "NOT_SUBMITTED"
+    },
+    "opencode": {
+      "harness": "opencode",
+      "source_sha": "a2755b617c096137b2d5f45c525709348377c92a",
+      "nativeId": "ses_e4205ab82ffe02cbjbrsowvmXN",
+      "status": "PASS",
+      "cleanup": "ARCHIVED",
+      "readerCleanup": "DISPOSED",
+      "startedAt": "2026-11-09T01:44:21.220Z",
+      "finishedAt": "2026-11-09T01:44:27.186Z",
+      "private_result_path": "/home/roomhacker/.local/state/agent-herder/ci-native-20261109/opencode-real-baseline/result.json",
+      "private_result_sha256": "89d2eb775109734a78e791f4fbf055e0c52267657aba4fec063a6590bbd4096e",
+      "parent_exit_code": 0,
+      "remaining_owned_process_ids": [],
+      "exact_pair_count": 2,
+      "continuation": "same_native_session_id"
+    }
+  }
+}

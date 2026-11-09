@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "scope": "source-only CICLEANUP and CIZCODEPROOF acceptance",
+  "completed_source_slices": [
+    "CICLEANUP",
+    "CIZCODEPROOF"
+  ],
+  "source_manifest": {
+    "path": "evidence/ci-visible-20261109/collector-final-v3/source-freeze.json",
+    "sha256": "dbd70f8c9325f9d62f4f29f200f4feed9da67a588b14df7a1a55d4455a025fac"
+  },
+  "validation": {
+    "baseline_typescript_suites": 8,
+    "baseline_typescript_tests": 96,
+    "python_release_gate_tests": 37,
+    "fixed_helper_tests": 6,
+    "final_worker_serial_deadline_proof": "PASS",
+    "component_source_binding": "PASS",
+    "manager_json_content_type_binding": "PASS",
+    "typescript_build_whitespace": "PASS"
+  },
+  "bootstrap": {
+    "status": "FAIL",
+    "expected": true,
+    "error_code": "native_profiles_missing",
+    "missing_harnesses": [
+      "chatgpt",
+      "zai",
+      "zcode"
+    ],
+    "model_effects": "NOT_SUBMITTED"
+  },
+  "installed_component_acceptance": "FAIL",
+  "installed_all_five_acceptance": false,
+  "installed_actions_performed_by_this_agent": false,
+  "full_global_gate_unchanged": true,
+  "remaining_tasks": [
+    "CISOURCEFINAL",
+    "CIINSTALLFINAL",
+    "CINATIVE",
+    "CIBROWSERINSTALL"
+  ],
+  "evidence": {
+    "source-model-result.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-model-result.json",
+      "sha256": "0cc6163de986485690c074b51c672f7ae6c3f0c5598f81605ff9b304943acaa3"
+    },
+    "source-model-tests.log": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-model-tests.log",
+      "sha256": "483c162a93a807bf65bf615ad8e0c8bcada34888f7173ca7603b2fe0db497a7b"
+    },
+    "source-install-result.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-install-result.json",
+      "sha256": "fa96626c2c149bc3f3088958c39d37564601c011820fd9e736f0706487b2583e"
+    },
+    "worker-tests.log": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/worker-tests.log",
+      "sha256": "333756c90376affa73f75c57e43b73f8af81dde77a864cf027c6c20e25645ecd"
+    },
+    "gate-helper-tests.log": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/gate-helper-tests.log",
+      "sha256": "442240389c63ec73eaada4dcab7a9ab80d9f5559b3761409b6582ea2799218c4"
+    },
+    "source-identity-result.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-identity-result.json",
+      "sha256": "908423f5c09627386bc8f237253cf95ee8403fad1db0ad0b6a4ba5d42d2d4a9e"
+    },
+    "old-installed-component-rejections.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/old-installed-component-rejections.json",
+      "sha256": "dd991f87da2da9fa1184e61b611ce1f87517e5672e75f492ee0ab87bf6dcd453"
+    },
+    "source-manager-result.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-manager-result.json",
+      "sha256": "48f69a365f88c4fda39d0cb926c548105a67ccf6bec95c1f494400bbda7114eb"
+    },
+    "bindings-tests.log": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/bindings-tests.log",
+      "sha256": "e9daea897968db04268d8da5fd8082a05932e69c39ca6adfd525cd3acd7a3e93"
+    },
+    "source-freeze.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/source-freeze.json",
+      "sha256": "dbd70f8c9325f9d62f4f29f200f4feed9da67a588b14df7a1a55d4455a025fac"
+    },
+    "bootstrap-result.json": {
+      "path": "evidence/ci-visible-20261109/collector-final-v3/bootstrap-result.json",
+      "sha256": "1cb063ce24c822218b6c7ad7349be2a6e5f8582ed0c77924db8fbcf8b25f1565"
+    }
+  }
+}

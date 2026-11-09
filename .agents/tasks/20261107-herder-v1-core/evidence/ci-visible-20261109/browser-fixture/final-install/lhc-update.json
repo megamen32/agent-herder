@@ -1,0 +1,14 @@
+{
+  "schema": "agent-herder.ci-browser-leaf-close-receipt.v1",
+  "observed_at": "2026-11-09T02:58:16.944619+00:00",
+  "leaf": "CIBROWSERINSTALL",
+  "status": "done",
+  "before_sha256": "72ab5f8f23d5f84ab4dfe9696a9c03771e8109818d7d93aadda503ee8281d194",
+  "after_sha256": "f6bbb686871490a17e4924017d295c1b5b1c45c6031790d8eeaf95153273cf2f",
+  "evidence_path": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/browser-fixture/final-install/result.json",
+  "evidence_sha256": "21c8f77fcf8093141838b142a5ca52a737fd40f9843636cef9b0c16a8010c3f2",
+  "official_api_result": {
+    "id": "CIBROWSERINSTALL",
+    "sha256": "f6bbb686871490a17e4924017d295c1b5b1c45c6031790d8eeaf95153273cf2f"
+  }
+}

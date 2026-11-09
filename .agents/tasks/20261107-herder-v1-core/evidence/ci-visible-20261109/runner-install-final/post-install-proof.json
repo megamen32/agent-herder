@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "observed_at": "2026-11-09T03:10:37.254844+00:00",
+  "reviewed_source_sha": "f8f5d4141be48f0ff5aefe0fcd8bd028755ac64a",
+  "runner": {
+    "id": 21,
+    "name": "herder-installed-server100",
+    "status": "online",
+    "busy": false,
+    "label": "agent-herder-installed-server100"
+  },
+  "service": {
+    "MainPID": "1025572",
+    "WorkingDirectory": "/opt/agent-herder-ci-runner",
+    "User": "agent-herder-ci",
+    "ActiveState": "active",
+    "SubState": "running",
+    "FragmentPath": "/etc/systemd/system/agent-herder-installed-ci.service"
+  },
+  "unit_sha256": "882028360c94bece358baf4777f84d0842f06512dd614b5914800581f81e6671",
+  "install_manifest_sha256": "b65b46d2e746aabd6506e890deaa2b241bc1832009013114d7ec825b811d0a77",
+  "fixture_sha256": "decb4740c9af6f69748d033f84898282dfd2bd18da4678a322e8292a5e0c9e28",
+  "installed_files": {
+    "collector.cjs": "5aac0349a768948e437a2b1050c1956e6628bef3a6474f5aa16e6b5cdedfd4ef",
+    "bindings.cjs": "39671ca3efdfc501cd8408209a63e5428364b7a201ce5114c1a4f00fda49b2b2",
+    "candidate_release_gate.py": "1c046e773b69021812b356aacae434ab4fdd769c0013236c673275fd3eaf0397",
+    "installed-public-core.py": "655471cc805733784014908dd43936b811092bb96ac55c2fa8e4db310a9845e1",
+    "public-rust-consumer.py": "c9ae81c5494b855bc12b2873b62c74bac37f0945b2b4aab44f45744a18465451",
+    "ci-browser-fixture.mjs": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2"
+  },
+  "helper_sha256": "f37d0553e52f32675921b1870b34ce43831b40cc01d3d7fbcb9e6dd8bb25ff20",
+  "credential_metadata": {
+    ".credentials": {
+      "uid": 988,
+      "gid": 987,
+      "mode": "0o600"
+    },
+    ".credentials_rsaparams": {
+      "uid": 988,
+      "gid": 987,
+      "mode": "0o600"
+    }
+  },
+  "credential_values_exposed": false,
+  "shared_runtime_changes": false
+}

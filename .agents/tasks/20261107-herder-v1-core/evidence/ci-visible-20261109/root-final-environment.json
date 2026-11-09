@@ -1,0 +1,30 @@
+{
+  "observed_at": "2026-11-09T03:16:50.881684+00:00",
+  "scope": "read_only_existing_installed_components",
+  "pinned_core_manifest_source": "ce1c3322673590ced14e4a547d40c3368b31aac4",
+  "pinned_core_manifest_sha256": "01e74d4d523afda36a11326c0b6d759c3d830c7e620a357c21fdaaacc54ea6d8",
+  "services": [
+    {
+      "unit": "agent-herder.service",
+      "pid": 1168864,
+      "pinned_argv_present": true,
+      "artifact_hashes_match": true,
+      "executable_hash_matches": true
+    },
+    {
+      "unit": "agent-herder-v1-noticeplace.service",
+      "pid": 3229841,
+      "pinned_argv_present": true,
+      "artifact_hashes_match": true,
+      "executable_hash_matches": true
+    }
+  ],
+  "lease_expires": "2026-11-09T05:18:38.798637+00:00",
+  "lease_owner": {
+    "hostId": "roomhacker-server-100",
+    "harness": "zai",
+    "sessionId": "web-b491a74b-c5c7-43e5-9206-b443fd6e78dd"
+  },
+  "incoming_addressed_messages": 0,
+  "shared_runtime_mutations": false
+}

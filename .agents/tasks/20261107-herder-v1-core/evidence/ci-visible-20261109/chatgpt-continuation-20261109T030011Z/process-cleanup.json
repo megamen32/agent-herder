@@ -1,0 +1,30 @@
+{
+  "server100": {
+    "host": "roomhacker-server-100",
+    "observed_at": "2026-11-09T03:05:28.036802+00:00",
+    "original_process": {
+      "pid": 954565,
+      "ppid": 954564,
+      "start_ticks": "81404434"
+    },
+    "original_generation_alive": false,
+    "task_script_process_count": 0,
+    "task_script_pids": [],
+    "pinned_vibe_ssh_reader_count": 0,
+    "pinned_vibe_ssh_reader_pids": [],
+    "killed": false
+  },
+  "mac_mini": {
+    "host": "mac-mini-2012.lan",
+    "observed_at": "2026-11-09T03:05:26.858593+00:00",
+    "exact_binding": {
+      "cli": "/Users/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/cli.js",
+      "transport": "stdio",
+      "session": "session_1",
+      "port": 19888
+    },
+    "reader_count": 0,
+    "readers": [],
+    "killed": false
+  }
+}

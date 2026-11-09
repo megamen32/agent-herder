@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "observed_at": "2026-11-09T02:43:19.596981+00:00",
+  "status": "FAILED",
+  "exit_code": 1,
+  "timed_out": false,
+  "error_class": null,
+  "intent_sha256": "a2122fcded4cb26732161c941e89b9f2ba9ab7e17d3901ecf5047d1eebd45c43",
+  "reviewed_source_sha": "53cfe57f43090152d8f399749e1ce598656097ae",
+  "log_sha256": "1e664866ba6c08834998ff07b1e03544cdc3aca370dd637da3b913c62b66fd5d",
+  "install_manifest_exists": false,
+  "no_replay": true
+}
