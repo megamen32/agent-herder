@@ -20,6 +20,24 @@ describe('autostart source ownership',()=>{
    expect(notify).toHaveBeenCalledTimes(1);
   }finally{await rm(root,{recursive:true,force:true});}
  });
+ it('retains the exact deferred episode before its notice',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'source-binding-deferral-'));
+  try {
+   const file=join(root,'unfinished.json');const store=new UnfinishedSessionStore(file);
+   const session={id:'fixture-deferred',harness:'codex' as const,status:'error' as const,cwd:'/fixture/deferred',title:'fixture',lastActivity:new Date().toISOString(),needsPermission:false,messageCount:0};
+   await store.markStarted(session,'fixture-generation');
+   const record={...(await store.list())[0]!,recoveryCause:'turn.failed' as const,recoveryTurnId:'deferred-failed-root',state:'active' as const};
+   const notify=vi.fn(async()=>{const state=JSON.parse(await readFile(file,'utf8'));expect(state.sourceBindings[0]).toMatchObject({sessionId:session.id,recoveryTurnId:'deferred-failed-root'});});
+   const launcher=new UnfinishedSessionLauncher({adapters:new Map(),store,settingsStore:new SessionAutostartStore(join(root,'settings.json'),{}),notify});
+   await (launcher as any).notifyUnsubmittedBlock(record,{reason:'below_reserve',remainingPercent:14,resetsAt:null});
+   // The working record is re-armed and later removed, but the exact episode
+   // stays verifiable by the source.
+   await store.remove('codex',session.id,session.cwd);
+   expect(await new UnfinishedSessionStore(file).list()).toEqual([]);
+   const state=JSON.parse(await readFile(file,'utf8'));expect(state.sourceBindings[0]).toMatchObject({sessionId:session.id,startedAt:record.startedAt,recoveryTurnId:'deferred-failed-root'});
+   expect(notify).toHaveBeenCalledTimes(1);
+  }finally{await rm(root,{recursive:true,force:true});}
+ });
  it('runs one independent callback in existing watchdog even with recovery disabled; contains checker failure',async()=>{
   const root=await mkdtemp(join(tmpdir(),'source-cycle-'));
   try{

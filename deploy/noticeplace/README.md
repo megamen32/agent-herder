@@ -6,6 +6,8 @@
 
 The source tuple is `agent-herder / agent-herder-autostart / <exact host> / unfinished-session-autostart-failed`. The exact correlation is reproduced from the existing `UnfinishedSessionRecord` using the producer's `unfinishedRecordKey` and `startedAt`. No session ID is guessed from title/body. This first bounded adapter supports Codex only; other harnesses return unknown.
 
+The source also owns the deferral classes `unfinished-session-quota-blocked` and `unfinished-session-not-submitted`: a refusal that never reached the native writer is a deferral, not a native failure, and the producer emits it under its own signal type. The predicate resolves the failed ROOT turn from the native rollout by the interrupted turn the record names, because the record stores the interrupted turn and a continuation runs under the root that turn belongs to. A completion of another root is not the same execution.
+
 After a source request is pulled, the predicate freshly reads:
 
 - Herder `unfinished-sessions.json`: exact episode, failed native root turn and failure notice time;
@@ -32,7 +34,7 @@ python3 deploy/noticeplace/autostart_source_verifier.py \
 
 The existing owner is `UnfinishedSessionLauncher`, `src/autopilot/unfinished-session-launcher.ts`. Its `notifyExhausted` emits this source through `createUnfinishedSessionNotifier` in `src/index.ts`; its existing reconcile/watchdog cycle is the future invocation seam. The current NoticeplaceHealthObserver follows the **repair executor** and intentionally cannot supply source health.
 
-The existing watchdog calls the one-shot SDK adapter through `sourceVerifierTick`; there is no new timer. Before `notifyExhausted` sends its event, `retainSourceBinding` persists the exact episode in `sourceBindings` inside the existing unfinished registry. Work-record removal/rearm preserves that snapshot. The predicate prefers it over mutable work records. Historical missing bindings are not reconstructed from event titles or correlation strings. The event constructor and live original event shapes were checked: they do not currently carry structured failed native turn data.
+The existing watchdog calls the one-shot SDK adapter through `sourceVerifierTick`; there is no new timer. Before `notifyExhausted` and before the deferral notice `notifyUnsubmittedBlock` send their event, `retainSourceBinding` persists the exact episode in `sourceBindings` inside the existing unfinished registry. Work-record removal/rearm preserves that snapshot. The predicate prefers it over mutable work records. Historical missing bindings are not reconstructed from event titles or correlation strings. The event constructor and live original event shapes were checked: they do not currently carry structured failed native turn data.
 
 `src/autopilot/autostart-source-verifier.ts` invokes the packaged helper with a30s process deadline and existing private producer environment. The normal immutable release packages `deploy/noticeplace`. Source integration alone is not installed/runtime acceptance: see the deployment receipt. A valid project token with exact verifier grant is required; an invalid or revoked producer credential is not substituted with an executor/QA credential.
 

@@ -46,6 +46,44 @@ class SourceTests(unittest.TestCase):
  def test_partial_tail_and_wrong_header_are_unknown(self):
   with self.rollout.open('a') as f:f.write('{partial')
   self.assertEqual(self.measure()['observed_state'],'unknown');self.events[0]['payload']['id']='foreign';self.save();self.assertEqual(self.measure()['observed_state'],'unknown')
+ def test_deferral_class_is_answered_by_the_source(self):
+  """A refusal that was never submitted is a deferral the source owns.
+
+  The producer emits it under its own signal type. The source must answer
+  for that class too, otherwise the incident can never be closed by the
+  source and stays open forever.
+  """
+  group={**GROUP,'signal_type':'unfinished-session-quota-blocked','problem_type':'unfinished-session-quota-blocked'}
+  self.assertEqual(self.measure(group)['observed_state'],'healthy')
+  for signal in ('unfinished-session-quota-blocked','unfinished-session-not-submitted'):
+   self.assertIn(signal,adapter.OWNED_SIGNALS)
+   accepted=adapter.run_tick.__wrapped__ if hasattr(adapter.run_tick,'__wrapped__') else None
+  # The own cycle must pick the deferral class up, not only the exhausted one.
+  self.assertIn('unfinished-session-quota-blocked',adapter.OWNED_SIGNALS)
+  self.assertIn('unfinished-session-not-submitted',adapter.OWNED_SIGNALS)
+ def test_deferral_group_of_another_class_is_not_answered(self):
+  for signal in ('unfinished-session-quota-blocked','unfinished-session-not-submitted'):
+   group={**GROUP,'signal_type':signal,'problem_type':signal}
+   self.assertEqual(self.measure(group)['observed_state'],'healthy')
+  group={**GROUP,'signal_type':'unfinished-session-quota-blocked','problem_type':'unfinished-session-autostart-failed'}
+  self.assertEqual(self.measure(group)['observed_state'],'unknown')
+ def test_continuation_under_the_root_of_the_interrupted_turn_is_healthy(self):
+  """The record names the interrupted TURN, not the root it belongs to.
+
+  A continuation of that root is the same execution, so it proves the
+  recovery. A turn of another root does not.
+  """
+  self.events=[{'type':'session_meta','payload':{'id':SID,'cwd':CWD}},
+               self.event('task_started','2026-11-08T14:30:00Z',turn_id='interrupted-turn',root_turn_id='root-of-turn'),
+               self.event('task_aborted' if False else 'task_failed','2026-11-08T14:40:00Z',turn_id='interrupted-turn',root_turn_id='root-of-turn'),
+               self.event('task_started','2026-11-08T15:01:00Z',turn_id='continued-turn',root_turn_id='root-of-turn'),
+               self.event('task_complete','2026-11-08T15:02:00Z',turn_id='continued-turn',root_turn_id='root-of-turn')]
+  self.save()
+  self.write(self.state/'unfinished-sessions.json',{'sessions':[{**RECORD,'recoveryTurnId':'interrupted-turn'}]})
+  self.assertEqual(self.measure()['observed_state'],'healthy')
+  # A completion of a DIFFERENT root is not the same execution.
+  self.events[-1]['payload']['root_turn_id']='other-root';self.save()
+  self.assertEqual(self.measure()['observed_state'],'unknown')
  def test_official_sdk_pull_then_fresh_native_read_and_unknown_no_replay(self):
   order=[];posts=[]
   def http(method,path,body=None,key=None):
