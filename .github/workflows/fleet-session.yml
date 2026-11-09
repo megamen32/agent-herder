@@ -2,8 +2,27 @@ name: Fleet session routing
 
 on:
   push:
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - '.cargo/**'
+      - 'Cargo.*'
+      - 'packages/**'
+      - 'tests/**'
+      - 'deploy/**'
+      - 'scripts/**'
+      - '.github/workflows/fleet-session.yml'
+      - 'package*.json'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+      - 'vitest.config.ts'
   pull_request:
   workflow_dispatch:
+    inputs:
+      installed_source_sha:
+        description: 'Optional installed runtime commit; only a main ancestor with no runtime/UI/CI source changes is accepted'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,3 +54,76 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/native -p test_runner_config.py
           python3 -m unittest discover -s tests/native -p test_candidate_release_gate.py
+
+      - name: Verify installed browser collector, helper and rendered identity
+        run: |
+          npx vitest run --root . --config vitest.config.ts tests/installed-browser-smoke.test.ts tests/installed-browser-bindings.test.ts tests/installed-codex-proof.test.ts tests/installed-zcode-proof.test.ts tests/installed-owned-cleanup.test.ts tests/installed-native-worker.test.ts tests/ahap-zcode-model-pin.test.ts tests/session-sidebar.test.tsx tests/session-detail-identity.test.ts
+          python3 -m unittest discover -s tests/native -p test_installed_smoke_helper.py
+          node --test tests/native/ci-browser-fixture.test.mjs
+
+  installed-browser:
+    name: Installed Vibe functional smoke
+    if: >-
+      github.repository == 'megamen32/agent-herder' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: routing
+    # This exact label is registered by provision-installed-smoke-runner.py.
+    runs-on: [self-hosted, Linux, X64, agent-herder-installed-server100]
+    timeout-minutes: 40
+    concurrency:
+      group: agent-herder-installed-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run fixed installed runtime and Vibe collector
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import re
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          requested = os.environ["GITHUB_SHA"]
+          installed = event.get("inputs", {}).get("installed_source_sha") or requested
+          if not isinstance(installed, str) or not re.fullmatch(r"[0-9a-f]{40}", installed):
+              raise SystemExit("Invalid installed source SHA")
+          paths = ["src", "packages", "tests", "deploy", "scripts", "crates", ".cargo", ":(glob)Cargo.*", ".github/workflows/fleet-session.yml",
+                   ":(glob)package*.json", ":(glob)tsconfig*.json", "vite.config.ts", "vitest.config.ts"]
+          subprocess.run(["git", "merge-base", "--is-ancestor", installed, requested], check=True)
+          subprocess.run(["git", "diff", "--quiet", installed, requested, "--", *paths], check=True)
+          request = {
+              "run_id": "gha-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"],
+              "expected_source_sha": installed,
+          }
+          completed = subprocess.run(
+              ["sudo", "-n", "-u", "roomhacker", "/usr/local/libexec/agent-herder-ci-smoke"],
+              input=json.dumps(request), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              timeout=2100, check=False,
+          )
+          # The fixed helper emits status/check codes only. Raw browser/native
+          # evidence and credentials remain in its protected host run directory.
+          try:
+              summary = json.loads(completed.stdout)
+          except ValueError:
+              summary = {"mode": "installed-browser", "status": "FAIL", "error_code": "helper_output_invalid"}
+          summary.update(requested_commit_sha=requested, runtime_source_sha=installed, source_tree_equivalent=True)
+          Path("installed-browser-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(json.dumps(summary, sort_keys=True))
+          sys.exit(0 if completed.returncode == 0 and summary.get("status") == "PASS" else 1)
+          PY
+      - name: Keep sanitized installed smoke summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-browser-summary
+          path: installed-browser-summary.json
+          if-no-files-found: error
+          retention-days: 14

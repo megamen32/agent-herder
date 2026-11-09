@@ -3196,6 +3196,14 @@ export class ZcodeAdapter implements HarnessAdapter {
     }
   }
 
+  /** Passive native capabilities for an explicitly pinned new-session model. */
+  async readCreateModelCatalog(): Promise<Record<string, unknown>> {
+    if (!this.nativeReadWithoutActivation || !this.isReady()) {
+      throw new Error("Create model catalog requires an existing ready official ZCode server");
+    }
+    return this.readNativeModelCatalog(this.workspace());
+  }
+
   async listModels(): Promise<string[]> {
     const configured = [...this.modelIds];
     if (this.useLocalConfig) {

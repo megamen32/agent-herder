@@ -40,17 +40,38 @@ test('every CLI call pins all launch settings and clears external auto-attach se
   const c = config(), args = browserArguments(c, ['tab', 'list']);
   assert.deepEqual(args, ['--session', 'herderci1109', '--namespace', 'herderci1109', '--auto-connect', 'false',
     '--headed', 'false', '--idle-timeout', '0', 'tab', 'list', '--json']);
-  const env = browserEnvironment(c, {AGENT_BROWSER_CDP: 'foreign', AGENT_BROWSER_AUTO_CONNECT: 'true', PATH: '/untrusted'});
+  const env = browserEnvironment(c, {AGENT_BROWSER_CDP: 'foreign', AGENT_BROWSER_AUTO_CONNECT: 'true', PATH: '/untrusted',
+    XDG_RUNTIME_DIR: '/run/user/1000', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus'});
   assert.equal(env.AGENT_BROWSER_PROFILE, '/owned/ci-profile');
   assert.equal(env.AGENT_BROWSER_EXTENSIONS, '/owned/vibe-extension');
   assert.equal(env.AGENT_BROWSER_CDP, undefined);
   assert.equal(env.AGENT_BROWSER_AUTO_CONNECT, 'false');
   assert.equal(env.PATH, '/usr/bin:/bin');
+  // Agent-browser resolves its namespace PID/socket directory from XDG_RUNTIME_DIR.
+  // The manager pins the original HOME-scoped directory, so the child must not move it.
+  assert.equal(env.XDG_RUNTIME_DIR, undefined);
+  assert.equal(env.DBUS_SESSION_BUS_ADDRESS, undefined);
 });
 
 test('proc stat handles names with spaces and parentheses', () => {
   const fields = ['S', '10', ...Array(17).fill('0'), '12345', '0'];
   assert.deepEqual(parseProcStat('11 (chrome ) worker) ' + fields.join(' ')), {ppid: 10, start_ticks: '12345'});
+});
+
+test('relay readiness waits for the strict process proof without launching a browser', async () => {
+  const c = config(), manager = new BrowserFixtureManager(c, sha), expected = processes(c).relay;
+  let reads = 0; manager.relayReadyPollMs = 1;
+  manager.relay = async () => {if (++reads === 1) throw Object.assign(Error('not listening yet'), {code: 'fixture_relay_binding_mismatch'}); return expected;};
+  manager.cli = async () => {assert.fail('readiness must not launch or attach to a browser');};
+  assert.equal(await manager.waitRelay(), expected); assert.equal(reads, 2);
+});
+
+test('relay readiness fails within its bound and never returns an unverified process', async () => {
+  const manager = new BrowserFixtureManager(config(), sha);
+  manager.relayReadyTimeoutMs = 0; let reads = 0;
+  manager.relay = async () => {reads++; throw Object.assign(Error('wrong relay'), {code: 'fixture_relay_binding_mismatch'});};
+  manager.cli = async () => {assert.fail('failed readiness must not launch a browser');};
+  await assert.rejects(manager.waitRelay(), {code: 'fixture_relay_binding_mismatch'}); assert.equal(reads, 1);
 });
 
 test('process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports', () => {
@@ -81,7 +102,7 @@ test('anchor matching scans only own CLI tab handles and restores original selec
     calls.push(args);
     if (args[0] === 'tab' && args[1] === 'list') return {tabs: [{tabId: 't1', active: true}, {tabId: 't2', active: false}]};
     if (args[0] === 'tab') {active = args[1]; return {};}
-    return {result: active === 't2' ? {match: true, origin: 'https://agent.bezrabotnyi.com', authenticated: true, api_status: 200} : {match: false}};
+    return {result: active === 't2' ? {match: true, origin: 'https://agent.bezrabotnyi.com', authenticated: true, api_status: 200, content_type: 'application/json'} : {match: false}};
   };
   const result = await findAnchor(cli, 'herder-ci-anchor-123e4567-e89b-42d3-a456-426614174000', config().ui_url);
   assert.equal(result.cli_tab_id, 't2'); assert.equal(active, 't1');
@@ -94,7 +115,7 @@ test('ambiguous and missing anchors fail after restoring tab selection', async (
     const cli = async args => {
       if (args[0] === 'tab' && args[1] === 'list') return {tabs: [{tabId: 't1', active: true}, {tabId: 't2'}]};
       if (args[0] === 'tab') {active = args[1]; return {};}
-      return {result: {match, authenticated: true, api_status: 200, origin: 'https://agent.bezrabotnyi.com'}};
+      return {result: {match, authenticated: true, api_status: 200, content_type: 'application/json', origin: 'https://agent.bezrabotnyi.com'}};
     };
     await assert.rejects(findAnchor(cli, 'marker', config().ui_url)); assert.equal(active, 't1');
   }
@@ -113,6 +134,34 @@ test('failed read and failed restore cannot produce PASS', async () => {
   assert.deepEqual(calls.at(-2), ['tab', 't1']);
 });
 
+function runAnchorProbe(fetch) {
+  const marker = 'herder-ci-anchor-123e4567-e89b-42d3-a456-426614174000';
+  const run = new Function('window', 'location', 'document', 'fetch', 'AbortSignal', 'return ' + inspectAnchorScript(marker, config().ui_url));
+  return run({name: marker}, {origin: 'https://agent.bezrabotnyi.com', pathname: '/', search: ''},
+    {querySelector: () => ({})}, fetch, {timeout: () => new AbortController().signal});
+}
+
+test('known JSON headers return without waiting for a body cancellation that never settles', async () => {
+  let cancelled = false, timer;
+  const probe = runAnchorProbe(async () => ({status: 200, headers: {get: () => 'application/json; charset=utf-8'},
+    body: {cancel: () => {cancelled = true; return new Promise(() => {});}}}));
+  try {
+    const result = await Promise.race([probe, new Promise((_, reject) => {timer = setTimeout(() => reject(Error('body cancellation blocked known headers')), 250);})]);
+    assert.equal(cancelled, true); assert.equal(result.authenticated, true); assert.equal(result.api_status, 200);
+    assert.equal(result.content_type, 'application/json; charset=utf-8');
+  } finally {clearTimeout(timer);}
+});
+
+test('HTML responses and network timeouts cannot satisfy the UI API proof', async () => {
+  const html = await runAnchorProbe(async () => ({status: 200, headers: {get: () => 'text/html'}, body: null}));
+  assert.equal(html.authenticated, false); assert.equal(html.api_status, 200);
+  const timeout = await runAnchorProbe(async () => {throw Object.assign(Error('bounded network timeout'), {name: 'TimeoutError'});});
+  assert.equal(timeout.authenticated, false); assert.equal(timeout.api_status, 0); assert.equal(timeout.api_error, 'TimeoutError');
+  const cli = async args => args[0] === 'tab' && args[1] === 'list' ? {tabs: [{tabId: 't1', active: true}]}
+    : args[0] === 'tab' ? {} : {result: timeout};
+  await assert.rejects(findAnchor(cli, 'marker', config().ui_url), {code: 'fixture_ui_api_unavailable'});
+});
+
 function stoppingManager() {
   const c = config(), p = processes(c), manager = new BrowserFixtureManager(c, sha);
   manager.locked = fn => fn();
@@ -123,6 +172,24 @@ function stoppingManager() {
   manager.stopProcesses = async () => p;
   return manager;
 }
+
+test('a health tick defers a contended probe and validates the next available generation', async () => {
+  const manager = stoppingManager(); let attempts = 0, processReads = 0;
+  manager.locked = async operation => {if (++attempts === 1) throw Object.assign(Error('probe in progress'), {code: 'ELOCKED'}); return operation();};
+  manager.processes = async () => {processReads++; return processes(manager.config);};
+  manager.cli = async () => {assert.fail('health contention must not launch or close the browser');};
+  assert.equal(await manager.healthCheck(), false); assert.equal(processReads, 0);
+  assert.equal(await manager.healthCheck(), true); assert.equal(processReads, 1);
+});
+
+test('health deferral does not swallow compromised locks or a real generation failure', async () => {
+  const compromised = stoppingManager();
+  compromised.locked = async () => {throw Object.assign(Error('compromised'), {code: 'ECOMPROMISED'});};
+  await assert.rejects(compromised.healthCheck(), {code: 'ECOMPROMISED'});
+  const changed = stoppingManager();
+  changed.processes = async () => {const p = processes(changed.config); p.browser.start_ticks = '111'; return p;};
+  await assert.rejects(changed.healthCheck(), {code: 'managed_fixture_generation_mismatch'});
+});
 test('UNKNOWN close is reconciled once, with no replay and only exact owned session', async () => {
   const manager = stoppingManager(), calls = []; let removed = false;
   manager.cli = async args => {calls.push(args); throw Error('accepted then timeout');};
@@ -151,7 +218,7 @@ test('orphan browser cannot trigger a new daemon or an unbound close', async () 
 
 test('fixed inspection bounds auth GET and never includes caller JavaScript or session body', () => {
   const script = inspectAnchorScript('marker', config().ui_url);
-  assert.match(script, /AbortSignal.timeout\(2500\)/);
+  assert.match(script, /AbortSignal.timeout\(20000\)/);
   assert.match(script, /response.body\?\.cancel/);
   assert.doesNotMatch(script, /response\.json|document\.cookie|localStorage|sessionStorage/);
 });

@@ -247,8 +247,8 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   else expect(execute).toThrow(mode==='foreign-id'?'native_session_identity_mismatch':'HTTP Error 401');
  });
  it('receiver once-record survives client/server factory replacement and preserves unknown without another native create',async()=>{
-  let callback:any;const server={registerTool:(name:string,_spec:any,fn:any)=>{if(name==='fleet_create_session')callback=fn;}};const create=vi.fn(async()=>({id:'native-id',cwd:'/home/roomhacker'}));const deps={adapters:new Map([['codex',{createSession:create}]])} as any;
-  registerFleetNodeTools(server as any,deps);const args={inputId:'a'.repeat(64),harness:'codex',name:'empty',cwd:'/home/roomhacker'};const first=await callback(args);registerFleetNodeTools(server as any,deps);expect(await callback(args)).toEqual(first);expect(create).toHaveBeenCalledOnce();
+  let callback:any;const server={registerTool:(name:string,_spec:any,fn:any)=>{if(name==='fleet_create_session')callback=fn;}};const create=vi.fn(async({cwd}:{cwd:string})=>({id:'native-id',cwd}));const deps={adapters:new Map([['codex',{createSession:create}]])} as any;
+  registerFleetNodeTools(server as any,deps);const args={inputId:'a'.repeat(64),harness:'codex',name:'empty',cwd:state.home};const first=await callback(args);expect(first.structuredContent).toMatchObject({ok:true,created:true,sessionId:'native-id'});registerFleetNodeTools(server as any,deps);expect(await callback(args)).toEqual(first);expect(create).toHaveBeenCalledOnce();
   create.mockRejectedValueOnce(new Error('native socket closed'));const lost={...args,inputId:'b'.repeat(64)};const unknown=await callback(lost);registerFleetNodeTools(server as any,deps);expect(await callback(lost)).toEqual(unknown);expect(create).toHaveBeenCalledTimes(2);expect(JSON.parse(unknown.content[0].text).state).toBe('unknown');
  });
  it('registered Fleet node forwards the exact project selector only to the scoped Codex runtime',async()=>{

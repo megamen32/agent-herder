@@ -168,6 +168,58 @@ function validSessionId(value: unknown): value is string {
     && value.length <= 4096 && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
+export interface ZcodeCreateModelPin {
+  getPinnedCreateModel(): string;
+  verifyPinnedCreateModel(): Promise<{
+    model: string; provider_id: string; model_id: string; reasoning_level: string;
+    source: "zcode-native-create-model-catalog"; observed_at: string;
+    listed_models: string[]; native_catalog_entry: unknown;
+  }>;
+}
+
+/** A protected owner profile may choose a model for its own new sessions.
+ * This neither changes native defaults nor substitutes another provider. */
+export function pinZcodeCreateModel<T extends Pick<ZcodeAdapter, "createSession" | "listModels" | "readCreateModelCatalog">>(
+  adapter: T, configured: string | undefined,
+): T & Partial<ZcodeCreateModelPin> {
+  if (configured === undefined) return adapter;
+  if (configured.trim() !== configured || !/^[^/\s$]+\/[^/\s$]+\$[^/\s$]+$/u.test(configured) || configured.length > 512) {
+    throw new Error("AHAP_ZCODE_CREATE_MODEL requires exact provider/model$reasoning");
+  }
+  const [base, reasoning] = configured.split("$");
+  const [provider, model] = base.split("/");
+  const create = adapter.createSession.bind(adapter);
+  const verify = async () => {
+    const listed = await adapter.listModels();
+    const catalog = await adapter.readCreateModelCatalog();
+    const settings = catalog.settings as {model?: {available?: unknown[]}} | undefined;
+    const available = settings?.model?.available;
+    const matches = Array.isArray(available) ? available.filter(value => {
+      const ref = (value as {ref?: {providerId?: unknown; modelId?: unknown}})?.ref;
+      return ref?.providerId === provider && ref.modelId === model;
+    }) : [];
+    const entry = matches[0] as {reasoning?: {levels?: Array<{value?: unknown}>}} | undefined;
+    const levels = entry?.reasoning?.levels;
+    if (!Array.isArray(listed) || !listed.every(value => typeof value === "string")
+        || (!listed.includes(base) && !listed.includes(configured)) || matches.length !== 1
+        || !Array.isArray(levels) || levels.some(value => typeof value?.value !== "string")
+        || levels.filter(value => value.value === reasoning).length !== 1) {
+      throw new Error("Pinned ZCode model or reasoning is unavailable in the native catalog");
+    }
+    return {model: configured, provider_id: provider, model_id: model, reasoning_level: reasoning,
+      source: "zcode-native-create-model-catalog" as const, observed_at: new Date().toISOString(),
+      listed_models: listed, native_catalog_entry: matches[0]};
+  };
+  adapter.createSession = async options => {
+    if (options.model !== undefined && options.model !== configured) {
+      throw new Error("Caller model conflicts with the pinned ZCode create model");
+    }
+    await verify();
+    return create({...options, model: configured});
+  };
+  return Object.assign(adapter, {getPinnedCreateModel: () => configured, verifyPinnedCreateModel: verify});
+}
+
 export function makeConfiguredAdapter(): ZcodeAdapter {
   const command = process.env.AHAP_ZCODE_SERVER_NODE?.trim();
   const entry = process.env.AHAP_ZCODE_SERVER_ENTRY?.trim();
@@ -190,7 +242,7 @@ export function makeConfiguredAdapter(): ZcodeAdapter {
     if (!adapter.nativeReadWithoutActivation) {
       throw new Error("official-server route was not selected; no stdio fallback");
     }
-    return adapter;
+    return pinZcodeCreateModel(adapter, process.env.AHAP_ZCODE_CREATE_MODEL);
   }
   // Preserve the already explicitly configured custom binary contract.
   if (transport !== undefined && transport !== "custom-stdio") {
@@ -199,7 +251,7 @@ export function makeConfiguredAdapter(): ZcodeAdapter {
   if (!command?.startsWith("/") || !entry?.startsWith("/") || !cwd?.startsWith("/")) {
     throw new Error("AHAP_ZCODE_SERVER_NODE, AHAP_ZCODE_SERVER_ENTRY and AHAP_ZCODE_CWD must be absolute paths");
   }
-  return new ZcodeAdapter({ command, args: [entry], cwd });
+  return pinZcodeCreateModel(new ZcodeAdapter({ command, args: [entry], cwd }), process.env.AHAP_ZCODE_CREATE_MODEL);
 }
 
 async function main(): Promise<void> {
@@ -216,3 +268,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 1;
   });
 }
+
+// Maintained read-only supervisor proof for the exact installed CI owner.
+export {readZcodeOfficialRunning} from './adapters/zcode-server-control.js';

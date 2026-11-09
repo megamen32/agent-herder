@@ -73,8 +73,9 @@ export function browserArguments(c, args, idle = c.browser.idle_timeout_ms) {
 }
 export function browserEnvironment(c, _inherited = {}) {
   // Do not inherit CDP, profile, proxy, remote-debugging or credential selectors.
+  // Keep the CLI's runtime sockets under HOME/.agent-browser, as daemonPidFile
+  // and the original isolated namespace require. XDG_RUNTIME_DIR relocates them.
   return {HOME: c.owner_home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8',
-    XDG_RUNTIME_DIR: '/run/user/' + c.runtime_uid, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/' + c.runtime_uid + '/bus',
     AGENT_BROWSER_PROFILE: c.browser.profile_path, AGENT_BROWSER_EXTENSIONS: c.browser.extensions_path,
     AGENT_BROWSER_SESSION: c.browser.session, AGENT_BROWSER_NAMESPACE: c.browser.namespace,
     AGENT_BROWSER_AUTO_CONNECT: 'false', AGENT_BROWSER_HEADED: 'false', AGENT_BROWSER_IDLE_TIMEOUT_MS: String(c.browser.idle_timeout_ms)};
@@ -165,10 +166,13 @@ export function inspectAnchorScript(marker, uiUrl) {
     if(window.name!==marker||location.origin!==expected.origin||location.pathname!==expected.pathname||location.search!==expected.search)return {match:false};
     const herder=Boolean(document.querySelector('#herder-chat-list'));
     if(!herder)return {match:true,origin:location.origin,authenticated:false,api_status:0};
-    try{const response=await fetch(new URL('/api/sessions',expected.origin),{credentials:'same-origin',redirect:'error',signal:AbortSignal.timeout(2500)});
-      const status=response.status;await response.body?.cancel();
-      return {match:true,origin:location.origin,authenticated:status===200,api_status:status};
-    }catch{return {match:true,origin:location.origin,authenticated:false,api_status:0};}})()`;
+    try{const response=await fetch(new URL('/api/sessions',expected.origin),{credentials:'same-origin',redirect:'error',signal:AbortSignal.timeout(20000)});
+      const status=response.status,content_type=response.headers.get('content-type')||'';
+      const json=content_type.split(';',1)[0].trim().toLowerCase()==='application/json';
+      try{void response.body?.cancel().catch(()=>{});}catch{}
+      return {match:true,origin:location.origin,authenticated:status===200&&json,api_status:status,content_type};
+    }catch(error){return {match:true,origin:location.origin,authenticated:false,api_status:0,
+      api_error:['AbortError','TimeoutError'].includes(error?.name)?error.name:'NetworkError'};}})()`;
 }
 export async function findAnchor(cli, marker, uiUrl) {
   const listed = await cli(['tab', 'list']);
@@ -195,6 +199,8 @@ export async function findAnchor(cli, marker, uiUrl) {
   if (readError) throw readError;
   if (matches.length !== 1) fail('fixture_anchor_not_unique');
   const result = matches[0];
+  if (result.api_error) fail('fixture_ui_api_unavailable');
+  if (result.api_status === 200 && String(result.content_type || '').split(';', 1)[0].trim().toLowerCase() !== 'application/json') fail('fixture_ui_api_content_type_invalid');
   if (result.origin !== new URL(uiUrl).origin || result.authenticated !== true || result.api_status !== 200) fail('fixture_ui_authentication_missing');
   return result;
 }
@@ -264,7 +270,10 @@ async function stillSameProcess(identity) {
 }
 
 export class BrowserFixtureManager {
-  constructor(config, configSha) {this.config = validateConfig(config); this.configSha = configSha; this.stopTimeoutMs = 15000;}
+  constructor(config, configSha) {
+    this.config = validateConfig(config); this.configSha = configSha; this.stopTimeoutMs = 15000;
+    this.relayReadyTimeoutMs = 10000; this.relayReadyPollMs = 100;
+  }
   async locked(operation) {
     const {default: lockfile} = await import('proper-lockfile');
     const release = await lockfile.lock(this.config.state_dir, {realpath: true, stale: 120000, update: 2000,
@@ -275,7 +284,8 @@ export class BrowserFixtureManager {
     const c = this.config, env = browserEnvironment(c); env.AGENT_BROWSER_IDLE_TIMEOUT_MS = String(idle);
     let value;
     try {
-      const result = await exec(c.browser.executable, browserArguments(c, args, idle), {env, cwd: c.owner_home, timeout: args[0] === 'open' ? 30000 : 6000, maxBuffer: 262144});
+      const result = await exec(c.browser.executable, browserArguments(c, args, idle), {env, cwd: c.owner_home,
+        timeout: args[0] === 'open' ? 30000 : args[0] === 'eval' ? 25000 : 6000, maxBuffer: 262144});
       value = JSON.parse(result.stdout);
     } catch {fail('fixture_cli_outcome_unknown');}
     if (value?.success !== true) fail('fixture_cli_failed');
@@ -310,6 +320,14 @@ export class BrowserFixtureManager {
     if (bootstrap && !['daemon', 'browser', 'relay'].every(k => p[k].pid === c.bootstrap[k].pid && p[k].start_ticks === c.bootstrap[k].start_ticks)) fail('bootstrap_process_changed');
     return p;
   }
+  async waitRelay() {
+    const deadline = Date.now() + this.relayReadyTimeoutMs;
+    for (;;) {
+      try {return await this.relay();}
+      catch (error) {if (Date.now() >= deadline) throw error;}
+      await sleep(this.relayReadyPollMs);
+    }
+  }
   async bootId() {return (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();}
   async generation(p) {return deriveGeneration(this.configSha, await this.bootId(), p);}
   async state() {return JSON.parse(await privateFile(join(this.config.state_dir, 'state.json'), this.config.runtime_uid, 0o077));}
@@ -325,7 +343,8 @@ export class BrowserFixtureManager {
       browser_pid: p.browser.pid, browser_start_ticks: p.browser.start_ticks,
       relay_pid: p.relay.pid, relay_start_ticks: p.relay.start_ticks,
       relay: {agent_port: c.relay.agent_port, extension_port: c.relay.extension_port, state_dir: c.relay.state_dir, session_id: c.relay.session_id},
-      authenticated: anchor.authenticated, api_status: anchor.api_status, origin: anchor.origin, cli_tab_id: anchor.cli_tab_id,
+      authenticated: anchor.authenticated, api_status: anchor.api_status, api_content_type: anchor.content_type,
+      origin: anchor.origin, cli_tab_id: anchor.cli_tab_id,
       vibe_page_correlated: false,
       observed_at: new Date().toISOString(), ...extra};
   }
@@ -457,6 +476,20 @@ export class BrowserFixtureManager {
       fail('fixture_stop_outcome_unknown');
     });
   }
+  async healthCheck() {
+    try {
+      await this.locked(async () => {
+        const state = await this.state(), p = await this.processes();
+        assertManagedState(state, this.configSha, await this.generation(p), p);
+      });
+      return true;
+    } catch (error) {
+      // A bounded attestation can legitimately hold this lock longer than a
+      // health tick's acquisition budget. Defer only that contention.
+      if (error.code === 'ELOCKED') return false;
+      throw error;
+    }
+  }
   async serve() {
     const started = await this.start();
     process.stdout.write(JSON.stringify(started) + '\n');
@@ -467,7 +500,7 @@ export class BrowserFixtureManager {
     try {
       while (!stopped) {
         await Promise.race([done, sleep(10000)]); if (stopped) break;
-        await this.locked(async () => {const state = await this.state(), p = await this.processes(); assertManagedState(state, this.configSha, await this.generation(p), p);});
+        await this.healthCheck();
       }
     } finally {
       process.removeListener('SIGTERM', onStop); process.removeListener('SIGINT', onStop);
@@ -479,13 +512,18 @@ export class BrowserFixtureManager {
 export async function main(argv = process.argv.slice(2)) {
   if (argv[0] !== '--config' || argv[1] !== CONFIG_PATH) fail('fixed_fixture_config_path_required');
   const verb = argv[2];
-  if (!['verify', 'attest', 'bootstrap-attest', 'serve', 'stop'].includes(verb)) fail('fixture_command_invalid');
+  if (!['verify', 'attest', 'bootstrap-attest', 'serve', 'stop', 'wait-relay'].includes(verb)) fail('fixture_command_invalid');
   const withPage = ['attest', 'bootstrap-attest'].includes(verb);
   if (withPage ? (argv.length !== 7 || argv[3] !== '--page-id' || argv[5] !== '--nonce') : argv.length !== 3) fail('fixture_arguments_invalid');
   const pageId = withPage ? Number(argv[4]) : undefined, nonce = withPage ? argv[6] : undefined;
   if (withPage && (!positive(pageId) || !uuid(nonce))) fail('owned_page_attestation_identity_invalid');
   const {config, configSha} = await loadConfig(), manager = new BrowserFixtureManager(config, configSha);
   if (verb === 'serve') {await manager.serve(); return;}
+  if (verb === 'wait-relay') {
+    const relay = await manager.waitRelay();
+    process.stdout.write(JSON.stringify({status: 'READY', config_sha256: configSha, relay_pid: relay.pid, relay_start_ticks: relay.start_ticks}) + '\n');
+    return;
+  }
   const value = verb === 'stop' ? await manager.stop() : verb === 'bootstrap-attest' ? await manager.bootstrapAttest(pageId, nonce) : await manager.verify(pageId, nonce);
   process.stdout.write(JSON.stringify(value) + '\n');
 }

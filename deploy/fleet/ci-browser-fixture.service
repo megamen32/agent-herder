@@ -1,8 +1,7 @@
 [Unit]
 Description=Agent Herder isolated CI browser
-Requires=agent-herder-ci-vibe.service
 After=network-online.target agent-herder-ci-vibe.service
-Wants=network-online.target
+Wants=network-online.target agent-herder-ci-vibe.service
 
 [Service]
 Type=simple
@@ -13,10 +12,12 @@ Environment=HOME=/home/roomhacker
 Environment=PATH=/usr/bin:/bin
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStartPre=+/bin/systemctl restart agent-herder-ci-vibe.service
+ExecStartPre=/usr/local/bin/node /opt/agent-herder-ci-smoke/ci-browser-fixture.mjs --config /etc/agent-herder-ci-smoke/browser-fixture.json wait-relay
 ExecStart=/usr/local/bin/node /opt/agent-herder-ci-smoke/ci-browser-fixture.mjs --config /etc/agent-herder-ci-smoke/browser-fixture.json serve
 Restart=on-failure
 RestartSec=10
-KillMode=control-group
+KillMode=mixed
 TimeoutStopSec=60
 UMask=0077
 NoNewPrivileges=true
