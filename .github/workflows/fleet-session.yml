@@ -59,6 +59,7 @@ jobs:
         run: |
           npx vitest run --root . --config vitest.config.ts tests/installed-browser-smoke.test.ts tests/installed-browser-bindings.test.ts tests/installed-codex-proof.test.ts tests/installed-zcode-proof.test.ts tests/installed-owned-cleanup.test.ts tests/installed-native-worker.test.ts tests/ahap-zcode-model-pin.test.ts tests/session-sidebar.test.tsx tests/session-detail-identity.test.ts
           python3 -m unittest discover -s tests/native -p test_installed_smoke_helper.py
+          python3 -m unittest discover -s tests/native -p test_installed_smoke_provision.py
           node --test tests/native/ci-browser-fixture.test.mjs
 
   installed-browser:
