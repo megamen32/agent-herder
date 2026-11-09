@@ -11,6 +11,7 @@ import {verifyFleetOwnerCookie} from "./fleet-owner-auth.js";
 import {FleetDirectTransport} from "../mesh/fleet-direct-transport.js";
 import {FleetOwnerHttpTransport} from "../mesh/fleet-owner-http-transport.js";
 import {FleetGptAdminTransport} from "../mesh/fleet-gptadmin-transport.js";
+import {FleetFileDiskCache} from "../mesh/fleet-disk-cache.js";
 import {unwrapResult} from "../mesh/protocol.js";
 import type {FleetHostDefinition} from "../mesh/fleet-contract.js";
 import {getDefaultMcpClientTokenStore} from "../mcp/client-token-store.js";
@@ -27,6 +28,13 @@ export const fleetHosts: readonly FleetHostDefinition[] = [
 
 type Binding = {endpoint: string; headers: Record<string, string>; generation: string};
 type Active = Binding & {service: FleetCabinetService};
+/** Bounded numeric env knob: a missing or invalid value keeps the default, an explicit one is clamped. */
+function boundedEnvNumber(name: string, fallback: number, minimum: number, maximum: number): number {
+  const raw = process.env[name]?.trim();
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
+}
 /** Explicit deployment seam. Disabled default preserves the approved caller/journal. */
 export function configuredFleetRustCore(socket: string | undefined = process.env.AGENT_HERDER_MESH_CORE_SOCKET, localHost: string = hostname()) {
   return socket ? new RustCoreClient(socket, localHost) : undefined;
@@ -50,12 +58,23 @@ export function createConfiguredFleetApiHandler(options: {
   const stateRoot = options.stateRoot ?? join(homedir(), ".local", "state", "agent-herder", "fleet");
   const approvedGeneration = options.approvedCredentialGeneration ?? process.env.AGENT_HERDER_FLEET_CREDENTIAL_PIN;
   const directServices=new Map<string,FleetCabinetService>();
+  // Durable display cache of the cabinet: an opening browser answers from the
+  // last known machines/sessions instantly while the background loop keeps
+  // the snapshot and the first inventory pages fresh on disk and in memory.
+  const fleetDiskCache = new FleetFileDiskCache(join(stateRoot, "disk-cache"));
+  const fleetWarmIntervalMs = boundedEnvNumber("AGENT_HERDER_FLEET_WARM_INTERVAL_MS", 50_000, 0, 600_000);
+  const fleetStaleServeMs = boundedEnvNumber("AGENT_HERDER_FLEET_STALE_SERVE_MS", 1_800_000, 0, 86_400_000);
+  const browserCacheDeps = {
+    diskCache: fleetDiskCache,
+    ...(fleetWarmIntervalMs > 0 ? {warmIntervalMs: fleetWarmIntervalMs} : {}),
+    ...(fleetStaleServeMs > 0 ? {staleServeMs: fleetStaleServeMs} : {}),
+  };
   // Verified owner requests retain their own immutable credential generation.
   // Keep the same profile journal/service across rotation; never share a mutable cookie.
   const publicOwnerContext=new AsyncLocalStorage<Readonly<{cookie:string;credentialGeneration:string}>>();
   const direct=(principal:string,realm:string)=>{
     const key=realm+':'+principal;let service=directServices.get(key);
-    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>realm==='haos-sso-owner'?new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}):new FleetDirectTransport()});directServices.set(key,service);}
+    if(!service){if(directServices.size>=2)throw new Error('fleet_direct_scope_limit');service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId:key,userId:principal},journalPath:realm==='ssh-native-owner'?join(stateRoot,'direct-owner-create.json'):join(stateRoot,'direct-'+createHash('sha256').update(key).digest('hex')+'-create.json'),transportFactory:()=>realm==='haos-sso-owner'?new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}):new FleetDirectTransport(),...browserCacheDeps});directServices.set(key,service);}
     return service;
   };
   let active: Active | undefined;
@@ -113,6 +132,9 @@ export function createConfiguredFleetApiHandler(options: {
         // work (measured ~9s on a busy daemon), so they keep discovery headroom
         // instead of the 10s interactive read deadline.
         transportFactory: () => new FleetGptAdminTransport({endpoint: binding.endpoint, headersProvider: () => ({...binding.headers}), readDeadlineMs: 20_000}),
+        // The Hub lane keeps the durable display cache but no background warm
+        // loop: its traffic relays through the central Hub and stays on demand.
+        diskCache: fleetDiskCache,
       });
       return active = {...binding, service};
     })().finally(() => { connecting = undefined; });
@@ -159,7 +181,7 @@ export function createConfiguredFleetApiHandler(options: {
             // route can only serve peers. The local machine answers through the
             // same in-process bridge the loopback owner uses; remote machines
             // keep the cookie-faithful owner HTTP transport.
-            service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId,userId},transportFactory:(context)=>context.hostId===hostname()?new FleetDirectTransport():new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()})});
+            service=new FleetCabinetService({rustCore,hosts:fleetHosts,scope:{profileId,userId},transportFactory:(context)=>context.hostId===hostname()?new FleetDirectTransport():new FleetOwnerHttpTransport({ownerContext:()=>publicOwnerContext.getStore()}),...browserCacheDeps});
             directServices.set(key,service);
           }
         }else service=direct('roomhacker','haos-sso-owner');

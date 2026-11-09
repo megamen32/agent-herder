@@ -3,7 +3,7 @@ import {addressKey,compactSession,type MeshAddress,type MeshSession} from './pro
 import {projectPeerSession} from './gptadmin.js';
 import {coordinationNotes} from '../coordination-notes.js';
 export interface InventorySession extends MeshSession {parentAddress?:MeshAddress}
-export interface SessionInventoryPage {hostId:string;sessions:InventorySession[];nextCursor:string|null;observedAt:string|null;warming:boolean;partial:boolean;total:number}
+export interface SessionInventoryPage {hostId:string;sessions:InventorySession[];nextCursor:string|null;observedAt:string|null;warming:boolean;partial:boolean;total:number;/** True when this page was served from the durable cache while one fresh read runs in the background. */stale?:boolean}
 export interface LocalInventorySnapshot {sessions:AgentSession[];warming:boolean;observedAt:string|null}
 /** Pages the existing process-owned metadata snapshot. Never starts discovery/history/a writer. */
 export function sessionInventoryPage(hostId:string,snapshot:LocalInventorySnapshot,cursor?:string,limit=100):SessionInventoryPage {

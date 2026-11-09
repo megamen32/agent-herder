@@ -111,14 +111,20 @@ export class BrowserTurnAutopilotObserver {
     return this.options.staleRefreshMs ?? 300_000;
   }
 
-  /** One bounded driver-side re-read of the turn state of one chat. */
+  /** One bounded driver-side re-read of the turn state of one chat: the
+   * active check every running browser session gets at least once per
+   * staleRefreshMs window (browser harnesses publish no hooks, so their
+   * "does this session still work" answer comes from the provider's own
+   * API). The outcome is logged so the owner sees the check in the journal. */
   private async refreshStaleTurn(harness: string, session: AgentSession): Promise<void> {
     const adapter = this.options.adapters.get(harness) as HarnessAdapter & { refreshSession?: (id: string) => Promise<boolean> };
     if (typeof adapter?.refreshSession !== "function") return;
     try {
-      await adapter.refreshSession(session.id);
+      const checked = await adapter.refreshSession(session.id);
+      if (checked) console.error(`[agent-herder] browser active check ${harness}/${session.id}: re-read the real turn state from the provider`);
+      else this.options.onError?.(`active check unavailable for ${harness}/${session.id}: the driver could not re-read the turn state`);
     } catch (error) {
-      this.options.onError?.(`stale turn refresh failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
+      this.options.onError?.(`active check failed for ${harness}/${session.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

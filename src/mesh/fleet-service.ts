@@ -9,41 +9,93 @@ import type {RustCoreHostSelector} from './rust-core-client.js';
 import {fleetSessionControlSchema,type FleetSessionControl,type FleetSessionResponse} from './fleet-session-control.js';
 import {searchSessionFleet} from '../session-search-fleet.js';
 import type {SessionSearchQuery} from '../session-search.js';
+import type {FleetDiskCacheStore,FleetDiskSnapshotRecord} from './fleet-disk-cache.js';
 type Context=FleetScope&{hostId:string;credentialGeneration?:string};
 type Cached={revision:number;host:FleetHost;sessions:FleetSession[];complete:boolean;limited:boolean;target:string;inventorySupported?:boolean};
-export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;rustCore?:RustCoreHostSelector;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string}
+export interface FleetDependencies {hosts:readonly FleetHostDefinition[];scope:FleetScope;transportFactory:(context:Context)=>GptAdminTransport;rustCore?:RustCoreHostSelector;now?:()=>number;ttlMs?:number;readDeadlineMs?:number;discoveryDeadlineMs?:number;createDeadlineMs?:number;journalPath?:string;credentialGeneration?:string;
+/** Durable display cache of the last known hosts/sessions/pages/views. Optional: absent keeps the pure in-memory behavior every existing test pins down. */
+diskCache?:FleetDiskCacheStore;
+/** After the first successful discovery the service keeps its snapshot and the first inventory pages warm in the background at this interval; 0 or undefined disables the loop. */
+warmIntervalMs?:number;
+/** Stale-while-revalidate window: an expired-but-recent snapshot or page is served instantly while one fresh read runs in the background; 0 or undefined disables serving stale data. */
+staleServeMs?:number}
 /** Service scope is supplied by authenticated server code, never by request bodies. */
 export class FleetCabinetService {
  private readonly transports=new Map<string,GptAdminTransport>();
  private readonly cache=new Map<string,Cached>();
  private readonly inventoryCache=new Map<string,{expiresAt:number;bytes:number;page:SessionInventoryPage}>();
  private readonly inventoryPending=new Map<string,Promise<SessionInventoryPage>>();
+ /** Last served first page per host for the stale-while-revalidate window. */
+ private readonly pageByHost=new Map<string,{page:SessionInventoryPage;revision:number;savedAt:number}>();
+ private readonly sessionReadsInFlight=new Set<string>();
+ private warmTimer?:ReturnType<typeof setInterval>;
+ private warming=false;
+ private diskHydrated=false;
+ private diskHydrating?:Promise<void>;
+ private get staleServeMs(){return this.deps.staleServeMs??0;}
  private inventoryResult(page:SessionInventoryPage):SessionInventoryPage{
   const result=structuredClone(page);
   if(result.warming||result.observedAt===null||this.now()-Date.parse(result.observedAt)>60000)result.partial=true;
   return result;
  }
- private async inventoryPage(key:string,host:Cached,read:()=>Promise<SessionInventoryPage>):Promise<SessionInventoryPage>{
+ /** A served-from-cache page is honest about it: display data, one fresh read already running. */
+ private stalePageResult(page:SessionInventoryPage):SessionInventoryPage{
+  const result=this.inventoryResult(page);
+  return {...result,partial:true,stale:true};
+ }
+ private async inventoryPage(host:Cached,cursor:string|undefined,limit:number,read:()=>Promise<SessionInventoryPage>):Promise<SessionInventoryPage>{
   const now=this.now();for(const[k,v]of this.inventoryCache)if(v.expiresAt<=now)this.inventoryCache.delete(k);
+  const key=JSON.stringify([host.host.hostId,host.revision,cursor??'',limit]);
   const cached=this.inventoryCache.get(key);if(cached)return this.inventoryResult(cached.page);
   const pending=this.inventoryPending.get(key);if(pending)return this.inventoryResult(await pending);
+  // Stale-while-revalidate: the last first page of this host answers instantly
+  // while one fresh read runs in the background, so an open browser never
+  // waits for the slow fleet discovery it has already seen.
+  if(cursor===undefined&&this.staleServeMs>0){
+   const remembered=this.pageByHost.get(host.host.hostId);
+   if(remembered&&this.now()-remembered.savedAt<this.staleServeMs){this.backgroundPageRead(host,cursor,limit,read,key);return this.stalePageResult(remembered.page);}
+   const disk=this.diskCache?await this.diskCache.readInventoryPage(this.browserScopeKey,host.host.hostId).catch(()=>undefined):undefined;
+   if(disk&&disk.version===1&&Number.isFinite(disk.savedAt)&&this.now()-disk.savedAt<this.staleServeMs&&disk.page&&disk.page.hostId===host.host.hostId&&Array.isArray(disk.page.sessions)){
+    this.pageByHost.set(host.host.hostId,{page:disk.page,revision:host.revision,savedAt:disk.savedAt});
+    this.backgroundPageRead(host,cursor,limit,read,key);
+    return this.stalePageResult(disk.page);
+   }
+  }
   if(this.inventoryPending.size>=6)throw new Error('inventory_reads_busy');
+  return this.inventoryResult(await this.startPageRead(host,cursor,limit,read,key));
+ }
+ private startPageRead(host:Cached,cursor:string|undefined,limit:number,read:()=>Promise<SessionInventoryPage>,key:string):Promise<SessionInventoryPage>{
   const operation=read().then(page=>{
    if(this.cache.get(host.host.hostId)?.revision!==host.revision)throw new Error('inventory_owner_observation_changed');
-   const bytes=Buffer.byteLength(JSON.stringify(page));if(bytes<=524288){this.inventoryCache.set(key,{page:structuredClone(page),bytes,expiresAt:this.now()+30000});
-    let total=[...this.inventoryCache.values()].reduce((n,p)=>n+p.bytes,0);for(const[k,p]of this.inventoryCache){if(total<=2097152&&this.inventoryCache.size<=32)break;total-=p.bytes;this.inventoryCache.delete(k);}}
+   this.rememberPage(host,cursor,limit,page);
    return page;
-  }).finally(()=>{this.inventoryPending.delete(key);});this.inventoryPending.set(key,operation);return this.inventoryResult(await operation);
+  }).finally(()=>{this.inventoryPending.delete(key);});this.inventoryPending.set(key,operation);return operation;
+ }
+ private backgroundPageRead(host:Cached,cursor:string|undefined,limit:number,read:()=>Promise<SessionInventoryPage>,key:string):void{
+  if(this.inventoryPending.has(key)||this.inventoryPending.size>=6)return;
+  this.startPageRead(host,cursor,limit,read,key).catch(()=>undefined);
+ }
+ private rememberPage(host:Cached,cursor:string|undefined,limit:number,page:SessionInventoryPage):void{
+  const bytes=Buffer.byteLength(JSON.stringify(page));if(bytes>524288)return;
+  const key=JSON.stringify([host.host.hostId,host.revision,cursor??'',limit]);
+  this.inventoryCache.set(key,{page:structuredClone(page),bytes,expiresAt:this.now()+30000});
+  let total=[...this.inventoryCache.values()].reduce((n,p)=>n+p.bytes,0);for(const[k,p]of this.inventoryCache){if(total<=2097152&&this.inventoryCache.size<=32)break;total-=p.bytes;this.inventoryCache.delete(k);}
+  if(cursor===undefined){
+   this.pageByHost.set(host.host.hostId,{page:structuredClone(page),revision:host.revision,savedAt:this.now()});
+   if(this.diskCache)void this.diskCache.writeInventoryPage(this.browserScopeKey,{version:1,savedAt:this.now(),hostId:host.host.hostId,page}).catch(()=>undefined);
+  }
  }
  private pending?:Promise<FleetView>;
  private sessionReads=0;
  private lastReadAt:number|null=null;
  private readRevision=0;
  private readonly journal?:FleetCreateJournal;
+ private readonly diskCache?:FleetDiskCacheStore;
  constructor(private readonly deps:FleetDependencies){
   this.deps={...deps,scope:Object.freeze({...deps.scope}),hosts:deps.hosts.map(h=>Object.freeze({...h}))};
   if(!deps.hosts.length||deps.hosts.length>5||new Set(deps.hosts.map(h=>h.hostId)).size!==deps.hosts.length)throw new Error('Expected 1..5 unique fleet hosts');
   if(deps.journalPath)this.journal=new FleetCreateJournal(this.deps.journalPath!,this.deps.scope);
+  this.diskCache=deps.diskCache;
  }
  get canReadSession(){return typeof this.transport(this.deps.hosts[0]!.hostId).readSession==='function';}
  async search(input:SessionSearchQuery&{hostId?:string}){
@@ -61,9 +113,34 @@ export class FleetCabinetService {
  async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
   if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!(address.harness==='minimax-code'||fleetHarnesses.includes(address.harness as any))||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
   await this.selectedHost(address.hostId);
-  const transport=this.transport(address.hostId);if(!transport.readSession||this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
+  const transport=this.transport(address.hostId);if(!transport.readSession)throw new Error('fleet_session_read_unavailable');
+  const read=transport.readSession.bind(transport);
+  if(this.diskCache){
+   // The last saved read-only view answers instantly while one fresh read
+   // runs in the background; the cabinet renders display data only and the
+   // next poll replaces it with the live view.
+   const cached=await this.diskCache.readSessionView(this.browserScopeKey,address).catch(()=>undefined);
+   if(cached&&cached.version===1&&Number.isFinite(cached.savedAt)){
+    void this.backgroundSessionRead(read,address);
+    return cached.view&&typeof cached.view==='object'?{...(cached.view as Record<string,unknown>),servedFromCacheAt:cached.savedAt}:cached.view;
+   }
+  }
+  return await this.foregroundSessionRead(read,address);
+ }
+ private async foregroundSessionRead(read:(target:string,harness:string,sessionId:string)=>Promise<unknown>,address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
+  if(this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
   this.sessionReads++;
-  try{return await transport.readSession(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);}finally{this.sessionReads--;}
+  try{
+   const view=await read(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);
+   if(this.diskCache)void this.diskCache.writeSessionView(this.browserScopeKey,address,{version:1,savedAt:this.now(),view}).catch(()=>undefined);
+   return view;
+  }finally{this.sessionReads--;}
+ }
+ private async backgroundSessionRead(read:(target:string,harness:string,sessionId:string)=>Promise<unknown>,address:{hostId:string;harness:string;nativeSessionId:string}):Promise<void>{
+  const key=`${address.hostId}:${address.harness}:${address.nativeSessionId}`;
+  if(this.sessionReads>=3||this.sessionReadsInFlight.has(key))return;
+  this.sessionReadsInFlight.add(key);
+  try{await this.foregroundSessionRead(read,address);}catch{/* the saved view stays served; the next request retries */}finally{this.sessionReadsInFlight.delete(key);}
  }
  /** Canonical spelling of a configured machine, so one machine has one name. */
  private canonicalHost(hostId:string):string|undefined{
@@ -113,8 +190,7 @@ export class FleetCabinetService {
     const cursor=options.cursors?.[host.hostId];
     const overlay=cursor?[]:cached.sessions.slice(0,Math.max(0,limit-1));
     const nativeLimit=limit-overlay.length;
-    const key=JSON.stringify([host.hostId,cached.revision,cursor??'',limit]);
-    const page=await this.inventoryPage(key,cached,async()=>{
+    const page=await this.inventoryPage(cached,cursor,limit,async()=>{
     const raw=unwrapResult(await this.bounded(readSessionPage(cached.target,cursor,nativeLimit),this.now()+(this.deps.readDeadlineMs??10000)));
     if(raw.hostId!==host.hostId||!Array.isArray(raw.sessions)||raw.sessions.length>nativeLimit||raw.nextCursor!==null&&(typeof raw.nextCursor!=='string'||raw.nextCursor.length>2048||!/^[A-Za-z0-9_-]+$/.test(raw.nextCursor))||raw.observedAt!==null&&(typeof raw.observedAt!=='string'||raw.observedAt.length>64||!Number.isFinite(Date.parse(raw.observedAt))))throw new Error('inventory_page_invalid');
     const sessions=new Map<string,InventorySession>();let partial=raw.partial!==false||raw.warming!==false;
@@ -153,7 +229,12 @@ export class FleetCabinetService {
   if(options.refresh&&options.hostId)all=await this.refresh(options.hostId);
   else if(this.pending)all=await this.pending;
   else if(!options.refresh&&this.lastReadAt!==null&&this.now()-this.lastReadAt<(this.deps.ttlMs??60000)&&[...this.cache.values()].every(r=>!['ready','metadata_only'].includes(r.host.state)||(r.host.expiresAt??0)>this.now())){
-   const entries=this.deps.hosts.map(h=>this.cache.get(h.hostId)!);all={hosts:entries.map(r=>r.host),sessions:entries.flatMap(r=>r.sessions),complete:entries.every(r=>r.complete),limited:entries.some(r=>r.limited)};
+   all=this.memoryView();
+  }else if(!options.refresh&&this.staleServeMs>0&&await this.staleSnapshot()){
+   // Serve the recent snapshot instantly and refresh in the background: an
+   // open browser must never wait for the slow fleet discovery again.
+   if(!this.pending)this.pending=this.refresh().finally(()=>{this.pending=undefined;});
+   all=this.memoryView();
   }else{this.pending=this.refresh().finally(()=>{this.pending=undefined;});all=await this.pending;}
   const hosts=all.hosts.filter(h=>!options.hostId||h.hostId===options.hostId);
   const sessions=all.sessions.filter(s=>!options.hostId||s.address.hostId===options.hostId);
@@ -210,9 +291,67 @@ export class FleetCabinetService {
   const expire=(r:Cached):Cached=>['ready','metadata_only'].includes(r.host.state)&&(r.host.expiresAt??0)<=this.now()?{...r,complete:false,host:{...r.host,state:'stale',createHarnesses:[],reason:'metadata_expired'}}:r;
   for(const [hostId,result]of results){const prior=this.cache.get(hostId);if(!prior||prior.revision<=result.revision)this.cache.set(hostId,expire(result));}
   for(const [hostId,entry]of this.cache)this.cache.set(hostId,expire(entry));
-  if(!selectedHostId)this.lastReadAt=this.now();
+  if(!selectedHostId){this.lastReadAt=this.now();this.startWarmLoop();void this.persistSnapshot();}
   const ordered=queried.map(h=>this.cache.get(h.hostId)!);
   return {hosts:ordered.map(r=>r.host),sessions:ordered.flatMap(r=>r.sessions),complete:ordered.every(r=>r.complete),limited:ordered.some(r=>r.limited)};
+ }
+ /** The current in-memory view without any discovery: what browsers and agents keep re-reading while it is fresh enough. */
+ private memoryView():FleetView{
+  const entries=this.deps.hosts.map(h=>this.cache.get(h.hostId)).filter((r):r is Cached=>!!r);
+  return {hosts:entries.map(r=>r.host),sessions:entries.flatMap(r=>r.sessions),complete:entries.length===this.deps.hosts.length&&entries.every(r=>r.complete),limited:entries.some(r=>r.limited)};
+ }
+ /** True when a recent-enough snapshot exists in memory or on disk: the caller answers instantly and one background refresh updates it. */
+ private async staleSnapshot():Promise<boolean>{
+  if(this.staleSnapshotUsable())return true;
+  return await this.hydrateDiskSnapshot();
+ }
+ private staleSnapshotUsable():boolean{
+  if(!this.cache.size)return false;
+  const freshest=[...this.cache.values()].reduce((at,r)=>Math.max(at,r.host.fetchedAt??0),0);
+  return freshest>0&&this.now()-freshest<this.staleServeMs;
+ }
+ /** Hydrate the memory cache from the durable display cache once per process: after a restart the first browser open answers from disk immediately. */
+ private hydrateDiskSnapshot():Promise<boolean>{
+  this.diskHydrating??=(async()=>{
+   if(this.diskHydrated)return;this.diskHydrated=true;
+   const disk=this.diskCache;if(!disk)return;
+   try{
+    const record=await disk.readSnapshot(this.browserScopeKey);
+    if(record?.version!==1||!Array.isArray(record.hosts)||!record.hosts.length)return;
+    const savedAt=Number.isFinite(record.savedAt)?record.savedAt:0;
+    if(!savedAt||this.now()-savedAt>=this.staleServeMs)return;
+    const revision=this.readRevision;
+    for(const bundle of record.hosts){
+     if(!bundle||!bundle.host||typeof bundle.host.hostId!=='string'||!this.deps.hosts.some(h=>h.hostId===bundle.host.hostId)||!Array.isArray(bundle.sessions))continue;
+     this.cache.set(bundle.host.hostId,{revision,host:bundle.host,sessions:bundle.sessions,complete:bundle.complete===true,limited:bundle.limited===true,target:typeof bundle.target==='string'?bundle.target:'',...(bundle.inventorySupported===true?{inventorySupported:true}:{})});
+    }
+    this.lastReadAt=savedAt;
+   }catch{/* a corrupt or missing record starts from a live refresh */}
+  })();
+  return this.diskHydrating.then(()=>this.staleSnapshotUsable());
+ }
+ /** Keep the fleet snapshot and the first inventory pages warm in the background so an opening browser never waits for a cold discovery. */
+ private startWarmLoop():void{
+  if(this.warmTimer||!this.deps.warmIntervalMs)return;
+  this.warmTimer=setInterval(()=>{void this.warmup().catch(()=>undefined);},this.deps.warmIntervalMs);
+  this.warmTimer.unref?.();
+ }
+ private async warmup():Promise<void>{
+  if(this.warming)return;this.warming=true;
+  try{
+   if(!this.pending)this.pending=this.refresh().finally(()=>{this.pending=undefined;});
+   await this.pending;
+   await this.inventory({});
+  }catch{/* the last known data stays served; the next cycle retries */}
+  finally{this.warming=false;}
+ }
+ /** Persist the published snapshot for this scope: after a restart the first browser open answers from disk while the background refresh runs. */
+ private async persistSnapshot():Promise<void>{
+  const disk=this.diskCache;if(!disk)return;
+  const entries=this.deps.hosts.map(h=>this.cache.get(h.hostId)).filter((r):r is Cached=>!!r);
+  if(!entries.length)return;
+  const record:FleetDiskSnapshotRecord={version:1,savedAt:this.now(),hosts:entries.map(r=>({host:r.host,sessions:r.sessions,complete:r.complete,limited:r.limited,target:r.target,...(r.inventorySupported!==undefined?{inventorySupported:r.inventorySupported}:{})}))};
+  await disk.writeSnapshot(this.browserScopeKey,record).catch(()=>undefined);
  }
  async create(request:FleetCreateRequest):Promise<FleetCreateReceipt>{
   const reject=(reason:string,retryable=true):FleetCreateReceipt=>({state:'not_attempted',inputId:request.inputId,retryable,reason});
