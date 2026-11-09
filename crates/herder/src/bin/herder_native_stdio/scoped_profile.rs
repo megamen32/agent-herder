@@ -356,7 +356,11 @@ fn validate_existing_sessions(owner: &OwnerProfile) -> io::Result<()> {
     if owner.kind != "chatgpt" || owner.ahap_script.is_none() || owner.existing_sessions.len() > 256 {
         return Err(invalid());
     }
-    let scope = owner.ahap_env.get("AHAP_BROWSER_ACCOUNT_SCOPE").ok_or_else(invalid)?;
+    let scope = owner
+        .ahap_env
+        .get("AHAP_BROWSER_ACCOUNT_SCOPE")
+        .or_else(|| owner.ahap_env.get("AHAP_USERIO_ACCOUNT_SCOPE"))
+        .ok_or_else(invalid)?;
     let mut keys = std::collections::BTreeSet::new();
     let mut natives = std::collections::BTreeSet::new();
     for approval in &owner.existing_sessions {
