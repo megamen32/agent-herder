@@ -789,6 +789,12 @@ export function inputId(harness: string): string {
 /** The datalist id of the incident model field. */
 export const INCIDENT_MODEL_LIST_ID = "launch-model-incident";
 
+export function updateIncidentModel(execution: HealthExecutionProfile, model: string): HealthExecutionProfile {
+  const route = model.trim();
+  const provider = route.includes("/") ? route.split("/", 1)[0] : execution.provider;
+  return { ...execution, provider: provider as HealthExecutionProfile["provider"], model };
+}
+
 /**
  * The fully qualified route of the incident model of the policy.
  *
@@ -899,7 +905,7 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
           <input type="text" maxLength={256} list={INCIDENT_MODEL_LIST_ID} value={policy.incidentExecution?.model ?? ""}
             placeholder={INCIDENT_EXECUTION.model} aria-label="Модель локального маршрута Herder" aria-invalid={Boolean(incidentIssue)}
             onChange={(event) => {
-              draft.edit({ ...policy, incidentExecution: { ...(policy.incidentExecution ?? INCIDENT_EXECUTION), model: event.target.value } }, "incidentExecution");
+              draft.edit({ ...policy, incidentExecution: updateIncidentModel(policy.incidentExecution ?? INCIDENT_EXECUTION, event.target.value) }, "incidentExecution");
             }} />
           <datalist id={INCIDENT_MODEL_LIST_ID}>{incidentModelOptions.map((model) => <option value={model} key={model} />)}</datalist>
         </label>
