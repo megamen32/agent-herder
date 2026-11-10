@@ -81,7 +81,7 @@ describe("ChatGPT AHAP browser runner", () => {
       AHAP_CHATGPT_CDP_TARGET_ID: "unused",
       AHAP_CHATGPT_PAGE_ID: "7",
       AHAP_CHATGPT_ACCOUNT_SCOPE: scope,
-    })).toThrow("AHAP_BROWSER_TRANSPORT must explicitly select");
+    })).toThrow("UserIO must not share another browser transport");
     expect(() => makeConfiguredAdapter({ AHAP_HARNESS: "opencode" }))
       .toThrow("AHAP_HARNESS must explicitly select chatgpt or zai");
   });

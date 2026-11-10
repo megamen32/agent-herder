@@ -5,16 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UserIoChatGptDriver, type UserIoConfig } from "../src/adapters/chatgpt-userio-driver.js";
 import { makeConfiguredAdapter } from "../src/ahap-browser-runner.js";
+import { userIoAccountScope } from "../src/adapters/userio-agent-channel.js";
 
 const CHAT = "11111111-1111-4111-8111-111111111111";
 const USR = "22222222-2222-4222-8222-222222222222";
 const ASST = "33333333-3333-4333-8333-333333333333";
 const INSTANCE = "browser-44444444-4444-4444-8444-444444444444";
 const IDENTITY = "account-uuid-userio-canary";
-const SCOPE = createHash("sha256").update(IDENTITY).digest("hex");
+const SCOPE = userIoAccountScope('chatgpt','user-1','account-1');
 const homes:string[]=[];
 afterEach(()=>{for(const dir of homes.splice(0))rmSync(dir,{force:true,recursive:true});});
-function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:string[]=[INSTANCE]){
+function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:string[]=[INSTANCE], receiptInstance:string|undefined=INSTANCE, context:{connectionId?:string;principalId?:string}={}){
   const home=mkdtempSync(join(tmpdir(),"herder-userio-test-"));homes.push(home);
   const tokenFile=join(home,"token");writeFileSync(tokenFile,"test-valid-token-12345",{mode:0o600});
   const events:{action:string;args:Record<string,unknown>;agent_instance_id:string}[]=[];
@@ -38,13 +39,15 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
     }
     if(url.pathname==="/v1/agent/results"&&opts.method==="GET"){
       return new Response(JSON.stringify({results:[...pending].map(([id,v])=>({
-        id,action:v.action,agent_id:"agent-default",result:v.result
+        id,action:v.action,agent_id:"agent-default",agent_instance_id:receiptInstance,
+        ...(context.connectionId?{connection_id:context.connectionId}:{}),
+        ...(context.principalId?{principal_id:context.principalId}:{}),result:v.result
       }))}),{status:200});
     }
     return new Response("not found",{status:404});
   };
   const config:UserIoConfig={endpoint:"http://127.0.0.1:9999",agentId:"agent-default",
-    instanceId:INSTANCE,accountScope:SCOPE,tokenFile,fetcher:fetcher as typeof fetch};
+    instanceId:INSTANCE,accountScope:SCOPE,tokenFile,...context,fetcher:fetcher as typeof fetch};
   return {driver:new UserIoChatGptDriver(config),config,events};
 }
 const read={
@@ -56,13 +59,19 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it("derives account scope from provider, user and workspace account identity",()=>{
+    expect(userIoAccountScope('chatgpt','user-1','account-1')).toBe(
+      createHash('sha256').update(JSON.stringify({provider:'chatgpt',user_id:'user-1',account_id:'account-1'})).digest('hex'));
+    expect(userIoAccountScope('chatgpt','user-1','account-1')).not.toBe(userIoAccountScope('chatgpt','user-1','account-2'));
+  });
   it("routes every command to one UUID and preserves latest native pair",async()=>{
+    const context={connectionId:"work",principalId:"principal-work"};
     const {driver,events}=fixture({
       gpt_session_proof:{ok:true,present:true,proof:"a".repeat(64)},
-      gpt_scope:{ok:true,account_scope:SCOPE},
+      gpt_scope:{ok:true,account_scope:SCOPE,provider:'chatgpt',user_id:'user-1',account_id:'account-1'},
       gpt_list:{ok:true,chats:[{id:CHAT,title:"Existing chat",update_time:10}]},
       gpt_read:read,gpt_send:{ok:true,reply:"A",chat_url:"https://chatgpt.com/c/"+CHAT},
-    });
+    },[INSTANCE],INSTANCE,context);
     await driver.verifyPinnedAccountScope();
     expect(driver.getAccountScope()).toBe(SCOPE);
     const sessions=await driver.listObservedChats();
@@ -74,6 +83,7 @@ describe("strict UserIO ChatGPT transport",()=>{
       completionStatus:"finished_successfully",endTurn:true,model:"gpt-6"});
     expect(await driver.sendMessage({chatId:CHAT,text:"new user message"})).toEqual({assistantText:"A"});
     expect(events.every(e=>e.agent_instance_id===INSTANCE)).toBe(true);
+    expect(events.every(e=>(e as typeof e & {connection_id?:string}).connection_id==="work")).toBe(true);
     expect(events.filter(e=>e.action==="gpt_send")).toHaveLength(1);
     expect(events.find(e=>e.action==="gpt_send")?.args).toMatchObject({
       chat_ref:CHAT,mode:"ui",expected_account_scope:SCOPE});
@@ -86,6 +96,12 @@ describe("strict UserIO ChatGPT transport",()=>{
     await expect(driver.verifyPinnedAccountScope()).rejects.toThrow(
       "userio_profile_principal_mismatch");
     expect(events).toHaveLength(0);
+  });
+  it("rejects a result from a different or missing native agent instance",async()=>{
+    for(const instance of ['browser-99999999-9999-4999-8999-999999999999', '']) {
+      const {driver}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)}},[INSTANCE],instance);
+      await expect(driver.verifyPinnedAccountScope()).rejects.toThrow('userio_command_result_mismatch');
+    }
   });
   it("refuses any account mismatch before enumerating or sending",async()=>{
     const {driver,events}=fixture({
@@ -127,5 +143,33 @@ describe("strict UserIO ChatGPT transport",()=>{
     expect(()=>makeConfiguredAdapter({
       AHAP_HARNESS:"chatgpt",AHAP_BROWSER_TRANSPORT:"vibe-mcp",
     } as NodeJS.ProcessEnv)).toThrow("Vibe is not permitted");
+  });
+  it("returns the full native message snapshot and rejects a different snapshot account",async()=>{
+    const earlier={...read.latest_user,id:'55555555-5555-4555-8555-555555555555',text:'earlier'};
+    const snapshot={...read,account_scope:SCOPE,snapshot_epoch:'epoch-1',revision:4,
+      coverage:'conversation',complete:true,limitations:[],messages:[earlier,read.latest_user,read.latest_assistant]};
+    const auth={gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},gpt_scope:{ok:true,account_scope:SCOPE}};
+    const {driver}=fixture({...auth,gpt_read:snapshot});
+    await driver.verifyPinnedAccountScope();
+    expect((await driver.getMessages(CHAT)).map(m=>m.text)).toEqual(['earlier',"User's original prompt",'Original assistant response']);
+    const raw=await driver.getRawTranscript(CHAT);
+    expect(raw.complete).toBe(true);
+    expect(JSON.parse(Buffer.from(raw.bytes).toString())).toMatchObject({snapshot_epoch:'epoch-1',revision:4,account_scope:SCOPE,chat_ref:CHAT});
+    const other=fixture({...auth,gpt_read:{...snapshot,account_scope:'b'.repeat(64)}}).driver;
+    await other.verifyPinnedAccountScope();
+    await expect(other.getMessages(CHAT)).rejects.toThrow('userio_read_account_mismatch');
+  });
+  it("reports a legacy latest-pair read as incomplete",async()=>{
+    const {driver}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
+      gpt_scope:{ok:true,account_scope:SCOPE},gpt_read:read});
+    await driver.verifyPinnedAccountScope();
+    expect(await driver.getRawTranscript(CHAT)).toMatchObject({complete:false});
+  });
+  it("defaults to UserIO with complete config and accepts the Rust token alias",()=>{
+    const {config}=fixture({});
+    const adapter=makeConfiguredAdapter({AHAP_HARNESS:'chatgpt',AHAP_BROWSER_ACCOUNT_SCOPE:SCOPE,
+      AHAP_USERIO_ENDPOINT:config.endpoint,AHAP_USERIO_AGENT_ID:config.agentId,
+      AHAP_USERIO_INSTANCE_ID:config.instanceId,AHAP_USERIO_TOKEN_FILE:config.tokenFile});
+    expect(adapter.name).toContain('UserIO');
   });
 });

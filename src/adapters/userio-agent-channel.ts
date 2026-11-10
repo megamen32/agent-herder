@@ -1,13 +1,18 @@
 import { lstat, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { isAbsolute, normalize } from "node:path";
 
 const INSTANCE = /^browser-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
 export type UserIoConfig = {
   endpoint:string; agentId:string; instanceId:string; accountScope:string;
-  tokenFile:string; fetcher?:typeof fetch;
+  tokenFile:string; connectionId?:string; principalId?:string; fetcher?:typeof fetch;
 };
 export type UserIoAgentResult = {ok:boolean;error?:string;[k:string]:unknown};
+export function userIoAccountScope(provider:string,userId:string,accountId:string):string {
+  if(!provider||!userId||!accountId) throw new Error('userio_identity_incomplete');
+  return createHash('sha256').update(JSON.stringify({provider,user_id:userId,account_id:accountId})).digest('hex');
+}
 const sleep = (ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 const endpoint=(value:string)=>{
   let url:URL;try{url=new URL(value);}catch{throw new Error("userio_endpoint_invalid");}
@@ -43,7 +48,9 @@ export class UserIoAgentChannel {
     this.url=endpoint(config.endpoint);
     if(!/^[A-Za-z0-9_.:-]{1,128}$/u.test(config.agentId)
       ||!INSTANCE.test(config.instanceId)||!SHA.test(config.accountScope)
-      ||!isAbsolute(config.tokenFile))throw new Error("userio_profile_invalid");
+      ||!isAbsolute(config.tokenFile)
+      ||config.connectionId!==undefined&&!/^[A-Za-z0-9_.:-]{1,128}$/u.test(config.connectionId)
+      ||config.principalId!==undefined&&(!config.principalId||config.principalId.length>256))throw new Error("userio_profile_invalid");
     this.config=config;
     this.fetcher=config.fetcher??fetch;
   }
@@ -78,7 +85,9 @@ export class UserIoAgentChannel {
       throw new Error("userio_command_invalid");
     await this.verifyPrincipal();
     const ack=await this.request("POST","/v1/agent/commands",{
-      agent_id:this.config.agentId,agent_instance_id:this.config.instanceId,action,args});
+      agent_id:this.config.agentId,agent_instance_id:this.config.instanceId,
+      ...(this.config.connectionId?{connection_id:this.config.connectionId}:{}),
+      ...(this.config.principalId?{principal_id:this.config.principalId}:{}),action,args});
     const id=ack.id;
     if(ack.queued!==true||typeof id!=="string"||!id.startsWith(this.config.agentId+":"))
       throw new Error("userio_command_rejected");
@@ -93,6 +102,10 @@ export class UserIoAgentChannel {
       if(matching.length){
         const record=matching[0]!;
         if(record.action!==action||record.agent_id!==this.config.agentId
+          ||(record.agent_instance_id!==undefined&&record.agent_instance_id!==this.config.instanceId)
+          ||record.agent_instance_id===undefined
+          ||this.config.connectionId!==undefined&&record.connection_id!==this.config.connectionId
+          ||this.config.principalId!==undefined&&record.principal_id!==this.config.principalId
           ||!record.result||typeof record.result!=="object")
           throw new Error("userio_command_result_mismatch");
         const result=record.result as UserIoAgentResult;

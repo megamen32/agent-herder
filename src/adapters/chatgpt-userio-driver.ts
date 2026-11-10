@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
-import type { SessionMessageView } from "../types/index.js";
-import { UserIoAgentChannel, type UserIoConfig, type UserIoAgentResult } from "./userio-agent-channel.js";
+import type { RawTranscriptExport, SessionMessageView } from "../types/index.js";
+import { UserIoAgentChannel, userIoAccountScope, type UserIoConfig, type UserIoAgentResult } from "./userio-agent-channel.js";
 export type { UserIoConfig } from "./userio-agent-channel.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -10,7 +10,8 @@ type AgentResult=UserIoAgentResult;
 type GptMessage={id:string;role:"user"|"assistant";text:string;status:string;
   end_turn:boolean;create_time:number;update_time:number;phase?:string;model?:string};
 type GptRead=AgentResult & {chat_ref?:string;ready?:boolean;
-  latest_user?:GptMessage;latest_assistant?:GptMessage|null};
+  latest_user?:GptMessage;latest_assistant?:GptMessage|null;messages?:GptMessage[];
+  account_scope?:string;snapshot_epoch?:unknown;revision?:unknown;coverage?:unknown;complete?:unknown;limitations?:unknown};
 
 export class UserIoChatGptDriver implements BrowserChatDriver {
   readonly browserFeatures = {nativeConversationIds:true,queueAfterGeneration:false,
@@ -38,6 +39,11 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
     const identity=await this.call("gpt_scope");
     if(typeof identity.account_scope!=="string"||!SHA.test(identity.account_scope))
       throw new Error("userio_account_scope_unavailable");
+    if(identity.provider!==undefined||identity.user_id!==undefined||identity.account_id!==undefined) {
+      if(typeof identity.provider!=="string"||typeof identity.user_id!=="string"||typeof identity.account_id!=="string"
+        ||userIoAccountScope(identity.provider,identity.user_id,identity.account_id)!==identity.account_scope)
+        throw new Error("userio_account_scope_identity_mismatch");
+    }
     if(identity.account_scope!==this.config.accountScope)
       throw new Error("pinned browser account scope mismatch");
     this.verifiedAccountScope=identity.account_scope;
@@ -70,13 +76,18 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
     if(!UUID.test(chatId))throw new Error("invalid_chat_ref");
     const value=await this.call("gpt_read",{chat_ref:chatId,
       expected_account_scope:this.config.accountScope});
-    if(value.chat_ref!==chatId||!value.latest_user)
+    if(value.chat_ref!==chatId||(!value.latest_user&&!Array.isArray(value.messages)))
+      throw new Error("userio_read_invalid");
+    if(value.account_scope!==undefined&&value.account_scope!==this.config.accountScope)
+      throw new Error("userio_read_account_mismatch");
+    if(value.messages!==undefined&&(!Array.isArray(value.messages)||value.account_scope!==this.config.accountScope))
       throw new Error("userio_read_invalid");
     return value as GptRead;
   }
   private asMessage(raw:GptMessage):SessionMessageView {
     if(!raw||!UUID.test(raw.id)||!["user","assistant"].includes(raw.role)
-      ||typeof raw.text!=="string"||raw.text.length>16000)
+      ||typeof raw.text!=="string"||raw.text.length>16000||typeof raw.status!=="string"
+      ||typeof raw.end_turn!=="boolean"||!Number.isFinite(raw.create_time)||!Number.isFinite(raw.update_time))
       throw new Error("userio_message_invalid");
     return {id:raw.id,role:raw.role,text:raw.text,parts:[{type:"text",text:raw.text}],
       ...(raw.status?{completionStatus:raw.status}:{}),
@@ -86,9 +97,23 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
   }
   async getMessages(chatId:string):Promise<SessionMessageView[]>{
     const data=await this.read(chatId);
-    const all=[data.latest_user,data.latest_assistant].filter(
+    const all=data.messages??[data.latest_user,data.latest_assistant].filter(
       (item):item is GptMessage=>!!item);
     return all.map(item=>this.asMessage(item));
+  }
+  async getRawTranscript(chatId:string):Promise<RawTranscriptExport>{
+    const data=await this.read(chatId);
+    const messages=data.messages??[data.latest_user,data.latest_assistant].filter((m):m is GptMessage=>!!m);
+    messages.forEach(message=>this.asMessage(message));
+    const complete=Array.isArray(data.messages)&&data.complete===true
+      &&typeof data.snapshot_epoch==='string'&&data.snapshot_epoch.length>0
+      &&(typeof data.revision==='string'||Number.isSafeInteger(data.revision))
+      &&typeof data.coverage==='string'&&data.coverage.length>0
+      &&Array.isArray(data.limitations)&&data.limitations.every(v=>typeof v==='string');
+    const limitations=Array.isArray(data.limitations)?data.limitations.filter((v):v is string=>typeof v==='string'):[];
+    if(!complete)limitations.push('Native snapshot completeness is not established.');
+    return {bytes:Buffer.from(JSON.stringify(data)),complete,source:{kind:'native-api',
+      location:`https://chatgpt.com/c/${chatId}`,format:'json'},timestampCoverage:complete?'native':'partial',limitations};
   }
   async sendMessage(input:{chatId:string;text:string;waitForCompletion?:boolean}):
       Promise<{assistantText?:string}>{

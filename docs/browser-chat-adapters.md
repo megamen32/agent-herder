@@ -7,19 +7,24 @@ not to an aggregate `browser-chat` adapter.
 
 | Harness | Driver | Identity | Account archive |
 | --- | --- | --- | --- |
-| `chatgpt` | `builtin:chatgpt-mac-cdp` | stable native `/c/<uuid>` | separate `cdp_*` tools |
-| `zai` | `builtin:zai-cdp` | sidebar title or exact `/c/<uuid>` route | unavailable |
+| `chatgpt` | `builtin:chatgpt-userio` | stable native `/c/<uuid>` | UserIO extension channel |
+| `zai` | `builtin:zai-userio` | stable native `/c/<uuid>` route | UserIO extension channel |
 
-Both drivers reuse the **existing authenticated Mac mini Chrome CDP gateway**.
-Neither opens another browser, profile or login session. A missing/unavailable
-site does not disable the other or any coding agent.
+The maintained AHAP browser transport is the UserIO extension channel. It runs
+inside the selected owner browser profile and does not expose cookies or site
+credentials to Herder. A complete UserIO profile is required; missing fields
+fail clearly and never trigger Vibe or direct CDP fallback.
+
+Vibe and direct CDP remain explicit experimental/unmaintained compatibility
+transports only. They are not selected implicitly and are not part of the
+maintained browser adapter contract.
 
 Configure `AGENT_HERDER_BROWSER_CHAT_PROVIDERS` with a JSON array:
 
 ```json
 [
-  {"id":"chatgpt","name":"ChatGPT","cwd":"/home/roomhacker/.browser-chat/chatgpt","module":"builtin:chatgpt-mac-cdp"},
-  {"id":"zai","name":"Z.ai","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-cdp"}
+  {"id":"chatgpt","name":"ChatGPT","cwd":"/home/roomhacker/.browser-chat/chatgpt","module":"builtin:chatgpt-userio"},
+  {"id":"zai","name":"Z.ai","cwd":"/home/roomhacker/.browser-chat/zai","module":"builtin:zai-userio"}
 ]
 ```
 
@@ -29,6 +34,15 @@ Use `/api/adapters` to inspect/disable them separately. This API also returns
 base capabilities are not treated as proof of native provider support.
 
 ## Sessions and sending
+
+UserIO broker results must carry matching `agent_id`, `agent_instance_id`, and
+command action. Missing native instance identity is a failed receipt, even when
+the backend response says `ok`. `gpt_read` returns `chat_ref`,
+`snapshot_epoch`, `revision`, `account_scope`, `coverage`, `complete`,
+`limitations`, and when available the complete native `messages` array. Each
+message retains native id, role, text, status, `end_turn`, `create_time`, and
+`update_time`. Full messages are consumed before the latest pair; pair fallback
+is reported as incomplete.
 
 Each provider exposes its own harness and scoped session IDs:
 

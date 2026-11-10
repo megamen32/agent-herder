@@ -453,7 +453,7 @@ export function makeConfiguredAdapter(
 ): BrowserAdapterPort {
   const harness = env.AHAP_HARNESS?.trim();
   if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
-  const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
+  const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim() || 'userio';
   if (!["direct-cdp", "mac-mini", "vibe", "vibe-mcp", "userio"].includes(transport ?? "")) {
     throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini, vibe, vibe-mcp or userio");
   }
@@ -465,12 +465,15 @@ export function makeConfiguredAdapter(
   // a closed tab never breaks the route and never opens a tab per call.
   const rawPageId = (env.AHAP_BROWSER_PAGE_ID ?? env.AHAP_CHATGPT_PAGE_ID ?? env.AGENT_HERDER_ZAI_PAGE_ID)?.trim();
   const pageId = rawPageId && /^[1-9][0-9]*$/u.test(rawPageId) ? Number(rawPageId) : undefined;
-  const expectedScope = (env.AHAP_BROWSER_ACCOUNT_SCOPE ?? env.AHAP_CHATGPT_ACCOUNT_SCOPE)?.trim();
+  const expectedScope = (env.AHAP_BROWSER_ACCOUNT_SCOPE ?? env.AHAP_CHATGPT_ACCOUNT_SCOPE ?? env.AHAP_USERIO_ACCOUNT_SCOPE)?.trim();
   if (!expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
     throw new Error("Exact account scope is required");
   }
 
   if (transport === "userio") {
+    if(env.AHAP_USERIO_ACCOUNT_SCOPE && env.AHAP_USERIO_ACCOUNT_SCOPE!==expectedScope) throw new Error('userio_scope_conflict');
+    if(env.AHAP_USERIO_ACCESS_TOKEN_FILE && env.AHAP_USERIO_TOKEN_FILE
+      && env.AHAP_USERIO_ACCESS_TOKEN_FILE!==env.AHAP_USERIO_TOKEN_FILE) throw new Error('userio_token_file_conflict');
     if (rawPageId || env.AHAP_BROWSER_CDP_WS_URL || env.AHAP_BROWSER_MCP_URL
       || env.AHAP_CHATGPT_CDP_WS_URL || env.AHAP_BROWSER_CDP_CONTEXT_ID) {
       throw new Error("UserIO must not share another browser transport");
@@ -480,13 +483,16 @@ export function makeConfiguredAdapter(
       agentId: env.AHAP_USERIO_AGENT_ID ?? "",
       instanceId: env.AHAP_USERIO_INSTANCE_ID ?? "",
       accountScope: expectedScope,
-      tokenFile: env.AHAP_USERIO_ACCESS_TOKEN_FILE ?? "",
+      tokenFile: env.AHAP_USERIO_ACCESS_TOKEN_FILE ?? env.AHAP_USERIO_TOKEN_FILE ?? "",
+      ...(env.AHAP_USERIO_CONNECTION_ID?.trim()?{connectionId:env.AHAP_USERIO_CONNECTION_ID.trim()}:{}),
+      ...(env.AHAP_USERIO_PRINCIPAL_ID?.trim()?{principalId:env.AHAP_USERIO_PRINCIPAL_ID.trim()}:{}),
     };
     const driver = harness === "chatgpt" ? new UserIoChatGptDriver(config) : new ZaiUserIoDriver(config);
     const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT UserIO" : "Z.AI UserIO",
       harness, cwd: process.cwd() } as const;
     const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
     return Object.assign(adapter, {
+      ...(driver instanceof UserIoChatGptDriver ? {getRawTranscript: (id:string) => driver.getRawTranscript(browserChatNativeId(id, harness, true))} : {}),
       getAccountScope: () => driver.getAccountScope(),
       verifyPinnedAccountScope: async () => {
         if (driver instanceof ZaiUserIoDriver) await driver.verifyPinnedAccountScope(expectedScope);
