@@ -100,6 +100,63 @@ describe("ZAI under exact UserIO browser profile",()=>{
      .rejects.toThrow("send_not_ready");
    expect(commands.some(c=>c.action==="zai_send")).toBe(false);
  });
+ it("exports native response bodies with truthful partial coverage",async()=>{
+   const detail=' { "native": true } ', batch=' { "payload": "unaltered" } ';
+   const {driver}=fixture({...outcomes,zai_raw:{ok:true,chat_ref:REF,detail,batches:[batch]}});
+   await driver.verifyPinnedAccountScope();
+   const raw=await driver.getRawTranscript("route:"+REF);
+   expect(raw.complete).toBe(false);
+   expect(JSON.parse(Buffer.from(raw.bytes).toString())).toEqual({detail,batches:[batch]});
+ });
+ it("archives only after verified account and reports uncertain failure",async()=>{
+   const {driver,commands}=fixture({...outcomes,zai_archive:{ok:true}});
+   await driver.verifyPinnedAccountScope();
+   expect(await driver.archiveChat("route:"+REF)).toEqual({ok:true});
+   expect(commands.filter(c=>c.action==="zai_archive")).toHaveLength(1);
+   const failed=fixture({...outcomes,zai_archive:{ok:false,error:"archive_outcome_unknown"}});
+   await failed.driver.verifyPinnedAccountScope();
+   expect(await failed.driver.archiveChat("route:"+REF)).toEqual({ok:false,error:"archive_outcome_unknown"});
+ });
+ it("persists a scoped draft, admits exact native IDs, and reuses alias after restart",async()=>{
+   const dir=mkdtempSync(join(tmpdir(),"zai-drafts-"));folders.push(dir);
+   const previous=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+   process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=dir;
+   try{
+     const {driver,config,commands}=fixture({...outcomes,zai_first_send:{ok:true,admission:"confirmed",chat_ref:REF,native_user_message_id:USER}});
+     const draft=await driver.createChat({title:"fixture"});
+     expect(draft.id).toMatch(/^draft:/);
+     expect(await driver.getMessages(draft.id)).toEqual([]);
+     expect(await driver.sendMessage({chatId:draft.id,text:"first"})).toEqual({nativeInputMessageId:USER});
+     const restarted=new ZaiUserIoDriver(config);
+     await restarted.verifyPinnedAccountScope();
+     expect((await restarted.getMessages(draft.id))[0]?.id).toBe(USER);
+     await restarted.sendMessage({chatId:draft.id,text:"second"});
+     expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
+     expect(commands.find(c=>c.action==="zai_send")?.args.chat_ref).toBe(REF);
+   }finally{
+     if(previous===undefined)delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+     else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=previous;
+   }
+ });
+ it("reconciles an uncertain first send by original command without re-submitting",async()=>{
+   const dir=mkdtempSync(join(tmpdir(),"zai-unknown-"));folders.push(dir);
+   const previous=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+   process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=dir;
+   try{
+     const receipt:Record<string,unknown>={ok:false,error:"zai_first_outcome_unknown"};
+     const {driver,config,commands}=fixture({...outcomes,zai_first_send:receipt});
+     const draft=await driver.createChat({title:"fixture"});
+     await expect(driver.sendMessage({chatId:draft.id,text:"first"})).rejects.toThrow("outcome unknown");
+     Object.assign(receipt,{ok:true,admission:"confirmed",chat_ref:REF,native_user_message_id:USER});
+     const restarted=new ZaiUserIoDriver(config);
+     await restarted.verifyPinnedAccountScope();
+     expect(await restarted.sendMessage({chatId:draft.id,text:"first"})).toEqual({nativeInputMessageId:USER});
+     expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
+   }finally{
+     if(previous===undefined)delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+     else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=previous;
+   }
+ });
  it("rejects Vibe as the owner transport for ZAI",()=>{
    const env:NodeJS.ProcessEnv={AHAP_HARNESS:"zai",AHAP_BROWSER_TRANSPORT:"vibe-mcp"};
    expect(()=>makeConfiguredAdapter(env)).toThrow("Vibe is not permitted");
