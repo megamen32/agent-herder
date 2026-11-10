@@ -1,0 +1,12 @@
+{
+  "baseline_source_sha256": "f6c585bd147b54529ff51bc096092b25f500e26937710bc4389f5f3731d9d3a4",
+  "fixed_source_sha256_after": "e981d6a3c9f86a8dba1cc4bff3c9086240b8da732a4a56998921fbda8c16a2e6",
+  "fixed_source_sha256_before": "e981d6a3c9f86a8dba1cc4bff3c9086240b8da732a4a56998921fbda8c16a2e6",
+  "green_exit": 0,
+  "green_log_sha256": "9d49018d007916d37a9c67f9c3a25ffd92389f994735924147ec15c62a773333",
+  "head_blob_sha256": "e981d6a3c9f86a8dba1cc4bff3c9086240b8da732a4a56998921fbda8c16a2e6",
+  "owned_git_status": "",
+  "red_exit": 1,
+  "red_log_sha256": "1939e6f6f48e35075e9bde361ab9b71a37298151a33873b63a30f2a076315b7b",
+  "restored_exact": true
+}

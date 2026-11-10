@@ -1,0 +1,13 @@
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+{"manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-lifecycle-4990f920/manifest.json", "manifest_sha256": "44172c5b03b430f6f05ac86a55ceaab2f73cb36b7b22836e5e9d600ad6d69ade", "source_commit": "4990f920fdea7b83513c8be7d2efc8a096cfee06"}

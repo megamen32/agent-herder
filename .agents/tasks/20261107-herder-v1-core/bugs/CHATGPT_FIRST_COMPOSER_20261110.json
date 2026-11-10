@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-10T20:31:34+00:00",
+  "details": "Nativepreclickcomposer_not_empty_or_ready. EmptyChatGPTcomposer showsvoice; sendbuttonappearsafterinput. Fixturealwaysprovidedbutton. Fixhydratedownedemptyeditor theninserttext thenboundedfreshsendbutton+scopeguard clickonce; no nativewrite occurred fororiginal.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T20:31:34+00:00",
+      "changes": {
+        "details": "Nativepreclickcomposer_not_empty_or_ready. EmptyChatGPTcomposer showsvoice; sendbuttonappearsafterinput. Fixturealwaysprovidedbutton. Fixhydratedownedemptyeditor theninserttext thenboundedfreshsendbutton+scopeguard clickonce; no nativewrite occurred fororiginal.",
+        "source": "native-chatgpt14 originalcommand37e074 receipt; scoped-chatgpt.js:firstSend",
+        "status": "open",
+        "title": "Первая отправка требует sendbutton до ввода текста"
+      }
+    }
+  ],
+  "id": "CHATGPT_FIRST_COMPOSER_20261110",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "source": "native-chatgpt14 originalcommand37e074 receipt; scoped-chatgpt.js:firstSend",
+  "status": "open",
+  "title": "Первая отправка требует sendbutton до ввода текста",
+  "updated_at": "2026-11-10T20:31:34+00:00"
+}

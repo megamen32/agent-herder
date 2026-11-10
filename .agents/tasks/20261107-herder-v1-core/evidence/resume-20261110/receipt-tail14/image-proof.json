@@ -1,0 +1,16 @@
+{
+  "all_31_source_hashes_match_local_origin_main": true,
+  "all_31_source_hashes_match_revision": true,
+  "base_image": "sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201",
+  "base_to_candidate_changed": [
+    "/opt/universal-userio/src/universal_userio/agent_channel.py"
+  ],
+  "both_zip_hashes_match_base_and_revision": true,
+  "image": "sha256:89bc032c1fadd60699e1c1a1b75d4f9234593a5a0a01939adf62baafee36679d",
+  "revision": "a3e1d2e965a5c9e8ff255fa67bf2c45808bf2857",
+  "verified_paths": 33,
+  "zip_hashes": {
+    "src/universal_userio/static/vk-userio-extension-mv3.zip": "c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16",
+    "src/universal_userio/static/vk-userio-extension.zip": "c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16"
+  }
+}

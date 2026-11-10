@@ -1,0 +1,18 @@
+{
+  "installed": true,
+  "at": "2026-11-10T20:04:28.175Z",
+  "fence": 102,
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-lazy-cebecc13/manifest.json",
+  "manifest_sha256": "eb62ae35bc083fb3713ac961ca694ef3b1302b6323401278ba356ce75dc63301",
+  "profiles": [
+    "codex-local",
+    "codex-44",
+    "opencode-noticeplace-local",
+    "chatgpt-userio-vk-browser",
+    "zcode-local"
+  ],
+  "connected_pid": 2018166,
+  "connected_restart": "complete; status running=true",
+  "source_commit": "cebecc13480d0bb4b212dd6fc59f49d99a7e1333",
+  "connected_discover": "5 configured instances; exact GPTAdmin source a6351e185ce8758999a3a708e000b3c9"
+}

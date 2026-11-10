@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-10T20:19:00+00:00",
+  "details": "Sameprofile metadata firstsuccess scope8a then listscope_mismatch; AX/authlogin. Newnativefetch missingAuthorization comparedexistingCDPscript. Archivepage verifiedstate butreturnsokwithoutchat_ref/archived, driver819correctlyrefuses. Fixexistingextensionandnativeproof, nopermissionsbypass.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T20:19:00+00:00",
+      "changes": {
+        "details": "Sameprofile metadata firstsuccess scope8a then listscope_mismatch; AX/authlogin. Newnativefetch missingAuthorization comparedexistingCDPscript. Archivepage verifiedstate butreturnsokwithoutchat_ref/archived, driver819correctlyrefuses. Fixexistingextensionandnativeproof, nopermissionsbypass.",
+        "source": "zai-live14/list-bound-reconciled.json; mac-zai-auth-read.log; lib/zai.js",
+        "status": "open",
+        "title": "Z.ai принимает гостевой scope и теряет подтверждение archive"
+      }
+    }
+  ],
+  "id": "ZAI_NATIVE_AUTH_ARCHIVE_20261110",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "source": "zai-live14/list-bound-reconciled.json; mac-zai-auth-read.log; lib/zai.js",
+  "status": "open",
+  "title": "Z.ai принимает гостевой scope и теряет подтверждение archive",
+  "updated_at": "2026-11-10T20:19:00+00:00"
+}

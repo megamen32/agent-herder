@@ -2,7 +2,7 @@
   "id": "CHATLIFEFIXTURE13",
   "parent": "S2",
   "label": "Проверить ChatGPT lifecycle через Rust и настоящее расширение локально",
-  "status": "running",
+  "status": "done",
   "owner": "Lovelace",
   "model": "gpt-6.1-terra",
   "estimate_minutes": 15,
@@ -12,7 +12,7 @@
   "description": "Один локальный путь реальныйRust→AHAPrunner→UserIOcommand/results→extension с fixture native site. Без provider вызовов. Сохранить исходные команды/ID, first+secondsend, restart, archive.",
   "acceptance": "Единыйfixture создаёт draft, firstsend подтверждает observednativeID, secondsend тотжechat, read/export/restart безресенда, archiveexact, scope/accountswitch/UNKNOWN не повторяются. Использует истинные shippedentrypoints и существующие stores. Binary/runner source+hash receipt пригоден для reuse release.",
   "created_at": "2026-11-10T22:01:34+03:00",
-  "updated_at": "2026-11-10T22:01:34+03:00",
+  "updated_at": "2026-11-10T22:19:42+03:00",
   "progress_events": [
     {
       "at": "2026-11-10T22:01:34+03:00",
@@ -39,6 +39,23 @@
       },
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:19:42+03:00",
+      "note": "Сквозная локальная проверка завершена; реальныйпровайдер и установкаследуютотдельно.",
+      "changes": {
+        "status": "done",
+        "result": "Publishedfixture4990f920. РеальныйRustrelease21eedee3→bundledAHAP→localHTTP→настоящиеextensionagent+scopedmodules, fakeDOM/provider: first+secondsendconfirmednativeIDs, restartreadscopefail/archivePASS. SeparateUNKNOWNinjectedread: originalcommandID+resultrecoveredafterrestart/no2ndsend; coreoperationremainsUNKNOWN. Proof ART/chatlife12-final.log +unknown-final.log andchatlife12-build/source-build-receipt.json; nocallsprovider. SourceRustc56treeexactmatch4990Rusttree, binaryreuseperreceipt. FinalcombinedZaiwrapper/artifactverificationseparate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Publishedfixture4990f920. РеальныйRustrelease21eedee3→bundledAHAP→localHTTP→настоящиеextensionagent+scopedmodules, fakeDOM/provider: first+secondsendconfirmednativeIDs, restartreadscopefail/archivePASS. SeparateUNKNOWNinjectedread: originalcommandID+resultrecoveredafterrestart/no2ndsend; coreoperationremainsUNKNOWN. Proof ART/chatlife12-final.log +unknown-final.log andchatlife12-build/source-build-receipt.json; nocallsprovider. SourceRustc56treeexactmatch4990Rusttree, binaryreuseperreceipt. FinalcombinedZaiwrapper/artifactverificationseparate."
 }

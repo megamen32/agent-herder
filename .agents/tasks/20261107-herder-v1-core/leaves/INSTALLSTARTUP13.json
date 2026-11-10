@@ -1,0 +1,68 @@
+{
+  "id": "INSTALLSTARTUP13",
+  "parent": "MRESUME10",
+  "label": "Подтвердить запуск общего Herder с пятью профилями",
+  "status": "done",
+  "owner": "Terra",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "После CAS appendZCode проверка startup/discovery5profile через обычныйinstalledSDK; connectedGPTAdmin502 отдельный внешнийroute. Не повторять provider sends/creates. Source startupbug исправить минимально если reproduced.",
+  "acceptance": "Штатныйinstalledentry initialize+tools+discoverinstances5, stderr/exit/readiness evidence. Exact consumer ref context; source vs installed vs gateway раздельно. No foreignconfig/restart/rollback, HumanStop and receipts preserved.",
+  "created_at": "2026-11-10T22:13:20+03:00",
+  "updated_at": "2026-11-10T22:18:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T22:13:20+03:00",
+      "note": "",
+      "changes": {
+        "id": "INSTALLSTARTUP13",
+        "parent": "MRESUME10",
+        "label": "Подтвердить запуск общего Herder с пятью профилями",
+        "status": "running",
+        "owner": "Terra",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "После CAS appendZCode проверка startup/discovery5profile через обычныйinstalledSDK; connectedGPTAdmin502 отдельный внешнийroute. Не повторять provider sends/creates. Source startupbug исправить минимально если reproduced.",
+        "acceptance": "Штатныйinstalledentry initialize+tools+discoverinstances5, stderr/exit/readiness evidence. Exact consumer ref context; source vs installed vs gateway раздельно. No foreignconfig/restart/rollback, HumanStop and receipts preserved."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:16:05+03:00",
+      "note": "Ordinary installed SDK: initialize, 15 tools and discover all 5 instances PASS in 47.5 s; exit 0, stderr verified separately. Evidence herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/installed-startup13/result.json. GPTAdmin 502 is separate and its previous pending receipts were not replayed. No source fix or shared mutations needed.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c6e1-761a-7092-8c00-2ba15fdbfb4a",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c6e1-761a-7092-8c00-2ba15fdbfb4a",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:18:01+03:00",
+      "note": "Установленный entry работоспособен; внешний connected route остаётся отдельной открытой ошибкой.",
+      "changes": {
+        "status": "done",
+        "result": "Один обычный installedSDK probe 19:14:53→19:15:40UTC PASS47.5s; initialize/tools15/discover5instances, code0/stderrпустой. Coree34manifest селекторы0362b132. Никакогоsourcefix не потребовалось. ConnectedGPTAdmin502 иoriginalrestartjob отдельноUNKNOWN, не закрыты этимSDKproof. ART/installed-startup13/result.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Один обычный installedSDK probe 19:14:53→19:15:40UTC PASS47.5s; initialize/tools15/discover5instances, code0/stderrпустой. Coree34manifest селекторы0362b132. Никакогоsourcefix не потребовалось. ConnectedGPTAdmin502 иoriginalrestartjob отдельноUNKNOWN, не закрыты этимSDKproof. ART/installed-startup13/result.json."
+}

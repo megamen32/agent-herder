@@ -1,0 +1,58 @@
+{
+  "installed": true,
+  "at": "2026-11-10T19:29:41.901Z",
+  "fence": 101,
+  "records": [
+    {
+      "path": "/home/roomhacker/.config/agent-herder/v1-entry.json",
+      "candidate": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/lifecycle13/v1-entry.json.candidate",
+      "beforeSha": "0362b132cca45412ae58c3b274108046cadef96de8df9b24bb6aa3b5cfd25672",
+      "afterSha": "9a1be74d68d424dad9598c279b89e359bfeb5441884d24b14569a2f55418b5a6"
+    },
+    {
+      "path": "/home/roomhacker/.config/agent-herder/gptadmin-entry.json",
+      "candidate": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/lifecycle13/gptadmin-entry.json.candidate",
+      "beforeSha": "0362b132cca45412ae58c3b274108046cadef96de8df9b24bb6aa3b5cfd25672",
+      "afterSha": "9a1be74d68d424dad9598c279b89e359bfeb5441884d24b14569a2f55418b5a6"
+    }
+  ],
+  "profiles": [
+    {
+      "oldPath": "/home/roomhacker/herder-artifacts/installed-v1/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+      "newPath": "/home/roomhacker/herder-artifacts/installed-v1/herder-owner-home/authority/profile-userio-lifecycle-composed-4990f920.json",
+      "oldSha": "f3259f3fd129fc3d3795edf642c859c91cb410718c2c86f3c8112d88bb6701eb",
+      "newSha": "58d8b56534b616c551ff963dc1dc4967e21aca42d8144a9b08af24fe2cfb2229",
+      "instance": "codex-local"
+    },
+    {
+      "oldPath": "/home/roomhacker/herder-artifacts/installed-v1/remote44/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+      "newPath": "/home/roomhacker/herder-artifacts/installed-v1/remote44/herder-owner-home/authority/profile-userio-lifecycle-composed-4990f920.json",
+      "oldSha": "d39e7303af6a9f5a5815c209acf7fd71d4402359efd311c834d77751129da10d",
+      "newSha": "51eaed5efbc1659f033abdbc45b4fc7c1315e4944a1ebb1689f2774f33752fbe",
+      "instance": "codex-44"
+    },
+    {
+      "oldPath": "/home/roomhacker/herder-artifacts/installed-v1/noticeplace/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+      "newPath": "/home/roomhacker/herder-artifacts/installed-v1/noticeplace/herder-owner-home/authority/profile-userio-lifecycle-composed-4990f920.json",
+      "oldSha": "8b7f054b79f6fa2f813f27fff323f5295707d508b9523e708bb7ae8435ad4473",
+      "newSha": "b93d32893c3caf3534ebd73162c5a1d30b57fa0d030322fa7713ab5a6eac9c55",
+      "instance": "opencode-noticeplace-local"
+    },
+    {
+      "oldPath": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/browser-profile-stage/herder-owner-home/authority/profile-chatgpt-userio-staged.json",
+      "newPath": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/browser-profile-stage/herder-owner-home/authority/profile-userio-lifecycle-composed-4990f920.json",
+      "oldSha": "d15bcd7b16a97fff0ab5d76aef9272e5f9ade3806784d1748be69af62a108d7b",
+      "newSha": "e8e9493fa206810bb2170dc6c62534fd8dac11e3a22b8e25b4d38b29b57f7424",
+      "instance": "chatgpt-userio-vk-browser"
+    },
+    {
+      "oldPath": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/zcode-install13/herder-owner-home/authority/profile-zcode-install13.json",
+      "newPath": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/zcode-install13/herder-owner-home/authority/profile-userio-lifecycle-composed-4990f920.json",
+      "oldSha": "84a8f58fd91873043171b5133024e13307661c5a1ea3ddd820010e94c7443620",
+      "newSha": "61220927e375c57734a0e20a7e80eb4ddde78c9dab863423657870d9e7912d20",
+      "instance": "zcode-local"
+    }
+  ],
+  "manifestSha": "5d16e4e70bce12257474a9c680a887a500f4dcf3997479c528eb805ade17018b",
+  "connectedChildRestart": "pending_external_GPTAdmin_502"
+}

@@ -1,0 +1,5 @@
+{"authorityHost":"roomhacker-server-100","project":"/home/roomhacker/agents-projects/universal-userio/.git","acquired":true,"lease":{"project":"/home/roomhacker/agents-projects/universal-userio/.git","owner":{"hostId":"roomhacker-server-100","harness":"codex","nativeSessionId":"01a1c551-1737-7bb0-9b52-e25e4b8436c6"},"fence":52,"acquiredAt":1794338567805,"expiresAt":1794339467805},"proofPath":"/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/mac-lease-030.json"}
+Файлы UserIO 0.9.30 установлены: /Users/roomhacker/Downloads/Universal-UserIO-Agent-0.9.11
+Резерв: /Users/roomhacker/Library/Application Support/UserIO/extension-backups/before-20261110-112250-jebld6ey.zip
+FILES_INSTALLED_0.9.30_RELOAD_PENDING
+{"authorityHost":"roomhacker-server-100","project":"/home/roomhacker/agents-projects/universal-userio/.git","released":true}

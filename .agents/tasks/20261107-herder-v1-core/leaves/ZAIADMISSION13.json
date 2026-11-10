@@ -1,0 +1,55 @@
+{
+  "id": "ZAIADMISSION13",
+  "parent": "S2",
+  "label": "Подтвердить первую отправку Z.ai через общий адаптер",
+  "status": "done",
+  "owner": "Luna",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 10,
+  "description": "ZaiUserIoDriver firstsend возвращает nativeID, но не включает supportsFirstSendReceipt; BrowserChatAdapter требует несуществующую draft baseline. Минимальный фикс в общем реальном adapter path.",
+  "acceptance": "RED/GREEN через BrowserChatAdapter+реальный ZaiUserIoDriver: pending draft firstsend admitted nativeID, нет zai_read до admission, один firstsend, secondread alias. Scoped negative/UNKNOWN preserved. Published main exact owned source.",
+  "created_at": "2026-11-10T22:36:30+03:00",
+  "updated_at": "2026-11-10T22:51:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T22:36:30+03:00",
+      "note": "",
+      "changes": {
+        "id": "ZAIADMISSION13",
+        "parent": "S2",
+        "label": "Подтвердить первую отправку Z.ai через общий адаптер",
+        "status": "running",
+        "owner": "Luna",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 10,
+        "description": "ZaiUserIoDriver firstsend возвращает nativeID, но не включает supportsFirstSendReceipt; BrowserChatAdapter требует несуществующую draft baseline. Минимальный фикс в общем реальном adapter path.",
+        "acceptance": "RED/GREEN через BrowserChatAdapter+реальный ZaiUserIoDriver: pending draft firstsend admitted nativeID, нет zai_read до admission, один firstsend, secondread alias. Scoped negative/UNKNOWN preserved. Published main exact owned source."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:51:47+03:00",
+      "note": "Luna finished exact source slice; parent reviewed regression outcomes and package consumer boundary.",
+      "changes": {
+        "status": "done",
+        "result": "Published main8199024f118fbbd15ca5b419bf16c1c064013e88. Actual BrowserChatAdapter+ZaiUserIoDriver RED3 -> GREEN18, tsc PASS. First draft returns native message receipt; UNKNOWN never re-enqueues firstsend; archive requires exact native chat_ref and archived:true. Source proof only; final package and live Z.ai acceptance separate. Evidence ART/zai-admission13/RED.log,GREEN.log; owned2files."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Published main8199024f118fbbd15ca5b419bf16c1c064013e88. Actual BrowserChatAdapter+ZaiUserIoDriver RED3 -> GREEN18, tsc PASS. First draft returns native message receipt; UNKNOWN never re-enqueues firstsend; archive requires exact native chat_ref and archived:true. Source proof only; final package and live Z.ai acceptance separate. Evidence ART/zai-admission13/RED.log,GREEN.log; owned2files."
+}

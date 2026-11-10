@@ -1,0 +1,57 @@
+{
+  "id": "RECEIPTTAIL14",
+  "parent": "MRESUME10",
+  "label": "Ускорить чтение квитанций UserIO без полного сканирования журнала",
+  "status": "done",
+  "owner": "Terra",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "Live result limit1=11319ms при status273ms. read_results разбирает369MiB целиком каждыйpoll. Reverse-tail на том же canonical JSONL сохраняет ID/изоляцию.",
+  "acceptance": "RED/GREEN largejournal readbudget, latestfirst/filter/UTF8/partialline; exact ownedmain, immutablebackend derivative с0.9.30ZIPs, supportedleaseCAS install иlatency/readback.",
+  "created_at": "2026-11-10T23:00:06+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-10T23:31:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T23:00:06+03:00",
+      "note": "",
+      "changes": {
+        "id": "RECEIPTTAIL14",
+        "parent": "MRESUME10",
+        "label": "Ускорить чтение квитанций UserIO без полного сканирования журнала",
+        "status": "running",
+        "owner": "Terra",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "Live result limit1=11319ms при status273ms. read_results разбирает369MiB целиком каждыйpoll. Reverse-tail на том же canonical JSONL сохраняет ID/изоляцию.",
+        "acceptance": "RED/GREEN largejournal readbudget, latestfirst/filter/UTF8/partialline; exact ownedmain, immutablebackend derivative с0.9.30ZIPs, supportedleaseCAS install иlatency/readback."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T23:31:33+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Publisheda3e1d2e; actualREDbaseline +34GREEN; image89bc all31hashes,onlyagent_channelchanged,both030ZIPs preserved. Installedfence56 container025eb491; accounts19 andfrontend/voiceunchanged. ActualHTTPresults11319→6ms,SDK10/10nativeIDsread114284→22098ms,connect2739ms. No newstore/journalmutation. Evidence receipt-tail14."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Publisheda3e1d2e; actualREDbaseline +34GREEN; image89bc all31hashes,onlyagent_channelchanged,both030ZIPs preserved. Installedfence56 container025eb491; accounts19 andfrontend/voiceunchanged. ActualHTTPresults11319→6ms,SDK10/10nativeIDsread114284→22098ms,connect2739ms. No newstore/journalmutation. Evidence receipt-tail14."
+}

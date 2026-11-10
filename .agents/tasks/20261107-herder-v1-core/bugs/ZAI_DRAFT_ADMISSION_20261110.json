@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T19:39:08+00:00",
+  "details": "ZaiUserIoDriver возвращаетnativeIDfirstsend, но безsupportsFirstSendReceipt; BrowserChatAdapter трактуетdraftкакexistingnativeиостанавливаетсяNativebaselineunavailable. WorkerZAIADMISSION13 проверяет реальныйadapterRED/GREEN иминимальныйfix, archiveconfirmationnegative отдельно.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T19:39:08+00:00",
+      "changes": {
+        "details": "ZaiUserIoDriver возвращаетnativeIDfirstsend, но безsupportsFirstSendReceipt; BrowserChatAdapter трактуетdraftкакexistingnativeиостанавливаетсяNativebaselineunavailable. WorkerZAIADMISSION13 проверяет реальныйadapterRED/GREEN иминимальныйfix, archiveconfirmationnegative отдельно.",
+        "source": "src/adapters/browser-chat.ts:firstDraft; src/adapters/zai-userio-driver.ts",
+        "status": "open",
+        "title": "Общий browser adapter не принимает первое сообщение черновика Z.ai"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Lead",
+      "at": "2026-11-10T19:52:14+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/zai-admission13/GREEN.log",
+            "red_proof_path": "evidence/resume-20261110/zai-admission13/RED.log",
+            "red_result": "FAIL",
+            "red_sha256": "ba55fcfd4efd618486f96d31ea1e5c746f1a611a73076b07950db7c281f2a334",
+            "result": "PASS",
+            "sha256": "a01e5ccf677151ce121c1186199f85915226b4a594c74cc9b95942beba1767b0",
+            "test_command": "npx vitest run tests/zai-userio.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "ZAI_DRAFT_ADMISSION_20261110",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/zai-admission13/GREEN.log",
+      "red_proof_path": "evidence/resume-20261110/zai-admission13/RED.log",
+      "red_result": "FAIL",
+      "red_sha256": "ba55fcfd4efd618486f96d31ea1e5c746f1a611a73076b07950db7c281f2a334",
+      "result": "PASS",
+      "sha256": "a01e5ccf677151ce121c1186199f85915226b4a594c74cc9b95942beba1767b0",
+      "test_command": "npx vitest run tests/zai-userio.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "src/adapters/browser-chat.ts:firstDraft; src/adapters/zai-userio-driver.ts",
+  "status": "fixed",
+  "title": "Общий browser adapter не принимает первое сообщение черновика Z.ai",
+  "updated_at": "2026-11-10T19:52:14+00:00"
+}

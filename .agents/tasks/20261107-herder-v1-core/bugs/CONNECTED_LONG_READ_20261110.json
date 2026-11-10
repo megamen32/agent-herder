@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-10T19:14:13+00:00",
+  "details": "Installed SDK получил10/10messages, но connected session(messages) был принят в backgroundjob 902b98d9bc278f8704cb70c3c2b551a6; samecredential tasks/get child вернул invalidtaskId, root403/no receipt; позднийreadonlyjob106b765c9d7af25f7ff76995c0c96d1b тоже не удалосьпрочитать. Повторов исходногосообщения нет. Possible caller/profile receipt routing; причина не доказана source. 19:10UTC restartchildAgentHerderjob28e811d7f57d4af82cb88320f252c1e9 иdiscoverjobе7e47187e9df42e543aafbcf3713fa65послеZCodeappendтакжеpending, затемGPTAdminHTTP502. Herder startup отдельно расследуетINSTALLSTARTUP13; GPTAdmin auth/hub изменение вне текущегоownedrepair.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T19:14:13+00:00",
+      "changes": {
+        "details": "Installed SDK получил10/10messages, но connected session(messages) был принят в backgroundjob 902b98d9bc278f8704cb70c3c2b551a6; samecredential tasks/get child вернул invalidtaskId, root403/no receipt; позднийreadonlyjob106b765c9d7af25f7ff76995c0c96d1b тоже не удалосьпрочитать. Повторов исходногосообщения нет. Possible caller/profile receipt routing; причина не доказана source. 19:10UTC restartchildAgentHerderjob28e811d7f57d4af82cb88320f252c1e9 иdiscoverjobе7e47187e9df42e543aafbcf3713fa65послеZCodeappendтакжеpending, затемGPTAdminHTTP502. Herder startup отдельно расследуетINSTALLSTARTUP13; GPTAdmin auth/hub изменение вне текущегоownedrepair.",
+        "source": "evidence/resume-20261110/final-verification/public-browser-read-proof.json; installed-startup13",
+        "status": "open",
+        "title": "Подключённый клиент не получает результат длинного чтения Herder"
+      }
+    }
+  ],
+  "id": "CONNECTED_LONG_READ_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "source": "evidence/resume-20261110/final-verification/public-browser-read-proof.json; installed-startup13",
+  "status": "open",
+  "title": "Подключённый клиент не получает результат длинного чтения Herder",
+  "updated_at": "2026-11-10T19:14:13+00:00"
+}

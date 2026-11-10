@@ -1,0 +1,20 @@
+{
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-lazy-cebecc13/manifest.json",
+  "manifest_sha256": "eb62ae35bc083fb3713ac961ca694ef3b1302b6323401278ba356ce75dc63301",
+  "source_commit": "cebecc13480d0bb4b212dd6fc59f49d99a7e1333",
+  "source_tree": "6a3c08dc865011b2ceb8622c807f7e9080038ae4",
+  "rust_tree": "faca385aec0a9b8221e37f19d1bc7f5907da9da1",
+  "rust_binary_sha256": "1f85e7b720e159d1553e832c4d84030ed6daa389ec0eae3a6aba5c765d59815c",
+  "rust_reused_from_commit": "f9ab3ac93ec1ba9814a5bb88be6b2a1fc70bdaea",
+  "typescript": "fresh build from source_commit",
+  "tests": "85 existing and focused tests PASS; two additional real AHAP missing/wrong scope PASS; tsc PASS",
+  "package_hashes": "PASS incl remote44 pins",
+  "extension_version": "0.9.30",
+  "extension_zip_sha256": "c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16",
+  "lifecycle": "PASS fake DOM create, first and second send, restart, read, archive, scope refusal",
+  "unknown": "PASS original command receipt recovered after restart without resend",
+  "scope": "package only; no install or provider actions",
+  "staging_manifest": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/final-lazy14b/package/manifest.json",
+  "staging_manifest_sha256": "2efad51c0315d84c32e501af4038a126cfb2c5ad7543f60d30250c15448699f4",
+  "release_copy": "PASS regular copied bytes and preserved modes"
+}

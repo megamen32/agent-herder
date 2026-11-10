@@ -1,0 +1,75 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_results_poll_reads_only_needed_tail_of_large_journal ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79b9ea4c0c10>
+
+    def test_results_poll_reads_only_needed_tail_of_large_journal(tmp_path, monkeypatch):
+        from pathlib import Path
+    
+        journal = tmp_path / 'results.jsonl'
+        old = b'{"user":"other","agent_id":"a","pad":"' + b'x' * 220 + b'"}\n'
+        with journal.open('wb') as stream:
+            for _ in range(70000):
+                stream.write(old)
+            stream.write(b'{"user":"owner","agent_id":"a","id":"latest"}\n')
+        cutoff = journal.stat().st_size - 1024 * 1024
+        original_open, original_read_text = Path.open, Path.read_text
+    
+        class GuardedFile:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+            def __enter__(self):
+                self.wrapped.__enter__()
+                return self
+            def __exit__(self, *args):
+                return self.wrapped.__exit__(*args)
+            def read(self, size=-1):
+                assert self.wrapped.tell() >= cutoff, 'read reached old journal prefix'
+                assert 0 <= size <= 1024 * 1024, 'unbounded read'
+                return self.wrapped.read(size)
+            def __getattr__(self, name):
+                return getattr(self.wrapped, name)
+    
+        def guarded_open(path, *args, **kwargs):
+            stream = original_open(path, *args, **kwargs)
+            return GuardedFile(stream) if path == journal else stream
+    
+        def guarded_read_text(path, *args, **kwargs):
+            assert path != journal, 'whole-journal read'
+            return original_read_text(path, *args, **kwargs)
+    
+        monkeypatch.setattr(Path, 'open', guarded_open)
+        monkeypatch.setattr(Path, 'read_text', guarded_read_text)
+        monkeypatch.setattr(agent_channel, 'RESULTS_FILE', journal)
+>       assert agent_channel.read_results(user='owner', agent_id='a', limit='1')['results'][0]['id'] == 'latest'
+
+tests/test_agent_channel.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/universal_userio/agent_channel.py:466: in read_results
+    lines = RESULTS_FILE.read_text(encoding="utf-8").splitlines()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl')
+args = (), kwargs = {'encoding': 'utf-8'}, @py_assert1 = False
+@py_format3 = "PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl') != PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl')"
+@py_format5 = "whole-journal read\n>assert PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl') != PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl')"
+
+    def guarded_read_text(path, *args, **kwargs):
+>       assert path != journal, 'whole-journal read'
+E       AssertionError: whole-journal read
+E       assert PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl') != PosixPath('/tmp/pytest-of-roomhacker/pytest-102223/test_results_poll_reads_only_n0/results.jsonl')
+
+tests/test_agent_channel.py:48: AssertionError
+=============================== warnings summary ===============================
+../../../../../usr/local/lib/python3.10/dist-packages/_pytest/config/__init__.py:1474
+  /usr/local/lib/python3.10/dist-packages/_pytest/config/__init__.py:1474: PytestConfigWarning: Unknown config option: asyncio_default_fixture_loop_scope
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_agent_channel.py::test_results_poll_reads_only_needed_tail_of_large_journal
+1 failed, 1 warning in 0.31s

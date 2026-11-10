@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T19:37:49+00:00",
+  "details": "Installed ordinary SDK initially took47.5s; finalcombinedcoldSDKconnect60sRequesttimedout. AHAPopen performs browseraccount/initnetwork beforepublicMCPinitialize; unavailable browsercanholdCLIcatalog too. Lazybrowserfirsttargetedinitunderexistingmutex fixesorderingwithoutweakeningaccountguard. WorkerLAZYBROWSER13 ownsRED/GREEN+artifact.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T19:37:49+00:00",
+      "changes": {
+        "details": "Installed ordinary SDK initially took47.5s; finalcombinedcoldSDKconnect60sRequesttimedout. AHAPopen performs browseraccount/initnetwork beforepublicMCPinitialize; unavailable browsercanholdCLIcatalog too. Lazybrowserfirsttargetedinitunderexistingmutex fixesorderingwithoutweakeningaccountguard. WorkerLAZYBROWSER13 ownsRED/GREEN+artifact.",
+        "source": "evidence/resume-20261110/installed-startup13/result.json; lifecycle13/installed-read.log",
+        "status": "open",
+        "title": "Медленный browser init задерживает всё MCP подключение"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Lead",
+      "at": "2026-11-10T20:18:59+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/lazy-browser13/green.log",
+            "red_proof_path": "evidence/resume-20261110/lazy-browser13/red.log",
+            "red_result": "FAIL",
+            "red_sha256": "7991d8e8b4bb0e88daeeb4cf0ea25d1d57eef8817dd9080aa811e15ea62fd78c",
+            "result": "PASS",
+            "sha256": "f38ea85dc47f7d590d62a5abac1b29f1368c80e33aa05e4b7b548e87d487b6fb",
+            "test_command": "cargo test --locked --lib adapters::ahap; installed MCP SDK connect2460ms"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "EAGER_BROWSER_STARTUP_20261110",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/lazy-browser13/green.log",
+      "red_proof_path": "evidence/resume-20261110/lazy-browser13/red.log",
+      "red_result": "FAIL",
+      "red_sha256": "7991d8e8b4bb0e88daeeb4cf0ea25d1d57eef8817dd9080aa811e15ea62fd78c",
+      "result": "PASS",
+      "sha256": "f38ea85dc47f7d590d62a5abac1b29f1368c80e33aa05e4b7b548e87d487b6fb",
+      "test_command": "cargo test --locked --lib adapters::ahap; installed MCP SDK connect2460ms"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/resume-20261110/installed-startup13/result.json; lifecycle13/installed-read.log",
+  "status": "fixed",
+  "title": "Медленный browser init задерживает всё MCP подключение",
+  "updated_at": "2026-11-10T20:18:59+00:00"
+}

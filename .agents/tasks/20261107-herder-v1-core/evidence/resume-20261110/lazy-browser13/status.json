@@ -1,0 +1,15 @@
+{
+  "status": "built_and_fixture_verified",
+  "commit": "f9ab3ac93ec1ba9814a5bb88be6b2a1fc70bdaea",
+  "tree": "0e008ad3927830edd0f39dde419dca6ad77a9733",
+  "tests": {
+    "ahap": "8 PASS",
+    "compat_mcp_discovery": "PASS 0.36s fixture",
+    "two_profiles": "PASS"
+  },
+  "scope": "lazy browser init only; targeted read retains existing separate 120s init and 120s RPC limits; no provider calls",
+  "binary": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/lazy-browser13/target/release/herder_native_stdio",
+  "binary_sha256": "1f85e7b720e159d1553e832c4d84030ed6daa389ec0eae3a6aba5c765d59815c",
+  "build": "cargo build --locked --release --bin herder_native_stdio",
+  "release_fixture": "compat initialize + discovery PASS 0.40s"
+}

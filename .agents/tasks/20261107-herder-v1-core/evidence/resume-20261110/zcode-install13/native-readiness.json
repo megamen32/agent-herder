@@ -1,0 +1,100 @@
+{
+  "observed_at": "2026-11-10T19:06:38.014Z",
+  "profile_path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/zcode-install13/herder-owner-home/authority/profile-zcode-install13.json",
+  "profile_sha256": "84a8f58fd91873043171b5133024e13307661c5a1ea3ddd820010e94c7443620",
+  "adapter_path": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-schema-2d70f4b9/fixture/ahap-zcode-runner.mjs",
+  "adapter_sha256": "a353b4e4d29c869f57b00154d0bfd722dad4e40a0d476646fe94efe2f0f28919",
+  "principal": "local-owner",
+  "instance": "zcode-local",
+  "transport": "official-server",
+  "expected_model_pin": "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled",
+  "ready": true,
+  "preflight": {
+    "ready": true,
+    "model_pin": {
+      "model": "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled",
+      "provider_id": "4cc673aa-6c6a-418b-8b91-9e601fef99f6",
+      "model_id": "MiniMax-M3.1-Flash",
+      "reasoning_level": "enabled",
+      "source": "zcode-native-create-model-catalog",
+      "observed_at": "2026-11-10T19:06:35.505Z",
+      "listed_models": [
+        "account:zai-individual-coding-plan/GLM-5.3",
+        "account:zai-individual-coding-plan/GLM-5.3-Flash",
+        "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/auto/coding",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/cx/gpt-6.1-sol",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/cx/gpt-6-luna",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/minimax/MiniMax-M3.1-Flash",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/orchestrator",
+        "f761f8b0-fc06-49c4-82bc-05e0924f9d6e/subagent",
+        "bigmodel-api/GLM-5.3",
+        "bigmodel-api/GLM-5.3-Flash",
+        "zai-api/GLM-5.3",
+        "zai-api/GLM-5.3-Flash",
+        "zai-api-2/GLM-5.3",
+        "zai-api-2/GLM-5.3-Flash",
+        "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled",
+        "Z.ai - Coding Plan/GLM-5.2",
+        "Z.ai - Coding Plan/GLM-5-Turbo",
+        "minimax/minimax/MiniMax-M3",
+        "omniroute/subagent",
+        "omniroute/auto/coding:free",
+        "omniroute/cp/cline-pass/kimi-k2.7-code",
+        "omniroute/cp/cline-pass/deepseek-v4-pro",
+        "omniroute/cp/cline-pass/kimi-k2.6",
+        "omniroute/cp/cline-pass/deepseek-v4-flash",
+        "omniroute/cp/cline-pass/mimo-v2.5",
+        "omniroute/cp/cline-pass/mimo-v2.5-pro",
+        "omniroute/oc/deepseek-v4-flash-free",
+        "omniroute/oc/big-pickle",
+        "omniroute/cx/gpt-5.6-terra-medium",
+        "omniroute/cx/gpt-5.6-sol-medium",
+        "omniroute/cx/gpt-5.6-luna-medium",
+        "omniroute/zc/glm-5.3-flash",
+        "omniroute/minimax/MiniMax-M3",
+        "omniroute/minimax/MiniMax-M2.7",
+        "omniroute/orchestrator",
+        "omniroute/subagent-cheap",
+        "omniroute/subagent-free",
+        "omniroute/persona",
+        "omniroute/paid-medium",
+        "omniroute/paid-premium",
+        "omniroute/free-stack",
+        "omniroute/Kimi Coding",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.2",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.3-codex",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.3-codex-spark",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.4",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.4-mini",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.5",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.5-high",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.5-low",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.5-medium",
+        "omniroute/qtSd/groupdemo/codex/gpt-5.5-xhigh",
+        "omniroute/qtSd/groupdemo/openrouter/auto",
+        "omniroute/minimax-combo-m3.1"
+      ],
+      "native_catalog_entry": {
+        "ref": {
+          "providerId": "4cc673aa-6c6a-418b-8b91-9e601fef99f6",
+          "modelId": "MiniMax-M3.1-Flash"
+        },
+        "label": "MiniMax-M3.1-Flash",
+        "reasoning": {
+          "levels": [
+            {
+              "value": "disabled"
+            },
+            {
+              "value": "enabled"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "close": {
+    "closed": true
+  }
+}

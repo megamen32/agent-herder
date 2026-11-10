@@ -1,0 +1,55 @@
+{
+  "id": "EXTINSTALL13",
+  "parent": "MEXT10",
+  "label": "Установить пакет расширения с ChatGPT и Z.ai lifecycle",
+  "status": "done",
+  "owner": "Luna",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "description": "Проверить опубликованный пакет0.9.30exactSHA/ZIP и доставить package-only backend derivative штатным lease/CASreplace-backend; сохранять31sourcehash/19accounts/frontendvoice. Mac reload иliveprovider выполняетLead отдельно.",
+  "acceptance": "ОбаpublicZIP возвращают ожидаемыйhash/version, backendsource31/31иaccounts19preserved, rollback+leaseCAS+release. Ниcustomerconversation/providerturn/Chrome/storage не изменены; source/package/serverinstall различены.",
+  "created_at": "2026-11-10T22:14:56+03:00",
+  "updated_at": "2026-11-10T22:32:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T22:14:56+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTINSTALL13",
+        "parent": "MEXT10",
+        "label": "Установить пакет расширения с ChatGPT и Z.ai lifecycle",
+        "status": "running",
+        "owner": "Luna",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "description": "Проверить опубликованный пакет0.9.30exactSHA/ZIP и доставить package-only backend derivative штатным lease/CASreplace-backend; сохранять31sourcehash/19accounts/frontendvoice. Mac reload иliveprovider выполняетLead отдельно.",
+        "acceptance": "ОбаpublicZIP возвращают ожидаемыйhash/version, backendsource31/31иaccounts19preserved, rollback+leaseCAS+release. Ниcustomerconversation/providerturn/Chrome/storage не изменены; source/package/serverinstall различены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:32:00+03:00",
+      "note": "Package-only server install and independent runtime/public ZIP readback complete; lease released.",
+      "changes": {
+        "status": "done",
+        "result": "Package-only UserIO 0.9.30 installed and independently verified. Published source 480146dfba5847c213fb98af00f316ece6aac6c7; both ZIPs SHA256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16, HTTP 200/version 0.9.30/MV3. Local derivative image sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201; current backend bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70 running, restart 0, supervisor PASS. Candidate and installed runtime source hashes 31/31 match; 19 account identities unchanged; frontend/voice container IDs and running state unchanged. Canonical replace-backend receipt and rollback baseline at /var/backups/universal-userio/20261110-backend-extension-030-01a1c551; lease fence 53 checked and released. Evidence: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract-030/result.md. Parent Mac/browser/consumer readback remains separate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c6e4-0178-7b91-8284-224233fea991",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c6e4-0178-7b91-8284-224233fea991",
+      "harness": "codex"
+    }
+  ],
+  "result": "Package-only UserIO 0.9.30 installed and independently verified. Published source 480146dfba5847c213fb98af00f316ece6aac6c7; both ZIPs SHA256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16, HTTP 200/version 0.9.30/MV3. Local derivative image sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201; current backend bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70 running, restart 0, supervisor PASS. Candidate and installed runtime source hashes 31/31 match; 19 account identities unchanged; frontend/voice container IDs and running state unchanged. Canonical replace-backend receipt and rollback baseline at /var/backups/universal-userio/20261110-backend-extension-030-01a1c551; lease fence 53 checked and released. Evidence: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract-030/result.md. Parent Mac/browser/consumer readback remains separate."
+}

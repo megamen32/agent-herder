@@ -1,0 +1,42 @@
+{
+  "source_commit": "c56aaa3c37898408b46973d4f4f97e77c850ecbe",
+  "source_tree": "320a877bc3c8ea8f50124a3a1706544322fc5c6e",
+  "source_clean_at_build": true,
+  "build_command": "CARGO_TARGET_DIR=<receipt-dir>/target cargo build --locked --release --bin herder_native_stdio",
+  "rustc": "rustc 1.96.1 (31fca3adb 2026-06-26)",
+  "cargo": "cargo 1.96.1 (356927216 2026-06-26)",
+  "core": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/chatlife12-build/target/release/herder_native_stdio",
+  "core_sha256": "21eedee3f2319aa7cfd2dc2b7530bec71d7e8e0f157d1606c0ae561aba8956d2",
+  "browser_bundle": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/chatlife12-build/fixture/ahap-browser-runner.mjs",
+  "browser_bundle_sha256": "8abf48219c7ab7c33675db260447e954959b91c7483122efde5a42dac71a027a",
+  "userio_source_commit": "e37cda11a785d8e748564d4ff899a624042b7d4c",
+  "status": "integrated fixture passed",
+  "fixture_commit": "4990f920fdea7b83513c8be7d2efc8a096cfee06",
+  "core_source_matches_fixture_commit": "git diff c56aaa3c..4990f920 -- crates/herder is empty",
+  "browser_bundle_source": "c56aaa3c37898408b46973d4f4f97e77c850ecbe; later main contains Z.ai wrapper changes not in this bundle",
+  "extension_files_sha256": {
+    "agent.js": "2372a1ae34cbb15865c4fc352246045fb91211103bc3b9408741bfd0ba64c00f",
+    "scoped-chatgpt.js": "bafe487dcc2101c3e149ce52ecb498b2b5e58ab05600fa0205681514354d64cd",
+    "chatgpt-core.js": "0673bf45ee1c0067afcb5c236f67cdcc8125a6ad897ef12383971fb42df4efe8",
+    "chatgpt-state.js": "27d1de4ea0c25f948f9070de41f3d402d2bdc7640f55b44d3c234343f29ee143"
+  },
+  "fixture_runs": {
+    "chatlife12-final.log": {
+      "path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/chatlife12-final.log",
+      "sha256": "937dc3219020324af641590062213c2d899b230fcac26b5f2592097d8ffc8833"
+    },
+    "chatlife12-unknown-final.log": {
+      "path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/chatlife12-unknown-final.log",
+      "sha256": "76d3dce3ee3c3f2d1f8f88c40623d9cfc5742b8a0bc19ac5bf62b3b78148ae58"
+    }
+  },
+  "compat": {
+    "path": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-schema-2d70f4b9/fixture/herder-compat",
+    "sha256": "0870c199939a619cb227ab17647fba3836965b5fb1efadf0ba8c8681b9615c2f",
+    "provenance_manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-schema-2d70f4b9/manifest.json",
+    "provenance_manifest_sha256": "e34aa2b906fb1b4d5c6e97cbdb4a4859b4fee6e9d500c026d96dc74ef65b5beb",
+    "source_commit_role": "manifest caller-supplied provenance, not proof of build"
+  },
+  "scope": "local fixture only; no installation or provider access",
+  "unknown_recovery": "core preserves UNKNOWN and refuses replay; restarted AHAP recovers exact command receipt without second send; core operation remains UNKNOWN"
+}

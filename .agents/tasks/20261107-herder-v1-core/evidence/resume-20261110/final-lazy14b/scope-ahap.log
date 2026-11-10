@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/lazy-browser13
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 18 skipped (20)
+   Start at  22:59:41
+   Duration  5.69s (transform 683ms, setup 41ms, import 915ms, tests 4.57s, environment 0ms)
+

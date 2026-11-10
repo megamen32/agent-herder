@@ -1,0 +1,13 @@
+{
+  "account_ids_unchanged": true,
+  "backup": "/var/backups/universal-userio/20261110-backend-extension-030-01a1c551",
+  "compose_sha256": "f7fbf0afb6e8d968ece685c634d4373804e849eb5e6eb9d74ad39299d3f69eec",
+  "container_id": "bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70",
+  "frontend_voice_configuration_unchanged": true,
+  "image": "universal-userio:backend-extension-480146f",
+  "image_id": "sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201",
+  "previous_image_id": "sha256:bf565c3a349627655454d9e58930ad03dac00f6dc148a99055e12c478b56ed53",
+  "revision": "480146dfba5847c213fb98af00f316ece6aac6c7",
+  "status": "installed",
+  "supervisor_healthy": true
+}

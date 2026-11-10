@@ -1,0 +1,16 @@
+   Compiling herder v0.1.0 (/home/roomhacker/herder-artifacts/worktrees/lazy-browser13/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.80s
+     Running unittests src/lib.rs (/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/lazy-browser13/target/debug/deps/herder-9d6e2aece7b41ccd)
+
+running 8 tests
+test adapters::ahap::tests::startup_failure_identifies_init_phase_without_echoing_remote_secrets ... ok
+test adapters::ahap::tests::ambiguous_result_and_null_error_poisons_connection ... ok
+test adapters::ahap::tests::initialize_harness_must_match_the_trusted_configuration ... ok
+test adapters::ahap::tests::capabilities_and_instance_are_explicit ... ok
+test adapters::ahap::tests::lazy_init_is_deferred_and_serialized ... ok
+test adapters::ahap::tests::timeout_never_replays_a_possibly_sent_mutation ... ok
+test adapters::ahap::tests::blocked_stdin_is_bounded_and_never_retried ... ok
+test adapters::ahap::tests::lazy_init_wrong_scope_and_timeout_fail_closed_without_replay ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 198 filtered out; finished in 0.37s
+

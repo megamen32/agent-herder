@@ -1,0 +1,3 @@
+{"phase":"initial_account","ok":true,"elapsedMs":9071}
+{"phase":"adapter_init","ok":true,"elapsedMs":6242}
+{"phase":"message_read","ok":true,"elapsedMs":8651,"count":10}

@@ -1,0 +1,10 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+..................................                                       [100%]
+=============================== warnings summary ===============================
+../../../../../usr/local/lib/python3.10/dist-packages/_pytest/config/__init__.py:1474
+  /usr/local/lib/python3.10/dist-packages/_pytest/config/__init__.py:1474: PytestConfigWarning: Unknown config option: asyncio_default_fixture_loop_scope
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+34 passed, 1 warning in 9.43s

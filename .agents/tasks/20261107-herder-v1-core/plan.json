@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "10.11 21:48МСК: установлен Rust entry, оба shared selectors содержат3CLI+ChatGPT UserIO. Connected discovery/context PASS; ordinary installed SDK10/10nativeIDs PASS, history partial. UserIO0.9.29 backend+Chrome Default/Carevio загружен. HUMANQUOTA12 завершён: exact2388 постоянно установлен fence98/PID3616632;56tests+tsc, installed human allowed/automatic0writes, единичный native NoticePlace steer admitted. Lovelace заканчивает ChatGPT lifecycle source; Linnaeus Z.ai source; Lorentz готовит ZCode shared profile readonly, без повторения provider canaries. Длинный connected messages имеет gateway receipt caller/profile mismatch, исходныеjobs сохранены, новые reads не повторяются. SESSIONREPLIES13 записан в очередь; полныйV1 пока не принят.",
-  "updated_at": "2026-11-10T21:48:38+03:00",
+  "current_progress": "10.11: installed Herdercebecc manifesteb62 запускаетсячерезSDKза2.7с,5instances; GPTAdminchildrestart/discoverPASS. UserIOreceipt-tailа3e установленfence56: results11319→6мс,SDKChatGPT10/10read114→22с. НовыйChatGPTfirstcanary taskc411 далUNKNOWN; exactnativecommand37e074 reconciledpreclickcomposer_not_empty_or_ready, resend0. Terraфиксируетfirstcomposer+Zai auth/archive иpackage0.9.32. ZaiCarevioauthpage;guestbindingremoved,Defaultprofileпроверяется. SESSIONREPLIESвочереди. ПолныйV1непринят.",
+  "updated_at": "2026-11-10T23:32:23+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",

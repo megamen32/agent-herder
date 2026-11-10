@@ -1,0 +1,8 @@
+# ZAISOURCE13 — integrated source and package receipt
+
+- Herder integration commit: 95bb2a42e8bda0498c94d770b1c7bf1dd7b9e93f; published main merge f0987253cc8bd926822637baf50eff42cc23847f. Both UserIO drivers expose their own raw transcript unchanged, including completeness and limitations.
+- UserIO exact versioned package source: 96c39854ea895f6abb7e37144407b45d04727c7a. Published package commit and main: 480146dfba5847c213fb98af00f316ece6aac6c7, parent exact source above.
+- Both package files SHA-256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16. Official extensions/vk-inbox/scripts/build.sh. ZIP integrity and manifest 0.9.30 confirmed; test_build verifies shipped lifecycle source matches package source, both ZIPs identical and deterministic.
+- The agent dispatch allows zai_raw, zai_first_send, zai_archive only through existing account binding check and loads the lifecycle module in the background worker. Routing test includes negative binding and exact handler cases.
+- Extension full Node suite: 131 passed, log extension-full-node-030.log. Package and macOS installer unit tests: 6 passed, one pre-existing unknown pytest configuration warning, log extension-package-python-030.log. Herder runner and Z.ai focused suites: 83 passed; TypeScript noEmit passed (herder-tsc.log).
+- The Z.ai lifecycle fixture separately tests mock script dispatch and runs the actual first-click page function in an in-process fake DOM; the latter checks composer insertion, single click and mocked native readback. It is not a Chrome/browser or real provider test. Raw export remains partial and size bounded. No backend installation, Mac modification, real-provider actions or model calls.

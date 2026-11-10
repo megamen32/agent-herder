@@ -1,0 +1,54 @@
+{
+  "start": "2026-11-10T19:14:53.487Z",
+  "selector": "default installed v1-entry",
+  "stage": "done",
+  "initialize": "ok",
+  "tools": [
+    "discover",
+    "sessions",
+    "session",
+    "create",
+    "deliver",
+    "resume",
+    "stop",
+    "search",
+    "export",
+    "automation",
+    "resource",
+    "configure",
+    "permission",
+    "human_request",
+    "compat_task"
+  ],
+  "isError": false,
+  "instances": [
+    {
+      "instance": "codex-local",
+      "harness": "codex",
+      "node": "roomhacker-server-100"
+    },
+    {
+      "instance": "codex-44",
+      "harness": "codex",
+      "node": "server-44"
+    },
+    {
+      "instance": "opencode-noticeplace-local",
+      "harness": "opencode",
+      "node": "roomhacker-server-100"
+    },
+    {
+      "instance": "chatgpt-userio-vk-browser",
+      "harness": "chatgpt",
+      "node": "roomhacker-server-100"
+    },
+    {
+      "instance": "zcode-local",
+      "harness": "zcode",
+      "node": "roomhacker-server-100"
+    }
+  ],
+  "ok": true,
+  "closed": true,
+  "end": "2026-11-10T19:15:40.982Z"
+}

@@ -1,0 +1,14 @@
+{
+  "/vk-userio-extension-mv3.zip": {
+    "http_status": 200,
+    "manifest_version": 3,
+    "sha256": "c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16",
+    "version": "0.9.30"
+  },
+  "/vk-userio-extension.zip": {
+    "http_status": 200,
+    "manifest_version": 3,
+    "sha256": "c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16",
+    "version": "0.9.30"
+  }
+}

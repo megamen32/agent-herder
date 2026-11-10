@@ -16,7 +16,7 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "current_progress": "10.11 21:48МСК: установлен Rust entry, оба shared selectors содержат3CLI+ChatGPT UserIO. Connected discovery/context PASS; ordinary installed SDK10/10nativeIDs PASS, history partial. UserIO0.9.29 backend+Chrome Default/Carevio загружен. HUMANQUOTA12 завершён: exact2388 постоянно установлен fence98/PID3616632;56tests+tsc, installed human allowed/automatic0writes, единичный native NoticePlace steer admitted. Lovelace заканчивает ChatGPT lifecycle source; Linnaeus Z.ai source; Lorentz готовит ZCode shared profile readonly, без повторения provider canaries. Длинный connected messages имеет gateway receipt caller/profile mismatch, исходныеjobs сохранены, новые reads не повторяются. SESSIONREPLIES13 записан в очередь; полныйV1 пока не принят.",
+  "current_progress": "10.11: installed Herdercebecc manifesteb62 запускаетсячерезSDKза2.7с,5instances; GPTAdminchildrestart/discoverPASS. UserIOreceipt-tailа3e установленfence56: results11319→6мс,SDKChatGPT10/10read114→22с. НовыйChatGPTfirstcanary taskc411 далUNKNOWN; exactnativecommand37e074 reconciledpreclickcomposer_not_empty_or_ready, resend0. Terraфиксируетfirstcomposer+Zai auth/archive иpackage0.9.32. ZaiCarevioauthpage;guestbindingremoved,Defaultprofileпроверяется. SESSIONREPLIESвочереди. ПолныйV1непринят.",
   "deliverable": "implementation",
   "decomposition": "progressive",
   "revisions": [
@@ -153,7 +153,7 @@
   ],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-10T21:48:38+03:00",
+  "updated_at": "2026-11-10T23:32:23+03:00",
   "tasks": [
     {
       "id": "BACKENDCONTRACT11",
@@ -928,10 +928,11 @@
     {
       "id": "CHATLIFESOURCE12",
       "label": "Довести создание и архивирование ChatGPT через общее расширение",
-      "status": "running",
+      "status": "done",
       "parent": "S2",
       "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
-      "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+      "acceptance": "Опубликованный source ChatGPT draft/create/firstsend receipt recovery и scoped archive; focused RED/GREEN per layer. Сквозной Rust→extension fixture и реальная установка выделены отдельно, а общий lifecycle остаётся незавершённым до них.",
+      "result": "PublishedHerder c56aaa3c/UserIOe37cda11;136Herder+9Rust+18extension+tscPASS. Scoped discard и accepted command receipt persisted, digest recovery, firstsend native IDs, confirmedarchive before aliasremoval; unknownPOSTack fenced. Три слоя проверены раздельно; сквознойfixture продолжается CHATLIFEFIXTURE13, install/provider не выполнены.",
       "owner": "Heisenberg",
       "model": "gpt-6.1-terra",
       "origin": "",
@@ -959,6 +960,23 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:01:33+03:00",
+          "note": "Закрыт только доказанный source после превышения оценки; непроверенный сквозной результат вынесен в отдельный следующий лист, общий критерий не снят.",
+          "changes": {
+            "status": "done",
+            "acceptance": "Опубликованный source ChatGPT draft/create/firstsend receipt recovery и scoped archive; focused RED/GREEN per layer. Сквозной Rust→extension fixture и реальная установка выделены отдельно, а общий lifecycle остаётся незавершённым до них.",
+            "result": "PublishedHerder c56aaa3c/UserIOe37cda11;136Herder+9Rust+18extension+tscPASS. Scoped discard и accepted command receipt persisted, digest recovery, firstsend native IDs, confirmedarchive before aliasremoval; unknownPOSTack fenced. Три слоя проверены раздельно; сквознойfixture продолжается CHATLIFEFIXTURE13, install/provider не выполнены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -967,7 +985,54 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-10T20:54:08+03:00",
-      "started_at": "2026-11-10T20:54:08+03:00"
+      "started_at": "2026-11-10T20:54:08+03:00",
+      "finished_at": "2026-11-10T22:01:33+03:00"
+    },
+    {
+      "id": "CHATNATIVE14",
+      "label": "Проверить новый ChatGPT чат через установленный Herder",
+      "status": "running",
+      "parent": "MRESUME10",
+      "description": "Singlefreshnativecanary stablekeys. OriginalfirsttaskUNKNOWN reconciledsourcecommand37e… resultpreclickcomposer_not_empty_or_ready; no secondsend. Sourcefixfirstcomposerinprogress.",
+      "acceptance": "Afterfixedextension firstnativeinput+assistant,secondinput+assistant,restart/messages/raw,exactownarchive. Originalreceipts retained; no replays ofuncertainmutation.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T23:31:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHATNATIVE14",
+            "parent": "MRESUME10",
+            "label": "Проверить новый ChatGPT чат через установленный Herder",
+            "status": "running",
+            "owner": "Lead",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "description": "Singlefreshnativecanary stablekeys. OriginalfirsttaskUNKNOWN reconciledsourcecommand37e… resultpreclickcomposer_not_empty_or_ready; no secondsend. Sourcefixfirstcomposerinprogress.",
+            "acceptance": "Afterfixedextension firstnativeinput+assistant,secondinput+assistant,restart/messages/raw,exactownarchive. Originalreceipts retained; no replays ofuncertainmutation."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T23:31:33+03:00",
+      "started_at": "2026-11-10T23:31:33+03:00"
     },
     {
       "id": "CHROMEPROFILE10",
@@ -2877,6 +2942,68 @@
       "finished_at": "2026-11-10T16:27:34+03:00"
     },
     {
+      "id": "EXTINSTALL13",
+      "label": "Установить пакет расширения с ChatGPT и Z.ai lifecycle",
+      "status": "done",
+      "parent": "MEXT10",
+      "description": "Проверить опубликованный пакет0.9.30exactSHA/ZIP и доставить package-only backend derivative штатным lease/CASreplace-backend; сохранять31sourcehash/19accounts/frontendvoice. Mac reload иliveprovider выполняетLead отдельно.",
+      "acceptance": "ОбаpublicZIP возвращают ожидаемыйhash/version, backendsource31/31иaccounts19preserved, rollback+leaseCAS+release. Ниcustomerconversation/providerturn/Chrome/storage не изменены; source/package/serverinstall различены.",
+      "result": "Package-only UserIO 0.9.30 installed and independently verified. Published source 480146dfba5847c213fb98af00f316ece6aac6c7; both ZIPs SHA256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16, HTTP 200/version 0.9.30/MV3. Local derivative image sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201; current backend bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70 running, restart 0, supervisor PASS. Candidate and installed runtime source hashes 31/31 match; 19 account identities unchanged; frontend/voice container IDs and running state unchanged. Canonical replace-backend receipt and rollback baseline at /var/backups/universal-userio/20261110-backend-extension-030-01a1c551; lease fence 53 checked and released. Evidence: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract-030/result.md. Parent Mac/browser/consumer readback remains separate.",
+      "owner": "Luna",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:14:56+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTINSTALL13",
+            "parent": "MEXT10",
+            "label": "Установить пакет расширения с ChatGPT и Z.ai lifecycle",
+            "status": "running",
+            "owner": "Luna",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "description": "Проверить опубликованный пакет0.9.30exactSHA/ZIP и доставить package-only backend derivative штатным lease/CASreplace-backend; сохранять31sourcehash/19accounts/frontendvoice. Mac reload иliveprovider выполняетLead отдельно.",
+            "acceptance": "ОбаpublicZIP возвращают ожидаемыйhash/version, backendsource31/31иaccounts19preserved, rollback+leaseCAS+release. Ниcustomerconversation/providerturn/Chrome/storage не изменены; source/package/serverinstall различены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:32:00+03:00",
+          "note": "Package-only server install and independent runtime/public ZIP readback complete; lease released.",
+          "changes": {
+            "status": "done",
+            "result": "Package-only UserIO 0.9.30 installed and independently verified. Published source 480146dfba5847c213fb98af00f316ece6aac6c7; both ZIPs SHA256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16, HTTP 200/version 0.9.30/MV3. Local derivative image sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201; current backend bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70 running, restart 0, supervisor PASS. Candidate and installed runtime source hashes 31/31 match; 19 account identities unchanged; frontend/voice container IDs and running state unchanged. Canonical replace-backend receipt and rollback baseline at /var/backups/universal-userio/20261110-backend-extension-030-01a1c551; lease fence 53 checked and released. Evidence: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract-030/result.md. Parent Mac/browser/consumer readback remains separate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c6e4-0178-7b91-8284-224233fea991",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c6e4-0178-7b91-8284-224233fea991",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T22:14:56+03:00",
+      "started_at": "2026-11-10T22:14:56+03:00",
+      "finished_at": "2026-11-10T22:32:00+03:00"
+    },
+    {
       "id": "EXTPOLL10",
       "label": "Изолировать OAuth и команды по подключениям",
       "status": "done",
@@ -4217,6 +4344,81 @@
       "finished_at": "2026-11-08T18:45:28+03:00"
     },
     {
+      "id": "INSTALLSTARTUP13",
+      "label": "Подтвердить запуск общего Herder с пятью профилями",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "После CAS appendZCode проверка startup/discovery5profile через обычныйinstalledSDK; connectedGPTAdmin502 отдельный внешнийroute. Не повторять provider sends/creates. Source startupbug исправить минимально если reproduced.",
+      "acceptance": "Штатныйinstalledentry initialize+tools+discoverinstances5, stderr/exit/readiness evidence. Exact consumer ref context; source vs installed vs gateway раздельно. No foreignconfig/restart/rollback, HumanStop and receipts preserved.",
+      "result": "Один обычный installedSDK probe 19:14:53→19:15:40UTC PASS47.5s; initialize/tools15/discover5instances, code0/stderrпустой. Coree34manifest селекторы0362b132. Никакогоsourcefix не потребовалось. ConnectedGPTAdmin502 иoriginalrestartjob отдельноUNKNOWN, не закрыты этимSDKproof. ART/installed-startup13/result.json.",
+      "owner": "Terra",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:13:20+03:00",
+          "note": "",
+          "changes": {
+            "id": "INSTALLSTARTUP13",
+            "parent": "MRESUME10",
+            "label": "Подтвердить запуск общего Herder с пятью профилями",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "После CAS appendZCode проверка startup/discovery5profile через обычныйinstalledSDK; connectedGPTAdmin502 отдельный внешнийroute. Не повторять provider sends/creates. Source startupbug исправить минимально если reproduced.",
+            "acceptance": "Штатныйinstalledentry initialize+tools+discoverinstances5, stderr/exit/readiness evidence. Exact consumer ref context; source vs installed vs gateway раздельно. No foreignconfig/restart/rollback, HumanStop and receipts preserved."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:16:05+03:00",
+          "note": "Ordinary installed SDK: initialize, 15 tools and discover all 5 instances PASS in 47.5 s; exit 0, stderr verified separately. Evidence herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/installed-startup13/result.json. GPTAdmin 502 is separate and its previous pending receipts were not replayed. No source fix or shared mutations needed.",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c6e1-761a-7092-8c00-2ba15fdbfb4a",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c6e1-761a-7092-8c00-2ba15fdbfb4a",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:18:01+03:00",
+          "note": "Установленный entry работоспособен; внешний connected route остаётся отдельной открытой ошибкой.",
+          "changes": {
+            "status": "done",
+            "result": "Один обычный installedSDK probe 19:14:53→19:15:40UTC PASS47.5s; initialize/tools15/discover5instances, code0/stderrпустой. Coree34manifest селекторы0362b132. Никакогоsourcefix не потребовалось. ConnectedGPTAdmin502 иoriginalrestartjob отдельноUNKNOWN, не закрыты этимSDKproof. ART/installed-startup13/result.json."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T22:13:20+03:00",
+      "started_at": "2026-11-10T22:13:20+03:00",
+      "finished_at": "2026-11-10T22:18:01+03:00"
+    },
+    {
       "id": "ISOREVIEW",
       "label": "Проверить отсутствие смешения двух Chrome профилей",
       "status": "done",
@@ -4282,6 +4484,134 @@
       "created_at": "2026-11-08T18:55:35+03:00",
       "started_at": "2026-11-08T18:55:35+03:00",
       "finished_at": "2026-11-08T19:05:02+03:00"
+    },
+    {
+      "id": "LAZYBROWSER13",
+      "label": "Не блокировать запуск Herder ожиданием browser аккаунта",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Measuredinstalledstartup47.5s, freshSDKconnecttimedout; browserinit доMCPinitialize делаетобычныйingressзависимымотудалённойстраницы. Минимальный lazyAHAPinit onlybrowser после быстрогоinitializecapabilities; firsttargetedcall выполняеттотжепроверенныйinit иscopegateоднократно.",
+      "acceptance": "RED/GREEN реальныйAHAPfixture: ordinaryMCP initialize/discoverнеждутbrowserinit; firstread/mutationждётscopeinit, wrongaccount невыдаётdata/непишетnative, concurrentcallsinitonce, timeoutpoisons/noresend. Nonbrowserсемантикапрежняя. Buildartifact/installedreadback отдельныйgate.",
+      "result": "Installed manifesteb62 underfence102. Rust1f85; ordinarySDKconnect2460ms,discovery5 and ChatGPTread10/10 PASS. Sourcef9ab published; no eagerbrowseraccountwait during MCPinitialize.",
+      "owner": "Terra",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:33:43+03:00",
+          "note": "",
+          "changes": {
+            "id": "LAZYBROWSER13",
+            "parent": "MRESUME10",
+            "label": "Не блокировать запуск Herder ожиданием browser аккаунта",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Measuredinstalledstartup47.5s, freshSDKconnecttimedout; browserinit доMCPinitialize делаетобычныйingressзависимымотудалённойстраницы. Минимальный lazyAHAPinit onlybrowser после быстрогоinitializecapabilities; firsttargetedcall выполняеттотжепроверенныйinit иscopegateоднократно.",
+            "acceptance": "RED/GREEN реальныйAHAPfixture: ordinaryMCP initialize/discoverнеждутbrowserinit; firstread/mutationждётscopeinit, wrongaccount невыдаётdata/непишетnative, concurrentcallsinitonce, timeoutpoisons/noresend. Nonbrowserсемантикапрежняя. Buildartifact/installedreadback отдельныйgate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T23:14:59+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Installed manifesteb62 underfence102. Rust1f85; ordinarySDKconnect2460ms,discovery5 and ChatGPTread10/10 PASS. Sourcef9ab published; no eagerbrowseraccountwait during MCPinitialize."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T22:33:43+03:00",
+      "started_at": "2026-11-10T22:33:43+03:00",
+      "finished_at": "2026-11-10T23:14:59+03:00"
+    },
+    {
+      "id": "LIFECYCLEINSTALL13",
+      "label": "Собрать и установить общий пакет новых browser операций",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Из опубликованного4990source собрать immutable bundle с точнымRust21eedee3 и прежнимиbootstrap/compat. Проверить finalcombined fixture0.9.30, обновитьprofiles/selectorsCAS lease, штатныйconsumer/readback. Всеaccountscopes иexistingstate сохраняются.",
+      "acceptance": "Manifesthashes иproductionentry--check; fixturefirst+secondsend/restart/UNKNOWN/archivethefinalbundle, ordinarySDKinstalledread/context. Совместимыйexisting3CLI+ChatGPT+ZCode безproviderreplay. Реальныйproviderlifecycle принимаетсятолькоотдельнойsinglecanary сnativeID+recipientreadback.",
+      "result": "Finalcebecc artifacteb62 installedbothselectorsfence102, same5authoritystores/remote44pins. SDKconnect2.46s,10/10ChatGPTnativeIDsread114.3s; fixturefirst/second/restart/archive+UNKNOWNPASS. Connectedchildrestartfence103completePID2018166/discover5. Realprovidernewlifecycle separate gate.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:20:21+03:00",
+          "note": "",
+          "changes": {
+            "id": "LIFECYCLEINSTALL13",
+            "parent": "MRESUME10",
+            "label": "Собрать и установить общий пакет новых browser операций",
+            "status": "running",
+            "owner": "Lead",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "description": "Из опубликованного4990source собрать immutable bundle с точнымRust21eedee3 и прежнимиbootstrap/compat. Проверить finalcombined fixture0.9.30, обновитьprofiles/selectorsCAS lease, штатныйconsumer/readback. Всеaccountscopes иexistingstate сохраняются.",
+            "acceptance": "Manifesthashes иproductionentry--check; fixturefirst+secondsend/restart/UNKNOWN/archivethefinalbundle, ordinarySDKinstalledread/context. Совместимыйexisting3CLI+ChatGPT+ZCode безproviderreplay. Реальныйproviderlifecycle принимаетсятолькоотдельнойsinglecanary сnativeID+recipientreadback."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T23:14:59+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Finalcebecc artifacteb62 installedbothselectorsfence102, same5authoritystores/remote44pins. SDKconnect2.46s,10/10ChatGPTnativeIDsread114.3s; fixturefirst/second/restart/archive+UNKNOWNPASS. Connectedchildrestartfence103completePID2018166/discover5. Realprovidernewlifecycle separate gate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T22:20:21+03:00",
+      "started_at": "2026-11-10T22:20:21+03:00",
+      "finished_at": "2026-11-10T23:14:59+03:00"
     },
     {
       "id": "MULTICORE",
@@ -4911,6 +5241,70 @@
       },
       "created_at": "2026-11-08T19:05:02+03:00",
       "started_at": "2026-11-08T19:05:02+03:00"
+    },
+    {
+      "id": "RECEIPTTAIL14",
+      "label": "Ускорить чтение квитанций UserIO без полного сканирования журнала",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Live result limit1=11319ms при status273ms. read_results разбирает369MiB целиком каждыйpoll. Reverse-tail на том же canonical JSONL сохраняет ID/изоляцию.",
+      "acceptance": "RED/GREEN largejournal readbudget, latestfirst/filter/UTF8/partialline; exact ownedmain, immutablebackend derivative с0.9.30ZIPs, supportedleaseCAS install иlatency/readback.",
+      "result": "Publisheda3e1d2e; actualREDbaseline +34GREEN; image89bc all31hashes,onlyagent_channelchanged,both030ZIPs preserved. Installedfence56 container025eb491; accounts19 andfrontend/voiceunchanged. ActualHTTPresults11319→6ms,SDK10/10nativeIDsread114284→22098ms,connect2739ms. No newstore/journalmutation. Evidence receipt-tail14.",
+      "owner": "Terra",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T23:00:06+03:00",
+          "note": "",
+          "changes": {
+            "id": "RECEIPTTAIL14",
+            "parent": "MRESUME10",
+            "label": "Ускорить чтение квитанций UserIO без полного сканирования журнала",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Live result limit1=11319ms при status273ms. read_results разбирает369MiB целиком каждыйpoll. Reverse-tail на том же canonical JSONL сохраняет ID/изоляцию.",
+            "acceptance": "RED/GREEN largejournal readbudget, latestfirst/filter/UTF8/partialline; exact ownedmain, immutablebackend derivative с0.9.30ZIPs, supportedleaseCAS install иlatency/readback."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T23:31:33+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Publisheda3e1d2e; actualREDbaseline +34GREEN; image89bc all31hashes,onlyagent_channelchanged,both030ZIPs preserved. Installedfence56 container025eb491; accounts19 andfrontend/voiceunchanged. ActualHTTPresults11319→6ms,SDK10/10nativeIDsread114284→22098ms,connect2739ms. No newstore/journalmutation. Evidence receipt-tail14."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T23:00:06+03:00",
+      "started_at": "2026-11-10T23:00:06+03:00",
+      "finished_at": "2026-11-10T23:31:33+03:00"
     },
     {
       "id": "RECONCILE10",
@@ -5967,12 +6361,189 @@
       "created_at": "2026-11-08T19:36:27+03:00"
     },
     {
+      "id": "ZAIADMISSION13",
+      "label": "Подтвердить первую отправку Z.ai через общий адаптер",
+      "status": "done",
+      "parent": "S2",
+      "description": "ZaiUserIoDriver firstsend возвращает nativeID, но не включает supportsFirstSendReceipt; BrowserChatAdapter требует несуществующую draft baseline. Минимальный фикс в общем реальном adapter path.",
+      "acceptance": "RED/GREEN через BrowserChatAdapter+реальный ZaiUserIoDriver: pending draft firstsend admitted nativeID, нет zai_read до admission, один firstsend, secondread alias. Scoped negative/UNKNOWN preserved. Published main exact owned source.",
+      "result": "Published main8199024f118fbbd15ca5b419bf16c1c064013e88. Actual BrowserChatAdapter+ZaiUserIoDriver RED3 -> GREEN18, tsc PASS. First draft returns native message receipt; UNKNOWN never re-enqueues firstsend; archive requires exact native chat_ref and archived:true. Source proof only; final package and live Z.ai acceptance separate. Evidence ART/zai-admission13/RED.log,GREEN.log; owned2files.",
+      "owner": "Luna",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:36:30+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAIADMISSION13",
+            "parent": "S2",
+            "label": "Подтвердить первую отправку Z.ai через общий адаптер",
+            "status": "running",
+            "owner": "Luna",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 10,
+            "description": "ZaiUserIoDriver firstsend возвращает nativeID, но не включает supportsFirstSendReceipt; BrowserChatAdapter требует несуществующую draft baseline. Минимальный фикс в общем реальном adapter path.",
+            "acceptance": "RED/GREEN через BrowserChatAdapter+реальный ZaiUserIoDriver: pending draft firstsend admitted nativeID, нет zai_read до admission, один firstsend, secondread alias. Scoped negative/UNKNOWN preserved. Published main exact owned source."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:51:47+03:00",
+          "note": "Luna finished exact source slice; parent reviewed regression outcomes and package consumer boundary.",
+          "changes": {
+            "status": "done",
+            "result": "Published main8199024f118fbbd15ca5b419bf16c1c064013e88. Actual BrowserChatAdapter+ZaiUserIoDriver RED3 -> GREEN18, tsc PASS. First draft returns native message receipt; UNKNOWN never re-enqueues firstsend; archive requires exact native chat_ref and archived:true. Source proof only; final package and live Z.ai acceptance separate. Evidence ART/zai-admission13/RED.log,GREEN.log; owned2files."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      },
+      "created_at": "2026-11-10T22:36:30+03:00",
+      "started_at": "2026-11-10T22:36:30+03:00",
+      "finished_at": "2026-11-10T22:51:47+03:00"
+    },
+    {
+      "id": "ZAIARCHAUTH14",
+      "label": "Исправить проверку входа Z.ai и точную квитанцию archive",
+      "status": "running",
+      "parent": "S2",
+      "description": "Guestidentity falsely succeeded whilepage/auth. Nativefetch lackedsiteAuthorization. Archivepage returns ok only although driver needs exactid+archived. Repairexistingextension source andpackage0.9.31; no newstore.",
+      "acceptance": "RED/GREEN realpagefunctions rejectunauth/guestscope; token stayspage; exact archiveconfirmation andwrongusernegative. Mainpublish+ZIPprovenance, nativeChromeinstall/readback andhonestloginlimit.",
+      "owner": "Terra",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T23:19:00+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAIARCHAUTH14",
+            "parent": "S2",
+            "label": "Исправить проверку входа Z.ai и точную квитанцию archive",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Guestidentity falsely succeeded whilepage/auth. Nativefetch lackedsiteAuthorization. Archivepage returns ok only although driver needs exactid+archived. Repairexistingextension source andpackage0.9.31; no newstore.",
+            "acceptance": "RED/GREEN realpagefunctions rejectunauth/guestscope; token stayspage; exact archiveconfirmation andwrongusernegative. Mainpublish+ZIPprovenance, nativeChromeinstall/readback andhonestloginlimit."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T23:19:00+03:00",
+      "started_at": "2026-11-10T23:19:00+03:00"
+    },
+    {
+      "id": "ZAILIVE14",
+      "label": "Найти подтверждённый аккаунт Z.ai и привязку UserIO",
+      "status": "done",
+      "kind": "research",
+      "parent": "S2",
+      "description": "Read-only existing installed UserIO status/accounts/connections and source route. Establish authenticated native Z.ai account and exact destination binding; preserve all existing profiles.",
+      "acceptance": "Exact source of native identity and binding, supported next mutation route or concrete absence; no provider send/archive/reload. ART/zai-live14/recon.json and result.md.",
+      "result": "Native zaiscope firstreturned8a but exactsameinstance/principal laterlist scope_mismatch; browserAXshows authlogin. Guest scope is not accepted as logged-in identity. Temporarybinding undofenced55; nativewrites0. Sourceauthfix ZAIARCHAUTH14; report ART/zai-live14 plusmac-zai-auth-read.log.",
+      "owner": "Luna",
+      "session": "01a1c703-88c4-7122-8703-68359d93ef57",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:51:48+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAILIVE14",
+            "parent": "S2",
+            "label": "Найти подтверждённый аккаунт Z.ai и привязку UserIO",
+            "kind": "research",
+            "status": "running",
+            "owner": "Luna",
+            "model": "gpt-6-luna",
+            "session": "01a1c703-88c4-7122-8703-68359d93ef57",
+            "harness": "codex",
+            "estimate_minutes": 10,
+            "description": "Read-only existing installed UserIO status/accounts/connections and source route. Establish authenticated native Z.ai account and exact destination binding; preserve all existing profiles.",
+            "acceptance": "Exact source of native identity and binding, supported next mutation route or concrete absence; no provider send/archive/reload. ART/zai-live14/recon.json and result.md."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T23:18:59+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Native zaiscope firstreturned8a but exactsameinstance/principal laterlist scope_mismatch; browserAXshows authlogin. Guest scope is not accepted as logged-in identity. Temporarybinding undofenced55; nativewrites0. Sourceauthfix ZAIARCHAUTH14; report ART/zai-live14 plusmac-zai-auth-read.log."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      },
+      "created_at": "2026-11-10T22:51:48+03:00",
+      "started_at": "2026-11-10T22:51:48+03:00",
+      "finished_at": "2026-11-10T23:18:59+03:00"
+    },
+    {
       "id": "ZAISOURCE13",
       "label": "Довести Z.ai через существующее расширение UserIO",
-      "status": "running",
+      "status": "done",
       "parent": "S2",
       "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
       "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live.",
+      "result": "Herder b28849e1 driver+95bb2a42wrapper published f0987253; UserIOd208ac64primitives+96c39854dispatch and480146dfpackage0.9.30. Scopedfirstsend/receiptrecovery/archive/rawpartial; newZaiaccountobservednocheckedbindings; routingnegativetests. FullNode131PASS, packagePython6PASS, Herderfocused83PASS+tsc. ActualpagefunctionfakeDOMsingleclick/native-readbackPASS, browser/providerNOTRUN; projectsunsupported. Installedserver0.9.30handledEXTINSTALL13; nativeconsumerstillpending.",
       "owner": "Terra",
       "model": "gpt-6.1-terra",
       "origin": "",
@@ -6000,6 +6571,22 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:35:22+03:00",
+          "note": "Закрыт publishedsource+packageрезультат; непроверенныйnativeproviderнеприписан.",
+          "changes": {
+            "status": "done",
+            "result": "Herder b28849e1 driver+95bb2a42wrapper published f0987253; UserIOd208ac64primitives+96c39854dispatch and480146dfpackage0.9.30. Scopedfirstsend/receiptrecovery/archive/rawpartial; newZaiaccountobservednocheckedbindings; routingnegativetests. FullNode131PASS, packagePython6PASS, Herderfocused83PASS+tsc. ActualpagefunctionfakeDOMsingleclick/native-readbackPASS, browser/providerNOTRUN; projectsunsupported. Installedserver0.9.30handledEXTINSTALL13; nativeconsumerstillpending."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -6008,7 +6595,8 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-10T21:45:57+03:00",
-      "started_at": "2026-11-10T21:45:57+03:00"
+      "started_at": "2026-11-10T21:45:57+03:00",
+      "finished_at": "2026-11-10T22:35:22+03:00"
     },
     {
       "id": "ZAISTATE",
@@ -6227,10 +6815,11 @@
     {
       "id": "ZCODEINSTALL13",
       "label": "Подготовить ZCode для общего установленного consumer",
-      "status": "running",
+      "status": "done",
       "parent": "MRESUME10",
       "description": "Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.",
-      "acceptance": "Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены.",
+      "acceptance": "Собственный profile schema4 и native readiness без inference; CAS append в обаsharedselectors с сохранением4existing. Подключённый consumer послеrestart проверяется отдельноINSTALLSTARTUP13.",
+      "result": "Под fence10019:09UTC обаselectorsCAS обновлены920374→0362b132; добавлен zcode-local principal local-owner с exactexistingMiniMax pin; preserved3CLI+ChatGPT. Fresh NativeWorkerPort pinned_official_server_owner ready=true19:06:35UTC, no inference, closedtrue. Launcher--check5PASS. Childrestart submittedjob28e811d7f57d4af82cb88320f252c1e9, outcome неполучен; subsequentconnected502. Lease100released. Installedstartup отдельныйINSTALLSTARTUP13 и не считается доказанным этим листом.",
       "owner": "Luna",
       "model": "gpt-6-luna",
       "origin": "",
@@ -6258,6 +6847,23 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:14:44+03:00",
+          "note": "Закрыта фактическая подготовка+selector install; consumerstartup не закрыт, выделен текущему исполнителю.",
+          "changes": {
+            "status": "done",
+            "acceptance": "Собственный profile schema4 и native readiness без inference; CAS append в обаsharedselectors с сохранением4existing. Подключённый consumer послеrestart проверяется отдельноINSTALLSTARTUP13.",
+            "result": "Под fence10019:09UTC обаselectorsCAS обновлены920374→0362b132; добавлен zcode-local principal local-owner с exactexistingMiniMax pin; preserved3CLI+ChatGPT. Fresh NativeWorkerPort pinned_official_server_owner ready=true19:06:35UTC, no inference, closedtrue. Launcher--check5PASS. Childrestart submittedjob28e811d7f57d4af82cb88320f252c1e9, outcome неполучен; subsequentconnected502. Lease100released. Installedstartup отдельныйINSTALLSTARTUP13 и не считается доказанным этим листом."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -6266,7 +6872,8 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-10T21:42:03+03:00",
-      "started_at": "2026-11-10T21:42:03+03:00"
+      "started_at": "2026-11-10T21:42:03+03:00",
+      "finished_at": "2026-11-10T22:14:44+03:00"
     },
     {
       "id": "A10",
@@ -6827,6 +7434,73 @@
       "actual_minutes": 6.0,
       "created_at": "2026-11-07T22:48:26+03:00",
       "started_at": "2026-11-07T22:49:46+03:00"
+    },
+    {
+      "id": "CHATLIFEFIXTURE13",
+      "label": "Проверить ChatGPT lifecycle через Rust и настоящее расширение локально",
+      "status": "done",
+      "parent": "S2",
+      "description": "Один локальный путь реальныйRust→AHAPrunner→UserIOcommand/results→extension с fixture native site. Без provider вызовов. Сохранить исходные команды/ID, first+secondsend, restart, archive.",
+      "acceptance": "Единыйfixture создаёт draft, firstsend подтверждает observednativeID, secondsend тотжechat, read/export/restart безресенда, archiveexact, scope/accountswitch/UNKNOWN не повторяются. Использует истинные shippedentrypoints и существующие stores. Binary/runner source+hash receipt пригоден для reuse release.",
+      "result": "Publishedfixture4990f920. РеальныйRustrelease21eedee3→bundledAHAP→localHTTP→настоящиеextensionagent+scopedmodules, fakeDOM/provider: first+secondsendconfirmednativeIDs, restartreadscopefail/archivePASS. SeparateUNKNOWNinjectedread: originalcommandID+resultrecoveredafterrestart/no2ndsend; coreoperationremainsUNKNOWN. Proof ART/chatlife12-final.log +unknown-final.log andchatlife12-build/source-build-receipt.json; nocallsprovider. SourceRustc56treeexactmatch4990Rusttree, binaryreuseperreceipt. FinalcombinedZaiwrapper/artifactverificationseparate.",
+      "owner": "Lovelace",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T22:01:34+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHATLIFEFIXTURE13",
+            "parent": "S2",
+            "label": "Проверить ChatGPT lifecycle через Rust и настоящее расширение локально",
+            "status": "running",
+            "owner": "Lovelace",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "CHATLIFESOURCE12"
+            ],
+            "description": "Один локальный путь реальныйRust→AHAPrunner→UserIOcommand/results→extension с fixture native site. Без provider вызовов. Сохранить исходные команды/ID, first+secondsend, restart, archive.",
+            "acceptance": "Единыйfixture создаёт draft, firstsend подтверждает observednativeID, secondsend тотжechat, read/export/restart безресенда, archiveexact, scope/accountswitch/UNKNOWN не повторяются. Использует истинные shippedentrypoints и существующие stores. Binary/runner source+hash receipt пригоден для reuse release."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T22:19:42+03:00",
+          "note": "Сквозная локальная проверка завершена; реальныйпровайдер и установкаследуютотдельно.",
+          "changes": {
+            "status": "done",
+            "result": "Publishedfixture4990f920. РеальныйRustrelease21eedee3→bundledAHAP→localHTTP→настоящиеextensionagent+scopedmodules, fakeDOM/provider: first+secondsendconfirmednativeIDs, restartreadscopefail/archivePASS. SeparateUNKNOWNinjectedread: originalcommandID+resultrecoveredafterrestart/no2ndsend; coreoperationremainsUNKNOWN. Proof ART/chatlife12-final.log +unknown-final.log andchatlife12-build/source-build-receipt.json; nocallsprovider. SourceRustc56treeexactmatch4990Rusttree, binaryreuseperreceipt. FinalcombinedZaiwrapper/artifactverificationseparate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "CHATLIFESOURCE12"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T22:01:34+03:00",
+      "started_at": "2026-11-10T22:01:34+03:00",
+      "finished_at": "2026-11-10T22:19:42+03:00"
     },
     {
       "id": "CHROMEPROFILE11",
@@ -10763,7 +11437,7 @@
       "created_at": "2026-11-07T22:06:07+03:00"
     }
   ],
-  "leaf_count": 115,
+  "leaf_count": 125,
   "milestones": [
     {
       "id": "FLEETCUTOVER",
@@ -10790,6 +11464,7 @@
         "CAREVIOLIVE12",
         "EXTCONN10",
         "EXTCORE10",
+        "EXTINSTALL13",
         "EXTPOLL10",
         "EXTRELEASE10",
         "EXTUI10"
@@ -10798,8 +11473,8 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 5,
-      "total": 6
+      "done": 6,
+      "total": 7
     },
     {
       "id": "MRESUME10",
@@ -10809,10 +11484,15 @@
         "BROWSER10",
         "BROWSERINSTALL12",
         "BROWSERREG11",
+        "CHATNATIVE14",
         "CIROUTE10",
         "DELIVER10",
         "HUMANQUOTA12",
         "INCIDENTREG11",
+        "INSTALLSTARTUP13",
+        "LAZYBROWSER13",
+        "LIFECYCLEINSTALL13",
+        "RECEIPTTAIL14",
         "RECONCILE10",
         "REGRESS10",
         "SMALLREG11",
@@ -10824,8 +11504,8 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 11,
-      "total": 13
+      "done": 16,
+      "total": 18
     },
     {
       "id": "RESTORELEGACY",
@@ -10899,6 +11579,7 @@
         "CASETRACE",
         "CHATB2",
         "CHATDELTA",
+        "CHATLIFEFIXTURE13",
         "CHATLIFESOURCE12",
         "COREWAIT",
         "FILLREADBACK",
@@ -10930,6 +11611,9 @@
         "R2",
         "SENDDIAG",
         "USERIOQUIET",
+        "ZAIADMISSION13",
+        "ZAIARCHAUTH14",
+        "ZAILIVE14",
         "ZAISOURCE13",
         "ZAISTATE",
         "ZARCHPROOF"
@@ -10938,8 +11622,8 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 21,
-      "total": 38
+      "done": 26,
+      "total": 42
     },
     {
       "id": "S3",

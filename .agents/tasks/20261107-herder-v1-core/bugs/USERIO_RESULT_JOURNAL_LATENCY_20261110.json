@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T20:00:07+00:00",
+  "details": "Live386937840bytes JSONL. results limit1=11319ms,status273ms. Wholefile scan on each poll inflates browser RPC. Fix reverse-tail on same journal, no alternate truth.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T20:00:07+00:00",
+      "changes": {
+        "details": "Live386937840bytes JSONL. results limit1=11319ms,status273ms. Wholefile scan on each poll inflates browser RPC. Fix reverse-tail on same journal, no alternate truth.",
+        "source": "agent_channel.py:read_results; ART/lifecycle13/http-latency.mjs",
+        "status": "open",
+        "title": "Чтение одной квитанции сканирует весь журнал UserIO"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Lead",
+      "at": "2026-11-10T20:31:33+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/receipt-tail14/actualGREEN.log",
+            "red_proof_path": "evidence/resume-20261110/receipt-tail14/actualRED.log",
+            "red_result": "FAIL",
+            "red_sha256": "1939e6f6f48e35075e9bde361ab9b71a37298151a33873b63a30f2a076315b7b",
+            "result": "PASS",
+            "sha256": "9d49018d007916d37a9c67f9c3a25ffd92389f994735924147ec15c62a773333",
+            "test_command": "PYTHONPATH=src python3 -m pytest tests/test_agent_channel.py -q"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "USERIO_RESULT_JOURNAL_LATENCY_20261110",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/receipt-tail14/actualGREEN.log",
+      "red_proof_path": "evidence/resume-20261110/receipt-tail14/actualRED.log",
+      "red_result": "FAIL",
+      "red_sha256": "1939e6f6f48e35075e9bde361ab9b71a37298151a33873b63a30f2a076315b7b",
+      "result": "PASS",
+      "sha256": "9d49018d007916d37a9c67f9c3a25ffd92389f994735924147ec15c62a773333",
+      "test_command": "PYTHONPATH=src python3 -m pytest tests/test_agent_channel.py -q"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "agent_channel.py:read_results; ART/lifecycle13/http-latency.mjs",
+  "status": "fixed",
+  "title": "Чтение одной квитанции сканирует весь журнал UserIO",
+  "updated_at": "2026-11-10T20:31:33+00:00"
+}

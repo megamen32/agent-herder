@@ -1,0 +1,101 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/lazy-browser13
+
+ ❯ tests/chatgpt-userio-driver.test.ts (18 tests | 2 failed | 15 skipped) 9120ms
+     × rejects latest-pair reads without the exact scope: undefined 1398ms
+     × runs addressed reads through real AHAP and UserIO channel without duplicate account probes 5906ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/chatgpt-userio-driver.test.ts > strict UserIO ChatGPT transport > rejects latest-pair reads without the exact scope: undefined
+AssertionError: promise resolved "[ { …(9) }, { …(9) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "completionStatus": "finished_successfully",
+    "endTurn": true,
+    "id": "22222222-2222-4222-8222-222222222222",
+    "model": undefined,
+    "parts": [
+      {
+        "text": "User's original prompt",
+        "type": "text",
+      },
+    ],
+    "phase": "final",
+    "role": "user",
+    "text": "User's original prompt",
+    "timestamp": "1970-01-01T00:00:01.000Z",
+  },
+  {
+    "completionStatus": "finished_successfully",
+    "endTurn": true,
+    "id": "33333333-3333-4333-8333-333333333333",
+    "model": "gpt-6",
+    "parts": [
+      {
+        "text": "Original assistant response",
+        "type": "text",
+      },
+    ],
+    "phase": "final",
+    "role": "assistant",
+    "text": "Original assistant response",
+    "timestamp": "1970-01-01T00:00:02.000Z",
+  },
+]
+
+ ❯ tests/chatgpt-userio-driver.test.ts:69:43
+     67|       gpt_scope:{ok:true,account_scope:SCOPE},gpt_read:{...read,accoun…
+     68|     await driver.verifyPinnedAccountScope();
+     69|     await expect(driver.getMessages(CHAT)).rejects.toThrow('userio_rea…
+       |                                           ^
+     70|     await expect(driver.getRawTranscript(CHAT)).rejects.toThrow('useri…
+     71|   },10000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/chatgpt-userio-driver.test.ts > strict UserIO ChatGPT transport > runs addressed reads through real AHAP and UserIO channel without duplicate account probes
+AssertionError: expected [ 'gpt_session_proof', …(12) ] to deeply equal [ 'gpt_session_proof', …(4) ]
+
+- Expected
++ Received
+
+  [
+    "gpt_session_proof",
+    "gpt_scope",
+    "gpt_list",
++   "gpt_session_proof",
++   "gpt_scope",
+    "gpt_read",
++   "gpt_session_proof",
++   "gpt_scope",
++   "gpt_session_proof",
++   "gpt_scope",
+    "gpt_read",
++   "gpt_session_proof",
++   "gpt_scope",
+  ]
+
+ ❯ tests/chatgpt-userio-driver.test.ts:91:41
+     89|       expect(replies.every(r=>!r.error)).toBe(true);
+     90|       expect(replies[2].result).toHaveLength(2);
+     91|       expect(f.events.map(e=>e.action)).toEqual(['gpt_session_proof','…
+       |                                         ^
+     92|       expect(f.events.filter(e=>e.action==='gpt_read').every(e=>e.args…
+     93|     } finally { vi.unstubAllGlobals(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 15 skipped (18)
+   Start at  22:57:42
+   Duration  10.76s (transform 1.18s, setup 47ms, import 1.43s, tests 9.12s, environment 0ms)
+

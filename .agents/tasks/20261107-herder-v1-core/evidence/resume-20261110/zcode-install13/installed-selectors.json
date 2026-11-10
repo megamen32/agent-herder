@@ -1,0 +1,21 @@
+{
+  "installed": true,
+  "at": "2026-11-10T19:09:35.305Z",
+  "fence": 100,
+  "manifestSha256": "e34aa2b906fb1b4d5c6e97cbdb4a4859b4fee6e9d500c026d96dc74ef65b5beb",
+  "profilePath": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/zcode-install13/herder-owner-home/authority/profile-zcode-install13.json",
+  "profileSha256": "84a8f58fd91873043171b5133024e13307661c5a1ea3ddd820010e94c7443620",
+  "records": [
+    {
+      "path": "/home/roomhacker/.config/agent-herder/v1-entry.json",
+      "beforeSha256": "9203749046e34a8fcceca23e1ec3d45dbf3e390ad618d23d5ebd6ee9a63d6e30",
+      "afterSha256": "0362b132cca45412ae58c3b274108046cadef96de8df9b24bb6aa3b5cfd25672"
+    },
+    {
+      "path": "/home/roomhacker/.config/agent-herder/gptadmin-entry.json",
+      "beforeSha256": "9203749046e34a8fcceca23e1ec3d45dbf3e390ad618d23d5ebd6ee9a63d6e30",
+      "afterSha256": "0362b132cca45412ae58c3b274108046cadef96de8df9b24bb6aa3b5cfd25672"
+    }
+  ],
+  "leaseHeldForChildRestart": true
+}

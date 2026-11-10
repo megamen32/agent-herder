@@ -2,14 +2,14 @@
   "id": "ZAISOURCE13",
   "parent": "S2",
   "label": "Довести Z.ai через существующее расширение UserIO",
-  "status": "running",
+  "status": "done",
   "owner": "Terra",
   "model": "gpt-6.1-terra",
   "estimate_minutes": 15,
   "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
   "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live.",
   "created_at": "2026-11-10T21:45:57+03:00",
-  "updated_at": "2026-11-10T21:45:57+03:00",
+  "updated_at": "2026-11-10T22:35:22+03:00",
   "progress_events": [
     {
       "at": "2026-11-10T21:45:57+03:00",
@@ -33,6 +33,23 @@
       },
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:35:22+03:00",
+      "note": "Закрыт publishedsource+packageрезультат; непроверенныйnativeproviderнеприписан.",
+      "changes": {
+        "status": "done",
+        "result": "Herder b28849e1 driver+95bb2a42wrapper published f0987253; UserIOd208ac64primitives+96c39854dispatch and480146dfpackage0.9.30. Scopedfirstsend/receiptrecovery/archive/rawpartial; newZaiaccountobservednocheckedbindings; routingnegativetests. FullNode131PASS, packagePython6PASS, Herderfocused83PASS+tsc. ActualpagefunctionfakeDOMsingleclick/native-readbackPASS, browser/providerNOTRUN; projectsunsupported. Installedserver0.9.30handledEXTINSTALL13; nativeconsumerstillpending."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Herder b28849e1 driver+95bb2a42wrapper published f0987253; UserIOd208ac64primitives+96c39854dispatch and480146dfpackage0.9.30. Scopedfirstsend/receiptrecovery/archive/rawpartial; newZaiaccountobservednocheckedbindings; routingnegativetests. FullNode131PASS, packagePython6PASS, Herderfocused83PASS+tsc. ActualpagefunctionfakeDOMsingleclick/native-readbackPASS, browser/providerNOTRUN; projectsunsupported. Installedserver0.9.30handledEXTINSTALL13; nativeconsumerstillpending."
 }
