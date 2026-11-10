@@ -1,6 +1,7 @@
 import * as React from "react";
 import {
   labelFor,
+  incidentModelRoute,
   mergeProjectRouteParts,
   moveProjectRouteHarness,
   normalizeProjectKey,
@@ -1344,8 +1345,8 @@ export function BlockedModelNotice({
  * The first-class Projects screen.
  *
  * It edits only the project routes of the Herder launch policy. The model of
- * the incident analysis stays in Notice Place and the global allowlist stays
- * in the launch settings, so this page never touches either of them.
+ * the incident model and the global allowlist stay in the launch settings,
+ * so this page never changes either of them.
  *
  * The list is collapsed: one row per project with the name, the machine, the
  * counts and the time of the last change. The body of a row opens on demand.
@@ -1517,8 +1518,8 @@ export function ProjectsSettings({ onOpenLaunchSettings }: { onOpenLaunchSetting
       </div>
       <div>
         <span className="eyebrow">МОДЕЛЬ ДЛЯ АНАЛИЗА ИНЦИДЕНТОВ</span>
-        <p className="projects-globals-value">Notice Place</p>
-        <small className="projects-help">Модель для анализа инцидентов выбирается в <a href="https://notify.bezrabotnyi.com/admin/#health-model">админке Notice Place</a>. Эта страница её не меняет.</small>
+        <p className="projects-globals-value">{incidentModelRoute(policy) || "Не задана"}</p>
+        <small className="projects-help">Модель инцидентов задаётся в политике Herder и меняется в общих настройках запуска.</small>
       </div>
       <div>
         <span className="eyebrow">ОБЩИЕ МОДЕЛИ СРЕДЫ</span>

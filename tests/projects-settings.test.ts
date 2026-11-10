@@ -60,10 +60,11 @@ describe("Projects page form", () => {
     expect(page).toContain("Пустое поле берёт общую модель среды");
   });
 
-  it("leaves the incident model of Notice Place alone", () => {
-    expect(page).toContain('href="https://notify.bezrabotnyi.com/admin/#health-model"');
-    expect(page).toContain("Эта страница её не меняет.");
-    expect(page).not.toContain("incidentExecution");
+  it("shows the Herder incident model and points to launch settings", () => {
+    expect(page).toContain("incidentModelRoute(policy)");
+    expect(page).toContain("Модель инцидентов задаётся в политике Herder");
+    expect(page).not.toContain("Модель для анализа инцидентов выбирается в");
+    expect(page).toContain("onOpenLaunchSettings");
   });
 
   it("names every control for a screen reader", () => {
