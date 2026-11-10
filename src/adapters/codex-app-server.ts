@@ -1565,7 +1565,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           threadId: id,
           expectedTurnId,
           input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
-        }) as { turnId?: string };
+        }, "turn/steer", this.requestTimeoutMs, options.origin === "human" && Number.isFinite(options.humanRequestedAt)) as { turnId?: string };
         if (result.turnId !== expectedTurnId) {
           return { ok: false, admitted: true, nonRetryable: true, error: "Codex steer receipt did not match the verified active turn; do not retry" };
         }
@@ -1594,7 +1594,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     // materialized threads are resumed only after the accepted H34 restore path.
     const resumed: ControlResult = this.projectRuntimePolicy && this.projectThreadIds.has(id)
       ? { ok: true }
-      : await this.resumeSession(id);
+      : await this.resumeSession(id, options.origin === "human" && Number.isFinite(options.humanRequestedAt));
     this.assertLifecycleActive();
     if (!resumed.ok) {
       if (steerActive && startRaceRetries > 0 && /already has an active writer/i.test(resumed.error ?? "")) {
@@ -1621,7 +1621,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
         model: this.projectRuntimePolicy?.modelId ?? options.model ?? session.model ?? null,
         ...(this.projectRuntimePolicy ? codexProjectTurnParams(this.projectRuntimePolicy) : {}),
-      }) as { turn?: { id?: string; status?: string } };
+      }, "turn/start", this.requestTimeoutMs, options.origin === "human" && Number.isFinite(options.humanRequestedAt)) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
       if (typeof turnId !== "string" || !turnId.trim()) {
         if (completion) this.clearCompletion(id);
@@ -1981,7 +1981,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
-  async resumeSession(id: string): Promise<ControlResult> {
+  async resumeSession(id: string, humanReserve = false): Promise<ControlResult> {
     try { this.assertLifecycleActive(); }
     catch (error) { return { ok: false, nonRetryable: true, error: (error as Error).message }; }
     if (this.projectRuntimePolicy) {
@@ -2001,7 +2001,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = await this.request("thread/resume", {
         threadId: id,
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-      }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      }, "thread/resume", this.requestTimeoutMs, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
       if (result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
@@ -3033,7 +3033,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch { return false; }
   }
 
-  private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
+  private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs, humanReserve = false): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
@@ -3045,7 +3045,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model
         : method === "thread/start" ? await this.defaultCodexModel() : undefined;
       if (!codexQuotaExemptModel(model) && !await this.ownedLocalProviderOperation(method, params)) {
-        await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
+        await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})), true, ["thread/resume", "turn/start", "turn/steer"].includes(method) && humanReserve);
       }
       this.assertLifecycleActive();
       if (!this.isTransportWritable()) throw new Error("Codex app-server disconnected during quota check");

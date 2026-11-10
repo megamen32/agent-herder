@@ -141,9 +141,9 @@ export function codexQuotaExemptModel(model: string | null | undefined): boolean
   return typeof model === "string" && /^(zc\/|glm[-_.0-9])/i.test(model.trim());
 }
 
-export async function assertCodexQuota(operation:string,reader:QuotaReader=readCodexUsage,allowLocalHistory=true):Promise<void> {
+export async function assertCodexQuota(operation:string,reader:QuotaReader=readCodexUsage,allowLocalHistory=true,allowHumanReserve=false):Promise<void> {
   const {decision}=await checkCodexQuota(reader,codexQuotaPolicyPath(),allowLocalHistory);
-  if(!decision.allowed){lastDenial={operation,decision};throw new CodexQuotaBlockedError(decision,operation);}
+  if(!decision.allowed && !(allowHumanReserve && decision.reason==="below_reserve")){lastDenial={operation,decision};throw new CodexQuotaBlockedError(decision,operation);}
 }
 
 /** Caller-side fleet protection uses the recipient's quota, never another host's account. */

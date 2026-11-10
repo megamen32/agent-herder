@@ -196,3 +196,12 @@ describe("Codex quota read bound versus reader deadline",()=>{
   }finally{vi.useRealTimers();vi.unstubAllEnvs();await rm(dir,{recursive:true,force:true});}
  });
 });
+
+it("only exempts a declared human steer from the local reserve, never a provider denial", async () => {
+ const dir=await mkdtemp(join(tmpdir(),"quota-human-")); vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+ try {
+  await expect(guardModule.assertCodexQuota("turn/steer",async()=>sample(95),true,true)).resolves.toBeUndefined();
+  await expect(guardModule.assertCodexQuota("turn/steer",async()=>sample(95))).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+  await expect(guardModule.assertCodexQuota("turn/steer",async()=>({...sample(95),ordinaryUsageAllowed:false}),true,true)).rejects.toMatchObject({decision:{reason:"provider_denied"}});
+ } finally { await rm(dir,{recursive:true,force:true}); }
+});

@@ -167,19 +167,24 @@ it("keeps a newer human stop fenced before native Codex admission", async () => 
   } finally { await f.close(); }
 });
 
-it("refuses the Codex admission while the quota reserve is spent", async () => {
-  // 95% used leaves 5% of the window, below the 20% reserve.
-  const f = await fixture(false, false, 95);
+it("blocks automatic active sends below reserve even with an accidental human timestamp", async () => {
+  const f = await fixture(true, false, 95);
+  try {
+    const result = await f.adapter.sendActiveMessage("fixture-thread", { message: "automatic", origin: "automation", humanRequestedAt: Date.now() });
+    expect(result).toMatchObject({ok:false, admitted:false, notSubmitted:true});
+    expect(result.error).toContain("codex_quota_guard");
+    expect(f.requests.filter(r => r.method === "turn/steer" || r.method === "turn/start")).toHaveLength(0);
+  } finally { await f.close(); }
+});
+
+it.each([false, true])("admits a declared human answer below reserve (active=%s)", async (active) => {
+  const f = await fixture(active, false, 95);
   const pending = f.post();
   try {
-    const response = await pending;
-    expect(response.status).toBe(502);
-    const body = await response.json() as { status: string; reason: string; retry: boolean };
-    expect(body.status).toBe("resume_failed");
-    expect(body.reason).toContain("codex_quota_guard");
-    // A refusal that was never submitted must not be replayed.
-    expect(body.retry).toBe(false);
-    // The guard reads the quota before the transport write: no turn was sent.
-    expect(f.requests.filter((request) => request.method === "turn/start" || request.method === "turn/steer")).toHaveLength(0);
+    const method = active ? "turn/steer" : "turn/start";
+    await vi.waitFor(() => expect(f.requests.some(r => r.method === method)).toBe(true), { timeout: 1000 });
+    if (active) expect(f.requests.find(r => r.method === method)?.params?.expectedTurnId).toBe("native-current");
+    f.ack();
+    expect((await pending).status).toBe(202);
   } finally { await f.close(); }
 });
