@@ -9,7 +9,6 @@
   ],
   "bin": {
     "agent-herder": "dist/index.js",
-    "agent-herder-browser-autopilot": "dist/browser-autopilot-main.js",
     "agent-herder-release-admin": "dist/project-release-admin.js",
     "agent-herder-autopilot-hook": "dist/autopilot-hook.js",
     "agent-herder-claude-autopilot-hook": "dist/claude-autopilot-hook.js",
