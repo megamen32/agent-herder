@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { cleanupDistBuild, ensureDist } from "./fixtures/ensure-dist.mjs";
 import { createNamedSession, newOrResumeNamedSession, deliverNamedSession } from "../src/named-session.js";
+import { outcomeOf } from "../src/automation/project-launch-dispatch.js";
 import { agentRelayEnvelope } from "../src/agent-relay-envelope.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import { toolDefinitions } from "../src/mcp-tools/definitions.js";
@@ -92,6 +93,17 @@ function fakeAdapter(harness: "opencode" | "codex" | "fast-agent", initial: Agen
 }
 
 describe("named session creation and reuse", () => {
+  it.each(["create", "resume", "deliver"] as const)("preserves created but unverified session in %s without a prompt", async (entry) => {
+    const cwd = await workspace();
+    const fake = fakeAdapter("opencode");
+    fake.adapter.createSession = async () => { throw Object.assign(new Error("created with wrong cwd"), { code: "OPENCODE_CREATED_UNVERIFIED", sessionId: "ses_wrong" }); };
+    const adapters = new Map([["opencode", fake.adapter]]);
+    const request = { harness:"opencode", name:`cwd-unverified-${entry}`, cwd, message:"no tools" };
+    const result = entry === "create" ? await createNamedSession(adapters, request) : entry === "resume" ? await newOrResumeNamedSession(adapters, request) : await deliverNamedSession(adapters, request);
+    expect(result).toMatchObject({ok:false,created:true,sessionId:"ses_wrong",delivery:"admission_unknown",admissionUnknown:true,nonRetryable:true});
+    expect(outcomeOf(result)).toBe("admission_unknown");
+    expect(fake.deliveries).toHaveLength(0);
+  });
   it("rechecks source HumanStop atomically at native admission after a stale preflight result", async () => {
     const cwd = await workspace();
     const stopPath = join(await workspace(), "human-stop.json");

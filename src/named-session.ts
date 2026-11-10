@@ -334,7 +334,7 @@ export async function createNamedSession(
       await rememberNamedSession(adapter, normalized.name, normalized.cwd, session);
       return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized, ...createdCodexServiceTierResult(session, request.serviceTier) };
     } catch (error) {
-      return failed(normalized, (error as Error).message);
+      return projectCreatedUnverified(normalized, error) ?? failed(normalized, (error as Error).message);
     }
   });
 }
@@ -389,7 +389,7 @@ export async function newOrResumeNamedSession(
         await rememberNamedSession(adapter, normalized.name, normalized.cwd, target);
         created = true;
       } catch (error) {
-        return { kind: "error", result: failed(normalized, (error as Error).message, "not_attempted") };
+        return { kind: "error", result: projectCreatedUnverified(normalized, error) ?? failed(normalized, (error as Error).message, "not_attempted") };
       }
     }
     const adopted = !created && Boolean(target) && !boundBefore;
@@ -756,6 +756,12 @@ function failed(
   return { ok: false, created: false, error, ...(delivery ? { delivery } : {}), ...request, ...extra };
 }
 
+function projectCreatedUnverified(request: NamedSessionRequest, error: unknown): NamedSessionResult | undefined {
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "OPENCODE_CREATED_UNVERIFIED") return undefined;
+  const sessionId = "sessionId" in error && typeof error.sessionId === "string" ? error.sessionId : undefined;
+  return failed(request, error.message, "admission_unknown", { created: true, ...(sessionId ? { sessionId } : {}), admissionUnknown: true, nonRetryable: true });
+}
+
 function createdCodexServiceTierResult(session: AgentSession, requested?: CodexServiceTier): Pick<NamedSessionResult, "requestedServiceTier" | "serviceTier" | "serviceTierMismatch"> {
   if (session.harness !== "codex") return {};
   const requestedServiceTier = requested ?? "normal";
@@ -809,7 +815,7 @@ export async function deliverNamedSession(adapters: Map<string,HarnessAdapter>, 
     if (!target) {
       if ((request.create||"if_missing")==="never") return {ok:false,created:false,harness:normalized.harness,name:normalized.name,cwd:normalized.cwd,delivery:"not_found",activated:false,error:"Named session not found"};
       if (!adapter.createSession) return {...failed(normalized,`${adapter.name} does not support session creation`,"not_attempted"),activated:false};
-      try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); await rememberNamedSession(adapter, normalized.name, normalized.cwd, target); created=true; } catch(e){ return {...failed(normalized,(e as Error).message,"not_attempted"),activated:false}; }
+      try { if (await sourceHeldNow(request)) return { ...failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted"), activated: false }; target=await adapter.createSession({name:normalized.name,cwd:normalized.cwd,model:request.model,fullAccess:true}); await rememberNamedSession(adapter, normalized.name, normalized.cwd, target); created=true; } catch(e){ return {...(projectCreatedUnverified(normalized,e) ?? failed(normalized,(e as Error).message,"not_attempted")),activated:false}; }
     }
     const fresh=await adapter.getSession(target.id); const activation=request.activation ?? (created ? "always" : "if_running");
     if (!fresh) return {...failed(normalized,"Native target activity unavailable","not_attempted"),sessionId:target.id,activated:false};

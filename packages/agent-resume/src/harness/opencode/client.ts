@@ -516,6 +516,14 @@ function isArchivedSession(session: OpenCodeSessionPayload): boolean {
   return archived === true;
 }
 
+export class OpenCodeCreatedUnverifiedError extends Error {
+  readonly code = "OPENCODE_CREATED_UNVERIFIED" as const;
+  constructor(readonly sessionId?: string) {
+    super(`OpenCode created session ${sessionId || "unknown"} with unverified or mismatched directory; inspect this session before retrying`);
+    this.name = "OpenCodeCreatedUnverifiedError";
+  }
+}
+
 export class OpenCodeClient implements HarnessClient {
   readonly kind = "opencode" as const;
   private baseUrl: string;
@@ -549,7 +557,7 @@ export class OpenCodeClient implements HarnessClient {
   async init(): Promise<void> {
     await this.probeProtocol();
     const res = await this.fetch(this.isV22 ? "/global/health" : this.isV2 ? this.api("/config") : "/global/health");
-    if (!res.ok) throw new Error(`OpenCode ${this.baseUrl} is not reachable: HTTP ${res.status}${await this.errorHint(res)}`);
+    if (!res.ok || !isJsonResponse(res)) throw new Error(`OpenCode ${this.baseUrl} is not reachable: HTTP ${res.status}${await this.errorHint(res)}`);
   }
 
   async listSessions(options: { cwd?: string; limit?: number } = {}): Promise<HarnessSessionSummary[]> {
@@ -640,7 +648,7 @@ export class OpenCodeClient implements HarnessClient {
         method: "POST",
         body: JSON.stringify({ title: request.title }),
       });
-      return this.toSummary(session);
+      return this.createdSessionAtRequestedDirectory(session, request.cwd);
     }
     if (this.isV2) {
       const session = await this.fetchJson<OpenCodeSessionPayload>(this.api("/session"), {
@@ -652,13 +660,28 @@ export class OpenCodeClient implements HarnessClient {
           ...(request.fullAccess ? { permissions: [{ action: "*", resource: "*", effect: "allow" }] } : {}),
         }),
       });
-      return this.toSummary(session);
+      return this.createdSessionAtRequestedDirectory(session, request.cwd);
     }
     const query = new URLSearchParams({ directory: request.cwd });
     const session = await this.fetchJson<OpenCodeSessionPayload>(`/session?${query.toString()}`, {
       method: "POST",
       body: JSON.stringify({ title: request.title, ...(model ? { model } : {}), ...(request.fullAccess ? { permission: [{ permission: "*", pattern: "*", action: "allow" }] } : {}) }),
     });
+    return this.createdSessionAtRequestedDirectory(session, request.cwd);
+  }
+
+  private async createdSessionAtRequestedDirectory(session: OpenCodeSessionPayload, cwd: string): Promise<HarnessSessionSummary> {
+    const actual = this.directoryOf(session);
+    let matches = actual === cwd;
+    if (!matches && actual) {
+      try {
+        const { realpath } = await import("node:fs/promises");
+        matches = await realpath(actual) === await realpath(cwd);
+      } catch { /* unreadable paths cannot establish equivalence */ }
+    }
+    if (!session.id || !matches) {
+      throw new OpenCodeCreatedUnverifiedError(session.id);
+    }
     return this.toSummary(session);
   }
 
@@ -1718,14 +1741,17 @@ export class OpenCodeClient implements HarnessClient {
       this.apiPrefix = this.pinnedProtocol === "v2" ? "/api" : "";
       return;
     }
-    this.protocolProbed = true;
     const v2 = await this.rawFetch("/api/config");
     if (v2.ok && isJsonResponse(v2)) {
       this.apiPrefix = "/api";
+      this.protocolProbed = true;
       return;
     }
+    if (v2.status === 401 || v2.status === 403) throw new Error(`OpenCode API authentication failed: HTTP ${v2.status}`);
     const v1 = await this.rawFetch("/global/health");
-    this.apiPrefix = v1.ok ? "" : "/api";
+    if (!v1.ok || !isJsonResponse(v1)) throw new Error(`OpenCode protocol probe failed: HTTP ${v1.status}, expected JSON health`);
+    this.apiPrefix = "";
+    this.protocolProbed = true;
   }
 
   private async readStatuses(directory?: string, sessionIds?: string[]): Promise<Record<string, OpenCodeStatusSnapshot>> {
@@ -1864,7 +1890,7 @@ export class OpenCodeClient implements HarnessClient {
       if (directory) url.searchParams.set("directory", directory);
     }
     const response = await this.rawFetch(url.toString().slice(this.baseUrl.length), init);
-    if (!this.pinnedProtocol && isHtmlResponse(response)) {
+    if (!this.pinnedProtocol && (!init?.method || init.method === "GET") && isHtmlResponse(response)) {
       const bare = path.startsWith("/api/") ? path.slice("/api".length) : path;
       const retargeted: string = this.apiPrefix === "/api" ? `/api${bare}` : bare;
       if (retargeted !== path) {
