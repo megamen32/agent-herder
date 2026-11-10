@@ -3,6 +3,7 @@ import { recordProjectLifecycle, type IntegrationWake } from "../project-integra
 import { hostname as releaseAuthorityHost } from "node:os";
 import { projectReleaseLeases, terminalReleaseAt } from "../project-release-lease.js";
 import {startActiveFleetInventoryOwner} from '../active-session-fleet.js';
+import {sessionQuickDetailsCache} from "./session-details-cache.js";
 import { isLeafAllowedByOwnerRule } from "../model-launch-policy.js";
 import {startActiveInventoryOwner} from "../active-session-inventory.js";
 import {listActiveSessions} from "../mcp/active-session-tools.js";
@@ -3730,12 +3731,37 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       if (details.session.id !== sessionId || details.session.harness !== harness) return sendJson(response, 409, { error: "Exact native session identity mismatch." });
       return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
     }
+    // The last saved quick view answers instantly from disk while one fresh
+    // read runs in the background: a click on a session must not wait out a
+    // multi-second adapter read (a large opencode session measures 16-19s).
+    // Full (non-quick) reads stay live and keep their child-task enrichment.
+    if (quick) {
+      try {
+        return sendJson(response, 200, await sessionQuickDetailsCache.serve(
+          harness, sessionId,
+          Number.isFinite(limitValue) ? limitValue : 3, history || "auto",
+          async () => {
+            const details = await supervisor.getSessionDetails(
+              harness,
+              sessionId,
+              { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
+            );
+            if (details.session.id !== sessionId || details.session.harness !== harness) throw new Error("session_identity_mismatch");
+            return details;
+          },
+        ));
+      } catch (error) {
+        if (error instanceof Error && error.message === "session_identity_mismatch")
+          return sendJson(response, 409, { error: "Exact native session identity mismatch." });
+        throw error;
+      }
+    }
     const details = await supervisor.getSessionDetails(
       harness,
       sessionId,
       { limit: Number.isFinite(limitValue) ? limitValue : 3, history: history || "auto", quick },
     );
-    return sendJson(response, 200, quick ? details : await withChildTasks(details, harness));
+    return sendJson(response, 200, await withChildTasks(details, harness));
   }
   const visualizationMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/([^/]+)\/visualization$/);
   if (visualizationMatch && request.method === "GET") {

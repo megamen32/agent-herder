@@ -62,7 +62,12 @@ export function createConfiguredFleetApiHandler(options: {
   // last known machines/sessions instantly while the background loop keeps
   // the snapshot and the first inventory pages fresh on disk and in memory.
   const fleetDiskCache = new FleetFileDiskCache(join(stateRoot, "disk-cache"));
-  const fleetWarmIntervalMs = boundedEnvNumber("AGENT_HERDER_FLEET_WARM_INTERVAL_MS", 50_000, 0, 600_000);
+  // Five minutes, not seconds: the warm loop only covers the "nobody is
+  // looking" case (the browser's own 30-60s polls revalidate on demand, and
+  // the disk cache answers any first open instantly). A tighter loop proved
+  // too chatty on the already-loaded owner box: every cycle spawns SSH
+  // bridges to each fleet peer.
+  const fleetWarmIntervalMs = boundedEnvNumber("AGENT_HERDER_FLEET_WARM_INTERVAL_MS", 300_000, 0, 3_600_000);
   const fleetStaleServeMs = boundedEnvNumber("AGENT_HERDER_FLEET_STALE_SERVE_MS", 1_800_000, 0, 86_400_000);
   const browserCacheDeps = {
     diskCache: fleetDiskCache,
