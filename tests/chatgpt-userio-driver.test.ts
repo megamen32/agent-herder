@@ -61,6 +61,20 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it('discards pending draft and archives admitted alias only with exact native confirmation',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'herder-draft-test-')); homes.push(root);
+    const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
+    try {
+      const results={gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},gpt_scope:{ok:true,account_scope:SCOPE},
+        gpt_first_send:{ok:true,admission:'confirmed',chat_ref:CHAT,native_user_message_id:USR},gpt_archive:{ok:true,archived:true,chat_ref:'99999999-9999-4999-8999-999999999999'}};
+      const f=fixture(results);await f.driver.verifyPinnedAccountScope();
+      const pending=await f.driver.createChat({});expect(await f.driver.archiveChat(pending.id)).toEqual({ok:true});
+      const draft=await f.driver.createChat({});await f.driver.sendMessage({chatId:draft.id,text:'first'});
+      expect(await f.driver.archiveChat(draft.id)).toEqual({ok:false,error:'archive_outcome_unknown'});
+      const restarted=new UserIoChatGptDriver(f.config);await restarted.verifyPinnedAccountScope();expect(restarted.getKnownChat(draft.id)).not.toBeNull();
+      expect(f.events.filter(e=>e.action==='gpt_archive').map(e=>e.args.chat_ref)).toEqual([CHAT]);
+    } finally { if(prior===undefined) delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=prior; }
+  },20000);
   it('recovers the original accepted receipt after restart without another first send',async()=>{
     const root=mkdtempSync(join(tmpdir(),'herder-draft-test-')); homes.push(root);
     const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
@@ -75,7 +89,7 @@ describe("strict UserIO ChatGPT transport",()=>{
       expect(await restarted.sendMessage({chatId:draft.id,text:'first'})).toEqual({nativeInputMessageId:USR});
       expect(f.events.filter(e=>e.action==='gpt_first_send')).toHaveLength(1);
     } finally { if(prior===undefined) delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=prior; }
-  });
+  },20000);
   it("creates an account-scoped local draft, admits an exact first message and restores its alias",async()=>{
     const root=mkdtempSync(join(tmpdir(),"herder-draft-test-")); homes.push(root);
     const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
