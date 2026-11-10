@@ -155,9 +155,9 @@ type OpenCodeModelProviderResolution = {
   resolvedProviderLeaves: OpenCodeResolvedProviderLeaf[];
 };
 
-function isCodexClaudeRestrictedCohortProject(cwd: string): boolean {
+function isCodexClaudeRestrictedCohortProject(cwd: string, roots: readonly string[] = CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS): boolean {
   const project = normalize(cwd).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
-  return CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS.some((root) => {
+  return roots.some((root) => {
     const canonicalRoot = normalize(root).replace(/\\/gu, "/").replace(/\/+$/u, "").toLocaleLowerCase("en-US");
     return project === canonicalRoot || project.startsWith(`${canonicalRoot}/`);
   });
@@ -2584,6 +2584,14 @@ export interface UnfinishedSessionLauncherOptions {
   fallbackModelsForHarness?: (harness: "opencode" | "zcode", session?: { cwd: string }) => Promise<string[]>;
   /** Existing project launch policy is the authority for operator-cohort model admission. */
   projectLaunchPolicyStore?: Pick<AutomationLaunchPolicyStore, "load">;
+  /**
+   * The project roots of the restricted operator cohort.
+   *
+   * The cohort decides which provider leaves a restricted session may use, so
+   * the check must stay closed by default. The roots are injectable so that a
+   * test can exercise the restricted branch without naming a production path.
+   */
+  restrictedCohortProjectRoots?: string[];
   /** Read-only OpenCode session/active/permission/Inbox/transcript CAS snapshot for explicit operator continuations. */
   operatorContinuationSnapshotReader?: OpenCodeNativeContinuationReader;
   /** Rechecks owning fleet authorization before any automatic native work. */
@@ -2702,9 +2710,12 @@ export class UnfinishedSessionLauncher {
   }>();
   /** Sessions already continued by the batch planner in the current recovery pass. */
   private readonly continuedThisRecovery = new Set<string>();
+  private readonly restrictedCohortProjectRoots: string[];
 
   constructor(private readonly options: UnfinishedSessionLauncherOptions) {
     UnfinishedSessionLauncher.runtime = this;
+    this.restrictedCohortProjectRoots = options.restrictedCohortProjectRoots
+      ?? [...CODEX_CLAUDE_RESTRICTED_PROJECT_ROOTS];
     this.projectLaunchPolicyStore = options.projectLaunchPolicyStore
       ?? new AutomationLaunchPolicyStore(join(resolveAutopilotStateDir(), "automation-launch-policy.json"));
     this.maxAttempts = positiveInteger(options.maxAttempts ?? Number(process.env.AGENT_HERDER_AUTOSTART_MAX_ATTEMPTS || 3), 3);
@@ -6357,7 +6368,7 @@ export class UnfinishedSessionLauncher {
       const route = findGoverningProjectRoute(loaded.policy, session.cwd);
       if (route && (!route.harnesses.includes("opencode") || route.operatorCohortRecovery === "deny")) return false;
       if (!resolveProjectRecoveryModels(loaded.policy, "opencode", session.cwd).includes(model)) return false;
-      if (!isCodexClaudeRestrictedCohortProject(session.cwd)) {
+      if (!isCodexClaudeRestrictedCohortProject(session.cwd, this.restrictedCohortProjectRoots)) {
         return operatorCohortRecoveryAllowed(loaded.policy, session.cwd);
       }
       const adapter = this.options.adapters.get("opencode") as (HarnessAdapter & {

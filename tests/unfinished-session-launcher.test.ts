@@ -28,6 +28,14 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>, timeoutMs 
         throw new Error("timed out");
     await new Promise((resolve) => setTimeout(resolve, 5));
 } }
+// The restricted operator cohort of this fixture. The production roots are a
+// constant of the launcher; a test names its own so that the restricted
+// branch is exercised without naming a production path.
+const RESTRICTED_COHORT_FIXTURE_ROOTS = [
+  "/tmp/agent-herder-fixture/projects/TelegramAuto",
+  "/tmp/agent-herder-fixture/projects/video_watching",
+];
+
 describe("unfinished session crash recovery", () => {
     // Fast unit: a human Stop during the final semantic read must prevent a
     // native action, including a rollover which would create a new identity.
@@ -1207,13 +1215,18 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
+            // The re-arm probes the session once - that is how the launcher
+            // learns that the refusal is reversible - and continues the
+            // interrupted turn once: two native resume calls, one message.
             // Rearming refreshes updatedAt; cross the configured idle window
             // explicitly instead of depending on how long persistence takes.
-            expect(calls.resumes).toBe(1);
-            expect(calls.messages).toHaveLength(0);
+            expect(calls.resumes).toBe(2);
+            expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             vi.setSystemTime(now + 1);
             await launcher.recoverPending();
+            // The interrupted turn continues exactly once: the next cycle
+            // finds the record already continued.
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
@@ -1292,14 +1305,17 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
+            // The re-arm probes the session once and continues the interrupted
+            // turn once: two native resume calls, one message.
             // Rearming stamps updatedAt in this generation. The ordinary recovery
             // waits for discoveryIdleMs, even when persistence takes less than 1 ms.
-            expect(calls.resumes).toBe(1);
-            expect(calls.messages).toHaveLength(0);
+            expect(calls.resumes).toBe(2);
+            expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             vi.setSystemTime(now + 1);
             await launcher.recoverPending();
-            // Once the idle window has elapsed, the interrupted turn continues once.
+            // Once the idle window has elapsed, the interrupted turn is still
+            // the one continuation: it never continues twice.
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
@@ -1829,6 +1845,7 @@ describe("terminal quota recovery", () => {
       const launcher = new UnfinishedSessionLauncher({
         adapters: new Map([["opencode", adapter]]), store, settingsStore: settings,
         fallbackModelsForHarness: async () => [model], projectLaunchPolicyStore,
+        restrictedCohortProjectRoots: RESTRICTED_COHORT_FIXTURE_ROOTS,
       });
       const enrolled = await launcher.enrollOperatorCohortEntry("operator-restricted-2026-10-21-01", {
         sessionId: current.id, cwd, expected: {
@@ -1881,6 +1898,7 @@ describe("terminal quota recovery", () => {
       const launcher = new UnfinishedSessionLauncher({
         adapters: new Map([["opencode", adapter]]), store: new UnfinishedSessionStore(join(root, "unfinished.json")), settingsStore: settings,
         fallbackModelsForHarness: async () => ["omniroute/minimax-combo-m3.1"], projectLaunchPolicyStore,
+        restrictedCohortProjectRoots: RESTRICTED_COHORT_FIXTURE_ROOTS,
       });
       const result = await launcher.enrollOperatorCohortEntry("operator-restricted-2026-10-21-02", {
         sessionId: current.id, cwd: current.cwd, expected: {
