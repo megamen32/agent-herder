@@ -493,7 +493,7 @@ export function makeConfiguredAdapter(
       harness, cwd: process.cwd() } as const;
     const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
     return Object.assign(adapter, {
-      ...(driver instanceof UserIoChatGptDriver ? {getRawTranscript: (id:string) => driver.getRawTranscript(browserChatNativeId(id, harness, true))} : {}),
+      getRawTranscript: (id:string) => driver.getRawTranscript(browserChatNativeId(id, harness, true)),
       getAccountScope: () => driver.getAccountScope(),
       verifyPinnedAccountScope: async () => {
         if (driver instanceof ZaiUserIoDriver) await driver.verifyPinnedAccountScope(expectedScope);

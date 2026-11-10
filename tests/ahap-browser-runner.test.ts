@@ -1,5 +1,7 @@
 import { PassThrough } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { UserIoChatGptDriver } from "../src/adapters/chatgpt-userio-driver.js";
+import { ZaiUserIoDriver } from "../src/adapters/zai-userio-driver.js";
 import type { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
 import { AhapReadError } from "../src/ahap-legacy-read.js";
@@ -28,6 +30,17 @@ async function run(adapter: TestAdapter, requests: unknown[]) {
 }
 
 describe("ChatGPT AHAP browser runner", () => {
+  it.each([["chatgpt",UserIoChatGptDriver],["zai",ZaiUserIoDriver]] as const)("preserves %s native raw transcript coverage",async(harness,driver)=>{
+    const receipt={bytes:Buffer.from("native"),complete:false,source:{kind:"native-api" as const,location:"fixture",format:"json" as const},timestampCoverage:"partial" as const,limitations:["partial"]};
+    const spy=vi.spyOn(driver.prototype,"getRawTranscript").mockResolvedValue(receipt);
+    try {
+      const adapter=makeConfiguredAdapter({AHAP_HARNESS:harness,AHAP_BROWSER_TRANSPORT:"userio",AHAP_BROWSER_ACCOUNT_SCOPE:scope,
+        AHAP_USERIO_ENDPOINT:"http://127.0.0.1:9999",AHAP_USERIO_AGENT_ID:"test",AHAP_USERIO_INSTANCE_ID:"browser-11111111-1111-4111-8111-111111111111",AHAP_USERIO_TOKEN_FILE:"/tmp/unused"});
+      const result=await adapter.getRawTranscript("route:11111111-1111-4111-8111-111111111111");
+      expect(result).toEqual(receipt);
+      expect(spy).toHaveBeenCalledOnce();
+    }finally{spy.mockRestore();}
+  });
   it("explicitly selects MacMiniChromeTransport and verifies the configured page and account", async () => {
     const selected: string[] = [];
     const calls: Array<{ name: string; args?: Record<string, unknown> }> = [];
