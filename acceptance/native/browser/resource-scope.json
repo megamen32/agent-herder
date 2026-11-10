@@ -1,0 +1,50 @@
+{
+  "schema": "agent-herder.qa-browser-resource-scope.v1",
+  "task_ref": "QBROWSERCLAIM",
+  "test_only": true,
+  "authority": {
+    "host_id": "roomhacker-server-100",
+    "route": "local",
+    "root": "/home/roomhacker/.local/state/agent-herder/qa-browser-authority",
+    "authority_file": "/home/roomhacker/.local/state/agent-herder/qa-browser-authority/authority.json",
+    "storage_id": "qa-browser-server100-4aaccdfe-fd67-4597-84a1-0bf6320fc49d",
+    "schema_version": "v1"
+  },
+  "resource": {
+    "resource_ref": "qa-browser-page7-chat-6aee9fd5-7ee0-83ea-a06f-a3ed148605e8",
+    "kind": "browser_page",
+    "scope": {
+      "type": "node",
+      "node_ref": "mac-mini-2012.lan"
+    },
+    "identity": {
+      "gateway_host": "mac-mini-2012.lan",
+      "gateway_port": 50260,
+      "page": 7,
+      "chat_id": "6aee9fd5-7ee0-83ea-a06f-a3ed148605e8",
+      "account_sha256": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1"
+    }
+  },
+  "owner_receipt_ref": "/home/roomhacker/.local/state/agent-herder/qa-browser-authority-receipt.json",
+  "constraints": [
+    "test authority only",
+    "no production storage",
+    "no browser mutation",
+    "cooperative owner JSON plus OS lock; not CDP fencing"
+  ],
+  "ci_handoff": {
+    "designated_operator_ref": "CIlead01a1ac52",
+    "owner_identity_from_cli": "linux-euid:1000",
+    "before_native_operation": [
+      "/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder/target/debug/herder ownership status --authority /home/roomhacker/.local/state/agent-herder/qa-browser-authority/authority.json --resource qa-browser-page7-chat-6aee9fd5-7ee0-83ea-a06f-a3ed148605e8",
+      "/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder/target/debug/herder ownership claim --authority /home/roomhacker/.local/state/agent-herder/qa-browser-authority/authority.json --resource qa-browser-page7-chat-6aee9fd5-7ee0-83ea-a06f-a3ed148605e8 --claim-id 21df64fc-3e0f-4f9e-8664-b40c39a840bb --purpose 'CIlead01a1ac52 browser page7 QA claim'"
+    ],
+    "claim_expectation": "status=owned with the exact owner claim; repeated same claim_id under the same Linux euid is idempotent/already_owned",
+    "after_native_operation": [
+      "/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder/target/debug/herder ownership release --authority /home/roomhacker/.local/state/agent-herder/qa-browser-authority/authority.json --resource qa-browser-page7-chat-6aee9fd5-7ee0-83ea-a06f-a3ed148605e8 --claim-id 21df64fc-3e0f-4f9e-8664-b40c39a840bb",
+      "/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder/target/debug/herder ownership status --authority /home/roomhacker/.local/state/agent-herder/qa-browser-authority/authority.json --resource qa-browser-page7-chat-6aee9fd5-7ee0-83ea-a06f-a3ed148605e8"
+    ],
+    "release_expectation": "release exact claim once, then status=free",
+    "instruction_reference": "This manifest is the shared reference for QBROWSERCLAIM and the CI handoff."
+  }
+}
