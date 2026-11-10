@@ -59,6 +59,37 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it("creates an account-scoped local draft, admits an exact first message and restores its alias",async()=>{
+    const root=mkdtempSync(join(tmpdir(),"herder-draft-test-")); homes.push(root);
+    const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
+    try {
+      const auth={gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},gpt_scope:{ok:true,account_scope:SCOPE},
+        gpt_list:{ok:true,chats:[{id:CHAT,title:'native'}]},gpt_read:{...read,account_scope:SCOPE},
+        gpt_first_send:{ok:true,admission:'confirmed',chat_ref:CHAT,native_user_message_id:USR}};
+      const {driver,config,events}=fixture(auth); await driver.verifyPinnedAccountScope();
+      const draft=await driver.createChat({title:'new'}); expect(draft.id).toMatch(/^draft:/);
+      expect(events.some(e=>e.action==='gpt_first_send')).toBe(false);
+      const receipt=await driver.sendMessage({chatId:draft.id,text:'first'});
+      expect(receipt).toMatchObject({nativeInputMessageId:USR});
+      const restarted=new UserIoChatGptDriver(config); await restarted.verifyPinnedAccountScope();
+      expect((await restarted.listObservedChats()).map(c=>c.id)).toEqual([draft.id]);
+      expect((await restarted.getMessages(draft.id))[0].id).toBe(USR);
+      expect(events.filter(e=>e.action==='gpt_first_send')).toHaveLength(1);
+    } finally { if(prior===undefined) delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=prior; }
+  });
+  it("keeps an unknown first send fenced across restart",async()=>{
+    const root=mkdtempSync(join(tmpdir(),"herder-draft-test-")); homes.push(root);
+    const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
+    try {
+      const {driver,config,events}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
+        gpt_scope:{ok:true,account_scope:SCOPE},gpt_first_send:{ok:false,error:'outcome_unknown'}});
+      await driver.verifyPinnedAccountScope(); const draft=await driver.createChat({title:'new'});
+      await expect(driver.sendMessage({chatId:draft.id,text:'first'})).rejects.toThrow('outcome unknown');
+      const restarted=new UserIoChatGptDriver(config); await restarted.verifyPinnedAccountScope();
+      await expect(restarted.sendMessage({chatId:draft.id,text:'first'})).rejects.toThrow('uncertain');
+      expect(events.filter(e=>e.action==='gpt_first_send')).toHaveLength(1);
+    } finally { if(prior===undefined) delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=prior; }
+  });
   it("derives account scope from provider, user and workspace account identity",()=>{
     expect(userIoAccountScope('chatgpt','user-1','account-1')).toBe(
       createHash('sha256').update(JSON.stringify({provider:'chatgpt',user_id:'user-1',account_id:'account-1'})).digest('hex'));

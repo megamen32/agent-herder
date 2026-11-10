@@ -57,7 +57,7 @@ export interface BrowserChatDriver {
   sendMessage(
     input: { chatId: string; text: string; waitForCompletion?: boolean },
     signal?: AbortSignal,
-  ): Promise<{ assistantText?: string }>;
+  ): Promise<{ assistantText?: string; nativeInputMessageId?: string }>;
   /** Full paginated scan of every conversation (ChatGPT only). Paginates
    * offset=0,100,200… with a 15s gap; respects 429. Used by the Web UI
    * "Пересканировать чаты" button / Ctrl+Shift+R. */
@@ -67,6 +67,8 @@ export interface BrowserChatDriver {
    * plus the durable inventory). A paused harness without this flag serves
    * only what it already holds in memory. */
   readonly passiveInventory?: boolean;
+  /** This driver returns a native message receipt for an initially empty draft. */
+  readonly supportsFirstSendReceipt?: boolean;
   /** Stop only the actively generating turn of this exact conversation.
    * Never navigates to another chat to find a Stop button.
    */
@@ -453,7 +455,8 @@ export class BrowserChatAdapter implements HarnessAdapter {
       // Correlated AHAP sends need a provider message ID, not merely a click.
       // Snapshot first so an older identical prompt cannot become the receipt.
       let beforeIds: Set<string> | undefined;
-      if (options.inputId) {
+      const firstDraft = this.driver.supportsFirstSendReceipt === true && nativeId.startsWith("draft:") && this.driver.getKnownChat?.(nativeId)?.pendingRemoteCreation === true;
+      if (options.inputId && !firstDraft) {
         let before: SessionMessageView[] | null | undefined;
         try { before = await this.driver.getMessages?.(nativeId); }
         catch { before = undefined; }
@@ -473,7 +476,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
         }
         beforeIds = new Set(before.map(message => message.id));
       }
-      await this.driver.sendMessage({
+      const submitted = await this.driver.sendMessage({
         chatId: nativeId,
         text: options.message,
         waitForCompletion: options.queue !== true,
@@ -486,6 +489,10 @@ export class BrowserChatAdapter implements HarnessAdapter {
         if (updated) this.inventory.set(nativeId,updated);
       }
       this.historyCache.invalidate(nativeId);
+      if (options.inputId && firstDraft && submitted.nativeInputMessageId) {
+        return { ok: true, admitted: true, admission: "accepted", inputId: options.inputId, nativeInputMessageId: submitted.nativeInputMessageId };
+      }
+      if (options.inputId && firstDraft) return { ok: false, admissionUnknown: true, error: "First message receipt unavailable" };
       if (beforeIds) {
         // The provider stores the accepted message a moment after the click.
         // One immediate read can therefore find nothing and would leave the

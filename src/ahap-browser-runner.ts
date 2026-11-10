@@ -162,7 +162,7 @@ export async function serveBrowserChatAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: adapter.type, name: adapter.name,
-        capabilities: { deliveryModes: ["queue"], methods: [...new Set([...METHODS, ...(adapter.archiveSession && adapter.supportsArchive?.() !== false ? ["archiveSession"] : []), ...legacyReadMethods(adapter)])], controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
+        capabilities: { deliveryModes: ["queue"], methods: [...new Set([...METHODS, ...(adapter.archiveSession && adapter.supportsArchive?.() !== false ? ["archiveSession"] : []), ...legacyReadMethods(adapter).filter(method => method !== "listProjects" || (adapter.browserFeatures as {projects?:boolean} | undefined)?.projects !== false)])], controlCapabilities: CONTROL_CAPABILITIES, browserFeatures: adapter.browserFeatures },
       } });
       continue;
     }
@@ -196,6 +196,7 @@ export async function serveBrowserChatAhap(
         case "listSessions":
         case "getRawTranscript":
         case "listProjects":
+          if (request.method === "listProjects" && (adapter.browserFeatures as {projects?:boolean} | undefined)?.projects === false) { error(id, -32601, "projects not supported"); continue; }
           await assertCurrentAccount();
           result = await legacyRead(adapter, request.method, params);
           await assertCurrentAccount();
