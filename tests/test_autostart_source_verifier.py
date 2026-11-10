@@ -9,6 +9,9 @@ SID='01a1a6c3-4b6c-7663-bcbd-8f80a2af10f4';CWD='/fixture/project';HOST='roomhack
 RECORD={'harness':'codex','sessionId':SID,'cwd':CWD,'startedAt':'2026-11-08T14:00:00Z','notifiedAt':'2026-11-08T15:00:00Z','recoveryCause':'turn.failed','recoveryTurnId':'failed-turn','state':'exhausted'}
 GROUP={'project':'agent-herder','source_id':'agent-herder-autostart','host_id':HOST,'signal_type':'unfinished-session-autostart-failed','problem_type':'unfinished-session-autostart-failed','correlation_id':f'unfinished-codex:{SID}:{CWD}-'+RECORD['startedAt']}
 NOW=1794153600.0
+# notification_center.consumer_lifecycle serves a due page of at most
+# SWEEP_PAGE_SIZE (20) checks to one source.
+SERVER_PAGE_SIZE=20
 class SourceTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
@@ -104,10 +107,12 @@ class SourceTests(unittest.TestCase):
   The source answers every due check of one sweep in one tick: a request that
   waits behind the others would miss the deadline of the server, and the
   incident would be delivered to an executor again with the health of the
-  source still unknown.
+  source still unknown. The server serves a due page of at most
+  SWEEP_PAGE_SIZE (20) checks, so a full page of due checks must leave the
+  tick with a full page of answers and not with a truncated batch.
   """
   posts=[]
-  requests=[{'group':GROUP,'request_id':f'request-{index}','generation':1,'incident_id':f'inc_{index}'} for index in range(6)]
+  requests=[{'group':GROUP,'request_id':f'request-{index}','generation':1,'incident_id':f'inc_{index}'} for index in range(SERVER_PAGE_SIZE)]
   def http(method,path,body=None,key=None):
    if method=='POST':posts.append(body);return {'generation':1,'incident_id':body.get('incident_id'),'observed_state':body.get('observed_state'),'request_id':body.get('request_id')}
    if 'verification-requests' in path:return {'requests':requests}
@@ -130,4 +135,18 @@ class SourceTests(unittest.TestCase):
    adapter.run_tick(self.paths(),host_id=HOST,base_url='https://fixture.invalid',token='fixture',state_dir=self.root/'verifier',transport=http)
   self.assertLessEqual(len(posts),adapter.MAX_CHECKS_PER_TICK)
   self.assertLess(adapter.TICK_DEADLINE_SECONDS,30)
+ def test_admission_covers_a_whole_server_page(self):
+  """The admission must not truncate the page that the server serves.
+
+  The server serves a due page of at most SWEEP_PAGE_SIZE (20) checks and
+  re-arms an expired request while serving it. A count below that page size
+  truncates the sweep, and the checks behind the truncation wait for a later
+  tick. The truncated checks are exactly the ones the server re-armed most
+  often: every accepted answer moves a check to the tail of the
+  (verification_due, incident_id) order, so the incident that was re-armed
+  last is answered last. A check that waits that long misses the deadline of
+  the server, and the server then expires it and delivers the incident to an
+  executor again with the health of the source still unknown.
+  """
+  self.assertGreaterEqual(adapter.MAX_CHECKS_PER_TICK,SERVER_PAGE_SIZE)
 if __name__=='__main__':unittest.main()
