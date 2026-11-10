@@ -33,6 +33,19 @@ describe("background Stop delivery",()=>{
   const first=consumer.submit(input);await waitUntil(()=>f.jobs.get(first.id)?.state==='completed');
   expect(consumer.submit(input).id).toBe(first.id);expect(evaluate).toHaveBeenCalledTimes(1);
  });
+ it.each(["streaming-final","new-user"])("defers ChatGPT when the native latest pair is not complete: %s",async reason=>{
+  const f=await fixture();
+  const messages:any[]=[{id:"u1",role:"user",text:"Задача",parts:[]},{id:"a1",role:"assistant",text:"Частичный ответ",phase:"final",parts:[],
+    ...(reason==="streaming-final"?{completionStatus:"in_progress",endTurn:false}:{completionStatus:"finished_successfully",endTurn:true})}];
+  if(reason==="new-user")messages.push({id:"u2",role:"user",text:"Новое поручение",parts:[]});
+  const adapter={...f.adapter,getBackgroundMessages:async()=>messages};
+  const evaluate=vi.fn(async()=>({decision:"continue",next_goal:"Must not send"}));
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([["chatgpt",adapter as any]]),evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const job=consumer.submit({...event,harness:"chatgpt"});
+  await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+  expect(evaluate).not.toHaveBeenCalled();expect(f.deliver).not.toHaveBeenCalled();
+ });
+
  it("automatically reconsiders a safely deferred ChatGPT stop after history returns",async()=>{
   const f=await fixture();let status:'running'|'idle'='running',reads=0,available=false;
   const messages=[{id:'u1',role:'user',text:'question',parts:[]},{id:'a1',role:'assistant',text:'answer',parts:[]}];
@@ -117,5 +130,57 @@ describe("background Stop delivery",()=>{
   const c=new BackgroundAutopilotStop({jobs:restored,adapters:new Map(),evaluate:vi.fn(),held:async()=>false,allowed:async()=>true,deliver:vi.fn()});
   expect(c.submit(event).state).toBe("interrupted");
   f.finish({decision:"done"});await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+ });
+});
+
+
+describe("independent background autopilot sessions", () => {
+ it("lets another session finish while the first judge is waiting", async () => {
+  const f=await fixture();
+  const adapter={...f.adapter,getSession:async(id:string)=>({id,harness:"codex",cwd:"/test",status:"idle",lastActivity:new Date().toISOString()})};
+  let finishFirst!:(value:any)=>void;
+  const blocked=new Promise<any>(resolve=>{finishFirst=resolve});
+  const evaluate=vi.fn(async(input:any)=>input.sessionId==="blocked-zai-session"?blocked:{decision:"continue",next_goal:"Продолжить вторую задачу"});
+  const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([["codex",adapter as any]]),evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+  const first=consumer.submit({...event,sessionId:"blocked-zai-session"});
+  await waitUntil(()=>evaluate.mock.calls.length===1);
+  const second=consumer.submit({...event,sessionId:"other-profile-session"});
+  await waitUntil(()=>f.jobs.get(second.id)?.state==="completed");
+  expect(f.jobs.get(first.id)?.state).not.toBe("completed");
+  expect(f.deliver.mock.calls[0]?.[0]).toMatchObject({sessionId:"other-profile-session"});
+  finishFirst({decision:"done"});await waitUntil(()=>f.jobs.get(first.id)?.state==="completed");
+ });
+
+ it("passes cancellation to the active judge", async () => {
+  const f=await fixture();const job=f.consumer.submit(event);
+  await waitUntil(()=>f.evaluate.mock.calls.length===1);
+  const input=f.evaluate.mock.calls[0]![0] as any;
+  expect(input.signal).toBeInstanceOf(AbortSignal);
+  expect(input.signal.aborted).toBe(false);
+  f.jobs.cancel(job.id);
+  expect(input.signal.aborted).toBe(true);
+  f.finish({decision:"done"});
+  await waitUntil(()=>!f.consumer.isPending(event.harness,event.sessionId));
+ });
+
+ it("preserves the real user request after an automatic continuation", async () => {
+  const f=await fixture();
+  const {getHumanStopStore,HumanStopStore}=await import("../src/human-stop-store.js");
+  const originStore=new HumanStopStore(join(f.root,"origin.json"));
+  await originStore.rememberGeneratedPrompt("codex",event.sessionId,"Автоматический следующий шаг","preceding-native-turn");
+  const generated=vi.spyOn(getHumanStopStore(),"isGeneratedPrompt").mockImplementation((h,id,input)=>originStore.isGeneratedPrompt(h,id,input));
+  try {
+   const messages=[
+    {id:"human",role:"user",text:"Моя полная исходная задача",parts:[]},
+    {id:"reply",role:"assistant",text:"Начал работу",parts:[]},
+    {id:"generated",role:"user",text:"Автоматический следующий шаг",parts:[]},
+    {id:"latest",role:"assistant",text:event.lastAssistantMessage,parts:[]},
+   ];
+   const adapter={...f.adapter,getSessionMessages:async()=>messages};
+   const consumer=new BackgroundAutopilotStop({jobs:f.jobs,adapters:new Map([["codex",adapter as any]]),evaluate:f.evaluate,deliver:f.deliver,held:async()=>false,allowed:async()=>true});
+   const job=consumer.submit(event);await waitUntil(()=>f.evaluate.mock.calls.length===1);
+   expect(f.evaluate.mock.calls[0]![0]).toMatchObject({lastUserMessage:"Моя полная исходная задача",lastAssistantMessage:event.lastAssistantMessage,messages});
+   f.finish({decision:"done"});await waitUntil(()=>f.jobs.get(job.id)?.state==="completed");
+  } finally {generated.mockRestore();}
  });
 });

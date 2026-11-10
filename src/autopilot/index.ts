@@ -1,4 +1,6 @@
 import { JudgeRequestTrace } from "./judge-request.js";
+import { runZaiModelCycle } from "./zai-failover.js";
+import { buildAutopilotJudgeContext } from "./judge-context.js";
 import { UserStyleStore, USER_STYLE_PROMPT } from "./user-style.js";
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
@@ -19,6 +21,8 @@ export type StopHookInput = {
   turn_id: string;
   last_user_message?: string | null;
   last_assistant_message: string | null;
+  /** Native conversation evidence; projected and budgeted separately before inference. */
+  messages?: Array<{ role: string; text?: string; id?: string }> | null;
   transcript_path: string | null;
   stop_hook_active: boolean;
   model?: string;
@@ -264,6 +268,12 @@ export function createOpenAICompatibleJudge(config: {
   model: string;
   token?: string;
   fetchImpl?: typeof fetch;
+  /** Opt in only for the configured Z.AI judge; other routes retain one request. */
+  retryPolicy?: "zai-cycle";
+  contextBytes?: number;
+  signal?: AbortSignal;
+  shouldContinue?: () => Promise<boolean> | boolean;
+  retrySleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }): JudgeClient {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
@@ -274,16 +284,26 @@ export function createOpenAICompatibleJudge(config: {
       const style = await styleStore.prepare(input.hook.last_user_message ? [{
         text: input.hook.last_user_message, harness: input.hook.harness ?? "codex", sessionId: input.hook.session_id,
       }] : []);
-      const request = new JudgeRequestTrace({ model: config.model, endpoint, operation: "stop" });
+      const { messages: nativeMessages, ...hook } = input.hook;
+      const expanded = config.retryPolicy === "zai-cycle" ? buildAutopilotJudgeContext({
+        lastUserMessage: hook.last_user_message,
+        lastAssistantMessage: hook.last_assistant_message,
+        messages: nativeMessages ?? [],
+        maxContextBytes: config.contextBytes,
+      }) : undefined;
+      const attempt = async (model: string) => {
+      const request = new JudgeRequestTrace({ model, endpoint, operation: "stop" });
       const response = await request.fetch(fetchImpl, endpoint, {
         method: "POST",
         headers: {
           ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
           "content-type": "application/json",
         },
-        signal: AbortSignal.timeout(config.timeoutMs ?? 35_000),
+        signal: config.signal
+          ? AbortSignal.any([config.signal, AbortSignal.timeout(config.timeoutMs ?? 35_000)])
+          : AbortSignal.timeout(config.timeoutMs ?? 35_000),
         body: JSON.stringify({
-          model: config.model,
+          model,
           temperature: 0,
           // The judge parser consumes one JSON response. Explicitly disable
           // gateway SSE defaults so OpenAI-compatible providers do not return
@@ -324,7 +344,8 @@ export function createOpenAICompatibleJudge(config: {
               role: "user",
               content: JSON.stringify({
                 ...styleStore.payload(style),
-                hook: input.hook,
+                hook: expanded ? { ...hook, last_user_message: expanded.lastUserMessage, last_assistant_message: expanded.lastAssistantMessage } : hook,
+                ...(expanded ? { conversation_history: expanded.messages, context_truncation: expanded.truncation } : {}),
                 evidence: input.evidence,
                 remaining_continuations: input.remainingContinuations,
               }),
@@ -342,11 +363,19 @@ export function createOpenAICompatibleJudge(config: {
       try {
         const result = parseJudgeJson(content);
         normalizeDecision(result); // Never learn from an invalid decision.
-        await styleStore.remember(style, result);
         return result;
       } catch {
         throw new Error("Judge returned non-JSON content");
       }
+      };
+      const result = config.retryPolicy === "zai-cycle"
+        ? await runZaiModelCycle({ attempt, signal: config.signal, shouldContinue: config.shouldContinue, sleep: config.retrySleep })
+        : await attempt(config.model);
+      if (config.signal?.aborted || (config.shouldContinue && !await config.shouldContinue())) {
+        throw new DOMException("Autopilot judgement was cancelled", "AbortError");
+      }
+      await styleStore.remember(style, result);
+      return result;
     },
   };
 }
@@ -936,7 +965,12 @@ export async function readBoundedEvidence(
 function sanitizeHookForJudge(input: StopHookInput): StopHookInput {
   return {
     ...input,
-    last_user_message: sanitizeChoiceContext(input.last_user_message),
+    // Notification cards have a small display budget; model input must retain the human request.
+    last_user_message: input.last_user_message == null ? input.last_user_message
+      : redactSecrets(withoutCoordinationPrefix(input.last_user_message)).trim(),
+    ...(input.messages ? { messages: input.messages.flatMap(message =>
+      (message.role === "user" || message.role === "assistant" || message.role === "tool") && typeof message.text === "string"
+        ? [{ ...message, text: redactSecrets(message.text) }] : []) } : {}),
     last_assistant_message:
       input.last_assistant_message === null
         ? null

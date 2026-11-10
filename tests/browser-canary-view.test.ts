@@ -27,7 +27,7 @@ function fixture(harness: "chatgpt" | "zai") {
     throw Error("unexpected " + name);
   });
   const adapter = makeConfiguredAdapter({ AHAP_HARNESS: harness, AHAP_BROWSER_TRANSPORT: "vibe",
-    AHAP_BROWSER_ACCOUNT_SCOPE: scope, AHAP_BROWSER_VIBE_TARGET: "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    AHAP_BROWSER_ACCOUNT_SCOPE: scope, AHAP_BROWSER_VIBE_TARGET: "mac-mini",
     AHAP_BROWSER_VIBE_SESSION_ID: "session_1" }, {
     macMini() { throw Error("legacy not selected"); }, directCdp() { throw Error("CDP not selected"); }, vibe() { return { call }; },
   });

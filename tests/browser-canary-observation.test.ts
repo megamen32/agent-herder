@@ -31,7 +31,7 @@ describe("owned browser canary observation", () => {
   it("exposes a separate proof API on the configured production adapter", () => {
     const adapter = makeConfiguredAdapter({
       AHAP_HARNESS: "chatgpt", AHAP_BROWSER_TRANSPORT: "vibe", AHAP_BROWSER_ACCOUNT_SCOPE: "a".repeat(64),
-      AHAP_BROWSER_VIBE_TARGET: "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal", AHAP_BROWSER_VIBE_SESSION_ID: "session_1",
+      AHAP_BROWSER_VIBE_TARGET: "mac-mini", AHAP_BROWSER_VIBE_SESSION_ID: "session_1",
     }, {
       macMini() { throw Error("legacy not selected"); }, directCdp() { throw Error("CDP not selected"); },
       vibe() { return { async call() { throw Error("test never connects"); } }; },

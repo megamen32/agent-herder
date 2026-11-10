@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { completionEvidence, createAnthropicCompatibleSessionCompletionJudge, fitBatchContext, SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore, type UnfinishedSessionNotice } from "../src/autopilot/unfinished-session-launcher.js";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { JudgeRequestError } from "../src/autopilot/judge-request.js";
@@ -1183,6 +1183,9 @@ describe("original task completion evidence", () => {
 
     it("re-arms an exhausted archived record and continues the interrupted turn", async () => {
         const root = await mkdtemp(join(tmpdir(), "archived-exhausted-"));
+        const now = Date.now();
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(now);
         try {
             const current = fixture("error", "codex", "archived-exhausted");
             const calls = { resumes: 0, messages: [] as string[] };
@@ -1204,12 +1207,18 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
-            // The restored thread is resumable again, so the exhausted record
-            // returns to the armed state and the turn continues.
+            // Rearming refreshes updatedAt; cross the configured idle window
+            // explicitly instead of depending on how long persistence takes.
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(0);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            vi.setSystemTime(now + 1);
+            await launcher.recoverPending();
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
         } finally {
+            vi.useRealTimers();
             await rm(root, { recursive: true, force: true });
         }
     });
@@ -1259,6 +1268,9 @@ describe("original task completion evidence", () => {
 
     it("re-arms an exhausted quota-blocked record and continues the interrupted turn", async () => {
         const root = await mkdtemp(join(tmpdir(), "quota-guard-exhausted-"));
+        const now = Date.now();
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(now);
         try {
             const current = fixture("error", "codex", "quota-guard-exhausted");
             const calls = { resumes: 0, messages: [] as string[] };
@@ -1280,12 +1292,19 @@ describe("original task completion evidence", () => {
                 notify: async (notice: UnfinishedSessionNotice) => { notices.push(notice); },
             });
             await launcher.recoverPending();
-            // The guard admits the native resume again, so the exhausted record
-            // returns to the armed state and the interrupted turn continues.
+            // Rearming stamps updatedAt in this generation. The ordinary recovery
+            // waits for discoveryIdleMs, even when persistence takes less than 1 ms.
+            expect(calls.resumes).toBe(1);
+            expect(calls.messages).toHaveLength(0);
+            expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
+            vi.setSystemTime(now + 1);
+            await launcher.recoverPending();
+            // Once the idle window has elapsed, the interrupted turn continues once.
             expect(calls.messages).toHaveLength(1);
             expect((await store.list())[0]).toMatchObject({ state: "active", attempts: 0 });
             expect(notices.map((notice) => notice.signalType)).not.toContain("unfinished-session-autostart-failed");
         } finally {
+            vi.useRealTimers();
             await rm(root, { recursive: true, force: true });
         }
     });
@@ -1757,23 +1776,23 @@ describe("terminal quota recovery", () => {
   });
 
   it.each([
-    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "omniroute/minimax-combo-m3.1", leaves: [
+    { cwd: "/tmp/agent-herder-fixture/projects/TelegramAuto", model: "omniroute/minimax-combo-m3.1", leaves: [
       { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
       { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
     ] },
-    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto/ATV", model: "omniroute/minimax-combo-m3.1", leaves: [
+    { cwd: "/tmp/agent-herder-fixture/projects/TelegramAuto/ATV", model: "omniroute/minimax-combo-m3.1", leaves: [
       { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
       { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
     ] },
-    { cwd: "/home/roomhacker/PycharmProjects/video_watching", model: "omniroute/minimax-combo-m3.1", leaves: [
+    { cwd: "/tmp/agent-herder-fixture/projects/video_watching", model: "omniroute/minimax-combo-m3.1", leaves: [
       { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
       { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
     ] },
-    { cwd: "/home/roomhacker/PycharmProjects/video_watching/worker", model: "omniroute/minimax-combo-m3.1", leaves: [
+    { cwd: "/tmp/agent-herder-fixture/projects/video_watching/worker", model: "omniroute/minimax-combo-m3.1", leaves: [
       { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3.1-Flash" },
       { providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" },
     ] },
-    { cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "omniroute/zai-coding-plan/glm-5.3-flash", leaves: [
+    { cwd: "/tmp/agent-herder-fixture/projects/TelegramAuto", model: "omniroute/zai-coding-plan/glm-5.3-flash", leaves: [
       { providerId: "zai-coding-plan", modelId: "glm-5.3-flash" },
     ] },
   ])("admits a restricted cohort session only when the exact fallback resolves to allowed provider leaves (%s)", async ({ cwd, model, leaves }) => {
@@ -1833,7 +1852,7 @@ describe("terminal quota recovery", () => {
       const failedAt = new Date(Date.now() - 30_000).toISOString();
       const current: AgentSession = {
         ...fixture("error", "opencode", "restricted-forbidden-session"),
-        cwd: "/home/roomhacker/PycharmProjects/TelegramAuto", model: "minimax-coding-plan/MiniMax-M3.1-Flash",
+        cwd: "/tmp/agent-herder-fixture/projects/TelegramAuto", model: "minimax-coding-plan/MiniMax-M3.1-Flash",
         meta: { nativeLastTurn: {
           sessionId: "restricted-forbidden-session", turnId: "restricted-native-turn", assistantMessageId: "restricted-assistant",
           providerId: "minimax-coding-plan", modelId: "MiniMax-M3.1-Flash", status: "failed", completedAt: failedAt,

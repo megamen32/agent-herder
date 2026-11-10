@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { browserTransportSettingsFromEnv, resolveMacMiniSettings, type BrowserTransportSettings } from "./browser-runtime-settings.js";
 
 /** Narrow Chrome DevTools MCP transport over the existing Mac mini CDP owner.
  * Each SSH invocation calls the ALREADY-RUNNING local gateway. It never opens
@@ -11,14 +12,19 @@ export interface ChromePageTools {
 }
 
 export class MacMiniChromeTransport implements ChromePageTools {
+  private readonly gatewayScript: string;
+  private readonly gatewayUrl: string;
   constructor(
-    private readonly target = process.env.AGENT_HERDER_MAC_MINI_SSH_TARGET || "roomhacker@192.168.2.4",
+    target?: string,
     private readonly timeoutMs = 30_000,
+    settings: BrowserTransportSettings = browserTransportSettingsFromEnv(),
   ) {
-    if (!/^[a-zA-Z_][\w.-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(target)) {
-      throw new Error("Invalid trusted Mac mini SSH target");
-    }
+    const resolved = resolveMacMiniSettings({ ...settings, ...(target ? { macMiniSshTarget: target } : {}) });
+    this.target = resolved.sshTarget;
+    this.gatewayScript = resolved.gatewayScript;
+    this.gatewayUrl = resolved.gatewayUrl;
   }
+  private readonly target: string;
 
   async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
     if (!/^[a-z_]+$/.test(name)) throw new Error("Invalid Chrome MCP tool name");
@@ -29,8 +35,8 @@ export class MacMiniChromeTransport implements ChromePageTools {
       const child = spawn("ssh", [
         "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
         "-o", "ConnectTimeout=5", this.target,
-        "/usr/bin/python3", "/Users/roomhacker/.local/share/mac-chrome-mcp/http_stdio.py",
-        "--url", "http://127.0.0.1:50260/mcp",
+        "/usr/bin/python3", this.gatewayScript,
+        "--url", this.gatewayUrl,
       ], { stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
@@ -46,7 +52,8 @@ export class MacMiniChromeTransport implements ChromePageTools {
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
         stdout += chunk;
-        if (stdout.length > 512 * 1024) fail("Chrome MCP response exceeds bound");
+        // Allow the 512 KiB complete latest pair plus nested JSON/MCP escaping.
+        if (stdout.length > 3 * 1024 * 1024) fail("Chrome MCP response exceeds bound");
       });
       child.stderr.on("data", (chunk: string) => {
         stderr += chunk;

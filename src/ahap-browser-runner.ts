@@ -3,6 +3,10 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter, browserChatNativeId } from "./adapters/browser-chat.js";
+import { UserIoChatGptDriver } from "./adapters/chatgpt-userio-driver.js";
+import { ZaiUserIoDriver } from "./adapters/zai-userio-driver.js";
+import { VibeChromePageTools, type VibeChromePageToolsOptions } from "./adapters/vibe-chrome-transport.js";
+import { readProtectedBrowserMcpToken, validateBrowserMcpUrl } from "./adapters/browser-mcp-profile.js";
 import { ChatGptMacCdpDriver, CHATGPT_MAC_SNAPSHOT, parseChatGptPages } from "./adapters/chatgpt-mac-cdp-driver.js";
 import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT, parseZaiPages } from "./adapters/zai-cdp-driver.js";
 import { claimOwnedTab, isOwnedTabUrl, OWNED_TAB_QUERY, ownedTabProbeScript, ownedTabUrl, resolveOwnedTab } from "./adapters/browser-owned-tab.js";
@@ -10,6 +14,7 @@ import { verifyNewChatAccountScope } from "./adapters/browser-chat-new-page.js";
 import { DirectCdpPageTools, type DirectCdpConfig } from "./adapters/direct-cdp-page-tools.js";
 import { MacMiniChromeTransport, parseChromeEvaluation, type ChromePageTools } from "./adapters/mac-mini-chrome-transport.js";
 import { VibeChromeTransport, isVibePageOwnershipRefusal, vibeCreatedPageId, vibeOperationReceipt, vibeOwnershipNamespace, vibeStdioParameters, vibeTextBody, type VibeChromeConfig } from "./adapters/vibe-chrome-transport.js";
+import { browserTransportSettingsFromEnv } from "./adapters/browser-runtime-settings.js";
 import type { AgentSession, SessionMessageView } from "./types/index.js";
 
 type RpcId = string | number;
@@ -403,12 +408,14 @@ export interface BrowserChatRunnerTransportFactories {
   directCdp(config: DirectCdpConfig): ChromePageTools;
   macMini(): ChromePageTools;
   vibe?(config: VibeChromeConfig): ChromePageTools;
+  vibeMcp?(config: VibeChromePageToolsOptions): ChromePageTools & { close?(): void | Promise<void> };
 }
 
 const DEFAULT_TRANSPORT_FACTORIES: BrowserChatRunnerTransportFactories = {
   directCdp: config => new DirectCdpPageTools(config),
   macMini: () => new MacMiniChromeTransport(),
   vibe: config => new VibeChromeTransport(config),
+  vibeMcp: config => new VibeChromePageTools(config),
 };
 
 /** Restrict every driver branch to this exact Vibe binding. Known foreign URL
@@ -447,8 +454,11 @@ export function makeConfiguredAdapter(
   const harness = env.AHAP_HARNESS?.trim();
   if (harness !== "chatgpt" && harness !== "zai") throw new Error("AHAP_HARNESS must explicitly select chatgpt or zai");
   const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TRANSPORT)?.trim();
-  if (transport !== "direct-cdp" && transport !== "mac-mini" && transport !== "vibe") {
-    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini or vibe");
+  if (!["direct-cdp", "mac-mini", "vibe", "vibe-mcp", "userio"].includes(transport ?? "")) {
+    throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp, mac-mini, vibe, vibe-mcp or userio");
+  }
+  if (transport === "vibe-mcp") {
+    throw new Error("Vibe is not permitted for ChatGPT or Z.AI owner sessions");
   }
   // The page number is only a first-use hint. The driver owns exactly one
   // tab per provider and finds it by its own marker, so a gateway restart or
@@ -458,6 +468,32 @@ export function makeConfiguredAdapter(
   const expectedScope = (env.AHAP_BROWSER_ACCOUNT_SCOPE ?? env.AHAP_CHATGPT_ACCOUNT_SCOPE)?.trim();
   if (!expectedScope || !ACCOUNT_SCOPE.test(expectedScope)) {
     throw new Error("Exact account scope is required");
+  }
+
+  if (transport === "userio") {
+    if (rawPageId || env.AHAP_BROWSER_CDP_WS_URL || env.AHAP_BROWSER_MCP_URL
+      || env.AHAP_CHATGPT_CDP_WS_URL || env.AHAP_BROWSER_CDP_CONTEXT_ID) {
+      throw new Error("UserIO must not share another browser transport");
+    }
+    const config = {
+      endpoint: env.AHAP_USERIO_ENDPOINT ?? "",
+      agentId: env.AHAP_USERIO_AGENT_ID ?? "",
+      instanceId: env.AHAP_USERIO_INSTANCE_ID ?? "",
+      accountScope: expectedScope,
+      tokenFile: env.AHAP_USERIO_ACCESS_TOKEN_FILE ?? "",
+    };
+    const driver = harness === "chatgpt" ? new UserIoChatGptDriver(config) : new ZaiUserIoDriver(config);
+    const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT UserIO" : "Z.AI UserIO",
+      harness, cwd: process.cwd() } as const;
+    const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
+    return Object.assign(adapter, {
+      getAccountScope: () => driver.getAccountScope(),
+      verifyPinnedAccountScope: async () => {
+        if (driver instanceof ZaiUserIoDriver) await driver.verifyPinnedAccountScope(expectedScope);
+        else await driver.verifyPinnedAccountScope();
+      },
+      close: async () => undefined,
+    });
   }
 
   let selectedTransport: ChromePageTools;
@@ -471,11 +507,12 @@ export function makeConfiguredAdapter(
     const rawPort = env.AHAP_BROWSER_VIBE_RELAY_PORT?.trim();
     if (rawPort && !/^[0-9]+$/u.test(rawPort)) throw new Error("vibe_invalid_relay_port");
     const relayStateDir = env.AHAP_BROWSER_VIBE_STATE_DIR?.trim();
+    const runtimeSettings = browserTransportSettingsFromEnv(env);
     const config: VibeChromeConfig = { target, sessionId,
       ...(rawPort ? { relayPort: Number(rawPort) } : {}),
       ...(relayStateDir ? { relayStateDir } : {}),
+      ...(Object.values(runtimeSettings).some(Boolean) ? { runtimeSettings } : {}),
     };
-    vibeStdioParameters(config);
     ownedPageNamespace = vibeOwnershipNamespace(config);
     if (!factories.vibe) throw new Error("vibe_transport_factory_unavailable");
     selectedTransport = factories.vibe(config);
@@ -535,7 +572,7 @@ export function makeConfiguredAdapter(
     return { pageId, receipt };
   };
   const driver = harness === "chatgpt"
-    ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope)
+    ? new ChatGptMacCdpDriver(pageTools, undefined, 0, expectedScope, { autoRespondToPrompts: false })
     : new ZaiCdpDriver(pageTools, undefined, 0);
   const provider = { id: harness, name: harness === "chatgpt" ? "ChatGPT browser" : "Z.ai browser", harness, cwd: process.cwd() } as const;
   const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);

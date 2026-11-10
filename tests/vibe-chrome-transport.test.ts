@@ -9,7 +9,13 @@ import { parseChromeEvaluation } from "../src/adapters/mac-mini-chrome-transport
 
 const text = (value: string) => ({ content: [{ type: "text", text: value }] });
 const evaluation = (result: unknown) => text(JSON.stringify({ success: true, result, executionTime: 1, type: typeof result }));
-const binding = { target: MAC_MINI_VIBE_TARGET, sessionId: "session_1" };
+const runtimeSettings = {
+  vibeMacSshTarget: "fixture-user@fixture-host",
+  vibeMacNodePath: "/tmp/fixture-node",
+  vibeMacCliPath: "/tmp/fixture-vibe-cli",
+};
+const serverRuntimeSettings = { vibeServerCliPath: "/tmp/fixture-server-vibe-cli" };
+const binding = { target: MAC_MINI_VIBE_TARGET, sessionId: "session_1", runtimeSettings };
 
 describe("Vibe ChromePageTools contract", () => {
   it("normalizes every observed page and preserves the selected ID", async () => {
@@ -102,13 +108,13 @@ describe("configured Vibe child binding", () => {
   });
 
   it("isolates a configured local CI relay and clears inherited remote selection", () => {
-    const configured = vibeStdioParameters({ target: SERVER100_VIBE_TARGET, sessionId: "session_1", relayPort: 19898, relayStateDir: "/home/roomhacker/.local/state/agent-herder/ci-vibe" });
+    const configured = vibeStdioParameters({ target: SERVER100_VIBE_TARGET, sessionId: "session_1", relayPort: 19898, relayStateDir: "/tmp/agent-herder-fixture/ci-vibe", runtimeSettings: serverRuntimeSettings });
     expect(configured.command).toBe(process.execPath);
     expect(configured.env).toMatchObject({
       VIBE_REMOTE_URL: "", VIBE_EXTENSION_UUID: "", VIBE_RELAY_UUID: "",
       VIBE_MCP_AGENT_PORT: "19898", VIBE_MCP_EXTENSION_PORT: "19899",
-      VIBE_MCP_STATE_DIR: "/home/roomhacker/.local/state/agent-herder/ci-vibe",
-      VIBE_MCP_PID_FILE: "/home/roomhacker/.local/state/agent-herder/ci-vibe/vibebrowser-relay.pid",
+      VIBE_MCP_STATE_DIR: "/tmp/agent-herder-fixture/ci-vibe",
+      VIBE_MCP_PID_FILE: "/tmp/agent-herder-fixture/ci-vibe/vibebrowser-relay.pid",
     });
     expect(() => vibeStdioParameters({ ...binding, relayPort: 19898 })).toThrow("vibe_custom_relay_requires_isolated_state");
   });
@@ -117,7 +123,7 @@ describe("configured Vibe child binding", () => {
     expect(() => vibeStdioParameters({ ...binding, target: "other" })).toThrow("vibe_target_not_configured");
     expect(() => vibeStdioParameters({ ...binding, sessionId: "" })).toThrow("vibe_browser_session_required");
     expect(() => vibeStdioParameters({ ...binding, sessionId: "session_1;touch/tmp/x" })).toThrow("vibe_browser_session_required");
-    expect(() => vibeStdioParameters({ ...binding, relayPort: 19898, relayStateDir: "/home/roomhacker/../other" })).toThrow("vibe_invalid_relay_state");
+    expect(() => vibeStdioParameters({ ...binding, relayPort: 19898, relayStateDir: "/tmp/agent-herder-fixture/../other" })).toThrow("vibe_invalid_relay_state");
   });
 });
 

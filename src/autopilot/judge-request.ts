@@ -67,7 +67,7 @@ export class JudgeRequestTrace {
       if (code === "1002") return "rate_limited";
     }
     if (host === "api.z.ai") {
-      if (["1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"].includes(code ?? "")) return "quota_exhausted";
+      if (["1113", "1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"].includes(code ?? "")) return "quota_exhausted";
       if (code === "1302") return "rate_limited";
       if (code === "1305") return "overloaded";
     }

@@ -53,7 +53,9 @@ export type AutopilotRunnerInput = {
   transcriptPath?: string | null;
   stopHookActive?: boolean;
   model?: string;
-  messages?: Array<{ role: string; text?: string }> | null;
+  messages?: Array<{ role: string; text?: string; id?: string }> | null;
+  /** Process-owned cancellation; never serialized into model context. */
+  signal?: AbortSignal;
   nativeReportObservation?: NativeReportObservation;
   /** Internal native idle/history fingerprint gate supplied by BackgroundAutopilotStop. */
   nativeFence?: () => Promise<boolean | NativeFenceRead>;
@@ -188,6 +190,21 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
       judge: createOpenAICompatibleJudge({
         // Background inference is independent of the short native-hook deadline.
         timeoutMs: background ? 90_000 : 35_000,
+        ...(background && input.harness === "chatgpt" && process.env.AGENT_HERDER_AUTOPILOT_JUDGE_PROVIDER === "zai" ? {
+          retryPolicy: "zai-cycle" as const,
+          contextBytes: readInteger(process.env.AGENT_HERDER_AUTOPILOT_ZAI_CONTEXT_BYTES, 128 * 1024),
+        } : {}),
+        signal: input.signal,
+        shouldContinue: async () => {
+          if (input.signal?.aborted || await held()) return false;
+          const latestRecord = await store.get(input.harness, input.sessionId);
+          if (latestRecord?.enabled === false) return false;
+          const latestPolicy = await policyStore.readEffective();
+          if (latestRecord?.enabled !== true && !effectivePolicyAllowsTarget(latestPolicy, {
+            harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd),
+          })) return false;
+          return !input.nativeFence || normalizeNativeFence(await input.nativeFence()).allowed;
+        },
         baseUrl: requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_BASE_URL"),
         model: runtimeSettings.autopilotJudgeModel || requiredEnv("AGENT_HERDER_AUTOPILOT_JUDGE_MODEL"),
         token: process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN || (process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE ? (await readFile(process.env.AGENT_HERDER_AUTOPILOT_JUDGE_TOKEN_FILE, "utf8")).trim() : undefined) || process.env.OPENAI_API_KEY,
@@ -567,6 +584,7 @@ function stopInput(input: AutopilotRunnerInput, lastAssistantMessage: string | n
     turn_id: input.turnId || `turn-${Date.now()}`,
     ...(lastUserMessage !== undefined ? { last_user_message: lastUserMessage } : {}),
     last_assistant_message: lastAssistantMessage,
+    ...(input.messages ? { messages: input.messages } : {}),
     transcript_path: input.transcriptPath ?? null,
     stop_hook_active: input.stopHookActive ?? false,
     harness: input.harness,

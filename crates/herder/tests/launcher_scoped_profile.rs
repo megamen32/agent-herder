@@ -1075,8 +1075,11 @@ fn safe_vibe_env() -> serde_json::Value {
     serde_json::json!({
         "AHAP_BROWSER_TRANSPORT":"vibe",
         "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64),
-        "AHAP_BROWSER_VIBE_TARGET":"mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
-        "AHAP_BROWSER_VIBE_SESSION_ID":"session_1"
+        "AHAP_BROWSER_VIBE_TARGET":"mac-mini",
+        "AHAP_BROWSER_VIBE_SESSION_ID":"session_1",
+        "AGENT_HERDER_VIBE_MAC_SSH_TARGET":"fixture-user@fixture-host",
+        "AGENT_HERDER_VIBE_MAC_NODE_PATH":"/tmp/fixture-node",
+        "AGENT_HERDER_VIBE_MAC_CLI_PATH":"/tmp/fixture-vibe-cli"
     })
 }
 
@@ -1087,9 +1090,13 @@ fn trusted_vibe_profile_accepts_exact_browser_binding_and_isolated_relay() {
         for isolated in [false, true] {
             let mut env = safe_vibe_env();
             if isolated {
-                env["AHAP_BROWSER_VIBE_TARGET"] = "mcp:shell:roomhacker-server-100:VibeServer100Local".into();
+                env["AHAP_BROWSER_VIBE_TARGET"] = "server-100".into();
+                env.as_object_mut().unwrap().remove("AGENT_HERDER_VIBE_MAC_SSH_TARGET");
+                env.as_object_mut().unwrap().remove("AGENT_HERDER_VIBE_MAC_NODE_PATH");
+                env.as_object_mut().unwrap().remove("AGENT_HERDER_VIBE_MAC_CLI_PATH");
+                env["AGENT_HERDER_VIBE_SERVER_CLI_PATH"] = "/tmp/fixture-server-vibe-cli".into();
                 env["AHAP_BROWSER_VIBE_RELAY_PORT"] = "19898".into();
-                env["AHAP_BROWSER_VIBE_STATE_DIR"] = "/home/roomhacker/.local/state/herder-ci-vibe".into();
+                env["AHAP_BROWSER_VIBE_STATE_DIR"] = "/tmp/agent-herder-fixture/herder-ci-vibe".into();
             }
             fs::write(&f.profile, vibe_owner_profile(&f, kind, env.clone()).to_string()).unwrap();
             let opened = scoped_profile::open_owner(&f.profile).unwrap();
@@ -1119,15 +1126,15 @@ fn trusted_vibe_profile_rejects_missing_binding_before_runner_launch() {
 fn trusted_vibe_profile_rejects_unsafe_binding_and_ambiguous_transport() {
     let f = Fixture::new();
     for (name, value) in [
-        ("AHAP_BROWSER_VIBE_TARGET", "mcp:shell:foreign:Vibe"),
+        ("AHAP_BROWSER_VIBE_TARGET", "foreign"),
         ("AHAP_BROWSER_VIBE_SESSION_ID", "session_1;touch injected"),
         ("AHAP_BROWSER_VIBE_SESSION_ID", ""),
         ("AHAP_BROWSER_VIBE_RELAY_PORT", "1023"),
         ("AHAP_BROWSER_VIBE_RELAY_PORT", "65535"),
         ("AHAP_BROWSER_VIBE_RELAY_PORT", "19888;true"),
         ("AHAP_BROWSER_VIBE_STATE_DIR", "relative/state"),
-        ("AHAP_BROWSER_VIBE_STATE_DIR", "/home/roomhacker/../other"),
-        ("AHAP_BROWSER_VIBE_STATE_DIR", "/home/roomhacker/state;true"),
+        ("AHAP_BROWSER_VIBE_STATE_DIR", "/tmp/agent-herder-fixture/../other"),
+        ("AHAP_BROWSER_VIBE_STATE_DIR", "/tmp/agent-herder-fixture/state;true"),
         ("AHAP_BROWSER_ACCOUNT_SCOPE", "not-an-account-hash"),
         ("AHAP_BROWSER_TRANSPORT", "mac-mini"),
     ] {
@@ -1149,4 +1156,248 @@ fn trusted_vibe_profile_keeps_unknown_and_process_environment_rejected() {
     }
     fs::write(&f.profile, vibe_owner_profile(&f, "codex", safe_vibe_env()).to_string()).unwrap();
     assert!(scoped_profile::open_owner(&f.profile).is_err(), "Vibe keys cannot cross into Codex");
+}
+
+#[test]
+fn owner_enrolls_exact_existing_chat_and_revokes_profile_membership_without_native_writes() {
+    use std::io::{BufRead, BufReader, Write};
+    let f=Fixture::new();f.migrate_v4();
+    let script=f.root.join("existing-adapter.py");
+    fs::write(&script,r#"import json,os,sys
+home=os.environ['HOME']; native='chatgpt::native~conversation'
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ with open(os.path.join(home,'native-methods'),'a') as out:out.write(m+'\n')
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','listSessions'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='listSessions':v=[{'id':native,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}]
+ elif m=='getSession':
+  assert p['id']==native
+  v={'id':native,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}
+ elif m=='getSessionMessages':
+  assert p['id']==native
+  v=[{'id':'human','role':'user','text':'existing request'},{'id':'answer','role':'assistant','text':'existing answer'}]
+ else:raise Exception('native writes forbidden in enrollment acceptance: '+m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&script,fs::Permissions::from_mode(0o600)).unwrap();
+    let mut profile=serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "kind":"chatgpt","principal":"owner","node":"node","instance":"chatgpt-existing",
+        "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":script,
+        "code_home":f.root,"cwd":f.root,"ahap_env":{"AHAP_BROWSER_ACCOUNT_SCOPE":"b".repeat(64)},
+        "existing_sessions":[{"request_key":"approve-existing","native_session_id":"chatgpt::native~conversation","account_scope":"b".repeat(64)}]
+    }});
+    fs::write(&f.profile,profile.to_string()).unwrap();
+    let binary=env!("CARGO_BIN_EXE_herder_native_stdio");
+    let enroll=||Command::new(binary).args(["--enroll-existing-owner-profile"]).arg(&f.profile)
+        .args(["--request-key","approve-existing"]).output().unwrap();
+    let first=enroll();
+    assert!(first.status.success(),"{}",String::from_utf8_lossy(&first.stderr));
+    let receipt:serde_json::Value=serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(receipt["provenance"],"owner-explicit-existing-session");
+    let second=enroll();assert!(second.status.success(),"{}",String::from_utf8_lossy(&second.stderr));
+    assert_eq!(receipt,serde_json::from_slice::<serde_json::Value>(&second.stdout).unwrap());
+    let session=receipt["session_ref"].as_str().unwrap();
+    let read=|expected_visible:bool| {
+        let mut child=Command::new(binary).arg("--trusted-owner-profile").arg(&f.profile)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut input=child.stdin.take().unwrap();let mut output=BufReader::new(child.stdout.take().unwrap());
+        let meta=serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"enrollment-fixture","version":"1"}});
+        let mut call=|id:u64,name:&str,args:serde_json::Value|{
+            writeln!(input,"{}",serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":name,"arguments":args}})).unwrap();input.flush().unwrap();
+            let mut line=String::new();assert!(output.read_line(&mut line).unwrap()>0,"owner core exited before reply");
+            serde_json::from_str::<serde_json::Value>(&line).unwrap()
+        };
+        let adoption=call(0,"session",serde_json::json!({"action":"register","instance_ref":"chatgpt-existing",
+            "native_session_id":"chatgpt::native~conversation","request_key":"public-adopt-enrolled"}));
+        assert_eq!(adoption["result"]["isError"],true,"{adoption}");
+        assert_eq!(adoption["result"]["structuredContent"]["code"],"session_provenance_unavailable","{adoption}");
+        let list=call(1,"sessions",serde_json::json!({"action":"list","instance_ref":"chatgpt-existing"}));
+        assert_eq!(list["result"]["structuredContent"]["sessions"].as_array().unwrap().len(),usize::from(expected_visible),"{list}");
+        let messages=call(2,"session",serde_json::json!({"action":"messages","session_ref":session}));
+        if expected_visible {
+            assert_eq!(messages["result"]["structuredContent"]["page"]["messages"][0]["text"],"existing request","{messages}");
+        } else {assert_eq!(messages["result"]["isError"],true,"{messages}");}
+        drop(call);drop(input);assert!(child.wait().unwrap().success());
+    };
+    read(true);
+    profile["owner"]["existing_sessions"]=serde_json::json!([]);
+    fs::write(&f.profile,profile.to_string()).unwrap();
+    read(false);
+    let log=fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert!(!log.lines().any(|method|matches!(method,"createSession"|"sendMessage")),"{log}");
+    assert_eq!(Connection::open(&f.db).unwrap().query_row("SELECT count(*) FROM session_bindings",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+}
+
+fn all_approved_enrollment_fixture() -> Fixture {
+    let f = Fixture::new();
+    f.migrate_v4();
+    let script = f.root.join("batch-existing-adapter.py");
+    fs::write(&script, r#"import json,os,sys,time
+home=os.environ['HOME']
+natives=['chatgpt::batch-one','chatgpt::batch-two','chatgpt::batch-three']
+for line in sys.stdin:
+ r=json.loads(line);m=r['method'];p=r.get('params',{})
+ with open(os.path.join(home,'native-methods'),'a') as out:out.write(m+':'+p.get('id','')+'\n')
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages','listSessions'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='listSessions':v=[{'id':n,'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False} for n in natives]
+ elif m=='getSession':
+  assert p['id'] in natives
+  if p['id']==natives[1] and os.path.exists(os.path.join(home,'pause-second')):
+   started=time.monotonic()
+   while not os.path.exists(os.path.join(home,'continue-second')):
+    if time.monotonic()-started>20:raise Exception('fixture continuation timeout')
+    time.sleep(0.01)
+  v={'id':p['id'],'harness':'chatgpt','status':'idle','cwd':home,'needsPermission':False}
+  if p['id']==natives[1] and os.path.exists(os.path.join(home,'refuse-second')):v['id']='chatgpt::different'
+ else:raise Exception('native writes forbidden in batch enrollment: '+m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o600)).unwrap();
+    let approvals = ["one", "two", "three"].map(|name| serde_json::json!({
+        "request_key":format!("approve-{name}"),
+        "native_session_id":format!("chatgpt::batch-{name}"),
+        "account_scope":"b".repeat(64),
+    }));
+    let profile = serde_json::json!({
+        "database":f.db, "gate":f.gate, "generation":"generation",
+        "owner":{
+            "kind":"chatgpt", "principal":"owner", "node":"node", "instance":"chatgpt-existing",
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(), "ahap_script":script,
+            "code_home":f.root, "cwd":f.root,
+            "ahap_env":{"AHAP_BROWSER_ACCOUNT_SCOPE":"b".repeat(64)},
+            "existing_sessions":approvals,
+        },
+    });
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    f
+}
+
+fn all_approved_receipts(bytes: &[u8]) -> Vec<serde_json::Value> {
+    std::str::from_utf8(bytes).unwrap().lines()
+        .map(|line| serde_json::from_str(line).unwrap()).collect()
+}
+
+fn run_all_approved(f: &Fixture) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--enroll-existing-owner-profile").arg(&f.profile)
+        .arg("--all-approved").output().unwrap()
+}
+
+#[test]
+fn owner_enroll_all_reuses_one_adapter_keeps_per_entry_reads_and_exact_replay() {
+    let f = all_approved_enrollment_fixture();
+    let first = run_all_approved(&f);
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    let receipts = all_approved_receipts(&first.stdout);
+    assert_eq!(receipts.len(), 3);
+    for (receipt, name) in receipts.iter().zip(["one", "two", "three"]) {
+        assert_eq!(receipt["request_key"], format!("approve-{name}"));
+        assert_eq!(receipt["native_session_id"], format!("chatgpt::batch-{name}"));
+        assert_eq!(receipt["provenance"], "owner-explicit-existing-session");
+    }
+    let first_calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    let expected = [
+        "initialize:", "init:",
+        "listSessions:", "getSession:chatgpt::batch-one",
+        "listSessions:", "getSession:chatgpt::batch-two",
+        "listSessions:", "getSession:chatgpt::batch-three",
+    ];
+    assert_eq!(first_calls.lines().collect::<Vec<_>>(), expected);
+    let second = run_all_approved(&f);
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+    assert_eq!(all_approved_receipts(&second.stdout), receipts);
+    let calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert_eq!(calls.lines().collect::<Vec<_>>(), expected.repeat(2));
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 3);
+}
+
+#[test]
+fn owner_enroll_all_stops_on_first_error_and_resumes_without_duplicate_binding() {
+    let f = all_approved_enrollment_fixture();
+    fs::write(f.root.join("refuse-second"), b"fixture").unwrap();
+    let failed = run_all_approved(&f);
+    assert!(!failed.status.success());
+    let prior = all_approved_receipts(&failed.stdout);
+    assert_eq!(prior.len(), 1);
+    assert_eq!(prior[0]["request_key"], "approve-one");
+    let calls = fs::read_to_string(f.root.join("native-methods")).unwrap();
+    assert_eq!(calls.lines().collect::<Vec<_>>(), [
+        "initialize:", "init:", "listSessions:", "getSession:chatgpt::batch-one",
+        "listSessions:", "getSession:chatgpt::batch-two",
+    ]);
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    fs::remove_file(f.root.join("refuse-second")).unwrap();
+    let resumed = run_all_approved(&f);
+    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    let after = all_approved_receipts(&resumed.stdout);
+    assert_eq!(after.len(), 3);
+    assert_eq!(after[0], prior[0]);
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 3);
+}
+
+#[test]
+fn owner_enroll_all_rejects_mixed_selectors_and_empty_approval_before_adapter_open() {
+    let f = all_approved_enrollment_fixture();
+    for args in [
+        vec!["--all-approved", "--request-key", "approve-one"],
+        vec!["--request-key", "approve-one", "--all-approved"],
+        vec!["--all-approved", "--all-approved"],
+        vec!["--request-key", "not-approved"],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+            .arg("--enroll-existing-owner-profile").arg(&f.profile)
+            .args(args).output().unwrap();
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        assert!(!f.root.join("native-methods").exists());
+    }
+    let mut profile: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&f.profile).unwrap()).unwrap();
+    profile["owner"]["existing_sessions"] = serde_json::json!([]);
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let result = run_all_approved(&f);
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(!f.root.join("native-methods").exists());
+    assert_eq!(Connection::open(&f.db).unwrap().query_row(
+        "SELECT count(*) FROM session_bindings", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+}
+
+#[test]
+fn owner_enroll_all_flushes_receipt_before_later_native_verification_completes() {
+    use std::io::{BufRead, BufReader, Read};
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let f = all_approved_enrollment_fixture();
+    fs::write(f.root.join("pause-second"), b"fixture").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+        .arg("--enroll-existing-owner-profile").arg(&f.profile).arg("--all-approved")
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (send, receive) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut output = BufReader::new(stdout);
+        let mut line = String::new();
+        let result = output.read_line(&mut line);
+        send.send((result, line, output)).unwrap();
+    });
+    // The second getSession cannot finish until this test observes the first
+    // receipt. Bound failure and release the fixture before any assertion.
+    let first = receive.recv_timeout(Duration::from_secs(10));
+    fs::write(f.root.join("continue-second"), b"fixture").unwrap();
+    let completion = child.wait_with_output().unwrap();
+    let (read, line, mut output) = first.expect("first confirmed receipt was not flushed");
+    assert!(read.unwrap() > 0);
+    assert!(completion.status.success(), "{}", String::from_utf8_lossy(&completion.stderr));
+    let receipt: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(receipt["request_key"], "approve-one");
+    let mut remaining = Vec::new();
+    output.read_to_end(&mut remaining).unwrap();
+    assert_eq!(all_approved_receipts(&remaining).len(), 2);
+    reader.join().unwrap();
 }

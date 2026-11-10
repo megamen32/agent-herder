@@ -4,6 +4,7 @@
 compile_error!("scoped HumanStop gate currently requires Linux inode semantics");
 
 pub mod archive;
+pub mod enroll;
 pub mod mcp_stop;
 pub mod mcp_task;
 pub mod mcp_task_server;
