@@ -1,0 +1,39 @@
+{
+  "version": "0.9.29",
+  "loaded_profiles_confirmed": 2,
+  "ui": {
+    "chatgpt_account_row_visible": true,
+    "userio_checkbox_visible_before_binding": true,
+    "explicit_checkbox_click_count": 1
+  },
+  "driver": {
+    "ok": true,
+    "at": "2026-11-10T17:40:58.247Z",
+    "verified_scope": true,
+    "message_count": 10,
+    "destination": "legacy-default",
+    "effect_ok": true,
+    "coverage": "partial",
+    "complete": false,
+    "limitations": [
+      "partial_capture",
+      "completion_unverified",
+      "Native snapshot completeness is not established."
+    ]
+  },
+  "independent_api": {
+    "ok": true,
+    "at": "2026-11-10T17:45:59.001011+00:00",
+    "stored_messages": 10,
+    "expected_messages": 10,
+    "matched_messages": 10
+  },
+  "sources": [
+    "mac-options-029-unbound.log",
+    "mac-binding-029.log",
+    "mac-default-loaded029.log",
+    "mac-carevio-loaded029.log",
+    "live-userio-read-028.json (historical name; 0.9.29)",
+    "userio-native-readback.json"
+  ]
+}

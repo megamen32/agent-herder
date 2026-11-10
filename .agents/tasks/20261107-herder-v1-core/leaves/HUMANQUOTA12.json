@@ -1,0 +1,55 @@
+{
+  "id": "HUMANQUOTA12",
+  "parent": "MRESUME10",
+  "label": "Пропускать отправки по поручению человека при низком резерве Codex",
+  "status": "done",
+  "description": "Direct owner10Nov update: existing declared human authorization with server timestamp bypasses only local below_reserve on requested message, automatic/default remains denied; provider refusal/HumanStop preserved. Published2388ea93 and realnativecurrentsteeradmitted; installpersistentTSruntime.",
+  "acceptance": "Manualdeclaredhuman allowedbelowreserve;automaticdefaultdeniedbeforemutation;nativeproviderdeniedunchanged;published+installedproof and one exact authorizednativecoordination receipt.",
+  "owner": "Maxwell",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "created_at": "2026-11-10T21:27:36+03:00",
+  "updated_at": "2026-11-10T21:47:12+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T21:27:36+03:00",
+      "note": "",
+      "changes": {
+        "id": "HUMANQUOTA12",
+        "parent": "MRESUME10",
+        "label": "Пропускать отправки по поручению человека при низком резерве Codex",
+        "status": "running",
+        "description": "Direct owner10Nov update: existing declared human authorization with server timestamp bypasses only local below_reserve on requested message, automatic/default remains denied; provider refusal/HumanStop preserved. Published2388ea93 and realnativecurrentsteeradmitted; installpersistentTSruntime.",
+        "acceptance": "Manualdeclaredhuman allowedbelowreserve;automaticdefaultdeniedbeforemutation;nativeproviderdeniedunchanged;published+installedproof and one exact authorizednativecoordination receipt.",
+        "owner": "Maxwell",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T21:47:12+03:00",
+      "note": "Постоянная установка и проверка политики завершены; глобальный резерв/отказ провайдера/HumanStop сохранены.",
+      "changes": {
+        "status": "done",
+        "result": "2388ea93 опубликован и постоянно установлен штатным rollout под fresh lease fence98. current exact2388, PID3616632 active, health200, nonrevision config preserved, lease released. Source56PASS+tsc; isolated native candidate Codex/OpenCode/ZCode PASS (full browser acceptance отдельно incomplete). Installed module smoke: manual admitted, automatic below_reserve0writes. Original single authorized NoticePlace native steer admitted=true. Evidence evidence/resume-20261110/quota-human12/installed-receipt.json and related RED/GREEN."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "2388ea93 опубликован и постоянно установлен штатным rollout под fresh lease fence98. current exact2388, PID3616632 active, health200, nonrevision config preserved, lease released. Source56PASS+tsc; isolated native candidate Codex/OpenCode/ZCode PASS (full browser acceptance отдельно incomplete). Installed module smoke: manual admitted, automatic below_reserve0writes. Original single authorized NoticePlace native steer admitted=true. Evidence evidence/resume-20261110/quota-human12/installed-receipt.json and related RED/GREEN."
+}

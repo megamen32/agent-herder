@@ -1,0 +1,1 @@
+PASS: same Chromium probe on e840c9fa: at 375px and 800px actual rendered text is Work and Personal, each one text fragment and 14px high; two connection rows exist and document scrollWidth is within viewport.

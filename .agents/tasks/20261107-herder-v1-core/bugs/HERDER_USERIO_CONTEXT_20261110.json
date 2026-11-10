@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T15:39:53+00:00",
+  "details": "Fresh Rust profile review: AHAP_USERIO_CONNECTION_ID/PRINCIPAL_ID accepted TS runner but absent Rust allowlist. Also userIoAccountScope rejected empty workspace unlike extension. Discriminating RED reproduced, fix e73b32d3 staged/published with6RustprofilePASS/37TSfocusedPASS; fullRustlib separately has2reproduced failures now owned RUSTFLAKE11.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T15:39:53+00:00",
+      "changes": {
+        "details": "Fresh Rust profile review: AHAP_USERIO_CONNECTION_ID/PRINCIPAL_ID accepted TS runner but absent Rust allowlist. Also userIoAccountScope rejected empty workspace unlike extension. Discriminating RED reproduced, fix e73b32d3 staged/published with6RustprofilePASS/37TSfocusedPASS; fullRustlib separately has2reproduced failures now owned RUSTFLAKE11.",
+        "source": "evidence/resume-20261110",
+        "status": "open",
+        "title": "Rust launcher не пропускает destination и personal workspace"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T16:55:00+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/final-verification/identity-green.log",
+            "red_proof_path": "evidence/resume-20261110/final-verification/identity-red.log",
+            "red_result": "FAIL",
+            "red_sha256": "9af5081e170cf3dab61378f5fee1e686289e0b46fdd67058998eff242890aa42",
+            "result": "PASS",
+            "sha256": "0d7e4ad9ac67f015e4ebc588e548ca4b3a935e07284f19413f3e7ffeda5b7f66",
+            "test_command": "vitest identity focused37PASS + Rust enrollment6PASS"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "HERDER_USERIO_CONTEXT_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/final-verification/identity-green.log",
+      "red_proof_path": "evidence/resume-20261110/final-verification/identity-red.log",
+      "red_result": "FAIL",
+      "red_sha256": "9af5081e170cf3dab61378f5fee1e686289e0b46fdd67058998eff242890aa42",
+      "result": "PASS",
+      "sha256": "0d7e4ad9ac67f015e4ebc588e548ca4b3a935e07284f19413f3e7ffeda5b7f66",
+      "test_command": "vitest identity focused37PASS + Rust enrollment6PASS"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/resume-20261110",
+  "status": "fixed",
+  "title": "Rust launcher не пропускает destination и personal workspace",
+  "updated_at": "2026-11-10T16:55:00+00:00"
+}

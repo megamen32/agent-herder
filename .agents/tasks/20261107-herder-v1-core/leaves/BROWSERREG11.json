@@ -1,0 +1,86 @@
+{
+  "id": "BROWSERREG11",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Исправить регрессии проверок browser adapters",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Failing browser fixtures reproduced and fixed while account identity and no-fallback admission remain intact; focused suites GREEN; owned source/test commit and RED/GREEN logs.",
+  "affected_files": [
+    "tests/autopilot-zai-browser-judge.test.ts",
+    "tests/browser-chat-history-cache.test.ts",
+    "tests/browser-chat-loader.test.ts",
+    "tests/browser-profile-isolation-regression.test.ts",
+    "tests/chatgpt-session-export.test.ts",
+    "tests/zai-foreground-draft.test.ts",
+    "tests/v1-browser-runtime.test.ts"
+  ],
+  "created_at": "2026-11-10T18:00:08+03:00",
+  "updated_at": "2026-11-10T18:23:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:00:08+03:00",
+      "note": "",
+      "changes": {
+        "id": "BROWSERREG11",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Исправить регрессии проверок browser adapters",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Failing browser fixtures reproduced and fixed while account identity and no-fallback admission remain intact; focused suites GREEN; owned source/test commit and RED/GREEN logs.",
+        "affected_files": [
+          "tests/autopilot-zai-browser-judge.test.ts",
+          "tests/browser-chat-history-cache.test.ts",
+          "tests/browser-chat-loader.test.ts",
+          "tests/browser-profile-isolation-regression.test.ts",
+          "tests/chatgpt-session-export.test.ts",
+          "tests/zai-foreground-draft.test.ts",
+          "tests/v1-browser-runtime.test.ts"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:09:40+03:00",
+      "note": "RED/GREEN and tsc evidence: evidence/resume-20261110/browser-reg11/; integration remains with parent Lead.",
+      "changes": {
+        "status": "done",
+        "result": "Detached commit 4c54f559: seven owned fixture suites GREEN 81/81; tsc --noEmit exit 0. RED 20 failures reproduced. No real browsers/provider sends; no production paths changed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c5f9-9ff8-7621-b901-d380a01ad615",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c5f9-9ff8-7621-b901-d380a01ad615",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:23:34+03:00",
+      "note": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending.",
+      "changes": {
+        "result": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending."
+}

@@ -1,0 +1,87 @@
+{
+  "id": "CHROMEPROFILE13",
+  "label": "Проверить stdio MCP и GPTAdmin real executable readback",
+  "description": "Запустить focused tests, tools/list и harmless profile_list через реальный executable; собрать source/install/readback evidence и только затем подготовить runtime registration.",
+  "acceptance": "Python tests and py_compile pass; subprocess MCP initialize/tools/list/profile_list return bounded redacted receipts; GPTAdmin source diff reviewed and commit ready.",
+  "affected_files": [
+    "tests/test_chrome_profile_manager_mcp.py",
+    "docs/CHROME_PROFILE_MANAGER_MCP.md"
+  ],
+  "status": "deferred",
+  "kind": "task",
+  "owner": "GPTAdmin separate session",
+  "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "workhorse",
+  "complexity": "M",
+  "estimate_minutes": 15,
+  "estimate": "15 min",
+  "estimate_min": 15,
+  "estimate_max": 15,
+  "depends_on": [
+    "CHROMEPROFILE12"
+  ],
+  "wave": 3,
+  "created_at": "2026-11-10T16:56:52+03:00",
+  "updated_at": "2026-11-10T18:34:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T16:56:52+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHROMEPROFILE13",
+        "label": "Проверить stdio MCP и GPTAdmin real executable readback",
+        "description": "Запустить focused tests, tools/list и harmless profile_list через реальный executable; собрать source/install/readback evidence и только затем подготовить runtime registration.",
+        "acceptance": "Python tests and py_compile pass; subprocess MCP initialize/tools/list/profile_list return bounded redacted receipts; GPTAdmin source diff reviewed and commit ready.",
+        "affected_files": [
+          "tests/test_chrome_profile_manager_mcp.py",
+          "docs/CHROME_PROFILE_MANAGER_MCP.md"
+        ],
+        "status": "pending",
+        "kind": "task",
+        "owner": "lead",
+        "session": "current",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "workhorse",
+        "complexity": "M",
+        "estimate_minutes": 15,
+        "estimate": "15 min",
+        "estimate_min": 15,
+        "estimate_max": 15,
+        "depends_on": [
+          "CHROMEPROFILE12"
+        ],
+        "wave": 3
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:34:47+03:00",
+      "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+      "changes": {
+        "status": "deferred",
+        "owner": "GPTAdmin separate session",
+        "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+        "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+}

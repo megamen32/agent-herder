@@ -1,0 +1,74 @@
+{
+  "id": "REGRESS10",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Проверить текущую Rust и AHAP основу и закрыть ошибки тестов",
+  "status": "done",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "acceptance": "Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof.",
+  "created_at": "2026-11-10T15:11:04+03:00",
+  "updated_at": "2026-11-10T15:26:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:11:04+03:00",
+      "note": "",
+      "changes": {
+        "id": "REGRESS10",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Проверить текущую Rust и AHAP основу и закрыть ошибки тестов",
+        "status": "queued",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "acceptance": "Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:14:34+03:00",
+      "note": "Luna runs scoped Rust/AHAP regression and known ETXTBSY RED→GREEN.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c559-0bb2-7001-b861-59925edeff7a",
+        "session": "01a1c559-0bb2-7001-b861-59925edeff7a",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:57+03:00",
+      "note": "Source regression only, not installed five-lane acceptance. Evidence: evidence/resume-20261110/luna-regressions.md.",
+      "changes": {
+        "status": "done",
+        "result": "Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c559-0bb2-7001-b861-59925edeff7a",
+  "session": "01a1c559-0bb2-7001-b861-59925edeff7a",
+  "harness": "codex",
+  "result": "Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed."
+}

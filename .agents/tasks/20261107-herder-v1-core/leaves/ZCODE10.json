@@ -1,0 +1,74 @@
+{
+  "id": "ZCODE10",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Подготовить совместимый ZCode adapter и model pin для установки",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Exact native catalog подтверждает pin; совместимый immutable adapter подготовлен, scoped source tests GREEN, готов CAS install без изменения старых операций.",
+  "created_at": "2026-11-10T15:11:03+03:00",
+  "updated_at": "2026-11-10T15:26:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:11:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "ZCODE10",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Подготовить совместимый ZCode adapter и model pin для установки",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Exact native catalog подтверждает pin; совместимый immutable adapter подготовлен, scoped source tests GREEN, готов CAS install без изменения старых операций."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:14:34+03:00",
+      "note": "Terra preparing exact compatible stage artifact+native catalog pin. Main owns final CAS install.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+        "session": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:57+03:00",
+      "note": "Prepared artifact accepted as source/stage result; shared installation remains Lead-owned.",
+      "changes": {
+        "status": "done",
+        "result": "Compatible immutable candidate-v2 manifest f05b3961d9a19bc573408578193d688258ef042e7cd06b956f936544daa13aa8 and profile d21b38c6 prepared. Native catalog exact MiniMax pin verified; staged NativeWorkerPort preflight ready=true, no inference. 30 focused tests/package verifier PASS. migration-input.json has old/new fixture and install hashes. Evidence: evidence/resume-20261110/terra-zcode.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+  "session": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+  "harness": "codex",
+  "result": "Compatible immutable candidate-v2 manifest f05b3961d9a19bc573408578193d688258ef042e7cd06b956f936544daa13aa8 and profile d21b38c6 prepared. Native catalog exact MiniMax pin verified; staged NativeWorkerPort preflight ready=true, no inference. 30 focused tests/package verifier PASS. migration-input.json has old/new fixture and install hashes. Evidence: evidence/resume-20261110/terra-zcode.md."
+}

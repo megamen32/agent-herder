@@ -1,0 +1,1 @@
+FAIL: same Chromium probe on beee53a (pre-publication baseline) and 0fed2ca (published UI predecessor): at 375px and 800px, actual options DOM has 0 rendered .connection-name labels and 0 .connection-row elements for fake Work and Personal connections.

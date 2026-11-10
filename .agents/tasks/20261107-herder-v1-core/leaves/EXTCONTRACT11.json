@@ -1,0 +1,55 @@
+{
+  "id": "EXTCONTRACT11",
+  "label": "Исправить контракт одного ChatGPT snapshot для UserIO и Herder",
+  "status": "done",
+  "description": "Cross-module identity hash, command metadata admission, existing-binding lookup and honest partial history. WorkerCarson c03b299 plus passive hash followup.",
+  "acceptance": "Real extension modules Node GREEN and Lead review; release/actualbrowser separateEXTREAL11.",
+  "owner": "Carson",
+  "session": "01a1c5fe-60e2-7e93-bc03-536551f98fd1",
+  "estimate_minutes": 15,
+  "model": "gpt-6.1-terra",
+  "created_at": "2026-11-10T18:23:35+03:00",
+  "updated_at": "2026-11-10T18:34:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:23:35+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTCONTRACT11",
+        "label": "Исправить контракт одного ChatGPT snapshot для UserIO и Herder",
+        "status": "running",
+        "description": "Cross-module identity hash, command metadata admission, existing-binding lookup and honest partial history. WorkerCarson c03b299 plus passive hash followup.",
+        "acceptance": "Real extension modules Node GREEN and Lead review; release/actualbrowser separateEXTREAL11.",
+        "owner": "Carson",
+        "session": "01a1c5fe-60e2-7e93-bc03-536551f98fd1",
+        "estimate_minutes": 15,
+        "model": "gpt-6.1-terra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:34:45+03:00",
+      "note": "Source verified and published; installation not claimed.",
+      "changes": {
+        "status": "done",
+        "result": "c03b299+a944d5c published f3983cd.105Node testsPASS. Lead reviewed canonical scope for passive/scoped read/send and metadata proof; completeness >100 truthfully partial. ActualChromium and runtime separateEXTREAL11/EXTRELEASE10."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "c03b299+a944d5c published f3983cd.105Node testsPASS. Lead reviewed canonical scope for passive/scoped read/send and metadata proof; completeness >100 truthfully partial. ActualChromium and runtime separateEXTREAL11/EXTRELEASE10."
+}

@@ -1,0 +1,74 @@
+{
+  "id": "EXTPOLL10",
+  "kind": "task",
+  "parent": "MEXT10",
+  "label": "Изолировать OAuth и команды по подключениям",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute.",
+  "created_at": "2026-11-10T15:22:33+03:00",
+  "updated_at": "2026-11-10T16:27:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:33+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTPOLL10",
+        "kind": "task",
+        "parent": "MEXT10",
+        "label": "Изолировать OAuth и команды по подключениям",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:58+03:00",
+      "note": "Same worker implements per-connection command/result context and receipt isolation.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+        "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:56+03:00",
+      "note": "Принято Lead после source review и соответствующих тестов.",
+      "changes": {
+        "status": "done",
+        "result": "Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+  "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+  "harness": "codex",
+  "result": "Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS."
+}

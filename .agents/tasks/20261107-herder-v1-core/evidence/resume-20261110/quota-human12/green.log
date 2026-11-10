@@ -1,0 +1,13 @@
+
+ RUN  v4.1.10 /tmp/herder-quota-human12
+
+(node:3014654) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3014674) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  4 passed (4)
+      Tests  56 passed (56)
+   Start at  21:22:00
+   Duration  8.10s (transform 6.35s, setup 131ms, import 8.54s, tests 8.95s, environment 1ms)
+

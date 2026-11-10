@@ -12,13 +12,47 @@
         "status": "open",
         "title": "V1 release report accepts PASS without Vibe session evidence"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T16:55:00+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/final-verification/release-gate.log",
+            "red_proof_path": "evidence/ci-visible-20261109/red.log",
+            "red_result": "FAIL",
+            "red_sha256": "543edd052dfc7f8732bb23eaa3a19870782f4dfd01f68bf3f853bca95abbe4ac",
+            "result": "PASS",
+            "sha256": "50b76b41ae0c921ceadd06d3ab9896dd3ac6bff1ae58836b475f3c3697bce1ca",
+            "test_command": "python3 -m pytest -q tests/native/test_candidate_release_gate.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
     }
   ],
   "id": "CIVIBE_REQUIRED_EVIDENCE",
   "owner": "chatgpt-all-harness-ci-20261109",
   "reporter": "chatgpt-all-harness-ci-20261109",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/final-verification/release-gate.log",
+      "red_proof_path": "evidence/ci-visible-20261109/red.log",
+      "red_result": "FAIL",
+      "red_sha256": "543edd052dfc7f8732bb23eaa3a19870782f4dfd01f68bf3f853bca95abbe4ac",
+      "result": "PASS",
+      "sha256": "50b76b41ae0c921ceadd06d3ab9896dd3ac6bff1ae58836b475f3c3697bce1ca",
+      "test_command": "python3 -m pytest -q tests/native/test_candidate_release_gate.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
   "source": "evidence/ci-visible-20261109/red.log",
-  "status": "open",
+  "status": "fixed",
   "title": "V1 release report accepts PASS without Vibe session evidence",
-  "updated_at": "2026-11-08T22:51:58+00:00"
+  "updated_at": "2026-11-10T16:55:00+00:00"
 }

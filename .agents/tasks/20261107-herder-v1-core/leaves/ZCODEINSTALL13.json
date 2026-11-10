@@ -1,0 +1,38 @@
+{
+  "id": "ZCODEINSTALL13",
+  "parent": "MRESUME10",
+  "label": "Подготовить ZCode для общего установленного consumer",
+  "status": "running",
+  "owner": "Luna",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "description": "Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.",
+  "acceptance": "Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены.",
+  "created_at": "2026-11-10T21:42:03+03:00",
+  "updated_at": "2026-11-10T21:42:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T21:42:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "ZCODEINSTALL13",
+        "parent": "MRESUME10",
+        "label": "Подготовить ZCode для общего установленного consumer",
+        "status": "running",
+        "owner": "Luna",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "description": "Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.",
+        "acceptance": "Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

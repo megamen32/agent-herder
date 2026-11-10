@@ -1,0 +1,190 @@
+initialize: OK
+SdkError: Invalid result for tools/list: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      0,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      1,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      2,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      3,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      4,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      5,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      6,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      7,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      8,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      9,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      10,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      11,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      12,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "object"
+    ],
+    "path": [
+      "tools",
+      13,
+      "inputSchema",
+      "type"
+    ],
+    "message": "Invalid input: expected \"object\""
+  }
+]
+    at file:///home/roomhacker/agents-projects/agent-herder/node_modules/@modelcontextprotocol/client/dist/src-D_zzAWoS.mjs:6143:18
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  code: 'INVALID_RESULT',
+  data: undefined
+}

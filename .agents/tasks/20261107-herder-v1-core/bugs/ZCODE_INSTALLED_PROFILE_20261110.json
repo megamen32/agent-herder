@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T12:12:09+00:00",
+  "details": "Read-only preflight exact /etc/agent-herder-ci-smoke/fixture.json references herder-v1-82b91db9-readfix runner. Missing getPinnedCreateModel/verifyPinnedCreateModel/readZcodeOfficialRunning and missing AHAP_ZCODE_CREATE_MODEL. Source already has compatible implementation; current installed preflight fails without model send.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T12:12:09+00:00",
+      "changes": {
+        "details": "Read-only preflight exact /etc/agent-herder-ci-smoke/fixture.json references herder-v1-82b91db9-readfix runner. Missing getPinnedCreateModel/verifyPinnedCreateModel/readZcodeOfficialRunning and missing AHAP_ZCODE_CREATE_MODEL. Source already has compatible implementation; current installed preflight fails without model send.",
+        "source": "evidence/resume-20261110/terra-route.md",
+        "status": "open",
+        "title": "Installed ZCode profile привязан к несовместимому adapter"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Luna",
+      "at": "2026-11-10T17:18:05+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/final-verification/zcode-preflight-acceptance.log",
+            "red_proof_path": "evidence/resume-20261110/terra-route.md",
+            "red_result": "ChatGPT, Z.ai и ZCode вернули `native_read_or_coverage_failed`;",
+            "red_sha256": "f64ec9146b83d3a28a067278d31d4a5c1d327feedeaa577933a7ab1dee35ab08",
+            "result": "PASS: saved native preflight receipt accepted; ready=true; source=zcode-native-create-model-catalog; model=4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled; model_effects=0; acceptance of saved receipt, not a new native run.",
+            "sha256": "ca1a7aa9a5ce50e2deae61b942611cfb5188428e2fe758849f8609d283275167",
+            "test_command": "python3 acceptance verifier: read zcode-installed-preflight.json; assert ready=true, exact model/source, model_effects=0; emit saved-receipt acceptance (no native run)"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "ZCODE_INSTALLED_PROFILE_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/final-verification/zcode-preflight-acceptance.log",
+      "red_proof_path": "evidence/resume-20261110/terra-route.md",
+      "red_result": "ChatGPT, Z.ai и ZCode вернули `native_read_or_coverage_failed`;",
+      "red_sha256": "f64ec9146b83d3a28a067278d31d4a5c1d327feedeaa577933a7ab1dee35ab08",
+      "result": "PASS: saved native preflight receipt accepted; ready=true; source=zcode-native-create-model-catalog; model=4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled; model_effects=0; acceptance of saved receipt, not a new native run.",
+      "sha256": "ca1a7aa9a5ce50e2deae61b942611cfb5188428e2fe758849f8609d283275167",
+      "test_command": "python3 acceptance verifier: read zcode-installed-preflight.json; assert ready=true, exact model/source, model_effects=0; emit saved-receipt acceptance (no native run)"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/resume-20261110/terra-route.md",
+  "status": "fixed",
+  "title": "Installed ZCode profile привязан к несовместимому adapter",
+  "updated_at": "2026-11-10T17:18:05+00:00"
+}

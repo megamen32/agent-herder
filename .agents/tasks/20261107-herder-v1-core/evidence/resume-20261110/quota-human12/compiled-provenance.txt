@@ -1,0 +1,7 @@
+tsc_exit=0
+source_commit=2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+source_tree=4b70facf51789c31a3d0937b967fd27b6d3ebb18
+18f5705d3822166c85f955d15708a948b41049e2ccfc4a0d6e26cfe5aea44cf4  /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/compiled/adapters/codex-app-server.js
+236eea39090d09506014ff10866dcdf3dfe9f9e2cf46221a0479a76c0ff1d025  /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/compiled/codex-quota-guard.js
+dependencies=node_modules symlink to canonical checkout; not a self-contained release
+import_check=adapter_export_function

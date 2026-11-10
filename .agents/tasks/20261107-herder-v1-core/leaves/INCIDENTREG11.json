@@ -1,0 +1,83 @@
+{
+  "id": "INCIDENTREG11",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Исправить регрессии incident policy и generation",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Direct minimax-coding-plan model policy remains enforced, same-group new generation preserved and all failed noticeplace focused suites GREEN; no live events or notifications.",
+  "affected_files": [
+    "tests/noticeplace-health-model-qualification.test.ts",
+    "tests/r40-incident-policy.test.ts",
+    "tests/noticeplace-group-continuation.test.ts",
+    "tests/r40-health-preflight.test.ts",
+    "tests/noticeplace-health-launch.test.ts"
+  ],
+  "created_at": "2026-11-10T18:00:08+03:00",
+  "updated_at": "2026-11-10T18:34:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:00:08+03:00",
+      "note": "",
+      "changes": {
+        "id": "INCIDENTREG11",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Исправить регрессии incident policy и generation",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Direct minimax-coding-plan model policy remains enforced, same-group new generation preserved and all failed noticeplace focused suites GREEN; no live events or notifications.",
+        "affected_files": [
+          "tests/noticeplace-health-model-qualification.test.ts",
+          "tests/r40-incident-policy.test.ts",
+          "tests/noticeplace-group-continuation.test.ts",
+          "tests/r40-health-preflight.test.ts",
+          "tests/noticeplace-health-launch.test.ts"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:23:35+03:00",
+      "note": "Integratedec5041f1: direct minimax-coding-plan route48PASS; final broad suite found2additional policy test files assigned same Worker Russell, no real incidents.",
+      "changes": {
+        "status": "running",
+        "result": "Integratedec5041f1: direct minimax-coding-plan route48PASS; final broad suite found2additional policy test files assigned same Worker Russell, no real incidents."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:34:45+03:00",
+      "note": "Full source regression green on immutable tree; shared foreign WIP preserved.",
+      "changes": {
+        "status": "done",
+        "result": "ec5041f1+29048ee7 published origin/main. Final isolated exacttree cb7e4685=29048ee7 full npm test5536PASS/14skip614filesPASS, core package suitePASS. No real incidents."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "ec5041f1+29048ee7 published origin/main. Final isolated exacttree cb7e4685=29048ee7 full npm test5536PASS/14skip614filesPASS, core package suitePASS. No real incidents."
+}

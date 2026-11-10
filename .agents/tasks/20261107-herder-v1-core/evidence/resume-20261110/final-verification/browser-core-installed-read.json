@@ -1,0 +1,74 @@
+{
+  "phase": "installed-read",
+  "at": "2026-11-10T18:20:39.393Z",
+  "selector": "/home/roomhacker/.config/agent-herder/gptadmin-entry.json",
+  "instance": "chatgpt-userio-vk-browser",
+  "providerMessages": 10,
+  "connected": true,
+  "toolCount": 15,
+  "instances": [
+    {
+      "instance": "codex-local",
+      "harness": "codex",
+      "node": "roomhacker-server-100"
+    },
+    {
+      "instance": "codex-44",
+      "harness": "codex",
+      "node": "server-44"
+    },
+    {
+      "instance": "opencode-noticeplace-local",
+      "harness": "opencode",
+      "node": "roomhacker-server-100"
+    },
+    {
+      "instance": "chatgpt-userio-vk-browser",
+      "harness": "chatgpt",
+      "node": "roomhacker-server-100"
+    }
+  ],
+  "registration": {
+    "address": {
+      "instance": {
+        "instance_id": "chatgpt-userio-vk-browser",
+        "node": "roomhacker-server-100"
+      },
+      "native_session_id": "6af2c9ac-6064-83ea-b8e0-892266a2a752"
+    },
+    "harness": "chatgpt",
+    "identity_source": "authorized_native_registration",
+    "is_self": false,
+    "message_target": {
+      "action": "session",
+      "session_ref": "session:c678f986d231c56992a17b8966dd1397",
+      "tool": "deliver"
+    },
+    "registered": true,
+    "replayed": true,
+    "session_ref": "session:c678f986d231c56992a17b8966dd1397",
+    "workspace": null,
+    "workspace_revision": 0,
+    "workspace_source": "session_declaration"
+  },
+  "messageResultKeys": [
+    "page",
+    "session_ref"
+  ],
+  "messageCount": 10,
+  "messageIds": [
+    "d2a24600-efb8-4686-a2b8-9608711a7d21",
+    "8916a817-ed0e-5eec-a0a5-a83df5913c2b",
+    "e003a3e0-5cc3-5575-a5c5-e6d6d2053a1e",
+    "44e048b5-246b-53fd-8204-c8a9db0db7a7",
+    "9196cc38-5761-57ac-a395-30e94c757c9d",
+    "92677e52-d378-5789-a854-001065741ebb",
+    "850237fb-1f71-51c7-aa98-b848162460af",
+    "15a21d22-bc39-5166-8843-e315ef4c743b",
+    "3b01f0f7-7efa-5682-b4fb-67dbb5b4ab8e",
+    "22b0be5b-35ca-5f80-b68c-c70239a3ee0c"
+  ],
+  "complete": false,
+  "matchingMessageIds": 10,
+  "ok": true
+}

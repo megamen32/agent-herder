@@ -1,0 +1,38 @@
+{
+  "id": "CHATLIFESOURCE12",
+  "parent": "S2",
+  "label": "Довести создание и архивирование ChatGPT через общее расширение",
+  "status": "running",
+  "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
+  "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+  "owner": "Heisenberg",
+  "estimate_minutes": 15,
+  "model": "gpt-6.1-terra",
+  "created_at": "2026-11-10T20:54:08+03:00",
+  "updated_at": "2026-11-10T20:54:08+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T20:54:08+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHATLIFESOURCE12",
+        "parent": "S2",
+        "label": "Довести создание и архивирование ChatGPT через общее расширение",
+        "status": "running",
+        "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
+        "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+        "owner": "Heisenberg",
+        "estimate_minutes": 15,
+        "model": "gpt-6.1-terra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

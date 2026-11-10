@@ -3,7 +3,7 @@
   "kind": "task",
   "parent": "RESTORELEGACY",
   "label": "Установить и проверить три сценария обычным клиентом",
-  "status": "queued",
+  "status": "done",
   "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
   "estimate_minutes": 15,
   "depends_on": [
@@ -13,7 +13,7 @@
   "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-08T20:23:20+03:00",
-  "updated_at": "2026-11-08T20:23:20+03:00",
+  "updated_at": "2026-11-10T20:24:11+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T20:23:20+03:00",
@@ -41,6 +41,23 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T20:24:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle."
 }

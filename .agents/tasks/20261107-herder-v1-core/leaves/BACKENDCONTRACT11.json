@@ -1,0 +1,53 @@
+{
+  "id": "BACKENDCONTRACT11",
+  "label": "Сверить живой backend UserIO с контрактом расширения",
+  "status": "done",
+  "description": "Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.",
+  "owner": "Mencius",
+  "session": "01a1c60a-8349-76e1-a759-1a267d3a3d88",
+  "estimate_minutes": 15,
+  "model": "gpt-6.1-terra",
+  "created_at": "2026-11-10T18:23:35+03:00",
+  "updated_at": "2026-11-10T20:15:54+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:23:35+03:00",
+      "note": "",
+      "changes": {
+        "id": "BACKENDCONTRACT11",
+        "label": "Сверить живой backend UserIO с контрактом расширения",
+        "status": "running",
+        "description": "Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.",
+        "owner": "Mencius",
+        "session": "01a1c60a-8349-76e1-a759-1a267d3a3d88",
+        "estimate_minutes": 15,
+        "model": "gpt-6.1-terra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T20:15:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12."
+}

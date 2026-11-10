@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/resume-20261110/consent-watcher-check.py", line 14, in <module>
+    assert "setInterval" not in source, f"background prompt timer remains in {origin}"
+AssertionError: background prompt timer remains in 3cda11b0

@@ -1,0 +1,94 @@
+Command: node --test extensions/vk-inbox/tests/extcontract11.test.mjs extensions/vk-inbox/tests/options.test.mjs extensions/vk-inbox/tests/connection-ui.test.mjs extensions/vk-inbox/tests/connections.test.mjs extensions/vk-inbox/tests/chatgpt-passive.test.mjs extensions/vk-inbox/tests/oauth.test.mjs; after fix.
+TAP version 13
+# Subtest: startup removes legacy sweep and makes no ChatGPT request
+ok 1 - startup removes legacy sweep and makes no ChatGPT request
+# Subtest: passive identity alone observes an unbound account for explicit user selection
+ok 2 - passive identity alone observes an unbound account for explicit user selection
+# Subtest: natural plural fetch passes hook and passive reducer as partial without granting access
+ok 3 - natural plural fetch passes hook and passive reducer as partial without granting access
+# Subtest: 429 persists cooldown and later extension requests do not reach ChatGPT
+ok 4 - 429 persists cooldown and later extension requests do not reach ChatGPT
+# Subtest: observations from other origins cannot publish messages or change cooldown
+ok 5 - observations from other origins cannot publish messages or change cooldown
+# Subtest: cooldown survives worker reload and covers URL inputs
+ok 6 - cooldown survives worker reload and covers URL inputs
+# Subtest: native fetch is not repeated; auth projection excludes all credentials
+ok 7 - native fetch is not repeated; auth projection excludes all credentials
+# Subtest: observed 429 takes effect even when UserIO history forwarding is blocked
+ok 8 - observed 429 takes effect even when UserIO history forwarding is blocked
+# Subtest: passive projection and addressed consumer share native snapshot
+ok 9 - passive projection and addressed consumer share native snapshot
+# Subtest: passive snapshot and scoped identity match Herder account digest
+ok 10 - passive snapshot and scoped identity match Herder account digest
+# Subtest: refresh observes identity before listing accounts and renders an unbound row
+ok 11 - refresh observes identity before listing accounts and renders an unbound row
+# Subtest: connection UI renders named endpoint cards and independent account destinations
+ok 12 - connection UI renders named endpoint cards and independent account destinations
+# Subtest: bindings save by stable accountKey with selected connection ids
+ok 13 - bindings save by stable accountKey with selected connection ids
+# Subtest: adding work and personal connections emits separate save commands
+ok 14 - adding work and personal connections emits separate save commands
+# Subtest: per-connection OAuth and ChatGPT registration carry distinct connection ids
+ok 15 - per-connection OAuth and ChatGPT registration carry distinct connection ids
+# Subtest: destination matrix renders saved A-both and B-personal bindings after reload
+ok 16 - destination matrix renders saved A-both and B-personal bindings after reload
+# Subtest: options UI does not expose route ids or tokens
+ok 17 - options UI does not expose route ids or tokens
+# Subtest: named destinations do not show a misleading global login and long scopes stay out of account labels
+ok 18 - named destinations do not show a misleading global login and long scopes stay out of account labels
+# Subtest: legacy destination is explicit and all connection statuses are scoped
+ok 19 - legacy destination is explicit and all connection statuses are scoped
+# Subtest: ChatGPT account management opens for the chosen destination
+ok 20 - ChatGPT account management opens for the chosen destination
+# Subtest: explicit account bindings and idempotent legacy migration
+ok 21 - explicit account bindings and idempotent legacy migration
+# Subtest: logout one connection preserves the other persisted binding
+ok 22 - logout one connection preserves the other persisted binding
+# Subtest: pure transition preserves input and describes the storage effect
+ok 23 - pure transition preserves input and describes the storage effect
+# Subtest: receipt requires exact connection and browser identity
+ok 24 - receipt requires exact connection and browser identity
+# Subtest: verified scope discovers an unbound account and never overwrites selected bindings
+ok 25 - verified scope discovers an unbound account and never overwrites selected bindings
+# Subtest: describe observes verified identity without exposing private data
+ok 26 - describe observes verified identity without exposing private data
+# Subtest: scope agrees with Herder identity and is shared by list and read
+ok 27 - scope agrees with Herder identity and is shared by list and read
+# Subtest: bounded session proof runs through real agent and ChatGPT modules
+ok 28 - bounded session proof runs through real agent and ChatGPT modules
+# Subtest: real account binding authorizes only its exact observed scope without creating accounts
+ok 29 - real account binding authorizes only its exact observed scope without creating accounts
+# Subtest: bounded snapshots do not claim a complete history
+ok 30 - bounded snapshots do not claim a complete history
+# Subtest: persisted snapshots require the new completeness evidence
+ok 31 - persisted snapshots require the new completeness evidence
+# Subtest: API send rechecks the active account before any provider operation
+ok 32 - API send rechecks the active account before any provider operation
+# Subtest: lookup rejects ambiguous persisted bindings and preserves storage
+ok 33 - lookup rejects ambiguous persisted bindings and preserves storage
+# Subtest: empty workspace is kept as an explicit canonical identity
+ok 34 - empty workspace is kept as an explicit canonical identity
+# Subtest: colliding legacy binding keys cannot acquire another identity
+ok 35 - colliding legacy binding keys cannot acquire another identity
+# Subtest: UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+ok 36 - UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+# Subtest: ChatGPT cookies are never posted by the remote action without an explicit local choice
+ok 37 - ChatGPT cookies are never posted by the remote action without an explicit local choice
+# Subtest: profile matching compares existing ChatGPT sessions without exporting credentials
+ok 38 - profile matching compares existing ChatGPT sessions without exporting credentials
+# Subtest: unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+ok 39 - unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+# Subtest: settings do not ask for a route identifier and preserve an existing route
+ok 40 - settings do not ask for a route identifier and preserve an existing route
+# Subtest: settings show the connected account and disconnect only the selected account
+ok 41 - settings show the connected account and disconnect only the selected account
+# Subtest: another connected ChatGPT never hides explicit selection of the local profile
+ok 42 - another connected ChatGPT never hides explicit selection of the local profile
+1..42
+# tests 42
+# suites 0
+# pass 42
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

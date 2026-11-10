@@ -1,0 +1,106 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/incident-reg11
+
+ ❯ tests/noticeplace-health-model-qualification.test.ts (4 tests | 1 failed) 16ms
+     × qualifies the bare model id of the center with the pinned provider 8ms
+ ❯ tests/r40-incident-policy.test.ts (3 tests | 2 failed) 33ms
+     × keeps the incident route separate from ordinary launch defaults 10ms
+     × pins the approved OmniRoute incident execution profile and rejects substitutions 3ms
+ ❯ tests/noticeplace-group-continuation.test.ts (12 tests | 1 failed) 515ms
+   × preserves a legitimate new generation after the entire old group is healthy 71ms
+ ❯ tests/noticeplace-health-launch.test.ts (0 test)
+ ❯ tests/r40-health-preflight.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts [ tests/noticeplace-health-launch.test.ts ]
+ FAIL  tests/r40-health-preflight.test.ts [ tests/r40-health-preflight.test.ts ]
+Error: Failed to resolve entry for package "agent-resume-mcp". The package may have incorrect main/module/exports specified in its package.json.
+ ❯ src/resume-transport.ts:2:1
+      1| import { type ChildProcessWithoutNullStreams } from "node:child_proces…
+      2| import { ReceiptLedger } from "agent-resume-mcp";
+       | ^
+      3| import { spawnIsolatedWorkload } from "./workload-launcher.js";
+      4| import { coreCanDeliver, createCoreResumeTransport, defaultResumeLedge…
+ ❯ src/web/server.ts:61:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/noticeplace-group-continuation.test.ts > preserves a legitimate new generation after the entire old group is healthy
+AssertionError: expected { ok: true, created: false, …(5) } to match object { ok: true, created: true }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "created": true,
++   "created": false,
+    "ok": true,
+  }
+
+ ❯ tests/noticeplace-group-continuation.test.ts:71:64
+     69|   f.documents.inc_new = { id: 'inc_new', project: 'qa', state: 'open',…
+     70|     group_key: 'group_1', group: f.documents.inc_B.lifecycle.group, at…
+     71|   expect(await f.router().run(f.request('inc_new'), f.launch)).toMatch…
+       |                                                                ^
+     72|   expect(f.launches).toEqual([undefined]);
+     73| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/noticeplace-health-model-qualification.test.ts > the model of an incident analysis > qualifies the bare model id of the center with the pinned provider
+AssertionError: expected 'glm-5.3-flash-minimax-m3.1' to be 'omniroute/glm-5.3-flash-minimax-m3.1' // Object.is equality
+
+Expected: "omniroute/glm-5.3-flash-minimax-m3.1"
+Received: "glm-5.3-flash-minimax-m3.1"
+
+ ❯ tests/noticeplace-health-model-qualification.test.ts:10:23
+      8|   it("qualifies the bare model id of the center with the pinned provid…
+      9|     const qualified = qualifyNoticeplaceHealthModel(CENTER_MODEL);
+     10|     expect(qualified).toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+       |                       ^
+     11|     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", mode…
+     12|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/r40-incident-policy.test.ts > Notice Place incident subscription policy > keeps the incident route separate from ordinary launch defaults
+AssertionError: expected 'minimax-coding-plan/MiniMax-M3.1-Flash' to be 'omniroute/glm-5.3-flash-minimax-m3.1' // Object.is equality
+
+Expected: "omniroute/glm-5.3-flash-minimax-m3.1"
+Received: "minimax-coding-plan/MiniMax-M3.1-Flash"
+
+ ❯ tests/r40-incident-policy.test.ts:14:66
+     12|   it("keeps the incident route separate from ordinary launch defaults"…
+     13|     expect(validateAutomationLaunchPolicy({ ...general, incidentExecut…
+     14|     expect(healthModelForHarness("opencode", incidentExecution)).toBe(…
+       |                                                                  ^
+     15|   });
+     16|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/r40-incident-policy.test.ts > Notice Place incident subscription policy > pins the approved OmniRoute incident execution profile and rejects substitutions
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/r40-incident-policy.test.ts:19:84
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+
+ Test Files  5 failed (5)
+      Tests  4 failed | 15 passed (19)
+   Start at  18:02:41
+   Duration  2.46s (transform 4.94s, setup 162ms, import 1.39s, tests 564ms, environment 1ms)
+

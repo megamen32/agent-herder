@@ -1,0 +1,91 @@
+{
+  "id": "CHROMEPROFILE12",
+  "label": "Подключить Chrome profile MCP к GPTAdmin source registry",
+  "description": "Зарегистрировать curated capability/child MCP definition в GPTAdmin source, не меняя live /etc до source acceptance; сохранить cross-platform argv and root config boundaries.",
+  "acceptance": "GPTAdmin unit tests validate source registration, catalog metadata, argv and no secret leakage; generated supervisor config contains child descriptor.",
+  "affected_files": [
+    "cli.py",
+    "tests/test_mcp_catalog.py",
+    "tests/test_cli_agent_mcp_clients.py",
+    "VERSION"
+  ],
+  "status": "deferred",
+  "kind": "task",
+  "owner": "GPTAdmin separate session",
+  "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "workhorse",
+  "complexity": "M",
+  "estimate_minutes": 15,
+  "estimate": "15 min",
+  "estimate_min": 15,
+  "estimate_max": 15,
+  "depends_on": [
+    "CHROMEPROFILE11"
+  ],
+  "wave": 2,
+  "created_at": "2026-11-10T16:56:51+03:00",
+  "updated_at": "2026-11-10T18:34:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T16:56:51+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHROMEPROFILE12",
+        "label": "Подключить Chrome profile MCP к GPTAdmin source registry",
+        "description": "Зарегистрировать curated capability/child MCP definition в GPTAdmin source, не меняя live /etc до source acceptance; сохранить cross-platform argv and root config boundaries.",
+        "acceptance": "GPTAdmin unit tests validate source registration, catalog metadata, argv and no secret leakage; generated supervisor config contains child descriptor.",
+        "affected_files": [
+          "cli.py",
+          "tests/test_mcp_catalog.py",
+          "tests/test_cli_agent_mcp_clients.py",
+          "VERSION"
+        ],
+        "status": "pending",
+        "kind": "task",
+        "owner": "lead",
+        "session": "current",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "workhorse",
+        "complexity": "M",
+        "estimate_minutes": 15,
+        "estimate": "15 min",
+        "estimate_min": 15,
+        "estimate_max": 15,
+        "depends_on": [
+          "CHROMEPROFILE11"
+        ],
+        "wave": 2
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:34:46+03:00",
+      "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+      "changes": {
+        "status": "deferred",
+        "owner": "GPTAdmin separate session",
+        "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+        "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+}

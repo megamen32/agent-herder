@@ -1,0 +1,10 @@
+# UserIO 0.9.29 backend package — receipt
+
+2026-11-10 17:35 UTC. Published source release commit 3db38e788df5d1a8be1ba9c306c9abf67f53a897, parent 7fa6e7291655a43af55eba6ad50fff894718128d. The scoped release commit contains only manifest.json and the two extension ZIPs; normal fast-forward push and remote main readback succeeded.
+
+- ZIP SHA256, both aliases: 1081ca717b4ed8c5b9a288ffe4abb13eabc930349284041f5026cd4b9b5bfb8e. Source paths: src/universal_userio/static/vk-userio-extension.zip and src/universal_userio/static/vk-userio-extension-mv3.zip. Published MV3 download: https://msg.bezrabotnyi.com/vk-userio-extension-mv3.zip.
+- Full extension Node tests: 118/118. Python package and installer checks: 49/49, one pytest unknown-config warning. Logs: release-029-node.log and release-029-python.log.
+- Package-only derivative base: sha256:cb56ddf6afad67ed4fdb57c03f280770ab55708e571b5178f5ced1e4aa145769. Candidate image: sha256:bf565c3a349627655454d9e58930ad03dac00f6dc148a99055e12c478b56ed53. Offline image readback: 31/31 canonical source hashes match published commit, both ZIP hashes match, release metadata commit matches; manifest SHA256 81871ac41d9b7d60601a0ee6e4bb0db48b4a463ccf436a726d2f92c8f958993a.
+- Canonical replace-backend completed once using project lease fence 50, checked before operation and released, and CAS against container c25eb766f5f9395ebb0d1385f2b2957152c3f2a018e5103f38ebc9d291b31b69. Native protected receipt and rollback baseline: /var/backups/universal-userio/20261110-backend-extension-029-01a1c66d.
+- Installed backend bd5d3963038815c50266c223a55c243538e61d8e8118c2ab99fb5310f84ca9d3 is running on candidate image, restart count 0; independent installed source hash check 31/31; supervisor health passed; accounts API matched all 19 baseline identities. Installer verified config, mounts, frontend and voice unchanged; frontend and voice remain running.
+- Both public ZIP URLs returned HTTP 200 with expected hash and manifest version 0.9.29, manifest_version 3. No Mac, Herder, browser acceptance, canary, notification or model invocation was performed.

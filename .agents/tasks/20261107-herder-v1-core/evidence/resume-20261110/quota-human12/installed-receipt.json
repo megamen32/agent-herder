@@ -1,0 +1,19 @@
+{
+  "sourceSha": "2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3",
+  "current": "/home/roomhacker/agents-projects/.fleet-candidate/releases/2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3",
+  "pid": 3616632,
+  "healthHttp": 200,
+  "leaseReleased": true,
+  "leaseFence": 98,
+  "nativeCandidate": "PASS fake isolated fixture",
+  "nativeHumanSteerReceipt": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/native-human-steer.json",
+  "installedPolicySmoke": {
+    "installedModule": "2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3",
+    "manual": "PASS",
+    "manualTurn": "fixture-turn",
+    "automatic": "PASS",
+    "automaticWrites": 0
+  },
+  "installedAdapterSha256": "18f5705d3822166c85f955d15708a948b41049e2ccfc4a0d6e26cfe5aea44cf4",
+  "nonRevisionConfigPreserved": true
+}

@@ -1,0 +1,89 @@
+{
+  "observed_at": "2026-11-10T12:14:37Z",
+  "source_sha": "1fcac12e511d17d203ab8a08fb662f2a1f7b46b1",
+  "selectors": {
+    "v1-entry.json": {
+      "selector_sha256": "1fbc6b0392751f66bc5ab5541b639a089c5b2f647537a6af59a927276cf2d690",
+      "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-zai-autopilot-d584fb68/manifest.json",
+      "manifest_sha256": "4c878fe33849ba410ee4307f0477501712c1d729a81150bfa15f512aaf46d7c2",
+      "source_commit": "d584fb68d7f897afa4224a45b7e66f9d8c00f505",
+      "core_sha256": "284cd55d00c3b64bb4d02b8663e8dd40e6a30589133e10be4c09bbc78a6c203d",
+      "profiles": [
+        {
+          "node": "roomhacker-server-100",
+          "instance": "codex-local",
+          "kind": "codex",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker/agents-projects"
+        },
+        {
+          "node": "server-44",
+          "instance": "codex-44",
+          "kind": "codex",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker"
+        },
+        {
+          "node": "roomhacker-server-100",
+          "instance": "opencode-noticeplace-local",
+          "kind": "opencode",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker/agents-projects/agent-herder"
+        },
+        {
+          "node": "mac-mini-node",
+          "instance": "chatgpt-mini-default",
+          "kind": "chatgpt",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker"
+        },
+        {
+          "node": "mac-mini-node",
+          "instance": "zai-mini-default",
+          "kind": "zai",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker"
+        }
+      ]
+    },
+    "gptadmin-entry.json": {
+      "selector_sha256": "0f21d0f29547989b05b34d7f94c77788f1a0e7abeb32212087e4cabca6e8c114",
+      "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-zai-autopilot-d584fb68/manifest.json",
+      "manifest_sha256": "4c878fe33849ba410ee4307f0477501712c1d729a81150bfa15f512aaf46d7c2",
+      "source_commit": "d584fb68d7f897afa4224a45b7e66f9d8c00f505",
+      "core_sha256": "284cd55d00c3b64bb4d02b8663e8dd40e6a30589133e10be4c09bbc78a6c203d",
+      "profiles": [
+        {
+          "node": "roomhacker-server-100",
+          "instance": "codex-local",
+          "kind": "codex",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker/agents-projects"
+        },
+        {
+          "node": "server-44",
+          "instance": "codex-44",
+          "kind": "codex",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker"
+        },
+        {
+          "node": "roomhacker-server-100",
+          "instance": "opencode-noticeplace-local",
+          "kind": "opencode",
+          "code_home": "/home/roomhacker",
+          "cwd": "/home/roomhacker/agents-projects/agent-herder"
+        }
+      ]
+    }
+  },
+  "decision": "Rust core + existing TS/AHAP native adapters for V1; direct Rust control parity is separate successor scope",
+  "noticeplace_release": "abd9a50fd5ee9f29f6598ab765de0eaa2aa8fcd9",
+  "inference_mutations": 0,
+  "human_deliveries": 0,
+  "limitations": [
+    "Source/runtime SHA alone does not prove all-five consumer workflow",
+    "Old accepted and UNKNOWN operations are not replayed",
+    "Shared ordinary projects list is authorized registered subset, complete=false"
+  ]
+}

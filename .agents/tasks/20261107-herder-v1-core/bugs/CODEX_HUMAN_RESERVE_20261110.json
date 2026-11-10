@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T18:22:02+00:00",
+  "details": "Owner authorized exact message to NoticePlace session. Desktop transport unavailable; native active steer refused preadmission below_reserve6%. Owner explicitly ordered manual human-requested sends to proceed and automatic sends to remain gated. Existing human origin+humanRequested chain; scoped worker fixes native request quota gate with auto negative tests. No global policy disable/nativeprovider limit bypass.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T18:22:02+00:00",
+      "changes": {
+        "details": "Owner authorized exact message to NoticePlace session. Desktop transport unavailable; native active steer refused preadmission below_reserve6%. Owner explicitly ordered manual human-requested sends to proceed and automatic sends to remain gated. Existing human origin+humanRequested chain; scoped worker fixes native request quota gate with auto negative tests. No global policy disable/nativeprovider limit bypass.",
+        "source": "ART/noticeplace-handoff-steer.json + user10Nov manualquota instruction",
+        "status": "open",
+        "title": "Локальный резерв Codex блокирует прямое поручение человека"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Lead",
+      "at": "2026-11-10T18:48:00+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/quota-human12/green.log",
+            "red_proof_path": "evidence/resume-20261110/quota-human12/red.log",
+            "red_result": "FAIL",
+            "red_sha256": "c1faaff310f929b213abdfcb92203bef10e64fd079055b51e3a755e2fe28c9c4",
+            "result": "PASS",
+            "sha256": "98869225419b30e5fcc82d1110c563b95549afa032a4b64b9edd08ab87ae0685",
+            "test_command": "vitest run tests/human-request-codex-admission.test.ts plus quota regression suite; 4 files, 56 tests"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "CODEX_HUMAN_RESERVE_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/quota-human12/green.log",
+      "red_proof_path": "evidence/resume-20261110/quota-human12/red.log",
+      "red_result": "FAIL",
+      "red_sha256": "c1faaff310f929b213abdfcb92203bef10e64fd079055b51e3a755e2fe28c9c4",
+      "result": "PASS",
+      "sha256": "98869225419b30e5fcc82d1110c563b95549afa032a4b64b9edd08ab87ae0685",
+      "test_command": "vitest run tests/human-request-codex-admission.test.ts plus quota regression suite; 4 files, 56 tests"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "ART/noticeplace-handoff-steer.json + user10Nov manualquota instruction",
+  "status": "fixed",
+  "title": "Локальный резерв Codex блокирует прямое поручение человека",
+  "updated_at": "2026-11-10T18:48:00+00:00"
+}

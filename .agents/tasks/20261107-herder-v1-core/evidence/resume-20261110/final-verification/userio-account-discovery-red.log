@@ -1,0 +1,32 @@
+Command: node --test extensions/vk-inbox/tests/extcontract11.test.mjs; before fix. Failures: account not observed from accountScope and describe.
+TAP version 13
+# Subtest: verified scope discovers an unbound account and never overwrites selected bindings
+not ok 1 - verified scope discovers an unbound account and never overwrites selected bindings
+# Subtest: describe observes verified identity without exposing private data
+not ok 2 - describe observes verified identity without exposing private data
+# Subtest: scope agrees with Herder identity and is shared by list and read
+ok 3 - scope agrees with Herder identity and is shared by list and read
+# Subtest: bounded session proof runs through real agent and ChatGPT modules
+ok 4 - bounded session proof runs through real agent and ChatGPT modules
+# Subtest: real account binding authorizes only its exact observed scope without creating accounts
+ok 5 - real account binding authorizes only its exact observed scope without creating accounts
+# Subtest: bounded snapshots do not claim a complete history
+ok 6 - bounded snapshots do not claim a complete history
+# Subtest: persisted snapshots require the new completeness evidence
+ok 7 - persisted snapshots require the new completeness evidence
+# Subtest: API send rechecks the active account before any provider operation
+ok 8 - API send rechecks the active account before any provider operation
+# Subtest: lookup rejects ambiguous persisted bindings and preserves storage
+ok 9 - lookup rejects ambiguous persisted bindings and preserves storage
+# Subtest: empty workspace is kept as an explicit canonical identity
+ok 10 - empty workspace is kept as an explicit canonical identity
+# Subtest: colliding legacy binding keys cannot acquire another identity
+ok 11 - colliding legacy binding keys cannot acquire another identity
+1..11
+# tests 11
+# suites 0
+# pass 9
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0

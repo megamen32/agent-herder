@@ -1,60 +1,25 @@
 Граф задач: Herder V1: новое ядро с готовыми адаптерами
-
-# Актуальный статус на 2026-11-10 (после merge/deploy SHA 77e5338)
-
-Эта запись актуализирует снимок, сохраняя исторические leaf receipts. Проверка проведена после merge PR #57 (документация) и PR #58 (hardening immutable artifact modes).
-
-- Публичный `main`: **77e53384350b906563e144075f8a6fc60881680c**.
-- Установленный live runtime: **77e53384350b906563e144075f8a6fc60881680c**; `current`, `node-config.sourceSha`, systemd `ExecStart`, PID и HTTP `200` сверены после guarded owner-rollout.
-- Candidate gate: **15/15 checks PASS**; native Codex/OpenCode/ZCode candidate stage PASS; полный installed acceptance остаётся INCOMPLETE.
-- Installed smoke `manual-rust-v1-77e53384c`: runtime identity **PASS**, process cleanup **PASS**, но `transport_or_provider_failure`; `model_effects=NOT_SUBMITTED`, global inventory **UNVERIFIED**, все пять lanes остаются **UNKNOWN**.
-- Browser blocker локализован: локальный Mac relay отвечает, но публичный child route `VibeMacMiniLocal` всё ещё stale и привязан к старому parent `shell:mac-mini-2012.lan`; live `shell:mac-mini-node` уже получил точную child definition, но hub readback ещё не подтверждает новую parent registration.
-- ZCode profile теперь использует официальный `/home/roomhacker` и isolated transport; installed lane ещё не был принят отдельным receipt.
-- Граф Rust v1: **58/85 закрыты; 27 остаются**. В графе: 2 в работе, 4 заблокированы, 5 ждут leaf, 6 ждут исполнителя; допуска к финальному запуску нет.
-- Expanded MCP gate: **200/578 закрыты; 36 остаются**, 7 заблокированы, 5 ждут; AC01–AC18 и пять adapter lanes всё ещё не приняты.
-
-## Исходный Rust v1 план
-
-- 58 из 85 листьев закрыты; 27 остаются открытыми.
-- В графе: 2 в работе, 4 заблокированы, 5 ждут листа, 6 ждут исполнителя; допуска к финальному запуску нет.
-- Source/package и отрицательные candidate-gates есть. Установленная приёмка ещё не закрыта.
-- CI run **42749881688** для этого `main` остановил `Installed Vibe functional smoke`: отсутствуют подтверждённые профили `chatgpt`, `zai`, `zcode`; эти lane получили `UNKNOWN`, `model_effects=NOT_SUBMITTED`. Это текущий release blocker.
-- Обязательный финальный gate: для Codex, OpenCode, ZCode, ChatGPT и Z.ai один точный артефакт должен пройти create → отдельный deliver → read → export с полнотой → search → projects, затем restart, повтор same request key, UNKNOWN и HumanStop без повторной mutation.
-- План закрывается только точными receipts на установленном артефакте; source или fake доказательства не повышаются до installed PASS.
-
-## Что делаем дальше
-
-1. Восстановить/зарегистрировать разрешённые managed-профили ChatGPT, Z.ai и ZCode и повторить установленный smoke; до этого deploy gate остаётся закрыт.
-2. Провести текущий `main` через полный CI/release gate и установить immutable candidate; после установки сверить runtime SHA и readback.
-3. Повторить Codex и ZCode на exact candidate, сохранив receipts для всех обязательных операций и restart/no-replay.
-4. Разобрать ChatGPT B после зафиксированной паузы/429: восстановить выделенный browser route, выполнить полный сценарий и сохранить UNKNOWN при любом потерянном ACK.
-5. Завершить Z.ai на том же candidate и проверить два профиля/изоляцию.
-6. Выполнить sole installer и независимый installed readback на Linux/macOS; обновить coverage только по receipts.
-7. Закрыть migration/legacy-removal/handoff и только затем отметить plan done.
-
-## Отдельный expanded MCP план
-
-`.agents/tasks/20261107-herder-native-mcp-breaking` — это детализированная очередь исполнения: 200/578 листьев закрыты, 36 остаются, 7 блокеров и 5 ожиданий; AC01–AC18 и пять adapter lanes пока не приняты. Его задачи T001–T015, ресурсы/roster/native routes, E001/E002 и финальные RC/migration/legacy/install идут как подзадачи этого продуктового gate.
-
-Ревизия плана: d38a65d4aba4
+Ревизия плана: af3697fe8fac
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
-Цель: Закончить полезную версию за три часа по поручению владельца 07.11.2026: CI доводит прежние адаптеры, Astra отвечает за ядро и штатное подключение.
+Цель: Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.
 Бизнес-результат: Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов.
-Как проверим: Через штатный MCP entrypoint одного immutable core+AHAP artifact выбрать exact instance каждой из пяти сред; create, отдельный deliver, read, export с полнотой, search и projects. CLI используют настоящий harness и лжемодель, browser выделенный scope. Повторить на installed artifact. Проверить restart/same request key/UNKNOWN/HumanStop без повторной mutation. Unsupported обязательной операции не PASS.
-Декомпозиция: 85 листьев · 4 параллельно · 7 волн · слотов: 4
-Прогресс (по листьям графа): 58/85 готово (68.2%) · в работе 2 · заблокировано 4 · ждёт листа 5 · ждёт исполнителя 6 · осталось 27
-Кандидаты по зависимостям и вместимости: BROWSERRECOVER, FIXBI, FIXQC, NETDIAG
+Как проверим: Один capture/core и native IDs. Две связи Рабочий UserIO/Личный UserIO: аккаунт A разрешён обоим, B только личному; правильные credentials, commands/results и delivery receipts изолированы поconnection/account. UserIO читает свои сообщения, Herder получаетChatGPT изтого же canonical snapshot. UI/reload сохраняетнастройки; VK capability видна. Existing singleconnection мигрирует без потериданных. Installedprofile и ordinaryMCP readback, CLI lifecycle, restart/no-replay/HumanStop доказаны отдельно.
+Декомпозиция: 115 листьев · 4 параллельно · 7 волн · слотов: 4
+Прогресс (по листьям графа): 79/115 готово (68.7%) · в работе 6 · заблокировано 4 · ждёт листа 4 · ждёт исполнителя 0 · осталось 32
+Кандидаты по зависимостям и вместимости: нет
 Подтверждённый допуск к запуску: нет
-Смета плана: $8.49 (provisional) за 85 из 85 листьев
-frontier $8.49 (provisional) — 100.0% всех долларов плана
-остатку к запуску $2.00 (provisional)
+Смета плана: $10.62 (provisional) за 111 из 115 листьев
+frontier $10.62 (provisional) — 100.0% всех долларов плана
+остатку к запуску $2.74 (provisional)
 бюджет не задан
-снимок 9ad517313003 от 2026-11-08T18:27:42Z · возраст 8 ч 52 мин · скорость токенов: frontier provisional
-Листьев в графе: 85 · слотов: 4 · волн: 7
-Параллельность: сейчас 0 из 4 слотов, пик по плану 4
-Исполнители: занято 0 из 4 слотов · ждёт листа: 5 (RESTOREPROOF, C14, R3, FIX, …) · ждёт исполнителя: 6 (FIXQW, C13, B13, N1, …) · готово к запуску: 4 (BROWSERRECOVER, FIXBI, FIXQC, NETDIAG)
-Прогноз: известная активная часть 1 ч 48 мин (от 1 ч 48 мин), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-09T06:19+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
-Критический путь: Контракт Rust core → AHAP → TypeScript adapters → Rust client: raw transcript и inventory через AHAP → Rust client: modes/capabilities/receipts обычной отправки → Общий launcher без новых native протоколов → Публикация согласованного candidate manifest → Z.ai: выделенный scope через public core → Исправление конкретных consumer регрессий
+снимок 013d89f1c939 от 2026-11-10T18:27:53Z · возраст 20 мин · скорость токенов: frontier provisional
+ПРЕВЫШЕН ПРЕДЕЛ ОЦЕНКИ ЛИСТА (15 мин): длинную работу надо разбить на два листа, либо записать в листе estimate_over_limit_reason, почему он сознательно больше:
+  - лист SESSIONREPLIES13: оценка 45 мин при пределе 15 мин — чего не хватает: разбиения или причины превышения
+Листьев в графе: 115 · слотов: 4 · волн: 7
+Параллельность: сейчас 4 из 4 слотов, пик по плану неизвестен
+Исполнители: занято 4 из 4 слотов · ждёт листа: 4 (C14, R3, FIX, R2) · ждёт исполнителя: 0 · кандидаты по зависимостям и вместимости: 0
+Прогноз: известная активная часть 2 ч 13 мин (от 2 ч 13 мин), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-10T21:48+03:00 · простой 0 мин · неточно: Листьев без оценки — 3; срок внешнего ожидания не подтверждён
+Критический путь: неизвестен — оценки длительности не заданы
 Блокеры:
   - Почему ждём: Owner requested browser stop and5minute quiet investigation of429; original create task outcome preserved, no replay.
     Кто делает: 01a1bb0c-4fd3-75e2-ae2a-2c18a99462de
@@ -72,7 +37,18 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
     Кто делает: 01a1bb0c-4fd3-75e2-ae2a-2c18a99462de
     Следующий шаг: Chrome auto-restarted afterquit; SIGSTOP nine Chrome PIDs16:03:20Z, restore after16:08:20Z. No token changes.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
-Листья плана (85):
+Листья плана (115):
+  - BACKENDCONTRACT11 · ✅ Готово · (Сверить живой backend UserIO с контрактом расширения) · оценка 15 мин · усилие 1 ч 52 мин по часам · по часам 1 ч 52 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.
+      Результат: Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12.
+  - BROWSER10 · ✅ Готово · (Подключить Herder к единому ядру расширения UserIO) · оценка 15 мин · усилие 1 ч 13 мин по часам · по часам 1 ч 13 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Исследовать существующее extension, найти один canonical ChatGPT capture/command core, подготовить тонкий typed Herder binding без Vibe и дублирования reader/data truth.
+      Приёмка: Единый extension core читает UserIO и передаёт ChatGPT stream Herder через distinct bindings. Нет второй независимой копии истины/читателя; source/tests и actual installed same-chat readback отдельно. Подключения и scope понятны в UI.
+      Результат: Herder maintained ChatGPT/Z.ai transport переведён на UserIO extension default in commit 3cda11b0. Full native messages and honest partial transcript metadata, exact account scope, no silent Vibe/CDP fallback; Vibe/direct CDP explicitly experimental/unmaintained. Focused Herder suite 88/88 PASS, tsc and npm build PASS.
+  - BROWSERINSTALL12 · ✅ Готово · (Подключить проверенный ChatGPT к общему MCP) · оценка 10 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.22 · модель 302ai/gpt-6-astra · класс frontier · токенов 12 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Prepared browser profile and ordinary staged Rust read10/10 accepted; appendexactprofile to both selectors after releaselease handoff, preserve3CLI; public connected consumer read.
+      Приёмка: Оба shared selectors установлены CAS под lease; child AgentHerder перезапущен штатно; connected discover/context видят ChatGPT; обычный installed SDK читает 10/10 native message IDs. Длинный connected messages через gateway имеет отдельный незавершённый receipt и не считается этим закрытием.
+      Результат: Установлено под fence95; child AgentHerder restart fence96 подтверждён новымPID2731310. Connected4instances и context ChatGPT session:c678f986d231c56992a17b8966dd1397 PASS; installed SDK10/10sameIDs PASS, history partial. Evidence final-verification/browser-core-installed-read.json и browser-selector-installed.json. Длинный gateway session(messages) принят в job, результат не доступен вызывающему из-за caller/profile receipt mismatch; новый read не повторять, это отдельная integration gap.
   - BROWSERRECOVER · ⋯ В очереди · (Восстановить managed browser/gateway и точный ChatGPT clientroute) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Рабочее чтение gateway/DOM; сохранены persistentprofile/login/history/foreigndrafts. Штатныйrepair/restart/reload разрешён владельцем; account+exactQAclaim перед nativecase. Original modelUNKNOWN no replay.
       Сохранённый статус: queued
@@ -88,12 +64,20 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: неизвестно; runtime неизвестен (runtime_unknown)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
+  - BROWSERREG11 · ✅ Готово · (Исправить регрессии проверок browser adapters) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Failing browser fixtures reproduced and fixed while account identity and no-fallback admission remain intact; focused suites GREEN; owned source/test commit and RED/GREEN logs.
+      Затрагиваемые файлы: `tests/autopilot-zai-browser-judge.test.ts`, `tests/browser-chat-history-cache.test.ts`, `tests/browser-chat-loader.test.ts`, `tests/browser-profile-isolation-regression.test.ts`, `tests/chatgpt-session-export.test.ts`, `tests/zai-foreground-draft.test.ts`, `tests/v1-browser-runtime.test.ts`
+      Результат: Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending.
   - C10 · ✅ Готово · (Контракт Rust core → AHAP → TypeScript adapters) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: CONTRACT.md: owner clarification Rust core→existing AHAP→legacy TS adapters; exact writers/receipts/public scenarios/deadline. CI assignment accepted astra-v1-contract-boundary-20261107T1924. Quorum recheck separate P00.
+  - CAREVIOLIVE12 · ✅ Готово · (Прочитать реальный ChatGPT из Carevio через UserIO и Herder) · оценка 15 мин · усилие 54 мин по часам · по часам 54 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Reload exact extension to0.9.28 using ordinary UI, observe account identity unbound, explicitly bind existing destination, read existing chat with compiled Herder and confirm UserIO snapshot readback. No message/model/creation.
+      Приёмка: Loaded0.9.28 and exact profile/principal identity; explicit account destination binding; Herder read and UserIO same snapshot metadata; install profile only after read.
+      Результат: Carevio+Default loaded0.9.29 nativeUI. Verified Carevio identity creates unboundrow; explicitUIcheckbox selects legacy-default. Real Herder driver list20/read10 and UserIO API10/10same nativeIDs. Staged ordinary Rust core registered session:c678f986d231c56992a17b8966dd1397 and messages10/10PASS; current transcript partial. evidence/resume-20261110/final-verification/browser-core-read-029.json + userio-native-readback-029.json + userio029live. Sharedselector install is separate BROWSERINSTALL12, not yet applied.
   - CASETRACE · ✅ Готово · (Browser consumer сохраняет task trace и cleanup после timeout) · оценка 15 мин · усилие 6 мин по часам · по часам 6 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Локальный fakeRPC proof; сохранены taskpoll durations/responses/sessionref, no-replay; explicitcandidate/installedstage.
       Результат: Sol6.1 Kierkegaard: fixture сохраняет tasks/get responses/errors/durations, восстанавливает exact session_ref из owner DB readonly и запускает cleanup после timeout; candidate/installed stage обязательный. 6 fakeRPC testsPASS, lead diff reviewed. Live sends не выполнялись.
@@ -120,6 +104,30 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Приёмка: Локализовать exact sourcebug либо browser provider blocker, RED/fix/GREEN; livebrowser remains integrator.
       Затрагиваемые файлы: `src/adapters/browser-chat.ts`, `tests/chatgpt-session-export.test.ts`
       Результат: Sol6.1 Maxwell нашёл и исправил getSessionMessages(limit=200)→full export/read_cooldown. Reconcile теперь ordinary history; explicit export complete. Worker78testsPASS+tsc; lead reviewed diff, integrating. Live/provider429 этим ещё не доказан.
+  - CHATLIFESOURCE12 · 🔄 В работе · (Довести создание и архивирование ChatGPT через общее расширение) · оценка 15 мин · усилие не измерено · прошло 54 мин на момент сборки · отстаём: прошло 54 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.
+      Приёмка: RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.
+      Сохранённый статус: running
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T20:54:08+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Плановая модель: gpt-6.1-terra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
+  - CHROMEPROFILE10 · ⏸ Отложено владельцем · (Зафиксировать контрольный контракт Chrome profile MCP) · оценка 15 мин · усилие не измерено · вне остатка · зависит: — · стоимость — вне сметы · отложено владельцем
+      Описание задачи: Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.
+      Приёмка: Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.
+      Затрагиваемые файлы: `docs/CHROME_PROFILE_MANAGER_MCP.md`, `tests/test_chrome_profile_manager_mcp.py`
+      Результат: Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.
   - CIBROWSER · ✅ Готово · (Managed isolated Vibe QA fixture source) · оценка 15 мин · усилие 27 мин по часам · по часам 27 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.
       Приёмка: Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.
@@ -189,6 +197,9 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Приёмка: Reviewed foundation committed and published with exact-source build and targeted tests.
       Затрагиваемые файлы: `deploy/fleet`
       Результат: Published main0ebc4eb40d676bf55630f143fd0dfa2372cf15d5. Exact a275 build,92 tests,manager17,mergedRust26 PASS plus1existingignored. Foreign WIP preserved. Remaining work: CISOURCEFINAL andCIINSTALLFINAL. Actual five-lane installed acceptance remains INCOMPLETE and is not claimed by this source slice.
+  - CIROUTE10 · ✅ Готово · (Восстановить полный installed preflight через штатный consumer) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Источник профилей/manifest и public route установлены; preflight пяти lanes проходит либо точный чинящийся отказ локализован. Секреты и чужие вкладки сохранены.
+      Результат: Terra read-only installed binding preflight: Codex/OpenCodeREADY, browseraccountVibe outcomeunavailable, ZCodeold82b missingexports/modelpin. Evidence resume-20261110/terra-route.md; exact remaining repairs split into BROWSER10/ZCODE10; sends0.
   - CIRUNNERFINAL · ✅ Готово · (Install isolated runner and observe real hosted workflow) · оценка 15 мин · усилие 36 мин по часам · по часам 36 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Bounded infrastructure slice from CIINSTALLFINAL. Reviewed packet53cfe57f, existing protected credentials, separate runner and browser only.
       Приёмка: Dedicated runner online, protected installer receipt verified, actual GitHub workflow executed with truthful installed result and no model effects when preflight is blocked.
@@ -229,6 +240,25 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Результат: 7nativeclientconfig:44/88/M1Codex+OpenCode,MiniCodex. Protectedbackup0600/CAS; existingownercredential безротации; все7initialize/toolslist/discoverPASS15tools1instance. Nativeharnessreload отдельнонепроверен. Remote-stop-receipt.md.
   - CUTSTOP · ✅ Готово · (Отключить legacy Herder на100/44/88/MacMini/MacM1) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Результат: 100service masked inactive PID0 после обнаруженного повторного запуска; stand/tunnels disabled inactive. Terra44/88disabled inactivePID0, Macjobsdisabledunloaded; oldentryprocessesabsent incl88HarnessMesh. Evidence finish-20261108/fleet-herder-remote-stop-receipt.md. RemoteGPTAdmin legacy refs disabled. Native sessions/data/secrets сохранены.
+  - EXTCONN10 · ✅ Готово · (Модель подключений и безопасная миграция текущей настройки) · оценка 15 мин · усилие 1 ч 01 мин по часам · по часам 1 ч 01 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Legacy singleconnection migrated once; same endpoint/differentOAuth principals isolated; account A→work+personal, B→personal, credentials never cross.
+      Результат: Модель Work/Personal подключений и account binding matrix внедрены в UserIO extension commit 3a72b85. Named endpoints, HTTPS/loopback validation, stable provider+user+workspace keys, legacy-default one-time migration, same endpoint with separate OAuth storage. Extension suite 96/96 PASS; backend channel tests 32/32 PASS.
+  - EXTCONTRACT11 · ✅ Готово · (Исправить контракт одного ChatGPT snapshot для UserIO и Herder) · оценка 15 мин · усилие 11 мин по часам · по часам 11 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Cross-module identity hash, command metadata admission, existing-binding lookup and honest partial history. WorkerCarson c03b299 plus passive hash followup.
+      Приёмка: Real extension modules Node GREEN and Lead review; release/actualbrowser separateEXTREAL11.
+      Результат: c03b299+a944d5c published f3983cd.105Node testsPASS. Lead reviewed canonical scope for passive/scoped read/send and metadata proof; completeness >100 truthfully partial. ActualChromium and runtime separateEXTREAL11/EXTRELEASE10.
+  - EXTCORE10 · ✅ Готово · (Объединить ChatGPT passive и scoped reads в один core) · оценка 15 мин · усилие 1 ч 01 мин по часам · по часам 1 ч 01 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Passive/read/sync converge same account/conversation snapshot/native IDs+revision/completion; UserIO andHerder projection consume same core, noindependentnormalizer.
+      Результат: Единый функциональный ChatGPT snapshot core внедрён в UserIO extension commit 3a72b85: чистый reducer, durable chrome.storage state, passive и addressed reads используют один transition/effect path, workspace-safe account key, epoch/revision ordering. Extension suite 96/96 PASS; durable restart fence покрыт shared-chatgpt-core.test.mjs. Runtime install/readback остаётся отдельным release gate.
+  - EXTPOLL10 · ✅ Готово · (Изолировать OAuth и команды по подключениям) · оценка 15 мин · усилие 1 ч 01 мин по часам · по часам 1 ч 01 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute.
+      Результат: Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS.
+  - EXTREAL11 · ✅ Готово · (Проверить загруженное расширение и HTTP-чтение Herder) · оценка 15 мин · усилие 1 ч 45 мин по часам · по часам 1 ч 45 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Actual isolated Chromium MV3 with two local UserIO destinations and provider fixture. A→Work+Personal/B→Personal, Herder driver reads same snapshot, wrongbinding denied. No real provider request or send.
+      Результат: Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-real-summary.json and options-fixture-375.png/options-fixture-800.png. Real Mac/provider integration tracked CAREVIOLIVE12; not claimed by fixture.
+  - EXTUI10 · ✅ Готово · (Показать сервисы, подключения и выбор получателей аккаунта) · оценка 15 мин · усилие 1 ч 01 мин по часам · по часам 1 ч 01 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Русский UI ясноVK/ChatGPT/Z.ai, work/personalconnections, accountdestinationmatrix сохраняетсяпослерелоада;experimentalroutesclearlyseparate.
+      Результат: Options/popup UI показывает VK Web, ChatGPT, Z.ai, named Work/Personal connections and account destination matrix. Explicit connectionId RPCs, reload binding persistence, no raw tokens/routes in UI. Commit 3a72b85; UI/background tests included in 96/96 PASS.
   - FILLREADBACK · ✅ Готово · (Проверить фактический composer после ошибки fill) · оценка 15 мин · усилие 12 мин по часам · по часам 12 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Transport fill error after exact text applied can continue to one click after readback; stale uid refresh bounded, unknown click never repeated. RED/GREEN+native.
       Результат: Published5f987482/fd3257be: exact composer reconciled after fill ACK error, fresh stale-ref snapshots.119PASS+36PASS+tsc. Zai c5a live first create/send/read PASS, archivePASS; second call rejected before task; foreground state separate slice.
@@ -251,7 +281,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: неизвестно; runtime неизвестен (runtime_unknown)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - FIXBT · ✅ Готово · (Browser AHAP outer timeout accommodates30s native transport; compile+existing no-replay checks; native result separately CI) · оценка 5 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.02 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 6 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -274,7 +304,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: неизвестно; runtime неизвестен (runtime_unknown)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - FIXQW · ⋯ В очереди · (Сохранить доказанный отказ Codex до отправки: Ampere) · оценка 10 мин · усилие не измерено · ждёт: причина не названа · волна 1 · зависит: — · стоимость $0.04 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 12 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -294,15 +324,28 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - FOLLOWUPFILL · ✅ Готово · (ChatGPT follow-up: fill readback и действующий label) · оценка 15 мин · усилие 8 мин по часам · по часам 8 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: One click after exact fill readback even if ack lost; fresh textbox label; target/account/saved draft preserved, RED/GREEN.
       Результат: Published1ae8b85f: ChatGPT fill ACK readback + Russian editor, foreign drafts preserved, no repeated click. Worker55/lead109 tests PASS, tscPASS; live B full now running fresh root chatgpt-b-1ae8b85f-1900, no livePASS yet.
+  - HERDERCONSENT10 · ✅ Готово · (Убрать бесполезный Chrome Consent watcher и фоновые расходы) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Исправить legacy ChatGPT CDP prompt watcher: no background timer, default-off, one-shot compatibility scan only, preserve page-level modal auto-answer and document Chrome-owned consent boundary.
+      Приёмка: Focused chatgpt-mac-cdp-driver tests, tsc and diff-check pass; source commit integrated into main; no setInterval remains for prompt watcher and normal page operations still scan/answer page-level modal prompts.
+      Затрагиваемые файлы: `src/adapters/chatgpt-mac-cdp-driver.ts`, `tests/chatgpt-mac-cdp-driver.test.ts`, `docs/cdp-chat-mcp.md`
+      Результат: Commit 1838175e integrated into main. Focused Vitest 56/56 passed, tsc --noEmit passed, Rust lib 203/203 passed, diff-check passed. TDD RED/GREEN evidence and bug B8795931e39974cc68818 fixed. Full npm test remains red on 44 unrelated baseline/foreign failures, including pre-existing duplicate imports and missing browser fixture bindings; no Consent test failure.
   - HTTP429 · ✅ Готово · (Сократить лишние запросы и проверить общий cooldown ChatGPT) · оценка 15 мин · усилие 6 мин по часам · по часам 6 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: RED/GREEN account-scoped pre-request cooldown; no cross-tab retry storm; preserve account checks; live separate.
       Результат: Published d08a68ae: history account cooldown beforetabs/auth, no alternate-tab cooldown escape, RetryAfter lowerbound, concurrent identical reads coalesced, accountguards preserved. Worker82PASS, independent70PASS+tsc. Perprocess only; wrapperauth/extension requests not eliminated, live429 cause not proven.
+  - HUMANQUOTA12 · ✅ Готово · (Пропускать отправки по поручению человека при низком резерве Codex) · оценка 15 мин · усилие 19 мин по часам · по часам 19 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Direct owner10Nov update: existing declared human authorization with server timestamp bypasses only local below_reserve on requested message, automatic/default remains denied; provider refusal/HumanStop preserved. Published2388ea93 and realnativecurrentsteeradmitted; installpersistentTSruntime.
+      Приёмка: Manualdeclaredhuman allowedbelowreserve;automaticdefaultdeniedbeforemutation;nativeproviderdeniedunchanged;published+installedproof and one exact authorizednativecoordination receipt.
+      Результат: 2388ea93 опубликован и постоянно установлен штатным rollout под fresh lease fence98. current exact2388, PID3616632 active, health200, nonrevision config preserved, lease released. Source56PASS+tsc; isolated native candidate Codex/OpenCode/ZCode PASS (full browser acceptance отдельно incomplete). Installed module smoke: manual admitted, automatic below_reserve0writes. Original single authorized NoticePlace native steer admitted=true. Evidence evidence/resume-20261110/quota-human12/installed-receipt.json and related RED/GREEN.
+  - INCIDENTREG11 · ✅ Готово · (Исправить регрессии incident policy и generation) · оценка 15 мин · усилие 11 мин по часам · по часам 11 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Direct minimax-coding-plan model policy remains enforced, same-group new generation preserved and all failed noticeplace focused suites GREEN; no live events or notifications.
+      Затрагиваемые файлы: `tests/noticeplace-health-model-qualification.test.ts`, `tests/r40-incident-policy.test.ts`, `tests/noticeplace-group-continuation.test.ts`, `tests/r40-health-preflight.test.ts`, `tests/noticeplace-health-launch.test.ts`
+      Результат: ec5041f1+29048ee7 published origin/main. Final isolated exacttree cb7e4685=29048ee7 full npm test5536PASS/14skip614filesPASS, core package suitePASS. No real incidents.
   - INSTALL · ✅ Готово · (Запустить установленный Rust core через обычный MCP) · оценка 15 мин · усилие 5 мин по часам · по часам 5 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Новое прямое поручение08.11 19:31МСК: первым установить и запустить готовый Rust core+существующиеTS/AHAP через обычный MCP entrypoint. Exact manifest/hash, startup/tools/list и полезный реальный MCP readback. Полный5lane/browser/liveprofile gate остаётся отдельной последующей задачей, не prerequisite этого ограниченного запуска. Source чужих WIP не включать.
       Результат: Установлен /home/roomhacker/.local/bin/agent-herder-v1; selector ~/.config/agent-herder/v1-entry.json pinned d08a68ae manifest5e21be1d. Codex native bin через прежнийTS AHAP, persistent fresh authority. OrdinaryMCP2025-06-18: два запуска/restart PASS,15tools,discover instances+projectsPASS; /proc coreSHAe82a8353 совпадает. Штатная регистрация Codex agent-herder-v1 enabled; остальные config bytes preserved.7launcher regressionPASS. Browser/5lane readiness не заявлена; legacy сервис не переключён.
@@ -333,7 +376,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: неизвестно; runtime неизвестен (runtime_unknown)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - NPIDENTITY · ✅ Готово · (Исправить native ID и продолжение сессии NoticePlace) · оценка 15 мин · усилие 1 ч 16 мин по часам · по часам 1 ч 16 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -373,7 +416,13 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: leaf: After proven300.2s Chromequiet/resume, MacMini gateway50260 explicitlydisabled inlaunchd and consentpermissionrequired inlogs; localVibe8788 Notconnectedtorelay. Need browserroute owner restore/hand off current managedconnection before oneproviderread.
-  - RESTORECONTRACTS · 🔄 В работе · (Проверить контракты трёх потребителей и собрать acceptance tests) · оценка 15 мин · усилие не измерено · прошло 9 ч 56 мин на момент сборки · отстаём: прошло 9 ч 56 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - RECONCILE10 · ✅ Готово · (Сверить незаконченные leaves с опубликованными квитанциями) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Один evidence-файл связывает каждый оставшийся leaf с exact source/installed receipt; старые PASS/UNKNOWN не переименованы, лишние повторы исключены.
+      Результат: Reconciled late NoticePlace final2, wake and remote evidence. NPIDENTITY/NPLIVEFINAL already done; no new incident or replay. Early restore-core draft superseded by later COREWAKE/REMOTEFULL evidence. Evidence: evidence/resume-20261110/luna-reconciliation.md.
+  - REGRESS10 · ✅ Готово · (Проверить текущую Rust и AHAP основу и закрыть ошибки тестов) · оценка 15 мин · усилие 12 мин по часам · по часам 12 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof.
+      Результат: Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed.
+  - RESTORECONTRACTS · 🔄 В работе · (Проверить контракты трёх потребителей и собрать acceptance tests) · оценка 15 мин · усилие не измерено · прошло 1 ч 25 мин на момент сборки · отстаём: прошло 1 ч 25 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Exact existing APIs и executable RED acceptance для трёх путей; fake-only checks не выдавать за livePASS.
       Затрагиваемые файлы: `tests/v1-restored-workflows/**`, `evidence/finish-20261108/restore-contracts-terra.md`
       Сохранённый статус: running
@@ -392,7 +441,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
-  - RESTORECORE · 🔄 В работе · (Реализовать первый функциональный slice нового core) · оценка 15 мин · усилие не измерено · прошло 9 ч 56 мин на момент сборки · отстаём: прошло 9 ч 56 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - RESTORECORE · 🔄 В работе · (Реализовать первый функциональный slice нового core) · оценка 15 мин · усилие не измерено · прошло 1 ч 25 мин на момент сборки · отстаём: прошло 1 ч 25 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Pure domain decisions + explicit effects на существующем публичном пути; RED→GREEN, exact remaining route для3functions, no new scheduler framework.
       Затрагиваемые файлы: `crates/herder/**`, `evidence/finish-20261108/restore-core-luna.md`
       Сохранённый статус: running
@@ -427,6 +476,33 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
   - SENDDIAG · ✅ Готово · (Сохранять ограниченную причину browser отказа) · оценка 15 мин · усилие 9 мин по часам · по часам 9 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Sanitized allowlist reason/stage, no raw secrets, UNKNOWN semantics unchanged; RED/GREEN.
       Результат: Published54f93706. Exact whitelist stage/reason on AHAP browser send failures, no raw errors/secrets. UNKNOWN semantics unchanged.65testsPASS+tscPASS. Newcandidate54f93706-diagnostic manifest91610caa.
+  - SESSIONREPLIES13 · ⋯ В очереди · (Этап · Два автоматических ответа на сообщение между сессиями) · оценка 45 мин · усилие не измерено · ждёт: причина не названа · волна 1 · зависит: — · стоимость $0.10 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 54 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Поручение владельца 10.11: включить в будущую работу двухэтапный ответ между сессиями. По умолчанию отправитель получает ранний фактический текст получателя после его рассуждений и инструментов, затем конкретный итоговый ответ. expect_reply=false («не ждать ответа») отключает оба ответа и напоминания. Если итог не пришёл за заданное время, существующий хук напоминает получателю ответить и подсказывает точный способ. Реализацию начать после текущего установленного Herder.
+      Приёмка: Send без нового аргумента: ранний и итоговый текст из связанного хода получателя доставляются отправителю по одному разу. Пересылать только текст assistant, без reasoning, результатов инструментов и машинного ACK. expect_reply=false: никаких обратных ответов и напоминаний. Получатель может быть неактивен в момент отправки. Корреляция и восстановление используют существующие durable delivery/reply_to и hook, без второго планировщика и повторной исходной отправки. Напоминание ожидает только отсутствующий итог, имеет дедупликацию и учитывает HumanStop, needs_input и разрешения. Ответ на ответ не создаёт цикл. Проверить default/false, задержку, рестарт, неактивные сессии и cross-host.
+      Сохранённый статус: queued
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T21:40:16+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Плановая модель: gpt-6.1-terra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
+  - SMALLREG11 · ✅ Готово · (Исправить parse error и оставшиеся harness/UI проверки) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Duplicate imports fixed; UI/capacity/OpenCode/plugin packaging regression reproduced and fixed without weakening behavior contracts; focused GREEN and commit.
+      Затрагиваемые файлы: `tests/vibe-async-evaluation.test.ts`, `tests/web-ui.test.ts`, `tests/fleet-cabinet-navigation.test.ts`, `tests/codex-capacity-evidence.test.ts`, `tests/codex-plugin-release-payload.test.ts`, `tests/opencode-v22-protocol.test.ts`
+      Результат: Integrated87081943:6test files65PASS, tsc and diff. No production changes.
+  - STATE10 · ✅ Готово · (Восстановить текущую установленную связку и ближайший blocker) · оценка 15 мин · усилие 14 мин · по часам 10 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Сравнить основной Rust consumer, HTTP facade, selector/manifest и latest source. Проверить актуальность handoff и не повторять уже подтверждённые операции.
+      Приёмка: Установленные SHA/instances, последний real result и один точный blocker подтверждены read-only источниками.
+      Результат: Current main/live TS1fcac12e, installed Rustmanifest d584fb68 sha4c878fe3/core284cd55d and NPabd9a50f verified. Shared GPTAdmin selector gptadmin-entry has3CLI while local5profiles. Connected consumer remote44 historical2responses and NoticePlace same-session resume read back now; projects explicitly partial. Direct Rust native adapters are not fullreplacement. Concrete failures: browseraccountVibe and obsoleteZCodeinstalledbinding.
   - USERIOQUIET · ⋯ В очереди · (UserIO MV3: убрать лишние фоновые запросы к ChatGPT) · оценка 15 мин · усилие не измерено · ждёт: owner_deferred_core_start_first · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: By explicit owner scope extension change: silent default/startup, no overlapping sync, durable429RetryAfter, explicit manual sync works; artifact+tests and installed claim separated.
       Затрагиваемые файлы: `universal-userio/extensions/vk-inbox/lib/chatgpt.js`, `universal-userio/extensions/vk-inbox/tests`
@@ -465,12 +541,53 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
+  - ZAISOURCE13 · 🔄 В работе · (Довести Z.ai через существующее расширение UserIO) · оценка 15 мин · усилие не измерено · прошло 3 мин на момент сборки · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.
+      Приёмка: Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live.
+      Сохранённый статус: running
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T21:45:57+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Плановая модель: gpt-6.1-terra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
   - ZAISTATE · ✅ Готово · (Z.ai: обновлять foreground состояние после ответа) · оценка 15 мин · усилие 8 мин по часам · по часам 8 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Paused background untouched, exact draft native state updated, RED/GREEN, no foreign scope.
       Результат: Foreground admitted draft exactroute snapshot refresh and in-memory/durable state corrected, background pause preserved. Worker111PASS, lead54PASS including new profile negatives. Source integration underway; native full deferred until owner browser quiet interval ends.
   - ZARCHPROOF · ✅ Готово · (Сохранить настоящую ZCode archive квитанцию в CI отчёте) · оценка 15 мин · усилие 26 мин по часам · по часам 26 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Existing native fixture retains exact archive response; local regression and isolated fake model run.
       Результат: Published54f93706 fixture validates actual archive, c5a84dec native seam; exact c5a fresh full PASS including archive session:6bd2645f2c976bc673328de804dc7d03. Evidence zcode-c5a-full-result.json; retained prior archive UNKNOWN untouched; stopped runtime fix pending integration.
+  - ZCODE10 · ✅ Готово · (Подготовить совместимый ZCode adapter и model pin для установки) · оценка 15 мин · усилие 12 мин по часам · по часам 12 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Exact native catalog подтверждает pin; совместимый immutable adapter подготовлен, scoped source tests GREEN, готов CAS install без изменения старых операций.
+      Результат: Compatible immutable candidate-v2 manifest f05b3961d9a19bc573408578193d688258ef042e7cd06b956f936544daa13aa8 and profile d21b38c6 prepared. Native catalog exact MiniMax pin verified; staged NativeWorkerPort preflight ready=true, no inference. 30 focused tests/package verifier PASS. migration-input.json has old/new fixture and install hashes. Evidence: evidence/resume-20261110/terra-zcode.md.
+  - ZCODEINSTALL13 · 🔄 В работе · (Подготовить ZCode для общего установленного consumer) · оценка 15 мин · усилие не измерено · прошло 6 мин на момент сборки · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.
+      Приёмка: Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены.
+      Сохранённый статус: running
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T21:42:03+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Плановая модель: gpt-6-luna
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
   - A10 · ✅ Готово · (Rust client: raw transcript и inventory через AHAP) · оценка 15 мин · усилие 15 мин · по часам 16 мин · волна 2 · зависит: C10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
   - B10 · ✅ Готово · (Thin TS runner: legacy list/raw/projects) · оценка 15 мин · усилие 5 мин по часам · по часам 5 мин · волна 2 · зависит: C10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -495,13 +612,54 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
+  - CHROMEPROFILE11 · ⏸ Отложено владельцем · (Реализовать файловый Chrome profile MCP) · оценка 15 мин · усилие не измерено · вне остатка · зависит: CHROMEPROFILE10 · стоимость — вне сметы · отложено владельцем
+      Описание задачи: Добавить bounded stdio MCP executable с profile_list/status, stage, install/update, backup/rollback and reload/status receipts. Все mutation paths lock/CAS/atomic и не читают cookies/storage/page content.
+      Приёмка: Core implementation passes focused RED/GREEN tests for manifest validation, traversal/symlink refusal, profile isolation, backup/rollback CAS and honest unmanaged mode.
+      Затрагиваемые файлы: `tools/chrome_profile_manager_mcp.py`
+      Результат: Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.
   - D10 · ✅ Готово · (Public core reads: sessions и полный export) · оценка 15 мин · усилие 24 мин по часам · по часам 24 мин · волна 2 · зависит: C10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Затрагиваемые файлы: `crates/herder/src/bin/herder_native_stdio/owner_reads.rs`
       Результат: SOURCE+TESTS: owner_reads.rs public async call(identity,&Request,&Arc<AhapOpenCode>,&Arc<OwnerPolicy>,&InstanceRef)->Option<CallToolResult>. Sessions list filters principal+registered exact binding before AHAP fetch, no discovery grants. Native export preserves bytes_base64/complete/source/timestampCoverage/limitations; Common explicitly unsupported_format. Messages/recent bounded incomplete tail; Context verified self/root lineage. Errors message+expected+correction. cargo test --bin herder_native_stdio owner_reads::tests::: 15/15 PASS incl real AhapClient subprocess. No runtime/deploy/credentials changes; installed consumer proof belongs CI.
+  - DELIVER10 · 🔄 В работе · (Установить согласованные profiles и принять ordinary consumer) · оценка 15 мин · усилие не измерено · прошло 6 ч 34 мин на момент сборки · отстаём: прошло 6 ч 34 мин при оценке 15 мин · волна 2 · зависит: ZCODE10, BROWSER10 · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main.
+      Сохранённый статус: running
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T15:14:37+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6
+      Плановая модель: gpt-6-astra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
+  - EXTRELEASE10 · ⋯ В очереди · (Опубликовать расширение и проверить оба потребителя) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 2 · зависит: EXTCONN10, EXTPOLL10, EXTCORE10, EXTUI10 · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved.
+      Сохранённый статус: queued
+      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-10T15:22:34+03:00
+      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
+      Плановая модель: gpt-6-astra
+      Наблюдаемая модель: неизвестно
+      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
+      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
+      Наблюдаемый turn: неизвестно; worktree=неизвестно
+      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
+      Незавершённые зависимости: нет
+      Причина ожидания / доставки: не записана
   - FINALBUNDLE · ✅ Готово · (Упаковать изменения профилей и archive) · оценка 15 мин · усилие не измерено · волна 2 · зависит: PROFILEISO, MULTICORE · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Опубликованные owned source, immutable manifest, targeted package/NEG checks; новый artifact не объявляется installed.
       Результат: Immutable /home/roomhacker/herder-artifacts/releases/herder-v1-5ff02215-profiles/manifest.json, SHA256 9fc6f17e7b5c43b1a9208a2a60edc461d5d38c6357e19946892dbded50af1dfb. Source5ff022154aaef7a13ae41b4cd5d24d4353adc8ef опубликован. Все affected lanes проверяются на этих bytes, installed ещё нет.
@@ -526,24 +684,9 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
   - REMOTEFULL · ✅ Готово · (Проверить удалённую отправку, ответ и архивирование) · оценка 15 мин · усилие 20 мин по часам · по часам 20 мин · волна 2 · зависит: RESTOREREMOTE · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: InstalledordinaryMCPexact44instance→ownedtestcreate/deliver→readreceipt/message→archive. ExplicitLuna/Terra model; requestsboundandnotreplayed. Profile/authorityactualnode.
       Результат: Installed manifest203decf5/coreb51e550e: remote44 Codex gpt-6.1-terra two prompts/two native replies confirmed, archive confirmed, restart readonlyPASS and shared GPTAdmin same2markersPASS. Exact session_ref session:252919efe23cabd6148929f0b9a3c808; evidence finish-20261108/remote44-full-canary-metadata.json, retained hashesverifiedparent. Bounded message page completefalse explicit; no claim fullhistory.
-  - RESTOREPROOF · ⋯ В очереди · (Установить и проверить три сценария обычным клиентом) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 2 · зависит: RESTORECORE, RESTORECONTRACTS · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - RESTOREPROOF · ✅ Готово · (Установить и проверить три сценария обычным клиентом) · оценка 15 мин · усилие не измерено · волна 2 · зависит: RESTORECORE, RESTORECONTRACTS · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.
-      Сохранённый статус: queued
-      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1bb0c-4fd3-75e2-ae2a-2c18a99462de; source=mcp_metadata; at=2026-11-08T20:23:20+03:00
-      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Прежняя привязка leaf.session: host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Плановая модель: gpt-6.1-sol
-      Наблюдаемая модель: неизвестно
-      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
-      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
-      Наблюдаемый turn: неизвестно; worktree=неизвестно
-      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; ждёт зависимостей (dependencies_unmet)
-      Незавершённые зависимости: RESTORECORE, RESTORECONTRACTS
-      Причина ожидания / доставки: не записана
+      Результат: Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.
   - A11 · ✅ Готово · (Rust client: modes/capabilities/receipts обычной отправки) · оценка 15 мин · усилие 8 мин · по часам 10 мин · волна 3 · зависит: A10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
   - B11 · ✅ Готово · (Thin TS runner: прежний CodexAppServerAdapter) · оценка 15 мин · усилие 2 мин по часам · по часам 2 мин · волна 3 · зависит: B10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -569,6 +712,11 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; ждёт зависимостей (dependencies_unmet)
       Незавершённые зависимости: C13
       Причина ожидания / доставки: не записана
+  - CHROMEPROFILE12 · ⏸ Отложено владельцем · (Подключить Chrome profile MCP к GPTAdmin source registry) · оценка 15 мин · усилие не измерено · вне остатка · зависит: CHROMEPROFILE11 · стоимость — вне сметы · отложено владельцем
+      Описание задачи: Зарегистрировать curated capability/child MCP definition в GPTAdmin source, не меняя live /etc до source acceptance; сохранить cross-platform argv and root config boundaries.
+      Приёмка: GPTAdmin unit tests validate source registration, catalog metadata, argv and no secret leakage; generated supervisor config contains child descriptor.
+      Затрагиваемые файлы: `cli.py`, `tests/test_mcp_catalog.py`, `tests/test_cli_agent_mcp_clients.py`, `VERSION`
+      Результат: Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.
   - D11 · ✅ Готово · (Public core reads: существующий search index) · оценка 15 мин · усилие 14 мин по часам · по часам 14 мин · волна 3 · зависит: D10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: SOURCE+TESTS: authorized raw ingestion + guarded v4 indexing and ACL FTS retained. P1 revocation race fixed in owner_reads.rs only: after native refresh, final allowlist revalidates owner_policy::is_member and exact session binding in the SAME read_store transaction passed to search_page count/hits. No gate spans native I/O. RED revoked_during_refresh_cannot_leak_cached_excerpt_or_count reproduced unauthorized refresh plus leaked cached excerpt/total_hits=1. GREEN 16/16 owner_reads inline tests, including regression hits=[] total_hits=0 authorized_sessions=0 while secret remains cached. Public call API unchanged; formatting/whitespace checks clean. Final source SHA256 5511160f909cb39885710e12adb71946b8aeac279cdb9a65c758bd1e55c529b0. No other source/runtime/deploy edits; candidate/installed verification remains CI.
@@ -634,6 +782,11 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
   - C12 · ✅ Готово · (Общий launcher без новых native протоколов) · оценка 15 мин · усилие 15 мин · по часам 15 мин · волна 4 · зависит: C11, A11 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: Generic owner launcher maps all5 types through AHAP to existing TS adapters. Full public fake-AHAP create→second deliver→duplicate key→native export→search→projects→restart passed; launcher suite17passed/1explicit native ignored. Independent P1 mapping fixed RED→28AHAPtestsGREEN (idle Start/Queue false, Current true). Built real core debug binary. Actual native candidate/installed lanes remain CI.
+  - CHROMEPROFILE13 · ⏸ Отложено владельцем · (Проверить stdio MCP и GPTAdmin real executable readback) · оценка 15 мин · усилие не измерено · вне остатка · зависит: CHROMEPROFILE12 · стоимость — вне сметы · отложено владельцем
+      Описание задачи: Запустить focused tests, tools/list и harmless profile_list через реальный executable; собрать source/install/readback evidence и только затем подготовить runtime registration.
+      Приёмка: Python tests and py_compile pass; subprocess MCP initialize/tools/list/profile_list return bounded redacted receipts; GPTAdmin source diff reviewed and commit ready.
+      Затрагиваемые файлы: `tests/test_chrome_profile_manager_mcp.py`, `docs/CHROME_PROFILE_MANAGER_MCP.md`
+      Результат: Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.
   - D12 · ✅ Готово · (Public core reads: projects из native/registry) · оценка 15 мин · усилие 42 мин по часам · по часам 42 мин · волна 4 · зависит: D11 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Затрагиваемые файлы: `crates/herder/src/bin/herder_native_stdio/owner_reads.rs`
@@ -655,7 +808,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - N1 · ⋯ В очереди · (Исправить regression каталога и проверить освобождение execution lock) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 5 · зависит: C12 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -675,7 +828,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - R1 · ✅ Готово · (Публикация согласованного candidate manifest) · оценка 15 мин · усилие 10 мин · по часам 13 мин · волна 5 · зависит: C12, A11, B12, D12, C13, C14 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -697,7 +850,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - FIXD · ✅ Готово · (Показывать стадию отказа AHAP initialize/init и способ исправления) · оценка 15 мин · усилие 8 мин · волна 6 · зависит: R1 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -720,7 +873,7 @@ frontier $8.49 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; нет свободного слота (capacity_full)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - NCODEX · ✅ Готово · (Codex: прежний adapter и лжемодель через core) · оценка 15 мин · усилие 16 ч 34 мин по часам · по часам 16 ч 34 мин · волна 6 · зависит: R1 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional

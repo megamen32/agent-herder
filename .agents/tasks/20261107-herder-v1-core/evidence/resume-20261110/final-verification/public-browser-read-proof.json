@@ -1,0 +1,10 @@
+{
+  "method": "native tasks/get same credential same surface",
+  "taskId": "902b98d9bc278f8704cb70c3c2b551a6",
+  "error": {
+    "code": -32602,
+    "message": "invalid taskId for this MCP server"
+  },
+  "status": null,
+  "snapshots": []
+}

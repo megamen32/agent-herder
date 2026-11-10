@@ -1,0 +1,62 @@
+{
+  "id": "BROWSERINSTALL12",
+  "parent": "MRESUME10",
+  "label": "Подключить проверенный ChatGPT к общему MCP",
+  "status": "done",
+  "description": "Prepared browser profile and ordinary staged Rust read10/10 accepted; appendexactprofile to both selectors after releaselease handoff, preserve3CLI; public connected consumer read.",
+  "acceptance": "Оба shared selectors установлены CAS под lease; child AgentHerder перезапущен штатно; connected discover/context видят ChatGPT; обычный installed SDK читает 10/10 native message IDs. Длинный connected messages через gateway имеет отдельный незавершённый receipt и не считается этим закрытием.",
+  "owner": "Lead",
+  "estimate_minutes": 10,
+  "estimate_unknown_reason": "",
+  "blocker": "",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-10T21:03:00+03:00",
+  "updated_at": "2026-11-10T21:39:25+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T21:03:00+03:00",
+      "note": "",
+      "changes": {
+        "id": "BROWSERINSTALL12",
+        "parent": "MRESUME10",
+        "label": "Подключить проверенный ChatGPT к общему MCP",
+        "status": "blocked",
+        "description": "Prepared browser profile and ordinary staged Rust read10/10 accepted; appendexactprofile to both selectors after releaselease handoff, preserve3CLI; public connected consumer read.",
+        "acceptance": "BothselectorsCAS installed underownedprojectlease; connectedMCP discover chatgpt-userio-vk-browser and sessionmessages10matchingIDs; no messages/newcreate.",
+        "owner": "Lead",
+        "estimate_minutes": 10,
+        "estimate_unknown_reason": "Чужой project releaselease NoticePlace01a1c5a0; окноустановкипока не согласовано.",
+        "blocker": "Herder project releaselease held by NoticePlace01a1c5a0, fence94. Nativecoordinationpermission requested fromhuman pending. Do not overwritelease or bypass it.",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T21:39:25+03:00",
+      "note": "Прежний lease blocker снят и проверенная установка уже выполнена. Закрыта фактическая установка; public long-read receipt отражается отдельно, а не выдаётся за возвращённые данные.",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "estimate_unknown_reason": "",
+        "acceptance": "Оба shared selectors установлены CAS под lease; child AgentHerder перезапущен штатно; connected discover/context видят ChatGPT; обычный installed SDK читает 10/10 native message IDs. Длинный connected messages через gateway имеет отдельный незавершённый receipt и не считается этим закрытием.",
+        "result": "Установлено под fence95; child AgentHerder restart fence96 подтверждён новымPID2731310. Connected4instances и context ChatGPT session:c678f986d231c56992a17b8966dd1397 PASS; installed SDK10/10sameIDs PASS, history partial. Evidence final-verification/browser-core-installed-read.json и browser-selector-installed.json. Длинный gateway session(messages) принят в job, результат не доступен вызывающему из-за caller/profile receipt mismatch; новый read не повторять, это отдельная integration gap."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Установлено под fence95; child AgentHerder restart fence96 подтверждён новымPID2731310. Connected4instances и context ChatGPT session:c678f986d231c56992a17b8966dd1397 PASS; installed SDK10/10sameIDs PASS, history partial. Evidence final-verification/browser-core-installed-read.json и browser-selector-installed.json. Длинный gateway session(messages) принят в job, результат не доступен вызывающему из-за caller/profile receipt mismatch; новый read не повторять, это отдельная integration gap."
+}

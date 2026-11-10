@@ -1,0 +1,68 @@
+{
+  "id": "CAREVIOLIVE12",
+  "label": "Прочитать реальный ChatGPT из Carevio через UserIO и Herder",
+  "status": "done",
+  "description": "Reload exact extension to0.9.28 using ordinary UI, observe account identity unbound, explicitly bind existing destination, read existing chat with compiled Herder and confirm UserIO snapshot readback. No message/model/creation.",
+  "acceptance": "Loaded0.9.28 and exact profile/principal identity; explicit account destination binding; Herder read and UserIO same snapshot metadata; install profile only after read.",
+  "owner": "Lead",
+  "estimate_minutes": 15,
+  "parent": "MEXT10",
+  "model": "gpt-6-astra",
+  "created_at": "2026-11-10T20:08:59+03:00",
+  "updated_at": "2026-11-10T21:03:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T20:08:59+03:00",
+      "note": "",
+      "changes": {
+        "id": "CAREVIOLIVE12",
+        "label": "Прочитать реальный ChatGPT из Carevio через UserIO и Herder",
+        "status": "running",
+        "description": "Reload exact extension to0.9.28 using ordinary UI, observe account identity unbound, explicitly bind existing destination, read existing chat with compiled Herder and confirm UserIO snapshot readback. No message/model/creation.",
+        "acceptance": "Loaded0.9.28 and exact profile/principal identity; explicit account destination binding; Herder read and UserIO same snapshot metadata; install profile only after read.",
+        "owner": "Lead",
+        "estimate_minutes": 15,
+        "parent": "MEXT10",
+        "model": "gpt-6-astra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T20:36:15+03:00",
+      "note": "Carevio0.9.28 loaded UI proof+gpt_scope exactPASS; found discovery no account row. Source7fa RED/GREEN and release3db0.9.29 published, backend installed. Staging Mac0.9.29 then both profile reload/read; preserving binding guard. No provider messages/create.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T21:03:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Carevio+Default loaded0.9.29 nativeUI. Verified Carevio identity creates unboundrow; explicitUIcheckbox selects legacy-default. Real Herder driver list20/read10 and UserIO API10/10same nativeIDs. Staged ordinary Rust core registered session:c678f986d231c56992a17b8966dd1397 and messages10/10PASS; current transcript partial. evidence/resume-20261110/final-verification/browser-core-read-029.json + userio-native-readback-029.json + userio029live. Sharedselector install is separate BROWSERINSTALL12, not yet applied."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Carevio+Default loaded0.9.29 nativeUI. Verified Carevio identity creates unboundrow; explicitUIcheckbox selects legacy-default. Real Herder driver list20/read10 and UserIO API10/10same nativeIDs. Staged ordinary Rust core registered session:c678f986d231c56992a17b8966dd1397 and messages10/10PASS; current transcript partial. evidence/resume-20261110/final-verification/browser-core-read-029.json + userio-native-readback-029.json + userio029live. Sharedselector install is separate BROWSERINSTALL12, not yet applied."
+}

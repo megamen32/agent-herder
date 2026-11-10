@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/browser-reg11
+
+ ❯ tests/chatgpt-userio-driver.test.ts (11 tests | 1 failed | 10 skipped) 9ms
+     × derives account scope from provider, user and workspace account identity 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/chatgpt-userio-driver.test.ts > strict UserIO ChatGPT transport > derives account scope from provider, user and workspace account identity
+Error: userio_identity_incomplete
+ ❯ userIoAccountScope src/adapters/userio-agent-channel.ts:13:44
+     11| export type UserIoAgentResult = {ok:boolean;error?:string;[k:string]:u…
+     12| export function userIoAccountScope(provider:string,userId:string,accou…
+     13|   if(!provider||!userId||!accountId) throw new Error('userio_identity_…
+       |                                            ^
+     14|   return createHash('sha256').update(JSON.stringify({provider,user_id:…
+     15| }
+ ❯ tests/chatgpt-userio-driver.test.ts:66:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 skipped (11)
+   Start at  18:35:58
+   Duration  900ms (transform 475ms, setup 35ms, import 690ms, tests 9ms, environment 0ms)
+

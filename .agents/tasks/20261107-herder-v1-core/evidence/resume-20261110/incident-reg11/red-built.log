@@ -1,0 +1,313 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/incident-reg11
+
+ ❯ tests/noticeplace-health-model-qualification.test.ts (4 tests | 1 failed) 15ms
+     × qualifies the bare model id of the center with the pinned provider 10ms
+ ❯ tests/r40-incident-policy.test.ts (3 tests | 2 failed) 44ms
+     × keeps the incident route separate from ordinary launch defaults 13ms
+     × pins the approved OmniRoute incident execution profile and rejects substitutions 4ms
+ ❯ tests/noticeplace-group-continuation.test.ts (12 tests | 1 failed) 554ms
+   × preserves a legitimate new generation after the entire old group is healthy 64ms
+(node:612855) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:612871) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/r40-health-preflight.test.ts (1 test | 1 failed) 54ms
+   × admits the selected combo profile and rejects its unavailable native model before creating a session 53ms
+ ❯ tests/noticeplace-health-launch.test.ts (26 tests | 12 failed) 7725ms
+     × rejects a model outside the two exact approved combos minimax-coding-plan/MiniMax-M3.1-Flash 331ms
+     × accepts an approved exact combo omniroute/glm-5.3-flash-minimax-m3.1 13ms
+     × overrides the model only, retaining route CWD for omniroute/glm-5.3-flash-minimax-m3.1 15ms
+     × does not pass a global OpenCode fallback into incident analysis 94ms
+     × rejects a project excluding OpenCode without calling any runner 88ms
+     × rejects OpenCode excluded globally even if the project route allows it 107ms
+     × allows the exact pair for an unconfigured project 82ms
+     × replays accepted receipt without another executor 18ms
+     × replays unknown receipt without another executor 87ms
+     × never falls back on a definite health launch failure, including replay 92ms
+     × does not retry a rejected unconfigured health operation 98ms
+     × retains the in-flight reservation across concurrent HTTP requests 5008ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/noticeplace-group-continuation.test.ts > preserves a legitimate new generation after the entire old group is healthy
+AssertionError: expected { ok: true, created: false, …(5) } to match object { ok: true, created: true }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "created": true,
++   "created": false,
+    "ok": true,
+  }
+
+ ❯ tests/noticeplace-group-continuation.test.ts:71:64
+     69|   f.documents.inc_new = { id: 'inc_new', project: 'qa', state: 'open',…
+     70|     group_key: 'group_1', group: f.documents.inc_B.lifecycle.group, at…
+     71|   expect(await f.router().run(f.request('inc_new'), f.launch)).toMatch…
+       |                                                                ^
+     72|   expect(f.launches).toEqual([undefined]);
+     73| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > rejects a model outside the two exact approved combos minimax-coding-plan/MiniMax-M3.1-Flash
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ tests/noticeplace-health-launch.test.ts:75:53
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > accepts an approved exact combo omniroute/glm-5.3-flash-minimax-m3.1
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:81:29
+     79|     const { post, run } = await fixture();
+     80|     const response = await post({ model: approved });
+     81|     expect(response.status).toBe(200);
+       |                             ^
+     82|     expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContainin…
+     83|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > overrides the model only, retaining route CWD for omniroute/glm-5.3-flash-minimax-m3.1
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:93:29
+     91|     const { post, run } = await fixture(policy(["codex", "opencode"]));
+     92|     const response = await post({ model: approved });
+     93|     expect(response.status).toBe(200);
+       |                             ^
+     94|     expect(await response.json()).toMatchObject({ outcome: "accepted",…
+     95|     expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContainin…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > does not pass a global OpenCode fallback into incident analysis
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:101:35
+     99|     selected.fallbackModels = { opencode: ["omniroute/minimax-combo-m3…
+    100|     const { post, run } = await fixture(selected);
+    101|     expect((await post()).status).toBe(200);
+       |                                   ^
+    102|     expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContainin…
+    103|       harness: "opencode",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > rejects a project excluding OpenCode without calling any runner
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:110:35
+    108|   it("rejects a project excluding OpenCode without calling any runner"…
+    109|     const { post, run } = await fixture(policy(["codex"]));
+    110|     expect((await post()).status).toBe(409);
+       |                                   ^
+    111|     expect(run).not.toHaveBeenCalled();
+    112|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > rejects OpenCode excluded globally even if the project route allows it
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:117:35
+    115|     selected.allowedHarnesses = ["codex"];
+    116|     const { post, run } = await fixture(selected);
+    117|     expect((await post()).status).toBe(409);
+       |                                   ^
+    118|     expect(run).not.toHaveBeenCalled();
+    119|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > allows the exact pair for an unconfigured project
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:122:62
+    120|   it("allows the exact pair for an unconfigured project", async () => {
+    121|     const { post, run } = await fixture();
+    122|     expect((await post({ project: "unconfigured" })).status).toBe(200);
+       |                                                              ^
+    123|     expect(run).toHaveBeenCalledExactlyOnceWith(expect.objectContainin…
+    124|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > replays accepted receipt without another executor
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > replays unknown receipt without another executor
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/noticeplace-health-launch.test.ts:146:17
+    144|     const replay = await (await post({ model })).json();
+    145|     expect(replay).toEqual(first);
+    146|     expect(run).toHaveBeenCalledTimes(1);
+       |                 ^
+    147|   });
+    148|   it("never falls back on a definite health launch failure, including …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > never falls back on a definite health launch failure, including replay
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:150:35
+    148|   it("never falls back on a definite health launch failure, including …
+    149|     const { post, run } = await fixture(policy(), "rejected");
+    150|     expect((await post()).status).toBe(409);
+       |                                   ^
+    151|     expect((await post()).status).toBe(409);
+    152|     expect(run).toHaveBeenCalledTimes(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > does not retry a rejected unconfigured health operation
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/noticeplace-health-launch.test.ts:156:62
+    154|   it("does not retry a rejected unconfigured health operation", async …
+    155|     const { post, run } = await fixture(policy(), "rejected");
+    156|     expect((await post({ project: "unconfigured" })).status).toBe(409);
+       |                                                              ^
+    157|     expect((await post({ project: "unconfigured" })).status).toBe(409);
+    158|     expect(run).toHaveBeenCalledTimes(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/17]⎯
+
+ FAIL  tests/noticeplace-health-launch.test.ts > Notice Place health-launch HTTP admission > retains the in-flight reservation across concurrent HTTP requests
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/noticeplace-health-launch.test.ts:167:3
+    165|     expect(run).not.toHaveBeenCalled();
+    166|   });
+    167|   it("retains the in-flight reservation across concurrent HTTP request…
+       |   ^
+    168|     const { post, run } = await fixture();
+    169|     let release!: () => void;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/17]⎯
+
+ FAIL  tests/noticeplace-health-model-qualification.test.ts > the model of an incident analysis > qualifies the bare model id of the center with the pinned provider
+AssertionError: expected 'glm-5.3-flash-minimax-m3.1' to be 'omniroute/glm-5.3-flash-minimax-m3.1' // Object.is equality
+
+Expected: "omniroute/glm-5.3-flash-minimax-m3.1"
+Received: "glm-5.3-flash-minimax-m3.1"
+
+ ❯ tests/noticeplace-health-model-qualification.test.ts:10:23
+      8|   it("qualifies the bare model id of the center with the pinned provid…
+      9|     const qualified = qualifyNoticeplaceHealthModel(CENTER_MODEL);
+     10|     expect(qualified).toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+       |                       ^
+     11|     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", mode…
+     12|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/17]⎯
+
+ FAIL  tests/r40-health-preflight.test.ts > admits the selected combo profile and rejects its unavailable native model before creating a session
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/r40-health-preflight.test.ts:11:26
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/17]⎯
+
+ FAIL  tests/r40-incident-policy.test.ts > Notice Place incident subscription policy > keeps the incident route separate from ordinary launch defaults
+AssertionError: expected 'minimax-coding-plan/MiniMax-M3.1-Flash' to be 'omniroute/glm-5.3-flash-minimax-m3.1' // Object.is equality
+
+Expected: "omniroute/glm-5.3-flash-minimax-m3.1"
+Received: "minimax-coding-plan/MiniMax-M3.1-Flash"
+
+ ❯ tests/r40-incident-policy.test.ts:14:66
+     12|   it("keeps the incident route separate from ordinary launch defaults"…
+     13|     expect(validateAutomationLaunchPolicy({ ...general, incidentExecut…
+     14|     expect(healthModelForHarness("opencode", incidentExecution)).toBe(…
+       |                                                                  ^
+     15|   });
+     16|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/17]⎯
+
+ FAIL  tests/r40-incident-policy.test.ts > Notice Place incident subscription policy > pins the approved OmniRoute incident execution profile and rejects substitutions
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/r40-incident-policy.test.ts:19:84
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/17]⎯
+
+
+ Test Files  5 failed (5)
+      Tests  17 failed | 29 passed (46)
+   Start at  18:03:08
+   Duration  12.73s (transform 9.09s, setup 146ms, import 10.95s, tests 8.39s, environment 1ms)
+

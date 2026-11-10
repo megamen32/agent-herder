@@ -1,0 +1,38 @@
+{
+  "id": "ZAISOURCE13",
+  "parent": "S2",
+  "label": "Довести Z.ai через существующее расширение UserIO",
+  "status": "running",
+  "owner": "Terra",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
+  "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live.",
+  "created_at": "2026-11-10T21:45:57+03:00",
+  "updated_at": "2026-11-10T21:45:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T21:45:57+03:00",
+      "note": "",
+      "changes": {
+        "id": "ZAISOURCE13",
+        "parent": "S2",
+        "label": "Довести Z.ai через существующее расширение UserIO",
+        "status": "running",
+        "owner": "Terra",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
+        "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

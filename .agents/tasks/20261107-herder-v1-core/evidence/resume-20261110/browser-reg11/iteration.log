@@ -1,0 +1,115 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/browser-reg11
+
+ ❯ tests/browser-chat-loader.test.ts (4 tests | 1 failed) 436ms
+     × loads two independent instances with exact site identity and capabilities 404ms
+ ❯ tests/autopilot-zai-browser-judge.test.ts (27 tests | 3 failed) 268ms
+     × allocates and reuses only its own tab after correlated completion 10ms
+     × uses the exact successful new_page receipt when Z.AI removes the query during hydration 4ms
+     × quarantines foreign navigation between model selection and fill without clicking 10ms
+ ❯ tests/zai-foreground-draft.test.ts (11 tests | 1 failed) 77ms
+     × create/send/read/idle permits the second exact correlated delivery while background is paused 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > allocates and reuses only its own tab after correlated completion
+Error: Chrome evaluation did not return a JSON value
+ ❯ parseChromeEvaluation src/adapters/mac-mini-chrome-transport.ts:94:44
+     92|   const fence = "```", start = text.indexOf(fence + "json");
+     93|   const end = text.lastIndexOf(fence);
+     94|   if (start < 0 || end <= start + 7) throw new Error("Chrome evaluatio…
+       |                                            ^
+     95|   return JSON.parse(text.slice(start + 7, end).trim()) as T;
+     96| }
+ ❯ verifyNewChatAccountScope src/adapters/browser-chat-new-page.ts:44:14
+ ❯ OwnedZaiJudgeSlot.prepare src/autopilot/zai-browser-judge.ts:392:9
+ ❯ OwnedZaiJudgeSlot.infer src/autopilot/zai-browser-judge.ts:403:27
+ ❯ src/autopilot/zai-browser-judge.ts:112:24
+ ❯ Object.fetchImpl src/autopilot/zai-browser-judge.ts:132:18
+ ❯ tests/autopilot-zai-browser-judge.test.ts:357:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > uses the exact successful new_page receipt when Z.AI removes the query during hydration
+Error: Chrome evaluation did not return a JSON value
+ ❯ parseChromeEvaluation src/adapters/mac-mini-chrome-transport.ts:94:44
+     92|   const fence = "```", start = text.indexOf(fence + "json");
+     93|   const end = text.lastIndexOf(fence);
+     94|   if (start < 0 || end <= start + 7) throw new Error("Chrome evaluatio…
+       |                                            ^
+     95|   return JSON.parse(text.slice(start + 7, end).trim()) as T;
+     96| }
+ ❯ verifyNewChatAccountScope src/adapters/browser-chat-new-page.ts:44:14
+ ❯ OwnedZaiJudgeSlot.prepare src/autopilot/zai-browser-judge.ts:392:9
+ ❯ OwnedZaiJudgeSlot.infer src/autopilot/zai-browser-judge.ts:403:27
+ ❯ src/autopilot/zai-browser-judge.ts:112:24
+ ❯ Object.fetchImpl src/autopilot/zai-browser-judge.ts:132:18
+ ❯ tests/autopilot-zai-browser-judge.test.ts:369:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > quarantines foreign navigation between model selection and fill without clicking
+AssertionError: expected [Function] to throw error including 'target_changed' but got 'Chrome evaluation did not return a JS…'
+
+Expected: "target_changed"
+Received: "Chrome evaluation did not return a JSON value"
+
+ ❯ tests/autopilot-zai-browser-judge.test.ts:420:51
+    418|     const c = chrome(); c.interfere();
+    419|     const pool = createZaiBrowserJudgeFetch({ accountScope: scope, too…
+    420|     await expect(pool.fetchImpl(endpoint, body())).rejects.toThrow("ta…
+       |                                                   ^
+    421|     expect(c.prompts).toEqual([]);
+    422|     await expect(pool.fetchImpl(endpoint, body())).rejects.toThrow("re…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/browser-chat-loader.test.ts > separate site adapters sharing one browser base class > loads two independent instances with exact site identity and capabilities
+AssertionError: expected { nativeConversationIds: false, …(4) } to match object { nativeConversationIds: false, …(2) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "accountArchiveViaCdp": false,
++   "accountArchiveViaCdp": true,
+    "nativeConversationIds": false,
+    "queueAfterGeneration": true,
+  }
+
+ ❯ tests/browser-chat-loader.test.ts:28:33
+     26|       nativeConversationIds: true, accountArchiveViaCdp: true, queueAf…
+     27|     });
+     28|     expect(zai.browserFeatures).toMatchObject({
+       |                                 ^
+     29|       nativeConversationIds: false, accountArchiveViaCdp: false, queue…
+     30|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > create/send/read/idle permits the second exact correlated delivery while background is paused
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/zai-foreground-draft.test.ts:93:73
+     91|     expect(stored.chats).toContainEqual(expect.objectContaining({ id: …
+     92|     expect(f.calls.some(call => call.source === ZAI_ACTIVITY_SCRIPT)).…
+     93|     expect(f.calls.filter(call => call.source === ZAI_LIST_API_SCRIPT)…
+       |                                                                         ^
+     94|     expect(f.calls.every(call => ["evaluate_script", "list_pages"].inc…
+     95|     const second = await f.adapter.sendMessage(f.created.id, { message…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  3 failed | 4 passed (7)
+      Tests  5 failed | 75 passed (80)
+   Start at  18:05:47
+   Duration  4.83s (transform 1.91s, setup 112ms, import 2.08s, tests 1.49s, environment 1ms)
+

@@ -1,0 +1,79 @@
+{
+  "id": "STATE10",
+  "kind": "research",
+  "parent": "MRESUME10",
+  "label": "Восстановить текущую установленную связку и ближайший blocker",
+  "status": "done",
+  "owner": "roomhacker",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "description": "Сравнить основной Rust consumer, HTTP facade, selector/manifest и latest source. Проверить актуальность handoff и не повторять уже подтверждённые операции.",
+  "acceptance": "Установленные SHA/instances, последний real result и один точный blocker подтверждены read-only источниками.",
+  "created_at": "2026-11-10T15:03:54+03:00",
+  "updated_at": "2026-11-10T15:14:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:03:54+03:00",
+      "note": "",
+      "changes": {
+        "id": "STATE10",
+        "kind": "research",
+        "parent": "MRESUME10",
+        "label": "Восстановить текущую установленную связку и ближайший blocker",
+        "status": "queued",
+        "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "description": "Сравнить основной Rust consumer, HTTP facade, selector/manifest и latest source. Проверить актуальность handoff и не повторять уже подтверждённые операции.",
+        "acceptance": "Установленные SHA/instances, последний real result и один точный blocker подтверждены read-only источниками."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:03:56+03:00",
+      "note": "Продолжаем исходный accepted goal по прямому поручению владельца; границы и история сохранены.",
+      "changes": {
+        "status": "running",
+        "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:14:33+03:00",
+      "note": "Read-only state recovered, no mutation/model replay. Full five-lane acceptance remains unproven.",
+      "changes": {
+        "status": "done",
+        "result": "Current main/live TS1fcac12e, installed Rustmanifest d584fb68 sha4c878fe3/core284cd55d and NPabd9a50f verified. Shared GPTAdmin selector gptadmin-entry has3CLI while local5profiles. Connected consumer remote44 historical2responses and NoticePlace same-session resume read back now; projects explicitly partial. Direct Rust native adapters are not fullreplacement. Concrete failures: browseraccountVibe and obsoleteZCodeinstalledbinding.",
+        "actual_minutes": 14
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "result": "Current main/live TS1fcac12e, installed Rustmanifest d584fb68 sha4c878fe3/core284cd55d and NPabd9a50f verified. Shared GPTAdmin selector gptadmin-entry has3CLI while local5profiles. Connected consumer remote44 historical2responses and NoticePlace same-session resume read back now; projects explicitly partial. Direct Rust native adapters are not fullreplacement. Concrete failures: browseraccountVibe and obsoleteZCodeinstalledbinding.",
+  "actual_minutes": 14
+}

@@ -1,0 +1,74 @@
+{
+  "id": "EXTCORE10",
+  "kind": "task",
+  "parent": "MEXT10",
+  "label": "Объединить ChatGPT passive и scoped reads в один core",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Passive/read/sync converge same account/conversation snapshot/native IDs+revision/completion; UserIO andHerder projection consume same core, noindependentnormalizer.",
+  "created_at": "2026-11-10T15:22:33+03:00",
+  "updated_at": "2026-11-10T16:27:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:33+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTCORE10",
+        "kind": "task",
+        "parent": "MEXT10",
+        "label": "Объединить ChatGPT passive и scoped reads в один core",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Passive/read/sync converge same account/conversation snapshot/native IDs+revision/completion; UserIO andHerder projection consume same core, noindependentnormalizer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:59+03:00",
+      "note": "Terra implements one canonical ChatGPT snapshot core. Required: connection scope includes provider+userId+workspace/accountId; snapshot epoch plus ordered revisions; stale responses cannot overwrite newer observations.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+        "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:34+03:00",
+      "note": "Принято Lead после source review и полного extension suite.",
+      "changes": {
+        "status": "done",
+        "result": "Единый функциональный ChatGPT snapshot core внедрён в UserIO extension commit 3a72b85: чистый reducer, durable chrome.storage state, passive и addressed reads используют один transition/effect path, workspace-safe account key, epoch/revision ordering. Extension suite 96/96 PASS; durable restart fence покрыт shared-chatgpt-core.test.mjs. Runtime install/readback остаётся отдельным release gate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+  "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+  "harness": "codex",
+  "result": "Единый функциональный ChatGPT snapshot core внедрён в UserIO extension commit 3a72b85: чистый reducer, durable chrome.storage state, passive и addressed reads используют один transition/effect path, workspace-safe account key, epoch/revision ordering. Extension suite 96/96 PASS; durable restart fence покрыт shared-chatgpt-core.test.mjs. Runtime install/readback остаётся отдельным release gate."
+}

@@ -1,0 +1,69 @@
+{
+  "id": "SMALLREG11",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Исправить parse error и оставшиеся harness/UI проверки",
+  "status": "done",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "acceptance": "Duplicate imports fixed; UI/capacity/OpenCode/plugin packaging regression reproduced and fixed without weakening behavior contracts; focused GREEN and commit.",
+  "affected_files": [
+    "tests/vibe-async-evaluation.test.ts",
+    "tests/web-ui.test.ts",
+    "tests/fleet-cabinet-navigation.test.ts",
+    "tests/codex-capacity-evidence.test.ts",
+    "tests/codex-plugin-release-payload.test.ts",
+    "tests/opencode-v22-protocol.test.ts"
+  ],
+  "created_at": "2026-11-10T18:00:09+03:00",
+  "updated_at": "2026-11-10T18:23:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:00:09+03:00",
+      "note": "",
+      "changes": {
+        "id": "SMALLREG11",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Исправить parse error и оставшиеся harness/UI проверки",
+        "status": "queued",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "acceptance": "Duplicate imports fixed; UI/capacity/OpenCode/plugin packaging regression reproduced and fixed without weakening behavior contracts; focused GREEN and commit.",
+        "affected_files": [
+          "tests/vibe-async-evaluation.test.ts",
+          "tests/web-ui.test.ts",
+          "tests/fleet-cabinet-navigation.test.ts",
+          "tests/codex-capacity-evidence.test.ts",
+          "tests/codex-plugin-release-payload.test.ts",
+          "tests/opencode-v22-protocol.test.ts"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:23:34+03:00",
+      "note": "Integrated87081943:6test files65PASS, tsc and diff. No production changes.",
+      "changes": {
+        "status": "done",
+        "result": "Integrated87081943:6test files65PASS, tsc and diff. No production changes."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Integrated87081943:6test files65PASS, tsc and diff. No production changes."
+}

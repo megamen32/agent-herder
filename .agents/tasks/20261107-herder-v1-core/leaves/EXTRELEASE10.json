@@ -1,0 +1,48 @@
+{
+  "id": "EXTRELEASE10",
+  "kind": "task",
+  "parent": "MEXT10",
+  "label": "Опубликовать расширение и проверить оба потребителя",
+  "status": "queued",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "EXTCONN10",
+    "EXTPOLL10",
+    "EXTCORE10",
+    "EXTUI10"
+  ],
+  "acceptance": "Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved.",
+  "created_at": "2026-11-10T15:22:34+03:00",
+  "updated_at": "2026-11-10T15:22:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTRELEASE10",
+        "kind": "task",
+        "parent": "MEXT10",
+        "label": "Опубликовать расширение и проверить оба потребителя",
+        "status": "queued",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "EXTCONN10",
+          "EXTPOLL10",
+          "EXTCORE10",
+          "EXTUI10"
+        ],
+        "acceptance": "Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

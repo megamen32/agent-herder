@@ -1,17 +1,17 @@
 {
   "title": "Herder V1: новое ядро с готовыми адаптерами",
-  "goal": "Закончить полезную версию за три часа по поручению владельца 07.11.2026: CI доводит прежние адаптеры, Astra отвечает за ядро и штатное подключение.",
+  "goal": "Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.",
   "business_result": "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов.",
   "deliverable": "implementation",
-  "decomposition": "complete",
-  "default_model": "gpt-6.1-sol",
+  "decomposition": "progressive",
+  "default_model": "gpt-6.1-terra",
   "slots": 4,
   "estimate_policy": {
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "08.11 19:13МСК: owner5minquiet выполнена300.203751s, exactChromePIDs всеresumed; проверка16:12:27Z suspended_remaining0. d08a68ae source/pacakged manifest5e21be1d verifierPASS; unchangedcore/CLIreuse, ZCode/browser changed→nativefullнепереносится. Cooldown fix70parent+82workerPASS/tsc;3profileguards54PASS. MV3assessment reuse UserIOtabs_list/eval/Dots, sync15min up to12HTTP/accountguard gaps. Browserpostpausecheck blocked: MacMiniCDP50260 launchd explicitlydisabled, localVibe8788 Notconnectedtorelay; ChromePIDs опятьсменились, активныйbrowseroperator неустановлен. CI audit runtime sources active, permission/refusalнеобходится. Native sends stopped, installedV1нет,429clearedнеclaimed; next exacttransport handoff then oneobservedread.",
-  "updated_at": "2026-11-08T21:37:19+03:00",
+  "current_progress": "10.11 21:48МСК: установлен Rust entry, оба shared selectors содержат3CLI+ChatGPT UserIO. Connected discovery/context PASS; ordinary installed SDK10/10nativeIDs PASS, history partial. UserIO0.9.29 backend+Chrome Default/Carevio загружен. HUMANQUOTA12 завершён: exact2388 постоянно установлен fence98/PID3616632;56tests+tsc, installed human allowed/automatic0writes, единичный native NoticePlace steer admitted. Lovelace заканчивает ChatGPT lifecycle source; Linnaeus Z.ai source; Lorentz готовит ZCode shared profile readonly, без повторения provider canaries. Длинный connected messages имеет gateway receipt caller/profile mismatch, исходныеjobs сохранены, новые reads не повторяются. SESSIONREPLIES13 записан в очередь; полныйV1 пока не принят.",
+  "updated_at": "2026-11-10T21:48:38+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -20,7 +20,7 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "acceptance_scenario": "Через штатный MCP entrypoint одного immutable core+AHAP artifact выбрать exact instance каждой из пяти сред; create, отдельный deliver, read, export с полнотой, search и projects. CLI используют настоящий harness и лжемодель, browser выделенный scope. Повторить на installed artifact. Проверить restart/same request key/UNKNOWN/HumanStop без повторной mutation. Unsupported обязательной операции не PASS.",
+  "acceptance_scenario": "Один capture/core и native IDs. Две связи Рабочий UserIO/Личный UserIO: аккаунт A разрешён обоим, B только личному; правильные credentials, commands/results и delivery receipts изолированы поconnection/account. UserIO читает свои сообщения, Herder получаетChatGPT изтого же canonical snapshot. UI/reload сохраняетнастройки; VK capability видна. Existing singleconnection мигрирует без потериданных. Installedprofile и ordinaryMCP readback, CLI lifecycle, restart/no-replay/HumanStop доказаны отдельно.",
   "revisions": [
     {
       "at": "2026-11-07T23:24:43+03:00",
@@ -172,6 +172,105 @@
       "at": "2026-11-08T21:24:14+00:00",
       "reason": "herder-bypass",
       "summary": "herder-bypass: release-guard release project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-10T15:03:53+03:00",
+      "reason": "Владелец назначил нового Lead и поручил завершить незаконченный план; live и main ушли вперёд handoff 08.11.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "Восстанавливаем фактическое состояние и принимаем уже выполненное по exact evidence. В V1 сохраняем Rust core + TS/AHAP; работаем по минимальному оставшемуся consumer blocker, без повторения принятых операций."
+    },
+    {
+      "at": "2026-11-10T15:15:51+03:00",
+      "reason": "Прямая коррекция владельца: browserprofiles не Vibe; единое ядро UserIO extension с thin Herder binding, без двух истин и ручного выбора источника.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "BROWSER10 направлен на существующее extension/core и canonical chat stream. Полный Vibe smoke больше не является acceptance browser adapters; UI checks могут пользоваться Vibe как инструментом браузера. UserIO read и Herder ChatGPT data должны сосуществовать в одном core."
+    },
+    {
+      "at": "2026-11-10T15:22:32+03:00",
+      "reason": "Owner10Nov расширил итог: work/personal UserIO с overlapaccount selections; ясно показать VK; extensiondefault, CDP/Vibe экспериментальны и неактивны.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "Нужен единый core с perconnection OAuth/config/routes и общим ChatGPT snapshot; thin destinations вместо fork. UserIO primarydirty/diverged сохраняется; isolated detachedworktree от свежегоorigin/main дляownedextensionchanges."
+    },
+    {
+      "at": "2026-11-10T15:32:29+03:00",
+      "reason": "Owner reminded functional architecture is mandatory.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "Shared extension core and Herder integration must use pure state transitions plus explicit effects. OAuth/Chrome/UserIO/Herder are boundary adapters; no hidden mutable connection, second reader, fallback, or side effect inside domain/snapshot/routing reducers. Integration gate now includes functional-core tests and effect adapters separately."
+    },
+    {
+      "at": "2026-11-10T16:28:57+03:00",
+      "reason": "Source and package integration completed; runtime gate investigated",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "UserIO commit 3a72b85 and Herder commit 3cda11b0 are pushed. MV3/static ZIP 0.9.25 built with SHA256 7255eff0620d8372b5d919e72063f69bc8fc3cadc3f1ee6218c5e70d3f36 and installed into the exact local Chrome Default UserIO target with rollback backup. Vibe can list pages but refuses chrome://extensions and chrome-extension:// interaction, so loaded-extension reload, UserIO fixture readback and live Herder readback remain UNKNOWN; no PASS claimed."
+    },
+    {
+      "at": "2026-11-10T16:52:06+03:00",
+      "reason": "owner clarified that Chrome DevTools MCP consent and the existing 5-second watcher are unacceptable",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "Route changed: remove Chrome DevTools consent/polling from the default browser path. The maintained extension/profile manager must use a local control plane with explicit backend modes; CDP is optional only for an isolated controlled profile. Add a scoped Herder regression fix for the legacy modal watcher and a GPTAdmin child MCP with profile discovery, staged artifacts, backup/rollback, and honest unmanaged status."
+    },
+    {
+      "at": "2026-11-10T21:00:23+03:00",
+      "reason": "Owner10Nov указал на отсутствие видимого результата и неизменный ETA; ближайший приоритет — закончить обычное подключение до новых внутренних итераций.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "Зафиксирован реальный результат и отдельно невыполненная установка sharedbrowserprofile. Rustcore registration session:c678f986d231c56992a17b8966dd1397 и10messages подтверждены; permission на сообщение держателючужогоlease ожидается. Source lifecycleworker продолжаетmissingfunctionalities независимо."
+    },
+    {
+      "at": "2026-11-10T21:33:14+03:00",
+      "reason": "Владелец попросил добавить в будущую работу ранний/поздний ответ и напоминание при межсессионной отправке.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "SESSIONREPLIES13 вочереди: defaultожидаетearly+finalсреальнымтекстомсессии;expect_reply=falseотключаетобаответаинапоминания. Boundedhookнапоминаетполучателюдатьпозднийответисодержитточнуюподсказкуответа. Текущуюустановкуиквотныйфикснепрерывать;реализациюновогоfeatureнезапускатьсейчас."
+    },
+    {
+      "at": "2026-11-10T21:40:15+03:00",
+      "reason": "Подтверждена установка общего ChatGPT профиля; устранён устаревший lease blocker.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "summary": "BROWSERINSTALL12 закрыт установленным SDK10/10 и connected discovery/context. Длинное чтение GPTAdmin фиксируется отдельным integration gap. Двухэтапные ответы остаются в очереди."
     }
   ]
 }

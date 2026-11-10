@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-10T12:12:09+00:00",
+  "details": "Installed ChatGPT/zai preflight verifyPinnedAccountScope failed vibe_chrome_operation_outcome_unavailable_do_not_replay. Другой Vibe route list_pages works. Original operation outcome and configured route must be reconciled; no model send repeated.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T12:12:09+00:00",
+      "changes": {
+        "details": "Installed ChatGPT/zai preflight verifyPinnedAccountScope failed vibe_chrome_operation_outcome_unavailable_do_not_replay. Другой Vibe route list_pages works. Original operation outcome and configured route must be reconciled; no model send repeated.",
+        "source": "evidence/resume-20261110/terra-route.md",
+        "status": "open",
+        "title": "Pinned browser account read не возвращает результат через Vibe"
+      }
+    }
+  ],
+  "id": "BROWSER_PINNED_READ_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "source": "evidence/resume-20261110/terra-route.md",
+  "status": "open",
+  "title": "Pinned browser account read не возвращает результат через Vibe",
+  "updated_at": "2026-11-10T12:12:09+00:00"
+}

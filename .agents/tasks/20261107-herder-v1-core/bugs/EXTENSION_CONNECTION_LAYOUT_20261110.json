@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T15:39:53+00:00",
+  "details": "ActualChromium fixture preview800px wraps Work/Personal and buttons by letters; huge raw scope dominates; misleading global disconnected above named connections. WorkerKuhn owns options UI+tests and reruns actualbrowser.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T15:39:53+00:00",
+      "changes": {
+        "details": "ActualChromium fixture preview800px wraps Work/Personal and buttons by letters; huge raw scope dominates; misleading global disconnected above named connections. WorkerKuhn owns options UI+tests and reruns actualbrowser.",
+        "source": "evidence/resume-20261110",
+        "status": "open",
+        "title": "Узкие колонки ломают настройки Work/Personal"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T17:38:49+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/layout-proof/green-result.txt",
+            "red_proof_path": "evidence/resume-20261110/layout-proof/red-result.txt",
+            "red_result": "FAIL: same Chromium probe on beee53a (pre-publication baseline) and 0fed2ca (published UI predecessor): at 375px and 800px, actual options DOM has 0 rendered .connection-name labels and 0 .connection-row elements for fake Work and Personal connections.",
+            "red_sha256": "8cd3510adb56d4f02faa846593493b1f9e5361a6978c1eb45fa290d761328122",
+            "result": "PASS: same Chromium probe on e840c9fa: at 375px and 800px actual rendered text is Work and Personal, each one text fragment and 14px high; two connection rows exist and document scrollWidth is within viewport.",
+            "sha256": "ef6ffac13ec9a21e4fa9c092d049ac54d434ab91c7e4f56c0ffbc68eaddba420",
+            "test_command": "python3 evidence/resume-20261110/layout-proof/probe.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "EXTENSION_CONNECTION_LAYOUT_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/layout-proof/green-result.txt",
+      "red_proof_path": "evidence/resume-20261110/layout-proof/red-result.txt",
+      "red_result": "FAIL: same Chromium probe on beee53a (pre-publication baseline) and 0fed2ca (published UI predecessor): at 375px and 800px, actual options DOM has 0 rendered .connection-name labels and 0 .connection-row elements for fake Work and Personal connections.",
+      "red_sha256": "8cd3510adb56d4f02faa846593493b1f9e5361a6978c1eb45fa290d761328122",
+      "result": "PASS: same Chromium probe on e840c9fa: at 375px and 800px actual rendered text is Work and Personal, each one text fragment and 14px high; two connection rows exist and document scrollWidth is within viewport.",
+      "sha256": "ef6ffac13ec9a21e4fa9c092d049ac54d434ab91c7e4f56c0ffbc68eaddba420",
+      "test_command": "python3 evidence/resume-20261110/layout-proof/probe.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/resume-20261110",
+  "status": "fixed",
+  "title": "Узкие колонки ломают настройки Work/Personal",
+  "updated_at": "2026-11-10T17:38:49+00:00"
+}

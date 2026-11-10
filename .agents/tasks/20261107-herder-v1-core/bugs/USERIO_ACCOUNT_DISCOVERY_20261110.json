@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T17:19:32+00:00",
+  "details": "Loaded Carevio0.9.28; actual gpt_scope returns exact identity dbc1d2ed, but options after reload contains no ChatGPT account binding row. Natural new root tab also did not populate row. Current bootstrap relies solely on passive page auth/session fetch; verified metadata/UI identity paths do not observe unbound account. Evidence ART/live-userio-scope-028.json and mac-options-account-row2.log. No content command or binding guard bypass attempted.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T17:19:32+00:00",
+      "changes": {
+        "details": "Loaded Carevio0.9.28; actual gpt_scope returns exact identity dbc1d2ed, but options after reload contains no ChatGPT account binding row. Natural new root tab also did not populate row. Current bootstrap relies solely on passive page auth/session fetch; verified metadata/UI identity paths do not observe unbound account. Evidence ART/live-userio-scope-028.json and mac-options-account-row2.log. No content command or binding guard bypass attempted.",
+        "source": "live UserIO gpt_scope plus native options AX",
+        "status": "open",
+        "title": "Подтверждённый ChatGPT scope не появляется в списке аккаунтов для выбора назначения"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c66d-28e2-7702-8c8a-d89c1034d66c",
+      "at": "2026-11-10T17:55:37+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/final-verification/userio-account-discovery-green.log",
+            "red_proof_path": "evidence/resume-20261110/final-verification/userio-account-discovery-red.log",
+            "red_result": "# fail 2",
+            "red_sha256": "093e5f31c0bbc4f31955c19307c993aef3d66a0d8a019819253806c210b36ba3",
+            "result": "# pass 42",
+            "sha256": "216e3b0ffcee39e5f34bbf0887e8121997f11bea1e9befd5044a8eb6c1cc0aeb",
+            "test_command": "node --test extensions/vk-inbox/tests/extcontract11.test.mjs extensions/vk-inbox/tests/options.test.mjs extensions/vk-inbox/tests/connection-ui.test.mjs extensions/vk-inbox/tests/connections.test.mjs extensions/vk-inbox/tests/chatgpt-passive.test.mjs extensions/vk-inbox/tests/oauth.test.mjs"
+          },
+          "kind": "fixed",
+          "reason": "0.9.29: UI account row, explicit UserIO binding, driver 10 messages and independent API 10/10; partial capture only. See evidence/resume-20261110/final-verification/userio-account-discovery-acceptance.md."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "USERIO_ACCOUNT_DISCOVERY_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/final-verification/userio-account-discovery-green.log",
+      "red_proof_path": "evidence/resume-20261110/final-verification/userio-account-discovery-red.log",
+      "red_result": "# fail 2",
+      "red_sha256": "093e5f31c0bbc4f31955c19307c993aef3d66a0d8a019819253806c210b36ba3",
+      "result": "# pass 42",
+      "sha256": "216e3b0ffcee39e5f34bbf0887e8121997f11bea1e9befd5044a8eb6c1cc0aeb",
+      "test_command": "node --test extensions/vk-inbox/tests/extcontract11.test.mjs extensions/vk-inbox/tests/options.test.mjs extensions/vk-inbox/tests/connection-ui.test.mjs extensions/vk-inbox/tests/connections.test.mjs extensions/vk-inbox/tests/chatgpt-passive.test.mjs extensions/vk-inbox/tests/oauth.test.mjs"
+    },
+    "kind": "fixed",
+    "reason": "0.9.29: UI account row, explicit UserIO binding, driver 10 messages and independent API 10/10; partial capture only. See evidence/resume-20261110/final-verification/userio-account-discovery-acceptance.md."
+  },
+  "source": "live UserIO gpt_scope plus native options AX",
+  "status": "fixed",
+  "title": "Подтверждённый ChatGPT scope не появляется в списке аккаунтов для выбора назначения",
+  "updated_at": "2026-11-10T17:55:37+00:00"
+}

@@ -1,0 +1,51 @@
+{
+  "id": "MEXT10",
+  "kind": "milestone",
+  "label": "Единое расширение для рабочих и личных подключений",
+  "status": "done",
+  "estimate_minutes": 45,
+  "acceptance": "Один core, два независимых UserIO connection, пересекающиеся account маршруты и ясно видимыеVK/ChatGPT/Z.ai; опубликованный пакет и реальный readback.",
+  "model": "gpt-6.1-terra",
+  "created_at": "2026-11-10T15:22:32+03:00",
+  "updated_at": "2026-11-10T16:27:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:32+03:00",
+      "note": "",
+      "changes": {
+        "id": "MEXT10",
+        "kind": "milestone",
+        "label": "Единое расширение для рабочих и личных подключений",
+        "status": "running",
+        "estimate_minutes": 45,
+        "acceptance": "Один core, два независимых UserIO connection, пересекающиеся account маршруты и ясно видимыеVK/ChatGPT/Z.ai; опубликованный пакет и реальный readback.",
+        "model": "gpt-6.1-terra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:57+03:00",
+      "note": "Принято Lead после source review и соответствующих тестов.",
+      "changes": {
+        "status": "done",
+        "result": "Общий functional UserIO extension slice завершён в source/package: UserIO commit 3a72b85, Herder commit 3cda11b0, MV3/static ZIP SHA256 7255eff0620d8372b5d919e72063f69bc8fc3cadc3f1ee6218c5e70d3f36. Runtime proof вынесен в отдельный release gate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Общий functional UserIO extension slice завершён в source/package: UserIO commit 3a72b85, Herder commit 3cda11b0, MV3/static ZIP SHA256 7255eff0620d8372b5d919e72063f69bc8fc3cadc3f1ee6218c5e70d3f36. Runtime proof вынесен в отдельный release gate."
+}

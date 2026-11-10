@@ -1,0 +1,138 @@
+{
+  "before": [
+    {
+      "width": 375,
+      "scrollWidth": 360,
+      "labels": [],
+      "rows": [],
+      "status": "FAIL"
+    },
+    {
+      "width": 800,
+      "scrollWidth": 785,
+      "labels": [],
+      "rows": [],
+      "status": "FAIL"
+    }
+  ],
+  "after": [
+    {
+      "width": 375,
+      "scrollWidth": 360,
+      "labels": [
+        {
+          "text": "Work",
+          "height": 14,
+          "width": 34.953125,
+          "fragments": [
+            {
+              "x": 44,
+              "y": 300,
+              "width": 34.953125,
+              "height": 14
+            }
+          ]
+        },
+        {
+          "text": "Personal",
+          "height": 14,
+          "width": 59,
+          "fragments": [
+            {
+              "x": 44,
+              "y": 509,
+              "width": 59,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "rows": [
+        {
+          "left": 31,
+          "right": 329,
+          "width": 298,
+          "scrollWidth": 298,
+          "clientWidth": 298,
+          "actions": {
+            "left": 44,
+            "right": 316,
+            "width": 272
+          }
+        },
+        {
+          "left": 31,
+          "right": 329,
+          "width": 298,
+          "scrollWidth": 298,
+          "clientWidth": 298,
+          "actions": {
+            "left": 44,
+            "right": 316,
+            "width": 272
+          }
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "width": 800,
+      "scrollWidth": 785,
+      "labels": [
+        {
+          "text": "Work",
+          "height": 14,
+          "width": 34.953125,
+          "fragments": [
+            {
+              "x": 90.5,
+              "y": 293,
+              "width": 34.953125,
+              "height": 14
+            }
+          ]
+        },
+        {
+          "text": "Personal",
+          "height": 14,
+          "width": 59,
+          "fragments": [
+            {
+              "x": 90.5,
+              "y": 416,
+              "width": 59,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "rows": [
+        {
+          "left": 77.5,
+          "right": 707.5,
+          "width": 630,
+          "scrollWidth": 630,
+          "clientWidth": 630,
+          "actions": {
+            "left": 90.5,
+            "right": 685.546875,
+            "width": 595.046875
+          }
+        },
+        {
+          "left": 77.5,
+          "right": 707.5,
+          "width": 630,
+          "scrollWidth": 630,
+          "clientWidth": 630,
+          "actions": {
+            "left": 90.5,
+            "right": 685.546875,
+            "width": 595.046875
+          }
+        }
+      ],
+      "status": "PASS"
+    }
+  ]
+}

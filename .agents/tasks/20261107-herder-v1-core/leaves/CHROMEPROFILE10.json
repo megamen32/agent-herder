@@ -1,0 +1,97 @@
+{
+  "id": "CHROMEPROFILE10",
+  "label": "Зафиксировать контрольный контракт Chrome profile MCP",
+  "description": "Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.",
+  "acceptance": "Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.",
+  "affected_files": [
+    "docs/CHROME_PROFILE_MANAGER_MCP.md",
+    "tests/test_chrome_profile_manager_mcp.py"
+  ],
+  "status": "deferred",
+  "kind": "research",
+  "owner": "GPTAdmin separate session",
+  "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "workhorse",
+  "complexity": "M",
+  "estimate_minutes": 15,
+  "estimate": "15 min",
+  "estimate_min": 10,
+  "estimate_max": 15,
+  "wave": 1,
+  "created_at": "2026-11-10T16:56:51+03:00",
+  "updated_at": "2026-11-10T18:34:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T16:56:51+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHROMEPROFILE10",
+        "label": "Зафиксировать контрольный контракт Chrome profile MCP",
+        "description": "Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.",
+        "acceptance": "Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.",
+        "affected_files": [
+          "docs/CHROME_PROFILE_MANAGER_MCP.md",
+          "tests/test_chrome_profile_manager_mcp.py"
+        ],
+        "status": "pending",
+        "kind": "research",
+        "owner": "lead",
+        "session": "current",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "workhorse",
+        "complexity": "M",
+        "estimate_minutes": 15,
+        "estimate": "15 min",
+        "estimate_min": 10,
+        "estimate_max": 15,
+        "wave": 1
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:58:19+03:00",
+      "note": "Начата фиксация контракта и реализация GPTAdmin child MCP после подтверждения, что DevTools consent требует ручной Allow и watcher не может его нажать.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T18:34:46+03:00",
+      "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+      "changes": {
+        "status": "deferred",
+        "owner": "GPTAdmin separate session",
+        "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+        "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+}

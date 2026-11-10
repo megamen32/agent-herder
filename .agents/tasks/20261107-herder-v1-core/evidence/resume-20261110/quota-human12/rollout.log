@@ -1,0 +1,6 @@
+native candidate preflight passed; full installed release acceptance remains INCOMPLETE
+the config of the node is saved: /home/roomhacker/agents-projects/.fleet-candidate/node-config.json.bak-20261110T183904Z
+the native values of the node are written into /home/roomhacker/agents-projects/.fleet-candidate/node-config.json
+packages: shared store /home/roomhacker/agents-projects/.fleet-candidate/shared-node-modules/934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727 (created=False); 302 packages linked into /home/roomhacker/agents-projects/.fleet-candidate/shared-node-modules/934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727; agent-resume-mcp -> ../packages/agent-resume; area package root /home/roomhacker/agents-projects/.fleet-candidate/node_modules state=already
+rollback drop-in saved: /home/roomhacker/.config/systemd/user/agent-herder.service.d/10-release-exec.conf.bak-20261110T183904Z
+owner node is back on 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3

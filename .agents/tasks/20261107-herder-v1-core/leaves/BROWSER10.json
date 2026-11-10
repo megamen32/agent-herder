@@ -1,0 +1,92 @@
+{
+  "id": "BROWSER10",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Подключить Herder к единому ядру расширения UserIO",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Единый extension core читает UserIO и передаёт ChatGPT stream Herder через distinct bindings. Нет второй независимой копии истины/читателя; source/tests и actual installed same-chat readback отдельно. Подключения и scope понятны в UI.",
+  "created_at": "2026-11-10T15:11:03+03:00",
+  "updated_at": "2026-11-10T16:27:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:11:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "BROWSER10",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Восстановить чтение pinned account через установленный Vibe",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Исход исходной операции установлен, account scope обоих profiles читается через разрешённый маршрут; новые model sends0 до готовности."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:14:34+03:00",
+      "note": "Terra verifying original pinned browser read and route; own account read only.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+        "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:15:51+03:00",
+      "note": "Latest user steering overrides Vibe path; shared core with thin shells preferred after code verification.",
+      "changes": {
+        "label": "Подключить Herder к единому ядру расширения UserIO",
+        "description": "Исследовать существующее extension, найти один canonical ChatGPT capture/command core, подготовить тонкий typed Herder binding без Vibe и дублирования reader/data truth.",
+        "acceptance": "Единый extension core читает UserIO и передаёт ChatGPT stream Herder через distinct bindings. Нет второй независимой копии истины/читателя; source/tests и actual installed same-chat readback отдельно. Подключения и scope понятны в UI."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:57+03:00",
+      "note": "Принято Lead после source review и соответствующих тестов.",
+      "changes": {
+        "status": "done",
+        "result": "Herder maintained ChatGPT/Z.ai transport переведён на UserIO extension default in commit 3cda11b0. Full native messages and honest partial transcript metadata, exact account scope, no silent Vibe/CDP fallback; Vibe/direct CDP explicitly experimental/unmaintained. Focused Herder suite 88/88 PASS, tsc and npm build PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+  "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+  "harness": "codex",
+  "description": "Исследовать существующее extension, найти один canonical ChatGPT capture/command core, подготовить тонкий typed Herder binding без Vibe и дублирования reader/data truth.",
+  "result": "Herder maintained ChatGPT/Z.ai transport переведён на UserIO extension default in commit 3cda11b0. Full native messages and honest partial transcript metadata, exact account scope, no silent Vibe/CDP fallback; Vibe/direct CDP explicitly experimental/unmaintained. Focused Herder suite 88/88 PASS, tsc and npm build PASS."
+}

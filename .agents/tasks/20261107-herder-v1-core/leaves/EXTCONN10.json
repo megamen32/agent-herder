@@ -1,0 +1,74 @@
+{
+  "id": "EXTCONN10",
+  "kind": "task",
+  "parent": "MEXT10",
+  "label": "Модель подключений и безопасная миграция текущей настройки",
+  "status": "done",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "acceptance": "Legacy singleconnection migrated once; same endpoint/differentOAuth principals isolated; account A→work+personal, B→personal, credentials never cross.",
+  "created_at": "2026-11-10T15:22:33+03:00",
+  "updated_at": "2026-11-10T16:27:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:33+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTCONN10",
+        "kind": "task",
+        "parent": "MEXT10",
+        "label": "Модель подключений и безопасная миграция текущей настройки",
+        "status": "queued",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "acceptance": "Legacy singleconnection migrated once; same endpoint/differentOAuth principals isolated; account A→work+personal, B→personal, credentials never cross."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:58+03:00",
+      "note": "Terra implements connectionId-scoped OAuth and account destination bindings in detached UserIO worktree.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+        "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:56+03:00",
+      "note": "Принято Lead после source review и соответствующих тестов.",
+      "changes": {
+        "status": "done",
+        "result": "Модель Work/Personal подключений и account binding matrix внедрены в UserIO extension commit 3a72b85. Named endpoints, HTTPS/loopback validation, stable provider+user+workspace keys, legacy-default one-time migration, same endpoint with separate OAuth storage. Extension suite 96/96 PASS; backend channel tests 32/32 PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+  "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+  "harness": "codex",
+  "result": "Модель Work/Personal подключений и account binding matrix внедрены в UserIO extension commit 3a72b85. Named endpoints, HTTPS/loopback validation, stable provider+user+workspace keys, legacy-default one-time migration, same endpoint with separate OAuth storage. Extension suite 96/96 PASS; backend channel tests 32/32 PASS."
+}

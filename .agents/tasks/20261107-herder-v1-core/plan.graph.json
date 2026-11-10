@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "title": "Herder V1: новое ядро с готовыми адаптерами",
-  "goal": "Закончить полезную версию за три часа по поручению владельца 07.11.2026: CI доводит прежние адаптеры, Astra отвечает за ядро и штатное подключение.",
+  "goal": "Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.",
   "business_result": "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов.",
   "business_results": [
     "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов."
   ],
   "acceptance_scenarios": [
-    "Через штатный MCP entrypoint одного immutable core+AHAP artifact выбрать exact instance каждой из пяти сред; create, отдельный deliver, read, export с полнотой, search и projects. CLI используют настоящий harness и лжемодель, browser выделенный scope. Повторить на installed artifact. Проверить restart/same request key/UNKNOWN/HumanStop без повторной mutation. Unsupported обязательной операции не PASS."
+    "Один capture/core и native IDs. Две связи Рабочий UserIO/Личный UserIO: аккаунт A разрешён обоим, B только личному; правильные credentials, commands/results и delivery receipts изолированы поconnection/account. UserIO читает свои сообщения, Herder получаетChatGPT изтого же canonical snapshot. UI/reload сохраняетнастройки; VK capability видна. Existing singleconnection мигрирует без потериданных. Installedprofile и ordinaryMCP readback, CLI lifecycle, restart/no-replay/HumanStop доказаны отдельно."
   ],
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -16,9 +16,9 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "current_progress": "08.11 19:13МСК: owner5minquiet выполнена300.203751s, exactChromePIDs всеresumed; проверка16:12:27Z suspended_remaining0. d08a68ae source/pacakged manifest5e21be1d verifierPASS; unchangedcore/CLIreuse, ZCode/browser changed→nativefullнепереносится. Cooldown fix70parent+82workerPASS/tsc;3profileguards54PASS. MV3assessment reuse UserIOtabs_list/eval/Dots, sync15min up to12HTTP/accountguard gaps. Browserpostpausecheck blocked: MacMiniCDP50260 launchd explicitlydisabled, localVibe8788 Notconnectedtorelay; ChromePIDs опятьсменились, активныйbrowseroperator неустановлен. CI audit runtime sources active, permission/refusalнеобходится. Native sends stopped, installedV1нет,429clearedнеclaimed; next exacttransport handoff then oneobservedread.",
+  "current_progress": "10.11 21:48МСК: установлен Rust entry, оба shared selectors содержат3CLI+ChatGPT UserIO. Connected discovery/context PASS; ordinary installed SDK10/10nativeIDs PASS, history partial. UserIO0.9.29 backend+Chrome Default/Carevio загружен. HUMANQUOTA12 завершён: exact2388 постоянно установлен fence98/PID3616632;56tests+tsc, installed human allowed/automatic0writes, единичный native NoticePlace steer admitted. Lovelace заканчивает ChatGPT lifecycle source; Linnaeus Z.ai source; Lorentz готовит ZCode shared profile readonly, без повторения provider canaries. Длинный connected messages имеет gateway receipt caller/profile mismatch, исходныеjobs сохранены, новые reads не повторяются. SESSIONREPLIES13 записан в очередь; полныйV1 пока не принят.",
   "deliverable": "implementation",
-  "decomposition": "complete",
+  "decomposition": "progressive",
   "revisions": [
     {
       "at": "2026-11-07T23:24:43+03:00",
@@ -104,12 +104,281 @@
       "at": "2026-11-08T21:24:14+00:00",
       "reason": "herder-bypass",
       "summary": "herder-bypass: release-guard release project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-10T15:03:53+03:00",
+      "reason": "Владелец назначил нового Lead и поручил завершить незаконченный план; live и main ушли вперёд handoff 08.11.",
+      "summary": "Восстанавливаем фактическое состояние и принимаем уже выполненное по exact evidence. В V1 сохраняем Rust core + TS/AHAP; работаем по минимальному оставшемуся consumer blocker, без повторения принятых операций."
+    },
+    {
+      "at": "2026-11-10T15:15:51+03:00",
+      "reason": "Прямая коррекция владельца: browserprofiles не Vibe; единое ядро UserIO extension с thin Herder binding, без двух истин и ручного выбора источника.",
+      "summary": "BROWSER10 направлен на существующее extension/core и canonical chat stream. Полный Vibe smoke больше не является acceptance browser adapters; UI checks могут пользоваться Vibe как инструментом браузера. UserIO read и Herder ChatGPT data должны сосуществовать в одном core."
+    },
+    {
+      "at": "2026-11-10T15:22:32+03:00",
+      "reason": "Owner10Nov расширил итог: work/personal UserIO с overlapaccount selections; ясно показать VK; extensiondefault, CDP/Vibe экспериментальны и неактивны.",
+      "summary": "Нужен единый core с perconnection OAuth/config/routes и общим ChatGPT snapshot; thin destinations вместо fork. UserIO primarydirty/diverged сохраняется; isolated detachedworktree от свежегоorigin/main дляownedextensionchanges."
+    },
+    {
+      "at": "2026-11-10T15:32:29+03:00",
+      "reason": "Owner reminded functional architecture is mandatory.",
+      "summary": "Shared extension core and Herder integration must use pure state transitions plus explicit effects. OAuth/Chrome/UserIO/Herder are boundary adapters; no hidden mutable connection, second reader, fallback, or side effect inside domain/snapshot/routing reducers. Integration gate now includes functional-core tests and effect adapters separately."
+    },
+    {
+      "at": "2026-11-10T16:28:57+03:00",
+      "reason": "Source and package integration completed; runtime gate investigated",
+      "summary": "UserIO commit 3a72b85 and Herder commit 3cda11b0 are pushed. MV3/static ZIP 0.9.25 built with SHA256 7255eff0620d8372b5d919e72063f69bc8fc3cadc3f1ee6218c5e70d3f36 and installed into the exact local Chrome Default UserIO target with rollback backup. Vibe can list pages but refuses chrome://extensions and chrome-extension:// interaction, so loaded-extension reload, UserIO fixture readback and live Herder readback remain UNKNOWN; no PASS claimed."
+    },
+    {
+      "at": "2026-11-10T16:52:06+03:00",
+      "reason": "owner clarified that Chrome DevTools MCP consent and the existing 5-second watcher are unacceptable",
+      "summary": "Route changed: remove Chrome DevTools consent/polling from the default browser path. The maintained extension/profile manager must use a local control plane with explicit backend modes; CDP is optional only for an isolated controlled profile. Add a scoped Herder regression fix for the legacy modal watcher and a GPTAdmin child MCP with profile discovery, staged artifacts, backup/rollback, and honest unmanaged status."
+    },
+    {
+      "at": "2026-11-10T21:00:23+03:00",
+      "reason": "Owner10Nov указал на отсутствие видимого результата и неизменный ETA; ближайший приоритет — закончить обычное подключение до новых внутренних итераций.",
+      "summary": "Зафиксирован реальный результат и отдельно невыполненная установка sharedbrowserprofile. Rustcore registration session:c678f986d231c56992a17b8966dd1397 и10messages подтверждены; permission на сообщение держателючужогоlease ожидается. Source lifecycleworker продолжаетmissingfunctionalities независимо."
+    },
+    {
+      "at": "2026-11-10T21:33:14+03:00",
+      "reason": "Владелец попросил добавить в будущую работу ранний/поздний ответ и напоминание при межсессионной отправке.",
+      "summary": "SESSIONREPLIES13 вочереди: defaultожидаетearly+finalсреальнымтекстомсессии;expect_reply=falseотключаетобаответаинапоминания. Boundedhookнапоминаетполучателюдатьпозднийответисодержитточнуюподсказкуответа. Текущуюустановкуиквотныйфикснепрерывать;реализациюновогоfeatureнезапускатьсейчас."
+    },
+    {
+      "at": "2026-11-10T21:40:15+03:00",
+      "reason": "Подтверждена установка общего ChatGPT профиля; устранён устаревший lease blocker.",
+      "summary": "BROWSERINSTALL12 закрыт установленным SDK10/10 и connected discovery/context. Длинное чтение GPTAdmin фиксируется отдельным integration gap. Двухэтапные ответы остаются в очереди."
     }
   ],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-09T06:19:31+03:00",
+  "updated_at": "2026-11-10T21:48:38+03:00",
   "tasks": [
+    {
+      "id": "BACKENDCONTRACT11",
+      "label": "Сверить живой backend UserIO с контрактом расширения",
+      "status": "done",
+      "description": "Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.",
+      "result": "Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12.",
+      "owner": "Mencius",
+      "session": "01a1c60a-8349-76e1-a759-1a267d3a3d88",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:23:35+03:00",
+          "note": "",
+          "changes": {
+            "id": "BACKENDCONTRACT11",
+            "label": "Сверить живой backend UserIO с контрактом расширения",
+            "status": "running",
+            "description": "Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.",
+            "owner": "Mencius",
+            "session": "01a1c60a-8349-76e1-a759-1a267d3a3d88",
+            "estimate_minutes": 15,
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:15:54+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:23:35+03:00",
+      "started_at": "2026-11-10T18:23:35+03:00",
+      "finished_at": "2026-11-10T20:15:54+03:00"
+    },
+    {
+      "id": "BROWSER10",
+      "label": "Подключить Herder к единому ядру расширения UserIO",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Исследовать существующее extension, найти один canonical ChatGPT capture/command core, подготовить тонкий typed Herder binding без Vibe и дублирования reader/data truth.",
+      "acceptance": "Единый extension core читает UserIO и передаёт ChatGPT stream Herder через distinct bindings. Нет второй независимой копии истины/читателя; source/tests и actual installed same-chat readback отдельно. Подключения и scope понятны в UI.",
+      "result": "Herder maintained ChatGPT/Z.ai transport переведён на UserIO extension default in commit 3cda11b0. Full native messages and honest partial transcript metadata, exact account scope, no silent Vibe/CDP fallback; Vibe/direct CDP explicitly experimental/unmaintained. Focused Herder suite 88/88 PASS, tsc and npm build PASS.",
+      "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+      "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:11:03+03:00",
+          "note": "",
+          "changes": {
+            "id": "BROWSER10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Восстановить чтение pinned account через установленный Vibe",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Исход исходной операции установлен, account scope обоих profiles читается через разрешённый маршрут; новые model sends0 до готовности."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:34+03:00",
+          "note": "Terra verifying original pinned browser read and route; own account read only.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+            "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:15:51+03:00",
+          "note": "Latest user steering overrides Vibe path; shared core with thin shells preferred after code verification.",
+          "changes": {
+            "label": "Подключить Herder к единому ядру расширения UserIO",
+            "description": "Исследовать существующее extension, найти один canonical ChatGPT capture/command core, подготовить тонкий typed Herder binding без Vibe и дублирования reader/data truth.",
+            "acceptance": "Единый extension core читает UserIO и передаёт ChatGPT stream Herder через distinct bindings. Нет второй независимой копии истины/читателя; source/tests и actual installed same-chat readback отдельно. Подключения и scope понятны в UI."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:27:57+03:00",
+          "note": "Принято Lead после source review и соответствующих тестов.",
+          "changes": {
+            "status": "done",
+            "result": "Herder maintained ChatGPT/Z.ai transport переведён на UserIO extension default in commit 3cda11b0. Full native messages and honest partial transcript metadata, exact account scope, no silent Vibe/CDP fallback; Vibe/direct CDP explicitly experimental/unmaintained. Focused Herder suite 88/88 PASS, tsc and npm build PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:11:03+03:00",
+      "started_at": "2026-11-10T15:14:34+03:00",
+      "finished_at": "2026-11-10T16:27:57+03:00"
+    },
+    {
+      "id": "BROWSERINSTALL12",
+      "label": "Подключить проверенный ChatGPT к общему MCP",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Prepared browser profile and ordinary staged Rust read10/10 accepted; appendexactprofile to both selectors after releaselease handoff, preserve3CLI; public connected consumer read.",
+      "acceptance": "Оба shared selectors установлены CAS под lease; child AgentHerder перезапущен штатно; connected discover/context видят ChatGPT; обычный installed SDK читает 10/10 native message IDs. Длинный connected messages через gateway имеет отдельный незавершённый receipt и не считается этим закрытием.",
+      "result": "Установлено под fence95; child AgentHerder restart fence96 подтверждён новымPID2731310. Connected4instances и context ChatGPT session:c678f986d231c56992a17b8966dd1397 PASS; installed SDK10/10sameIDs PASS, history partial. Evidence final-verification/browser-core-installed-read.json и browser-selector-installed.json. Длинный gateway session(messages) принят в job, результат не доступен вызывающему из-за caller/profile receipt mismatch; новый read не повторять, это отдельная integration gap.",
+      "owner": "Lead",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T21:03:00+03:00",
+          "note": "",
+          "changes": {
+            "id": "BROWSERINSTALL12",
+            "parent": "MRESUME10",
+            "label": "Подключить проверенный ChatGPT к общему MCP",
+            "status": "blocked",
+            "description": "Prepared browser profile and ordinary staged Rust read10/10 accepted; appendexactprofile to both selectors after releaselease handoff, preserve3CLI; public connected consumer read.",
+            "acceptance": "BothselectorsCAS installed underownedprojectlease; connectedMCP discover chatgpt-userio-vk-browser and sessionmessages10matchingIDs; no messages/newcreate.",
+            "owner": "Lead",
+            "estimate_minutes": 10,
+            "estimate_unknown_reason": "Чужой project releaselease NoticePlace01a1c5a0; окноустановкипока не согласовано.",
+            "blocker": "Herder project releaselease held by NoticePlace01a1c5a0, fence94. Nativecoordinationpermission requested fromhuman pending. Do not overwritelease or bypass it.",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T21:39:25+03:00",
+          "note": "Прежний lease blocker снят и проверенная установка уже выполнена. Закрыта фактическая установка; public long-read receipt отражается отдельно, а не выдаётся за возвращённые данные.",
+          "changes": {
+            "status": "done",
+            "blocker": "",
+            "estimate_unknown_reason": "",
+            "acceptance": "Оба shared selectors установлены CAS под lease; child AgentHerder перезапущен штатно; connected discover/context видят ChatGPT; обычный installed SDK читает 10/10 native message IDs. Длинный connected messages через gateway имеет отдельный незавершённый receipt и не считается этим закрытием.",
+            "result": "Установлено под fence95; child AgentHerder restart fence96 подтверждён новымPID2731310. Connected4instances и context ChatGPT session:c678f986d231c56992a17b8966dd1397 PASS; installed SDK10/10sameIDs PASS, history partial. Evidence final-verification/browser-core-installed-read.json и browser-selector-installed.json. Длинный gateway session(messages) принят в job, результат не доступен вызывающему из-за caller/profile receipt mismatch; новый read не повторять, это отдельная integration gap."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 10.0,
+        "maximum": 10.0
+      },
+      "created_at": "2026-11-10T21:03:00+03:00",
+      "finished_at": "2026-11-10T21:39:25+03:00"
+    },
     {
       "id": "BROWSERRECOVER",
       "label": "Восстановить managed browser/gateway и точный ChatGPT clientroute",
@@ -206,6 +475,97 @@
       "created_at": "2026-11-08T00:55:53+03:00"
     },
     {
+      "id": "BROWSERREG11",
+      "label": "Исправить регрессии проверок browser adapters",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Failing browser fixtures reproduced and fixed while account identity and no-fallback admission remain intact; focused suites GREEN; owned source/test commit and RED/GREEN logs.",
+      "result": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending.",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:00:08+03:00",
+          "note": "",
+          "changes": {
+            "id": "BROWSERREG11",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Исправить регрессии проверок browser adapters",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Failing browser fixtures reproduced and fixed while account identity and no-fallback admission remain intact; focused suites GREEN; owned source/test commit and RED/GREEN logs.",
+            "affected_files": [
+              "tests/autopilot-zai-browser-judge.test.ts",
+              "tests/browser-chat-history-cache.test.ts",
+              "tests/browser-chat-loader.test.ts",
+              "tests/browser-profile-isolation-regression.test.ts",
+              "tests/chatgpt-session-export.test.ts",
+              "tests/zai-foreground-draft.test.ts",
+              "tests/v1-browser-runtime.test.ts"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:09:40+03:00",
+          "note": "RED/GREEN and tsc evidence: evidence/resume-20261110/browser-reg11/; integration remains with parent Lead.",
+          "changes": {
+            "status": "done",
+            "result": "Detached commit 4c54f559: seven owned fixture suites GREEN 81/81; tsc --noEmit exit 0. RED 20 failures reproduced. No real browsers/provider sends; no production paths changed."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c5f9-9ff8-7621-b901-d380a01ad615",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c5f9-9ff8-7621-b901-d380a01ad615",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:23:34+03:00",
+          "note": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending.",
+          "changes": {
+            "result": "Integrated130a16da:7test files81PASS and tsc. Full combined suite initially44failures resolved to only noticeplace policy fixtures plus foreign WIP modelpolicy. Final isolated suite pending."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/autopilot-zai-browser-judge.test.ts",
+        "tests/browser-chat-history-cache.test.ts",
+        "tests/browser-chat-loader.test.ts",
+        "tests/browser-profile-isolation-regression.test.ts",
+        "tests/chatgpt-session-export.test.ts",
+        "tests/zai-foreground-draft.test.ts",
+        "tests/v1-browser-runtime.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:00:08+03:00",
+      "finished_at": "2026-11-10T18:09:40+03:00"
+    },
+    {
       "id": "C10",
       "label": "Контракт Rust core → AHAP → TypeScript adapters",
       "status": "done",
@@ -281,6 +641,81 @@
       },
       "created_at": "2026-11-07T22:04:53+03:00",
       "finished_at": "2026-11-07T22:28:57+03:00"
+    },
+    {
+      "id": "CAREVIOLIVE12",
+      "label": "Прочитать реальный ChatGPT из Carevio через UserIO и Herder",
+      "status": "done",
+      "parent": "MEXT10",
+      "description": "Reload exact extension to0.9.28 using ordinary UI, observe account identity unbound, explicitly bind existing destination, read existing chat with compiled Herder and confirm UserIO snapshot readback. No message/model/creation.",
+      "acceptance": "Loaded0.9.28 and exact profile/principal identity; explicit account destination binding; Herder read and UserIO same snapshot metadata; install profile only after read.",
+      "result": "Carevio+Default loaded0.9.29 nativeUI. Verified Carevio identity creates unboundrow; explicitUIcheckbox selects legacy-default. Real Herder driver list20/read10 and UserIO API10/10same nativeIDs. Staged ordinary Rust core registered session:c678f986d231c56992a17b8966dd1397 and messages10/10PASS; current transcript partial. evidence/resume-20261110/final-verification/browser-core-read-029.json + userio-native-readback-029.json + userio029live. Sharedselector install is separate BROWSERINSTALL12, not yet applied.",
+      "owner": "Lead",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T20:08:59+03:00",
+          "note": "",
+          "changes": {
+            "id": "CAREVIOLIVE12",
+            "label": "Прочитать реальный ChatGPT из Carevio через UserIO и Herder",
+            "status": "running",
+            "description": "Reload exact extension to0.9.28 using ordinary UI, observe account identity unbound, explicitly bind existing destination, read existing chat with compiled Herder and confirm UserIO snapshot readback. No message/model/creation.",
+            "acceptance": "Loaded0.9.28 and exact profile/principal identity; explicit account destination binding; Herder read and UserIO same snapshot metadata; install profile only after read.",
+            "owner": "Lead",
+            "estimate_minutes": 15,
+            "parent": "MEXT10",
+            "model": "gpt-6-astra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:36:15+03:00",
+          "note": "Carevio0.9.28 loaded UI proof+gpt_scope exactPASS; found discovery no account row. Source7fa RED/GREEN and release3db0.9.29 published, backend installed. Staging Mac0.9.29 then both profile reload/read; preserving binding guard. No provider messages/create.",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T21:03:00+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Carevio+Default loaded0.9.29 nativeUI. Verified Carevio identity creates unboundrow; explicitUIcheckbox selects legacy-default. Real Herder driver list20/read10 and UserIO API10/10same nativeIDs. Staged ordinary Rust core registered session:c678f986d231c56992a17b8966dd1397 and messages10/10PASS; current transcript partial. evidence/resume-20261110/final-verification/browser-core-read-029.json + userio-native-readback-029.json + userio029live. Sharedselector install is separate BROWSERINSTALL12, not yet applied."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T20:08:59+03:00",
+      "started_at": "2026-11-10T20:08:59+03:00",
+      "finished_at": "2026-11-10T21:03:00+03:00"
     },
     {
       "id": "CASETRACE",
@@ -489,6 +924,150 @@
       "created_at": "2026-11-08T18:19:53+03:00",
       "started_at": "2026-11-08T18:19:53+03:00",
       "finished_at": "2026-11-08T18:26:53+03:00"
+    },
+    {
+      "id": "CHATLIFESOURCE12",
+      "label": "Довести создание и архивирование ChatGPT через общее расширение",
+      "status": "running",
+      "parent": "S2",
+      "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
+      "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+      "owner": "Heisenberg",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T20:54:08+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHATLIFESOURCE12",
+            "parent": "S2",
+            "label": "Довести создание и архивирование ChatGPT через общее расширение",
+            "status": "running",
+            "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
+            "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+            "owner": "Heisenberg",
+            "estimate_minutes": 15,
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T20:54:08+03:00",
+      "started_at": "2026-11-10T20:54:08+03:00"
+    },
+    {
+      "id": "CHROMEPROFILE10",
+      "label": "Зафиксировать контрольный контракт Chrome profile MCP",
+      "status": "deferred",
+      "kind": "research",
+      "description": "Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.",
+      "acceptance": "Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.",
+      "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.",
+      "owner": "GPTAdmin separate session",
+      "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "model_class": "workhorse",
+      "complexity": "M",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T16:56:51+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHROMEPROFILE10",
+            "label": "Зафиксировать контрольный контракт Chrome profile MCP",
+            "description": "Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.",
+            "acceptance": "Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.",
+            "affected_files": [
+              "docs/CHROME_PROFILE_MANAGER_MCP.md",
+              "tests/test_chrome_profile_manager_mcp.py"
+            ],
+            "status": "pending",
+            "kind": "research",
+            "owner": "lead",
+            "session": "current",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "model_class": "workhorse",
+            "complexity": "M",
+            "estimate_minutes": 15,
+            "estimate": "15 min",
+            "estimate_min": 10,
+            "estimate_max": 15,
+            "wave": 1
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:58:19+03:00",
+          "note": "Начата фиксация контракта и реализация GPTAdmin child MCP после подтверждения, что DevTools consent требует ручной Allow и watcher не может его нажать.",
+          "changes": {
+            "status": "running",
+            "owner": "roomhacker"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:46+03:00",
+          "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+          "changes": {
+            "status": "deferred",
+            "owner": "GPTAdmin separate session",
+            "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+            "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "docs/CHROME_PROFILE_MANAGER_MCP.md",
+        "tests/test_chrome_profile_manager_mcp.py"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T16:56:51+03:00",
+      "started_at": "2026-11-10T16:58:19+03:00",
+      "wave": 1
     },
     {
       "id": "CIBROWSER",
@@ -1139,6 +1718,64 @@
       "created_at": "2026-11-09T03:29:52+03:00",
       "started_at": "2026-11-09T03:29:52+03:00",
       "finished_at": "2026-11-09T04:55:20+03:00"
+    },
+    {
+      "id": "CIROUTE10",
+      "label": "Восстановить полный installed preflight через штатный consumer",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Источник профилей/manifest и public route установлены; preflight пяти lanes проходит либо точный чинящийся отказ локализован. Секреты и чужие вкладки сохранены.",
+      "result": "Terra read-only installed binding preflight: Codex/OpenCodeREADY, browseraccountVibe outcomeunavailable, ZCodeold82b missingexports/modelpin. Evidence resume-20261110/terra-route.md; exact remaining repairs split into BROWSER10/ZCODE10; sends0.",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:04:46+03:00",
+          "note": "",
+          "changes": {
+            "id": "CIROUTE10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Восстановить полный installed preflight через штатный consumer",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Источник профилей/manifest и public route установлены; preflight пяти lanes проходит либо точный чинящийся отказ локализован. Секреты и чужие вкладки сохранены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:34+03:00",
+          "note": "Bounded diagnostics complete; next fixes running with explicit owners.",
+          "changes": {
+            "status": "done",
+            "result": "Terra read-only installed binding preflight: Codex/OpenCodeREADY, browseraccountVibe outcomeunavailable, ZCodeold82b missingexports/modelpin. Evidence resume-20261110/terra-route.md; exact remaining repairs split into BROWSER10/ZCODE10; sends0."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:04:46+03:00",
+      "finished_at": "2026-11-10T15:14:34+03:00"
     },
     {
       "id": "CIRUNNERFINAL",
@@ -2018,6 +2655,463 @@
       "finished_at": "2026-11-08T20:12:38+03:00"
     },
     {
+      "id": "EXTCONN10",
+      "label": "Модель подключений и безопасная миграция текущей настройки",
+      "status": "done",
+      "parent": "MEXT10",
+      "acceptance": "Legacy singleconnection migrated once; same endpoint/differentOAuth principals isolated; account A→work+personal, B→personal, credentials never cross.",
+      "result": "Модель Work/Personal подключений и account binding matrix внедрены в UserIO extension commit 3a72b85. Named endpoints, HTTPS/loopback validation, stable provider+user+workspace keys, legacy-default one-time migration, same endpoint with separate OAuth storage. Extension suite 96/96 PASS; backend channel tests 32/32 PASS.",
+      "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+      "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:22:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTCONN10",
+            "kind": "task",
+            "parent": "MEXT10",
+            "label": "Модель подключений и безопасная миграция текущей настройки",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Legacy singleconnection migrated once; same endpoint/differentOAuth principals isolated; account A→work+personal, B→personal, credentials never cross."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:58+03:00",
+          "note": "Terra implements connectionId-scoped OAuth and account destination bindings in detached UserIO worktree.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+            "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:27:56+03:00",
+          "note": "Принято Lead после source review и соответствующих тестов.",
+          "changes": {
+            "status": "done",
+            "result": "Модель Work/Personal подключений и account binding matrix внедрены в UserIO extension commit 3a72b85. Named endpoints, HTTPS/loopback validation, stable provider+user+workspace keys, legacy-default one-time migration, same endpoint with separate OAuth storage. Extension suite 96/96 PASS; backend channel tests 32/32 PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:22:33+03:00",
+      "started_at": "2026-11-10T15:26:58+03:00",
+      "finished_at": "2026-11-10T16:27:56+03:00"
+    },
+    {
+      "id": "EXTCONTRACT11",
+      "label": "Исправить контракт одного ChatGPT snapshot для UserIO и Herder",
+      "status": "done",
+      "description": "Cross-module identity hash, command metadata admission, existing-binding lookup and honest partial history. WorkerCarson c03b299 plus passive hash followup.",
+      "acceptance": "Real extension modules Node GREEN and Lead review; release/actualbrowser separateEXTREAL11.",
+      "result": "c03b299+a944d5c published f3983cd.105Node testsPASS. Lead reviewed canonical scope for passive/scoped read/send and metadata proof; completeness >100 truthfully partial. ActualChromium and runtime separateEXTREAL11/EXTRELEASE10.",
+      "owner": "Carson",
+      "session": "01a1c5fe-60e2-7e93-bc03-536551f98fd1",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:23:35+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTCONTRACT11",
+            "label": "Исправить контракт одного ChatGPT snapshot для UserIO и Herder",
+            "status": "running",
+            "description": "Cross-module identity hash, command metadata admission, existing-binding lookup and honest partial history. WorkerCarson c03b299 plus passive hash followup.",
+            "acceptance": "Real extension modules Node GREEN and Lead review; release/actualbrowser separateEXTREAL11.",
+            "owner": "Carson",
+            "session": "01a1c5fe-60e2-7e93-bc03-536551f98fd1",
+            "estimate_minutes": 15,
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:45+03:00",
+          "note": "Source verified and published; installation not claimed.",
+          "changes": {
+            "status": "done",
+            "result": "c03b299+a944d5c published f3983cd.105Node testsPASS. Lead reviewed canonical scope for passive/scoped read/send and metadata proof; completeness >100 truthfully partial. ActualChromium and runtime separateEXTREAL11/EXTRELEASE10."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:23:35+03:00",
+      "started_at": "2026-11-10T18:23:35+03:00",
+      "finished_at": "2026-11-10T18:34:45+03:00"
+    },
+    {
+      "id": "EXTCORE10",
+      "label": "Объединить ChatGPT passive и scoped reads в один core",
+      "status": "done",
+      "parent": "MEXT10",
+      "acceptance": "Passive/read/sync converge same account/conversation snapshot/native IDs+revision/completion; UserIO andHerder projection consume same core, noindependentnormalizer.",
+      "result": "Единый функциональный ChatGPT snapshot core внедрён в UserIO extension commit 3a72b85: чистый reducer, durable chrome.storage state, passive и addressed reads используют один transition/effect path, workspace-safe account key, epoch/revision ordering. Extension suite 96/96 PASS; durable restart fence покрыт shared-chatgpt-core.test.mjs. Runtime install/readback остаётся отдельным release gate.",
+      "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+      "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:22:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTCORE10",
+            "kind": "task",
+            "parent": "MEXT10",
+            "label": "Объединить ChatGPT passive и scoped reads в один core",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Passive/read/sync converge same account/conversation snapshot/native IDs+revision/completion; UserIO andHerder projection consume same core, noindependentnormalizer."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:59+03:00",
+          "note": "Terra implements one canonical ChatGPT snapshot core. Required: connection scope includes provider+userId+workspace/accountId; snapshot epoch plus ordered revisions; stale responses cannot overwrite newer observations.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+            "session": "01a1c55e-770f-78f2-b4d1-bec9754f6b42",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:27:34+03:00",
+          "note": "Принято Lead после source review и полного extension suite.",
+          "changes": {
+            "status": "done",
+            "result": "Единый функциональный ChatGPT snapshot core внедрён в UserIO extension commit 3a72b85: чистый reducer, durable chrome.storage state, passive и addressed reads используют один transition/effect path, workspace-safe account key, epoch/revision ordering. Extension suite 96/96 PASS; durable restart fence покрыт shared-chatgpt-core.test.mjs. Runtime install/readback остаётся отдельным release gate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:22:33+03:00",
+      "started_at": "2026-11-10T15:26:59+03:00",
+      "finished_at": "2026-11-10T16:27:34+03:00"
+    },
+    {
+      "id": "EXTPOLL10",
+      "label": "Изолировать OAuth и команды по подключениям",
+      "status": "done",
+      "parent": "MEXT10",
+      "acceptance": "Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute.",
+      "result": "Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS.",
+      "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+      "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:22:33+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTPOLL10",
+            "kind": "task",
+            "parent": "MEXT10",
+            "label": "Изолировать OAuth и команды по подключениям",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:58+03:00",
+          "note": "Same worker implements per-connection command/result context and receipt isolation.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+            "session": "01a1c56a-39f4-7b21-a529-e588abc4e8d9",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:27:56+03:00",
+          "note": "Принято Lead после source review и соответствующих тестов.",
+          "changes": {
+            "status": "done",
+            "result": "Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:22:33+03:00",
+      "started_at": "2026-11-10T15:26:58+03:00",
+      "finished_at": "2026-11-10T16:27:56+03:00"
+    },
+    {
+      "id": "EXTREAL11",
+      "label": "Проверить загруженное расширение и HTTP-чтение Herder",
+      "status": "done",
+      "description": "Actual isolated Chromium MV3 with two local UserIO destinations and provider fixture. A→Work+Personal/B→Personal, Herder driver reads same snapshot, wrongbinding denied. No real provider request or send.",
+      "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-real-summary.json and options-fixture-375.png/options-fixture-800.png. Real Mac/provider integration tracked CAREVIOLIVE12; not claimed by fixture.",
+      "owner": "Kuhn",
+      "session": "01a1c60e-49de-7390-9adb-e971b1088c0c",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:23:35+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTREAL11",
+            "label": "Проверить загруженное расширение и HTTP-чтение Herder",
+            "status": "running",
+            "description": "Actual isolated Chromium MV3 with two local UserIO destinations and provider fixture. A→Work+Personal/B→Personal, Herder driver reads same snapshot, wrongbinding denied. No real provider request or send.",
+            "owner": "Kuhn",
+            "session": "01a1c60e-49de-7390-9adb-e971b1088c0c",
+            "estimate_minutes": 15,
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:08:59+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-live-summary.md. Real Mac/provider integration is separate follow-up, not claimed by fixture."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:12:53+03:00",
+          "note": "",
+          "changes": {
+            "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-real-summary.json and options-fixture-375.png/options-fixture-800.png. Real Mac/provider integration tracked CAREVIOLIVE12; not claimed by fixture."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:23:35+03:00",
+      "started_at": "2026-11-10T18:23:35+03:00",
+      "finished_at": "2026-11-10T20:08:59+03:00"
+    },
+    {
+      "id": "EXTUI10",
+      "label": "Показать сервисы, подключения и выбор получателей аккаунта",
+      "status": "done",
+      "parent": "MEXT10",
+      "acceptance": "Русский UI ясноVK/ChatGPT/Z.ai, work/personalconnections, accountdestinationmatrix сохраняетсяпослерелоада;experimentalroutesclearlyseparate.",
+      "result": "Options/popup UI показывает VK Web, ChatGPT, Z.ai, named Work/Personal connections and account destination matrix. Explicit connectionId RPCs, reload binding persistence, no raw tokens/routes in UI. Commit 3a72b85; UI/background tests included in 96/96 PASS.",
+      "owner": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+      "session": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:22:34+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTUI10",
+            "kind": "task",
+            "parent": "MEXT10",
+            "label": "Показать сервисы, подключения и выбор получателей аккаунта",
+            "status": "queued",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "acceptance": "Русский UI ясноVK/ChatGPT/Z.ai, work/personalconnections, accountdestinationmatrix сохраняетсяпослерелоада;experimentalroutesclearlyseparate."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:59+03:00",
+          "note": "Luna implements visible VK/ChatGPT/Z.ai services and work/personal destination matrix; UI never exposes tokens/raw route ids.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+            "session": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T16:27:56+03:00",
+          "note": "Принято Lead после source review и соответствующих тестов.",
+          "changes": {
+            "status": "done",
+            "result": "Options/popup UI показывает VK Web, ChatGPT, Z.ai, named Work/Personal connections and account destination matrix. Explicit connectionId RPCs, reload binding persistence, no raw tokens/routes in UI. Commit 3a72b85; UI/background tests included in 96/96 PASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:22:34+03:00",
+      "started_at": "2026-11-10T15:26:59+03:00",
+      "finished_at": "2026-11-10T16:27:56+03:00"
+    },
+    {
       "id": "FILLREADBACK",
       "label": "Проверить фактический composer после ошибки fill",
       "status": "done",
@@ -2624,6 +3718,89 @@
       "finished_at": "2026-11-08T18:55:15+03:00"
     },
     {
+      "id": "HERDERCONSENT10",
+      "label": "Убрать бесполезный Chrome Consent watcher и фоновые расходы",
+      "status": "done",
+      "description": "Исправить legacy ChatGPT CDP prompt watcher: no background timer, default-off, one-shot compatibility scan only, preserve page-level modal auto-answer and document Chrome-owned consent boundary.",
+      "acceptance": "Focused chatgpt-mac-cdp-driver tests, tsc and diff-check pass; source commit integrated into main; no setInterval remains for prompt watcher and normal page operations still scan/answer page-level modal prompts.",
+      "result": "Commit 1838175e integrated into main. Focused Vitest 56/56 passed, tsc --noEmit passed, Rust lib 203/203 passed, diff-check passed. TDD RED/GREEN evidence and bug B8795931e39974cc68818 fixed. Full npm test remains red on 44 unrelated baseline/foreign failures, including pre-existing duplicate imports and missing browser fixture bindings; no Consent test failure.",
+      "owner": "current",
+      "session": "current",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "model_class": "workhorse",
+      "complexity": "M",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T17:10:35+03:00",
+          "note": "",
+          "changes": {
+            "id": "HERDERCONSENT10",
+            "label": "Убрать бесполезный Chrome Consent watcher и фоновые расходы",
+            "description": "Исправить legacy ChatGPT CDP prompt watcher: no background timer, default-off, one-shot compatibility scan only, preserve page-level modal auto-answer and document Chrome-owned consent boundary.",
+            "acceptance": "Focused chatgpt-mac-cdp-driver tests, tsc and diff-check pass; source commit integrated into main; no setInterval remains for prompt watcher and normal page operations still scan/answer page-level modal prompts.",
+            "affected_files": [
+              "src/adapters/chatgpt-mac-cdp-driver.ts",
+              "tests/chatgpt-mac-cdp-driver.test.ts",
+              "docs/cdp-chat-mcp.md"
+            ],
+            "status": "done",
+            "kind": "task",
+            "owner": "current",
+            "session": "current",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "model_class": "workhorse",
+            "complexity": "M",
+            "estimate_minutes": 15,
+            "estimate": "15 min",
+            "estimate_min": 10,
+            "estimate_max": 15,
+            "wave": 1,
+            "result": "Commit 1838175e integrated from worker commit b430e87b. Worker focused suite 56/56, tsc and diff-check passed; final main recheck pending."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T17:21:02+03:00",
+          "note": "Final main verification complete; broad suite baseline failures are recorded separately and do not touch this owned slice.",
+          "changes": {
+            "result": "Commit 1838175e integrated into main. Focused Vitest 56/56 passed, tsc --noEmit passed, Rust lib 203/203 passed, diff-check passed. TDD RED/GREEN evidence and bug B8795931e39974cc68818 fixed. Full npm test remains red on 44 unrelated baseline/foreign failures, including pre-existing duplicate imports and missing browser fixture bindings; no Consent test failure."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "src/adapters/chatgpt-mac-cdp-driver.ts",
+        "tests/chatgpt-mac-cdp-driver.test.ts",
+        "docs/cdp-chat-mcp.md"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T17:10:35+03:00",
+      "finished_at": "2026-11-10T17:10:35+03:00",
+      "wave": 1
+    },
+    {
       "id": "HTTP429",
       "label": "Сократить лишние запросы и проверить общий cooldown ChatGPT",
       "status": "done",
@@ -2689,6 +3866,157 @@
       "created_at": "2026-11-08T19:05:01+03:00",
       "started_at": "2026-11-08T19:05:01+03:00",
       "finished_at": "2026-11-08T19:11:14+03:00"
+    },
+    {
+      "id": "HUMANQUOTA12",
+      "label": "Пропускать отправки по поручению человека при низком резерве Codex",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Direct owner10Nov update: existing declared human authorization with server timestamp bypasses only local below_reserve on requested message, automatic/default remains denied; provider refusal/HumanStop preserved. Published2388ea93 and realnativecurrentsteeradmitted; installpersistentTSruntime.",
+      "acceptance": "Manualdeclaredhuman allowedbelowreserve;automaticdefaultdeniedbeforemutation;nativeproviderdeniedunchanged;published+installedproof and one exact authorizednativecoordination receipt.",
+      "result": "2388ea93 опубликован и постоянно установлен штатным rollout под fresh lease fence98. current exact2388, PID3616632 active, health200, nonrevision config preserved, lease released. Source56PASS+tsc; isolated native candidate Codex/OpenCode/ZCode PASS (full browser acceptance отдельно incomplete). Installed module smoke: manual admitted, automatic below_reserve0writes. Original single authorized NoticePlace native steer admitted=true. Evidence evidence/resume-20261110/quota-human12/installed-receipt.json and related RED/GREEN.",
+      "owner": "Maxwell",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T21:27:36+03:00",
+          "note": "",
+          "changes": {
+            "id": "HUMANQUOTA12",
+            "parent": "MRESUME10",
+            "label": "Пропускать отправки по поручению человека при низком резерве Codex",
+            "status": "running",
+            "description": "Direct owner10Nov update: existing declared human authorization with server timestamp bypasses only local below_reserve on requested message, automatic/default remains denied; provider refusal/HumanStop preserved. Published2388ea93 and realnativecurrentsteeradmitted; installpersistentTSruntime.",
+            "acceptance": "Manualdeclaredhuman allowedbelowreserve;automaticdefaultdeniedbeforemutation;nativeproviderdeniedunchanged;published+installedproof and one exact authorizednativecoordination receipt.",
+            "owner": "Maxwell",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T21:47:12+03:00",
+          "note": "Постоянная установка и проверка политики завершены; глобальный резерв/отказ провайдера/HumanStop сохранены.",
+          "changes": {
+            "status": "done",
+            "result": "2388ea93 опубликован и постоянно установлен штатным rollout под fresh lease fence98. current exact2388, PID3616632 active, health200, nonrevision config preserved, lease released. Source56PASS+tsc; isolated native candidate Codex/OpenCode/ZCode PASS (full browser acceptance отдельно incomplete). Installed module smoke: manual admitted, automatic below_reserve0writes. Original single authorized NoticePlace native steer admitted=true. Evidence evidence/resume-20261110/quota-human12/installed-receipt.json and related RED/GREEN."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T21:27:36+03:00",
+      "started_at": "2026-11-10T21:27:36+03:00",
+      "finished_at": "2026-11-10T21:47:12+03:00"
+    },
+    {
+      "id": "INCIDENTREG11",
+      "label": "Исправить регрессии incident policy и generation",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Direct minimax-coding-plan model policy remains enforced, same-group new generation preserved and all failed noticeplace focused suites GREEN; no live events or notifications.",
+      "result": "ec5041f1+29048ee7 published origin/main. Final isolated exacttree cb7e4685=29048ee7 full npm test5536PASS/14skip614filesPASS, core package suitePASS. No real incidents.",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:00:08+03:00",
+          "note": "",
+          "changes": {
+            "id": "INCIDENTREG11",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Исправить регрессии incident policy и generation",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Direct minimax-coding-plan model policy remains enforced, same-group new generation preserved and all failed noticeplace focused suites GREEN; no live events or notifications.",
+            "affected_files": [
+              "tests/noticeplace-health-model-qualification.test.ts",
+              "tests/r40-incident-policy.test.ts",
+              "tests/noticeplace-group-continuation.test.ts",
+              "tests/r40-health-preflight.test.ts",
+              "tests/noticeplace-health-launch.test.ts"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:23:35+03:00",
+          "note": "Integratedec5041f1: direct minimax-coding-plan route48PASS; final broad suite found2additional policy test files assigned same Worker Russell, no real incidents.",
+          "changes": {
+            "status": "running",
+            "result": "Integratedec5041f1: direct minimax-coding-plan route48PASS; final broad suite found2additional policy test files assigned same Worker Russell, no real incidents."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:45+03:00",
+          "note": "Full source regression green on immutable tree; shared foreign WIP preserved.",
+          "changes": {
+            "status": "done",
+            "result": "ec5041f1+29048ee7 published origin/main. Final isolated exacttree cb7e4685=29048ee7 full npm test5536PASS/14skip614filesPASS, core package suitePASS. No real incidents."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/noticeplace-health-model-qualification.test.ts",
+        "tests/r40-incident-policy.test.ts",
+        "tests/noticeplace-group-continuation.test.ts",
+        "tests/r40-health-preflight.test.ts",
+        "tests/noticeplace-health-launch.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:00:08+03:00",
+      "started_at": "2026-11-10T18:23:35+03:00",
+      "finished_at": "2026-11-10T18:34:45+03:00"
     },
     {
       "id": "INSTALL",
@@ -3585,6 +4913,145 @@
       "started_at": "2026-11-08T19:05:02+03:00"
     },
     {
+      "id": "RECONCILE10",
+      "label": "Сверить незаконченные leaves с опубликованными квитанциями",
+      "status": "done",
+      "kind": "research",
+      "parent": "MRESUME10",
+      "acceptance": "Один evidence-файл связывает каждый оставшийся leaf с exact source/installed receipt; старые PASS/UNKNOWN не переименованы, лишние повторы исключены.",
+      "result": "Reconciled late NoticePlace final2, wake and remote evidence. NPIDENTITY/NPLIVEFINAL already done; no new incident or replay. Early restore-core draft superseded by later COREWAKE/REMOTEFULL evidence. Evidence: evidence/resume-20261110/luna-reconciliation.md.",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:04:46+03:00",
+          "note": "",
+          "changes": {
+            "id": "RECONCILE10",
+            "kind": "research",
+            "parent": "MRESUME10",
+            "label": "Сверить незаконченные leaves с опубликованными квитанциями",
+            "status": "queued",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "acceptance": "Один evidence-файл связывает каждый оставшийся leaf с exact source/installed receipt; старые PASS/UNKNOWN не переименованы, лишние повторы исключены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:58+03:00",
+          "note": "No plan or runtime mutation beyond canonical evidence.",
+          "changes": {
+            "status": "done",
+            "result": "Reconciled late NoticePlace final2, wake and remote evidence. NPIDENTITY/NPLIVEFINAL already done; no new incident or replay. Early restore-core draft superseded by later COREWAKE/REMOTEFULL evidence. Evidence: evidence/resume-20261110/luna-reconciliation.md."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:04:46+03:00",
+      "finished_at": "2026-11-10T15:26:58+03:00"
+    },
+    {
+      "id": "REGRESS10",
+      "label": "Проверить текущую Rust и AHAP основу и закрыть ошибки тестов",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof.",
+      "result": "Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed.",
+      "owner": "01a1c559-0bb2-7001-b861-59925edeff7a",
+      "session": "01a1c559-0bb2-7001-b861-59925edeff7a",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:11:04+03:00",
+          "note": "",
+          "changes": {
+            "id": "REGRESS10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Проверить текущую Rust и AHAP основу и закрыть ошибки тестов",
+            "status": "queued",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "acceptance": "Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:34+03:00",
+          "note": "Luna runs scoped Rust/AHAP regression and known ETXTBSY RED→GREEN.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c559-0bb2-7001-b861-59925edeff7a",
+            "session": "01a1c559-0bb2-7001-b861-59925edeff7a",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:57+03:00",
+          "note": "Source regression only, not installed five-lane acceptance. Evidence: evidence/resume-20261110/luna-regressions.md.",
+          "changes": {
+            "status": "done",
+            "result": "Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:11:04+03:00",
+      "started_at": "2026-11-10T15:14:34+03:00",
+      "finished_at": "2026-11-10T15:26:57+03:00"
+    },
+    {
       "id": "RESTORECONTRACTS",
       "label": "Проверить контракты трёх потребителей и собрать acceptance tests",
       "status": "running",
@@ -4151,6 +5618,228 @@
       "finished_at": "2026-11-08T18:38:03+03:00"
     },
     {
+      "id": "SESSIONREPLIES13",
+      "label": "Этап · Два автоматических ответа на сообщение между сессиями",
+      "status": "queued",
+      "kind": "milestone",
+      "description": "Поручение владельца 10.11: включить в будущую работу двухэтапный ответ между сессиями. По умолчанию отправитель получает ранний фактический текст получателя после его рассуждений и инструментов, затем конкретный итоговый ответ. expect_reply=false («не ждать ответа») отключает оба ответа и напоминания. Если итог не пришёл за заданное время, существующий хук напоминает получателю ответить и подсказывает точный способ. Реализацию начать после текущего установленного Herder.",
+      "acceptance": "Send без нового аргумента: ранний и итоговый текст из связанного хода получателя доставляются отправителю по одному разу. Пересылать только текст assistant, без reasoning, результатов инструментов и машинного ACK. expect_reply=false: никаких обратных ответов и напоминаний. Получатель может быть неактивен в момент отправки. Корреляция и восстановление используют существующие durable delivery/reply_to и hook, без второго планировщика и повторной исходной отправки. Напоминание ожидает только отсутствующий итог, имеет дедупликацию и учитывает HumanStop, needs_input и разрешения. Ответ на ответ не создаёт цикл. Проверить default/false, задержку, рестарт, неактивные сессии и cross-host.",
+      "owner": "Lead",
+      "model": "gpt-6.1-terra",
+      "estimate_unknown_reason": "Это пункт будущей работы. Перед реализацией исследовать существующие delivery/reply hooks и уточнить объём.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T21:33:14+03:00",
+          "note": "",
+          "changes": {
+            "id": "SESSIONREPLIES13",
+            "kind": "milestone",
+            "label": "Два автоматических ответа на сообщение между сессиями",
+            "status": "queued",
+            "description": "Прямое поручение владельца10Nov: добавить в будущую работу контракт межсессионных ответов. По умолчанию ожидание ответа включено: отправителю доставляются ранний реальный текст получателя после его reasoning/tools и поздний конкретный итог. expect_reply=false (не ждать ответа) отключает обе обратные доставки и напоминания. Хук при отсутствии требуемого позднего ответа через заданное время напоминает получателю ответить и даёт точную подсказку существующего маршрута ответа. Записываем в очередь; не переключать текущую установку/квотныйфикс.",
+            "acceptance": "Обычный send безновыхаргументов получаетровнодваэтапа early/final изcorrelatednative recipientturn. Пересылаетсятолькоassistanttext, никогдаreasoning/tooloutput/машинныйACK. expect_reply=false:0early/0final/0reminder. Получательнеобязанбытьactiveвмоментотправки; existingdurableoperation/reply_to иnativehookсохраняюткорреляциюпослерестарта,безповторнойотправкиисходногоinput. Reminderтолькоприотсутствииfinal, bounded/deduplicated,немешаетHumanStop/needs_input/permissions. Доставкаотправителювегоexactsessionнепорождаетбесконечныйreplyloop. Проверитьобаdefault/false,медленныерезультаты,restart,noactivecaller иcrosshostчерезсуществующийconsumer.",
+            "owner": "Lead",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 45,
+            "estimate_unknown_reason": "Покаэтоэлементбудущейработы;точныйобъёмоценитьпередреализациейпослеисследованиясуществующихdelivery/replyhooks."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T21:40:16+03:00",
+          "note": "Уточнена читаемая формулировка без изменения согласованного поведения; реализация остаётся в очереди.",
+          "changes": {
+            "description": "Поручение владельца 10.11: включить в будущую работу двухэтапный ответ между сессиями. По умолчанию отправитель получает ранний фактический текст получателя после его рассуждений и инструментов, затем конкретный итоговый ответ. expect_reply=false («не ждать ответа») отключает оба ответа и напоминания. Если итог не пришёл за заданное время, существующий хук напоминает получателю ответить и подсказывает точный способ. Реализацию начать после текущего установленного Herder.",
+            "acceptance": "Send без нового аргумента: ранний и итоговый текст из связанного хода получателя доставляются отправителю по одному разу. Пересылать только текст assistant, без reasoning, результатов инструментов и машинного ACK. expect_reply=false: никаких обратных ответов и напоминаний. Получатель может быть неактивен в момент отправки. Корреляция и восстановление используют существующие durable delivery/reply_to и hook, без второго планировщика и повторной исходной отправки. Напоминание ожидает только отсутствующий итог, имеет дедупликацию и учитывает HumanStop, needs_input и разрешения. Ответ на ответ не создаёт цикл. Проверить default/false, задержку, рестарт, неактивные сессии и cross-host.",
+            "estimate_unknown_reason": "Это пункт будущей работы. Перед реализацией исследовать существующие delivery/reply hooks и уточнить объём."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "created_at": "2026-11-10T21:33:14+03:00"
+    },
+    {
+      "id": "SMALLREG11",
+      "label": "Исправить parse error и оставшиеся harness/UI проверки",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Duplicate imports fixed; UI/capacity/OpenCode/plugin packaging regression reproduced and fixed without weakening behavior contracts; focused GREEN and commit.",
+      "result": "Integrated87081943:6test files65PASS, tsc and diff. No production changes.",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T18:00:09+03:00",
+          "note": "",
+          "changes": {
+            "id": "SMALLREG11",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Исправить parse error и оставшиеся harness/UI проверки",
+            "status": "queued",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "acceptance": "Duplicate imports fixed; UI/capacity/OpenCode/plugin packaging regression reproduced and fixed without weakening behavior contracts; focused GREEN and commit.",
+            "affected_files": [
+              "tests/vibe-async-evaluation.test.ts",
+              "tests/web-ui.test.ts",
+              "tests/fleet-cabinet-navigation.test.ts",
+              "tests/codex-capacity-evidence.test.ts",
+              "tests/codex-plugin-release-payload.test.ts",
+              "tests/opencode-v22-protocol.test.ts"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:23:34+03:00",
+          "note": "Integrated87081943:6test files65PASS, tsc and diff. No production changes.",
+          "changes": {
+            "status": "done",
+            "result": "Integrated87081943:6test files65PASS, tsc and diff. No production changes."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/vibe-async-evaluation.test.ts",
+        "tests/web-ui.test.ts",
+        "tests/fleet-cabinet-navigation.test.ts",
+        "tests/codex-capacity-evidence.test.ts",
+        "tests/codex-plugin-release-payload.test.ts",
+        "tests/opencode-v22-protocol.test.ts"
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T18:00:09+03:00",
+      "finished_at": "2026-11-10T18:23:34+03:00"
+    },
+    {
+      "id": "STATE10",
+      "label": "Восстановить текущую установленную связку и ближайший blocker",
+      "status": "done",
+      "kind": "research",
+      "parent": "MRESUME10",
+      "description": "Сравнить основной Rust consumer, HTTP facade, selector/manifest и latest source. Проверить актуальность handoff и не повторять уже подтверждённые операции.",
+      "acceptance": "Установленные SHA/instances, последний real result и один точный blocker подтверждены read-only источниками.",
+      "result": "Current main/live TS1fcac12e, installed Rustmanifest d584fb68 sha4c878fe3/core284cd55d and NPabd9a50f verified. Shared GPTAdmin selector gptadmin-entry has3CLI while local5profiles. Connected consumer remote44 historical2responses and NoticePlace same-session resume read back now; projects explicitly partial. Direct Rust native adapters are not fullreplacement. Concrete failures: browseraccountVibe and obsoleteZCodeinstalledbinding.",
+      "owner": "roomhacker",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:03:54+03:00",
+          "note": "",
+          "changes": {
+            "id": "STATE10",
+            "kind": "research",
+            "parent": "MRESUME10",
+            "label": "Восстановить текущую установленную связку и ближайший blocker",
+            "status": "queued",
+            "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "description": "Сравнить основной Rust consumer, HTTP facade, selector/manifest и latest source. Проверить актуальность handoff и не повторять уже подтверждённые операции.",
+            "acceptance": "Установленные SHA/instances, последний real result и один точный blocker подтверждены read-only источниками."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:03:56+03:00",
+          "note": "Продолжаем исходный accepted goal по прямому поручению владельца; границы и история сохранены.",
+          "changes": {
+            "status": "running",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex",
+            "owner": "roomhacker"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:33+03:00",
+          "note": "Read-only state recovered, no mutation/model replay. Full five-lane acceptance remains unproven.",
+          "changes": {
+            "status": "done",
+            "result": "Current main/live TS1fcac12e, installed Rustmanifest d584fb68 sha4c878fe3/core284cd55d and NPabd9a50f verified. Shared GPTAdmin selector gptadmin-entry has3CLI while local5profiles. Connected consumer remote44 historical2responses and NoticePlace same-session resume read back now; projects explicitly partial. Direct Rust native adapters are not fullreplacement. Concrete failures: browseraccountVibe and obsoleteZCodeinstalledbinding.",
+            "actual_minutes": 14
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "actual_minutes": 14.0,
+      "created_at": "2026-11-10T15:03:54+03:00",
+      "started_at": "2026-11-10T15:03:56+03:00",
+      "finished_at": "2026-11-10T15:14:33+03:00"
+    },
+    {
       "id": "USERIOQUIET",
       "label": "UserIO MV3: убрать лишние фоновые запросы к ChatGPT",
       "status": "queued",
@@ -4276,6 +5965,50 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-08T19:36:27+03:00"
+    },
+    {
+      "id": "ZAISOURCE13",
+      "label": "Довести Z.ai через существующее расширение UserIO",
+      "status": "running",
+      "parent": "S2",
+      "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
+      "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live.",
+      "owner": "Terra",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T21:45:57+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAISOURCE13",
+            "parent": "S2",
+            "label": "Довести Z.ai через существующее расширение UserIO",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Подключить отсутствующие raw export, scoped create/first-send и archive Z.ai через тот же extension channel и существующие drafts/receipts. Использовать уже проверенные native scripts текущего ZaiCdpDriver, без возврата CDP/Vibe в default. Реальные эффекты отдельным acceptance шагом.",
+            "acceptance": "Focused RED/GREEN доказывают native IDs, scope и account-switch, first-send admission, original command recovery/UNKNOWN no resend, native export с честной completeness, archive readback. Нет второго store/transport и повторных исторических canaries. Source main SHA и ограничения отдельно от install/live."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T21:45:57+03:00",
+      "started_at": "2026-11-10T21:45:57+03:00"
     },
     {
       "id": "ZAISTATE",
@@ -4410,6 +6143,130 @@
       "created_at": "2026-11-08T18:28:30+03:00",
       "started_at": "2026-11-08T18:28:30+03:00",
       "finished_at": "2026-11-08T18:55:16+03:00"
+    },
+    {
+      "id": "ZCODE10",
+      "label": "Подготовить совместимый ZCode adapter и model pin для установки",
+      "status": "done",
+      "parent": "MRESUME10",
+      "acceptance": "Exact native catalog подтверждает pin; совместимый immutable adapter подготовлен, scoped source tests GREEN, готов CAS install без изменения старых операций.",
+      "result": "Compatible immutable candidate-v2 manifest f05b3961d9a19bc573408578193d688258ef042e7cd06b956f936544daa13aa8 and profile d21b38c6 prepared. Native catalog exact MiniMax pin verified; staged NativeWorkerPort preflight ready=true, no inference. 30 focused tests/package verifier PASS. migration-input.json has old/new fixture and install hashes. Evidence: evidence/resume-20261110/terra-zcode.md.",
+      "owner": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+      "session": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:11:03+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZCODE10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Подготовить совместимый ZCode adapter и model pin для установки",
+            "status": "queued",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "acceptance": "Exact native catalog подтверждает pin; совместимый immutable adapter подготовлен, scoped source tests GREEN, готов CAS install без изменения старых операций."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:34+03:00",
+          "note": "Terra preparing exact compatible stage artifact+native catalog pin. Main owns final CAS install.",
+          "changes": {
+            "status": "running",
+            "owner": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+            "session": "01a1c559-0b26-7bc1-9a09-2996c9f3c034",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:26:57+03:00",
+          "note": "Prepared artifact accepted as source/stage result; shared installation remains Lead-owned.",
+          "changes": {
+            "status": "done",
+            "result": "Compatible immutable candidate-v2 manifest f05b3961d9a19bc573408578193d688258ef042e7cd06b956f936544daa13aa8 and profile d21b38c6 prepared. Native catalog exact MiniMax pin verified; staged NativeWorkerPort preflight ready=true, no inference. 30 focused tests/package verifier PASS. migration-input.json has old/new fixture and install hashes. Evidence: evidence/resume-20261110/terra-zcode.md."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:11:03+03:00",
+      "started_at": "2026-11-10T15:14:34+03:00",
+      "finished_at": "2026-11-10T15:26:57+03:00"
+    },
+    {
+      "id": "ZCODEINSTALL13",
+      "label": "Подготовить ZCode для общего установленного consumer",
+      "status": "running",
+      "parent": "MRESUME10",
+      "description": "Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.",
+      "acceptance": "Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены.",
+      "owner": "Luna",
+      "model": "gpt-6-luna",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T21:42:03+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZCODEINSTALL13",
+            "parent": "MRESUME10",
+            "label": "Подготовить ZCode для общего установленного consumer",
+            "status": "running",
+            "owner": "Luna",
+            "model": "gpt-6-luna",
+            "estimate_minutes": 15,
+            "description": "Проверить актуальный ранее подготовленный ZCode profile/store/runtime и согласовать его с установленным manifest e34aa2b9. Подготовить минимальный проверяемый CAS append в shared selectors без повторения ранее принятых provider canaries.",
+            "acceptance": "Известный профиль проверен source/artifact/store schema+native readiness; fresh immutable profile доступен штатному entry, нет Vibe/CDP default и провайдерных отправок. Prepared selector сохраняет4current instances. Shared mutation только после нового owned releaselease и согласования с Maxwell; source/build/install/consumer различены."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T21:42:03+03:00",
+      "started_at": "2026-11-10T21:42:03+03:00"
     },
     {
       "id": "A10",
@@ -4972,6 +6829,91 @@
       "started_at": "2026-11-07T22:49:46+03:00"
     },
     {
+      "id": "CHROMEPROFILE11",
+      "label": "Реализовать файловый Chrome profile MCP",
+      "status": "deferred",
+      "description": "Добавить bounded stdio MCP executable с profile_list/status, stage, install/update, backup/rollback and reload/status receipts. Все mutation paths lock/CAS/atomic и не читают cookies/storage/page content.",
+      "acceptance": "Core implementation passes focused RED/GREEN tests for manifest validation, traversal/symlink refusal, profile isolation, backup/rollback CAS and honest unmanaged mode.",
+      "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.",
+      "owner": "GPTAdmin separate session",
+      "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "model_class": "workhorse",
+      "complexity": "L",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T16:56:51+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHROMEPROFILE11",
+            "label": "Реализовать файловый Chrome profile MCP",
+            "description": "Добавить bounded stdio MCP executable с profile_list/status, stage, install/update, backup/rollback and reload/status receipts. Все mutation paths lock/CAS/atomic и не читают cookies/storage/page content.",
+            "acceptance": "Core implementation passes focused RED/GREEN tests for manifest validation, traversal/symlink refusal, profile isolation, backup/rollback CAS and honest unmanaged mode.",
+            "affected_files": [
+              "tools/chrome_profile_manager_mcp.py"
+            ],
+            "status": "pending",
+            "kind": "task",
+            "owner": "lead",
+            "session": "current",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "model_class": "workhorse",
+            "complexity": "L",
+            "estimate_minutes": 15,
+            "estimate": "15 min",
+            "estimate_min": 15,
+            "estimate_max": 15,
+            "depends_on": [
+              "CHROMEPROFILE10"
+            ],
+            "wave": 1
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:46+03:00",
+          "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+          "changes": {
+            "status": "deferred",
+            "owner": "GPTAdmin separate session",
+            "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+            "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tools/chrome_profile_manager_mcp.py"
+      ],
+      "depends_on": [
+        "CHROMEPROFILE10"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T16:56:51+03:00",
+      "wave": 1
+    },
+    {
       "id": "D10",
       "label": "Public core reads: sessions и полный export",
       "status": "done",
@@ -5103,6 +7045,126 @@
       "created_at": "2026-11-07T22:06:04+03:00",
       "started_at": "2026-11-07T22:24:54+03:00",
       "finished_at": "2026-11-07T22:49:22+03:00"
+    },
+    {
+      "id": "DELIVER10",
+      "label": "Установить согласованные profiles и принять ordinary consumer",
+      "status": "running",
+      "parent": "MRESUME10",
+      "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main.",
+      "owner": "roomhacker",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:11:04+03:00",
+          "note": "",
+          "changes": {
+            "id": "DELIVER10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Установить согласованные profiles и принять ordinary consumer",
+            "status": "queued",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "ZCODE10",
+              "BROWSER10"
+            ],
+            "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:37+03:00",
+          "note": "Lead prepares release/CAS and independent readback; dependent mutations wait for worker stage results.",
+          "changes": {
+            "status": "running",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex",
+            "owner": "roomhacker"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "ZCODE10",
+        "BROWSER10"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:11:04+03:00",
+      "started_at": "2026-11-10T15:14:37+03:00"
+    },
+    {
+      "id": "EXTRELEASE10",
+      "label": "Опубликовать расширение и проверить оба потребителя",
+      "status": "queued",
+      "parent": "MEXT10",
+      "acceptance": "Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved.",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:22:34+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTRELEASE10",
+            "kind": "task",
+            "parent": "MEXT10",
+            "label": "Опубликовать расширение и проверить оба потребителя",
+            "status": "queued",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "EXTCONN10",
+              "EXTPOLL10",
+              "EXTCORE10",
+              "EXTUI10"
+            ],
+            "acceptance": "Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "EXTCONN10",
+        "EXTPOLL10",
+        "EXTCORE10",
+        "EXTUI10"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:22:34+03:00"
     },
     {
       "id": "FINALBUNDLE",
@@ -5333,9 +7395,10 @@
     {
       "id": "RESTOREPROOF",
       "label": "Установить и проверить три сценария обычным клиентом",
-      "status": "queued",
+      "status": "done",
       "parent": "RESTORELEGACY",
       "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
+      "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "model": "gpt-6.1-sol",
       "origin": "",
@@ -5367,6 +7430,22 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:24:11+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -5377,7 +7456,8 @@
         "minimum": 15.0,
         "maximum": 15.0
       },
-      "created_at": "2026-11-08T20:23:20+03:00"
+      "created_at": "2026-11-08T20:23:20+03:00",
+      "finished_at": "2026-11-10T20:24:11+03:00"
     },
     {
       "id": "A11",
@@ -5757,6 +7837,97 @@
       "actual_minutes": 7.0,
       "created_at": "2026-11-07T22:57:39+03:00",
       "started_at": "2026-11-07T22:59:14+03:00"
+    },
+    {
+      "id": "CHROMEPROFILE12",
+      "label": "Подключить Chrome profile MCP к GPTAdmin source registry",
+      "status": "deferred",
+      "description": "Зарегистрировать curated capability/child MCP definition в GPTAdmin source, не меняя live /etc до source acceptance; сохранить cross-platform argv and root config boundaries.",
+      "acceptance": "GPTAdmin unit tests validate source registration, catalog metadata, argv and no secret leakage; generated supervisor config contains child descriptor.",
+      "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.",
+      "owner": "GPTAdmin separate session",
+      "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "model_class": "workhorse",
+      "complexity": "M",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T16:56:51+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHROMEPROFILE12",
+            "label": "Подключить Chrome profile MCP к GPTAdmin source registry",
+            "description": "Зарегистрировать curated capability/child MCP definition в GPTAdmin source, не меняя live /etc до source acceptance; сохранить cross-platform argv and root config boundaries.",
+            "acceptance": "GPTAdmin unit tests validate source registration, catalog metadata, argv and no secret leakage; generated supervisor config contains child descriptor.",
+            "affected_files": [
+              "cli.py",
+              "tests/test_mcp_catalog.py",
+              "tests/test_cli_agent_mcp_clients.py",
+              "VERSION"
+            ],
+            "status": "pending",
+            "kind": "task",
+            "owner": "lead",
+            "session": "current",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "model_class": "workhorse",
+            "complexity": "M",
+            "estimate_minutes": 15,
+            "estimate": "15 min",
+            "estimate_min": 15,
+            "estimate_max": 15,
+            "depends_on": [
+              "CHROMEPROFILE11"
+            ],
+            "wave": 2
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:46+03:00",
+          "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+          "changes": {
+            "status": "deferred",
+            "owner": "GPTAdmin separate session",
+            "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+            "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "cli.py",
+        "tests/test_mcp_catalog.py",
+        "tests/test_cli_agent_mcp_clients.py",
+        "VERSION"
+      ],
+      "depends_on": [
+        "CHROMEPROFILE11"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T16:56:51+03:00",
+      "wave": 2
     },
     {
       "id": "D11",
@@ -6463,6 +8634,93 @@
       "created_at": "2026-11-07T22:06:03+03:00",
       "started_at": "2026-11-07T22:43:27+03:00",
       "finished_at": "2026-11-07T22:59:26+03:00"
+    },
+    {
+      "id": "CHROMEPROFILE13",
+      "label": "Проверить stdio MCP и GPTAdmin real executable readback",
+      "status": "deferred",
+      "description": "Запустить focused tests, tools/list и harmless profile_list через реальный executable; собрать source/install/readback evidence и только затем подготовить runtime registration.",
+      "acceptance": "Python tests and py_compile pass; subprocess MCP initialize/tools/list/profile_list return bounded redacted receipts; GPTAdmin source diff reviewed and commit ready.",
+      "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110.",
+      "owner": "GPTAdmin separate session",
+      "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "model_class": "workhorse",
+      "complexity": "M",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T16:56:52+03:00",
+          "note": "",
+          "changes": {
+            "id": "CHROMEPROFILE13",
+            "label": "Проверить stdio MCP и GPTAdmin real executable readback",
+            "description": "Запустить focused tests, tools/list и harmless profile_list через реальный executable; собрать source/install/readback evidence и только затем подготовить runtime registration.",
+            "acceptance": "Python tests and py_compile pass; subprocess MCP initialize/tools/list/profile_list return bounded redacted receipts; GPTAdmin source diff reviewed and commit ready.",
+            "affected_files": [
+              "tests/test_chrome_profile_manager_mcp.py",
+              "docs/CHROME_PROFILE_MANAGER_MCP.md"
+            ],
+            "status": "pending",
+            "kind": "task",
+            "owner": "lead",
+            "session": "current",
+            "harness": "codex",
+            "model": "gpt-6.1-sol",
+            "model_class": "workhorse",
+            "complexity": "M",
+            "estimate_minutes": 15,
+            "estimate": "15 min",
+            "estimate_min": 15,
+            "estimate_max": 15,
+            "depends_on": [
+              "CHROMEPROFILE12"
+            ],
+            "wave": 3
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T18:34:47+03:00",
+          "note": "Transferred to requested separate session; deferred here does not mean product complete.",
+          "changes": {
+            "status": "deferred",
+            "owner": "GPTAdmin separate session",
+            "session": "01a1c600-12bf-7202-9686-fd2de0903386",
+            "result": "Transferred per explicit owner instruction to actual separate GPTAdmin Codex session01a1c600-12bf-7202-9686-fd2de0903386; Herder does not own its implementation/acceptance. Native thread.started+turn.started confirmed, live events in herder-artifacts/handoffs/chrome-extension-mcp-20261110."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "affected_files": [
+        "tests/test_chrome_profile_manager_mcp.py",
+        "docs/CHROME_PROFILE_MANAGER_MCP.md"
+      ],
+      "depends_on": [
+        "CHROMEPROFILE12"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T16:56:52+03:00",
+      "wave": 3
     },
     {
       "id": "D12",
@@ -8505,7 +10763,7 @@
       "created_at": "2026-11-07T22:06:07+03:00"
     }
   ],
-  "leaf_count": 85,
+  "leaf_count": 115,
   "milestones": [
     {
       "id": "FLEETCUTOVER",
@@ -8523,6 +10781,51 @@
       },
       "done": 4,
       "total": 4
+    },
+    {
+      "id": "MEXT10",
+      "label": "Единое расширение для рабочих и личных подключений",
+      "status": "running",
+      "children": [
+        "CAREVIOLIVE12",
+        "EXTCONN10",
+        "EXTCORE10",
+        "EXTPOLL10",
+        "EXTRELEASE10",
+        "EXTUI10"
+      ],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 5,
+      "total": 6
+    },
+    {
+      "id": "MRESUME10",
+      "label": "Завершить установленный V1 и подтвердить потребительский путь",
+      "status": "running",
+      "children": [
+        "BROWSER10",
+        "BROWSERINSTALL12",
+        "BROWSERREG11",
+        "CIROUTE10",
+        "DELIVER10",
+        "HUMANQUOTA12",
+        "INCIDENTREG11",
+        "RECONCILE10",
+        "REGRESS10",
+        "SMALLREG11",
+        "STATE10",
+        "ZCODE10",
+        "ZCODEINSTALL13"
+      ],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 11,
+      "total": 13
     },
     {
       "id": "RESTORELEGACY",
@@ -8556,7 +10859,7 @@
         "minimum": 15.0,
         "maximum": 15.0
       },
-      "done": 17,
+      "done": 18,
       "total": 22
     },
     {
@@ -8596,6 +10899,7 @@
         "CASETRACE",
         "CHATB2",
         "CHATDELTA",
+        "CHATLIFESOURCE12",
         "COREWAIT",
         "FILLREADBACK",
         "FINALBUNDLE",
@@ -8626,6 +10930,7 @@
         "R2",
         "SENDDIAG",
         "USERIOQUIET",
+        "ZAISOURCE13",
         "ZAISTATE",
         "ZARCHPROOF"
       ],
@@ -8634,7 +10939,7 @@
         "maximum": 45.0
       },
       "done": 21,
-      "total": 36
+      "total": 38
     },
     {
       "id": "S3",
@@ -8654,6 +10959,18 @@
       },
       "done": 3,
       "total": 6
+    },
+    {
+      "id": "SESSIONREPLIES13",
+      "label": "Два автоматических ответа на сообщение между сессиями",
+      "status": "queued",
+      "children": [],
+      "estimate_minutes": {
+        "minimum": 45.0,
+        "maximum": 45.0
+      },
+      "done": 0,
+      "total": 0
     }
   ],
   "estimate_policy": {

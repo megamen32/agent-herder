@@ -1,0 +1,53 @@
+{
+  "id": "RECONCILE10",
+  "kind": "research",
+  "parent": "MRESUME10",
+  "label": "Сверить незаконченные leaves с опубликованными квитанциями",
+  "status": "done",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "acceptance": "Один evidence-файл связывает каждый оставшийся leaf с exact source/installed receipt; старые PASS/UNKNOWN не переименованы, лишние повторы исключены.",
+  "created_at": "2026-11-10T15:04:46+03:00",
+  "updated_at": "2026-11-10T15:26:58+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:04:46+03:00",
+      "note": "",
+      "changes": {
+        "id": "RECONCILE10",
+        "kind": "research",
+        "parent": "MRESUME10",
+        "label": "Сверить незаконченные leaves с опубликованными квитанциями",
+        "status": "queued",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "acceptance": "Один evidence-файл связывает каждый оставшийся leaf с exact source/installed receipt; старые PASS/UNKNOWN не переименованы, лишние повторы исключены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:58+03:00",
+      "note": "No plan or runtime mutation beyond canonical evidence.",
+      "changes": {
+        "status": "done",
+        "result": "Reconciled late NoticePlace final2, wake and remote evidence. NPIDENTITY/NPLIVEFINAL already done; no new incident or replay. Early restore-core draft superseded by later COREWAKE/REMOTEFULL evidence. Evidence: evidence/resume-20261110/luna-reconciliation.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Reconciled late NoticePlace final2, wake and remote evidence. NPIDENTITY/NPLIVEFINAL already done; no new incident or replay. Early restore-core draft superseded by later COREWAKE/REMOTEFULL evidence. Evidence: evidence/resume-20261110/luna-reconciliation.md."
+}

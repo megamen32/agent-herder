@@ -1,0 +1,74 @@
+{
+  "id": "EXTUI10",
+  "kind": "task",
+  "parent": "MEXT10",
+  "label": "Показать сервисы, подключения и выбор получателей аккаунта",
+  "status": "done",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "acceptance": "Русский UI ясноVK/ChatGPT/Z.ai, work/personalconnections, accountdestinationmatrix сохраняетсяпослерелоада;experimentalroutesclearlyseparate.",
+  "created_at": "2026-11-10T15:22:34+03:00",
+  "updated_at": "2026-11-10T16:27:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:22:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTUI10",
+        "kind": "task",
+        "parent": "MEXT10",
+        "label": "Показать сервисы, подключения и выбор получателей аккаунта",
+        "status": "queued",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "acceptance": "Русский UI ясноVK/ChatGPT/Z.ai, work/personalconnections, accountdestinationmatrix сохраняетсяпослерелоада;experimentalroutesclearlyseparate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:26:59+03:00",
+      "note": "Luna implements visible VK/ChatGPT/Z.ai services and work/personal destination matrix; UI never exposes tokens/raw route ids.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+        "session": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T16:27:56+03:00",
+      "note": "Принято Lead после source review и соответствующих тестов.",
+      "changes": {
+        "status": "done",
+        "result": "Options/popup UI показывает VK Web, ChatGPT, Z.ai, named Work/Personal connections and account destination matrix. Explicit connectionId RPCs, reload binding persistence, no raw tokens/routes in UI. Commit 3a72b85; UI/background tests included in 96/96 PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "owner": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+  "session": "01a1c56a-3b18-7af3-bd6a-f773a1447c9a",
+  "harness": "codex",
+  "result": "Options/popup UI показывает VK Web, ChatGPT, Z.ai, named Work/Personal connections and account destination matrix. Explicit connectionId RPCs, reload binding persistence, no raw tokens/routes in UI. Commit 3a72b85; UI/background tests included in 96/96 PASS."
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-10T17:45:59.001011+00:00",
+  "principalId": "user_785be2f2b49c41698dd89ad00de36905",
+  "nativeChatRef": "6af2c9ac-6064-83ea-b8e0-892266a2a752",
+  "candidateCount": 1,
+  "visibleCount": 18,
+  "conversationId": "conv_55920326637be5a9e736c519",
+  "source": "chatgpt:rsw9nyj7my-privaterelay.appleid.com",
+  "storedMessages": 10,
+  "expectedMessages": 10,
+  "matchedMessages": 10,
+  "ok": true
+}

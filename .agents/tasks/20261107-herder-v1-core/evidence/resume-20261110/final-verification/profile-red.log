@@ -1,0 +1,22 @@
+   Compiling herder v0.1.0 (/home/roomhacker/herder-artifacts/worktrees/browser-reg11/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.41s
+     Running unittests src/bin/herder_native_stdio.rs (/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/herder-candidate/rust-target/debug/deps/herder_native_stdio-536b4a6db33bda37)
+
+running 1 test
+test scoped_profile::enrollment_tests::userio_binding_accepts_exact_protected_profile ... FAILED
+
+failures:
+
+---- scoped_profile::enrollment_tests::userio_binding_accepts_exact_protected_profile stdout ----
+
+thread 'scoped_profile::enrollment_tests::userio_binding_accepts_exact_protected_profile' (1598801) panicked at src/bin/herder_native_stdio/scoped_profile.rs:620:13:
+assertion failed: allowed_adapter_env("chatgpt", key)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    scoped_profile::enrollment_tests::userio_binding_accepts_exact_protected_profile
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--bin herder_native_stdio`

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/browser-reg11
+
+
+ Test Files  7 passed (7)
+      Tests  81 passed (81)
+   Start at  18:07:58
+   Duration  5.99s (transform 2.17s, setup 94ms, import 2.95s, tests 1.72s, environment 1ms)
+

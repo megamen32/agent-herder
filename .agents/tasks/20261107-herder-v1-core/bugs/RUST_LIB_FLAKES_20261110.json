@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T15:39:53+00:00",
+  "details": "Fresh exacttree Rust lib201PASS2FAIL: stalled_pipe_obeys_request_deadline line454 Textfilebusy; execution_lock_exclusive line236WouldBlock. WorkerHeisenberg assigned2paths, no blanket retry; log herder-artifacts/.../herder-candidate/rust-lib-final.log.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T15:39:53+00:00",
+      "changes": {
+        "details": "Fresh exacttree Rust lib201PASS2FAIL: stalled_pipe_obeys_request_deadline line454 Textfilebusy; execution_lock_exclusive line236WouldBlock. WorkerHeisenberg assigned2paths, no blanket retry; log herder-artifacts/.../herder-candidate/rust-lib-final.log.",
+        "source": "evidence/resume-20261110",
+        "status": "open",
+        "title": "Два сбоя Rust lib: ETXTBSY и удержанная execution lock"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T16:55:00+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/final-verification/rust-lib-green.log",
+            "red_proof_path": "evidence/resume-20261110/final-verification/rust-lib-red.log",
+            "red_result": "FAIL",
+            "red_sha256": "b1d75093a56b76d8ce648387905fd91831facb07d78ada062faf7c4ab355a2ae",
+            "result": "PASS",
+            "sha256": "dc3a32f59c02c91c3f8a131c6153ee0b0608171f09b3e230fd6859f59953c3d3",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --lib"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "RUST_LIB_FLAKES_20261110",
+  "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/final-verification/rust-lib-green.log",
+      "red_proof_path": "evidence/resume-20261110/final-verification/rust-lib-red.log",
+      "red_result": "FAIL",
+      "red_sha256": "b1d75093a56b76d8ce648387905fd91831facb07d78ada062faf7c4ab355a2ae",
+      "result": "PASS",
+      "sha256": "dc3a32f59c02c91c3f8a131c6153ee0b0608171f09b3e230fd6859f59953c3d3",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --lib"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/resume-20261110",
+  "status": "fixed",
+  "title": "Два сбоя Rust lib: ETXTBSY и удержанная execution lock",
+  "updated_at": "2026-11-10T16:55:00+00:00"
+}

@@ -1,0 +1,78 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/incident-reg11
+
+ ❯ tests/noticeplace-health-observer-contract.test.ts (23 tests | 1 failed) 533ms
+     × uses one model allowlist for the analysis and the repair of an incident 9ms
+(node:1050655) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/noticeplace-health-plan-trust.test.ts (8 tests | 2 failed) 98ms
+     × never persists a plan that only the quoted details name 63ms
+     × persists the plan of the operator's line 28ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/noticeplace-health-observer-contract.test.ts > Notice Place health launch policy > uses one model allowlist for the analysis and the repair of an incident
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/noticeplace-health-observer-contract.test.ts:290:70
+    288|     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/minimax/MiniM…
+    289|     expect(isNoticeplaceHealthModel("omniroute/glm-5.3-flash-minimax-m…
+    290|     expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).t…
+       |                                                                      ^
+    291|     expect(isNoticeplaceHealthModel("zai/GLM-4.6")).toBe(false);
+    292|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/noticeplace-health-plan-trust.test.ts > Notice Place health plan persistence > never persists a plan that only the quoted details name
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ launchAndArm tests/noticeplace-health-plan-trust.test.ts:121:27
+    119|       body: JSON.stringify({ purpose, harness: "opencode", model, proj…
+    120|     });
+    121|     expect(launch.status).toBe(200);
+       |                           ^
+    122|     // The center arms the session of the launch with the incident bin…
+    123|     const arm = await fetch(`http://127.0.0.1:${address.port}/api/auto…
+ ❯ tests/noticeplace-health-plan-trust.test.ts:134:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/noticeplace-health-plan-trust.test.ts > Notice Place health plan persistence > persists the plan of the operator's line
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ launchAndArm tests/noticeplace-health-plan-trust.test.ts:121:27
+    119|       body: JSON.stringify({ purpose, harness: "opencode", model, proj…
+    120|     });
+    121|     expect(launch.status).toBe(200);
+       |                           ^
+    122|     // The center arms the session of the launch with the incident bin…
+    123|     const arm = await fetch(`http://127.0.0.1:${address.port}/api/auto…
+ ❯ tests/noticeplace-health-plan-trust.test.ts:140:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 28 passed (31)
+   Start at  18:17:00
+   Duration  4.48s (transform 4.36s, setup 120ms, import 5.02s, tests 630ms, environment 0ms)
+

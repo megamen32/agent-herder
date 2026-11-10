@@ -1,0 +1,35 @@
+
+ RUN  v4.1.10 /tmp/herder-quota-human12
+
+(node:2821713) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/human-request-codex-admission.test.ts (6 tests | 1 failed | 5 skipped) 1067ms
+   × admits an attested human answer to the exact active turn below the local reserve 1066ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/human-request-codex-admission.test.ts > admits an attested human answer to the exact active turn below the local reserve
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout tests/human-request-codex-admission.test.ts:191:84
+    189|   const pending = f.post();
+    190|   try {
+    191|     await vi.waitFor(() => expect(f.requests.some(r => r.method === "t…
+       |                                                                                    ^
+    192|     expect(f.requests.find(r => r.method === "turn/steer")?.params?.ex…
+    193|     f.ack();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 skipped (6)
+   Start at  21:16:33
+   Duration  6.38s (transform 4.48s, setup 37ms, import 5.12s, tests 1.07s, environment 0ms)
+

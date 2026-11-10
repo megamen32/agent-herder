@@ -1,0 +1,68 @@
+{
+  "id": "EXTREAL11",
+  "label": "Проверить загруженное расширение и HTTP-чтение Herder",
+  "status": "done",
+  "description": "Actual isolated Chromium MV3 with two local UserIO destinations and provider fixture. A→Work+Personal/B→Personal, Herder driver reads same snapshot, wrongbinding denied. No real provider request or send.",
+  "owner": "Kuhn",
+  "session": "01a1c60e-49de-7390-9adb-e971b1088c0c",
+  "estimate_minutes": 15,
+  "model": "gpt-6.1-terra",
+  "created_at": "2026-11-10T18:23:35+03:00",
+  "updated_at": "2026-11-10T20:12:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T18:23:35+03:00",
+      "note": "",
+      "changes": {
+        "id": "EXTREAL11",
+        "label": "Проверить загруженное расширение и HTTP-чтение Herder",
+        "status": "running",
+        "description": "Actual isolated Chromium MV3 with two local UserIO destinations and provider fixture. A→Work+Personal/B→Personal, Herder driver reads same snapshot, wrongbinding denied. No real provider request or send.",
+        "owner": "Kuhn",
+        "session": "01a1c60e-49de-7390-9adb-e971b1088c0c",
+        "estimate_minutes": 15,
+        "model": "gpt-6.1-terra"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T20:08:59+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-live-summary.md. Real Mac/provider integration is separate follow-up, not claimed by fixture."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T20:12:53+03:00",
+      "note": "",
+      "changes": {
+        "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-real-summary.json and options-fixture-375.png/options-fixture-800.png. Real Mac/provider integration tracked CAREVIOLIVE12; not claimed by fixture."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Actual isolated Chromium MV3 fixture: A→Work+Personal and B→Personal, wrongbinding rejected, same snapshot read by actual compiled Herder driver, durable state after worker restart and responsive 375/800 layout. Evidence evidence/resume-20261110/final-verification/extension-real-summary.json and options-fixture-375.png/options-fixture-800.png. Real Mac/provider integration tracked CAREVIOLIVE12; not claimed by fixture."
+}

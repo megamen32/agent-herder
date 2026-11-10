@@ -12,13 +12,31 @@
         "status": "open",
         "title": "Future Rust-native Codex tests intermittently fail under full parallel lib run"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T16:54:43+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "RUST_LIB_FLAKES_20261110",
+          "kind": "duplicate",
+          "reason": "Same Textfilebusy/fork descriptor retention reproduced and fixed in45fde4a7; full currentlib203PASS. Original historicalalltests not replayed."
+        },
+        "status": "duplicate"
+      }
     }
   ],
   "id": "B77878108142345f69820",
   "owner": "Astra integration / Archimedes evidence",
   "reporter": "Astra integration / Archimedes evidence",
+  "resolution": {
+    "duplicate_of": "RUST_LIB_FLAKES_20261110",
+    "kind": "duplicate",
+    "reason": "Same Textfilebusy/fork descriptor retention reproduced and fixed in45fde4a7; full currentlib203PASS. Original historicalalltests not replayed."
+  },
   "source": "cargo lib parallel repetitions; actual V1 exactartifact negative consumer PASS",
-  "status": "open",
+  "status": "duplicate",
   "title": "Future Rust-native Codex tests intermittently fail under full parallel lib run",
-  "updated_at": "2026-11-07T20:26:42+00:00"
+  "updated_at": "2026-11-10T16:54:43+00:00"
 }

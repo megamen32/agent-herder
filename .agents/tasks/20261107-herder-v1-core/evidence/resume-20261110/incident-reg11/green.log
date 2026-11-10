@@ -1,0 +1,13 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/incident-reg11
+
+(node:671837) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:671817) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  5 passed (5)
+      Tests  48 passed (48)
+   Start at  18:05:10
+   Duration  7.29s (transform 7.61s, setup 188ms, import 8.99s, tests 3.89s, environment 1ms)
+

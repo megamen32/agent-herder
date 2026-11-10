@@ -1,0 +1,5 @@
+Tue Nov 10 17:35:19 UTC 2026
+{"status": "installed", "revision": "3db38e788df5d1a8be1ba9c306c9abf67f53a897", "image": "universal-userio:backend-extension-3db38e7", "image_id": "sha256:bf565c3a349627655454d9e58930ad03dac00f6dc148a99055e12c478b56ed53", "container_id": "bd5d3963038815c50266c223a55c243538e61d8e8118c2ab99fb5310f84ca9d3", "previous_image_id": "sha256:cb56ddf6afad67ed4fdb57c03f280770ab55708e571b5178f5ced1e4aa145769", "compose_sha256": "479906cea8fccbc0a4d5136081745e2024625a91382f62eb465f6b85e90c9aa4", "supervisor_healthy": true, "account_ids_unchanged": true, "frontend_voice_configuration_unchanged": true, "backup": "/var/backups/universal-userio/20261110-backend-extension-029-01a1c66d"}
+install_exit=0
+lease_release_exit=0
+Independent post-install readback: 31/31 installed source hashes, supervisor health passed, accounts 19/19 unchanged; both public ZIP URLs HTTP 200 SHA256 1081ca717b4ed8c5b9a288ffe4abb13eabc930349284041f5026cd4b9b5bfb8e, MV3 version 0.9.29; backend/frontend/voice running.

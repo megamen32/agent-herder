@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-10T14:10:35+00:00",
+  "details": "The legacy createBrowserChatDriver started a 5-second setInterval that SSH/CDP-scanned ChatGPT page DOM. The Chrome M144 remote-debugging Allow prompt is Chrome-owned UI outside page-level CDP, so the watcher could never click it; repeated scans added CPU/SSH work. Fix requires no interval, default off and honest page-level boundary.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "current",
+      "at": "2026-11-10T14:10:35+00:00",
+      "changes": {
+        "details": "The legacy createBrowserChatDriver started a 5-second setInterval that SSH/CDP-scanned ChatGPT page DOM. The Chrome M144 remote-debugging Allow prompt is Chrome-owned UI outside page-level CDP, so the watcher could never click it; repeated scans added CPU/SSH work. Fix requires no interval, default off and honest page-level boundary.",
+        "source": "owner report + src/adapters/chatgpt-mac-cdp-driver.ts startPromptPolling",
+        "status": "open",
+        "title": "Chrome DevTools Consent watcher polls every 5 seconds but cannot see Chrome-owned consent UI"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "current",
+      "at": "2026-11-10T14:19:53+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/consent-watcher-green.log",
+            "red_proof_path": "evidence/resume-20261110/consent-watcher-red.log",
+            "red_result": "AssertionError: background prompt timer remains in 3cda11b0",
+            "red_sha256": "155304ed21e08895ebfcd48990463dfe563aa6d2ee11d59649d72d2761280860",
+            "result": "PASS: working-tree has no background prompt timer and has bounded scan",
+            "sha256": "f676a51f6a435d031a4c48b51c58dfb017a095d0ead5aac027cd45f224ccb52b",
+            "test_command": "python3 .agents/tasks/20261107-herder-v1-core/evidence/resume-20261110/consent-watcher-check.py (RED with HERDER_SOURCE_REF=3cda11b0; GREEN on working tree)"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B8795931e39974cc68818",
+  "owner": "current",
+  "reporter": "current",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/consent-watcher-green.log",
+      "red_proof_path": "evidence/resume-20261110/consent-watcher-red.log",
+      "red_result": "AssertionError: background prompt timer remains in 3cda11b0",
+      "red_sha256": "155304ed21e08895ebfcd48990463dfe563aa6d2ee11d59649d72d2761280860",
+      "result": "PASS: working-tree has no background prompt timer and has bounded scan",
+      "sha256": "f676a51f6a435d031a4c48b51c58dfb017a095d0ead5aac027cd45f224ccb52b",
+      "test_command": "python3 .agents/tasks/20261107-herder-v1-core/evidence/resume-20261110/consent-watcher-check.py (RED with HERDER_SOURCE_REF=3cda11b0; GREEN on working tree)"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "owner report + src/adapters/chatgpt-mac-cdp-driver.ts startPromptPolling",
+  "status": "fixed",
+  "title": "Chrome DevTools Consent watcher polls every 5 seconds but cannot see Chrome-owned consent UI",
+  "updated_at": "2026-11-10T14:19:53+00:00"
+}

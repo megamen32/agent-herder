@@ -1,0 +1,222 @@
+
+ RUN  v4.1.10 /home/roomhacker/herder-artifacts/worktrees/browser-reg11
+
+ ❯ tests/browser-chat-loader.test.ts (4 tests | 2 failed) 465ms
+     × loads two independent instances with exact site identity and capabilities 415ms
+     × scopes native chat IDs without mixing sessions or sending to another provider 29ms
+ ❯ tests/browser-chat-history-cache.test.ts (10 tests | 1 failed) 409ms
+     × integrates a real provider instance with native history, scoped IDs and 100-chat warming 9ms
+ ❯ tests/autopilot-zai-browser-judge.test.ts (27 tests | 3 failed) 244ms
+     × allocates and reuses only its own tab after correlated completion 8ms
+     × uses the exact successful new_page receipt when Z.AI removes the query during hydration 3ms
+     × quarantines foreign navigation between model selection and fill without clicking 7ms
+ ❯ tests/browser-profile-isolation-regression.test.ts (7 tests | 1 failed) 166ms
+   × configured Zai create refuses account drift instead of rebinding its draft to another profile 14ms
+ ❯ tests/chatgpt-session-export.test.ts (7 tests | 1 failed) 82ms
+   × reads an admitted draft through its verified native conversation 25ms
+ ❯ tests/zai-foreground-draft.test.ts (11 tests | 11 failed) 38ms
+     × create/send/read/idle permits the second exact correlated delivery while background is paused 14ms
+     × keeps the default background refresh paused without any browser request 2ms
+     × resolves an unpinned exact account-owned tab without opening or selecting a page 2ms
+     × does not release stale busy admission on account mismatch 2ms
+     × does not release stale busy admission on account_read mismatch 2ms
+     × does not release stale busy admission on origin mismatch 2ms
+     × does not release stale busy admission on path mismatch 2ms
+     × does not release stale busy admission on missing mismatch 1ms
+     × does not release stale busy admission on generating mismatch 5ms
+     × does not release stale busy admission on unknown mismatch 2ms
+     × does not release stale busy admission on security mismatch 2ms
+ ❯ tests/v1-browser-runtime.test.ts (14 tests | 1 failed) 36ms
+     × binds the browser transport to a verified account 10ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 20 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > allocates and reuses only its own tab after correlated completion
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > uses the exact successful new_page receipt when Z.AI removes the query during hydration
+ReferenceError: location is not defined
+ ❯ evalmachine.<anonymous>:2:3
+ ❯ evalmachine.<anonymous>:12:3
+ ❯ Object.call tests/autopilot-zai-browser-judge.test.ts:337:30
+    335|         const source = String(args.function);
+    336|         if (source.includes("__herderZaiHook")) return "\u0060\u0060\u…
+    337|         const result = await runInNewContext("(" + source + ")()", {
+       |                              ^
+    338|           globalThis: f.window, URL, Uint8Array, Object, Promise,
+    339|         });
+ ❯ verifyNewChatAccountScope src/adapters/browser-chat-new-page.ts:45:17
+ ❯ OwnedZaiJudgeSlot.prepare src/autopilot/zai-browser-judge.ts:392:15
+ ❯ OwnedZaiJudgeSlot.infer src/autopilot/zai-browser-judge.ts:403:27
+ ❯ src/autopilot/zai-browser-judge.ts:112:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/20]⎯
+
+ FAIL  tests/autopilot-zai-browser-judge.test.ts > concrete private-tab Z.AI transport > quarantines foreign navigation between model selection and fill without clicking
+AssertionError: expected [Function] to throw error including 'target_changed' but got 'location is not defined'
+
+Expected: "target_changed"
+Received: "location is not defined"
+
+ ❯ tests/autopilot-zai-browser-judge.test.ts:418:51
+    416|     const c = chrome(); c.interfere();
+    417|     const pool = createZaiBrowserJudgeFetch({ accountScope: scope, too…
+    418|     await expect(pool.fetchImpl(endpoint, body())).rejects.toThrow("ta…
+       |                                                   ^
+    419|     expect(c.prompts).toEqual([]);
+    420|     await expect(pool.fetchImpl(endpoint, body())).rejects.toThrow("re…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/20]⎯
+
+ FAIL  tests/browser-chat-history-cache.test.ts > durable browser chat history > integrates a real provider instance with native history, scoped IDs and 100-chat warming
+AssertionError: expected [] to have a length of 101 but got +0
+
+- Expected
++ Received
+
+- 101
++ 0
+
+ ❯ tests/browser-chat-history-cache.test.ts:88:22
+     86|     await adapter.init();
+     87|     const sessions=await adapter.listSessions();
+     88|     expect(sessions).toHaveLength(101);
+       |                      ^
+     89|     expect((await adapter.getSession("chatgpt::native-0"))?.title).toB…
+     90|     await vi.waitFor(async()=>expect((await adapter.getSessionMessages…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/20]⎯
+
+ FAIL  tests/browser-chat-loader.test.ts > separate site adapters sharing one browser base class > loads two independent instances with exact site identity and capabilities
+Error: browser_runtime_setting_missing:AGENT_HERDER_MAC_MINI_SSH_TARGET
+ ❯ required src/adapters/browser-runtime-settings.ts:45:21
+     43|
+     44| function required(name: string, value: string | undefined): string {
+     45|   if (!value) throw new Error(`browser_runtime_setting_missing:${name}…
+       |                     ^
+     46|   return value;
+     47| }
+ ❯ resolveMacMiniSettings src/adapters/browser-runtime-settings.ts:78:21
+ ❯ new MacMiniChromeTransport src/adapters/mac-mini-chrome-transport.ts:22:22
+ ❯ Module.createBrowserChatDriver src/adapters/zai-cdp-driver.ts:1124:27
+ ❯ loadBrowserChatProviderAdapter src/adapters/browser-chat-loader.ts:58:51
+ ❯ tests/browser-chat-loader.test.ts:17:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/20]⎯
+
+ FAIL  tests/browser-chat-loader.test.ts > separate site adapters sharing one browser base class > scopes native chat IDs without mixing sessions or sending to another provider
+AssertionError: expected undefined to match object { id: 'chatgpt::same-native-id', …(3) }
+
+- Expected:
+{
+  "cwd": "/browser/chatgpt",
+  "harness": "chatgpt",
+  "id": "chatgpt::same-native-id",
+  "meta": {
+    "browserProvider": "chatgpt",
+  },
+}
+
++ Received:
+undefined
+
+ ❯ tests/browser-chat-loader.test.ts:53:15
+     51|     const [a] = await chatgpt.listSessions();
+     52|     const [b] = await zai.listSessions();
+     53|     expect(a).toMatchObject({id:"chatgpt::same-native-id",harness:"cha…
+       |               ^
+     54|     expect(b).toMatchObject({id:"zai::same-native-id",harness:"zai",cw…
+     55|     expect(await chatgpt.getSession(a!.id)).toMatchObject({id:a!.id});
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/20]⎯
+
+ FAIL  tests/browser-profile-isolation-regression.test.ts > configured Zai create refuses account drift instead of rebinding its draft to another profile
+AssertionError: expected { code: -32000, …(2) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "code": -32000,
+  "data": {
+    "correctiveAction": "Check the selected instance, owner profile and native session ID; inspect owner-side adapter diagnostics.",
+    "expected": "Selected legacy adapter must return a response for the requested method",
+    "method": "init",
+    "outcome": "read_failed",
+    "reason": "unknown",
+    "stage": "verify_pinned_account",
+  },
+  "message": "Browser adapter initialization failed",
+}
+
+ ❯ tests/browser-profile-isolation-regression.test.ts:191:28
+    189|   await serving;
+    190|   const replies = text.trim().split("\n").map(line => JSON.parse(line)…
+    191|   expect(replies[1].error).toBeUndefined();
+       |                            ^
+    192|   expect(replies[2].result).toBeUndefined();
+    193|   expect(replies[2].error).toBeDefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/20]⎯
+
+ FAIL  tests/chatgpt-session-export.test.ts > reads an admitted draft through its verified native conversation
+ReferenceError: TextEncoder is not defined
+ ❯ evalmachine.<anonymous>:68:35
+ ❯ Object.call tests/chatgpt-session-export.test.ts:83:20
+     81|       if(name==='list_pages')return '1: ChatGPT (https://chatgpt.com/)…
+     82|       if(args.function.includes('const digest=await crypto.subtle.dige…
+     83|       const result=await vm.runInContext('('+args.function+')()',conte…
+       |                    ^
+     84|       return '```json\n'+JSON.stringify(result)+'\n```';
+     85|     }};
+ ❯ ChatGptMacCdpDriver.readMessages src/adapters/chatgpt-mac-cdp-driver.ts:1069:38
+ ❯ ChatGptMacCdpDriver.getMessages src/adapters/chatgpt-mac-cdp-driver.ts:1029:18
+ ❯ BrowserChatAdapter.getSessionMessages src/adapters/browser-chat.ts:393:18
+ ❯ tests/chatgpt-session-export.test.ts:88:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/20]⎯
+
+ FAIL  tests/v1-browser-runtime.test.ts > browser autopilot owner configuration > binds the browser transport to a verified account
+AssertionError: expected [Function] to throw error including 'browser_binding_invalid' but got 'browser_autopilot_zai_vibe_transport_…'
+
+Expected: "browser_binding_invalid"
+Received: "browser_autopilot_zai_vibe_transport_disabled"
+
+ ❯ tests/v1-browser-runtime.test.ts:42:89
+     40|   expect(validateV1BrowserAutopilotConfig({...config,zai:browser}).zai…
+     41|   for(const change of [{accountScope:"Carevio"},{tokenEnv:"SECRET"},{b…
+     42|    expect(()=>validateV1BrowserAutopilotConfig({...config,zai:{...brow…
+       |                                                                                         ^
+     43|  });
+     44|  it("requires an exact nonempty enrolled target set when enabled",()=>{
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/20]⎯
+
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > create/send/read/idle permits the second exact correlated delivery while background is paused
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > keeps the default background refresh paused without any browser request
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > resolves an unpinned exact account-owned tab without opening or selecting a page
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on account mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on account_read mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on origin mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on path mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on missing mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on generating mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on unknown mismatch
+ FAIL  tests/zai-foreground-draft.test.ts > Z.ai foreground admitted draft activity > does not release stale busy admission on security mismatch
+Error: zai account verification unavailable: unverified
+ ❯ verifyNewChatAccountScope src/adapters/browser-chat-new-page.ts:48:11
+     46|       site==='chatgpt'?CHATGPT_CREATE_SCOPE_SCRIPT:ZAI_CURRENT_ACCOUNT…
+     47|   if(typeof data.scope!=='string'||!/^[a-f0-9]{64}$/.test(data.scope))
+     48|     throw new Error(site+' account verification unavailable: '+(data.e…
+       |           ^
+     49|   return data.scope;
+     50| }
+ ❯ src/adapters/zai-cdp-driver.ts:449:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/20]⎯
+
+
+ Test Files  7 failed (7)
+      Tests  20 failed | 60 passed (80)
+   Start at  18:02:20
+   Duration  5.11s (transform 2.13s, setup 89ms, import 2.39s, tests 1.44s, environment 1ms)
+

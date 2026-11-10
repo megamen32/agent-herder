@@ -1,0 +1,14 @@
+   Compiling herder v0.1.0 (/home/roomhacker/herder-artifacts/worktrees/browser-reg11/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.45s
+     Running unittests src/bin/herder_native_stdio.rs (/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/herder-candidate/rust-target/debug/deps/herder_native_stdio-536b4a6db33bda37)
+
+running 6 tests
+test scoped_profile::enrollment_tests::exact_profile_account_scope_is_required ... ok
+test scoped_profile::enrollment_tests::duplicate_keys_natives_and_wildcards_are_not_grants ... ok
+test scoped_profile::enrollment_tests::legacy_profile_without_enrollment_remains_valid ... ok
+test scoped_profile::enrollment_tests::vibe_route_references_are_browser_only ... ok
+test scoped_profile::enrollment_tests::userio_binding_accepts_exact_protected_profile ... ok
+test scoped_profile::enrollment_tests::userio_binding_rejects_unsafe_transport_and_credentials ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.00s
+

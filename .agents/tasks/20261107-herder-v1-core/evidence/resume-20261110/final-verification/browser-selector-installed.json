@@ -1,0 +1,31 @@
+{
+  "installed": true,
+  "at": "2026-11-10T18:10:07.370Z",
+  "profile": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/browser-profile-stage/herder-owner-home/authority/profile-chatgpt-userio-staged.json",
+  "records": [
+    {
+      "path": "/home/roomhacker/.config/agent-herder/v1-entry.json",
+      "candidate": "/home/roomhacker/.config/agent-herder/v1-entry.json.browser-01a1c551",
+      "beforeSha": "c4f24aec37f847c662dd8ee68995334220e0ee649db86961ee59d5e394da8f72",
+      "profiles": [
+        "/home/roomhacker/herder-artifacts/installed-v1/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/installed-v1/remote44/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/installed-v1/noticeplace/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/browser-profile-stage/herder-owner-home/authority/profile-chatgpt-userio-staged.json"
+      ],
+      "afterSha": "9203749046e34a8fcceca23e1ec3d45dbf3e390ad618d23d5ebd6ee9a63d6e30"
+    },
+    {
+      "path": "/home/roomhacker/.config/agent-herder/gptadmin-entry.json",
+      "candidate": "/home/roomhacker/.config/agent-herder/gptadmin-entry.json.browser-01a1c551",
+      "beforeSha": "c4f24aec37f847c662dd8ee68995334220e0ee649db86961ee59d5e394da8f72",
+      "profiles": [
+        "/home/roomhacker/herder-artifacts/installed-v1/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/installed-v1/remote44/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/installed-v1/noticeplace/herder-owner-home/authority/profile-userio-schema-2d70f4b9.json",
+        "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/browser-profile-stage/herder-owner-home/authority/profile-chatgpt-userio-staged.json"
+      ],
+      "afterSha": "9203749046e34a8fcceca23e1ec3d45dbf3e390ad618d23d5ebd6ee9a63d6e30"
+    }
+  ]
+}

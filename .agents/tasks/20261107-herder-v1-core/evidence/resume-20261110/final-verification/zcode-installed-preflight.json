@@ -1,0 +1,16 @@
+{
+  "ready": true,
+  "source": "zcode-native-create-model-catalog",
+  "model": "4cc673aa-6c6a-418b-8b91-9e601fef99f6/MiniMax-M3.1-Flash$enabled",
+  "observed_at": "2026-11-10T16:15:11.786Z",
+  "profile_path": "/home/roomhacker/herder-artifacts/installed-v1/zcode-default/herder-owner-home/authority/profile-userio-45fde4a7.json",
+  "fixture_sha256": "05964aaca58fa4e253e23b2b4bf1c072c84ccb334cbc742ecb1bfe334d9623a1",
+  "installed_binding": {
+    "adapter_path": "/home/roomhacker/herder-artifacts/releases/herder-v1-userio-composed-45fde4a7/fixture/ahap-zcode-runner.mjs",
+    "adapter_sha256": "a353b4e4d29c869f57b00154d0bfd722dad4e40a0d476646fe94efe2f0f28919",
+    "node_ref": "roomhacker-server-100",
+    "profile_path": "/home/roomhacker/herder-artifacts/installed-v1/zcode-default/herder-owner-home/authority/profile-userio-45fde4a7.json",
+    "profile_sha256": "f7420d92b6c03feb3ca7cdf848d29d3e1f44b9927ca783344966fecde59d07bd"
+  },
+  "model_effects": 0
+}

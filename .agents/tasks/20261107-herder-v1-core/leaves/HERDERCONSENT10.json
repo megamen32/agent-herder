@@ -1,0 +1,81 @@
+{
+  "id": "HERDERCONSENT10",
+  "label": "Убрать бесполезный Chrome Consent watcher и фоновые расходы",
+  "description": "Исправить legacy ChatGPT CDP prompt watcher: no background timer, default-off, one-shot compatibility scan only, preserve page-level modal auto-answer and document Chrome-owned consent boundary.",
+  "acceptance": "Focused chatgpt-mac-cdp-driver tests, tsc and diff-check pass; source commit integrated into main; no setInterval remains for prompt watcher and normal page operations still scan/answer page-level modal prompts.",
+  "affected_files": [
+    "src/adapters/chatgpt-mac-cdp-driver.ts",
+    "tests/chatgpt-mac-cdp-driver.test.ts",
+    "docs/cdp-chat-mcp.md"
+  ],
+  "status": "done",
+  "kind": "task",
+  "owner": "current",
+  "session": "current",
+  "harness": "codex",
+  "model": "gpt-6.1-sol",
+  "model_class": "workhorse",
+  "complexity": "M",
+  "estimate_minutes": 15,
+  "estimate": "15 min",
+  "estimate_min": 10,
+  "estimate_max": 15,
+  "wave": 1,
+  "result": "Commit 1838175e integrated into main. Focused Vitest 56/56 passed, tsc --noEmit passed, Rust lib 203/203 passed, diff-check passed. TDD RED/GREEN evidence and bug B8795931e39974cc68818 fixed. Full npm test remains red on 44 unrelated baseline/foreign failures, including pre-existing duplicate imports and missing browser fixture bindings; no Consent test failure.",
+  "created_at": "2026-11-10T17:10:35+03:00",
+  "updated_at": "2026-11-10T17:21:02+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T17:10:35+03:00",
+      "note": "",
+      "changes": {
+        "id": "HERDERCONSENT10",
+        "label": "Убрать бесполезный Chrome Consent watcher и фоновые расходы",
+        "description": "Исправить legacy ChatGPT CDP prompt watcher: no background timer, default-off, one-shot compatibility scan only, preserve page-level modal auto-answer and document Chrome-owned consent boundary.",
+        "acceptance": "Focused chatgpt-mac-cdp-driver tests, tsc and diff-check pass; source commit integrated into main; no setInterval remains for prompt watcher and normal page operations still scan/answer page-level modal prompts.",
+        "affected_files": [
+          "src/adapters/chatgpt-mac-cdp-driver.ts",
+          "tests/chatgpt-mac-cdp-driver.test.ts",
+          "docs/cdp-chat-mcp.md"
+        ],
+        "status": "done",
+        "kind": "task",
+        "owner": "current",
+        "session": "current",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "model_class": "workhorse",
+        "complexity": "M",
+        "estimate_minutes": 15,
+        "estimate": "15 min",
+        "estimate_min": 10,
+        "estimate_max": 15,
+        "wave": 1,
+        "result": "Commit 1838175e integrated from worker commit b430e87b. Worker focused suite 56/56, tsc and diff-check passed; final main recheck pending."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T17:21:02+03:00",
+      "note": "Final main verification complete; broad suite baseline failures are recorded separately and do not touch this owned slice.",
+      "changes": {
+        "result": "Commit 1838175e integrated into main. Focused Vitest 56/56 passed, tsc --noEmit passed, Rust lib 203/203 passed, diff-check passed. TDD RED/GREEN evidence and bug B8795931e39974cc68818 fixed. Full npm test remains red on 44 unrelated baseline/foreign failures, including pre-existing duplicate imports and missing browser fixture bindings; no Consent test failure."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "id": "DELIVER10",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Установить согласованные profiles и принять ordinary consumer",
+  "status": "running",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "ZCODE10",
+    "BROWSER10"
+  ],
+  "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main.",
+  "created_at": "2026-11-10T15:11:04+03:00",
+  "updated_at": "2026-11-10T15:14:37+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T15:11:04+03:00",
+      "note": "",
+      "changes": {
+        "id": "DELIVER10",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Установить согласованные profiles и принять ordinary consumer",
+        "status": "queued",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "ZCODE10",
+          "BROWSER10"
+        ],
+        "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T15:14:37+03:00",
+      "note": "Lead prepares release/CAS and independent readback; dependent mutations wait for worker stage results.",
+      "changes": {
+        "status": "running",
+        "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "owner": "roomhacker"
+}

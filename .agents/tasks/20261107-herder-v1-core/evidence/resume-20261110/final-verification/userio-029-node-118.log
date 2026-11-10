@@ -1,0 +1,245 @@
+TAP version 13
+# Subtest: fresh profiles create distinct persistent automatic agent identities
+ok 1 - fresh profiles create distinct persistent automatic agent identities
+# Subtest: existing explicit binding remains stable
+ok 2 - existing explicit binding remains stable
+# Subtest: an existing legacy installation keeps its bound agent identity on upgrade
+ok 3 - an existing legacy installation keeps its bound agent identity on upgrade
+# Subtest: two legacy profiles have distinct persistent instance identities
+ok 4 - two legacy profiles have distinct persistent instance identities
+# Subtest: real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+ok 5 - real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+# Subtest: command with mismatched connection or principal never executes or posts
+ok 6 - command with mismatched connection or principal never executes or posts
+# Subtest: background RPC uses real connection registry and passes selected connection to OAuth
+ok 7 - background RPC uses real connection registry and passes selected connection to OAuth
+# Subtest: plural and singular exact history paths capture requested id and strip secrets
+ok 8 - plural and singular exact history paths capture requested id and strip secrets
+# Subtest: rejects mismatched identity and non-history paths
+ok 9 - rejects mismatched identity and non-history paths
+# Subtest: startup removes legacy sweep and makes no ChatGPT request
+ok 10 - startup removes legacy sweep and makes no ChatGPT request
+# Subtest: passive identity alone observes an unbound account for explicit user selection
+ok 11 - passive identity alone observes an unbound account for explicit user selection
+# Subtest: natural plural fetch passes hook and passive reducer as partial without granting access
+ok 12 - natural plural fetch passes hook and passive reducer as partial without granting access
+# Subtest: 429 persists cooldown and later extension requests do not reach ChatGPT
+ok 13 - 429 persists cooldown and later extension requests do not reach ChatGPT
+# Subtest: observations from other origins cannot publish messages or change cooldown
+ok 14 - observations from other origins cannot publish messages or change cooldown
+# Subtest: cooldown survives worker reload and covers URL inputs
+ok 15 - cooldown survives worker reload and covers URL inputs
+# Subtest: native fetch is not repeated; auth projection excludes all credentials
+ok 16 - native fetch is not repeated; auth projection excludes all credentials
+# Subtest: observed 429 takes effect even when UserIO history forwarding is blocked
+ok 17 - observed 429 takes effect even when UserIO history forwarding is blocked
+# Subtest: passive projection and addressed consumer share native snapshot
+ok 18 - passive projection and addressed consumer share native snapshot
+# Subtest: passive snapshot and scoped identity match Herder account digest
+ok 19 - passive snapshot and scoped identity match Herder account digest
+# Subtest: refresh observes identity before listing accounts and renders an unbound row
+ok 20 - refresh observes identity before listing accounts and renders an unbound row
+# Subtest: connection UI renders named endpoint cards and independent account destinations
+ok 21 - connection UI renders named endpoint cards and independent account destinations
+# Subtest: bindings save by stable accountKey with selected connection ids
+ok 22 - bindings save by stable accountKey with selected connection ids
+# Subtest: adding work and personal connections emits separate save commands
+ok 23 - adding work and personal connections emits separate save commands
+# Subtest: per-connection OAuth and ChatGPT registration carry distinct connection ids
+ok 24 - per-connection OAuth and ChatGPT registration carry distinct connection ids
+# Subtest: destination matrix renders saved A-both and B-personal bindings after reload
+ok 25 - destination matrix renders saved A-both and B-personal bindings after reload
+# Subtest: options UI does not expose route ids or tokens
+ok 26 - options UI does not expose route ids or tokens
+# Subtest: named destinations do not show a misleading global login and long scopes stay out of account labels
+ok 27 - named destinations do not show a misleading global login and long scopes stay out of account labels
+# Subtest: legacy destination is explicit and all connection statuses are scoped
+ok 28 - legacy destination is explicit and all connection statuses are scoped
+# Subtest: ChatGPT account management opens for the chosen destination
+ok 29 - ChatGPT account management opens for the chosen destination
+# Subtest: explicit account bindings and idempotent legacy migration
+ok 30 - explicit account bindings and idempotent legacy migration
+# Subtest: logout one connection preserves the other persisted binding
+ok 31 - logout one connection preserves the other persisted binding
+# Subtest: pure transition preserves input and describes the storage effect
+ok 32 - pure transition preserves input and describes the storage effect
+# Subtest: receipt requires exact connection and browser identity
+ok 33 - receipt requires exact connection and browser identity
+# Subtest: profile probe confirms the exact Dot room without exposing its messages
+ok 34 - profile probe confirms the exact Dot room without exposing its messages
+# Subtest: draft backup stores sensitive content locally and returns only verification metadata
+ok 35 - draft backup stores sensitive content locally and returns only verification metadata
+# Subtest: composer diagnostics only addresses the exact Dot tab
+ok 36 - composer diagnostics only addresses the exact Dot tab
+# Subtest: composer diagnostics refuses a different room and never returns draft content
+ok 37 - composer diagnostics refuses a different room and never returns draft content
+# Subtest: draft recovery requires an explicit action and retains unknown outcomes
+ok 38 - draft recovery requires an explicit action and retains unknown outcomes
+# Subtest: an unresolved automatic backup blocks later sends without exposing its text
+ok 39 - an unresolved automatic backup blocks later sends without exposing its text
+# Subtest: draft inspection command only addresses one exact Dot tab with a valid hash
+ok 40 - draft inspection command only addresses one exact Dot tab with a valid hash
+# Subtest: draft inspection matches only the exact room and does not return draft text
+ok 41 - draft inspection matches only the exact room and does not return draft text
+# Subtest: draft capture checks exact room and captures text and markup without mutation
+ok 42 - draft capture checks exact room and captures text and markup without mutation
+# Subtest: draft recovery refuses changes and restores only into an empty composer
+ok 43 - draft recovery refuses changes and restores only into an empty composer
+# Subtest: draft inspection refuses ambiguous editor and existing reply panel
+ok 44 - draft inspection refuses ambiguous editor and existing reply panel
+# Subtest: dot actions require one exact tab and never navigate another tab
+ok 45 - dot actions require one exact tab and never navigate another tab
+# Subtest: dot send validates payload before injection
+ok 46 - dot send validates payload before injection
+# Subtest: dot action forwards formatting to the selected tab
+ok 47 - dot action forwards formatting to the selected tab
+# Subtest: media commands require the exact Dot tab and use the fixed media function
+ok 48 - media commands require the exact Dot tab and use the fixed media function
+# Subtest: media read commands use the same exact tab and fixed reader
+ok 49 - media read commands use the same exact tab and fixed reader
+# Subtest: backgrounded Dot tab retains message text for durable echo matching
+ok 50 - backgrounded Dot tab retains message text for durable echo matching
+# Subtest: Dot snapshot retains the target of a labelled link
+ok 51 - Dot snapshot retains the target of a labelled link
+# Subtest: Dot snapshot preserves a blockquote range
+ok 52 - Dot snapshot preserves a blockquote range
+# Subtest: Dot snapshot preserves a link after a rendered paragraph break
+ok 53 - Dot snapshot preserves a link after a rendered paragraph break
+# Subtest: Dot composer receives a formatted hyperlink without interpreting input as raw HTML
+ok 54 - Dot composer receives a formatted hyperlink without interpreting input as raw HTML
+# Subtest: plain multiline text preserves hard breaks instead of adding a paragraph gap
+ok 55 - plain multiline text preserves hard breaks instead of adding a paragraph gap
+# Subtest: Dot extension stages media chunks only for the exact room and expected offset
+ok 56 - Dot extension stages media chunks only for the exact room and expected offset
+# Subtest: staged image is verified and delivered to the current Dot file input
+ok 57 - staged image is verified and delivered to the current Dot file input
+# Subtest: media send only clicks when the exact upload is ready and never clicks twice
+ok 58 - media send only clicks when the exact upload is ready and never clicks twice
+# Subtest: media reply uploads and submits in the verified reply panel
+ok 59 - media reply uploads and submits in the verified reply panel
+# Subtest: media caption keeps its clickable link in the Dot composer
+ok 60 - media caption keeps its clickable link in the Dot composer
+# Subtest: document caption keeps a single newline when the editor renders paragraphs differently
+ok 61 - document caption keeps a single newline when the editor renders paragraphs differently
+# Subtest: document upload readiness uses its file name rather than an image preview
+ok 62 - document upload readiness uses its file name rather than an image preview
+# Subtest: a backgrounded Dot composer verifies exact text via textContent before sending
+ok 63 - a backgrounded Dot composer verifies exact text via textContent before sending
+# Subtest: a backgrounded existing draft is never overwritten
+ok 64 - a backgrounded existing draft is never overwritten
+# Subtest: snapshot reports a document resource card as an attachment of its message
+ok 65 - snapshot reports a document resource card as an attachment of its message
+# Subtest: an image inside a resource card is counted only once
+ok 66 - an image inside a resource card is counted only once
+# Subtest: an unreadable resource card does not make the whole room unreadable
+ok 67 - an unreadable resource card does not make the whole room unreadable
+# Subtest: verified scope discovers an unbound account and never overwrites selected bindings
+ok 68 - verified scope discovers an unbound account and never overwrites selected bindings
+# Subtest: describe observes verified identity without exposing private data
+ok 69 - describe observes verified identity without exposing private data
+# Subtest: scope agrees with Herder identity and is shared by list and read
+ok 70 - scope agrees with Herder identity and is shared by list and read
+# Subtest: bounded session proof runs through real agent and ChatGPT modules
+ok 71 - bounded session proof runs through real agent and ChatGPT modules
+# Subtest: real account binding authorizes only its exact observed scope without creating accounts
+ok 72 - real account binding authorizes only its exact observed scope without creating accounts
+# Subtest: bounded snapshots do not claim a complete history
+ok 73 - bounded snapshots do not claim a complete history
+# Subtest: persisted snapshots require the new completeness evidence
+ok 74 - persisted snapshots require the new completeness evidence
+# Subtest: API send rechecks the active account before any provider operation
+ok 75 - API send rechecks the active account before any provider operation
+# Subtest: lookup rejects ambiguous persisted bindings and preserves storage
+ok 76 - lookup rejects ambiguous persisted bindings and preserves storage
+# Subtest: empty workspace is kept as an explicit canonical identity
+ok 77 - empty workspace is kept as an explicit canonical identity
+# Subtest: colliding legacy binding keys cannot acquire another identity
+ok 78 - colliding legacy binding keys cannot acquire another identity
+# Subtest: UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+ok 79 - UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+# Subtest: ChatGPT cookies are never posted by the remote action without an explicit local choice
+ok 80 - ChatGPT cookies are never posted by the remote action without an explicit local choice
+# Subtest: profile matching compares existing ChatGPT sessions without exporting credentials
+ok 81 - profile matching compares existing ChatGPT sessions without exporting credentials
+# Subtest: unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+ok 82 - unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+# Subtest: settings do not ask for a route identifier and preserve an existing route
+ok 83 - settings do not ask for a route identifier and preserve an existing route
+# Subtest: settings show the connected account and disconnect only the selected account
+ok 84 - settings show the connected account and disconnect only the selected account
+# Subtest: another connected ChatGPT never hides explicit selection of the local profile
+ok 85 - another connected ChatGPT never hides explicit selection of the local profile
+# Subtest: rejects untrusted references and never navigates on invalid input
+ok 86 - rejects untrusted references and never navigates on invalid input
+# Subtest: matches a full exact ChatGPT route, never a colliding prefix
+ok 87 - matches a full exact ChatGPT route, never a colliding prefix
+# Subtest: latest complete final assistant skips analysis and empty nodes
+ok 88 - latest complete final assistant skips analysis and empty nodes
+# Subtest: in-progress assistant after final fails closed
+ok 89 - in-progress assistant after final fails closed
+# Subtest: provider pagination and absent terminal proof never claim full history
+ok 90 - provider pagination and absent terminal proof never claim full history
+# Subtest: legacy branch must reach an explicit root; missing parents and cycles stay partial
+ok 91 - legacy branch must reach an explicit root; missing parents and cycles stay partial
+# Subtest: falls back to legacy mapping only on 404
+ok 92 - falls back to legacy mapping only on 404
+# Subtest: 429 is surfaced with Retry-After and no fallback
+ok 93 - 429 is surfaced with Retry-After and no fallback
+# Subtest: list with no configured scope passes serializable arguments
+ok 94 - list with no configured scope passes serializable arguments
+# Subtest: pure reducer fences delayed reads and workspace identity
+ok 95 - pure reducer fences delayed reads and workspace identity
+# Subtest: durable state restores epoch and revision after worker reload
+ok 96 - durable state restores epoch and revision after worker reload
+# Subtest: creates one service group per browser window and restores by title
+ok 97 - creates one service group per browser window and restores by title
+# Subtest: reuses a stable slot and refuses capacity instead of spawning unbounded tabs
+ok 98 - reuses a stable slot and refuses capacity instead of spawning unbounded tabs
+# Subtest: compares the actual downloadable ZIP manifest and reports a newer release
+ok 99 - compares the actual downloadable ZIP manifest and reports a newer release
+# Subtest: reports an unavailable version check honestly
+ok 100 - reports an unavailable version check honestly
+# Subtest: actual bridge sends canonical messages to each selected HTTP destination and VK keeps envelope
+ok 101 - actual bridge sends canonical messages to each selected HTTP destination and VK keeps envelope
+# Subtest: ZAI list is scoped and returns native IDs without browser secrets
+ok 102 - ZAI list is scoped and returns native IDs without browser secrets
+# Subtest: ZAI read uses exact chat identity and batch, preserving the latest pair
+ok 103 - ZAI read uses exact chat identity and batch, preserving the latest pair
+# Subtest: Wrong scope never gets history text or sends a batch
+ok 104 - Wrong scope never gets history text or sends a batch
+# Subtest: Invalid ref rejects before any site request
+ok 105 - Invalid ref rejects before any site request
+# Subtest: 429 respects Retry-After and does not retry
+ok 106 - 429 respects Retry-After and does not retry
+# Subtest: Two simulated profile contexts maintain independent auth scope
+ok 107 - Two simulated profile contexts maintain independent auth scope
+# Subtest: Judge refuses malformed model and never opens a tab
+ok 108 - Judge refuses malformed model and never opens a tab
+# Subtest: Judge account mismatch is a durable no-click rejection
+ok 109 - Judge account mismatch is a durable no-click rejection
+# Subtest: ZAI judge submits only to a new owned tab, with one native-correlated click
+ok 110 - ZAI judge submits only to a new owned tab, with one native-correlated click
+# Subtest: Unknown ZAI judge click cannot be repeated even with same request id
+ok 111 - Unknown ZAI judge click cannot be repeated even with same request id
+# Subtest: ZAI existing-chat send rejects malformed identity without clicks
+ok 112 - ZAI existing-chat send rejects malformed identity without clicks
+# Subtest: ZAI existing-chat send refuses incomplete last native run
+ok 113 - ZAI existing-chat send refuses incomplete last native run
+# Subtest: A fresh ZAI account with no chats still has a SHA-256 scope
+ok 114 - A fresh ZAI account with no chats still has a SHA-256 scope
+# Subtest: Incorrect ZAI account scope never fetches chat list
+ok 115 - Incorrect ZAI account scope never fetches chat list
+# Subtest: ZAI exact-chat sender clicks once, then confirms only a new native user ID
+ok 116 - ZAI exact-chat sender clicks once, then confirms only a new native user ID
+# Subtest: ZAI exact-chat sender does not retry an uncertain click
+ok 117 - ZAI exact-chat sender does not retry an uncertain click
+# Subtest: ZAI judge admits a tab while Chrome still reports loading but composer is ready
+ok 118 - ZAI judge admits a tab while Chrome still reports loading but composer is ready
+1..118
+# tests 118
+# suites 0
+# pass 118
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

@@ -1,0 +1,32 @@
+Codex/OpenCode/ZCode candidate PASS; full release INCOMPLETE; receipt /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate/ci-receipts/2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3.json
+packages: 302 packages linked into /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate/shared-node-modules/934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727; agent-resume-mcp -> ../packages/agent-resume; 3 tool caches of the store copied into the release; shared store /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate/shared-node-modules/934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727
+== candidate release ==
+script       : /tmp/herder-quota-human12/deploy/fleet/build-release-candidate.py
+requested sha: 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+catalog      : /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate
+release      : /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate/releases/2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+worktree     : /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/worktrees/herder-fleet-candidate-2388ea93
+source_sha   : 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+payload files: 1972
+sha256 index : 2a1ad6e6225dcefccf40da4968737c2cc794daa77fc9ecde911a3f030904b973
+bundle       : cc69ff285ed00f49df4f3f6e51b21185bc9fcc6fbfef06f7f25e9c510e727fae files=2358
+size         : unique 28.7 MiB (disk increment), apparent 28.7 MiB (the store counted again)
+store caches : unchanged by the build = True
+== checks ==
+[OK ] manifest.source_sha == requested head: 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3 vs 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+[OK ] source_dirty is false: False
+[OK ] payload lists every build file: payload=1972 files=1972 missing=0 extra=0 mismatched=0
+[OK ] sha256(dist/index.js) == payload['index.js']: 2a1ad6e6225dcefccf40da4968737c2cc794daa77fc9ecde911a3f030904b973
+[OK ] the candidate template carries the source sha of the manifest: 2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3
+[OK ] the live node config matches its exact before-build snapshot: exact snapshot unchanged: absent
+[OK ] the live current pointer matches its before-build snapshot: None
+[OK ] packages dir is a real directory named node_modules: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/fleet-candidate/releases/2388ea932f7f9a508e35a3b9caa9aa926ac5d6b3/node_modules
+[OK ] the release carries the full set of the store, nothing trimmed: store=305 release=305 missing=0 extra=0
+[OK ] no byte of the package set was copied: copied=4452292 B in 19 files (only the tool caches of the store are copied; every package is a link into the shared store of the lock file)
+[OK ] the workspace package is a link into the release: ../packages/agent-resume
+[OK ] bundle fingerprint of the release == the fingerprint of the manifest: cc69ff285ed00f49df4f3f6e51b21185bc9fcc6fbfef06f7f25e9c510e727fae vs cc69ff285ed00f49df4f3f6e51b21185bc9fcc6fbfef06f7f25e9c510e727fae
+[OK ] release fits the budget by its unique blocks: unique=28.7 MiB (disk increment) <= 512 MiB; apparent=28.7 MiB (counts the store again)
+[OK ] node release dir keeps at most two releases: 0: []
+[OK ] the build did not write into the store: 19 cache files of the store, unchanged = True
+== 15/15 checks passed ==
+worktree cleaned: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/quota-human12/worktrees/herder-fleet-candidate-2388ea93 (branch fleet/candidate-2388ea93 deleted)
