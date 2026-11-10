@@ -182,5 +182,11 @@ class PortableManifestTests(unittest.TestCase):
             self.assertEqual(result["builder"]["script"],"deploy/fleet/build-release-candidate.py")
             self.assertEqual(result["delivery"],3)
             self.assertEqual(result,json.loads(encoded))
+            for path in (
+                release / "build-manifest.json",
+                release / "dist" / "fleet-deployment-manifest.json",
+                release / "dist" / "index.js",
+            ):
+                self.assertEqual(path.stat().st_mode & 0o777, 0o644)
 
 if __name__=="__main__":unittest.main()
