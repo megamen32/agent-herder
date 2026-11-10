@@ -1,4 +1,24 @@
 Граф задач: Agent Herder v1 — переиспользование и короткая очередь исполнения
+
+# Актуальный статус на 2026-11-10
+
+Это исполнительная детализация исходного Rust v1 gate. Исторические leaf receipts не переписываются.
+
+- Основа проверки: публичный `main` **bdd0708515eb9e8504c7b46967fe3975f00826d6** (merge PR #56).
+- Текущий installed runtime: **c0742ab33fdb84a07855b8a0f6a8889b8c5dae73**; он отстаёт от `main`, поэтому live-проверка свежего кода ещё не выполнена.
+- Последний CI run **42749881688** заблокировал installed smoke из-за отсутствующих профилей `chatgpt`, `zai`, `zcode`; lane = `UNKNOWN`, `model_effects=NOT_SUBMITTED`.
+- Состояние очереди: 200/578 листьев закрыты, 36 остаются, 7 заблокированы, 5 ждут; подтверждённого допуска к запуску нет.
+- `ACCEPTANCE-COVERAGE.json`: AC01–AC18 = `not_accepted`; `FIVE-ADAPTER-ACCEPTANCE.json`: `INCOMPLETE`, candidate/installed receipts по пяти lane отсутствуют.
+
+### Следующая исполнимая цепочка
+
+1. Восстановить managed-профили ChatGPT/Z.ai/ZCode и закрыть installed smoke.
+2. T001–T015: отдельный удаляемый compatibility translator и client gate.
+3. R001/V036A/V031A/V028A/V052A/V061A: resource, offline manifest, roster, recent и native routes.
+4. E001/E002: установленный create → deliver → read для Codex/OpenCode.
+5. V060/V069/V097: полные adapter/readback сценарии.
+6. S10–S13: immutable RC, migration/rollback, legacy removal, Linux/macOS installed acceptance и handoff.
+
 Ревизия плана: ac3adb797632
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
 Цель: Довести новый общий Agent Herder до установленного результата, переиспользуя старые adapters и готовые source/CI; сначала OpenCode, затем ChatGPT и Z.ai, после них ZCode и последним Codex.
