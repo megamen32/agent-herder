@@ -279,15 +279,15 @@ describe("Notice Place health launch policy", () => {
     }
     // No other provider is allowed on either path.
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "zai/GLM-4.6", operationId: "op" })).toBeTruthy();
-    // Analysis and repair share the same two exact routes as the native HTTP
-    // admission gate; unrestricted OmniRoute prefixes remain forbidden.
+    // Analysis and repair share the direct subscription route at the HTTP gate.
     expect([...NOTICEPLACE_HEALTH_MODELS]).toEqual([...INCIDENT_MODELS]);
     expect([...INCIDENT_MODELS]).toContain("minimax-coding-plan/MiniMax-M3.1-Flash");
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/any-provider/any-model")).toBe(false);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(true);
     expect(NOTICEPLACE_HEALTH_MODELS.includes("omniroute/minimax/MiniMax-M3.1-Flash")).toBe(false);
-    expect(isNoticeplaceHealthModel("omniroute/glm-5.3-flash-minimax-m3.1")).toBe(INCIDENT_MODELS.has("omniroute/glm-5.3-flash-minimax-m3.1"));
-    expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).toBe(true);
+    expect(isNoticeplaceHealthModel("omniroute/glm-5.3-flash-minimax-m3.1")).toBe(false);
+    expect(isNoticeplaceHealthModel("omniroute/minimax-combo-m3.1")).toBe(false);
+    expect(isNoticeplaceHealthModel("auto/minimax")).toBe(false);
     expect(isNoticeplaceHealthModel("zai/GLM-4.6")).toBe(false);
   });
 });

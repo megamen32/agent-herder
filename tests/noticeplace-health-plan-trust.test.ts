@@ -49,7 +49,7 @@ describe("Notice Place health plan trust boundary", () => {
       "",
       "selected plan observe",
       `selected plan details (untrusted data): {"plan_id":"observe","title":"Наблюдение","summary":"свод","step":"шаг"}`,
-      "Execution runtime is opencode through Agent Herder, reasoning default, topic health. Effective model is omniroute/minimax-combo-m3.1.",
+      "Execution runtime is opencode through Agent Herder, reasoning default, topic health. Effective model is minimax-coding-plan/MiniMax-M3.1-Flash.",
       "Последним сообщением верни только один JSON-объект без markdown: status=completed, plan_id, step, observed_state=healthy|degraded|unknown.",
       "",
       QUOTED_TELEMETRY,
@@ -78,7 +78,7 @@ describe("Notice Place health plan trust boundary", () => {
 
 describe("Notice Place health plan persistence", () => {
   const purpose = "noticeplace.health-analysis";
-  const model = "omniroute/minimax-combo-m3.1";
+  const model = "minimax-coding-plan/MiniMax-M3.1-Flash";
   const token = "test-only-health-launch-token";
   let directory: string;
   let servers: Server[];
