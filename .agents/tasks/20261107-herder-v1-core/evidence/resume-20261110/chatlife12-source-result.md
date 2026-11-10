@@ -1,0 +1,7 @@
+# CHATLIFESOURCE12 — source result, local fixtures
+
+- Herder main: `c56aaa3c37898408b46973d4f4f97e77c850ecbe`; UserIO main: `e37cda11a785d8e748564d4ff899a624042b7d4c`. Both confirmed via remote refs.
+- Account-scoped draft discard; accepted first-send command ID persisted in the existing draft record; same original result can be reconciled after restart without another enqueue, keyed to original message digest. Unknown POST acknowledgement remains fenced because server owns command ID.
+- Existing-session Rust delivery no longer requires createSession. First send validates a fresh owned tab and account before click; existing send reports the observed native user message ID; archive requires exact native confirmation before local alias removal.
+- RED/GREEN artifacts: `browser-profile-stage/chatlife-recovery-red.log`, `chatlife-rust-red.log`, `chatlife-extension-extra-red.log`, `chatlife-final-herder.log` (136 passed), `chatlife-rust-green.log` (9 passed), `chatlife-final-userio.log` (18 passed), under `/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/`. TypeScript `tsc --noEmit` passed.
+- Boundary: Rust AHAP fixture, Herder driver fixtures, and extension fixtures passed separately. A single continuous Rust → actual AHAP runner → UserIO extension lifecycle fixture has not been built; no real provider or installed-runtime validation was performed. Treat integrated fixture and release validation as outstanding, not source acceptance. No versions, packages, runtime or Mac changed.
