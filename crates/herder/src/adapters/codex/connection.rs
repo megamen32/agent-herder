@@ -436,22 +436,25 @@ impl Drop for CodexConnection {
 #[cfg(all(test, unix))]
 mod deadline_tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn stalled_pipe_obeys_request_deadline_and_is_not_reused() {
         let root = std::env::temp_dir().join(format!("herder-stalled-pipe-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        let executable = root.join("fake-codex");
-        fs::write(&executable, "#!/bin/sh\nexec sleep 2\n").unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        // /bin/sh receives `app-server --stdio` and reads this script from cwd.
+        // Executing the system shell avoids executing a recently written inode.
+        let script = root.join("app-server");
+        fs::write(&script, "exec sleep 2\n").unwrap();
+        // Model a concurrent fork retaining the fixture's write descriptor.
+        let writer_held_by_fork = fs::OpenOptions::new().write(true).open(&script).unwrap();
         let mut connection = CodexConnection::open(CodexInstance {
             instance_id: "test".into(),
-            executable,
+            executable: PathBuf::from("/bin/sh"),
             code_home: root.clone(),
             cwd: root.clone(),
         })
         .unwrap();
+        drop(writer_held_by_fork);
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let first = connection.request(

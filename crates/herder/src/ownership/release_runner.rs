@@ -119,6 +119,24 @@ mod tests {
 
     #[test]
     fn execution_lock_is_exclusive_and_bound_to_registered_resource() {
+        // Other tests can fork while this lock is open. A pre-exec child keeps
+        // the inherited open-file description locked even after our drop. Run
+        // this test in a process that cannot be forked by other test threads.
+        const ISOLATED: &str = "HERDER_TARGET_LOCK_TEST_ISOLATED";
+        if std::env::var_os(ISOLATED).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "ownership::release_runner::tests::execution_lock_is_exclusive_and_bound_to_registered_resource",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(ISOLATED, "1")
+                .status()
+                .unwrap();
+            assert!(status.success(), "isolated lock test failed: {status}");
+            return;
+        }
         let root = std::env::temp_dir().join(format!(
             "herder-target-lock-{}-{}",
             std::process::id(),
