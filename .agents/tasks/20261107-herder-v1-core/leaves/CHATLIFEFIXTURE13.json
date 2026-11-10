@@ -1,0 +1,44 @@
+{
+  "id": "CHATLIFEFIXTURE13",
+  "parent": "S2",
+  "label": "Проверить ChatGPT lifecycle через Rust и настоящее расширение локально",
+  "status": "running",
+  "owner": "Lovelace",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "CHATLIFESOURCE12"
+  ],
+  "description": "Один локальный путь реальныйRust→AHAPrunner→UserIOcommand/results→extension с fixture native site. Без provider вызовов. Сохранить исходные команды/ID, first+secondsend, restart, archive.",
+  "acceptance": "Единыйfixture создаёт draft, firstsend подтверждает observednativeID, secondsend тотжechat, read/export/restart безресенда, archiveexact, scope/accountswitch/UNKNOWN не повторяются. Использует истинные shippedentrypoints и существующие stores. Binary/runner source+hash receipt пригоден для reuse release.",
+  "created_at": "2026-11-10T22:01:34+03:00",
+  "updated_at": "2026-11-10T22:01:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-10T22:01:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "CHATLIFEFIXTURE13",
+        "parent": "S2",
+        "label": "Проверить ChatGPT lifecycle через Rust и настоящее расширение локально",
+        "status": "running",
+        "owner": "Lovelace",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "CHATLIFESOURCE12"
+        ],
+        "description": "Один локальный путь реальныйRust→AHAPrunner→UserIOcommand/results→extension с fixture native site. Без provider вызовов. Сохранить исходные команды/ID, first+secondsend, restart, archive.",
+        "acceptance": "Единыйfixture создаёт draft, firstsend подтверждает observednativeID, secondsend тотжechat, read/export/restart безресенда, archiveexact, scope/accountswitch/UNKNOWN не повторяются. Использует истинные shippedentrypoints и существующие stores. Binary/runner source+hash receipt пригоден для reuse release."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

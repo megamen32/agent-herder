@@ -2,14 +2,14 @@
   "id": "CHATLIFESOURCE12",
   "parent": "S2",
   "label": "Довести создание и архивирование ChatGPT через общее расширение",
-  "status": "running",
+  "status": "done",
   "description": "Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.",
-  "acceptance": "RED/GREEN tests prove scoped draft+firstsend admission, duplicate/unknown no resend, restart alias, secondsend/read and exact archive. Published owned files without new transport; real isolated provider canary tracked next.",
+  "acceptance": "Опубликованный source ChatGPT draft/create/firstsend receipt recovery и scoped archive; focused RED/GREEN per layer. Сквозной Rust→extension fixture и реальная установка выделены отдельно, а общий lifecycle остаётся незавершённым до них.",
   "owner": "Heisenberg",
   "estimate_minutes": 15,
   "model": "gpt-6.1-terra",
   "created_at": "2026-11-10T20:54:08+03:00",
-  "updated_at": "2026-11-10T20:54:08+03:00",
+  "updated_at": "2026-11-10T22:01:33+03:00",
   "progress_events": [
     {
       "at": "2026-11-10T20:54:08+03:00",
@@ -33,6 +33,24 @@
       },
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-10T22:01:33+03:00",
+      "note": "Закрыт только доказанный source после превышения оценки; непроверенный сквозной результат вынесен в отдельный следующий лист, общий критерий не снят.",
+      "changes": {
+        "status": "done",
+        "acceptance": "Опубликованный source ChatGPT draft/create/firstsend receipt recovery и scoped archive; focused RED/GREEN per layer. Сквозной Rust→extension fixture и реальная установка выделены отдельно, а общий lifecycle остаётся незавершённым до них.",
+        "result": "PublishedHerder c56aaa3c/UserIOe37cda11;136Herder+9Rust+18extension+tscPASS. Scoped discard и accepted command receipt persisted, digest recovery, firstsend native IDs, confirmedarchive before aliasremoval; unknownPOSTack fenced. Три слоя проверены раздельно; сквознойfixture продолжается CHATLIFEFIXTURE13, install/provider не выполнены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "PublishedHerder c56aaa3c/UserIOe37cda11;136Herder+9Rust+18extension+tscPASS. Scoped discard и accepted command receipt persisted, digest recovery, firstsend native IDs, confirmedarchive before aliasremoval; unknownPOSTack fenced. Три слоя проверены раздельно; сквознойfixture продолжается CHATLIFEFIXTURE13, install/provider не выполнены."
 }
