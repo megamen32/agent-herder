@@ -5,11 +5,9 @@ export const NOTICEPLACE_HEALTH_PURPOSE = "noticeplace.health-analysis";
 /** Internal capability: JSON request bodies cannot supply a symbol property. */
 export const NOTICEPLACE_HEALTH_AUTHORIZED: unique symbol = Symbol("noticeplace.health-analysis.authorized");
 
-/** Exact owner-approved NoticePlace incident routes; the GLM route remains available. */
+/** Exact owner-approved NoticePlace incident route. */
 export const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   healthModelForHarness("opencode", INCIDENT_EXECUTION),
-  "minimax-coding-plan/MiniMax-M3.1-Flash",
-  "omniroute/minimax-combo-m3.1",
 ]);
 
 /**
@@ -23,7 +21,7 @@ export function qualifyNoticeplaceHealthModel(model: unknown): unknown {
   if (typeof model !== "string" || model.includes("/")) return model;
   for (const route of INCIDENT_MODELS) {
     const separator = route.indexOf("/");
-    if (separator > 0 && route.slice(0, separator) === "omniroute" && route.slice(separator + 1) === model) return route;
+    if (separator > 0 && route.slice(0, separator) === "minimax-coding-plan" && route.slice(separator + 1) === model) return route;
   }
   return model;
 }
@@ -40,7 +38,7 @@ export function validateNoticeplaceHealthLaunch(input: {
   harness?: unknown; model?: unknown; operationId?: unknown;
 }): string | undefined {
   if (input.harness !== "opencode" || !INCIDENT_MODELS.has(String(input.model))) {
-    return `Для анализа инцидента разрешён только OpenCode с одной из утверждённых комбо-моделей: ${[...INCIDENT_MODELS].join(", ")}. Другие модели не допускаются.`;
+    return `Для анализа инцидента разрешён только OpenCode с утверждённой моделью по подписке: ${[...INCIDENT_MODELS].join(", ")}. Другие модели не допускаются.`;
   }
   if (typeof input.operationId !== "string" || !input.operationId.trim()) {
     return "Для анализа инцидента требуется стабильный operation_id.";

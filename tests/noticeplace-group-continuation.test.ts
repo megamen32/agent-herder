@@ -60,7 +60,7 @@ it.each(['closed-origin', 'missing-ledger', 'wrong-group', 'wrong-session', 'wro
   expect(f.launches).toEqual([]); expect(f.created()).toBe(1);
 });
 
-it('preserves a legitimate new generation after the entire old group is healthy', async () => {
+it.each([true, false])('admits a new generation after recovery with session reuse enabled=%s', async reuse => {
   const f = await fixture();
   delete f.documents.inc_B.lifecycle.continuation;
   f.documents.inc_B.lifecycle.attempt_id = null;
@@ -68,8 +68,8 @@ it('preserves a legitimate new generation after the entire old group is healthy'
   f.documents.inc_A.state = 'resolved';
   f.documents.inc_new = { id: 'inc_new', project: 'qa', state: 'open', lifecycle: {
     group_key: 'group_1', group: f.documents.inc_B.lifecycle.group, attempt_id: null, session_id: null } };
-  expect(await f.router().run(f.request('inc_new'), f.launch)).toMatchObject({ ok: true, created: true });
-  expect(f.launches).toEqual([undefined]);
+  expect(await f.router().run({ ...f.request('inc_new'), incidentSessionPolicy: { enabled: reuse, ttlSeconds: 86400 } }, f.launch)).toMatchObject({ ok: true, created: !reuse });
+  expect(f.launches).toEqual([reuse ? 'ses_1' : undefined]);
 });
 
 it('a replay of the closed latest incident does not count as a fresh ordinary episode', async () => {

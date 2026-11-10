@@ -9,7 +9,7 @@ import type { AutomationLaunchPolicy } from "../src/automation-launch-policy.js"
 import { AutomationLaunchPolicyStore } from "../src/automation-launch-policy.js";
 
 const purpose = "noticeplace.health-analysis";
-const model = "omniroute/glm-5.3-flash-minimax-m3.1";
+const model = "minimax-coding-plan/MiniMax-M3.1-Flash";
 const token = "test-only-health-launch-token";
 let directory: string;
 let servers: Server[];
@@ -70,12 +70,12 @@ describe("Notice Place health-launch HTTP admission", () => {
     expect((await post()).status).toBe(401);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each(["other/model", `${model} `, "omniroute/minimax-coding-plan/MiniMax-M3.1-Flash", "minimax-coding-plan/MiniMax-M3.1-Flash"])("rejects a model outside the two exact approved combos %s", async invalid => {
+  it.each(["other/model", `${model} `, "omniroute/minimax-coding-plan/MiniMax-M3.1-Flash", "omniroute/minimax-combo-m3.1", "omniroute/glm-5.3-flash-minimax-m3.1", "auto/minimax"])("rejects a model outside the exact approved subscription route %s", async invalid => {
     const { post, run } = await fixture();
     expect((await post({ model: invalid })).status).toBe(400);
     expect(run).not.toHaveBeenCalled();
   });
-  it.each([model, "omniroute/minimax-combo-m3.1"])("accepts an approved exact combo %s", async approved => {
+  it.each([model])("accepts the approved exact subscription route %s", async approved => {
     const { post, run } = await fixture();
     const response = await post({ model: approved });
     expect(response.status).toBe(200);

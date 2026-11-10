@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { qualifyNoticeplaceHealthModel, validateNoticeplaceHealthLaunch } from "../src/automation/noticeplace-health-launch.js";
 
 /** The model the center states for the incident execution: the modelID alone. */
-const CENTER_MODEL = "glm-5.3-flash-minimax-m3.1";
+const CENTER_MODEL = "MiniMax-M3.1-Flash";
 
 describe("the model of an incident analysis", () => {
   it("qualifies the bare model id of the center with the pinned provider", () => {
     const qualified = qualifyNoticeplaceHealthModel(CENTER_MODEL);
-    expect(qualified).toBe("omniroute/glm-5.3-flash-minimax-m3.1");
+    expect(qualified).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: qualified, operationId: "op-1" })).toBeUndefined();
   });
 
