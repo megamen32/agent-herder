@@ -1,8 +1,17 @@
 Граф задач: Herder V1: новое ядро с готовыми адаптерами
 
-# Актуальный статус на 2026-11-10
+# Актуальный статус на 2026-11-10 (после merge/deploy SHA 77e5338)
 
-Эта запись актуализирует снимок, сохраняя исторические leaf receipts. Проверка сделана относительно публичного `main` **bdd0708515eb9e8504c7b46967fe3975f00826d6** (merge PR #56). Последний установленный и проверенный runtime всё ещё привязан к **c0742ab33fdb84a07855b8a0f6a8889b8c5dae73**; текущий `main` нужно отдельно провести через release gate и установить перед live-проверкой.
+Эта запись актуализирует снимок, сохраняя исторические leaf receipts. Проверка проведена после merge PR #57 (документация) и PR #58 (hardening immutable artifact modes).
+
+- Публичный `main`: **77e53384350b906563e144075f8a6fc60881680c**.
+- Установленный live runtime: **77e53384350b906563e144075f8a6fc60881680c**; `current`, `node-config.sourceSha`, systemd `ExecStart`, PID и HTTP `200` сверены после guarded owner-rollout.
+- Candidate gate: **15/15 checks PASS**; native Codex/OpenCode/ZCode candidate stage PASS; полный installed acceptance остаётся INCOMPLETE.
+- Installed smoke `manual-rust-v1-77e53384c`: runtime identity **PASS**, process cleanup **PASS**, но `transport_or_provider_failure`; `model_effects=NOT_SUBMITTED`, global inventory **UNVERIFIED**, все пять lanes остаются **UNKNOWN**.
+- Browser blocker локализован: локальный Mac relay отвечает, но публичный child route `VibeMacMiniLocal` всё ещё stale и привязан к старому parent `shell:mac-mini-2012.lan`; live `shell:mac-mini-node` уже получил точную child definition, но hub readback ещё не подтверждает новую parent registration.
+- ZCode profile теперь использует официальный `/home/roomhacker` и isolated transport; installed lane ещё не был принят отдельным receipt.
+- Граф Rust v1: **58/85 закрыты; 27 остаются**. В графе: 2 в работе, 4 заблокированы, 5 ждут leaf, 6 ждут исполнителя; допуска к финальному запуску нет.
+- Expanded MCP gate: **200/578 закрыты; 36 остаются**, 7 заблокированы, 5 ждут; AC01–AC18 и пять adapter lanes всё ещё не приняты.
 
 ## Исходный Rust v1 план
 
