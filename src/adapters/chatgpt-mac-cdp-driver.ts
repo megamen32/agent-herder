@@ -37,6 +37,11 @@ const RECENTLY_GENERATING_TTL_MS = 5 * 60 * 1000;
 const NATIVE_CHAT_ID = /^[a-f0-9]{8}-[a-f0-9-]{20,75}$/i;
 type Phase = "idle" | "generating" | "unknown";
 export type Page = { id: number; url: string; selected?: boolean; conversation?: boolean };
+
+/** Legacy opt-in gate; true means one bounded scan, never a polling loop. */
+export function isPromptPollingOptedIn(raw = process.env.AGENT_HERDER_CHATGPT_PROMPT_POLLING): boolean {
+  return raw?.trim().toLowerCase() === "on";
+}
 /** One modal prompt that the page is currently showing to the user.
  * Collected by the same evaluate_script call as the rest of the snapshot,
  * with no extra HTTP request: it never triggers a 429. Buttons carry only
@@ -245,22 +250,20 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
   getAccountScope(): string | undefined { return this.accountScope; }
 
   // --------------------------------------------------------------
-  // Modal-prompt polling + permission/continue-in-work auto-answer.
-  // The poller reuses the same MacMiniChromeTransport and the same
+  // Modal-prompt scan + permission/continue-in-work auto-answer.
+  // The scan reuses the same MacMiniChromeTransport and the same
   // CHATGPT_MAC_SNAPSHOT script; evaluate_script and take_snapshot go
   // through the local CDP WebSocket and cannot trigger HTTP 429 from
-  // chatgpt.com. The poller respects the existing 429 cooldown in three
+  // chatgpt.com. The scan respects the existing 429 cooldown in three
   // independent ways: (1) the page-side globalThis
-  // __herderChatGptReadCooldownUntil timestamp is probed each cycle; (2) a
-  // 429 seen in pageResources backs the poller off for 60s; (3) the poller
+  // __herderChatGptReadCooldownUntil timestamp is probed on each scan; (2) a
+  // 429 seen in pageResources backs the scan off for 60s; (3) the scan
   // never runs while an exclusive operation is in flight. Clicks happen in
   // one atomic evaluate_script that re-locates the chosen button inside the
   // dialog root and only then clicks; a stale snapshot can never click the
   // wrong button.
-  private static readonly PROMPT_POLL_INTERVAL_MS = 5_000;
   private static readonly PROMPT_BACKOFF_AFTER_429_MS = 60_000;
   private static readonly PROMPT_BACKOFF_AFTER_ERROR_MS = 15_000;
-  private promptPollTimer: ReturnType<typeof setInterval> | undefined;
   private promptPollInFlight = false;
   private lastSeen429At = 0;
   private promptPollErrorUntil = 0;
@@ -275,18 +278,15 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     return () => { this.promptListeners.delete(handler); };
   }
 
-  /** Begin periodic modal-prompt polling. */
+  /** Run one bounded page-level prompt scan; never create a background timer. */
   startPromptPolling(opts: { intervalMs?: number } = {}): void {
-    const intervalMs = opts.intervalMs && Number.isFinite(opts.intervalMs)
-      ? Math.max(2_000, Math.min(60_000, Math.round(opts.intervalMs)))
-      : ChatGptMacCdpDriver.PROMPT_POLL_INTERVAL_MS;
-    if (this.promptPollTimer) clearInterval(this.promptPollTimer);
-    this.promptPollTimer = setInterval(() => { void this.pollOnce().catch(() => undefined); }, intervalMs);
-    if (typeof this.promptPollTimer.unref === "function") this.promptPollTimer.unref();
+    void opts;
+    void this.scanPromptOnce().catch(() => undefined);
   }
 
   stopPromptPolling(): void {
-    if (this.promptPollTimer) { clearInterval(this.promptPollTimer); this.promptPollTimer = undefined; }
+    // Kept as a compatibility no-op. Prompt discovery happens during normal
+    // page snapshots, so there is no interval to clear.
   }
 
   private emitPromptEvent(event: HarnessEvent): void {
@@ -295,8 +295,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
   }
 
-  private async pollOnce(): Promise<void> {
-    // The runtime switch of the owner: a paused harness stops this poller
+  async scanPromptOnce(): Promise<void> {
+    // The runtime switch of the owner: a paused harness stops this scan
     // too — even a CDP snapshot is a request the paused site does not see.
     if (!liveHarnessPromptPollingEnabled("chatgpt")) return;
     if (this.promptPollInFlight) return;
@@ -1629,12 +1629,11 @@ export async function createBrowserChatDriver(): Promise<BrowserChatDriver> {
     throw new Error("Invalid AGENT_HERDER_CHATGPT_PAGE_ID");
   }
   const driver = new ChatGptMacCdpDriver(new MacMiniChromeTransport(), pageId);
-  if (process.env.AGENT_HERDER_CHATGPT_PROMPT_POLLING?.trim().toLowerCase() !== "off") {
-    const intervalRaw = Number(process.env.AGENT_HERDER_CHATGPT_PROMPT_POLL_INTERVAL_MS);
-    const intervalMs = Number.isFinite(intervalRaw) && intervalRaw > 0
-      ? Math.min(60_000, Math.max(2_000, Math.round(intervalRaw)))
-      : undefined;
-    driver.startPromptPolling({ intervalMs });
+  // Page-level modals are scanned by ordinary operations. Keep the legacy
+  // switch as an explicit one-shot opt-in; chrome://inspect consent is
+  // Chrome-owned UI and remains outside page-level CDP.
+  if (isPromptPollingOptedIn()) {
+    driver.startPromptPolling();
   }
   return driver;
 }

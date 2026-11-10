@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
+import { CHATGPT_MAC_SNAPSHOT, ChatGptMacCdpDriver, isPromptPollingOptedIn, parseChatGptPages, pickChatGptPage } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 import { parseChromeEvaluation, type ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 import { CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 import { BrowserChatDraftStore } from "../src/adapters/browser-chat-drafts.js";
@@ -35,6 +35,21 @@ class BrowserFixture implements ChromePageTools {
   }
 }
 describe("ChatGPT on existing Mac mini CDP", () => {
+  it("does not start a background prompt timer by default or on explicit opt-in", async () => {
+    const timer = vi.spyOn(globalThis, "setInterval");
+    const fixture = new BrowserFixture();
+    const driver = new ChatGptMacCdpDriver(fixture);
+    try {
+      expect(isPromptPollingOptedIn(undefined)).toBe(false);
+      expect(isPromptPollingOptedIn("off")).toBe(false);
+      expect(isPromptPollingOptedIn("on")).toBe(true);
+      driver.startPromptPolling();
+      expect(timer).not.toHaveBeenCalled();
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
   it("retains explicitly verified account scope with a fresh inventory and no passive hook", async () => {
     const scope = "a".repeat(64);
     const tools: ChromePageTools = { call: async (name, args = {}) => {

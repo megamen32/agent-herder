@@ -195,3 +195,13 @@ Every first successful `open_chat` and any failed history browser action also
 writes a private `trash/logs/chatgpt-history-archive-*.json` receipt and, when
 the driver returns it, a same-page PNG. The receipt intentionally contains no
 chat text; it records only the outcome, stage, page, and URL without query data.
+
+### ChatGPT page prompts
+
+ChatGPT page-level modal prompts are inspected during the normal CDP snapshot
+and operation paths, where matching permission and “Continue in Work” buttons
+may be auto-answered. The driver does not start a background prompt timer by
+default. `AGENT_HERDER_CHATGPT_PROMPT_POLLING=on` is a one-shot compatibility
+opt-in and performs one bounded page scan; it does not create a polling loop.
+Chrome-owned UI, including consent dialogs on `chrome://inspect`, is outside
+page-level CDP and is not promised or auto-clicked by this driver.
