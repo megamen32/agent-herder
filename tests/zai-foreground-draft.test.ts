@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { ZaiCdpDriver, ZAI_ACTIVITY_SCRIPT } from "../src/adapters/zai-cdp-driver.js";
 import { ZAI_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
+import { ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 import { setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 
 const first = vi.hoisted(() => vi.fn());
@@ -40,7 +41,7 @@ async function fixture(pinned = true) {
     if (name === "take_snapshot") return 'uid=1_1 textbox "Send a Message"';
     if (name === "fill") { state.composer = String(args.value); return "ok"; }
     if (name !== "evaluate_script") throw new Error("unexpected browser mutation: " + name);
-    if (source === ZAI_LIST_API_SCRIPT) {
+    if (source === ZAI_LIST_API_SCRIPT || source === ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT) {
       if (state.accountReadFails) throw new Error("account read failed");
       return json({ scope: state.scope, chats: [] });
     }
@@ -89,7 +90,8 @@ describe("Z.ai foreground admitted draft activity", () => {
     const stored = JSON.parse(await readFile(join(f.root, "inventory", "zai", scope, "inventory.json"), "utf8"));
     expect(stored.chats).toContainEqual(expect.objectContaining({ id: native, lastRunStatus: "completed" }));
     expect(f.calls.some(call => call.source === ZAI_ACTIVITY_SCRIPT)).toBe(true);
-    expect(f.calls.filter(call => call.source === ZAI_LIST_API_SCRIPT)).toHaveLength(1);
+    expect(f.calls.filter(call => call.source === ZAI_LIST_API_SCRIPT)).toHaveLength(0);
+    expect(f.calls.filter(call => call.source === ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT)).toHaveLength(1);
     expect(f.calls.every(call => ["evaluate_script", "list_pages"].includes(call.name))).toBe(true);
     const second = await f.adapter.sendMessage(f.created.id, { message: "second", inputId: "second-input", queue: true });
     expect(second).toMatchObject({ ok: true, admitted: true, nativeInputMessageId: "user-second" });

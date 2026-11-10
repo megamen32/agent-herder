@@ -66,7 +66,7 @@ describe("durable browser chat history",()=>{
     expect(parseChromeEvaluation<typeof payload>(result)).toEqual(payload);
   });
 
-  it("integrates a real provider instance with native history, scoped IDs and 100-chat warming",async()=>{
+  it("integrates passive provider inventory with native history and scoped IDs",async()=>{
     const root=await dir();
     vi.stubEnv("AGENT_HERDER_BROWSER_CHAT_CACHE_ROOT",root);
     const chats:BrowserChat[]=Array.from({length:101},(_,i)=>({
@@ -77,7 +77,7 @@ describe("durable browser chat history",()=>{
       id:id+"-1",role:"user" as const,text:"Fixture",parts:[{type:"text" as const,text:"Fixture"}],
     }]);
     const driver:BrowserChatDriver={
-      listChats:async()=>chats,getMessages:read,getAccountScope:()=>ACCOUNT_A,
+      listChats:async()=>chats,listObservedChats:async()=>chats,getMessages:read,getAccountScope:()=>ACCOUNT_A,
       sendMessage:async()=>({}),
     };
     const adapter=new BrowserChatAdapter(driver,{

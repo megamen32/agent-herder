@@ -1,14 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 import { loadBrowserChatAdapters, loadBrowserChatProviderAdapter, configuredBrowserProviderIds } from "../src/adapters/browser-chat-loader.js";
 
 let directory: string | null = null;
-afterEach(async () => { if (directory) await rm(directory, { recursive: true, force: true }); directory = null; });
+afterEach(async () => { vi.unstubAllEnvs(); setHarnessRuntimeSettingsPathForTests(undefined); if (directory) await rm(directory, { recursive: true, force: true }); directory = null; });
 
 describe("separate site adapters sharing one browser base class", () => {
   it("loads two independent instances with exact site identity and capabilities", async () => {
+    vi.stubEnv("AGENT_HERDER_MAC_MINI_SSH_TARGET", "fixture@localhost");
+    vi.stubEnv("AGENT_HERDER_MAC_MINI_CHROME_GATEWAY_SCRIPT", "/tmp/fixture-gateway.js");
     const config = JSON.stringify([
       { id: "chatgpt", name: "ChatGPT", cwd: "/browser/chatgpt", module: "builtin:chatgpt-mac-cdp" },
       { id: "zai", name: "Z.ai", cwd: "/browser/zai", module: "builtin:zai-cdp" },
@@ -23,7 +26,7 @@ describe("separate site adapters sharing one browser base class", () => {
       nativeConversationIds: true, accountArchiveViaCdp: true, queueAfterGeneration: true,
     });
     expect(zai.browserFeatures).toMatchObject({
-      nativeConversationIds: false, accountArchiveViaCdp: false, queueAfterGeneration: true,
+      nativeConversationIds: false, accountArchiveViaCdp: true, queueAfterGeneration: true,
     });
     expect(chatgpt.controlCapabilities).toMatchObject({ cancelTurn: true, modelSwitch: true });
     expect(zai.controlCapabilities).toMatchObject({ cancelTurn: true, modelSwitch: true });
@@ -31,10 +34,14 @@ describe("separate site adapters sharing one browser base class", () => {
 
   it("scopes native chat IDs without mixing sessions or sending to another provider", async () => {
     directory = await mkdtemp(join(tmpdir(), "browser-providers-"));
+    const settings = join(directory, "settings.json");
+    await writeFile(settings, JSON.stringify({version:1,pollingEnabled:true,harnesses:{}}));
+    setHarnessRuntimeSettingsPathForTests(settings);
     const module = join(directory, "fixture.mjs");
     await writeFile(module, `export async function createBrowserChatDriver() {
       return {
         listChats: async () => [{id:"same-native-id",title:"Test",working:false,unread:false,updatedAt:"2026-10-31T10:00:00Z"}],
+        listObservedChats: async () => [{id:"same-native-id",title:"Test",working:false,unread:false,updatedAt:"2026-10-31T10:00:00Z"}],
         getChat: async id => id==="same-native-id" ? {id,title:"Test",working:false,unread:false,updatedAt:"2026-10-31T10:00:00Z"} : null,
         sendMessage: async ({chatId}) => {
           if(chatId!=="same-native-id")throw Error("wrong target");return {};

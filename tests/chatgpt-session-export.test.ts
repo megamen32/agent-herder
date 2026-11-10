@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { BrowserChatAdapter } from '../src/adapters/browser-chat.js';
 import { chatgptFullConversationApiScript, chatgptConversationMessages } from '../src/adapters/chatgpt-full-conversation.js';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 
 describe('ChatGPT full session export', () => {
   it('reconciles 200 messages without invoking full export, while explicit export stays complete', async () => {
@@ -69,14 +70,14 @@ import { BrowserChatDraftStore } from '../src/adapters/browser-chat-drafts.js';
 it('reads an admitted draft through its verified native conversation', async () => {
   const root=await mkdtemp(join(tmpdir(),'herder-chat-draft-export-'));
   vi.stubEnv('AGENT_HERDER_BROWSER_DRAFT_ROOT',root);
-  const scope='a'.repeat(64), id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
+  const scope=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode('fixture'))).toString('hex'), id='6aa7e444-0ba4-83ed-992f-d2afaa3159e8';
   try {
     const drafts=new BrowserChatDraftStore('chatgpt',root);await drafts.useScope(scope);
     const draft=await drafts.create('fixture');await drafts.startSend(draft.id);await drafts.admit(draft.id,id);
     const mapping={first:{message:{id:'m1',author:{role:'user'},content:{parts:['question']}}},last:{message:{id:'m2',author:{role:'assistant'},content:{parts:['answer']}}}};
     const fetch=async(url:string)=>({ok:true,status:200,json:async()=>url==='/api/auth/session'?{accessToken:'fixture',account:{id:'fixture'}}:
       url.startsWith('/backend-api/conversations/')?{conversation_id:id,messages:Object.values(mapping).map(node=>node.message)}:{conversation_id:id,mapping}});
-    const context=vm.createContext({location:{origin:'https://chatgpt.com'},fetch,JSON,encodeURIComponent,Date,Object});
+    const context=vm.createContext({location:{origin:'https://chatgpt.com'},fetch,JSON,encodeURIComponent,Date,Object,TextEncoder,crypto:webcrypto});
     const tools:any={call:async(name:string,args:any)=>{
       if(name==='list_pages')return '1: ChatGPT (https://chatgpt.com/)';
       if(args.function.includes('const digest=await crypto.subtle.digest'))return '```json\n'+JSON.stringify({scope})+'\n```';

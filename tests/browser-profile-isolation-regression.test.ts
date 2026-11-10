@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
 import { ChatGptMacCdpDriver } from "../src/adapters/chatgpt-mac-cdp-driver.js";
-import { CHATGPT_CREATE_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
+import { CHATGPT_CREATE_SCOPE_SCRIPT, ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 import { ZAI_LIST_API_SCRIPT } from "../src/adapters/browser-chat-api-scripts.js";
 import type { ChromePageTools } from "../src/adapters/mac-mini-chrome-transport.js";
 
@@ -17,6 +18,24 @@ const temporary: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true })));
+});
+
+it("defaults to UserIO with the canonical account identity and never falls back to a browser", () => {
+  const identity = {provider:"chatgpt",user_id:"fixture-user",account_id:"fixture-account"};
+  const accountScope = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+  const macMini = vi.fn(() => { throw new Error("unexpected browser fallback"); });
+  const directCdp = vi.fn(() => { throw new Error("unexpected browser fallback"); });
+  const env = { AHAP_HARNESS:"chatgpt", AHAP_BROWSER_ACCOUNT_SCOPE:accountScope,
+    AHAP_USERIO_ENDPOINT:"http://127.0.0.1:12345", AHAP_USERIO_AGENT_ID:"fixture",
+    AHAP_USERIO_INSTANCE_ID:"browser-12345678-1234-1234-1234-123456789abc",
+    AHAP_USERIO_TOKEN_FILE:"/tmp/fixture-token" };
+  const adapter = makeConfiguredAdapter(env, {macMini,directCdp});
+  expect(adapter.name).toBe("ChatGPT UserIO");
+  expect(adapter.getAccountScope()).toBeUndefined();
+  expect(() => makeConfiguredAdapter({...env,AHAP_USERIO_ENDPOINT:""}, {macMini,directCdp}))
+    .toThrow("userio_endpoint_invalid");
+  expect(macMini).not.toHaveBeenCalled();
+  expect(directCdp).not.toHaveBeenCalled();
 });
 
 it("two-account consumer fixture rejects duplicate account scopes before native bootstrap", () => {
@@ -166,7 +185,7 @@ it("configured Zai create refuses account drift instead of rebinding its draft t
     if (name === "list_pages") return "7: Zai (https://chat.z.ai/?herder_owned=zai)";
     if (name === "evaluate_script") {
       if (String(args.function).includes("herder-owned:")) return json({ owned: true });
-      if (args.function === ZAI_LIST_API_SCRIPT) return json({ scope, chats: [] });
+      if (args.function === ZAI_LIST_API_SCRIPT || args.function === ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT) return json({ scope, chats: [] });
       return json({ origin: "https://chat.z.ai", loggedIn: true, composer: true, phase: "idle", chats: [] });
     }
     throw new Error("unexpected " + name);

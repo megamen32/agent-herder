@@ -2,6 +2,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { createZaiBrowserJudgeFetch, ZAI_BROWSER_JUDGE_BASE_URL, zaiBrowserJudgePageScript, type ZaiBrowserJudgeSlot } from "../src/autopilot/zai-browser-judge.js";
+import { ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT } from "../src/adapters/browser-chat-new-page.js";
 import { runZaiModelCycle } from "../src/autopilot/zai-failover.js";
 import { JudgeRequestTrace } from "../src/autopilot/judge-request.js";
 
@@ -333,6 +334,7 @@ describe("concrete private-tab Z.AI transport", () => {
         if (name === "close_page") { pages.delete(id); return "closed"; }
         if (name !== "evaluate_script") throw new Error("unexpected tool");
         const source = String(args.function);
+        if (source === ZAI_CURRENT_ACCOUNT_SCOPE_SCRIPT) return "```json\n" + JSON.stringify({ scope }) + "\n```";
         if (source.includes("__herderZaiHook")) return "\u0060\u0060\u0060json\n" + JSON.stringify({ scope, chats: [] }) + "\n\u0060\u0060\u0060";
         const result = await runInNewContext("(" + source + ")()", {
           globalThis: f.window, URL, Uint8Array, Object, Promise,

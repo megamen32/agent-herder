@@ -38,8 +38,10 @@ describe("browser autopilot owner configuration",()=>{
  it("binds the browser transport to a verified account",()=>{
   const browser={transport:"browser",accountScope:"a".repeat(64)};
   expect(validateV1BrowserAutopilotConfig({...config,zai:browser}).zai).toMatchObject(browser);
-  for(const change of [{accountScope:"Carevio"},{tokenEnv:"SECRET"},{browserMcpUrl:"https://example.com/mcp"},{sshTarget:"owner@host"}])
+  for(const change of [{accountScope:"Carevio"},{tokenEnv:"SECRET"},{sshTarget:"invalid target"}])
    expect(()=>validateV1BrowserAutopilotConfig({...config,zai:{...browser,...change}})).toThrow("browser_binding_invalid");
+  expect(()=>validateV1BrowserAutopilotConfig({...config,zai:{...browser,browserMcpUrl:"https://example.com/mcp"}})).toThrow("vibe_transport_disabled");
+  expect(validateV1BrowserAutopilotConfig({...config,zai:{...browser,sshTarget:"owner@host"}}).zai).toMatchObject({sshTarget:"owner@host"});
  });
  it("requires an exact nonempty enrolled target set when enabled",()=>{
   expect(()=>validateV1BrowserAutopilotConfig({...config,profiles:[]})).toThrow("requires_enrolled");
