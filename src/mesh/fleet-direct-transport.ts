@@ -7,6 +7,9 @@ import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-resources.js';
 import {FLEET_DIRECT_TOOLS} from './fleet-tool-allowlist.js';
+import {unwrapResult} from './protocol.js';
+import {FleetGptAdminTransport} from './fleet-gptadmin-transport.js';
+import {meshFleetTarget,meshNodeOf,readFleetMeshBinding} from './fleet-mesh-binding.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
 export type DirectPeer={hostId:string;sshHost:string;sshPort?:number;nativeUser:string;port:number;python:string};
 export const directFleetPeers:readonly DirectPeer[]=[
@@ -245,9 +248,42 @@ export function peerAvailabilityOf(hostId:string):{until:number;error:string;fai
 }
 /** Forget what is known about the availability of the nodes: the pause is a thing of the runtime. */
 export function resetPeerAvailability():void{peerAvailability.clear();}
+
+/**
+ * The mesh lane of the fleet: peer herders are reached through the hub relay
+ * (GrepMesh/GPTAdmin, the same authenticated registry GrepMesh itself consumes)
+ * instead of raising an SSH bridge to every machine on every fleet operation.
+ * The local machine keeps its in-process bridge; a node without a verified
+ * mesh binding keeps the documented SSH fallback path.
+ */
+export type FleetMeshTransportFactory=()=>Promise<GptAdminTransport|undefined>;
+const defaultMeshTransportFactory:FleetMeshTransportFactory=async()=>{
+ if(process.env.AGENT_HERDER_FLEET_TRANSPORT==='ssh')return undefined;
+ const binding=await readFleetMeshBinding();
+ if(!binding)return undefined;
+ return new FleetGptAdminTransport({endpoint:binding.endpoint,headersProvider:()=>({...binding.headers}),readDeadlineMs:20_000});
+};
+let meshTransportFactory:FleetMeshTransportFactory=defaultMeshTransportFactory;
+let sharedMeshTransport:GptAdminTransport|undefined|null;
+/** Tests inject a stub mesh lane; production keeps the pinned binding factory. */
+export function setFleetMeshTransportFactory(factory:FleetMeshTransportFactory):void{meshTransportFactory=factory;sharedMeshTransport=undefined;}
+/** Restore the production mesh lane factory. */
+export function resetFleetMeshTransportFactory():void{meshTransportFactory=defaultMeshTransportFactory;sharedMeshTransport=undefined;}
 export class FleetDirectTransport implements GptAdminTransport {
- constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000){
+ constructor(private readonly peers:readonly DirectPeer[]=fleetPeers(),private readonly deadlineMs=10000,private readonly meshLane?:GptAdminTransport|null){
   if(!peers.length||peers.length>5||new Set(peers.map(p=>p.hostId)).size!==peers.length)throw new Error('direct_peer_limit');
+ }
+ /** The mesh lane for a remote peer: undefined means the documented fallback path. */
+ private async meshFor(peer:DirectPeer):Promise<GptAdminTransport|undefined>{
+  // The local machine never leaves the process: its bridge answers directly.
+  if(isLocalPeer(peer))return undefined;
+  // An explicitly injected lane wins (tests); undefined keeps the shared pinned binding.
+  if(this.meshLane!==undefined)return this.meshLane??undefined;
+  if(sharedMeshTransport===null)return undefined;
+  if(sharedMeshTransport)return sharedMeshTransport;
+  const built=await meshTransportFactory().catch(()=>undefined);
+  if(!built){sharedMeshTransport=null;return undefined;}
+  return sharedMeshTransport=built;
  }
  private readDeadline(peer:DirectPeer,operation:'schema'|'probe'|'session'|'tool',tool?:string):number{
   const macRead=peer.hostId==='MacBook-Pro-User.local'&&(
@@ -255,7 +291,32 @@ export class FleetDirectTransport implements GptAdminTransport {
   );
   return macRead?Math.max(this.deadlineMs,macSessionReadTimeoutMs):this.deadlineMs;
  }
- async discover():Promise<unknown>{return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};}
+ async discover():Promise<unknown>{
+  // The mesh lane publishes the real registry: the mesh node state of each
+  // machine and its fleet child, projected onto the fleet's own host ids so
+  // one machine has one name and the cabinet state machine is unchanged.
+  for(const peer of this.peers){
+   const mesh=await this.meshFor(peer).catch(()=>undefined);
+   if(!mesh)continue;
+   try{
+    const registry=await mesh.discover() as {servers?:unknown};
+    const servers=Array.isArray(registry?.servers)?registry!.servers as {server_id?:unknown;name?:unknown;status?:unknown;kind?:unknown}[]:undefined;
+    if(!servers)break;
+    const byId=new Map<string,{status?:unknown}>();
+    for(const entry of servers)byId.set(String(entry?.server_id??entry?.name??''),entry as {status?:unknown});
+    return {servers:this.peers.flatMap(p=>{
+     const target=meshFleetTarget(p.hostId);
+     const node=byId.get(`shell:${meshNodeOf(p.hostId)}`);
+     const child=byId.get(target);
+     return [
+      {server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:node?.status??'offline'},
+      {server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:child?.status??(node?.status==='online'?'failed':'offline')},
+     ];})};
+   }catch{/* The configured view below stays the honest fallback. */}
+   break;
+  }
+  return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};
+ }
  private peer(target:string){const p=this.peers.find(p=>target===`mcp:shell:${p.hostId}:AgentHerder`);if(!p)throw new Error('direct_target_not_authorized');return p;}
  private rpc(peer:DirectPeer,method:string,params:Record<string,unknown>,timeoutMs:number):Promise<unknown>{
   const request=JSON.stringify({...peer,method,params,timeoutMs});if(Buffer.byteLength(request)>16384)throw new Error('direct_request_limit');
@@ -275,11 +336,37 @@ export class FleetDirectTransport implements GptAdminTransport {
  /** Ask a node whether it runs a herder runtime, and whether it has the owner lever tool. */
  async probeRuntime(target:string):Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>{
   const peer=this.peer(target);
+  const mesh=await this.meshFor(peer).catch(()=>undefined);
+  if(mesh){
+   // Over the mesh the runtime probe is the child's own tool list.
+   const schema=unwrapResult(await mesh.schema(meshFleetTarget(peer.hostId))) as {tools?:unknown};
+   const tools=Array.isArray(schema?.tools)?(schema!.tools as {name?:unknown}[]).map(t=>String(t?.name??'')).filter(Boolean):[];
+   if(!tools.length)throw new Error('direct_rpc_failed');
+   return {hasRuntime:true,hasDisarmTool:tools.includes('automation_disarm'),tools};
+  }
   return this.rpc(peer,'herder_runtime_probe',{},this.readDeadline(peer,'probe')) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
+  // The validation of the caller's own arguments stays synchronous: a forged
+  // target or session identity never becomes an async rejection.
   if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
-  const peer=this.peer(target);
+  return this.readSessionOnPeer(this.peer(target),harness,sessionId);
+ }
+ private async readSessionOnPeer(peer:DirectPeer,harness:string,sessionId:string):Promise<unknown>{
+  const mesh=await this.meshFor(peer).catch(()=>undefined);
+  if(mesh){
+   // The mesh lane answers the hub-lane session contract: verified node
+   // identity, then the exact native session identity.
+   const meshTarget=meshFleetTarget(peer.hostId);
+   const info=unwrapResult(await mesh.call(meshTarget,'fleet_node_info',{})) as Record<string,unknown>;
+   if(info.hostId!==peer.hostId)throw new Error('native_owner_identity_mismatch');
+   const result=unwrapResult(await mesh.call(meshTarget,'agent_info',{sessionId,harness})) as {session?:Record<string,unknown>};
+   const session=result?.session;
+   if(!session)throw new Error('fleet_session_not_found');
+   if(session.hostId!==peer.hostId)throw new Error('native_owner_identity_mismatch');
+   if(session.id!==sessionId||session.harness!==harness)throw new Error('fleet_session_identity_mismatch');
+   return result;
+  }
   return this.rpc(peer,'session/read',{harness,sessionId},this.readDeadline(peer,'session'));
  }
  /** Read one exact response resource from the native owner MCP; never use caller-local jobs for a remote binding. */
@@ -293,7 +380,15 @@ export class FleetDirectTransport implements GptAdminTransport {
   return await this.rpc(peer,'resources/read',{uri},Math.max(this.deadlineMs,30_000));
  }
  readSessionPage(target:string,cursor?:string,limit=100):Promise<unknown>{return this.call(target,'fleet_session_page',{limit,...(cursor?{cursor}:{})});}
- schema(target:string):Promise<unknown>{const peer=this.peer(target);return this.rpc(peer,'tools/list',{},this.readDeadline(peer,'schema'));}
+ schema(target:string):Promise<unknown>{
+  // The exact-peer admission stays synchronous; only the read is async.
+  return this.schemaOnPeer(this.peer(target));
+ }
+ private async schemaOnPeer(peer:DirectPeer):Promise<unknown>{
+  const mesh=await this.meshFor(peer).catch(()=>undefined);
+  if(mesh)return mesh.schema(meshFleetTarget(peer.hostId));
+  return this.rpc(peer,'tools/list',{},this.readDeadline(peer,'schema'));
+ }
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(!FLEET_DIRECT_TOOLS.includes(tool))throw new Error('direct_tool_not_authorized');
   if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
@@ -324,6 +419,18 @@ export class FleetDirectTransport implements GptAdminTransport {
   }
  }
  private async dispatch(peer:DirectPeer,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
+  const mesh=await this.meshFor(peer).catch(()=>undefined);
+  if(mesh){
+   // The mesh lane speaks the child tools directly: no SSH bridge, no
+   // per-call python handshake, the hub relay owns the connection.
+   const meshTarget=meshFleetTarget(peer.hostId);
+   await assertRemoteCodexAdmission(tool,args,()=>mesh.call(meshTarget,'model_quotas',{}));
+   if(tool==='create_session'){
+    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
+    return mesh.call(meshTarget,'fleet_create_session',{...args,inputId:idempotencyKey});
+   }
+   return mesh.call(meshTarget,tool,args);
+  }
   await assertRemoteCodexAdmission(tool,args,()=>this.rpc(peer,'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
