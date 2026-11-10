@@ -25,9 +25,25 @@ it("indexes native OpenCode v2 messages and detects edits", async () => {
     expect(before.status).toMatchObject({ state: "complete" });
     expect(before.found[0]).toMatchObject({ session: { nativeSessionId: "s1" }, chunks: [{ text: "first message" }] });
     db.prepare("UPDATE session_message SET data=? WHERE id=?").run(JSON.stringify({ text: "other message" }), "m1");
+    // An in-place data edit that bumps no envelope column is served from the
+    // index-only change key: the cheap scan keeps the previous revision.
+    const cheap = await scan();
+    expect(cheap.found[0].session.revision).toBe(before.found[0].session.revision);
+    // The periodic resync rehash bounds how long such an edit may stay
+    // unnoticed; with the resync interval forced to every scan it is detected.
+    vi.stubEnv("AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS", "1");
     const after = await scan();
     expect(after.found[0].session.revision).not.toBe(before.found[0].session.revision);
     expect(after.found[0].chunks[0].text).toBe("other message");
+    vi.unstubAllEnvs();
+    // A harness-maintained change key (new message) is detected immediately.
+    db.exec("INSERT INTO session_message VALUES('m2','s1','user',2,2,2,'{\"text\":\"second message\"}')");
+    vi.stubEnv("AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS", "60");
+    vi.stubEnv("OPENCODE_DB_PATH", path);
+    for (const key of ["CODEX_HOME", "MINIMAX_CODE_SESSION_STORE", "ZCODE_DB_PATH", "HERMES_STATE_DB", "CLAUDE_PROJECTS_DIR", "AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT"]) vi.stubEnv(key, join(root, key));
+    const appended = await scan();
+    expect(appended.found[0].session.revision).not.toBe(after.found[0].session.revision);
+    expect(appended.found[0].chunks.map(chunk => chunk.text)).toEqual(["other message", "second message"]);
   } finally { db.close(); vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }); }
 });
 

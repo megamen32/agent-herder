@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
@@ -361,9 +361,20 @@ export class HumanStopStore {
     return this.readUnsafe();
   }
 
+  /** Last parsed file plus the identity of the bytes it came from. The store
+   * file is shared with hook and runner processes that take the same lock, so
+   * the cheap stat comparison — not a trust assumption — decides when the
+   * cached parse may serve another read. */
+  private statCache?: { stamp: string; file: HumanStopFile };
+
   private async readUnsafe(): Promise<HumanStopFile> {
     try {
-      return parseHumanStopFile(JSON.parse(await readFile(this.path, "utf8")) as unknown);
+      const info = await stat(this.path);
+      const stamp = `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+      if (this.statCache && this.statCache.stamp === stamp) return structuredClone(this.statCache.file);
+      const file = parseHumanStopFile(JSON.parse(await readFile(this.path, "utf8")) as unknown);
+      this.statCache = { stamp, file };
+      return structuredClone(file);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, sessions: [] };
       throw error;
@@ -421,6 +432,9 @@ export class HumanStopStore {
       }
       await chmod(temporary, 0o600);
       await rename(temporary, this.path);
+      // The rename lands inside the same millisecond a same-size cache stamp
+      // could describe; never serve the pre-write parse after our own write.
+      this.statCache = undefined;
     } catch (error) {
       try { await unlink(temporary); } catch (cleanupError) {
         if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;

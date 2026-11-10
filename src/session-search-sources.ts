@@ -140,16 +140,39 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
    db.exec('BEGIN');
    const sessions=db.prepare('SELECT id,title,directory AS cwd FROM session_v2 ORDER BY id');
    const messages=db.prepare('SELECT id,data FROM session_message WHERE session_id=? ORDER BY seq,id');
+   // Index-only change key for the v2 store: the (session_id,seq) and
+   // (session_id,time_created,id) indexes answer these aggregates without
+   // touching the content column, so an unchanged session costs two index
+   // lookups instead of a full rehash of every message row.
+   const seqEnvelope=db.prepare('SELECT count(*) c,max(seq) s FROM session_message WHERE session_id=?');
+   const createdEnvelope=db.prepare('SELECT count(*) c,max(time_created) t,max(id) i FROM session_message WHERE session_id=?');
+   const v2Identity=(await stamp(path)).split(':').slice(0,2).join(':');
+   const v2CacheKey=`${harness}|${path}|${v2Identity}|v2`;
+   const v2Previous=digestCaches.get(v2CacheKey);
+   const v2Cache:DigestCache={entries:new Map(v2Previous?.entries),scans:(v2Previous?.scans??0)+1};
+   const v2Resync=v2Cache.scans%resyncScans()===0;
+   const v2Seen=new Set<string>();
    const content=(value:any):string=>typeof value==='string'?value:Array.isArray(value)?value.map(content).filter(Boolean).join('\n'):value&&typeof value==='object'?(typeof value.text==='string'?value.text:content(value.content)):'';
    for(const row of sessions.iterate() as Iterable<any>){
     check(options.signal);const id=str(row.id);if(!id)continue;
+    v2Seen.add(id);
+    const seq=seqEnvelope.get(id) as any;const created=createdEnvelope.get(id) as any;
+    const envelope=`${str(row.title)}|${str(row.cwd)}|${seq?.c??0}|${seq?.s??''}|${created?.t??''}|${created?.i??''}`;
+    const cached=v2Cache.entries.get(id);
+    let revision:string;
+    if(cached&&!v2Resync&&cached.envelope===envelope){revision=cached.digest;}
+    else{
     const hash=createHash('sha256').update(JSON.stringify({id,title:row.title,cwd:row.cwd}));
     let count=0;for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);hash.update(JSON.stringify(message));if(++count%128===0)await yieldEventLoop();}
-    const revision=hash.digest('hex');
+    revision=hash.digest('hex');
+    v2Cache.entries.set(id,{envelope,digest:revision});
+    }
     const chunks=async function*(){for(const message of messages.iterate(id) as Iterable<any>){check(options.signal);const value=JSON.parse(str(message.data));const body=content(value);if(body)yield {id:String(message.id),text:body};}};
     yield {harness,nativeSessionId:id,title:str(row.title)||id,cwd:str(row.cwd),revision,chunks:chunks()};
    }
+   for(const key of Array.from(v2Cache.entries.keys()))if(!v2Seen.has(key))v2Cache.entries.delete(key);
    db.exec('COMMIT');closeDb();
+   digestCaches.set(v2CacheKey,v2Cache);
    if(await dbStamp(path)!==sourceRevision && await sqliteBytes(path)!==initialBytes)throw new Error('native_source_changed_during_scan');
    return;
   }
@@ -157,16 +180,21 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
   const sessionTable=hermes?'sessions':'session',messageTable=hermes?'messages':'message';
   const sessionColumns=columnsOf(db,sessionTable);
   const sessionKey=hermes?null:(['time_updated','updated_at'].find(column=>sessionColumns.has(column))??null);
+  // Hermes publishes no row-level change key of its own, but its (session_id,
+  // timestamp) index answers count/max(timestamp)/max(id) without touching
+  // content rows: that index-only envelope is the cheap change key, and the
+  // periodic resync rehash still bounds an unnoticed in-place edit.
   const sessions=db.prepare(hermes?'SELECT id,title,cwd FROM sessions ORDER BY id':sessionKey?`SELECT id,title,directory AS cwd,${sessionKey} FROM session ORDER BY id`:'SELECT id,title,directory AS cwd FROM session ORDER BY id');
   const messages=db.prepare(hermes?'SELECT id,content FROM messages WHERE session_id=? ORDER BY timestamp,id':'SELECT id,data FROM message WHERE session_id=? ORDER BY time_created,id');
   const partLookupIndex=hermes?undefined:partLookupIndexOf(db,'part');
   const parts=hermes?null:db.prepare(`SELECT id,data FROM part${partLookupIndex?` INDEXED BY ${quoteIdentifier(partLookupIndex)}`:''} WHERE session_id=? AND message_id=? ORDER BY time_created,id`);
   // A source that publishes its own change key may skip the content hash.
-  // Hermes publishes none: its rows carry creation time only, so the hash stays.
+  // Hermes now shares the index-only envelope; without a session-leading
+  // message index it falls back to the full content hash.
   const messageIndex=sessionIndexOf(db,messageTable);
   const partIndex=hermes?undefined:sessionIndexOf(db,'part');
-  const incremental=!hermes&&!!sessionKey&&!!messageIndex;
-  const messageEnvelope=incremental?db.prepare(messageIndex!.includes('time_created')&&messageIndex!.includes('id')?'SELECT count(*) c,max(time_created) t,max(id) i FROM message WHERE session_id=?':'SELECT count(*) c FROM message WHERE session_id=?'):null;
+  const incremental=hermes?!!messageIndex:(!!sessionKey&&!!messageIndex);
+  const messageEnvelope=incremental?db.prepare(hermes?'SELECT count(*) c,max(timestamp) t,max(id) i FROM '+messageTable+' WHERE session_id=?':messageIndex!.includes('time_created')&&messageIndex!.includes('id')?'SELECT count(*) c,max(time_created) t,max(id) i FROM '+messageTable+' WHERE session_id=?':'SELECT count(*) c FROM '+messageTable+' WHERE session_id=?'):null;
   const partEnvelope=incremental&&partIndex?db.prepare('SELECT count(*) c FROM part WHERE session_id=?'):null;
   const identity=(await stamp(path)).split(':').slice(0,2).join(':');
   cacheKey=`${harness}|${path}|${identity}`;
@@ -188,11 +216,13 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
    };
    let revision:string;
    const cached=cache.entries.get(id);
-   if(exactSnapshot&&cached)revision=cached.digest;
+   // The exact snapshot shortcut may skip even the envelope, but never the
+   // periodic resync rehash: the resync is the bound on unnoticed edits.
+   if(exactSnapshot&&cached&&!resync)revision=cached.digest;
    else if(incremental){
     // Cheap key: the session row the harness maintains, plus index-only counts.
     const message=messageEnvelope!.get(id) as any;const part=partEnvelope?.get(id) as any;
-    const envelope=`${String((row as any)[sessionKey!]??'')}|${message?.c??0}|${message?.t??''}|${message?.i??''}|${part?.c??0}`;
+    const envelope=hermes?`${str(row.title)}|${str(row.cwd)}|${message?.c??0}|${message?.t??''}|${message?.i??''}`:`${String((row as any)[sessionKey!]??'')}|${message?.c??0}|${message?.t??''}|${message?.i??''}|${part?.c??0}`;
     if(cached&&!resync&&cached.envelope===envelope)revision=cached.digest;
     else{revision=await digestOf();cache.entries.set(id,{envelope,digest:revision});}
    }else{revision=await digestOf();if(hermes)cache.entries.set(id,{envelope:'',digest:revision});}
@@ -203,11 +233,14 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
   }
   for(const key of Array.from(cache.entries.keys()))if(!seen.has(key))cache.entries.delete(key);
   closeDb();
-  if(!hermes)digestCaches.set(cacheKey,cache);
+  // Commit the digest cache before the changed-source check: a live database
+  // changes during almost every scan, and dropping the cache on that benign
+  // race forced a full content rehash of every session on every retry.
+  // Envelopes and per-session digests stay valid; only the receipt of a
+  // complete snapshot is withheld by the throw below.
+  digestCaches.set(cacheKey,cache);
   check(options.signal);
   if(await dbStamp(path)!==sourceRevision)throw new Error('native_source_changed_during_scan');
-  check(options.signal);
-  if(hermes&&snapshotComplete)digestCaches.set(cacheKey,cache);
  }finally{closeDb();}
 }
 /** Read persisted source files only. No adapter caps, native writes or model calls. */
