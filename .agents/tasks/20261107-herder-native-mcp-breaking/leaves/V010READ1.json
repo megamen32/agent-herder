@@ -1,0 +1,64 @@
+{
+  "id": "V010READ1",
+  "label": "Подключить защищённый native recent read",
+  "description": "Подключить session recent к OpenCode reader с точным доверенно разрешённым session ref/address и instance; проверить на изолированном native процессе.",
+  "acceptance": "Разрешённое чтение проходит через application и реальный native reader; чужие ACL и instance не читают; launcher identity остаётся внешней.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/application/recent.rs",
+    "crates/herder/tests"
+  ],
+  "created_at": "2026-11-07T05:55:55+03:00",
+  "updated_at": "2026-11-07T06:06:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T05:55:55+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010READ1",
+        "label": "Подключить защищённый native recent read",
+        "description": "Подключить session recent к OpenCode reader с точным доверенно разрешённым session ref/address и instance; проверить на изолированном native процессе.",
+        "acceptance": "Разрешённое чтение проходит через application и реальный native reader; чужие ACL и instance не читают; launcher identity остаётся внешней.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/application/recent.rs",
+          "crates/herder/tests"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:56:00+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:06:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "84de5fc7: session/recent через application и OpenCode reader прочитал пустую созданную сессию isolated OpenCode 2.2.4, с injected principal и точным grant; другие principal/ref отказаны, чужой instance отклонён. Источник opaque ref и launcher identity пока внешние."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "84de5fc7: session/recent через application и OpenCode reader прочитал пустую созданную сессию isolated OpenCode 2.2.4, с injected principal и точным grant; другие principal/ref отказаны, чужой instance отклонён. Источник opaque ref и launcher identity пока внешние."
+}

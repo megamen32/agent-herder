@@ -1,0 +1,13 @@
+# V030 independent verification: incomplete
+
+Immutable origin/main `41ecb530aca3ee749422c0850d80dc6d70ddeb8d`; `search/index.rs` is identical to accepted `f4a5bca0`. Review `astra-search-45f0a716.md` already accepted page snapshot fix; it was not reopened.
+
+## Concrete failure: update scans the FTS corpus
+
+`update_session` queries `session_search_fts WHERE session_ref=?1` for existence and deletes by the same predicate. Schema declares `session_ref UNINDEXED`; SQLite `EXPLAIN QUERY PLAN` reports `SCAN session_search_fts VIRTUAL TABLE INDEX 0:` for both queries, while state lookup uses `sqlite_autoindex_session_search_state_1`. On a temporary in-memory FTS5 schema matching source, a progress handler counted 1,029 SQLite VM steps for an absent key in 100 rows and 100,029 steps in 10,000 rows. Thus an added/changed session does not rewrite other documents but DOES scan the corpus; V030's explicit no-full-corpus-scan acceptance is not met. Coverage lookup also uses an FTS existence subquery per allowed session. Need an indexed authoritative canonical-session-to-FTS-rowid mapping and direct rowid lookup/delete, or another demonstrably indexed design; preserve unique mapping, atomic FTS+state and old-writer fence, exact schema identity/version migration, then prove query plan and bounded work as corpus grows. Schema ownership belongs to Terra; do not silently change v4 or bypass its fence.
+
+## Positive bounded source proof
+
+Snapshot archive at `/tmp/herder-v030-41ecb530`. `cargo test --offline --manifest-path crates/herder/Cargo.toml --lib search::index::tests -- --nocapture`: 10 PASS. Isolated extra integration fixture `reopen-acl-test.rs` in the same archive exercised two allowed sessions plus hidden one, updated one, closed/reopened database, and proved the other's FTS rowid, content and snapshot_id unchanged, ACL count/page excludes hidden, both pages complete: 1 PASS. These tests use SQLite fixture, not actual production migration or native ingestion.
+
+`git grep` at this immutable main finds `update_session` and `search_page` outside their defining module only in `store/mod.rs` test code: no production ingestion or search caller. To complete actual V030, connect trusted inventory and native reader change detection to complete per-session searchable snapshots with stable revision IDs (not page cursors), update the sole migrated SQLite Writer, propagate unavailable/truncated source coverage, and connect search to an exact authorized session allowlist before count/page. Verify native input change -> only selected session reindexed -> reopened store -> authorized real consumer search; avoid real/runtime corpus for current task. Page snapshots are consistent within a single call, not across calls.

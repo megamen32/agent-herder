@@ -15,7 +15,7 @@
   "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
   "model": "gpt-6-luna",
   "created_at": "2026-11-07T21:29:29+03:00",
-  "updated_at": "2026-11-08T05:26:11+03:00",
+  "updated_at": "2026-11-08T00:23:45+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:29+03:00",
@@ -175,28 +175,10 @@
       },
       "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
       "harness": "codex"
-    },
-    {
-      "at": "2026-11-08T01:30:00+03:00",
-      "note": "Новый независимый candidate run 10d8b003-d44d-4bd5-9c76-86a5a81cc82e на manifest a5d62e9d973f8b37aa7aee3a39e96dfa85aac86dc5dd50502ea30f47e3edf998: один create вызвал ровно 1 loopback fake-model request. Stand остановился на mismatch сырого Task receipt и native ID; read-only retained reconciliation подтверждает native user msg_1b80d1952001VKROlOzFCkBRaK и completed assistant msg_1b80d1996001Ij3clu55Upo4Y0 (finish=stop), следом idle. Классификация UNKNOWN_POST_EFFECT, никаких повторов. Authority intent admitted, task row prepared/result_json=null — расхождение сохранено. Projects complete=false, поэтому неполный ответ, прежний PASS исправлен в новой записи. Deliver/export/search/reopen не запускались. Evidence: evidence/opencode-v1-5ea28f-reconciliation.json SHA256 4ded0c91aea0f44c4e060d66a842c44c992245744dc9771cbd6e1330bd99f590. Receipt reader fix commit 38bd0ea0a5c9953a0a7a61aad1dc77fa44127251 на origin/main; 27 offline tests GREEN согласно существующему proof, в этой сверке не перезапускались. Следующий шаг: сохранять retained state; дальнейшие native mutations только по новому прямому решению владельца.",
-      "actor": {
-        "harness": "codex",
-        "session_id": "current",
-        "source": "direct_owner_assignment"
-      }
-    },
-    {
-      "at": "2026-11-08T05:26:11+03:00",
-      "note": "Exact candidate herder-v1-814759a9248d manifest SHA256 83f5593155f11f7216dd6f36d81190025daef01fc73574fdda30b0e405977385; all 5 runtime digests matched; runner/native v2/v2. Read-only NEG preflight passed with 0 mutations/0 model requests. Fresh disposable consumer run 7c7eb80b-0b78-46b5-a219-68bd98327ed5, instance opencode-814759-final3-7cf814d2: create + initial response/read, same-session second deliver/read, complete native export, expected Common unsupported_format/effect=none, complete search, core restart/readback with model requests stable at 2: PASS. Projects returned complete=false, 0 projects, scope authorized_registered_sessions and limitation 'No native project observed for the authorized registered corpus'; therefore aggregate is PARTIAL, not full PASS. All mutations used local loopback fake model; no paid/external provider. Four reproduced stand defects fixed in owned fixture/tests; offline 31 tests GREEN and diff check clean. Evidence evidence/opencode-v1-814759-acceptance.json SHA256 0f8ccbf77693920b2559eba3814ffe695986e612a29b074008b9ba0660f424eb. Next: core-owned projects discovery must provide complete attributable provenance or explicit bounded status; no further native mutation needed for this OpenCode lane.",
-      "actor": {
-        "harness": "codex",
-        "session_id": "current",
-        "source": "direct_owner_assignment"
-      }
     }
   ],
   "wave": 2,
   "note": "Completion-reader TDD исправлен: завершённый assistant после exact marker user, exact Task receipt ID; trailing idle игнорируется. 26 offline tests PASS. Native attempt2 — UNKNOWN_POST_EFFECT: лог подтверждает user msg_1b7c25a85001XUIBWu63iP3rG8 и completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD (finish=stop), затем idle. Read-only reconciliation не нашёл исходный Task/request/input marker или disposable DB/profile: launcher удалил scratch без --retain-on-failure. Initial send не повторять; second send не разрешён без recovered first receipt. Дальнейшая native приёмка заблокирована удалённым scratch и запретом owner на fresh mutation.\n\nScoped publish завершён в origin/main: commit 7cc88e486ce4689117306a50293af7e2ebb5e341, ровно tests/native/ahap_opencode_stand.py SHA256 ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4 и tests/native/test_ahap_opencode_stand.py SHA256 f2362a9b4a5bc5fb519f1c8ef8722af834755fc7177aa138750039f547957328. Receipt .agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-d66c9c0729fe.json SHA256 44405ca4487bb0a85206ec2a634b683c89bf7998ba46027ae97a783595ec52bc; top-level phase=post_effect,status=UNKNOWN_POST_EFFECT, attempt1 сохранён. Offline proof: evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.json SHA256 02f6e238a1b66c9a97ae79ddbb597f7f8345338c8cdfa368c72f1036507d0e3f (26 tests PASS); raw output evidence/opencode-v1-d66c9c0729fe-offline-90d9b886.txt SHA256 9dc1a44d847b8a1a1aeda8ef009a509a72c7086471b5e612c8b7507e217e4ac7. Native launch/send/replay не выполнялись; native acceptance остаётся заблокирована удалённым scratch.\nRemote checkpoint: origin/main=5ea28f51838fcfc3230006a8709090f08009a47f; опубликованный OpenCode commit 7cc88e486ce4689117306a50293af7e2ebb5e341 — его ancestor, оба owned fixture-файла побайтно совпадают с origin/main.",
-  "blocker": "Public projects discovery remains incomplete in the candidate core response",
-  "result": "Exact candidate herder-v1-814759a9248d manifest SHA256 83f5593155f11f7216dd6f36d81190025daef01fc73574fdda30b0e405977385; all 5 runtime digests matched; runner/native v2/v2. Read-only NEG preflight passed with 0 mutations/0 model requests. Fresh disposable consumer run 7c7eb80b-0b78-46b5-a219-68bd98327ed5, instance opencode-814759-final3-7cf814d2: create + initial response/read, same-session second deliver/read, complete native export, expected Common unsupported_format/effect=none, complete search, core restart/readback with model requests stable at 2: PASS. Projects returned complete=false, 0 projects, scope authorized_registered_sessions and limitation 'No native project observed for the authorized registered corpus'; therefore aggregate is PARTIAL, not full PASS. All mutations used local loopback fake model; no paid/external provider. Four reproduced stand defects fixed in owned fixture/tests; offline 31 tests GREEN and diff check clean. Evidence evidence/opencode-v1-814759-acceptance.json SHA256 0f8ccbf77693920b2559eba3814ffe695986e612a29b074008b9ba0660f424eb. Next: core-owned projects discovery must provide complete attributable provenance or explicit bounded status; no further native mutation needed for this OpenCode lane."
+  "blocker": "Original native effect confirmed, retained authority unavailable; no replay",
+  "result": "d66 attempt2 UNKNOWN_POST_EFFECT: user msg_1b7c25a85001XUIBWu63iP3rG8 + completed assistant msg_1b7c25abb001b7qtOtsBN6TFDD; trailing idle caused false completion failure. Luna fixes matcher 02ff1510. Original scratch deleted without retain-on-failure; no exact session/requestkey for reconciliation. No new create or second send. Evidence opencode-v1-d66c9c0729fe.json."
 }

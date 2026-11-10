@@ -1,0 +1,41 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/crates/herder)
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+   --> src/ownership/resource.rs:89:9
+    |
+ 89 |         ensure_unique_external_identity(&resources_dir, &stored_descriptor)?;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ -------------- argument #1 of type `&StorageAuthority` is missing
+    |
+note: function defined here
+   --> src/ownership/resource.rs:175:4
+    |
+175 | fn ensure_unique_external_identity(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+176 |     authority: &StorageAuthority,
+    |     ----------------------------
+help: provide the argument
+    |
+ 89 |         ensure_unique_external_identity(/* &StorageAuthority */, &resources_dir, &stored_descriptor)?;
+    |                                         ++++++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `herder` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+   --> src/ownership/resource.rs:89:9
+    |
+ 89 |         ensure_unique_external_identity(&resources_dir, &stored_descriptor)?;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ -------------- argument #1 of type `&manifest::StorageAuthority` is missing
+    |
+note: function defined here
+   --> src/ownership/resource.rs:175:4
+    |
+175 | fn ensure_unique_external_identity(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+176 |     authority: &StorageAuthority,
+    |     ----------------------------
+help: provide the argument
+    |
+ 89 |         ensure_unique_external_identity(/* &manifest::StorageAuthority */, &resources_dir, &stored_descriptor)?;
+    |                                         ++++++++++++++++++++++++++++++++++
+
+error: could not compile `herder` (lib test) due to 1 previous error

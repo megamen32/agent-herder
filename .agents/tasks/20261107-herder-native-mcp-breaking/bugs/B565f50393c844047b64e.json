@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T05:23:56+00:00",
+  "details": "Direct Rust CDP browser attach/list/target context/account scope succeeded with no prompt. One V088C run created a task-owned new Z.ai target, but ZaiReader::create_new_chat returned WrongOrigin and closed only that created target before input; no provider prompt was sent. Need discriminate startup/navigation race from wrong endpoint/origin before retrying.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T05:23:56+00:00",
+      "changes": {
+        "details": "Direct Rust CDP browser attach/list/target context/account scope succeeded with no prompt. One V088C run created a task-owned new Z.ai target, but ZaiReader::create_new_chat returned WrongOrigin and closed only that created target before input; no provider prompt was sent. Need discriminate startup/navigation race from wrong endpoint/origin before retrying.",
+        "source": "cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live; output: ZAI create=failed reason=WrongOrigin; summary chatgpt=skipped_by_HumanStop zai=false.",
+        "status": "open",
+        "title": "Z.ai Rust create_new_chat returns WrongOrigin on live Chrome"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T05:35:11+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/B565f50393c844047b64e-green.txt",
+            "red_proof_path": "evidence/B565f50393c844047b64e-red.txt",
+            "red_result": "ZAI create=failed reason=WrongOrigin",
+            "red_sha256": "dcfd977d4ca187babb77c8c6f24f7f54393a621a00b47479fced64226ff356e6",
+            "result": "PASS: rust_create=ok; input event observed; one send clicked; reply marker matched; same chat readback=true with 2 messages; only created target closed.",
+            "sha256": "d2f806520bdc82e9af5fff450956411b897879c7749d32b4994f9ebb7ae39300",
+            "test_command": "cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B565f50393c844047b64e",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/B565f50393c844047b64e-green.txt",
+      "red_proof_path": "evidence/B565f50393c844047b64e-red.txt",
+      "red_result": "ZAI create=failed reason=WrongOrigin",
+      "red_sha256": "dcfd977d4ca187babb77c8c6f24f7f54393a621a00b47479fced64226ff356e6",
+      "result": "PASS: rust_create=ok; input event observed; one send clicked; reply marker matched; same chat readback=true with 2 messages; only created target closed.",
+      "sha256": "d2f806520bdc82e9af5fff450956411b897879c7749d32b4994f9ebb7ae39300",
+      "test_command": "cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live; output: ZAI create=failed reason=WrongOrigin; summary chatgpt=skipped_by_HumanStop zai=false.",
+  "status": "fixed",
+  "title": "Z.ai Rust create_new_chat returns WrongOrigin on live Chrome",
+  "updated_at": "2026-11-07T05:35:11+00:00"
+}

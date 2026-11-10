@@ -1,0 +1,85 @@
+F
+======================================================================
+FAIL: test_direct_fleet_entrypoint_cannot_bypass_authority (__main__.CandidateAuthorityRouteTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_candidate_authority_route.py", line 24, in test_direct_fleet_entrypoint_cannot_bypass_authority
+    with self.assertRaisesRegex(RuntimeError,'candidate CI'):m._node_side_fleet(args,rollout=Mock(),release_gate=gate)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 294, in _node_side_fleet
+    trim_releases(fleet / "releases", fleet / "rollback", sha, arguments.previous_sha,
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: trim reached
+
+======================================================================
+FAIL: test_unverified_or_forged_authority_context_cannot_reach_preparation (__main__.CandidateAuthorityRouteTests) (platform='linux', status='INCOMPLETE')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_candidate_authority_route.py", line 17, in test_unverified_or_forged_authority_context_cannot_reach_preparation
+    with self.assertRaisesRegex(RuntimeError,'candidate CI'):m._leased_node_side_fleet(args,gate)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 279, in _leased_node_side_fleet
+    return _node_side_fleet(arguments, rollout=rollout, release_gate=release_gate)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: preparation reached
+
+======================================================================
+FAIL: test_unverified_or_forged_authority_context_cannot_reach_preparation (__main__.CandidateAuthorityRouteTests) (platform='linux', status='PASS')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_candidate_authority_route.py", line 17, in test_unverified_or_forged_authority_context_cannot_reach_preparation
+    with self.assertRaisesRegex(RuntimeError,'candidate CI'):m._leased_node_side_fleet(args,gate)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 279, in _leased_node_side_fleet
+    return _node_side_fleet(arguments, rollout=rollout, release_gate=release_gate)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: preparation reached
+
+======================================================================
+FAIL: test_unverified_or_forged_authority_context_cannot_reach_preparation (__main__.CandidateAuthorityRouteTests) (platform='darwin', status='INCOMPLETE')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_candidate_authority_route.py", line 17, in test_unverified_or_forged_authority_context_cannot_reach_preparation
+    with self.assertRaisesRegex(RuntimeError,'candidate CI'):m._leased_node_side_fleet(args,gate)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 274, in _leased_node_side_fleet
+    return _node_side_fleet(arguments, rollout, handoff, release_gate)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: preparation reached
+
+======================================================================
+FAIL: test_unverified_or_forged_authority_context_cannot_reach_preparation (__main__.CandidateAuthorityRouteTests) (platform='darwin', status='PASS')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_candidate_authority_route.py", line 17, in test_unverified_or_forged_authority_context_cannot_reach_preparation
+    with self.assertRaisesRegex(RuntimeError,'candidate CI'):m._leased_node_side_fleet(args,gate)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 274, in _leased_node_side_fleet
+    return _node_side_fleet(arguments, rollout, handoff, release_gate)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: preparation reached
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.015s
+
+FAILED (failures=5)

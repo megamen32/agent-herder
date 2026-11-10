@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/herder-l43-full-v14-9e80/scripts/run-isolated-native-ci.py", line 719, in <module>
+    sys.exit(main())
+  File "/tmp/herder-l43-full-v14-9e80/scripts/run-isolated-native-ci.py", line 476, in main
+    shutil.copy2(HERE / name, stage / name)
+  File "/usr/lib/python3.10/shutil.py", line 434, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+  File "/usr/lib/python3.10/shutil.py", line 256, in copyfile
+    with open(dst, 'wb') as fdst:
+PermissionError: [Errno 13] Permission denied: '/tmp/herder-ci-bundle-wjegz9h4/native-hermes-search-contract.mjs'

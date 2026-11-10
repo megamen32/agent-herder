@@ -1,0 +1,15 @@
+{
+  "activations": {
+    "L01": {
+      "harness": "codex",
+      "leaf_id": "L01",
+      "owner": "roomhacker",
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "updated_at": "2026-11-06T21:38:51+00:00",
+      "worktree": "/home/roomhacker/agents-projects/agent-herder"
+    }
+  },
+  "config": "/home/roomhacker/.config/lhc/plan-mirror/client.json",
+  "owner": "f1fce51868bb3be7894dacf0dda3c006-0f1defb6b1f61efa9ad03f3e",
+  "worktree": "/home/roomhacker/agents-projects/agent-herder"
+}

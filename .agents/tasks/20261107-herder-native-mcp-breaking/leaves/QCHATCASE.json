@@ -1,0 +1,104 @@
+{
+  "kind": "task",
+  "status": "waiting",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QCHATCASE",
+  "label": "ChatGPT: проверить общий core с готовым direct-CDP adapter",
+  "parent": "S06",
+  "owner": "Browser worker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "depends_on": [
+    "QBROWSERJOIN",
+    "QBROWSERSCOPE",
+    "QMACREUSE",
+    "QBROWSERCLAIM",
+    "QAHAPLAUNCH"
+  ],
+  "description": "Использовать уже делегированный CI test scope после проверки текущих прав и exact account/context/target. Один свежий create/deliver/read через общий core, original receipt/no replay. Если scope недоступен, записать blocker только live части.",
+  "acceptance": "Exact native IDs, один input/answer, transcript completeness и artifact identity подтверждены; локальный draft не выдан за native conversation.",
+  "created_at": "2026-11-07T18:15:38+03:00",
+  "updated_at": "2026-11-07T20:46:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:38+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QCHATCASE",
+        "label": "ChatGPT: проверить общий core с готовым direct-CDP adapter",
+        "parent": "S06",
+        "owner": "Browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "depends_on": [
+          "QBROWSERJOIN"
+        ],
+        "description": "Использовать уже делегированный CI test scope после проверки текущих прав и exact account/context/target. Один свежий create/deliver/read через общий core, original receipt/no replay. Если scope недоступен, записать blocker только live части.",
+        "acceptance": "Exact native IDs, один input/answer, transcript completeness и artifact identity подтверждены; локальный draft не выдан за native conversation."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:54:57+03:00",
+      "note": "QBROWSERJOIN выявил source account-scope дефект; CISHARE подтверждает отсутствие выделенного lease.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Не исправлен read account scope B720e95cbcdcd484ab0f8; CISHARE подтверждает отсутствие отдельного browser target lease и exact delegated scope.",
+        "note": "Не запускать native browser case до исправления scope и получения точного target/lease."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:32:06+03:00",
+      "note": "Старый blocker account-scope снят. Фактический старый MacMiniChromeTransport рабочий, gateway list_pages читает ChatGPT/Z.ai. Не путать gateway pageId с raw CDP targetId; обычные вкладки не назначать тестовыми.",
+      "changes": {
+        "depends_on": [
+          "QBROWSERJOIN",
+          "QBROWSERSCOPE"
+        ],
+        "wait_reason": "Source account-scope исправлен и опубликован303cba8d. Mac Mini DevTools gateway проверен живым17:31UTC; общий Rust launch и точная dedicated target/account привязка ещё нужны."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:46:49+03:00",
+      "note": "CI единственный оператор текущей вкладки; после targetclaim L101, затем один последовательный handoff QCHATCASE. Другие lanes независимы.",
+      "changes": {
+        "depends_on": [
+          "QBROWSERJOIN",
+          "QBROWSERSCOPE",
+          "QMACREUSE",
+          "QBROWSERCLAIM",
+          "QAHAPLAUNCH"
+        ],
+        "wait_reason": "CI проверил dedicated gatewaypage7, exacttestchat/account; resource owner готовится QBROWSERCLAIM, existingtransport QMACREUSE. Общий Rust launch QAHAPLAUNCH пока blocked на точном refused/UNKNOWN resume Terra. Raw CDP target IDs не нужны для явно выбранного MacMiniChromeTransport и не подменяются gatewayID."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "CI проверил dedicated gatewaypage7, exacttestchat/account; resource owner готовится QBROWSERCLAIM, existingtransport QMACREUSE. Общий Rust launch QAHAPLAUNCH пока blocked на точном refused/UNKNOWN resume Terra. Raw CDP target IDs не нужны для явно выбранного MacMiniChromeTransport и не подменяются gatewayID.",
+  "note": "Не запускать native browser case до исправления scope и получения точного target/lease."
+}

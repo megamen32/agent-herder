@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 2,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V038 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V038 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V038",
   "created_at": "2026-11-07T01:52:24+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:01+03:00",
+  "updated_at": "2026-11-07T07:22:56+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:24+03:00",
@@ -73,9 +73,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:20:32+03:00",
+      "note": "V038A/B объединены; выполняю общий crash/UNKNOWN/guard inode acceptance без live ресурсов.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:22:56+03:00",
+      "note": "V038 завершён; весь fault/recovery behavior подтверждён isolated tests. Передаю aggregate SHA Терe.",
+      "changes": {
+        "status": "done",
+        "result": "Общая fault acceptance завершена: fail before rename даёт отсутствие owner/temp и повтор claim Acquired; after rename/до/после directory fsync оставляет один полный replayable owner; before unlink сохраняет owner, after unlink сообщает ошибку при уже удалённом owner (UNKNOWN, сверять состояние без повтора); abandoned owner temp убирается под guard lock; claim/renew/release сохраняют один guard inode. Проверка на актуальном origin/main c2cfd335: cargo test claim::crash_tests:: --lib — 5 passed, 0 failed, diff-check чистый. Собранный commit a5718e97 содержит V038A+B и inode guard check, интеграцию передаю Терe."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "parent": "S02",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Общая fault acceptance завершена: fail before rename даёт отсутствие owner/temp и повтор claim Acquired; after rename/до/после directory fsync оставляет один полный replayable owner; before unlink сохраняет owner, after unlink сообщает ошибку при уже удалённом owner (UNKNOWN, сверять состояние без повтора); abandoned owner temp убирается под guard lock; claim/renew/release сохраняют один guard inode. Проверка на актуальном origin/main c2cfd335: cargo test claim::crash_tests:: --lib — 5 passed, 0 failed, diff-check чистый. Собранный commit a5718e97 содержит V038A+B и inode guard check, интеграцию передаю Терe."
 }

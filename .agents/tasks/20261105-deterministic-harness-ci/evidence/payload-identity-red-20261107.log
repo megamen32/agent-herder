@@ -1,0 +1,15 @@
+E
+======================================================================
+ERROR: test_installed_release_uses_portable_payload_when_package_links_differ (test_candidate_driver.CandidateDriverTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-red-zeez_a4f/test_candidate_driver.py", line 23, in test_installed_release_uses_portable_payload_when_package_links_differ
+    proof = candidate_bundle_identity(release)
+  File "/tmp/herder-red-zeez_a4f/candidate_driver.py", line 57, in candidate_bundle_identity
+    raise ValueError('bundle fingerprint or file count mismatch')
+ValueError: bundle fingerprint or file count mismatch
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (errors=1)

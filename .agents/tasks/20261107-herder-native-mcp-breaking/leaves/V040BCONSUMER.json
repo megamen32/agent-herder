@@ -1,0 +1,91 @@
+{
+  "id": "V040BCONSUMER",
+  "label": "Проверить и опубликовать MCP resource claim consumer",
+  "description": "Перенести scoped commit 74d4cf6c только по двум owned paths на актуальный main без затрагивания чужих путей. Проверить NativeServer MCP wire resource.claim и resource.release совместно с offline CLI на одном временном resource; один победитель, чужой release rejected, reopen readback. Scoped publish и receipt.",
+  "acceptance": "Реальные NativeServer MCP tools/call и offline CLI используют один временный authority: ровно один claim winner, release чужого principal отклонён, restart/reopen readback подтверждает owner; owned commit опубликован на main.",
+  "affected_files": [
+    "crates/herder/src/application/workspace.rs",
+    "crates/herder/src/lib.rs"
+  ],
+  "status": "done",
+  "kind": "task",
+  "owner": "Resources worker",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
+  "estimate_minutes": 15,
+  "estimate": "15 minutes",
+  "duration_estimate_minutes": 15,
+  "created_at": "2026-11-07T20:24:26+03:00",
+  "updated_at": "2026-11-07T20:44:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:24:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "V040BCONSUMER",
+        "label": "Проверить и опубликовать MCP resource claim consumer",
+        "description": "Перенести scoped commit 74d4cf6c только по двум owned paths на актуальный main без затрагивания чужих путей. Проверить NativeServer MCP wire resource.claim и resource.release совместно с offline CLI на одном временном resource; один победитель, чужой release rejected, reopen readback. Scoped publish и receipt.",
+        "acceptance": "Реальные NativeServer MCP tools/call и offline CLI используют один временный authority: ровно один claim winner, release чужого principal отклонён, restart/reopen readback подтверждает owner; owned commit опубликован на main.",
+        "affected_files": [
+          "crates/herder/src/application/workspace.rs",
+          "crates/herder/src/lib.rs"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "owner": "L",
+        "session": "current",
+        "estimate_minutes": 15,
+        "estimate": "15 minutes",
+        "duration_estimate_minutes": 15
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:29:21+03:00",
+      "note": "Астра подтверждает продолжение того же исполнителя: scoped перенос на актуальный main и wire proof, без ожидания общего launcher.",
+      "changes": {
+        "owner": "Resources worker",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "harness": "codex",
+        "depends_on": [
+          "V040B"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:44:01+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Published to origin/main: commit 0fdd84c71332321fc8c652efcc7fc961aaa451c2 (parent ffb714b5), three scoped paths only: crates/herder/src/application/workspace.rs, crates/herder/src/lib.rs (single authorized pub mod workspace line), crates/herder/tests/workspace_mcp_wire.rs. Wire evidence: `cargo test --test workspace_mcp_wire` PASS 1/1; starts NativeServer::with_application and sends JSON-RPC tools/call resource.claim, offline CLI claim on identical temp file authority gets busy (MCP sole winner), separate NativeServer Bob resource.release gets MCP isError=true, reopened StorageAuthority read_by_claim_id confirms alice, offline CLI status=owned. Focused source tests: `cargo test application::workspace::tests --lib` PASS 2/2 including concurrent MCP adapter/CLI race exactly one winner, wrong-owner release, missing ACL rejection and reopen readback. Push accepted fast-forward ffb714b5..0fdd84c7; subsequent fetch confirms origin/main equals published commit. No Cargo/schema/launcher changes."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "harness": "codex",
+  "depends_on": [
+    "V040B"
+  ],
+  "result": "Published to origin/main: commit 0fdd84c71332321fc8c652efcc7fc961aaa451c2 (parent ffb714b5), three scoped paths only: crates/herder/src/application/workspace.rs, crates/herder/src/lib.rs (single authorized pub mod workspace line), crates/herder/tests/workspace_mcp_wire.rs. Wire evidence: `cargo test --test workspace_mcp_wire` PASS 1/1; starts NativeServer::with_application and sends JSON-RPC tools/call resource.claim, offline CLI claim on identical temp file authority gets busy (MCP sole winner), separate NativeServer Bob resource.release gets MCP isError=true, reopened StorageAuthority read_by_claim_id confirms alice, offline CLI status=owned. Focused source tests: `cargo test application::workspace::tests --lib` PASS 2/2 including concurrent MCP adapter/CLI race exactly one winner, wrong-owner release, missing ACL rejection and reopen readback. Push accepted fast-forward ffb714b5..0fdd84c7; subsequent fetch confirms origin/main equals published commit. No Cargo/schema/launcher changes."
+}

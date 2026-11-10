@@ -1,0 +1,106 @@
+{
+  "label": "Linux: исследовать collector и адресный маршрут",
+  "description": "Исследование collector и scoped адресного маршрута завершено; полноценный сбор установленного PID — L27.",
+  "acceptance": "Задокументированы работающие отдельные составляющие и остающиеся границы.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Rawls",
+  "id": "L20",
+  "created_at": "2026-11-06T17:35:06+03:00",
+  "updated_at": "2026-11-06T19:11:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T17:35:06+03:00",
+      "note": "Выделено из L05 после проверки отдельного тестового systemd PID; рабочий установленный сервис пока не проверен.",
+      "changes": {
+        "label": "Linux: collector для установленного Herder",
+        "description": "Связать изолированный peer с уже запущенным установленным PID и собрать проверяемые результаты сценария до и после.",
+        "acceptance": "Отдельный systemd unit на server-44: точный неизменный PID, listener и payload, 2 сессии, отправка, поиск, проекты и полный транскрипт; пригодный контракт подключения к rollout.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Rawls"
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:35:35+03:00",
+      "note": "Время до результата пока не оценено.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Срок до завершения не измерен."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:36:37+03:00",
+      "note": "Разделяю подготовку изолированного peer и проверку уже запущенного установленного unit; отдельный тестовый стенд server-44, production не переключать.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:41:13+03:00",
+      "note": "Сохранена предыдущая квитанция evidence/receipt-l20-initial-stand.json: установленный тестовый PID на server-44, не production; новый раздельный collector проходит RED→GREEN подготовку и cleanup, далее реальный повтор с внешним запуском unit.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:55:04+03:00",
+      "note": "Раздельный PreparedPeer: подготовка до запуска unit, collect по уже работающему MainPID и обязательному SHA, однократная отправка, cleanup/PDEATHSIG. server-44: независимый caller запустил тестовый unit до collect; PID 3028231/starttime 75961819/порт 36141 неизменны; 2 Codex сессии, доставка, поиск, проект, transcript 3+3, 2 запроса fixture. Квитанция evidence/receipt-l20-reusable-stand.json; контракт evidence/l20-collector-contract.md. Только Codex и отдельный стенд: allRequiredScenarios=false; production не проверен и rollout не подключён.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:58:43+03:00",
+      "note": "Контракт для L19 в evidence/l20-collector-contract.md; session L19 неактивна, сообщение поставлено в очередь без пробуждения. PASS только Codex test stand, allRequiredScenarios=false; полный postdeploy gate, production CI поиск и wrapper unit пока не подтверждены.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:07:13+03:00",
+      "note": "Продолжение: отдельный MCP CI-маршрут и ограниченный поиск через scoped adapter: RED 404 настоящего MCP-клиента, GREEN 3 файла/6 тестов; чужой transcript не читается, неверный CI токен отклонён. Поиск пока ограничен последними 1000 сообщениями. Новый production-mode стенд, wrapper identity и полный gate ещё не доказаны; предыдущая квитанция относится только к отдельному Codex стенду.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:13:11+03:00",
+      "note": "Дополнительный RED: scoped list вызывал общий native list три раза; исправлено перечислением только pinned ID через getSession. GREEN 5 файлов/12 тестов включая MCP и отказ неверного токена. Это source proof, не новый stand receipt; wrapper identity и production-mode stand остаются следующими шагами.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:11:34+03:00",
+      "note": "",
+      "changes": {
+        "label": "Linux: исследовать collector и адресный маршрут",
+        "description": "Исследование collector и scoped адресного маршрута завершено; полноценный сбор установленного PID — L27.",
+        "acceptance": "Задокументированы работающие отдельные составляющие и остающиеся границы.",
+        "status": "done",
+        "result": "Scoped list и авторизация peer прошли профильные тесты; изолированный stand с Codex и Herder подтвердил consumer сценарий в evidence/receipt-l27-isolated-codex-collector.json. Канонический manifest, идентичность загруженного PID и остальные среды остаются в L27."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Срок до завершения не измерен.",
+  "result": "Scoped list и авторизация peer прошли профильные тесты; изолированный stand с Codex и Herder подтвердил consumer сценарий в evidence/receipt-l27-isolated-codex-collector.json. Канонический manifest, идентичность загруженного PID и остальные среды остаются в L27."
+}

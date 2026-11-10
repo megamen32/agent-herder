@@ -1,0 +1,13 @@
+..E
+======================================================================
+ERROR: test_remote_receives_fenced_draft_and_refuses_changed_candidate (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-HrlIkW/tests/test_l44_authority_context.py", line 23, in test_remote_receives_fenced_draft_and_refuses_changed_candidate
+    result=remote.ci_draft();self.assertEqual(result['fence'],7);self.assertEqual(result['status'],'INCOMPLETE')
+AttributeError: 'RemoteReleaseGate' object has no attribute 'ci_draft'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.003s
+
+FAILED (errors=1)

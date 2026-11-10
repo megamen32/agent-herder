@@ -1,0 +1,135 @@
+{
+  "release": "/tmp/herder-l50-git-snapshot-62IYxNFo/catalog/releases/ee504384c628c7a4f269d3298cb6d11ed776bc31",
+  "checks": [
+    {
+      "name": "manifest.source_sha == requested head",
+      "pass": true,
+      "details": "ee504384c628c7a4f269d3298cb6d11ed776bc31 vs ee504384c628c7a4f269d3298cb6d11ed776bc31"
+    },
+    {
+      "name": "source_dirty is false",
+      "pass": true,
+      "details": "False"
+    },
+    {
+      "name": "payload lists every build file",
+      "pass": true,
+      "details": "payload=1878 files=1878 missing=0 extra=0 mismatched=0"
+    },
+    {
+      "name": "sha256(dist/index.js) == payload['index.js']",
+      "pass": true,
+      "details": "2f52e8e5ab4e6a6812b8d2d9949e3d8e4a845972ed82e8ef67c5881810d79b9b"
+    },
+    {
+      "name": "the candidate template carries the source sha of the manifest",
+      "pass": true,
+      "details": "ee504384c628c7a4f269d3298cb6d11ed776bc31"
+    },
+    {
+      "name": "the live node config matches its exact before-build snapshot",
+      "pass": true,
+      "details": "exact snapshot unchanged: absent"
+    },
+    {
+      "name": "current points at the candidate release",
+      "pass": true,
+      "details": "releases/ee504384c628c7a4f269d3298cb6d11ed776bc31"
+    },
+    {
+      "name": "packages dir is a real directory named node_modules",
+      "pass": true,
+      "details": "/tmp/herder-l50-git-snapshot-62IYxNFo/catalog/releases/ee504384c628c7a4f269d3298cb6d11ed776bc31/node_modules"
+    },
+    {
+      "name": "the release carries the full set of the store, nothing trimmed",
+      "pass": true,
+      "details": "store=305 release=305 missing=0 extra=0"
+    },
+    {
+      "name": "no byte of the package set was copied",
+      "pass": true,
+      "details": "copied=4443565 B in 19 files (only the tool caches of the store are copied; every package is a link into the shared store of the lock file)"
+    },
+    {
+      "name": "the workspace package is a link into the release",
+      "pass": true,
+      "details": "../packages/agent-resume"
+    },
+    {
+      "name": "bundle fingerprint of the release == the fingerprint of the manifest",
+      "pass": true,
+      "details": "03e0193a6d1581c79aef05e5af12189598a614b3d20900fbe0fbc28413f6f228 vs 03e0193a6d1581c79aef05e5af12189598a614b3d20900fbe0fbc28413f6f228"
+    },
+    {
+      "name": "release fits the budget by its unique blocks",
+      "pass": true,
+      "details": "unique=27.9 MiB (disk increment) <= 512 MiB; apparent=27.9 MiB (counts the store again)"
+    },
+    {
+      "name": "node release dir keeps at most two releases",
+      "pass": true,
+      "details": "0: []"
+    }
+  ],
+  "manifest": {
+    "kind": "release-build-manifest",
+    "delivery": 3,
+    "sourceSha": "ee504384c628c7a4f269d3298cb6d11ed776bc31",
+    "builtAt": "2026-11-06T23:43:09+0300",
+    "builder": {
+      "script": "deploy/fleet/build-release-candidate.py",
+      "commit": "ee504384c628c7a4f269d3298cb6d11ed776bc31",
+      "sourceTreeDirty": false
+    },
+    "bundleFingerprint": "03e0193a6d1581c79aef05e5af12189598a614b3d20900fbe0fbc28413f6f228",
+    "bundleFiles": 2276,
+    "payloadFingerprint": "26ed4cfb22f35419a6cf15b39a094b72519cc272d241e477db026f241f0e0ca5",
+    "payloadFiles": 1940,
+    "bundleBytes": 29233709,
+    "bundleSize": {
+      "unique_bytes": 29233709,
+      "unique_files": 1959,
+      "apparent_bytes": 29233709,
+      "shared_bytes": 0,
+      "shared_files": 0,
+      "unique_mib": 27.9,
+      "apparent_mib": 27.9
+    },
+    "supersedes": null,
+    "artifacts": {
+      "dist": {
+        "files": 1878,
+        "indexSha256": "2f52e8e5ab4e6a6812b8d2d9949e3d8e4a845972ed82e8ef67c5881810d79b9b",
+        "payloadDigest": "8388a6fc61b7fa05907d01a5f260274d5458e8ff75096cb16cd7a09ab6964037",
+        "manifest": "dist/fleet-deployment-manifest.json",
+        "contains": {
+          "web/settings-api.js": true,
+          "automation-disarm/scope.js": true
+        }
+      },
+      "packages/agent-resume": {
+        "name": "agent-resume-mcp",
+        "files": 59,
+        "treeSha256": "06c7295313c997259874b39b797ecbc909204a6fc252c8225636e88a61c7a70b"
+      },
+      "package.json": "2b337d8e4f3f779e92b4576a23f7c5ace55b11acd06c189df4c22d2d15f2d022",
+      "package-lock.json": "934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727",
+      "totalBytes": 29233709
+    },
+    "layoutContract": {
+      "nodeModules": "shared store: a real directory of links into shared-node-modules/<sha256(package-lock.json)>; the bytes are hard links of the store of the host",
+      "workspacePackage": "node_modules/agent-resume-mcp -> ../packages/agent-resume (inside the release)",
+      "storePolicy": "the root package store of the node is never modified; it keeps the package of the rollback release",
+      "dependencyRule": "deploy/fleet/release-rules.py: the runtime set of package-lock.json of this platform, without dev packages",
+      "ownerNode": {
+        "execStart": "<release>/dist/index.js through the systemd drop-in 10-release-exec.conf",
+        "workingDirectory": "operator-configured existing working directory; live data paths stay unchanged"
+      }
+    },
+    "deployment": {
+      "configuration": "external-private",
+      "targetsEmbedded": false
+    }
+  }
+}

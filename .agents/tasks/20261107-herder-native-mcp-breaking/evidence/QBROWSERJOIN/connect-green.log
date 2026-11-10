@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-tasks-publish-1047
+
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  18:29:40
+   Duration  512ms (transform 124ms, setup 52ms, import 138ms, tests 130ms, environment 0ms)
+

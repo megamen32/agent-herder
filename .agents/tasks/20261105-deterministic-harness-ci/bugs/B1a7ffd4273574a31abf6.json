@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-06T20:08:37+00:00",
+  "details": "Self-peer исправил direct_peer_limit: entrypoint стартовал, создал сессии и дошёл до HTTP MCP search. Ответ scope=fleet содержит host server-44 unavailable, reason direct_native_listener_unavailable, partial=true; evidence/l43-v12-unified.err. Требуется адресно проверить маршрут и полный coverage без маскировки partial; общий gate FAIL.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T20:08:37+00:00",
+      "changes": {
+        "details": "Self-peer исправил direct_peer_limit: entrypoint стартовал, создал сессии и дошёл до HTTP MCP search. Ответ scope=fleet содержит host server-44 unavailable, reason direct_native_listener_unavailable, partial=true; evidence/l43-v12-unified.err. Требуется адресно проверить маршрут и полный coverage без маскировки partial; общий gate FAIL.",
+        "source": "v12 unified candidate actual entrypoint HTTP MCP",
+        "status": "open",
+        "title": "Entrypoint fleet search возвращает unavailable в изолированной среде"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:13:56+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "B3ba50326cb13441fad3a",
+          "kind": "duplicate",
+          "reason": "Дублирует тот же v12 entrypoint fleet search и direct_native_listener_unavailable."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "B1a7ffd4273574a31abf6",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "duplicate_of": "B3ba50326cb13441fad3a",
+    "kind": "duplicate",
+    "reason": "Дублирует тот же v12 entrypoint fleet search и direct_native_listener_unavailable."
+  },
+  "source": "v12 unified candidate actual entrypoint HTTP MCP",
+  "status": "duplicate",
+  "title": "Entrypoint fleet search возвращает unavailable в изолированной среде",
+  "updated_at": "2026-11-06T20:13:56+00:00"
+}

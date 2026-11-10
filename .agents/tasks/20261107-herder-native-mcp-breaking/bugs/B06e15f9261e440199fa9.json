@@ -1,0 +1,35 @@
+{
+  "blocker": "Migration owner must provide verified authoritative SQLite hold cutover and serialize stop/claim; no state permits safe absence checks.",
+  "created_at": "2026-11-07T04:30:39+00:00",
+  "details": "dispatch_once выполняет prepared→dispatching без проверки holds; native snapshot устаревает и legacy JSON пока не синхронизирован с Rust SQLite, поэтому активный stop может быть пропущен.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "at": "2026-11-07T04:30:39+00:00",
+      "changes": {
+        "details": "dispatch_once выполняет prepared→dispatching без проверки holds; native snapshot устаревает и legacy JSON пока не синхронизирован с Rust SQLite, поэтому активный stop может быть пропущен.",
+        "source": "source review 82a3d2ca; reproduce isolated DB",
+        "status": "open",
+        "title": "HumanStop не проверяется в SQLite admission transaction"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "at": "2026-11-07T04:37:42+00:00",
+      "changes": {
+        "blocker": "Migration owner must provide verified authoritative SQLite hold cutover and serialize stop/claim; no state permits safe absence checks.",
+        "status": "blocked"
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B06e15f9261e440199fa9",
+  "owner": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "reporter": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "source": "source review 82a3d2ca; reproduce isolated DB",
+  "status": "blocked",
+  "title": "HumanStop не проверяется в SQLite admission transaction",
+  "updated_at": "2026-11-07T04:37:42+00:00"
+}

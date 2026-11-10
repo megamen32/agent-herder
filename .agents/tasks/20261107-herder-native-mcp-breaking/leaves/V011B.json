@@ -1,0 +1,87 @@
+{
+  "id": "V011B",
+  "label": "Проверить старый writer после миграции схемы",
+  "description": "Доказать отказ записи через настоящий скомпилированный старый writer после повышения версии схемы, сохраняя атомарность.",
+  "acceptance": "Два отдельных compiled writer и временная БД: новый проводит миграцию, старый не пишет; нет half intent; результат воспроизводим.",
+  "affected_files": [
+    "crates/herder/tests"
+  ],
+  "depends_on": [
+    "V011A"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "created_at": "2026-11-07T04:07:41+03:00",
+  "updated_at": "2026-11-07T04:31:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T04:07:41+03:00",
+      "note": "",
+      "changes": {
+        "id": "V011B",
+        "label": "Проверить старый writer после миграции схемы",
+        "description": "Доказать отказ записи через настоящий скомпилированный старый writer после повышения версии схемы, сохраняя атомарность.",
+        "acceptance": "Два отдельных compiled writer и временная БД: новый проводит миграцию, старый не пишет; нет half intent; результат воспроизводим.",
+        "affected_files": [
+          "crates/herder/tests"
+        ],
+        "depends_on": [
+          "V011A"
+        ],
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T04:22:53+03:00",
+      "note": "Исполнитель 01a1b399-9f89-7dd3-90fa-0d7238f29e2e.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:22:56+03:00",
+      "note": "Worker 01a1b399-9f89-7dd3-90fa-0d7238f29e2e registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b399-9f89-7dd3-90fa-0d7238f29e2e",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T04:22:56+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v011b",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b399-9f89-7dd3-90fa-0d7238f29e2e"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:31:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Два compiled test writer на временной SQLite базе: старый writer при открытом соединении отказал после user_version 2; новый пишет, rollback убирает task/intent. Опубликовано c5befa28, 1 integration test прошёл. Конструктор файла тестовый, production migration V2 ещё не доказана."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "owner": "01a1b399-9f89-7dd3-90fa-0d7238f29e2e",
+  "worker": null,
+  "result": "Два compiled test writer на временной SQLite базе: старый writer при открытом соединении отказал после user_version 2; новый пишет, rollback убирает task/intent. Опубликовано c5befa28, 1 integration test прошёл. Конструктор файла тестовый, production migration V2 ещё не доказана."
+}

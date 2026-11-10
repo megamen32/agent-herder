@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T13:04:14+00:00",
+  "details": "A first-message click could succeed and local draft admission could then fail, while BrowserChatAdapter returned notSubmitted. AHAP wrapper passed this through as a normal result instead of UNKNOWN. Wrapper now maps all failed/untyped send receipts to outcome unknown, retryable false, without replay. RED: evidence/V081CDPSEC-send-unknown-red.txt; GREEN: evidence/V081CDPSEC-green.txt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex V081CDP worker",
+      "at": "2026-11-07T13:04:14+00:00",
+      "changes": {
+        "details": "A first-message click could succeed and local draft admission could then fail, while BrowserChatAdapter returned notSubmitted. AHAP wrapper passed this through as a normal result instead of UNKNOWN. Wrapper now maps all failed/untyped send receipts to outcome unknown, retryable false, without replay. RED: evidence/V081CDPSEC-send-unknown-red.txt; GREEN: evidence/V081CDPSEC-green.txt.",
+        "source": "tests/ahap-browser-runner.test.ts fake regression",
+        "status": "open",
+        "title": "AHAP wrapper trusted legacy notSubmitted after a possible ChatGPT send effect"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex V081CDP worker",
+      "at": "2026-11-07T13:07:03+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V081CDPSEC-green.txt",
+            "red_proof_path": "evidence/V081CDPSEC-send-unknown-red.txt",
+            "red_result": "AssertionError: expected undefined to be defined",
+            "red_sha256": "67c06b773a95377215e87ad95034e4a9d28f837553e846d04a0091061018aedd",
+            "result": "TypeScript compilation passed; 3 test files passed, 42 tests passed, 0 failed.",
+            "sha256": "f8608443fab5f16d0dad6d40dbeecbb530c6e7a910f5bfbf7c7b2ec3fa7ee621",
+            "test_command": "vitest run --root . --config vitest.config.ts tests/ahap-browser-runner.test.ts tests/chatgpt-mac-cdp-driver.test.ts tests/direct-cdp-page-tools.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Baccde92c75644613b99b",
+  "owner": "Codex V081CDP worker",
+  "reporter": "Codex V081CDP worker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V081CDPSEC-green.txt",
+      "red_proof_path": "evidence/V081CDPSEC-send-unknown-red.txt",
+      "red_result": "AssertionError: expected undefined to be defined",
+      "red_sha256": "67c06b773a95377215e87ad95034e4a9d28f837553e846d04a0091061018aedd",
+      "result": "TypeScript compilation passed; 3 test files passed, 42 tests passed, 0 failed.",
+      "sha256": "f8608443fab5f16d0dad6d40dbeecbb530c6e7a910f5bfbf7c7b2ec3fa7ee621",
+      "test_command": "vitest run --root . --config vitest.config.ts tests/ahap-browser-runner.test.ts tests/chatgpt-mac-cdp-driver.test.ts tests/direct-cdp-page-tools.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/ahap-browser-runner.test.ts fake regression",
+  "status": "fixed",
+  "title": "AHAP wrapper trusted legacy notSubmitted after a possible ChatGPT send effect",
+  "updated_at": "2026-11-07T13:07:03+00:00"
+}

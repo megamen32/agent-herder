@@ -1,0 +1,73 @@
+
+ RUN  v4.1.10 /tmp/herder-tasks-publish-1047
+
+ ❯ tests/ahap-opencode-family.test.ts (5 tests | 1 failed) 145ms
+   × accepts literal JSON null but rejects malformed HTTP 200 before mutations 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/ahap-opencode-family.test.ts > accepts literal JSON null but rejects malformed HTTP 200 before mutations
+AssertionError: promise resolved "{ …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "adapter": OpenCodeAdapter {
++     "activeSnapshotReceipt": null,
++     "authorization": undefined,
++     "baseUrl": "http://127.0.0.1:21459",
++     "client": OpenCodeClient {
++       "apiPrefix": "",
++       "baseUrl": "http://127.0.0.1:21459",
++       "directories": Map {},
++       "headers": {},
++       "kind": "opencode",
++       "pinnedProtocol": "v22",
++       "protocolProbed": false,
++     },
++     "controlCapabilities": {
++       "cancelTurn": false,
++       "detach": false,
++       "events": false,
++       "fork": false,
++       "modelSwitch": false,
++       "recover": false,
++       "resume": false,
++       "steer": false,
++       "subagents": false,
++       "terminate": false,
++     },
++     "deliveredInboxBySession": Map {},
++     "integratorReservation": undefined,
++     "integratorSessionBindingStore": undefined,
++     "modelProviderResolverConfig": {},
++     "name": "OpenCode",
++     "runtimeCapabilities": {
++       "autopilotDispatch": "deliverInRunner",
++       "autopilotEligible": true,
++       "browserChat": false,
++       "hookDrivenStop": true,
++       "humanStopObserver": true,
++       "localInject": false,
++     },
++     "type": "opencode",
++     "v22CreatedSessions": Set {},
++     "v22StartAttempts": Set {},
++   },
++   "family": "v22",
+  }
+
+ ❯ tests/ahap-opencode-family.test.ts:56:138
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  19:42:03
+   Duration  2.09s (transform 1.24s, setup 82ms, import 1.62s, tests 145ms, environment 0ms)
+

@@ -1,0 +1,34 @@
+{
+  "id": "L94",
+  "label": "Mac Mini: проверить владельца Codex",
+  "description": "Не меняя конфигурации, подтвердить действующий Codex через установленный watchdog и его проверки сокета.",
+  "acceptance": "Нативная идентичность и единственный владелец сокета подтверждены без изменения доступа; установленный Herder и выпуск учитываются отдельно.",
+  "status": "done",
+  "owner": "lead",
+  "estimate_minutes": 15,
+  "kind": "research",
+  "result": "Mac Mini: config pin ссылается на отсутствующий PID 413, действующий Codex PID 88973 подтверждён text OWNED, socket FD 31, UID/start identity и единственным lsof owner. Установленный watchdog verify_codex_owner(admission=True) прошёл с проверенной идентичностью только в памяти; файл node-config и права не изменяли. Herder всё ещё не запущен; штатная привязка release authority не определена.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T16:50:40+03:00",
+  "updated_at": "2026-11-07T16:50:40+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T16:50:40+03:00",
+      "note": "",
+      "changes": {
+        "id": "L94",
+        "label": "Mac Mini: проверить владельца Codex",
+        "description": "Не меняя конфигурации, подтвердить действующий Codex через установленный watchdog и его проверки сокета.",
+        "acceptance": "Нативная идентичность и единственный владелец сокета подтверждены без изменения доступа; установленный Herder и выпуск учитываются отдельно.",
+        "status": "done",
+        "owner": "lead",
+        "estimate_minutes": 15,
+        "kind": "research",
+        "result": "Mac Mini: config pin ссылается на отсутствующий PID 413, действующий Codex PID 88973 подтверждён text OWNED, socket FD 31, UID/start identity и единственным lsof owner. Установленный watchdog verify_codex_owner(admission=True) прошёл с проверенной идентичностью только в памяти; файл node-config и права не изменяли. Herder всё ещё не запущен; штатная привязка release authority не определена.",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

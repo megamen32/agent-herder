@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests/native",
+    "-p",
+    "test_candidate_release_gate.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "diff_check_exit": 0,
+  "source_sha256": "559faca30d238591be101fa947738f4186d3dd165e9744366dc92ded488a92dd",
+  "test_sha256": "2296f38fa04234d91f9d4aeb4ddd9c07838ea21bee7cc4f9073ebce2d0529f31",
+  "observed_at": "2026-11-08T23:00:29.766070+00:00"
+}

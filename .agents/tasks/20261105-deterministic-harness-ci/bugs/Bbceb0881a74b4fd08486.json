@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T00:59:59+00:00",
+  "details": "Реальный entrypoint получил 422 для созданной сессии, файл которой уже существует. Тест показал отсутствие записи в сохранённом снимке; добавлен точный lookup при промахе по снимку, без ожидания TTL.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T00:59:59+00:00",
+      "changes": {
+        "details": "Реальный entrypoint получил 422 для созданной сессии, файл которой уже существует. Тест показал отсутствие записи в сохранённом снимке; добавлен точный lookup при промахе по снимку, без ожидания TTL.",
+        "source": "server-44 entrypoint-diag.err; tests/codex-app-server-home-transcript.test.ts",
+        "status": "open",
+        "title": "Транскрипт новой Codex-сессии недоступен при прогретом кэше"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-06T01:05:09+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-entrypoint-final.json",
+            "result": "PASS",
+            "sha256": "a20f6c5a2d0b91393a68a7f87067c05a061c048f0dc426463f096088c58b9677",
+            "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbceb0881a74b4fd08486",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-entrypoint-final.json",
+      "result": "PASS",
+      "sha256": "a20f6c5a2d0b91393a68a7f87067c05a061c048f0dc426463f096088c58b9677",
+      "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 entrypoint-diag.err; tests/codex-app-server-home-transcript.test.ts",
+  "status": "fixed",
+  "title": "Транскрипт новой Codex-сессии недоступен при прогретом кэше",
+  "updated_at": "2026-11-06T01:05:09+00:00"
+}

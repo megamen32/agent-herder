@@ -1,0 +1,7 @@
+V076B source/fake proof
+Worktree: /home/roomhacker/.codex/worktrees/herder-v075b/agent-herder
+Commit: 6d6b1a62f2dd55f2a4ca60cc0c2f6c407c4e0d19
+Changed paths: crates/herder/src/adapters/zcode/control.rs; acceptance/native/zcode/control-capability.json
+Command: rustfmt +stable --edition 2024 crates/herder/src/adapters/zcode/control.rs && cargo test --manifest-path /tmp/herder-v075b-harness.fxzIlX/Cargo.toml adapters::zcode::control -- --nocapture && git diff --check
+Result: 3 passed, 0 failed. Covered exact instance/session binding, verified model shape/reasoning field, permission mode allowlist, exact request ID requirement, and no transport use. Harness imports real source modules; test is synthetic/source-only.
+Not proven: native transport operation, consumer registration, live ZCode behavior/readback.

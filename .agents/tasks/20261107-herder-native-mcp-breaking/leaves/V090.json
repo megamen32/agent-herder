@@ -3,7 +3,9 @@
   "description": "Z.ai: Сверить recent с независимым native чтением. Частный результат исходного V090: Одна подтверждённая native read route → адреса/status/последние user+assistant. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V090B.",
   "acceptance": "Две сессии возвращают свои роли/turn refs; partial отмечен. Это точка объединения всей цепочки V090A, V090B, V090.",
   "affected_files": [
-    "crates/herder/src/adapters/z_ai/read.rs"
+    "crates/herder/src/adapters/zai/mod.rs",
+    "acceptance/contracts/z-ai.md",
+    "acceptance/native/z-ai/recent-two-chats.json"
   ],
   "depends_on": [
     "V090B"
@@ -13,16 +15,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V090 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V090 обязателен в конце цепочки.",
+  "note": "Owned source/fixture chain done without profile access or marker resend. Live consumer proof remains a separately scoped acceptance.",
   "estimate_over_limit_reason": "",
   "id": "V090",
   "created_at": "2026-11-07T01:52:33+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:41+03:00",
+  "updated_at": "2026-11-07T11:36:47+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:33+03:00",
@@ -74,9 +76,46 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:30:04+03:00",
+      "note": "Join native list/read normalization with RecentMessages; verify two isolated chat fixtures and preserve unknown correlation refs as null.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:34:24+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "affected_files": [
+          "crates/herder/src/adapters/zai/mod.rs",
+          "acceptance/contracts/z-ai.md",
+          "acceptance/native/z-ai/recent-two-chats.json"
+        ],
+        "result": "V090 chain joined: ZaiReader::list_chats exposes stable IDs from page 1; read_chat parses provider batch; recent_messages projects role-separated user/assistant slots while preserving message IDs and observed timestamps. Two isolated synthetic native payloads prove each chat retains its own role slots and IDs. The captured provider shape has no turn/reply/completion metadata, so turn_id, reply_to_input_id, assistant_replies_to_user, partial, and truncated remain None rather than inferred. Verification on origin/main 61e51b66: cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 6 passed; rustfmt +stable --edition 2024 --check and git diff --check passed. Commit eceb2031; prior V090A/B commits bc5f3ac1 and e2b820b3. Live two-chat provider readback remains unverified.",
+        "note": "Owned source/fixture chain done without profile access or marker resend. Live consumer proof remains a separately scoped acceptance."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:47+03:00",
+      "note": "",
+      "changes": {
+        "result": "Joined Z.ai list/read/recent source path. Two isolated synthetic native payloads prove chat IDs keep separate user/assistant slots and message IDs. No turn/reply/completion metadata is present in captured shape; those refs plus partial/truncated remain None rather than inferred. Final commit a8bbdf7a atop origin/main f18149d3. cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 6 passed; rustfmt +stable --edition 2024 --check and git diff --check passed. Live two-chat provider readback remains unverified."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
   ],
   "parent": "S07",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Joined Z.ai list/read/recent source path. Two isolated synthetic native payloads prove chat IDs keep separate user/assistant slots and message IDs. No turn/reply/completion metadata is present in captured shape; those refs plus partial/truncated remain None rather than inferred. Final commit a8bbdf7a atop origin/main f18149d3. cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 6 passed; rustfmt +stable --edition 2024 --check and git diff --check passed. Live two-chat provider readback remains unverified."
 }

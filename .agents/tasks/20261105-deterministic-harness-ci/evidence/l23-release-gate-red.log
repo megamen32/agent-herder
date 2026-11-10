@@ -1,0 +1,6 @@
+Captured from original run: python3 tests/test_native_release_gate.py
+Ran 12 tests
+FAILED (failures=2, errors=1)
+ERROR test_rollout_refuses_unproven_or_mismatched_ci_payload: ValueError candidate CI scenarios not accepted: fast-agent candidate report missing; hermes candidate report missing or partial; qoder candidate report missing; browser-chat isolated fixture report missing; chatgpt and zai real service independent session readbacks missing.
+FAIL test_complete_candidate_does_not_claim_installed_service: expected [] but received missing evidence failures.
+FAIL test_node_refuses_missing_ci_receipt_before_package_or_service_changes: collector preflight rejected earlier than missing receipt check.

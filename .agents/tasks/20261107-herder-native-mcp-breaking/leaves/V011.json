@@ -6,14 +6,14 @@
     "crates/herder/src/store/schema.sql"
   ],
   "depends_on": [
-    "V006"
+    "V011B"
   ],
   "estimate_minutes": {
     "minimum": 30,
     "maximum": 60
   },
   "kind": "task",
-  "status": "waiting",
+  "status": "done",
   "owner": "01a1b353-5464-7bd1-8587-c413444314fc",
   "wave": 1,
   "note": "Работа в локальном коммите 5b244735; проверка на test connections, совместимость настоящего старого binary остаётся открытой; ожидает интеграции.",
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T01:52:20+03:00",
   "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:17:16+03:00",
+  "updated_at": "2026-11-07T04:31:43+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:20+03:00",
@@ -88,7 +88,31 @@
       },
       "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:07:53+03:00",
+      "note": "Разбит только незавершённый остаток; исходная оценка и история сохранены.",
+      "changes": {
+        "status": "queued",
+        "depends_on": [
+          "V011B"
+        ],
+        "result": "Схема и изолированные SQLite probes опубликованы 03627936; реальный Rust writer и fence старого binary проверяются в V011A/B."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:31:43+03:00",
+      "note": "Исходный лист закрыт по изолированной схеме и тестовым binary; дальнейшая runtime интеграция остаётся в зависимых листьях.",
+      "changes": {
+        "status": "done",
+        "result": "Schema tables и version guards 03627936, writer f6283c92, межпроцессный тест c5befa28: rollback не оставляет half intent, старый тестовый binary не пишет после смены версии. Production migration V2 и файловый runtime writer ещё не реализованы; это не доказательство установки."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
-  "worker": null
+  "worker": null,
+  "result": "Schema tables и version guards 03627936, writer f6283c92, межпроцессный тест c5befa28: rollback не оставляет half intent, старый тестовый binary не пишет после смены версии. Production migration V2 и файловый runtime writer ещё не реализованы; это не доказательство установки."
 }

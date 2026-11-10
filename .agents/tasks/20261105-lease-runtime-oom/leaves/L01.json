@@ -1,0 +1,59 @@
+{
+  "label": "Устранить аварии runtime и проверить lease",
+  "model": "gpt-6",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "acceptance": "Штатный процесс устойчив и MCP доступен; чужой lease сохранён",
+  "id": "L01",
+  "created_at": "2026-11-05T04:32:44+03:00",
+  "session": "01a1a943-2d34-74a1-9daa-04859de8421d",
+  "harness": "codex",
+  "updated_at": "2026-11-05T04:47:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-05T04:32:44+03:00",
+      "note": "",
+      "changes": {
+        "label": "Устранить аварии runtime и проверить lease",
+        "model": "gpt-6",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 30
+        },
+        "acceptance": "Штатный процесс устойчив и MCP доступен; чужой lease сохранён"
+      },
+      "session": "01a1a943-2d34-74a1-9daa-04859de8421d",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-05T04:32:45+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1a943-2d34-74a1-9daa-04859de8421d",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-05T04:42:32+03:00",
+      "note": "Установлена причина аварий: V8 heap 768 MiB; override установлен, после рестарта MCP status и тестовый цикл lease прошли; проверяется устойчивость и расход памяти.",
+      "changes": {},
+      "session": "01a1a943-2d34-74a1-9daa-04859de8421d",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-05T04:47:16+03:00",
+      "note": "Убрано ограничение V8 768 MiB через отдельный systemd override; после штатного перезапуска реальный MCP status и цикл acquire/check/release для Agent Herder прошли, процесс без рестартов более 8 минут; потребление памяти остаётся высоким, источник нагрузки не установлен. Чужой fence 3 не изменяли; к финальному readback срок истёк.",
+      "changes": {
+        "status": "done"
+      },
+      "session": "01a1a943-2d34-74a1-9daa-04859de8421d",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "owner": "roomhacker"
+}

@@ -1,0 +1,55 @@
+{
+  "scope": "isolated-candidate-only",
+  "candidate_sha256": "1504c777be4c4e589099e358f43879f6a3925d4fa2fa6c5ffef08e5039d26a2b",
+  "elapsed_seconds": 35.918,
+  "journeys": [
+    {
+      "status": "INCOMPLETE",
+      "harness": "codex",
+      "sessions": [
+        {
+          "id": "01a1b5a2-ae41-7a11-98c3-ac3058d36a6d",
+          "job": "job_76cfe2dd2597f1fd5f4ec448738738e25ea4e10ae5a36403b445e5de2df4498b",
+          "pages": 3
+        },
+        {
+          "id": "01a1b5a2-af78-7a91-b131-b26b3b0e608a",
+          "job": "job_0dcbb78e8abb15847738333745c1077eaef26008672502ba0a2324a3a9ef42fe",
+          "pages": 3
+        }
+      ],
+      "fixtureRequests": 2,
+      "missing": [
+        "search",
+        "installed-process"
+      ]
+    },
+    {
+      "status": "INCOMPLETE",
+      "harness": "opencode",
+      "sessions": [
+        {
+          "id": "ses_e4a5d4e5fffe4Lf1AXFfh8SAVI",
+          "job": "job_13bf159bd74d82cdadc93ab6b101d2abd4b8ccc5c5e29755a539e5b607fed0b5",
+          "pages": 3
+        },
+        {
+          "id": "ses_e4a5d4d05ffeKjR2rz1I706Msg",
+          "job": "job_17c386324cbd59cdbd145c7c37a4b197c6213e92038756e39ce67b583a4e821a",
+          "pages": 3
+        }
+      ],
+      "fixtureRequests": 2,
+      "missing": [
+        "search",
+        "installed-process"
+      ]
+    }
+  ],
+  "client_sha256": "8ea16237dfd378b8c1c3c27a9c1e642420f63bf397df64f1ca13ed5a1cfe926d",
+  "limitations": [
+    "temporary integration into research runner",
+    "installed process not exercised",
+    "release gate FAIL"
+  ]
+}

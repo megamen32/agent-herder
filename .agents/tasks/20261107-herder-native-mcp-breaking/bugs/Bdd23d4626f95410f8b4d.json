@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-11-07T01:43:04+00:00",
+  "details": "The first standalone rustc --test run did not compile because the harness used Result::unwrap_err(), which requires Debug for the success type CodexConnection. This was a test-harness issue; it did not exercise or identify a defect in connection.rs. The harness now matches the Result explicitly. Initial compiler output and corrected rerun are in .tmp/v052b-codex-profile-20261107/ (connection-smoke-first.log and connection-smoke.log).",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T01:43:04+00:00",
+      "changes": {
+        "details": "The first standalone rustc --test run did not compile because the harness used Result::unwrap_err(), which requires Debug for the success type CodexConnection. This was a test-harness issue; it did not exercise or identify a defect in connection.rs. The harness now matches the Result explicitly. Initial compiler output and corrected rerun are in .tmp/v052b-codex-profile-20261107/ (connection-smoke-first.log and connection-smoke.log).",
+        "source": "rustc --edition 2024 --test .tmp/v052b-codex-profile-20261107/connection_smoke.rs",
+        "status": "open",
+        "title": "V053A temporary smoke harness compile error"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T01:44:51+00:00",
+      "changes": {
+        "resolution": {
+          "kind": "false_positive",
+          "reason": "Harness-only compile mistake: unwrap_err imposed a Debug bound on the success type. The adapter source was not involved in the failed compile. Replacing it with explicit Result matching made the same smoke harness compile and pass both isolated checks; see .tmp/v052b-codex-profile-20261107/connection-smoke-first.log, connection-build.log, and connection-smoke.log."
+        },
+        "status": "false_positive"
+      }
+    }
+  ],
+  "id": "Bdd23d4626f95410f8b4d",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "kind": "false_positive",
+    "reason": "Harness-only compile mistake: unwrap_err imposed a Debug bound on the success type. The adapter source was not involved in the failed compile. Replacing it with explicit Result matching made the same smoke harness compile and pass both isolated checks; see .tmp/v052b-codex-profile-20261107/connection-smoke-first.log, connection-build.log, and connection-smoke.log."
+  },
+  "source": "rustc --edition 2024 --test .tmp/v052b-codex-profile-20261107/connection_smoke.rs",
+  "status": "false_positive",
+  "title": "V053A temporary smoke harness compile error",
+  "updated_at": "2026-11-07T01:44:51+00:00"
+}

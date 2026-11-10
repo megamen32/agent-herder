@@ -1,0 +1,405 @@
+{
+  "validator": "Ajv offline",
+  "results": [
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "case": "candidate_reconstructed",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "default"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "case": "explicit_fast",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "fast"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "case": "explicit_model_full_access_fields",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "model": "herder-test",
+        "serviceTier": "default",
+        "approvalPolicy": "never",
+        "sandbox": "danger-full-access"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "case": "negative_wrong_tier_type",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": 42
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/serviceTier",
+          "schemaPath": "#/properties/serviceTier/type",
+          "keyword": "type",
+          "params": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": "must be string,null"
+        }
+      ]
+    },
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "case": "negative_wrong_approval_enum",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "default",
+        "approvalPolicy": "not-a-valid-policy"
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/approvalPolicy",
+          "schemaPath": "#/properties/approvalPolicy/anyOf/1/type",
+          "keyword": "type",
+          "params": {
+            "type": "null"
+          },
+          "message": "must be null"
+        },
+        {
+          "instancePath": "/approvalPolicy",
+          "schemaPath": "#/properties/approvalPolicy/anyOf",
+          "keyword": "anyOf",
+          "params": {},
+          "message": "must match a schema in anyOf"
+        }
+      ]
+    },
+    {
+      "schema": "schema/ClientRequest.json",
+      "case": "candidate_reconstructed",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "default"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/ClientRequest.json",
+      "case": "explicit_fast",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "fast"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/ClientRequest.json",
+      "case": "explicit_model_full_access_fields",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "model": "herder-test",
+          "serviceTier": "default",
+          "approvalPolicy": "never",
+          "sandbox": "danger-full-access"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema/ClientRequest.json",
+      "case": "negative_wrong_tier_type",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": 42
+        }
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/method",
+          "schemaPath": "#/oneOf/105/properties/method/enum",
+          "keyword": "enum",
+          "params": {
+            "allowedValues": [
+              "fuzzyFileSearch"
+            ]
+          },
+          "message": "must be equal to one of the allowed values"
+        },
+        {
+          "instancePath": "",
+          "schemaPath": "#/oneOf",
+          "keyword": "oneOf",
+          "params": {
+            "passingSchemas": null
+          },
+          "message": "must match exactly one schema in oneOf"
+        }
+      ]
+    },
+    {
+      "schema": "schema/ClientRequest.json",
+      "case": "negative_wrong_approval_enum",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "default",
+          "approvalPolicy": "not-a-valid-policy"
+        }
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/method",
+          "schemaPath": "#/oneOf/105/properties/method/enum",
+          "keyword": "enum",
+          "params": {
+            "allowedValues": [
+              "fuzzyFileSearch"
+            ]
+          },
+          "message": "must be equal to one of the allowed values"
+        },
+        {
+          "instancePath": "",
+          "schemaPath": "#/oneOf",
+          "keyword": "oneOf",
+          "params": {
+            "passingSchemas": null
+          },
+          "message": "must match exactly one schema in oneOf"
+        }
+      ]
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "case": "candidate_reconstructed",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "default"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "case": "explicit_fast",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "fast"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "case": "explicit_model_full_access_fields",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "model": "herder-test",
+        "serviceTier": "default",
+        "approvalPolicy": "never",
+        "sandbox": "danger-full-access"
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "case": "negative_wrong_tier_type",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": 42
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/serviceTier",
+          "schemaPath": "#/properties/serviceTier/type",
+          "keyword": "type",
+          "params": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": "must be string,null"
+        }
+      ]
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "case": "negative_wrong_approval_enum",
+      "input": {
+        "cwd": "/herder-owner-home/work",
+        "serviceTier": "default",
+        "approvalPolicy": "not-a-valid-policy"
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/approvalPolicy",
+          "schemaPath": "#/properties/approvalPolicy/anyOf/1/type",
+          "keyword": "type",
+          "params": {
+            "type": "null"
+          },
+          "message": "must be null"
+        },
+        {
+          "instancePath": "/approvalPolicy",
+          "schemaPath": "#/properties/approvalPolicy/anyOf",
+          "keyword": "anyOf",
+          "params": {},
+          "message": "must match a schema in anyOf"
+        }
+      ]
+    },
+    {
+      "schema": "schema-experimental/ClientRequest.json",
+      "case": "candidate_reconstructed",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "default"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/ClientRequest.json",
+      "case": "explicit_fast",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "fast"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/ClientRequest.json",
+      "case": "explicit_model_full_access_fields",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "model": "herder-test",
+          "serviceTier": "default",
+          "approvalPolicy": "never",
+          "sandbox": "danger-full-access"
+        }
+      },
+      "valid": true,
+      "errors": null
+    },
+    {
+      "schema": "schema-experimental/ClientRequest.json",
+      "case": "negative_wrong_tier_type",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": 42
+        }
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/method",
+          "schemaPath": "#/oneOf/179/properties/method/enum",
+          "keyword": "enum",
+          "params": {
+            "allowedValues": [
+              "fuzzyFileSearch/sessionStop"
+            ]
+          },
+          "message": "must be equal to one of the allowed values"
+        },
+        {
+          "instancePath": "",
+          "schemaPath": "#/oneOf",
+          "keyword": "oneOf",
+          "params": {
+            "passingSchemas": null
+          },
+          "message": "must match exactly one schema in oneOf"
+        }
+      ]
+    },
+    {
+      "schema": "schema-experimental/ClientRequest.json",
+      "case": "negative_wrong_approval_enum",
+      "input": {
+        "id": 1,
+        "method": "thread/start",
+        "params": {
+          "cwd": "/herder-owner-home/work",
+          "serviceTier": "default",
+          "approvalPolicy": "not-a-valid-policy"
+        }
+      },
+      "valid": false,
+      "errors": [
+        {
+          "instancePath": "/method",
+          "schemaPath": "#/oneOf/179/properties/method/enum",
+          "keyword": "enum",
+          "params": {
+            "allowedValues": [
+              "fuzzyFileSearch/sessionStop"
+            ]
+          },
+          "message": "must be equal to one of the allowed values"
+        },
+        {
+          "instancePath": "",
+          "schemaPath": "#/oneOf",
+          "keyword": "oneOf",
+          "params": {
+            "passingSchemas": null
+          },
+          "message": "must match exactly one schema in oneOf"
+        }
+      ]
+    }
+  ]
+}

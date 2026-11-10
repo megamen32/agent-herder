@@ -1,0 +1,178 @@
+{
+  "attempt": "astra-v1-codex-schema-20261107T2055",
+  "executor": "Archimedes",
+  "lead": "Astra",
+  "conclusion": "No request JSON-schema mismatch proven; default is a schema-valid serviceTier string. Runtime rejection/root cause unknown.",
+  "binary": "/home/roomhacker/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+  "version": "codex-cli 0.167.0",
+  "binary_sha256": "cdcb45aaa01d0f14e298985e09465aebccd47f64ecd298aea44814af7b62bbda",
+  "candidate_adapter_sha256": "700ce628c790a0703f1d0c5fb91ba47b7d2e994af8b680f2e4482844af1485f7",
+  "fields": [
+    {
+      "schema": "schema/v2/ThreadStartParams.json",
+      "sha256": "e9c6d3cc18d049bfbc0249add3808fb8e5a27e1a0b5a423767aafbc3859a9428",
+      "required": [],
+      "serviceTier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "cwd": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "model": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "approvalPolicy": {
+        "oneOf": [
+          {
+            "enum": [
+              "untrusted",
+              "on-request",
+              "never"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "granular": {
+                "properties": {
+                  "mcp_elicitations": {
+                    "type": "boolean"
+                  },
+                  "request_permissions": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "rules": {
+                    "type": "boolean"
+                  },
+                  "sandbox_approval": {
+                    "type": "boolean"
+                  },
+                  "skill_approval": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "mcp_elicitations",
+                  "rules",
+                  "sandbox_approval"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "granular"
+            ],
+            "title": "GranularAskForApproval",
+            "type": "object"
+          }
+        ]
+      },
+      "sandbox": {
+        "enum": [
+          "read-only",
+          "workspace-write",
+          "danger-full-access"
+        ],
+        "type": "string"
+      }
+    },
+    {
+      "schema": "schema-experimental/v2/ThreadStartParams.json",
+      "sha256": "80a40a7fac15b4bf70efb7f893fb353acc0a0d30c68f54aee4f01923deca85de",
+      "required": [],
+      "serviceTier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "cwd": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "model": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "approvalPolicy": {
+        "oneOf": [
+          {
+            "enum": [
+              "untrusted",
+              "on-request",
+              "never"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "granular": {
+                "properties": {
+                  "mcp_elicitations": {
+                    "type": "boolean"
+                  },
+                  "request_permissions": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "rules": {
+                    "type": "boolean"
+                  },
+                  "sandbox_approval": {
+                    "type": "boolean"
+                  },
+                  "skill_approval": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "mcp_elicitations",
+                  "rules",
+                  "sandbox_approval"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "granular"
+            ],
+            "title": "GranularAskForApproval",
+            "type": "object"
+          }
+        ]
+      },
+      "sandbox": {
+        "enum": [
+          "read-only",
+          "workspace-write",
+          "danger-full-access"
+        ],
+        "type": "string"
+      }
+    }
+  ],
+  "offline_validation_cases": 20,
+  "new_thread_start_calls": 0,
+  "model_sends": 0,
+  "mutation_replays": 0,
+  "adapter_edits": false,
+  "historical_binary_hash_present_in_original_evidence": false
+}

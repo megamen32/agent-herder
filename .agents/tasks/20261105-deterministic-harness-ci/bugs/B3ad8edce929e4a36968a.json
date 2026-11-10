@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T06:16:41+00:00",
+  "details": "На Mac Mini Vibe селектор data-message-author-role вернул 0, но сохранённый screenshot тестового чата явно показывает сообщения. Нужна адресная инспекция DOM своей вкладки после backoff и RED/GREEN для действительного markup.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T06:16:41+00:00",
+      "changes": {
+        "details": "На Mac Mini Vibe селектор data-message-author-role вернул 0, но сохранённый screenshot тестового чата явно показывает сообщения. Нужна адресная инспекция DOM своей вкладки после backoff и RED/GREEN для действительного markup.",
+        "source": "Mac Mini Vibe test screenshot 1794032073",
+        "status": "open",
+        "title": "ChatGPT DOM selector не видит сообщения в реально открытом чате"
+      }
+    }
+  ],
+  "id": "B3ad8edce929e4a36968a",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "Mac Mini Vibe test screenshot 1794032073",
+  "status": "open",
+  "title": "ChatGPT DOM selector не видит сообщения в реально открытом чате",
+  "updated_at": "2026-11-07T06:16:41+00:00"
+}

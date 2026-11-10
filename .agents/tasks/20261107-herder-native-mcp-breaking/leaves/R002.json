@@ -12,8 +12,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей.",
   "created_at": "2026-11-07T03:53:38+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:38+03:00",
+  "updated_at": "2026-11-07T06:16:36+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:38+03:00",
@@ -53,6 +53,35 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:48:39+03:00",
+      "note": "Предпосылки R001 и V036 завершены; регистрирую descriptor в каноническом storage.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:48:59+03:00",
+      "note": "LhcPlan привязывает plan-dir к canonical shared checkout, так как API не принимает явный workdir. Исполняю этот leaf только в managed worktree /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder; shared checkout не использую.",
+      "changes": {},
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:16:36+03:00",
+      "note": "R002 закрыт scoped commit 79ac0b5; доказательства unit suite 10/10. Далее по Overseer — R003, R004, V043, E003.",
+      "changes": {
+        "status": "done",
+        "result": "В crates/herder/src/ownership/resource.rs реализованы register_or_update/get/list/list_by_scope поверх resource.json: стабильный storage registry guard, дубликат external_ref отвергается, revision CAS возвращает WouldBlock для stale, запись temp+fsync+rename+directory fsync. ResourceMarker обратно-совместимо расширен optional descriptor; descriptor identity проверяется на read; неразрешённые markers не видны в list/get и не claim-ятся. Проверено: unauthorized get/list отказаны, create=revision 1, update=2, дубликат и stale отказаны без мутации. На свежем origin/main: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 10 passed, 0 failed; rustup stable rustfmt по изменённым Rust-файлам; git diff --check чистый. Detached commit 79ac0b5f071e80d8a6f270471f7ba21263a6a156, передан Тере для интеграции. Не доказаны MCP/offline CLI consumer readback и цепочка R003/R004/V043/E003."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "В crates/herder/src/ownership/resource.rs реализованы register_or_update/get/list/list_by_scope поверх resource.json: стабильный storage registry guard, дубликат external_ref отвергается, revision CAS возвращает WouldBlock для stale, запись temp+fsync+rename+directory fsync. ResourceMarker обратно-совместимо расширен optional descriptor; descriptor identity проверяется на read; неразрешённые markers не видны в list/get и не claim-ятся. Проверено: unauthorized get/list отказаны, create=revision 1, update=2, дубликат и stale отказаны без мутации. На свежем origin/main: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 10 passed, 0 failed; rustup stable rustfmt по изменённым Rust-файлам; git diff --check чистый. Detached commit 79ac0b5f071e80d8a6f270471f7ba21263a6a156, передан Тере для интеграции. Не доказаны MCP/offline CLI consumer readback и цепочка R003/R004/V043/E003."
 }

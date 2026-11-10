@@ -1,0 +1,4 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/codex-v1-5ea28f-bin-preflight-01
+V1 Codex stand failed: native core closed stdout during tools/list: Error: "AHAP codex startup failed: Initialization { phase: \"init\", cause: Remote }. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."
+
+ISOLATED_FAILURE_RETAINED /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/codex-v1-5ea28f-bin-preflight-01

@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T23:15:57+00:00",
+  "details": "В изолированном реальном Claude через Herder текст пользовательского сообщения отсутствовал в якобы полном постраничном транскрипте. Регрессионный тест с нативным строковым content до исправления показал только ответ ассистента.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-05T23:15:57+00:00",
+      "changes": {
+        "details": "В изолированном реальном Claude через Herder текст пользовательского сообщения отсутствовал в якобы полном постраничном транскрипте. Регрессионный тест с нативным строковым content до исправления показал только ответ ассистента.",
+        "source": "tests/integrator-transcript.test.ts; receipt-claude-herder-diag.json",
+        "status": "open",
+        "title": "Полный транскрипт Claude пропускает сообщения пользователя со строковым content"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-05T23:22:25+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-claude-herder-correlated.json",
+            "result": "PASS",
+            "sha256": "775cb32fa5134d8437eb8a2fc981a0cfc133ceeef221f0d99cc2100d6e726a43",
+            "test_command": "npx vitest run tests/integrator-transcript.test.ts; isolated real Claude through Herder"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bf817c789859249dfa640",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-claude-herder-correlated.json",
+      "result": "PASS",
+      "sha256": "775cb32fa5134d8437eb8a2fc981a0cfc133ceeef221f0d99cc2100d6e726a43",
+      "test_command": "npx vitest run tests/integrator-transcript.test.ts; isolated real Claude through Herder"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/integrator-transcript.test.ts; receipt-claude-herder-diag.json",
+  "status": "fixed",
+  "title": "Полный транскрипт Claude пропускает сообщения пользователя со строковым content",
+  "updated_at": "2026-11-05T23:22:25+00:00"
+}

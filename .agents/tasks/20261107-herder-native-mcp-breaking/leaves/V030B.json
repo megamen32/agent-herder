@@ -11,18 +11,18 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V030 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V030 обязателен в конце цепочки.",
+  "note": "V030B source-only slice in V030A-owned index.rs. Isolated SQLite fixture; ACL allowlist before limit/count/pagination; partial coverage if caller reports incomplete source coverage or any allowed transcript is truncated. Shared schema remains Terra-owned.",
   "created_at": "2026-11-07T03:52:53+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:53+03:00",
+  "updated_at": "2026-11-07T12:46:56+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:53+03:00",
@@ -51,6 +51,32 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:40:01+03:00",
+      "note": "Начал отдельный V030B по прямому поручению владельца; только source slice в том же index.rs, без shared schema/export/runtime.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "started_at": "2026-11-07T09:40:01.404Z",
+        "note": "V030B source-only slice in V030A-owned index.rs. Isolated SQLite fixture; ACL allowlist before limit/count/pagination; partial coverage if caller reports incomplete source coverage or any allowed transcript is truncated. Shared schema remains Terra-owned."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:46:56+03:00",
+      "note": "V030B source-only acceptance done; V030 remains open until Terra integrates v4 schema/export and later consumer proof. No ACL/coverage runtime claim.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:46:54.679Z",
+        "result": "Source-only V030B committed as d7d6cbee in crates/herder/src/search/index.rs. Added serializable search_page/SearchPage/SearchHit/SearchCoverage API. It receives the trusted ACL allowlist as full SessionAddress values and applies that set in SQL to both count and hit query before ORDER/LIMIT/OFFSET; count and pages contain authorized sessions only. Coverage is partial when caller source coverage is incomplete or any allowlisted session's transcript is marked truncated; total_hits is documented as a lower bound for partial coverage. update_session persists content_truncated with snapshot state. Isolated rusqlite harness: 10 passed (7 index + 3 address), evidence review-evidence/v030b/search-acl-coverage.log. Not integrated into crate/store schema/export, no production or consumer proof; Terra owns v4 migration/fence/export. Parent V030 remains open."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "started_at": "2026-11-07T09:40:01.404Z",
+  "finished_at": "2026-11-07T09:46:54.679Z",
+  "result": "Source-only V030B committed as d7d6cbee in crates/herder/src/search/index.rs. Added serializable search_page/SearchPage/SearchHit/SearchCoverage API. It receives the trusted ACL allowlist as full SessionAddress values and applies that set in SQL to both count and hit query before ORDER/LIMIT/OFFSET; count and pages contain authorized sessions only. Coverage is partial when caller source coverage is incomplete or any allowlisted session's transcript is marked truncated; total_hits is documented as a lower bound for partial coverage. update_session persists content_truncated with snapshot state. Isolated rusqlite harness: 10 passed (7 index + 3 address), evidence review-evidence/v030b/search-acl-coverage.log. Not integrated into crate/store schema/export, no production or consumer proof; Terra owns v4 migration/fence/export. Parent V030 remains open."
 }

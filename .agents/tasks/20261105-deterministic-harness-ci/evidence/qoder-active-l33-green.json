@@ -1,0 +1,1500 @@
+{
+  "checks": {
+    "sessions_created_through_herder": true,
+    "messages_delivered": true,
+    "complete_paged_transcripts": true,
+    "exact_search": true,
+    "project_listed": true,
+    "active_turn": true,
+    "native_bootstrap_transcripts_complete": true
+  },
+  "evidence": {
+    "api_creates": [
+      {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "created": true,
+          "sessionId": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+          "model": "fixture/fixture",
+          "harness": "qoder",
+          "name": "qoder-l12-api-0",
+          "cwd": "/fixture/project"
+        }
+      },
+      {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "created": true,
+          "sessionId": "3c13d102-8bea-410b-b251-50099791738d",
+          "model": "fixture/fixture",
+          "harness": "qoder",
+          "name": "qoder-l12-api-1",
+          "cwd": "/fixture/project"
+        }
+      }
+    ],
+    "native_bootstrap_ids": [
+      "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+      "3c13d102-8bea-410b-b251-50099791738d"
+    ],
+    "listed_ids": [
+      "3c13d102-8bea-410b-b251-50099791738d",
+      "c2068bee-7d96-4c91-93c0-2ac2d1c3c651"
+    ],
+    "deliveries": [
+      {
+        "send": {
+          "status": 202,
+          "body": {
+            "ok": true,
+            "inputId": "qoder-l12-0",
+            "pending": true,
+            "delivery": "deferred",
+            "job": {
+              "id": "job_0302ab3acc0cfe0e823881ef49aa1d233cbba41e7d149cb0f5ef44788fa1cb7b",
+              "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+              "state": "waiting",
+              "createdAt": "2026-11-06T16:52:24.714Z",
+              "updatedAt": "2026-11-06T16:52:24.718Z",
+              "ownerSessionId": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+              "resultRef": "herder://jobs/job_0302ab3acc0cfe0e823881ef49aa1d233cbba41e7d149cb0f5ef44788fa1cb7b",
+              "requestFingerprint": "f023718e9891bcc06304c2c84acb9c09f6825030fdf4067fc861bb14eb6624eb",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u0000c2068bee-7d96-4c91-93c0-2ac2d1c3c651\u0000qoder-l12-0",
+              "statusMessage": "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f \u043e\u0442\u0432\u0435\u0442\u0430"
+            }
+          }
+        },
+        "job": {
+          "status": 200,
+          "body": {
+            "job": {
+              "id": "job_0302ab3acc0cfe0e823881ef49aa1d233cbba41e7d149cb0f5ef44788fa1cb7b",
+              "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+              "state": "completed",
+              "createdAt": "2026-11-06T16:52:24.714Z",
+              "updatedAt": "2026-11-06T16:52:33.077Z",
+              "ownerSessionId": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+              "resultRef": "herder://jobs/job_0302ab3acc0cfe0e823881ef49aa1d233cbba41e7d149cb0f5ef44788fa1cb7b",
+              "requestFingerprint": "f023718e9891bcc06304c2c84acb9c09f6825030fdf4067fc861bb14eb6624eb",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u0000c2068bee-7d96-4c91-93c0-2ac2d1c3c651\u0000qoder-l12-0",
+              "progress": 1,
+              "result": {
+                "ok": true,
+                "inputId": "qoder-l12-0"
+              }
+            }
+          }
+        },
+        "observed": true,
+        "answer": true
+      },
+      {
+        "send": {
+          "status": 202,
+          "body": {
+            "ok": true,
+            "inputId": "qoder-l12-1",
+            "pending": true,
+            "delivery": "deferred",
+            "job": {
+              "id": "job_1e3222a960a907cf8b629738f4222cff7eef527b91bec4a662a61444f42c6ac3",
+              "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+              "state": "waiting",
+              "createdAt": "2026-11-06T16:52:33.445Z",
+              "updatedAt": "2026-11-06T16:52:33.474Z",
+              "ownerSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+              "resultRef": "herder://jobs/job_1e3222a960a907cf8b629738f4222cff7eef527b91bec4a662a61444f42c6ac3",
+              "requestFingerprint": "fcebcc2d3a936325c225a1527647b1ecbc8572e63655ef96ae7b78aed07013f3",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u00003c13d102-8bea-410b-b251-50099791738d\u0000qoder-l12-1",
+              "statusMessage": "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f \u043e\u0442\u0432\u0435\u0442\u0430"
+            }
+          }
+        },
+        "job": {
+          "status": 200,
+          "body": {
+            "job": {
+              "id": "job_1e3222a960a907cf8b629738f4222cff7eef527b91bec4a662a61444f42c6ac3",
+              "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+              "state": "completed",
+              "createdAt": "2026-11-06T16:52:33.445Z",
+              "updatedAt": "2026-11-06T16:52:40.226Z",
+              "ownerSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+              "resultRef": "herder://jobs/job_1e3222a960a907cf8b629738f4222cff7eef527b91bec4a662a61444f42c6ac3",
+              "requestFingerprint": "fcebcc2d3a936325c225a1527647b1ecbc8572e63655ef96ae7b78aed07013f3",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u00003c13d102-8bea-410b-b251-50099791738d\u0000qoder-l12-1",
+              "progress": 1,
+              "result": {
+                "ok": true,
+                "inputId": "qoder-l12-1"
+              }
+            }
+          }
+        },
+        "observed": true,
+        "answer": true
+      }
+    ],
+    "pages": [
+      {
+        "count": 4,
+        "complete": true,
+        "page_evidence": [
+          {
+            "cursor": null,
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6IjU1Y2NhMGI4LTEwNTctNGU5My1hZmY5LWY1MTZiYmI5YWM2NyIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 0,
+                "eventId": "93916706-2545-41db-aaf6-d02aa448eb42",
+                "nativeEventId": "93916706-2545-41db-aaf6-d02aa448eb42",
+                "kind": "message",
+                "author": {
+                  "kind": "unknown",
+                  "sourceRole": "user"
+                },
+                "timestamp": "2026-11-06T16:52:17.480Z",
+                "text": "Session initialized from Agent Herder. Wait for the user's task.",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Session initialized from Agent Herder. Wait for the user's task."
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6IjU1Y2NhMGI4LTEwNTctNGU5My1hZmY5LWY1MTZiYmI5YWM2NyIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6ImM5MmIzNTUyLWUxZDktNDY4ZS1hNzk5LTIwOGJhY2JlMDlkOCIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 1,
+                "eventId": "59f909a3-f185-42a5-9497-3053a44796bb",
+                "nativeEventId": "59f909a3-f185-42a5-9497-3053a44796bb",
+                "kind": "message",
+                "author": {
+                  "kind": "assistant",
+                  "sourceRole": "assistant"
+                },
+                "timestamp": "2026-11-06T16:52:17.672Z",
+                "text": "FIXTURE_OK",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "FIXTURE_OK",
+                      "citations": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6ImM5MmIzNTUyLWUxZDktNDY4ZS1hNzk5LTIwOGJhY2JlMDlkOCIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6IjE0YjViN2MzLWNjYzgtNDIzOS04OWZhLWQ2YjhmNDgwZDY5MiIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 2,
+                "eventId": "75bf3bd7-0395-43f5-97d9-08a82604bddb",
+                "nativeEventId": "75bf3bd7-0395-43f5-97d9-08a82604bddb",
+                "kind": "message",
+                "author": {
+                  "kind": "unknown",
+                  "sourceRole": "user"
+                },
+                "timestamp": "2026-11-06T16:52:31.708Z",
+                "text": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_0",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_0"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcImMyMDY4YmVlLTdkOTYtNGM5MS05M2MwLTJhYzJkMWMzYzY1MVwiXSIsIm5hdGl2ZUN1cnNvciI6IjE0YjViN2MzLWNjYzgtNDIzOS04OWZhLWQ2YjhmNDgwZDY5MiIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+            "nextCursor": null,
+            "complete": true,
+            "events": [
+              {
+                "sequence": 3,
+                "eventId": "21f7422b-c30c-42a7-a2d2-7390bf4090d0",
+                "nativeEventId": "21f7422b-c30c-42a7-a2d2-7390bf4090d0",
+                "kind": "message",
+                "author": {
+                  "kind": "assistant",
+                  "sourceRole": "assistant"
+                },
+                "timestamp": "2026-11-06T16:52:32.724Z",
+                "text": "FIXTURE_OK",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "FIXTURE_OK",
+                      "citations": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "containsMessage": true,
+        "containsBootstrap": true,
+        "answerAfterMessage": true,
+        "containsAnswer": true
+      },
+      {
+        "count": 4,
+        "complete": true,
+        "page_evidence": [
+          {
+            "cursor": null,
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6IjI1N2I0MGE1LTk1MDUtNDgxMy05MmNhLTVkODExNTIyM2U1NSIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 0,
+                "eventId": "44fb4898-ca91-44a0-9bd3-719e54b21be6",
+                "nativeEventId": "44fb4898-ca91-44a0-9bd3-719e54b21be6",
+                "kind": "message",
+                "author": {
+                  "kind": "unknown",
+                  "sourceRole": "user"
+                },
+                "timestamp": "2026-11-06T16:52:24.058Z",
+                "text": "Session initialized from Agent Herder. Wait for the user's task.",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Session initialized from Agent Herder. Wait for the user's task."
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6IjI1N2I0MGE1LTk1MDUtNDgxMy05MmNhLTVkODExNTIyM2U1NSIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6Ijg1MWMzYjNkLTdlY2YtNDQyZi1iNjlkLWMxMmI1ZDQxMzEyMCIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 1,
+                "eventId": "cffa405a-1bc9-4c93-a92f-2dd30fbe4898",
+                "nativeEventId": "cffa405a-1bc9-4c93-a92f-2dd30fbe4898",
+                "kind": "message",
+                "author": {
+                  "kind": "assistant",
+                  "sourceRole": "assistant"
+                },
+                "timestamp": "2026-11-06T16:52:24.242Z",
+                "text": "FIXTURE_OK",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "FIXTURE_OK",
+                      "citations": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6Ijg1MWMzYjNkLTdlY2YtNDQyZi1iNjlkLWMxMmI1ZDQxMzEyMCIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+            "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6IjdmZWEyNjNjLWE2ZjktNGIyMS1hN2Q0LTVjOTgwNTJjZjNhYSIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+            "complete": false,
+            "events": [
+              {
+                "sequence": 2,
+                "eventId": "733d0945-de7f-49cb-95f4-7f392526faf9",
+                "nativeEventId": "733d0945-de7f-49cb-95f4-7f392526faf9",
+                "kind": "message",
+                "author": {
+                  "kind": "unknown",
+                  "sourceRole": "user"
+                },
+                "timestamp": "2026-11-06T16:52:39.813Z",
+                "text": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_1",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_1"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImVmMzY0YmY2NTNjYVwiLFwicW9kZXJcIixcIjNjMTNkMTAyLThiZWEtNDEwYi1iMjUxLTUwMDk5NzkxNzM4ZFwiXSIsIm5hdGl2ZUN1cnNvciI6IjdmZWEyNjNjLWE2ZjktNGIyMS1hN2Q0LTVjOTgwNTJjZjNhYSIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+            "nextCursor": null,
+            "complete": true,
+            "events": [
+              {
+                "sequence": 3,
+                "eventId": "68332c91-431b-4a4b-940d-3c8d7b98e328",
+                "nativeEventId": "68332c91-431b-4a4b-940d-3c8d7b98e328",
+                "kind": "message",
+                "author": {
+                  "kind": "assistant",
+                  "sourceRole": "assistant"
+                },
+                "timestamp": "2026-11-06T16:52:39.911Z",
+                "text": "FIXTURE_OK",
+                "payload": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "FIXTURE_OK",
+                      "citations": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "containsMessage": true,
+        "containsBootstrap": true,
+        "answerAfterMessage": true,
+        "containsAnswer": true
+      }
+    ],
+    "search_source_status": [
+      {
+        "harness": "qoder",
+        "source": "/fixture/home/.qoder/projects",
+        "state": "complete",
+        "sessions": 2,
+        "catalogSessions": 2,
+        "textSessions": 0,
+        "missingContent": 0,
+        "chunks": 0
+      }
+    ],
+    "search_query": [
+      {
+        "query": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_0",
+        "isError": false,
+        "expected": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+        "matched": [
+          {
+            "hostId": "qoder-l12",
+            "harness": "qoder",
+            "nativeSessionId": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+            "title": "Session initialized from Agent Herder. Wait for the user's task.",
+            "cwd": "/fixture/project",
+            "revision": "66306:17993927:12616:1793983952827.9187:1793983952827.9187:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+            "chunkId": "75bf3bd7-0395-43f5-97d9-08a82604bddb",
+            "snippet": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_0",
+            "rank": -1.7968224420780214,
+            "shortId": "qc968"
+          }
+        ],
+        "response": {
+          "hostId": "qoder-l12",
+          "results": [
+            {
+              "hostId": "qoder-l12",
+              "harness": "qoder",
+              "nativeSessionId": "c2068bee-7d96-4c91-93c0-2ac2d1c3c651",
+              "title": "Session initialized from Agent Herder. Wait for the user's task.",
+              "cwd": "/fixture/project",
+              "revision": "66306:17993927:12616:1793983952827.9187:1793983952827.9187:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+              "chunkId": "75bf3bd7-0395-43f5-97d9-08a82604bddb",
+              "snippet": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_0",
+              "rank": -1.7968224420780214,
+              "shortId": "qc968"
+            }
+          ],
+          "index": {
+            "hostId": "qoder-l12",
+            "sessions": 2,
+            "chunks": 10,
+            "chunksIncludeStaging": false,
+            "indexing": false,
+            "run": {
+              "status": "complete",
+              "updatedAt": "2026-11-06T16:52:40.679Z",
+              "processed": 2,
+              "error": null,
+              "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1"
+            },
+            "sources": [
+              {
+                "harness": "chatgpt",
+                "source": "/fixture/home/.local/state/agent-herder/browser-chat-inventory",
+                "state": "partial",
+                "sessions": 0,
+                "catalogSessions": 0,
+                "textSessions": 0,
+                "missingContent": 0,
+                "chunks": 0,
+                "reason": "browser_inventory_root_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "claude",
+                "source": "/fixture/home/.claude/projects",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, scandir '/fixture/home/.claude/projects'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "codex",
+                "source": "/fixture/home/.codex",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "codex_session_sources_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.676Z"
+              },
+              {
+                "harness": "fast-agent",
+                "source": "native-persisted-reader",
+                "state": "unsupported",
+                "sessions": 0,
+                "reason": "native_persisted_history_reader_not_available",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.679Z"
+              },
+              {
+                "harness": "hermes",
+                "source": "/fixture/home/.hermes/state.db",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.hermes/state.db'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "minimax-code",
+                "source": "/fixture/home/.minimax/v2/sessions",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, scandir '/fixture/home/.minimax/v2/sessions'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "opencode",
+                "source": "/fixture/home/.local/share/opencode/opencode.db",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.local/share/opencode/opencode.db'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "qoder",
+                "source": "/fixture/home/.qoder/projects",
+                "state": "complete",
+                "sessions": 2,
+                "catalogSessions": 2,
+                "textSessions": 2,
+                "missingContent": 0,
+                "chunks": 8,
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 2,
+                "processedChunks": 8,
+                "indexedTextSessions": 2,
+                "indexedChunks": 8,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "zai",
+                "source": "/fixture/home/.local/state/agent-herder/browser-chat-inventory",
+                "state": "partial",
+                "sessions": 0,
+                "catalogSessions": 0,
+                "textSessions": 0,
+                "missingContent": 0,
+                "chunks": 0,
+                "reason": "browser_inventory_root_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "zcode",
+                "source": "/fixture/home/.zcode/cli/db/db.sqlite",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.zcode/cli/db/db.sqlite'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              }
+            ]
+          },
+          "partial": false,
+          "elapsedMs": 2.82
+        }
+      },
+      {
+        "query": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_1",
+        "isError": false,
+        "expected": "3c13d102-8bea-410b-b251-50099791738d",
+        "matched": [
+          {
+            "hostId": "qoder-l12",
+            "harness": "qoder",
+            "nativeSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+            "title": "Session initialized from Agent Herder. Wait for the user's task.",
+            "cwd": "/fixture/project",
+            "revision": "66306:17993944:12616:1793983960013.7622:1793983960013.7622:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+            "chunkId": "733d0945-de7f-49cb-95f4-7f392526faf9",
+            "snippet": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_1",
+            "rank": -1.7968224420780214,
+            "shortId": "qadc5"
+          }
+        ],
+        "response": {
+          "hostId": "qoder-l12",
+          "results": [
+            {
+              "hostId": "qoder-l12",
+              "harness": "qoder",
+              "nativeSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+              "title": "Session initialized from Agent Herder. Wait for the user's task.",
+              "cwd": "/fixture/project",
+              "revision": "66306:17993944:12616:1793983960013.7622:1793983960013.7622:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+              "chunkId": "733d0945-de7f-49cb-95f4-7f392526faf9",
+              "snippet": "QODER_L12_3506733ed6024137bdea0c8fb070b629_SEND_1",
+              "rank": -1.7968224420780214,
+              "shortId": "qadc5"
+            }
+          ],
+          "index": {
+            "hostId": "qoder-l12",
+            "sessions": 2,
+            "chunks": 10,
+            "chunksIncludeStaging": false,
+            "indexing": false,
+            "run": {
+              "status": "complete",
+              "updatedAt": "2026-11-06T16:52:40.679Z",
+              "processed": 2,
+              "error": null,
+              "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1"
+            },
+            "sources": [
+              {
+                "harness": "chatgpt",
+                "source": "/fixture/home/.local/state/agent-herder/browser-chat-inventory",
+                "state": "partial",
+                "sessions": 0,
+                "catalogSessions": 0,
+                "textSessions": 0,
+                "missingContent": 0,
+                "chunks": 0,
+                "reason": "browser_inventory_root_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "claude",
+                "source": "/fixture/home/.claude/projects",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, scandir '/fixture/home/.claude/projects'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "codex",
+                "source": "/fixture/home/.codex",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "codex_session_sources_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.676Z"
+              },
+              {
+                "harness": "fast-agent",
+                "source": "native-persisted-reader",
+                "state": "unsupported",
+                "sessions": 0,
+                "reason": "native_persisted_history_reader_not_available",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.679Z"
+              },
+              {
+                "harness": "hermes",
+                "source": "/fixture/home/.hermes/state.db",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.hermes/state.db'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "minimax-code",
+                "source": "/fixture/home/.minimax/v2/sessions",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, scandir '/fixture/home/.minimax/v2/sessions'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "opencode",
+                "source": "/fixture/home/.local/share/opencode/opencode.db",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.local/share/opencode/opencode.db'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "qoder",
+                "source": "/fixture/home/.qoder/projects",
+                "state": "complete",
+                "sessions": 2,
+                "catalogSessions": 2,
+                "textSessions": 2,
+                "missingContent": 0,
+                "chunks": 8,
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 2,
+                "processedChunks": 8,
+                "indexedTextSessions": 2,
+                "indexedChunks": 8,
+                "observedAt": "2026-11-06T16:52:40.677Z"
+              },
+              {
+                "harness": "zai",
+                "source": "/fixture/home/.local/state/agent-herder/browser-chat-inventory",
+                "state": "partial",
+                "sessions": 0,
+                "catalogSessions": 0,
+                "textSessions": 0,
+                "missingContent": 0,
+                "chunks": 0,
+                "reason": "browser_inventory_root_missing",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              },
+              {
+                "harness": "zcode",
+                "source": "/fixture/home/.zcode/cli/db/db.sqlite",
+                "state": "unavailable",
+                "sessions": 0,
+                "reason": "ENOENT: no such file or directory, stat '/fixture/home/.zcode/cli/db/db.sqlite'",
+                "scanId": "062d43b2-88b0-4e9c-8ca7-09632b83b7c1",
+                "processedTextSessions": 0,
+                "processedChunks": 0,
+                "indexedTextSessions": 0,
+                "indexedChunks": 0,
+                "observedAt": "2026-11-06T16:52:40.678Z"
+              }
+            ]
+          },
+          "partial": false,
+          "elapsedMs": 0.88
+        }
+      }
+    ],
+    "searchCoverage": {
+      "partial": false,
+      "state": "complete"
+    },
+    "active": {
+      "send": {
+        "status": 202,
+        "body": {
+          "ok": true,
+          "inputId": "qoder-l12-active",
+          "pending": true,
+          "delivery": "deferred",
+          "job": {
+            "id": "job_651c44460465ee78d9d1dcdd9809f8cb7a9b67482994e844eab2edce95edcac1",
+            "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+            "state": "waiting",
+            "createdAt": "2026-11-06T16:52:41.031Z",
+            "updatedAt": "2026-11-06T16:52:41.032Z",
+            "ownerSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+            "resultRef": "herder://jobs/job_651c44460465ee78d9d1dcdd9809f8cb7a9b67482994e844eab2edce95edcac1",
+            "requestFingerprint": "490e04e50dc76a806311e1b95792fbd55a415133189c4306c703167738487ee3",
+            "durableOnce": true,
+            "onceKey": "user-message\u0000qoder\u00003c13d102-8bea-410b-b251-50099791738d\u0000qoder-l12-active",
+            "statusMessage": "\u041e\u0436\u0438\u0434\u0430\u0435\u0442 \u043e\u043a\u043e\u043d\u0447\u0430\u043d\u0438\u044f \u043e\u0442\u0432\u0435\u0442\u0430"
+          }
+        }
+      },
+      "model_request_held": true,
+      "runtimeHostId": "ef364bf653ca",
+      "matched": [
+        {
+          "id": "3c13d102-8bea-410b-b251-50099791738d",
+          "harness": "qoder",
+          "title": "Session initialized from Agent Herder. Wait for the user's task.",
+          "runtimeHostId": "ef364bf653ca",
+          "status": "running",
+          "activity": {
+            "state": "active",
+            "observedAt": "2026-11-06T16:52:47.015Z",
+            "evidence": "native-adapter-status",
+            "expiresAt": "2026-11-06T16:53:17.015Z"
+          },
+          "workspaces": []
+        }
+      ],
+      "activeStatus": 200,
+      "activeHosts": [
+        {
+          "hostId": "ef364bf653ca",
+          "ownerPid": 9,
+          "state": "available",
+          "observedAt": "2026-11-06T16:52:47.015Z",
+          "sources": [
+            {
+              "harness": "qoder",
+              "exhaustive": false,
+              "source": "native-adapter",
+              "reason": "native_enumeration_coverage_unknown"
+            }
+          ]
+        }
+      ],
+      "fleetStatus": 200,
+      "fleetHosts": [
+        {
+          "hostId": "roomhacker-server-100",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "direct_peer_unavailable"
+        },
+        {
+          "hostId": "server-44",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "direct_peer_unavailable"
+        },
+        {
+          "hostId": "roomhacker-server-88",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "direct_peer_unavailable"
+        },
+        {
+          "hostId": "mac-mini-2012.lan",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "direct_peer_unavailable"
+        },
+        {
+          "hostId": "MacBook-Pro-User.local",
+          "state": "unavailable",
+          "observedAt": null,
+          "reason": "direct_peer_unavailable"
+        }
+      ],
+      "job": {
+        "status": 200,
+        "body": {
+          "job": {
+            "id": "job_651c44460465ee78d9d1dcdd9809f8cb7a9b67482994e844eab2edce95edcac1",
+            "kind": "\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+            "state": "completed",
+            "createdAt": "2026-11-06T16:52:41.031Z",
+            "updatedAt": "2026-11-06T16:52:48.489Z",
+            "ownerSessionId": "3c13d102-8bea-410b-b251-50099791738d",
+            "resultRef": "herder://jobs/job_651c44460465ee78d9d1dcdd9809f8cb7a9b67482994e844eab2edce95edcac1",
+            "requestFingerprint": "490e04e50dc76a806311e1b95792fbd55a415133189c4306c703167738487ee3",
+            "durableOnce": true,
+            "onceKey": "user-message\u0000qoder\u00003c13d102-8bea-410b-b251-50099791738d\u0000qoder-l12-active",
+            "progress": 1,
+            "result": {
+              "ok": true,
+              "inputId": "qoder-l12-active"
+            }
+          }
+        }
+      }
+    },
+    "model_request_count": 5
+  },
+  "searchCoverage": {
+    "partial": false,
+    "state": "complete"
+  },
+  "qoder_version": "1.1.84",
+  "bundle_sha256": "4269479aa05c991fb8bd365bc0e0238bf39faf501036d60e57e6e7e2260bc163",
+  "candidate_sha256": "d94b09a86b88264406b2cc65d9b4026bfdf2f64b636b93fddeab952451d73156",
+  "candidate_sha256_after": "d94b09a86b88264406b2cc65d9b4026bfdf2f64b636b93fddeab952451d73156",
+  "network": "docker --network none; fixture hosts mapped to 127.0.0.1",
+  "container_exit": 0,
+  "model_request_count": 5,
+  "requests": [
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v2/config/getDataPolicy"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "POST",
+      "host": "localhost",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/service/business/finish"
+    },
+    {
+      "method": "POST",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v1/tracking"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v2/config/getDataPolicy"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "POST",
+      "host": "localhost",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "POST",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/service/business/finish"
+    },
+    {
+      "method": "POST",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v1/tracking"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v2/config/getDataPolicy"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "POST",
+      "host": "localhost",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/service/business/finish"
+    },
+    {
+      "method": "POST",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v1/tracking"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v2/config/getDataPolicy"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "POST",
+      "host": "localhost",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/service/business/finish"
+    },
+    {
+      "method": "POST",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v1/tracking"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_hold"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v3/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/userinfo"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "POST",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/resolve"
+    },
+    {
+      "method": "GET",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/model/list"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v2/config/getDataPolicy"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v5/service/region/endpoints"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v3/user/status"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "openapi.qoder.sh",
+      "path": "/api/v1/qcs/config/stream"
+    },
+    {
+      "method": "POST",
+      "host": "localhost",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_release"
+    },
+    {
+      "method": "POST",
+      "host": "api2.qoder.sh",
+      "path": "/algo/api/v2/service/business/finish"
+    },
+    {
+      "method": "POST",
+      "host": "center.qoder.sh",
+      "path": "/algo/api/v1/tracking"
+    },
+    {
+      "method": "GET",
+      "host": "localhost",
+      "path": "/_stats"
+    }
+  ],
+  "status": "PASS",
+  "validation_errors": []
+}

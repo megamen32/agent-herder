@@ -1,0 +1,86 @@
+{
+  "id": "V025TASKRECON",
+  "parent": "S01",
+  "kind": "task",
+  "label": "Подтвердить MCP Task по сохранённой native receipt",
+  "description": "Подключить read-only reconcile точной receipt к Task и сохранить terminal projection под существующим fence; без повторного submit.",
+  "acceptance": "Matching receipt завершает Task через application path и сохраняется после reopen; mismatch не подтверждается; повтор delivery вызывает submit ровно один раз. Ручной SQL confirmation не является доказательством.",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "depends_on": [
+    "V025GUARD1"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Исходный B1a5bccfdace749a4ae22 source gap закрыт; live proof не объявлен. Terra получила verdict 11:18UTC и поручение выполнять готовый isolated consumer.",
+  "created_at": "2026-11-07T13:43:37+03:00",
+  "updated_at": "2026-11-07T14:19:42+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:43:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025TASKRECON",
+        "parent": "S01",
+        "kind": "task",
+        "label": "Подтвердить MCP Task по сохранённой native receipt",
+        "description": "Подключить read-only reconcile точной receipt к Task и сохранить terminal projection под существующим fence; без повторного submit.",
+        "acceptance": "Matching receipt завершает Task через application path и сохраняется после reopen; mismatch не подтверждается; повтор delivery вызывает submit ровно один раз. Ручной SQL confirmation не является доказательством.",
+        "status": "queued",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "depends_on": [
+          "V025GUARD1"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Source gap review 12f0d3a9+6c746784; поручение уже доставлено Tesla, текущий receipt recovery не дублировать. Работать поверх его актуального кандидата, source/fake path отдельно от native consumer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:51:04+03:00",
+      "note": "Статус соответствует наблюдаемому коду, не только доставке поручения.",
+      "changes": {
+        "status": "running",
+        "note": "Tesla active, уже меняет fixture manual SQL на реальный reconciliation application path. Canonical bug B1a5bccfdace749a4ae22, дополнительная запись автора относится к той же причине. Приёмка matching/mismatch/reopen и zero re-submit остаётся."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:14:39+03:00",
+      "note": "Immutable candidate для review и interface wiring; без native send и без нового store.",
+      "changes": {
+        "note": "Кандидат dfe5f79a поверх ddc17d40/ccfd813b: ScopedReceiptReconciler::new(Arc<ScopedAuthority>, Arc<R: NativeSessionReader+Send+Sync>) подключается ScopedTaskServer::with_reconciler; direct application использует .with_policy и тот же ScopedTaskServer::with_create_policy. Точный receipt проверяется без gate/DB transaction на native read, затем CAS confirmation в том же ledger; mismatch остаётся working, send не повторяется. Read grant разрешается после освобождения gate и повторно проверяется на direct task/get/reopen/revoke. Все fixture SQL UPDATE confirmed убраны. Offline scoped 33 PASS/1 ignored, launcher 10, schema/gate 4, target 1. B1a5bccfdace749a4ae22 fixed с RED/GREEN; Bdcdc08... duplicate. Нужен независимый review и отдельный настоящий bounded native consumer proof."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:19:13+03:00",
+      "note": "Принята конкретная immutable delta, повторного полного review нет.",
+      "changes": {
+        "status": "done",
+        "result": "dfe5f79a independent Nietzsche SUPPORTED source+2 immutable targeted tests PASS: exact receipt mismatch→working/match→terminal/reopen, gate/transaction released during read, submit1; direct Task current exact policy+reopen+revoke denied, reader1. Current grants are resolved before direct projection/reconciliation; aggregate linkage reviewed source. Автор48PASS+1ignored; independent aggregate test не засчитан из-за concurrent WIP. Реальный native SDK consumer у Terra V025PUBLIC отдельно.",
+        "note": "Исходный B1a5bccfdace749a4ae22 source gap закрыт; live proof не объявлен. Terra получила verdict 11:18UTC и поручение выполнять готовый isolated consumer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:19:42+03:00",
+      "note": "Source scope подтверждён независимым review; public native consumer остаётся отдельной приёмкой.",
+      "changes": {
+        "result": "Source dfe5f79a независимо SUPPORTED: exact receipt read-only reconciliation без gate/SQLite transaction на network wait, fenced подтверждение, mismatch остаётся unknown/working, повтор без submit; current exact Read policy для direct task projection/tasks/get/reopen/revoke. RED/GREEN B1a5bccfdace749a4ae22, Bdcdc08ec55a54deab3fc duplicate. Проверка 33 scoped PASS/1 ignored; native consumer отдельно выполняет Terra."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Source dfe5f79a независимо SUPPORTED: exact receipt read-only reconciliation без gate/SQLite transaction на network wait, fenced подтверждение, mismatch остаётся unknown/working, повтор без submit; current exact Read policy для direct task projection/tasks/get/reopen/revoke. RED/GREEN B1a5bccfdace749a4ae22, Bdcdc08ec55a54deab3fc duplicate. Проверка 33 scoped PASS/1 ignored; native consumer отдельно выполняет Terra."
+}

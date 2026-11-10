@@ -1,0 +1,99 @@
+{
+  "label": "macOS: подготовить sandbox и проверить старый runtime",
+  "description": "Подготовить sandbox и воспроизвести ограничения старого runtime; единый candidate и новый runtime в L31.",
+  "acceptance": "Сценарий реального клиента и границы sandbox проверены, неполный transcript явно отражён.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Goodall",
+  "id": "L24",
+  "created_at": "2026-11-06T18:13:51+03:00",
+  "updated_at": "2026-11-06T19:13:02+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T18:13:51+03:00",
+      "note": "Следующий этап L18: отдельный тестовый Mac PID получил uv_os_get_passwd ENOENT при строгом профиле; общий PASS не заявляется.",
+      "changes": {
+        "label": "macOS: запустить Herder в проверенном sandbox",
+        "description": "Устранить сбой os.userInfo при deny mach-lookup и доказать изоляцию точного sandbox профиля без доступа к credentials.",
+        "acceptance": "Изолированный Mac-стенд с лжемоделью запускает настоящий установленный артефакт; Mach canary и credential/network границы проверены под тем же профилем; рабочий PID сохранён.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Goodall"
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:14:16+03:00",
+      "note": "Прогноз срока не установлен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Срок выяснения зависимости системного сервиса неизвестен."
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:18:25+03:00",
+      "note": "TDD os.userInfo: RED ERR_SYSTEM_ERROR при deny mach, GREEN только синтетическая учётная запись через test-only DYLD interpose, включаемый собственным launcher внутри sandbox; сеть и Mach запрещены. Точный установленный dist/index.js запущен отдельным PID 58110 и ответил на MCP initialize; fixture model ещё не включена, изоляция расширенного профиля и полный артефакт не подтверждены, общий FAIL. Квитанции scripts/native-mac-ci-passwd-receipt.json и scripts/native-mac-ci-installed-shim-receipt.json. Далее повторить Mach/credential/network canary под точным профилем процесса и провести fixture через Herder, без общих src/web/native-ci и настоящих credentials.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:26:00+03:00",
+      "note": "Под точным расширенным профилем установленного Herder позитивный собственный Mach lookup=0, sandbox lookup=1100, тестовый внешний файл и IPv4 отклонены EPERM; отдельный PID 73952 ответил MCP initialize и создал синтетическую ACP-сессию acp:codex:synthetic-ci-session. Отправка получила определённый отказ session not found после исправления fixture list (RED/GREEN); установленный ACP adapter по умолчанию назначает harness claude, хотя зарегистрирован под codex, что требует дальнейшей проверки у владельца адаптера. Реального ответа лжемодели и полного credential proof нет; overall FAIL. scripts/native-mac-ci-conversation-fixed-receipt.json, scripts/native-mac-ci-passwd-receipt.json. Следующий тест: согласованный тестовый harness со стабильной идентичностью без обхода guard, проверить полный набор network/credential canary на точном профиле и завершить fixture turn.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:34:23+03:00",
+      "note": "Установленный ACP использован под совпадающими profile=claude/harness=claude через штатный web create: отдельный PID 93692 и его loopback listener подтверждены; один create вернул acp:claude:synthetic-ci-session, message HTTP 200 ok, карточка того же ID содержит HERDER_MAC_FIXTURE_OK. Собственный Mach positive=0, sandbox lookup=1100, внешний синтетический файл и IPv4 EPERM под точным профилем web PID. Диагноз прошлой not found подтверждён по source wrapper: профиль codex давал адаптеру фактический harness claude, и wrapper повторно искал по отсутствующему ключу claude. Квитанции scripts/native-mac-ci-web-receipt.json и native-mac-ci-web-validated-receipt.json, классификация fixture=true без повторной отправки, credential_isolation_proven=false, overall_pass=false. Общая изоляция credentials и полный артефакт ещё не подтверждены; следующий шаг — расширить отрицательные пробы IPv6, Unix, запись и Mach под этим профилем, подтвердить полную идентичность установленного release.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:53:27+03:00",
+      "note": "Реальный установленный Codex 0.160.0 SHA 112fae7a5a1223e673c8a1791d32338f37df8b527ff1159bb8adac6c4dbf1b4b: отдельный тестовый Herder PID 26166, profile разрешает исходящий доступ только к локальному deterministic fixture; Mach positive=0/deny=1100, синтетический файл read/write, IPv4, IPv6, Unix, другой loopback EPERM, fixture доступен. create определённо не принят codex_quota_guard quota_unknown; guard не ослаблен, fixture requests=0. Реальный OpenCode arm64 при таком sandbox SIGTRAP Bun с и без DYLD; Claude CLI не инициализировался, harness not configured. Исправлено наследование test DYLD в дочерние процессы: RED true → GREEN false, Claude повторно отказал до отправки. scripts/native-mac-ci-real-receipt-1.json, native-mac-ci-opencode-receipt-2.json, native-mac-ci-claude-receipt-2.json. Две реальные сессии/ответ/transcript и полный fingerprint release не доказаны; overall FAIL. Следующий шаг — диагностировать причины запуска реальных CLI под sandbox и предоставить guard достоверное разрешённое свидетельство квоты без рабочих аккаунтов или выбрать работоспособный test CLI, не ослабляя guard.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:58:00+03:00",
+      "note": "Реальный установленный fast-agent-mcp v0.10.43 через отдельный установленный Herder PID 44502: две сессии fast-agent:2611061557-67vU7Y и fast-agent:2611061557-HBf7NB созданы и получили отправку; readback каждой lastMessage=HERDER_TEST_MODEL_OK, тестовый локальный fixture подтвердил 2 POST /v1/chat/completions. Точный профиль: свой Mach positive=0/deny=1100, чужой тестовый файл read/write и IPv4/IPv6/Unix/другой loopback EPERM, fixture доступен; synthetic HOME/config, без рабочих credentials. Transcript endpoint обоих точных ID ответил 422 unsupported native JSONL harness: полный transcript не доказан и принадлежит параллельному владельцу общего transcript. scripts/native-mac-ci-fast-receipt-4.json. Дерево и зависимости установленного release не fingerprintированы, overall FAIL. Codex guard quota_unknown остался включён. Предыдущий ENOENT test home исправлен RED/GREEN; Python MIME dependency адресно разрешена только на системный публичный mime.types и все negative canary повторены под тем же профилем.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:13:02+03:00",
+      "note": "",
+      "changes": {
+        "label": "macOS: подготовить sandbox и проверить старый runtime",
+        "description": "Подготовить sandbox и воспроизвести ограничения старого runtime; единый candidate и новый runtime в L31.",
+        "acceptance": "Сценарий реального клиента и границы sandbox проверены, неполный transcript явно отражён.",
+        "status": "done",
+        "result": "Реальный Fast Agent через отдельный старый Herder создал две сессии и получил локальные ответы; transcript вернул 422. Сетевой, файловый и Mach sandbox проверен, кандидат и installed identity остаются L31."
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Срок выяснения зависимости системного сервиса неизвестен.",
+  "result": "Реальный Fast Agent через отдельный старый Herder создал две сессии и получил локальные ответы; transcript вернул 422. Сетевой, файловый и Mach sandbox проверен, кандидат и installed identity остаются L31."
+}

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T01:45:28+00:00",
+  "details": "Изолированный реальный Codex/OpenCode probe установленного server-44 d2df618: Codex app-server использует CODEX_HOME в тестовой изоляции, Herder transcript отвечает HTTP 422 native adapter has no supported complete JSONL export. Текущий main reader при отсутствии CODEX_DATA_DIR использует ~/.codex вместо CODEX_HOME. Точная правка уже присутствует в чужом незафиксированном CI worktree src/adapters/codex-app-server.ts; не редактировать чужой WIP. Доставка была тестовой в изолированном окружении; сохранён точный receipt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T01:45:28+00:00",
+      "changes": {
+        "details": "Изолированный реальный Codex/OpenCode probe установленного server-44 d2df618: Codex app-server использует CODEX_HOME в тестовой изоляции, Herder transcript отвечает HTTP 422 native adapter has no supported complete JSONL export. Текущий main reader при отсутствии CODEX_DATA_DIR использует ~/.codex вместо CODEX_HOME. Точная правка уже присутствует в чужом незафиксированном CI worktree src/adapters/codex-app-server.ts; не редактировать чужой WIP. Доставка была тестовой в изолированном окружении; сохранён точный receipt.",
+        "source": "server-44 /tmp/herder-minci-01a1ac52/diagnostic-2.err and diagnostic-2.json",
+        "status": "open",
+        "title": "Codex: полный транскрипт недоступен при отдельном CODEX_HOME"
+      }
+    }
+  ],
+  "id": "Bd788c2bc575a41e3b48b",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "server-44 /tmp/herder-minci-01a1ac52/diagnostic-2.err and diagnostic-2.json",
+  "status": "open",
+  "title": "Codex: полный транскрипт недоступен при отдельном CODEX_HOME",
+  "updated_at": "2026-11-07T01:45:28+00:00"
+}

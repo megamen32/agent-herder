@@ -12,8 +12,8 @@
   ],
   "parent": "S09",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -24,7 +24,7 @@
   "created_at": "2026-11-07T03:53:34+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:34+03:00",
+  "updated_at": "2026-11-07T11:32:16+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:34+03:00",
@@ -55,6 +55,36 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:26:03+03:00",
+      "note": "Astra назначила освободившемуся resources worker независимый consumer route LHC; read-only исследование узкого вызова, результат integrations/consumers/lhc/target.json. Не менять LHC runtime/планировщик.",
+      "changes": {
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:27:07+03:00",
+      "note": "Trace installed LHC 1.15.1 plan/task consumer invocation; only write integrations/consumers/lhc/target.json.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:32:16+03:00",
+      "note": "V110A выполнен: маршрут, владельца, версии и unit test route зафиксировал в target.json; runtime и apply не менял.",
+      "changes": {
+        "status": "done",
+        "result": "Записан и закоммичен в Agent Herder `integrations/consumers/lhc/target.json` (commit 4a10fe9e). Установленный Last Human Commit 1.15.1 вызывает `lhc_plan_ui.herder_panel(tasks)` из `lhc_plan_publish.publish(...)`; исходный владелец — megamen32, репозиторий megamen32/LastHumanCommit, наблюдавшийся checkout commit 6198a0fc6583d36fd2add22360ccb32c2cc37c88. SHA-256 `lhc_plan_ui.py` и `lhc_plan_publish.py` совпадает между installed 1.15.1 и source checkout; метаданные source plugin показывают 1.7.20. Точный тестовый маршрут записан: `pytest -q tests/test_plan_publish.py -k herder_panel`; команда не запускалась, это маршрут теста, а не доказательство live consumer. JSON валиден и перечисленные source/test пути существуют. Изменён только target.json; runtime LHC и settings apply не тронуты."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Записан и закоммичен в Agent Herder `integrations/consumers/lhc/target.json` (commit 4a10fe9e). Установленный Last Human Commit 1.15.1 вызывает `lhc_plan_ui.herder_panel(tasks)` из `lhc_plan_publish.publish(...)`; исходный владелец — megamen32, репозиторий megamen32/LastHumanCommit, наблюдавшийся checkout commit 6198a0fc6583d36fd2add22360ccb32c2cc37c88. SHA-256 `lhc_plan_ui.py` и `lhc_plan_publish.py` совпадает между installed 1.15.1 и source checkout; метаданные source plugin показывают 1.7.20. Точный тестовый маршрут записан: `pytest -q tests/test_plan_publish.py -k herder_panel`; команда не запускалась, это маршрут теста, а не доказательство live consumer. JSON валиден и перечисленные source/test пути существуют. Изменён только target.json; runtime LHC и settings apply не тронуты."
 }

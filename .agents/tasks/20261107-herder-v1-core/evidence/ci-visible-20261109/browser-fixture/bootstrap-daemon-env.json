@@ -1,0 +1,12 @@
+{
+  "observed_at": "2026-11-09T00:41:31.995579+00:00",
+  "pid": 3197883,
+  "start_ticks": "80048112",
+  "keys": {
+    "AGENT_BROWSER_PROFILE": "/home/roomhacker/.local/state/agent-herder/ci-ui-browser-20261109",
+    "AGENT_BROWSER_EXTENSIONS": "/home/roomhacker/.local/share/vibebrowser/extension-20261031",
+    "AGENT_BROWSER_SESSION": "herderci1109",
+    "AGENT_BROWSER_NAMESPACE": "herderci1109",
+    "AGENT_BROWSER_IDLE_TIMEOUT_MS": "1800000"
+  }
+}

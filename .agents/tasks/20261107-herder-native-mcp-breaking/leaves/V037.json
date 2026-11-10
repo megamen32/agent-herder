@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 2,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V037 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V037 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V037",
   "created_at": "2026-11-07T01:52:24+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:00+03:00",
+  "updated_at": "2026-11-07T05:47:09+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:24+03:00",
@@ -73,9 +73,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:44:21+03:00",
+      "note": "V037A/B доступны на свежем origin/main; добавляю реальную конкурентную проверку claims.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:47:09+03:00",
+      "note": "V037A/B и concurrency acceptance завершены; код на свежей origin/main в detached commits, ожидает central integration.",
+      "changes": {
+        "status": "done",
+        "result": "В V037A/B добавлены claim/renew/release с UUID claim_id, стабильным guard.lock, атомарным owner.json и CAS по владельцу. В V037 добавлен конкурентный тест: два параллельных callers; наблюдаем ровно один Acquired и один Busy; release чужого ID даёт PermissionDenied, guard inode сохраняется, state.json transaction отсутствует. На свежем origin/main после V037A: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 7 passed, 0 failed; git diff --check чистый. Scoped commits detached: V037B 1325276061f3ef0500663ec6871133223a87cb48, V037 concurrency 5f2e18f0fd2bcd7bfcf564574ab9dd924b2748d5. Не доказаны MCP и offline CLI consumer integration; следующий результат требует R002/E003."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
   ],
   "parent": "S02",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "В V037A/B добавлены claim/renew/release с UUID claim_id, стабильным guard.lock, атомарным owner.json и CAS по владельцу. В V037 добавлен конкурентный тест: два параллельных callers; наблюдаем ровно один Acquired и один Busy; release чужого ID даёт PermissionDenied, guard inode сохраняется, state.json transaction отсутствует. На свежем origin/main после V037A: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 7 passed, 0 failed; git diff --check чистый. Scoped commits detached: V037B 1325276061f3ef0500663ec6871133223a87cb48, V037 concurrency 5f2e18f0fd2bcd7bfcf564574ab9dd924b2748d5. Не доказаны MCP и offline CLI consumer integration; следующий результат требует R002/E003."
 }

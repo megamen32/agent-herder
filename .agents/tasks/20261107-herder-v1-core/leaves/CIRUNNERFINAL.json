@@ -1,0 +1,80 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Install isolated runner and observe real hosted workflow",
+  "description": "Bounded infrastructure slice from CIINSTALLFINAL. Reviewed packet53cfe57f, existing protected credentials, separate runner and browser only.",
+  "acceptance": "Dedicated runner online, protected installer receipt verified, actual GitHub workflow executed with truthful installed result and no model effects when preflight is blocked.",
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 15
+  },
+  "id": "CIRUNNERFINAL",
+  "created_at": "2026-11-09T05:43:22+03:00",
+  "updated_at": "2026-11-09T06:19:30+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T05:43:22+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Install isolated runner and observe real hosted workflow",
+        "description": "Bounded infrastructure slice from CIINSTALLFINAL. Reviewed packet53cfe57f, existing protected credentials, separate runner and browser only.",
+        "acceptance": "Dedicated runner online, protected installer receipt verified, actual GitHub workflow executed with truthful installed result and no model effects when preflight is blocked.",
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 15
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:01:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "Original single provision taskc02d451f20b071d183f6537735cb7ed2 confirmed FAILED before registration. Python3.10.12 data_filter anchored valid nested symlink at archive root. Exact uid988 partial is retained, GitHub registration absent. Independent safe-filter/resume review passed11tests; actual archive also found unit requires bin/runsvc.sh. Remaining concrete commit/continuation/CI observation is explicit CIRUNNERFIXFINAL. Hosted39 Linux+macOS PASS, installedjob42552768229 queued."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:19:30+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Original failed installer receipt retained; bounded repair/continuation completed under CIRUNNERFIXFINAL. Infrastructure PASS: runner21 herder-installed-server100 online/idle, service enabled active/running,6artifact/helper/fixture pins exact, credentials0600. One reviewed continuation CONFIRMED exit0; no duplicate registration. Final sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a, hosted Linux/macOS PASS. Actual installedjob128956411915/run42554202875 FAIL native_profiles_missing(chatgpt,zai,zcode), NOT_SUBMITTED, NOT_CREATED, exit2, cleanup_verified true. Canonical resulte569804b5d1bcbfc8d2da25affe2f172b24315b0926243f61f0f80d57422f059 and independent audite32d81533df9087f422dbb5fdddc776f8eb1b820ad4423fe51ac81b84ee82346. Full five-lane remains CIINSTALLFINAL blocked."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Original failed installer receipt retained; bounded repair/continuation completed under CIRUNNERFIXFINAL. Infrastructure PASS: runner21 herder-installed-server100 online/idle, service enabled active/running,6artifact/helper/fixture pins exact, credentials0600. One reviewed continuation CONFIRMED exit0; no duplicate registration. Final sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a, hosted Linux/macOS PASS. Actual installedjob128956411915/run42554202875 FAIL native_profiles_missing(chatgpt,zai,zcode), NOT_SUBMITTED, NOT_CREATED, exit2, cleanup_verified true. Canonical resulte569804b5d1bcbfc8d2da25affe2f172b24315b0926243f61f0f80d57422f059 and independent audite32d81533df9087f422dbb5fdddc776f8eb1b820ad4423fe51ac81b84ee82346. Full five-lane remains CIINSTALLFINAL blocked."
+}

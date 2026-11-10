@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-fast-red
+
+
+ Test Files  5 passed (5)
+      Tests  11 passed (11)
+   Start at  23:48:39
+   Duration  541ms (transform 935ms, setup 219ms, import 986ms, tests 78ms, environment 1ms)
+

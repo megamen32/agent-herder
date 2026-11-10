@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T15:52:15+00:00",
+  "details": "Source review main c65715df: ahap-browser-runner assertAccount проверяет только сохранённый getAccountScope до listSessions/getSessionMessages. ChatGptMacCdpDriver listUnlocked меняет accountScope по результату provider и возвращает chats без проверки expectedAccountScope до возврата; getMessages делает provider read без повторной проверки pinned account. Если аккаунт изменился между init и read, текущий запрос может вернуть данные нового аккаунта прежде чем следующий assert обнаружит mismatch. No browser use performed. Требуется проверка актуального pinned scope на read и до возврата с regression A→B; не считать browser scope acceptance доказанной.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T15:52:15+00:00",
+      "changes": {
+        "details": "Source review main c65715df: ahap-browser-runner assertAccount проверяет только сохранённый getAccountScope до listSessions/getSessionMessages. ChatGptMacCdpDriver listUnlocked меняет accountScope по результату provider и возвращает chats без проверки expectedAccountScope до возврата; getMessages делает provider read без повторной проверки pinned account. Если аккаунт изменился между init и read, текущий запрос может вернуть данные нового аккаунта прежде чем следующий assert обнаружит mismatch. No browser use performed. Требуется проверка актуального pinned scope на read и до возврата с regression A→B; не считать browser scope acceptance доказанной.",
+        "source": "src/ahap-browser-runner.ts:39-43,91-104; src/adapters/chatgpt-mac-cdp-driver.ts:529-534,662-666,789",
+        "status": "open",
+        "title": "ChatGPT AHAP read может раскрыть данные после смены account scope"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T16:48:50+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QBROWSERSCOPE-green-20261107.txt",
+            "red_proof_path": "evidence/QBROWSERSCOPE-red-20261107.txt",
+            "red_result": "2 failed",
+            "red_sha256": "f44935cea9cf7af80568fb299d0b99508bf7dacccfc269c0c6b5ce89fae0694a",
+            "result": "40 tests passed",
+            "sha256": "f721e319428d0259c2a8065d036a8766cd26d251a7a6362ec5089c871c723dfb",
+            "test_command": "./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/chatgpt-mac-cdp-driver.test.ts tests/ahap-browser-runner.test.ts"
+          },
+          "kind": "fixed",
+          "reason": "Pinned account scope is verified against the exact configured page before and after AHAP cached reads; provider list/read results fail closed on mismatch before return."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B720e95cbcdcd484ab0f8",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QBROWSERSCOPE-green-20261107.txt",
+      "red_proof_path": "evidence/QBROWSERSCOPE-red-20261107.txt",
+      "red_result": "2 failed",
+      "red_sha256": "f44935cea9cf7af80568fb299d0b99508bf7dacccfc269c0c6b5ce89fae0694a",
+      "result": "40 tests passed",
+      "sha256": "f721e319428d0259c2a8065d036a8766cd26d251a7a6362ec5089c871c723dfb",
+      "test_command": "./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/chatgpt-mac-cdp-driver.test.ts tests/ahap-browser-runner.test.ts"
+    },
+    "kind": "fixed",
+    "reason": "Pinned account scope is verified against the exact configured page before and after AHAP cached reads; provider list/read results fail closed on mismatch before return."
+  },
+  "source": "src/ahap-browser-runner.ts:39-43,91-104; src/adapters/chatgpt-mac-cdp-driver.ts:529-534,662-666,789",
+  "status": "fixed",
+  "title": "ChatGPT AHAP read может раскрыть данные после смены account scope",
+  "updated_at": "2026-11-07T16:48:50+00:00"
+}

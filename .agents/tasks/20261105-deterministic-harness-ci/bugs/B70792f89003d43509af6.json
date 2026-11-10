@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-06T17:15:38+00:00",
+  "details": "Изолированный native-model-smoke устанавливает XDG_DATA_HOME в root/data, а candidate session-search-sources ищет OpenCode по HOME/.local/share/opencode/opencode.db; source unavailable и точные ID не найдены. Установить OPENCODE_DB_PATH на реальный XDG путь и повторить исходный candidate.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Tesla",
+      "at": "2026-11-06T17:15:38+00:00",
+      "changes": {
+        "details": "Изолированный native-model-smoke устанавливает XDG_DATA_HOME в root/data, а candidate session-search-sources ищет OpenCode по HOME/.local/share/opencode/opencode.db; source unavailable и точные ID не найдены. Установить OPENCODE_DB_PATH на реальный XDG путь и повторить исходный candidate.",
+        "source": "L41 v8 unified candidate evidence/l41-v8-unified.err",
+        "status": "open",
+        "title": "OpenCode CI index ищет базу вне тестового XDG_DATA_HOME"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Tesla",
+      "at": "2026-11-06T17:17:02+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "B237478a6ae1d419490d0",
+          "kind": "duplicate",
+          "reason": "Обе записи описывают один отказ OpenCode index из-за несовпадения fixture XDG и пути БД; ведущая запись указана владельцем."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "B70792f89003d43509af6",
+  "owner": "Tesla",
+  "reporter": "Tesla",
+  "resolution": {
+    "duplicate_of": "B237478a6ae1d419490d0",
+    "kind": "duplicate",
+    "reason": "Обе записи описывают один отказ OpenCode index из-за несовпадения fixture XDG и пути БД; ведущая запись указана владельцем."
+  },
+  "source": "L41 v8 unified candidate evidence/l41-v8-unified.err",
+  "status": "duplicate",
+  "title": "OpenCode CI index ищет базу вне тестового XDG_DATA_HOME",
+  "updated_at": "2026-11-06T17:17:02+00:00"
+}

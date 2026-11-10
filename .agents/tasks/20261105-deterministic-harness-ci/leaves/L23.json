@@ -1,0 +1,92 @@
+{
+  "label": "Подготовить общий runner и частные validators",
+  "description": "Подготовка runner и доказательств на отдельных кандидатах; интеграция и общий прогон продолжаются в L33.",
+  "acceptance": "Есть подготовленный runner и установлены зависимости его переноса.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Tesla",
+  "id": "L23",
+  "created_at": "2026-11-06T17:55:06+03:00",
+  "updated_at": "2026-11-06T19:14:54+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T17:55:06+03:00",
+      "note": "Выделено из L04 после интеграции, исправляются зарегистрированные B4767c45f64fd429a8752.",
+      "changes": {
+        "label": "Общий runner: актуальный gate и единый кандидат",
+        "description": "Исправить тесты нового gate и повторить все доступные изолированные среды на одном candidate payload.",
+        "acceptance": "Gate тесты GREEN с негативными случаями, для доступных сред квитанции соответствуют одному payload; недоступные среды явно FAIL.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Tesla"
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:55:21+03:00",
+      "note": "Оценка срока уточняется по реальному прогону.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Срок повторного полного прогона пока неизвестен."
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:02:48+03:00",
+      "note": "Release gate RED: 2 FAIL и 1 error (включая новый collector preflight); GREEN 13 тестов, негативные partial/identity/SHA/fixture сохранены, B4767c45f64fd429a8752 закрыт с evidence. Ищу безопасный локальный Qoder: node:22-slim отсутствует, доступен node:22-alpine на server-44; проверяется пригодность и изоляция.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:14:46+03:00",
+      "note": "B4767c45f64fd429a8752 исправлен: исходный release-gate test GREEN 13/13, negative partial, identity, SHA и live-provider сохранены; RED и GREEN в evidence. На server-44 Alpine node работает, но настоящий pgrep не запускается без glibc; получен node:22-slim. Единый изолированный candidate c5620ac4 выполнен с настоящими Hermes/Fast/Qoder: общий FAIL; Qoder network none создал 2 сессии и полный transcript, но перечислена только 1 сессия, а полнота поиска не доказана; Hermes search partial, Fast search coverage отсутствует, L17 без SHA. evidence/l23-unified-candidate.json; установленный PID не проверялся.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:16:16+03:00",
+      "note": "Обнаружен и зарегистрирован B8a88ae17a75b43e19ed4: Qoder producer выдал PASS при listed_ids только для одной из двух созданных сессий; общий gate отказал. Владелец Qoder producer должен исправить перечисление/валидацию и предоставить полноту поиска. L23 остаётся running до подтверждения общего результата.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:27:32+03:00",
+      "note": "Hermes/Fast producer прекращали поиск при первом exact ID до завершения сканирования; добавлено ограниченное ожидание полного скана с проверкой поколения и повторным запуском; быстрый TDD RED→GREEN 3/3. Новый Qoder validator вызвал 1 FAIL + 1 error исходного gate-теста, синтетический receipt приведён к новому контракту, повтор GREEN 13/13. Реальное доказательство и единый candidate ещё не подтверждены; Browser fixture без candidate SHA не принимается.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:14:54+03:00",
+      "note": "",
+      "changes": {
+        "label": "Подготовить общий runner и частные validators",
+        "description": "Подготовка runner и доказательств на отдельных кандидатах; интеграция и общий прогон продолжаются в L33.",
+        "acceptance": "Есть подготовленный runner и установлены зависимости его переноса.",
+        "status": "done",
+        "result": "Подготовлены общий runner, validators и частные receipts; для Hermes и Browser producer перенесён в integration tree и проверен. Полный совместимый набор и общий candidate не готовы, продолжение L33."
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Срок повторного полного прогона пока неизвестен.",
+  "result": "Подготовлены общий runner, validators и частные receipts; для Hermes и Browser producer перенесён в integration tree и проверен. Полный совместимый набор и общий candidate не готовы, продолжение L33."
+}

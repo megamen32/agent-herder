@@ -1,0 +1,13 @@
+.E
+======================================================================
+ERROR: test_positive_full_snapshot_and_negative_changes (__main__.ProducerTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_ci_producer.py", line 28, in test_positive_full_snapshot_and_negative_changes
+    draft=m.authority_draft(result);self.assertEqual(draft['harnesses'],['codex','fast-agent']);self.assertEqual(draft['full_artifact_sha256'],result['full_artifact_sha256'])
+AttributeError: module 'ci_producer' has no attribute 'authority_draft'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.117s
+
+FAILED (errors=1)

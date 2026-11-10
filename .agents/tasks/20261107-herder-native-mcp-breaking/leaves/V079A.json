@@ -1,8 +1,8 @@
 {
   "id": "V079A",
-  "label": "ChatGPT: Зафиксировать версию и один официальный native маршрут",
-  "description": "ChatGPT: Зафиксировать версию и один официальный native маршрут. Частный результат исходного V079: Один versioned авторизованный browser profile через разрешённый маршрут: operations/receipt/history/context hook. Зафиксировать sample frames и недоступные операции. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V006.",
-  "acceptance": "Получен проверяемый результат: ChatGPT: Зафиксировать версию и один официальный native маршрут. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "label": "ChatGPT: Типизировать native normalization DTO",
+  "description": "Зафиксировать ChatGPT conversation payload projection отдельным typed DTO/normalizer с изолированными fixture tests. Не заявлять authenticated profile или live API proof.",
+  "acceptance": "Из acceptance/native/chatgpt/Cargo.toml проходят fixture tests для conversation identity, selected branch, user/assistant text и фильтрации внутренних сообщений.",
   "depends_on": [
     "V006"
   ],
@@ -11,8 +11,8 @@
   ],
   "parent": "S06",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -23,7 +23,7 @@
   "created_at": "2026-11-07T03:52:27+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:27+03:00",
+  "updated_at": "2026-11-07T04:40:13+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:27+03:00",
@@ -53,6 +53,69 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:26:37+03:00",
+      "note": "Проверяю native route/profile в isolated managed worktree от свежего origin/main.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:27:35+03:00",
+      "note": "Остановлено после одного обязательного Vibe check; другой browser/profile не использовался.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Нет исходного native adapter дерева и разрешённого browser profile readback",
+        "blocker_details": {
+          "source": "В isolated worktree от origin/main 16108ea94a74bddb7e9e1827891ace5606153b70 отсутствуют crates/herder/src/adapters/chatgpt/; acceptance/native/chatgpt/",
+          "browser": "Vibe list_pages завершился Protocol error (Network.enable): Target crashed.",
+          "next": "Повторить gate после восстановления Vibe relay и интеграции native adapter inputs; использовать только явно разрешённый test profile."
+        },
+        "result": "Не выполнен: native route/profile gate отсутствует в исходном target, browser readback не состоялся; авторизация, sample frames и операция не подтверждены."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:33:04+03:00",
+      "note": "Уточнение границы: native adapter path входит в собственную реализацию; прежний source-path blocker снят. Отдельная проверка Vibe/profile остаётся в B leaf.",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "blocker_details": {},
+        "result": ""
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:33:43+03:00",
+      "note": "Делаю ChatGPT typed DTO и fixture-driven normalization по ранее наблюдённой conversation mapping форме. Это не live/native provider proof.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:40:13+03:00",
+      "note": "Завершён source-only DTO/normalization fixture шаг по уточнённой границе владельца; live profile идёт отдельным V079B.",
+      "changes": {
+        "label": "ChatGPT: Типизировать native normalization DTO",
+        "description": "Зафиксировать ChatGPT conversation payload projection отдельным typed DTO/normalizer с изолированными fixture tests. Не заявлять authenticated profile или live API proof.",
+        "acceptance": "Из acceptance/native/chatgpt/Cargo.toml проходят fixture tests для conversation identity, selected branch, user/assistant text и фильтрации внутренних сообщений.",
+        "status": "done",
+        "result": "crates/herder/src/adapters/chatgpt/mod.rs и acceptance/native/chatgpt/conversation.json; isolated harness: 2/2 tests passed. Evidence: /tmp/herder-native-adapters-01a1b2b2/summary.md. Не доказаны live provider API, authorized profile, route, receipt/history/context или product crate registration."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "blocker": "",
+  "blocker_details": {},
+  "result": "crates/herder/src/adapters/chatgpt/mod.rs и acceptance/native/chatgpt/conversation.json; isolated harness: 2/2 tests passed. Evidence: /tmp/herder-native-adapters-01a1b2b2/summary.md. Не доказаны live provider API, authorized profile, route, receipt/history/context или product crate registration."
 }

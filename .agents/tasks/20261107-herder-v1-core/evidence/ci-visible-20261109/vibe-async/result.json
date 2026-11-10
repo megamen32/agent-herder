@@ -1,0 +1,47 @@
+{
+  "result": "GREEN: 91 passed",
+  "typecheck": "passed, exit 0",
+  "native_model_prompts": 0,
+  "one_dispatch_live": {
+    "nativeModelPrompts": 0,
+    "pageId": 1115967545,
+    "asyncValue": {
+      "value": "owned-value",
+      "count": 1
+    },
+    "rejection": "vibe_evaluation_failed",
+    "rejectionReceipt": {
+      "operationId": "85736b7c-5e2b-4539-b02f-ab11081abc52",
+      "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+      "sessionId": "session_1",
+      "pageId": 1115967545,
+      "state": "failed",
+      "dispatches": 1
+    },
+    "green": true,
+    "probeStateCleanup": {
+      "completedProbeEntryAbsent": true,
+      "counterAbsent": true
+    }
+  },
+  "auth_probe_pages_retained_for_profile_plan": [
+    1115967545,
+    1115967548
+  ],
+  "source_sha256": {
+    "src/adapters/vibe-chrome-transport.ts": "53bb255cfc213456e7317e1dee3b74532bc5ad2f04171d01902b7c9ddccc4ff1",
+    "src/ahap-browser-runner.ts": "73850c43b05ae77814f4599869637f0f5b4d4f293fe0bce36147d013cbca3360",
+    "tests/vibe-chrome-transport.test.ts": "e83f19239bcecbf1d083ac26dbd197a78c167126929cf924ad918a064e059d0a",
+    "tests/vibe-async-evaluation.test.ts": "62e05666914b99c2e6e8bb8e2e30896f4f1393f6cdf7fda24a97a7216904d852",
+    "tests/ahap-browser-vibe-selection.test.ts": "7e6ec684a0895f2b19311fce034a1c6dcd7acbea13e8c1335ff42590b0454db2"
+  },
+  "evidence_sha256": {
+    "vibe-async-red.json": "7c7880f927d200a454762ab9526b7f06b5335a9fdde84d3f4457b95d24e518da",
+    "vibe-async-red.log": "a93a0836b7f96d1a775955e99ac9cc94a1353e7266494695ffa3087ff5e795ae",
+    "vibe-async-green.log": "47a53cf54ac1884f9a7e1f7e19bfd78c8ce49b735a9330ec571f6ce9bcc51b28",
+    "vibe-async-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vibe-async-live-green.json": "6f1b55aa0173b24f064423c243c85c47ce8a9ecc8a9b34b6c47d7993450efff5",
+    "browser-auth-readiness.json": "941a6d6d46439f1e14adf4a89694653d619a595476fdcfb2c3574ffe3a68aae2",
+    "zcode-live-running.json": "75002cdbaa0cff54deab628a0fab686505ee869bafdf5cf6afe7d96290f6d0bd"
+  }
+}

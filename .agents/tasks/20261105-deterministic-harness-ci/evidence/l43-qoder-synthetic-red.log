@@ -1,0 +1,20 @@
+F
+======================================================================
+FAIL: test_qoder_synthetic_active_is_bound_to_second_created_session (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 70, in test_qoder_synthetic_active_is_bound_to_second_created_session
+    self.assertEqual(native_ci.validate_qoder_report(report,'a'*64),[])
+AssertionError: Lists differ: ['qoder: active turn missing'] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+'qoder: active turn missing'
+
+- ['qoder: active turn missing']
++ []
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

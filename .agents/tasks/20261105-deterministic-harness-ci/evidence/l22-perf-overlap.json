@@ -1,0 +1,40 @@
+{
+  "pid": 1201064,
+  "method": "perf cycles 49Hz sampled main TID during a bounded period with three read-only settings probes",
+  "requests": [
+    {
+      "start": 598083.401064207,
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598083.40620504,
+      "seconds": 0.005
+    },
+    {
+      "start": 598084.40703727,
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598084.489732074,
+      "seconds": 0.083
+    },
+    {
+      "start": 598085.490079387,
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598085.491751378,
+      "seconds": 0.002
+    }
+  ],
+  "limitation": "All probes in this sampled period were fast. Perf symbols include unresolved JIT addresses, so profile cannot identify a JS function or establish the cause of earlier timeouts.",
+  "summary": {
+    "profile_samples": ">1000",
+    "lost_samples": 0,
+    "copy_present_pte_pct": 4.21,
+    "v8_load_ic_megamorphic_pct": 3.68,
+    "fork_stack_observed": "copy_present_pte -> copy_page_range -> dup_mmap -> copy_process -> clone -> _Fork",
+    "contemporaneous_probe_seconds": [
+      0.005,
+      0.083,
+      0.002
+    ]
+  }
+}

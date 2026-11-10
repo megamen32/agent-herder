@@ -1,0 +1,29 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-fast-red
+
+ ❯ tests/native-hermes-minimax-transcript.test.ts (2 tests | 1 failed) 21ms
+   × paginates exact MiniMax native messages and preserves IDs and turns 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/native-hermes-minimax-transcript.test.ts > paginates exact MiniMax native messages and preserves IDs and turns
+Error: Native transcript page rejected: unsupported native JSONL harness
+ ❯ fail src/integrator-transcript.ts:88:9
+     86|
+     87| function fail(reason: string): never {
+     88|   throw new Error(`Native transcript page rejected: ${reason}`);
+       |         ^
+     89| }
+     90|
+ ❯ Object.reader src/integrator-transcript.ts:567:82
+ ❯ readIntegratorTranscriptPage src/integrator-transcript.ts:180:27
+ ❯ tests/native-hermes-minimax-transcript.test.ts:7:182
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  23:47:37
+   Duration  503ms (transform 151ms, setup 69ms, import 122ms, tests 21ms, environment 0ms)
+

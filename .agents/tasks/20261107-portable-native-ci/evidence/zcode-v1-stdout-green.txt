@@ -1,0 +1,17 @@
+test_official_provider_layout_and_exact_runtime_copy (test_v1_zcode_stand.FixturePreparation) ... ok
+test_refuses_non_loopback_model (test_v1_zcode_stand.FixturePreparation) ... ok
+test_rejects_changed_candidate_artifact (test_v1_zcode_stand.ManifestValidation) ... ok
+test_rejects_unexpected_manifest_before_reading_paths (test_v1_zcode_stand.ManifestValidation) ... ok
+test_expected_manifest_hash_must_be_explicit (test_v1_zcode_stand.PortableConfig) ... ok
+test_rejects_unisolated_backend_before_launch (test_v1_zcode_stand.PortableConfig) ... ok
+test_exactly_one_native_root_required (test_v1_zcode_stand.ProjectGate) ... ok
+test_missing_native_registration_blocks_create (test_v1_zcode_stand.ProjectGate) ... ok
+test_official_runtime_initializes_public_core (test_v1_zcode_stand.PublicRuntimeRegression) ... skipped 'set ZCODE_V1_RUNTIME and ZCODE_V1_MANIFEST for isolated public integration'
+test_success_returns_zero_and_writes_complete_receipt_without_secret_fields (test_v1_zcode_stand.SuccessReceipt) ... ok
+test_public_unknown_preserves_confirmed_session (test_v1_zcode_stand.UnknownReconciliation) ... ok
+test_reconciliation_requires_exact_session_and_source_id (test_v1_zcode_stand.UnknownReconciliation) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.059s
+
+OK (skipped=1)

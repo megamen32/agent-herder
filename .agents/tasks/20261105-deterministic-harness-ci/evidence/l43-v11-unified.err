@@ -1,0 +1,41 @@
+(node:335) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:335) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-dxbbc5oy/codex-home", "rollouts": ["/tmp/herder-native-model-dxbbc5oy/codex-home/sessions/2026/11/06/rollout-2026-11-06T19-52-23-01a1b26b-5e01-7b81-b85a-6705123323ea.jsonl", "/tmp/herder-native-model-dxbbc5oy/codex-home/sessions/2026/11/06/rollout-2026-11-06T19-52-23-01a1b26b-5dc4-7b00-afb1-50ee755c9120.jsonl", "/tmp/herder-native-model-dxbbc5oy/codex-home/sessions/2026/11/06/rollout-2026-11-06T19-52-15-01a1b26b-3ec4-7012-a2cc-552305f0e64e.jsonl"]}
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-dxbbc5oy/home/.codex", "rollouts": []}
+(node:576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: opencode, codex
+[agent-herder] Fatal: Error: direct_peer_limit
+    at new FleetDirectTransport (file:///mnt/candidate/dist/mesh/fleet-direct-transport.js:279:19)
+    at main (file:///mnt/candidate/dist/index.js:1128:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Traceback (most recent call last):
+  File "/mnt/native-entrypoint-probe.py", line 193, in <module>
+    if __name__=='__main__': main()
+  File "/mnt/native-entrypoint-probe.py", line 91, in main
+    output.flush(); raise RuntimeError(f'Herder exited {process.returncode}: {logs.read_text()[-3000:]}')
+RuntimeError: Herder exited 1: (node:576) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: opencode, codex
+[agent-herder] Fatal: Error: direct_peer_limit
+    at new FleetDirectTransport (file:///mnt/candidate/dist/mesh/fleet-direct-transport.js:279:19)
+    at main (file:///mnt/candidate/dist/index.js:1128:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 190, in main
+    subprocess.run([sys.executable, str(HERE / "native-entrypoint-probe.py"), args.herder_dist, str(root / "work"), f"http://127.0.0.1:{open_code_port}", f"http://127.0.0.1:{port}"], env=env, cwd=root / "work", check=True, timeout=120)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/native-entrypoint-probe.py', '/mnt/candidate/dist', '/tmp/herder-native-model-dxbbc5oy/work', 'http://127.0.0.1:38073', 'http://127.0.0.1:35561']' returned non-zero exit status 1.
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

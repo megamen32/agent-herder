@@ -1,0 +1,40 @@
+{
+  "pid": 1201064,
+  "scope": "read-only local HTTP and /proc thread CPU, no request or response contents",
+  "requests": [
+    {
+      "path": "/api/settings/background-indexing",
+      "start": 597676.185,
+      "utc": "2026-11-06T14:57:59.861435+00:00",
+      "status": 200,
+      "end": 597676.189,
+      "seconds": 0.003
+    },
+    {
+      "path": "/api/sessions",
+      "start": 597676.189,
+      "utc": "2026-11-06T14:57:59.865008+00:00",
+      "status": 200,
+      "end": 597676.206,
+      "seconds": 0.017
+    },
+    {
+      "path": "/api/settings/background-indexing",
+      "start": 597676.206,
+      "utc": "2026-11-06T14:57:59.882412+00:00",
+      "status": 200,
+      "end": 597676.253,
+      "seconds": 0.047
+    },
+    {
+      "path": "/api/sessions",
+      "start": 597676.253,
+      "utc": "2026-11-06T14:57:59.929673+00:00",
+      "status": 200,
+      "end": 597676.372,
+      "seconds": 0.119
+    }
+  ],
+  "cpu_samples": [],
+  "note": "Main thread CPU is not a JS stack or direct event-loop-delay measurement."
+}

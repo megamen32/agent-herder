@@ -1,0 +1,35 @@
+{
+  "blocker": "Чужой WIP collision в session_info source contract: worktree codex/session-lookup-transcript изменяет src/mcp/session-tools.ts и имеет unresolved UU src/mcp-tools/handlers.ts. Участок не менял; после освобождения файлов исправить опубликованный контракт и выполнить rollout только на server-44.",
+  "created_at": "2026-11-06T22:54:46+00:00",
+  "details": "Read-only вызов через локальный HTTP MCP server-44 завершился isError=false и вернул session id 01a18529-94c9-7e60-ae66-c54ecfa156f5 с hostId=server-44, harness=codex и lastMessage. latestUser, latestAssistant и recentMessages отсутствуют; historyComplete и partial также отсутствуют, поэтому обязательный default latest-user+assistant readback и честная полнота не доказаны. Evidence: evidence/l62-server44-rollout-session-info.json. Исправление заблокировано подтверждённым чужим WIP collision: worktree /home/roomhacker/agents-projects/agent-herder-worktrees/session-lookup-transcript имеет изменения src/mcp/session-tools.ts и unresolved UU src/mcp-tools/handlers.ts. Не редактировал и не публиковал чужой WIP; следующий шаг — разрешить владельцу source области завершить/освободить эти exact files, затем повторить RED→fix→GREEN и rollout только server-44.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-06T22:54:46+00:00",
+      "changes": {
+        "details": "Read-only вызов через локальный HTTP MCP server-44 завершился isError=false и вернул session id 01a18529-94c9-7e60-ae66-c54ecfa156f5 с hostId=server-44, harness=codex и lastMessage. latestUser, latestAssistant и recentMessages отсутствуют; historyComplete и partial также отсутствуют, поэтому обязательный default latest-user+assistant readback и честная полнота не доказаны. Evidence: evidence/l62-server44-rollout-session-info.json. Исправление заблокировано подтверждённым чужим WIP collision: worktree /home/roomhacker/agents-projects/agent-herder-worktrees/session-lookup-transcript имеет изменения src/mcp/session-tools.ts и unresolved UU src/mcp-tools/handlers.ts. Не редактировал и не публиковал чужой WIP; следующий шаг — разрешить владельцу source области завершить/освободить эти exact files, затем повторить RED→fix→GREEN и rollout только server-44.",
+        "source": "L62: direct MCP tools/call session_info на установленном server-44 runtime d2df61867871e0d8761f49f632a538fb0f972a67",
+        "status": "open",
+        "title": "session_info не возвращает последнюю пару user и assistant по умолчанию"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-06T22:55:45+00:00",
+      "changes": {
+        "blocker": "Чужой WIP collision в session_info source contract: worktree codex/session-lookup-transcript изменяет src/mcp/session-tools.ts и имеет unresolved UU src/mcp-tools/handlers.ts. Участок не менял; после освобождения файлов исправить опубликованный контракт и выполнить rollout только на server-44.",
+        "status": "blocked"
+      },
+      "reason": "Проверенный user+assistant default не реализован опубликованным d2df; exact shared source paths находятся в незавершённом чужом worktree, который нельзя забирать или обходить."
+    }
+  ],
+  "id": "B84321b19e22d43a4a074",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "L62: direct MCP tools/call session_info на установленном server-44 runtime d2df61867871e0d8761f49f632a538fb0f972a67",
+  "status": "blocked",
+  "title": "session_info не возвращает последнюю пару user и assistant по умолчанию",
+  "updated_at": "2026-11-06T22:55:45+00:00"
+}

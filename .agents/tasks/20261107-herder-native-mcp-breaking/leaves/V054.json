@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V054 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V054 обязателен в конце цепочки.",
+  "note": "Вариант запуска unshare --mount-proc был отвергнут ОС до исполнения теста; повтор без mount-proc прошёл в user/network namespace с единственным интерфейсом lo.",
   "estimate_over_limit_reason": "",
   "id": "V054",
   "created_at": "2026-11-07T01:52:27+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:25+03:00",
+  "updated_at": "2026-11-07T05:52:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:27+03:00",
@@ -74,9 +74,34 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:49:56+03:00",
+      "note": "Объединяющее доказательство V054: две независимые изолированные сессии должны возвращать свои user/assistant IDs и turn refs; отмечу partial при неполном результате.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:52:46+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Объединяющий V054 подтверждён на двух независимых тестовых сессиях: каждый fixture turn читался через CodexReader::list_messages и прямой Codex app-server thread/items/list. Обе сессии вернули собственные точные user/assistant IDs и общий для пары native turnId; session/turn refs между сессиями различаются. Fixture обработал ровно 2 запроса, сеть harness содержала только lo. Evidence: .tmp/v054-two-sessions-20261107/proof.json, transcript.jsonl, adapter-read.log. Частично: подтверждён native adapter/live profile; public MCP, установленный consumer и dev artifact остаются непроверенными и входят в последующие acceptance leaves.",
+        "actual_minutes": 15,
+        "note": "Вариант запуска unshare --mount-proc был отвергнут ОС до исполнения теста; повтор без mount-proc прошёл в user/network namespace с единственным интерфейсом lo."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Объединяющий V054 подтверждён на двух независимых тестовых сессиях: каждый fixture turn читался через CodexReader::list_messages и прямой Codex app-server thread/items/list. Обе сессии вернули собственные точные user/assistant IDs и общий для пары native turnId; session/turn refs между сессиями различаются. Fixture обработал ровно 2 запроса, сеть harness содержала только lo. Evidence: .tmp/v054-two-sessions-20261107/proof.json, transcript.jsonl, adapter-read.log. Частично: подтверждён native adapter/live profile; public MCP, установленный consumer и dev artifact остаются непроверенными и входят в последующие acceptance leaves.",
+  "actual_minutes": 15
 }

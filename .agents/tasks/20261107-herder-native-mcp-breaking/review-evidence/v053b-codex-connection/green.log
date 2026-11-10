@@ -1,0 +1,43 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/crates/herder)
+warning: fields `instance_id` and `code_home` are never read
+   --> src/bin/../adapters/codex/connection.rs:143:5
+    |
+142 | pub struct CodexConnection {
+    |            --------------- fields in this struct
+143 |     instance_id: String,
+    |     ^^^^^^^^^^^
+144 |     code_home: PathBuf,
+    |     ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `instance_id`, `code_home`, `process_id`, and `try_wait` are never used
+   --> src/bin/../adapters/codex/connection.rs:222:12
+    |
+158 | impl CodexConnection {
+    | -------------------- methods in this implementation
+...
+222 |     pub fn instance_id(&self) -> &str {
+    |            ^^^^^^^^^^^
+...
+226 |     pub fn code_home(&self) -> &Path {
+    |            ^^^^^^^^^
+...
+230 |     pub fn process_id(&self) -> u32 {
+    |            ^^^^^^^^^^
+...
+318 |     pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
+    |            ^^^^^^^^
+
+warning: `herder` (bin "connection_smoke" test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.03s
+     Running unittests src/bin/connection_smoke.rs (.tmp/v052b-codex-profile-20261107/cargo-target/debug/deps/connection_smoke-7fafa22e35276336)
+
+running 4 tests
+test malformed_response_is_bound_to_sent_request ... ok
+test disconnect_keeps_the_unknown_request_id ... ok
+test matches_ids_and_retains_notifications ... ok
+test ignores_a_late_response_after_a_timed_out_request ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+

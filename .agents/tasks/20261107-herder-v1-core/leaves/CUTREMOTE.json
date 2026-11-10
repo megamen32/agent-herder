@@ -1,0 +1,57 @@
+{
+  "id": "CUTREMOTE",
+  "kind": "task",
+  "parent": "FLEETCUTOVER",
+  "label": "Подключить remote clients к одному Rust Herder",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+  "acceptance": "Native client entries44/88/Mini/M1 ведут в общий authenticated GPTAdmin Herder; initialize/discover PASS. Только Herderconfig, existingownercredential, безротации; remote daemon не создаются.",
+  "note": "88consumerPASS;44/Mini auth отсутствовал,M1старыйauth401. Назначена установка новогоentry+existing ownercredential; независимый worker.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T20:17:11+03:00",
+  "updated_at": "2026-11-08T20:19:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:17:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "CUTREMOTE",
+        "kind": "task",
+        "parent": "FLEETCUTOVER",
+        "label": "Подключить remote clients к одному Rust Herder",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+        "acceptance": "Native client entries44/88/Mini/M1 ведут в общий authenticated GPTAdmin Herder; initialize/discover PASS. Только Herderconfig, existingownercredential, безротации; remote daemon не создаются.",
+        "note": "88consumerPASS;44/Mini auth отсутствовал,M1старыйauth401. Назначена установка новогоentry+existing ownercredential; независимый worker.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:19:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "7nativeclientconfig:44/88/M1Codex+OpenCode,MiniCodex. Protectedbackup0600/CAS; existingownercredential безротации; все7initialize/toolslist/discoverPASS15tools1instance. Nativeharnessreload отдельнонепроверен. Remote-stop-receipt.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "7nativeclientconfig:44/88/M1Codex+OpenCode,MiniCodex. Protectedbackup0600/CAS; existingownercredential безротации; все7initialize/toolslist/discoverPASS15tools1instance. Nativeharnessreload отдельнонепроверен. Remote-stop-receipt.md."
+}

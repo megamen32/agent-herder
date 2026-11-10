@@ -1,0 +1,63 @@
+{
+  "id": "L46",
+  "label": "MiniMax: сценарий на общем candidate",
+  "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+  "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Tesla",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T23:33:37+03:00",
+  "updated_at": "2026-11-07T21:30:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T23:33:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "L46",
+        "label": "MiniMax: сценарий на общем candidate",
+        "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+        "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Tesla",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:54:17+03:00",
+      "note": "MiniMax transcript 422 fixed minimal shared reader hunk, RED/GREEN 11 tests evidence/l46-minimax-transcript-{red,green}.log, real local-TLS isolated v18 payload d1c496e110152479f0f51722512598d597918e218baab3fc2237a8eeccb8cf2a: 2 sessions, completed jobs and 2+2 transcript pages evidence/l46-minimax-v18.json; Bbb fixed. Search in-memory MCP does not record partial, so L46 full acceptance and L49 remain unproven.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:04:08+03:00",
+      "note": "v20 server-44 new isolated MiniMax sessions candidate v2 SHA d1c496e110152479f0f51722512598d597918e218baab3fc2237a8eeccb8cf2a: 2 exact IDs, 2+2 native transcript, complete scan ed73a652-7417-4bf5-aa1e-bf97946fe377, source complete same scan, partial=false, indexed 5. MCP responses in evidence/l46-minimax-v20.json; in-memory MCP, not HTTP; runner hashes evidence/l46-v20-runner-sha256.txt. Search/gate RED/GREEN and truncated snippet tests evidence/l46-minimax-{search,gate,snippet}-{red,green}.log. Full candidate gate still FAIL, other harnesses and installed PID not covered.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

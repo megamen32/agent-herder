@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-06T20:32:26+00:00",
+  "details": "scripts/native-qoder-herder.py запускает docker через capture_output, затем сохраняет только receipt, а при отсутствии receipt лишь последние 4000 байт stderr; полный driver stdout/stderr не попадает в evidence/l43-v16-unified.{log,err} и после завершения недоступен. Runner stdout/stderr сохранены полностью, но это не полные первичные потоки Qoder. Qoder scripts принадлежат L25; требуется безопасный file-backed capture без раскрытия credentials, TDD и повтор на новом candidate.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T20:32:26+00:00",
+      "changes": {
+        "details": "scripts/native-qoder-herder.py запускает docker через capture_output, затем сохраняет только receipt, а при отсутствии receipt лишь последние 4000 байт stderr; полный driver stdout/stderr не попадает в evidence/l43-v16-unified.{log,err} и после завершения недоступен. Runner stdout/stderr сохранены полностью, но это не полные первичные потоки Qoder. Qoder scripts принадлежат L25; требуется безопасный file-backed capture без раскрытия credentials, TDD и повтор на новом candidate.",
+        "source": "v16 unified Qoder log audit",
+        "status": "open",
+        "title": "Qoder canary не сохраняет полный stdout/stderr Docker driver"
+      }
+    }
+  ],
+  "id": "B2315963e58cc4198a2e2",
+  "owner": "L43",
+  "reporter": "L43",
+  "source": "v16 unified Qoder log audit",
+  "status": "open",
+  "title": "Qoder canary не сохраняет полный stdout/stderr Docker driver",
+  "updated_at": "2026-11-06T20:32:26+00:00"
+}

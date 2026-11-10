@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T15:14:00+00:00",
+  "details": "server-44 установленный Herder PID 353306 создал собственный thread, GET session и transcript вернули 200, но фильтрованный список total=0. Native thread/loaded/list вернул точный ID, а thread/list его не содержит; полный список Herder использует thread/list.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T15:14:00+00:00",
+      "changes": {
+        "details": "server-44 установленный Herder PID 353306 создал собственный thread, GET session и transcript вернули 200, но фильтрованный список total=0. Native thread/loaded/list вернул точный ID, а thread/list его не содержит; полный список Herder использует thread/list.",
+        "source": "server-44 installed Herder and read-only native app-server probes 2026-11-07",
+        "status": "open",
+        "title": "Созданная пустая Codex-сессия не видна в полном списке"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T15:23:52+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/loaded-list-green-20261107.log",
+            "red_proof_path": "evidence/loaded-list-red-20261107.log",
+            "red_result": "FAIL",
+            "red_sha256": "005a7c7cf2f510054dc00658d4a3d2ae473394e014471d391b53deffe5782e34",
+            "result": "1 passed",
+            "sha256": "1157c9ab5d74504aafbbfa2ac18b7826760691de9ee1444e0d8f1d4b8326ab0c",
+            "test_command": "vitest run tests/codex-app-server.test.ts -t 'includes loaded zero-turn threads'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B9e0b13ba37ea413b95e8",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/loaded-list-green-20261107.log",
+      "red_proof_path": "evidence/loaded-list-red-20261107.log",
+      "red_result": "FAIL",
+      "red_sha256": "005a7c7cf2f510054dc00658d4a3d2ae473394e014471d391b53deffe5782e34",
+      "result": "1 passed",
+      "sha256": "1157c9ab5d74504aafbbfa2ac18b7826760691de9ee1444e0d8f1d4b8326ab0c",
+      "test_command": "vitest run tests/codex-app-server.test.ts -t 'includes loaded zero-turn threads'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 installed Herder and read-only native app-server probes 2026-11-07",
+  "status": "fixed",
+  "title": "Созданная пустая Codex-сессия не видна в полном списке",
+  "updated_at": "2026-11-07T15:23:52+00:00"
+}

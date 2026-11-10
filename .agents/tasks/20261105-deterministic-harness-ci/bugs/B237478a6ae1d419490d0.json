@@ -1,0 +1,85 @@
+{
+  "created_at": "2026-11-06T17:15:55+00:00",
+  "details": "Production XDG и session_v2 исправлены: RED evidence/l41-opencode-v2-red.log и l41-opencode-production-xdg-red.log, GREEN evidence/l41-opencode-production-xdg-green.log (15 tests). Server-44 candidate v2 SHA 4b7ff88faa9cf810d0691f4f5c6f7163cca5911690efd8a0660393b41c50e780, evidence/l41-opencode-4b7f-repeat.json: два exact OpenCode ID найдены, 2+2 transcript. Probe не сохраняет и не проверяет search partial/coverage: это нужно исправить и повторить прежде чем закрыть bug. Общий candidate gate FAIL.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T17:15:55+00:00",
+      "changes": {
+        "details": "В общем прогоне v8 поиск OpenCode не находит тестовую базу: fixture устанавливает отдельный XDG_DATA_HOME, а индексатор ищет под HOME. Проверить причину, исправить TDD и повторить исходный сценарий.",
+        "source": "L41 v8 unified candidate",
+        "status": "open",
+        "title": "OpenCode: поиск сессии не работает в общем CI при XDG_DATA_HOME"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "lead",
+      "at": "2026-11-06T17:21:34+00:00",
+      "changes": {
+        "details": "После указания OPENCODE_DB_PATH на базу XDG_DATA_HOME прежний ENOENT устранён, но поиск не проходит: индексатор ожидает таблицу session, которой нет в текущей native schema. Исправляется поддержка актуальной схемы с RED/GREEN и повтором."
+      },
+      "reason": ""
+    },
+    {
+      "action": "update",
+      "actor": "L41",
+      "at": "2026-11-06T17:25:45+00:00",
+      "changes": {
+        "details": "Две причины: isolated fixture должен передать OPENCODE_DB_PATH в свой XDG каталог; production индексатор должен учитывать XDG_DATA_HOME без override и читать native session_v2/session_message. RED evidence/l41-opencode-v2-red.log и l41-opencode-production-xdg-red.log; GREEN evidence/l41-opencode-production-xdg-green.log (15 тестов). Функциональный candidate v2 SHA 4b7ff88faa9cf810d0691f4f5c6f7163cca5911690efd8a0660393b41c50e780; исходный сценарий server-44 выполняется, статус остаётся open до подтверждения."
+      },
+      "reason": ""
+    },
+    {
+      "action": "update",
+      "actor": "L41",
+      "at": "2026-11-06T17:27:29+00:00",
+      "changes": {
+        "details": "Production XDG и session_v2 исправлены: RED evidence/l41-opencode-v2-red.log и l41-opencode-production-xdg-red.log, GREEN evidence/l41-opencode-production-xdg-green.log (15 tests). Server-44 candidate v2 SHA 4b7ff88faa9cf810d0691f4f5c6f7163cca5911690efd8a0660393b41c50e780, evidence/l41-opencode-4b7f-repeat.json: два exact OpenCode ID найдены, 2+2 transcript. Probe не сохраняет и не проверяет search partial/coverage: это нужно исправить и повторить прежде чем закрыть bug. Общий candidate gate FAIL."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T19:56:13+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l41-opencode-production-xdg-green.log",
+            "red_proof_path": "evidence/l41-opencode-production-xdg-red.log",
+            "red_result": "1 failed",
+            "red_sha256": "1af18930aa471c9eb3b690b601680d7ea2aee3cf9cc3b85cc1dd12a769cd9898",
+            "result": "15 passed",
+            "sha256": "b64384c99a97f9f5e496aba5efe9380aedcec27f3c656964f3bd876fa8b38d2f",
+            "test_command": "vitest run tests/native-hermes-opencode-v2.test.ts tests/hermes-search-wal.test.ts tests/session-search-sources.test.ts tests/qoder-l12.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B237478a6ae1d419490d0",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l41-opencode-production-xdg-green.log",
+      "red_proof_path": "evidence/l41-opencode-production-xdg-red.log",
+      "red_result": "1 failed",
+      "red_sha256": "1af18930aa471c9eb3b690b601680d7ea2aee3cf9cc3b85cc1dd12a769cd9898",
+      "result": "15 passed",
+      "sha256": "b64384c99a97f9f5e496aba5efe9380aedcec27f3c656964f3bd876fa8b38d2f",
+      "test_command": "vitest run tests/native-hermes-opencode-v2.test.ts tests/hermes-search-wal.test.ts tests/session-search-sources.test.ts tests/qoder-l12.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L41 v8 unified candidate",
+  "status": "fixed",
+  "title": "OpenCode: поиск сессии не работает в общем CI при XDG_DATA_HOME",
+  "updated_at": "2026-11-06T19:56:13+00:00"
+}

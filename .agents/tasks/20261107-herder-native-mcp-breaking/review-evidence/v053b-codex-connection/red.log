@@ -1,0 +1,137 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling serde_core v1.0.229
+   Compiling autocfg v1.5.1
+   Compiling memchr v2.8.3
+   Compiling cfg-if v1.0.5
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling itoa v1.0.18
+   Compiling pin-project-lite v0.2.17
+   Compiling ref-cast v1.0.27
+   Compiling once_cell v1.21.4
+   Compiling serde_json v1.0.154
+   Compiling futures-sink v0.3.34
+   Compiling futures-core v0.3.34
+   Compiling typenum v1.20.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling version_check v0.9.5
+   Compiling getrandom v0.3.4
+   Compiling foldhash v0.2.0
+   Compiling equivalent v1.0.3
+   Compiling smallvec v1.16.5
+   Compiling zerocopy v0.8.63
+   Compiling shlex v2.0.1
+   Compiling allocator-api2 v0.2.21
+   Compiling pkg-config v0.3.34
+   Compiling slab v0.4.12
+   Compiling futures-io v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling regex-syntax v0.8.11
+   Compiling parking_lot_core v0.9.12
+   Compiling getrandom v0.4.3
+   Compiling vcpkg v0.2.15
+   Compiling bytes v1.12.1
+   Compiling thiserror v2.0.21
+   Compiling const-oid v0.10.2
+   Compiling scopeguard v1.2.0
+   Compiling foldhash v0.1.5
+   Compiling bit-vec v0.8.0
+   Compiling cpufeatures v0.3.1
+   Compiling dyn-clone v1.0.20
+   Compiling jsonschema-value v0.60.2
+   Compiling rmcp v3.9.0
+   Compiling heck v0.5.0
+   Compiling unicode-general-category v1.1.0
+   Compiling borrow-or-share v0.2.4
+   Compiling outref v0.5.2
+   Compiling fallible-iterator v0.3.0
+   Compiling bitflags v2.13.2
+   Compiling micromap v0.3.0
+   Compiling bytecount v0.6.9
+   Compiling percent-encoding v2.3.2
+   Compiling vsimd v0.8.0
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling num-cmp v0.1.0
+   Compiling pastey v0.2.3
+   Compiling data-encoding v2.11.1
+   Compiling futures-channel v0.3.34
+   Compiling tracing-core v0.1.36
+   Compiling lock_api v0.4.14
+   Compiling cc v1.11.1
+   Compiling bit-set v0.8.0
+   Compiling hashbrown v0.15.5
+   Compiling num-traits v0.2.19
+   Compiling ahash v0.8.12
+   Compiling hashbrown v0.17.1
+   Compiling aho-corasick v1.1.5
+   Compiling uuid-simd v0.8.0
+   Compiling hashlink v0.10.0
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling hybrid-array v0.4.15
+   Compiling num-bigint v0.4.8
+   Compiling num-iter v0.1.46
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling uuid v1.29.0
+   Compiling libsqlite3-sys v0.35.0
+   Compiling parking_lot v0.12.5
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling regex-automata v0.4.18
+   Compiling jsonschema-regex v0.60.2
+   Compiling digest v0.11.3
+   Compiling sha2 v0.11.1
+   Compiling num-rational v0.4.2
+   Compiling num v0.4.3
+   Compiling fraction v0.17.0
+   Compiling indexmap v2.14.2
+   Compiling serde_path_to_error v0.1.20
+   Compiling serde_derive_internals v0.30.0
+   Compiling serde_derive v1.0.229
+   Compiling ref-cast-impl v1.0.27
+   Compiling futures-macro v0.3.34
+   Compiling tokio-macros v2.7.2
+   Compiling thiserror-impl v2.0.21
+   Compiling schemars_derive v1.2.3
+   Compiling tokio v1.54.1
+   Compiling tracing-attributes v0.1.31
+   Compiling strum_macros v0.28.0
+   Compiling futures-util v0.3.34
+   Compiling fancy-regex v0.19.2
+   Compiling regex v1.13.1
+   Compiling tracing v0.1.44
+   Compiling strum v0.28.0
+   Compiling chrono v0.4.45
+   Compiling fluent-uri v0.4.1
+   Compiling email_address v0.2.9
+   Compiling futures-executor v0.3.34
+   Compiling referencing v0.60.2
+   Compiling futures v0.3.34
+   Compiling schemars v1.2.3
+   Compiling jsonschema v0.60.2
+   Compiling tokio-util v0.7.20
+   Compiling rusqlite v0.37.0
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/crates/herder)
+error[E0308]: mismatched types
+   --> src/bin/../adapters/codex/connection.rs:203:19
+    |
+203 |             .name("codex-app-server-rpc-reader")
+    |              ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `String`, found `&str`
+    |              |
+    |              arguments to this method are incorrect
+    |
+note: method defined here
+   --> /rustc/31fca3adb283cc9dfd56b49cdee9a96eb9c96ffd/library/std/src/thread/builder.rs:107:11
+help: try using a conversion method
+    |
+203 |             .name("codex-app-server-rpc-reader".to_string())
+    |                                                ++++++++++++
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `herder` (bin "connection_smoke" test) due to 1 previous error

@@ -1,0 +1,93 @@
+{
+  "id": "QMACREUSE",
+  "parent": "S06",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "QBROWSERSCOPE"
+  ],
+  "label": "Переиспользовать рабочий Mac Mini transport в AHAP browser runner",
+  "description": "Mac Mini50260DevTools gateway и штатный MacMiniChromeTransport живы. Raw-CDP-only launcher не должен блокировать reuse. Явная конфигурация существующего transport, pinned page/account, без fallback и новых bridge/dependencies. CI владеет native target preparation, этот leaf source-only.",
+  "affected_files": [
+    "src/ahap-browser-runner.ts",
+    "tests/ahap-browser-runner.test.ts",
+    "acceptance/native/browser/"
+  ],
+  "acceptance": "Runner явно выбирает существующий direct CDP или штатный MacMiniChromeTransport; fail closed без exact page/account, отсутствие скрытого fallback; focused tests, published owned commit и launch contract. Не выдавать source proof за native case.",
+  "created_at": "2026-11-07T20:32:38+03:00",
+  "updated_at": "2026-11-07T20:47:55+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:32:38+03:00",
+      "note": "",
+      "changes": {
+        "id": "QMACREUSE",
+        "parent": "S06",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "QBROWSERSCOPE"
+        ],
+        "label": "Переиспользовать рабочий Mac Mini transport в AHAP browser runner",
+        "description": "Mac Mini50260DevTools gateway и штатный MacMiniChromeTransport живы. Raw-CDP-only launcher не должен блокировать reuse. Явная конфигурация существующего transport, pinned page/account, без fallback и новых bridge/dependencies. CI владеет native target preparation, этот leaf source-only.",
+        "affected_files": [
+          "src/ahap-browser-runner.ts",
+          "tests/ahap-browser-runner.test.ts",
+          "acceptance/native/browser/"
+        ],
+        "acceptance": "Runner явно выбирает существующий direct CDP или штатный MacMiniChromeTransport; fail closed без exact page/account, отсутствие скрытого fallback; focused tests, published owned commit и launch contract. Не выдавать source proof за native case."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:34:28+03:00",
+      "note": "Owner directs source-only MacMiniChromeTransport selection and fresh-main scoped publication. Exact page and expected account scope required; native target belongs to CI and no browser messages.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:47:55+03:00",
+      "note": "Fresh-main scoped commit f9ec4647 published and read back remotely. Source launch contract and focused evidence complete. CI owns native target preparation; preserve exact scope/lease prerequisite before any browser action.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T20:47:29+03:00",
+        "result": "Published QMACREUSE on fresh origin/main. Commit f9ec4647b9b71289d339d37e603114a46e1b3ab9 has parent 0fdd84c71332321fc8c652efcc7fc961aaa451c2 and contains only src/ahap-browser-runner.ts, tests/ahap-browser-runner.test.ts, acceptance/native/browser/launch-contract.md. Remote ls-remote and post-push fetch both read back f9ec4647. Runner now requires explicit AHAP_CHATGPT_TRANSPORT=mac-mini|direct-cdp; Mac Mini mode reuses MacMiniChromeTransport, and both modes require exact page ID + expected account scope. AHAP filters list_pages to that page and fails closed if absent; no transport/page fallback. Focused typecheck passed and runner tests passed 12/12 twice on fresh-main revisions. Evidence: evidence/QMACREUSE-20261107.md. CI worktree's independent transcript hunk remains untouched. Native browser acceptance, target selection, and messages were not run."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "finished_at": "2026-11-07T20:47:29+03:00",
+  "result": "Published QMACREUSE on fresh origin/main. Commit f9ec4647b9b71289d339d37e603114a46e1b3ab9 has parent 0fdd84c71332321fc8c652efcc7fc961aaa451c2 and contains only src/ahap-browser-runner.ts, tests/ahap-browser-runner.test.ts, acceptance/native/browser/launch-contract.md. Remote ls-remote and post-push fetch both read back f9ec4647. Runner now requires explicit AHAP_CHATGPT_TRANSPORT=mac-mini|direct-cdp; Mac Mini mode reuses MacMiniChromeTransport, and both modes require exact page ID + expected account scope. AHAP filters list_pages to that page and fails closed if absent; no transport/page fallback. Focused typecheck passed and runner tests passed 12/12 twice on fresh-main revisions. Evidence: evidence/QMACREUSE-20261107.md. CI worktree's independent transcript hunk remains untouched. Native browser acceptance, target selection, and messages were not run."
+}

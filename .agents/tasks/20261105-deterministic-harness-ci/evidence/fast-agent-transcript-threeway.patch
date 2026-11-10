@@ -1,0 +1,61 @@
+diff --git a/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/src/integrator-transcript.ts b/tmp/herder-fast-threeway-fMudhW/src/integrator-transcript.ts
+index 986c3055..110f1dbb 100644
+--- a/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/src/integrator-transcript.ts
++++ b/tmp/herder-fast-threeway-fMudhW/src/integrator-transcript.ts
+@@ -80,7 +80,7 @@ const MAX_CURSOR_LENGTH = 4096;
+ const MAX_EVENT_ID_LENGTH = 1024;
+ const MAX_AUTHOR_ID_LENGTH = 512;
+ export const MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES = 16 * 1024 * 1024;
+-const SUPPORTED_NATIVE_JSONL_HARNESSES = new Set(["codex", "claude", "qoder", "hermes"]);
++const SUPPORTED_NATIVE_JSONL_HARNESSES = new Set(["codex", "claude", "qoder", "hermes", "fast-agent"]);
+ const SNAPSHOT_CURSOR_TTL_MS = 30 * 60 * 1000;
+ const MAX_ISSUED_SNAPSHOT_CURSORS = 2048;
+ 
+@@ -396,7 +396,12 @@ function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>
+       ?? (row.type === "session_meta" ? payload?.id : undefined);
+     if (harness === "hermes" && sessionIdentity !== expectedSessionId) return fail("Hermes row native session identity is missing or mismatched");
+     if (typeof sessionIdentity === "string" && sessionIdentity !== expectedSessionId) return fail("native export session metadata does not match the requested session");
+-    const parsed: NativeTranscriptEvent[] = harness === "hermes" ? [{
++    const parsed: NativeTranscriptEvent[] = harness === "fast-agent" ? [{
++      sequence: events.length, ...sourceEventId(line, recordIndex, row.id), kind: "message",
++      author: { kind: row.role === "assistant" || row.role === "system" || row.role === "tool" ? row.role : "unknown", sourceRole: typeof row.role === "string" ? row.role : "unknown" },
++      ...(timestampString(row.timestamp) ? {timestamp:timestampString(row.timestamp)} : {}),
++      ...(textContent(row.content,["text"]) !== undefined ? {text:textContent(row.content,["text"])} : {}), payload:row,
++    }] : harness === "hermes" ? [{
+       sequence: events.length, ...sourceEventId(line, recordIndex, Number.isSafeInteger(row.id) ? String(row.id) : row.id), kind: "message",
+       author: { kind: row.role === "assistant" || row.role === "system" || row.role === "tool" ? row.role : "unknown", sourceRole: typeof row.role === "string" ? row.role : "unknown" },
+       ...(typeof row.timestamp === "number" && Number.isFinite(row.timestamp) ? {timestamp: timestampString(row.timestamp < 1e12 ? row.timestamp * 1000 : row.timestamp)} : {}),
+@@ -558,11 +563,13 @@ export function createRawTranscriptPageReader(input: {
+   return async ({ scope, cursor, limit }) => {
+     if (scopeKey(scope) !== expectedScope) return fail("reader was asked for another host/harness/session");
+     const chatgpt = scope.harness === "chatgpt";
++    const fastAgent = scope.harness === "fast-agent";
+     if (!chatgpt && !SUPPORTED_NATIVE_JSONL_HARNESSES.has(scope.harness)) return fail("unsupported native JSONL harness");
+     const state = cursor === null ? null : resolveCursor(cursor);
+     const raw = await input.getRawTranscript(scope.nativeSessionId);
+     if (!raw || raw.complete !== true || !raw.source || !["native-file", "native-api"].includes(raw.source.kind)
+-      || raw.source.format !== (chatgpt ? "json" : "jsonl") || !(raw.bytes instanceof Uint8Array)) return fail(chatgpt ? "native adapter has no supported complete JSON export" : "native adapter has no supported complete JSONL export");
++      || raw.source.format !== (chatgpt || fastAgent ? "json" : "jsonl") || !(raw.bytes instanceof Uint8Array)) return fail(chatgpt ? "native adapter has no supported complete JSON export" : "native adapter has no supported complete JSONL export");
++    if (fastAgent && raw.source.kind !== "native-file") return fail("Fast Agent transcript requires an exact native history file");
+     let expectedRecordId=scope.nativeSessionId;
+     if (scope.harness === "hermes") {
+       const prefix="hermes:sqlite:";
+@@ -576,8 +583,16 @@ export function createRawTranscriptPageReader(input: {
+       return fail("native transcript was truncated or its source metadata changed");
+     }
+     const candidateBytes = raw.bytes.subarray(0, state?.snapshotBytes ?? raw.bytes.byteLength);
+-    if (chatgpt && state && raw.bytes.byteLength !== state.snapshotBytes) return fail("ChatGPT conversation changed while paging");
+-    const snapshot = chatgpt ? parseChatGptSnapshot(candidateBytes, scope.nativeSessionId) : parseCompleteJsonlPrefix(candidateBytes, !state && scope.harness !== "hermes", expectedRecordId, scope.harness);
++    if ((chatgpt || fastAgent) && state && raw.bytes.byteLength !== state.snapshotBytes) return fail("ChatGPT conversation changed while paging");
++    let snapshot: ParsedTranscriptPrefix;
++    if (fastAgent) {
++      let history: {messages?: unknown};
++      try { history = JSON.parse(new TextDecoder("utf-8", {fatal:true}).decode(candidateBytes)); }
++      catch { return fail("Fast Agent history is invalid JSON"); }
++      if (!history || !Array.isArray(history.messages) || history.messages.some((m:unknown)=>!m || typeof m!=="object" || Array.isArray(m))) return fail("Fast Agent native history messages are missing or invalid");
++      const records = history.messages.map((m:unknown, recordIndex:number)=>({line:JSON.stringify(m),recordIndex}));
++      snapshot = {events:parseJsonlRecords(records, expectedRecordId, scope.harness),byteLength:candidateBytes.byteLength};
++    } else snapshot = chatgpt ? parseChatGptSnapshot(candidateBytes, scope.nativeSessionId) : parseCompleteJsonlPrefix(candidateBytes, !state && scope.harness !== "hermes", expectedRecordId, scope.harness);
+     if (state && snapshot.byteLength !== state.snapshotBytes) return fail("cursor does not end on a complete native event boundary");
+     const snapshotBytes = state?.snapshotBytes ?? snapshot.byteLength;
+     const snapshotHash = createHash("sha256").update(raw.bytes.subarray(0, snapshotBytes)).digest("hex");

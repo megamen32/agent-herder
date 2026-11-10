@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/.tmp/l35-test
+
+
+ Test Files  2 passed (2)
+      Tests  25 passed (25)
+   Start at  19:33:25
+   Duration  745ms (transform 449ms, setup 66ms, import 535ms, tests 93ms, environment 0ms)
+

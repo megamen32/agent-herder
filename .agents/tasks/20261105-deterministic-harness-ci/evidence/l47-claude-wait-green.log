@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: waits for native paged transcript to contain sent turn without another send
+ok 1 - waits for native paged transcript to contain sent turn without another send
+  ---
+  duration_ms: 4.580478
+  type: 'test'
+  ...
+# Subtest: does not accept an incomplete transcript even if it contains the expected answer
+ok 2 - does not accept an incomplete transcript even if it contains the expected answer
+  ---
+  duration_ms: 3.514263
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 101.784923

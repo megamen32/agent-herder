@@ -1,0 +1,12 @@
+{
+  "stage": "create",
+  "binding": {
+    "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    "sessionId": "session_1"
+  },
+  "fixturePid": 72617,
+  "fixturePort": 50285,
+  "modelPrompts": 0,
+  "pageId": 1115967538,
+  "created": true
+}

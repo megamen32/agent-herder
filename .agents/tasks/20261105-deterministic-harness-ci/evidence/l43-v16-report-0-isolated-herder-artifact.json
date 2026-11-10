@@ -1,0 +1,431 @@
+{
+  "scope": "isolated-herder-artifact",
+  "results": [
+    {
+      "harness": "codex",
+      "sessions": [
+        "01a1b28b-8b9a-77d0-b04e-b572f15fd88c",
+        "01a1b28b-8bcf-7863-8643-d713bbddc741"
+      ],
+      "sessionsCreated": true,
+      "answer": true,
+      "sessionsListed": true,
+      "projectListed": true,
+      "launchPolicyProjectListed": true,
+      "transcriptComplete": true,
+      "transcriptPages": [
+        3,
+        3
+      ],
+      "activeDiscovered": true,
+      "fixtureRequests": 3,
+      "seconds": 21.962,
+      "searchCoverage": {
+        "hostId": "test-host",
+        "results": [
+          {
+            "hostId": "test-host",
+            "harness": "codex",
+            "nativeSessionId": "01a1b28b-8b9a-77d0-b04e-b572f15fd88c",
+            "title": "HERDER_NATIVE_USER_codex",
+            "cwd": "/tmp/herder-native-model-llhbl0x0/work",
+            "revision": "165:189:35216:1793996852321.3022:1793996852321.3022:HERDER_NATIVE_USER_codex:/tmp/herder-native-model-llhbl0x0/work",
+            "chunkId": "msg_01a1b28b-8c4b-7d31-8aba-cb047de81fe8",
+            "snippet": "",
+            "rank": -0.5610804777629212,
+            "shortId": "cd93a"
+          },
+          {
+            "hostId": "test-host",
+            "harness": "codex",
+            "nativeSessionId": "01a1b28b-8bcf-7863-8643-d713bbddc741",
+            "title": "HERDER_NATIVE_USER_codex",
+            "cwd": "/tmp/herder-native-model-llhbl0x0/work",
+            "revision": "165:199:40991:1793996874035.8875:1793996874035.8875:HERDER_NATIVE_USER_codex:/tmp/herder-native-model-llhbl0x0/work",
+            "chunkId": "msg_01a1b28b-8d9b-7e82-b2b7-59751a1b646a",
+            "snippet": "",
+            "rank": -0.5610804777629212,
+            "shortId": "c1c5a"
+          }
+        ],
+        "index": {
+          "hostId": "test-host",
+          "sessions": 6,
+          "chunks": 28,
+          "chunksIncludeStaging": false,
+          "indexing": false,
+          "run": {
+            "status": "complete",
+            "updatedAt": "2026-11-06T20:27:58.272Z",
+            "processed": 6,
+            "error": null,
+            "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab"
+          },
+          "sources": [
+            {
+              "harness": "chatgpt",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.local/state/agent-herder/browser-chat-inventory",
+              "state": "partial",
+              "sessions": 0,
+              "catalogSessions": 0,
+              "textSessions": 0,
+              "missingContent": 0,
+              "chunks": 0,
+              "reason": "browser_inventory_root_missing",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "claude",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.claude/projects",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.claude/projects'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "codex",
+              "source": "/tmp/herder-native-model-llhbl0x0/codex-home",
+              "state": "complete",
+              "sessions": 3,
+              "catalogSessions": 3,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 10,
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 2,
+              "processedChunks": 10,
+              "indexedTextSessions": 3,
+              "indexedChunks": 14,
+              "observedAt": "2026-11-06T20:27:58.269Z"
+            },
+            {
+              "harness": "fast-agent",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.fast-agent",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.fast-agent/sessions'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "hermes",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.hermes/state.db",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, stat '/tmp/herder-native-model-llhbl0x0/home/.hermes/state.db'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "minimax-code",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.minimax/v2/sessions",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.minimax/v2/sessions'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "opencode",
+              "source": "/tmp/herder-native-model-llhbl0x0/data/opencode/opencode.db",
+              "state": "complete",
+              "sessions": 3,
+              "catalogSessions": 3,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 6,
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 2,
+              "processedChunks": 6,
+              "indexedTextSessions": 3,
+              "indexedChunks": 8,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "qoder",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.qoder/projects",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.qoder/projects'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.269Z"
+            },
+            {
+              "harness": "zai",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.local/state/agent-herder/browser-chat-inventory",
+              "state": "partial",
+              "sessions": 0,
+              "catalogSessions": 0,
+              "textSessions": 0,
+              "missingContent": 0,
+              "chunks": 0,
+              "reason": "browser_inventory_root_missing",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "zcode",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.zcode/cli/db/db.sqlite",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, stat '/tmp/herder-native-model-llhbl0x0/home/.zcode/cli/db/db.sqlite'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            }
+          ]
+        },
+        "partial": false,
+        "elapsedMs": 4.67
+      },
+      "sessionsSearched": true,
+      "searchWorker": true
+    },
+    {
+      "harness": "opencode",
+      "sessions": [
+        "ses_e4d741e85ffeXWuzgaBDVPEbfY",
+        "ses_e4d741e46ffeNbMQexAmdGk05t"
+      ],
+      "sessionsCreated": true,
+      "answer": true,
+      "sessionsListed": true,
+      "projectListed": true,
+      "launchPolicyProjectListed": true,
+      "transcriptComplete": true,
+      "transcriptPages": [
+        2,
+        2
+      ],
+      "activeDiscovered": true,
+      "fixtureRequests": 3,
+      "seconds": 4.137,
+      "searchCoverage": {
+        "hostId": "test-host",
+        "results": [
+          {
+            "hostId": "test-host",
+            "harness": "opencode",
+            "nativeSessionId": "ses_e4d741e46ffeNbMQexAmdGk05t",
+            "title": "Herder CI opencode 1",
+            "cwd": "/tmp/herder-native-model-llhbl0x0/work",
+            "revision": "db4d9293921488ac543f25b1c7251ebc05e1f7708cf1fd24ced23618dbd6c296:Herder CI opencode 1:/tmp/herder-native-model-llhbl0x0/work",
+            "chunkId": "msg_1b28be35c0010N7R53rCdBfnQZ",
+            "snippet": "HERDER_NATIVE_USER_opencode",
+            "rank": -3.5994146817399506,
+            "shortId": "o08ca"
+          },
+          {
+            "hostId": "test-host",
+            "harness": "opencode",
+            "nativeSessionId": "ses_e4d741e85ffeXWuzgaBDVPEbfY",
+            "title": "Herder CI opencode 0",
+            "cwd": "/tmp/herder-native-model-llhbl0x0/work",
+            "revision": "70f9de766614ef2ddeef094a2b214c521209ebd8f363c57717dc413471b021f2:Herder CI opencode 0:/tmp/herder-native-model-llhbl0x0/work",
+            "chunkId": "msg_1b28be208001g67uxbhfJVnJkp",
+            "snippet": "HERDER_NATIVE_USER_opencode",
+            "rank": -3.5994146817399506,
+            "shortId": "o3bb2"
+          }
+        ],
+        "index": {
+          "hostId": "test-host",
+          "sessions": 6,
+          "chunks": 28,
+          "chunksIncludeStaging": false,
+          "indexing": false,
+          "run": {
+            "status": "complete",
+            "updatedAt": "2026-11-06T20:27:58.272Z",
+            "processed": 6,
+            "error": null,
+            "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab"
+          },
+          "sources": [
+            {
+              "harness": "chatgpt",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.local/state/agent-herder/browser-chat-inventory",
+              "state": "partial",
+              "sessions": 0,
+              "catalogSessions": 0,
+              "textSessions": 0,
+              "missingContent": 0,
+              "chunks": 0,
+              "reason": "browser_inventory_root_missing",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "claude",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.claude/projects",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.claude/projects'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "codex",
+              "source": "/tmp/herder-native-model-llhbl0x0/codex-home",
+              "state": "complete",
+              "sessions": 3,
+              "catalogSessions": 3,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 10,
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 2,
+              "processedChunks": 10,
+              "indexedTextSessions": 3,
+              "indexedChunks": 14,
+              "observedAt": "2026-11-06T20:27:58.269Z"
+            },
+            {
+              "harness": "fast-agent",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.fast-agent",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.fast-agent/sessions'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "hermes",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.hermes/state.db",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, stat '/tmp/herder-native-model-llhbl0x0/home/.hermes/state.db'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "minimax-code",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.minimax/v2/sessions",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.minimax/v2/sessions'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "opencode",
+              "source": "/tmp/herder-native-model-llhbl0x0/data/opencode/opencode.db",
+              "state": "complete",
+              "sessions": 3,
+              "catalogSessions": 3,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 6,
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 2,
+              "processedChunks": 6,
+              "indexedTextSessions": 3,
+              "indexedChunks": 8,
+              "observedAt": "2026-11-06T20:27:58.270Z"
+            },
+            {
+              "harness": "qoder",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.qoder/projects",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, scandir '/tmp/herder-native-model-llhbl0x0/home/.qoder/projects'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.269Z"
+            },
+            {
+              "harness": "zai",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.local/state/agent-herder/browser-chat-inventory",
+              "state": "partial",
+              "sessions": 0,
+              "catalogSessions": 0,
+              "textSessions": 0,
+              "missingContent": 0,
+              "chunks": 0,
+              "reason": "browser_inventory_root_missing",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            },
+            {
+              "harness": "zcode",
+              "source": "/tmp/herder-native-model-llhbl0x0/home/.zcode/cli/db/db.sqlite",
+              "state": "unavailable",
+              "sessions": 0,
+              "reason": "ENOENT: no such file or directory, stat '/tmp/herder-native-model-llhbl0x0/home/.zcode/cli/db/db.sqlite'",
+              "scanId": "2d632a13-d2e9-4dcc-a44c-e6d36591d6ab",
+              "processedTextSessions": 0,
+              "processedChunks": 0,
+              "indexedTextSessions": 0,
+              "indexedChunks": 0,
+              "observedAt": "2026-11-06T20:27:58.271Z"
+            }
+          ]
+        },
+        "partial": false,
+        "elapsedMs": 1.43
+      },
+      "sessionsSearched": true,
+      "searchWorker": true
+    }
+  ]
+}

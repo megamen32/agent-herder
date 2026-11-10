@@ -1,0 +1,76 @@
+{
+  "id": "CTRLWAKE",
+  "kind": "task",
+  "parent": "S00",
+  "label": "Восстановить регистрацию единственного часового пробуждения Astra",
+  "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "status": "done",
+  "depends_on": [],
+  "estimate_minutes": 15,
+  "affected_files": [
+    "src/resume-after.ts",
+    "tests/resume-after.test.ts"
+  ],
+  "description": "Узкий legacy-runtime blocker контроля: нерелевантные token events и повторные timer sweep накапливают дорогие native probes в serial queue. Source fix без смены lifecycle и без replay зарегистрированного UNKNOWN.",
+  "acceptance": "Быстрый RED/GREEN доказывает отсутствие очереди из нерелевантных событий и коалесцирование timer sweeps; HumanStop, exact dependency and UNKNOWN tests pass. Source publication и runtime installation/readback существующего requestId отдельно; duplicate scheduler не создавать.",
+  "created_at": "2026-11-07T11:59:22+03:00",
+  "updated_at": "2026-11-07T12:19:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:59:22+03:00",
+      "note": "",
+      "changes": {
+        "id": "CTRLWAKE",
+        "kind": "task",
+        "parent": "S00",
+        "label": "Восстановить регистрацию единственного часового пробуждения Astra",
+        "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "status": "running",
+        "depends_on": [],
+        "estimate_minutes": 15,
+        "affected_files": [
+          "src/resume-after.ts",
+          "tests/resume-after.test.ts"
+        ],
+        "description": "Узкий legacy-runtime blocker контроля: нерелевантные token events и повторные timer sweep накапливают дорогие native probes в serial queue. Source fix без смены lifecycle и без replay зарегистрированного UNKNOWN.",
+        "acceptance": "Быстрый RED/GREEN доказывает отсутствие очереди из нерелевантных событий и коалесцирование timer sweeps; HumanStop, exact dependency and UNKNOWN tests pass. Source publication и runtime installation/readback существующего requestId отдельно; duplicate scheduler не создавать."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:03:08+03:00",
+      "note": "Astra сохранила scoped code commit; это не подтверждение восстановления production.",
+      "changes": {
+        "status": "waiting",
+        "result": "Source6195e46b: irrelevant progress filtered before serialized queue, concurrent timer sweeps coalesced; RED43 vs3 probes/33vs1scan, GREEN66 tests over resume-after/MCP/wiring. Source submitted to Terra review/main integration; legacy CI assigned runtime rollout. Real next wait remains unconfirmed; original requestId astra-herder-hourly-20261107T0922Z, expected wait_1c84ce639ceae5e8029b19b7e73204eb, no replay.",
+        "wait_reason": "Source review/main integration and legacy installed runtime readback; no new scheduling attempt while original remains UNKNOWN."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:09:39+03:00",
+      "note": "Source published; runtime acceptance intentionally remains incomplete.",
+      "changes": {
+        "result": "Source6195e46b independently reviewed by Terra and published main b00c778d. Astra66 relevant tests; Terra32 related tests. Source backlog amplification fixed; installed runtime and original scheduled request remain unconfirmed. Original requestId astra-herder-hourly-20261107T0922Z / wait_1c84ce639ceae5e8029b19b7e73204eb; no blind retry.",
+        "wait_reason": "Legacy CI owns normal runtime rollout/readback of published b00c778d; confirmed one next wake still required."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:19:33+03:00",
+      "note": "Runtime installed and original request reconciled after old process exit; one registered wake independently read back.",
+      "changes": {
+        "status": "done",
+        "result": "Source6195e46b/mainb00c778d: event filter+coalesced sweep, RED43vs3/33vs1, GREEN66 tests. Legacy CI installed release bafb71f5 on live agent-herder.service PID2954443, old PID982842 absent; installed JS inspected for both fixes. Full own-wait registry only two historical resumed, exact current absent. Same original requestId retry accepted and separately status-read back waiting: wait_1c84ce639ceae5e8029b19b7e73204eb scheduled2026-11-07T10:18:49.705Z. Exactly one pending next wake; no second scheduler. Evidence review-evidence/astra-resume-queue/runtime-readback.json. Actual future delivery not yet due.",
+        "wait_reason": ""
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Source6195e46b/mainb00c778d: event filter+coalesced sweep, RED43vs3/33vs1, GREEN66 tests. Legacy CI installed release bafb71f5 on live agent-herder.service PID2954443, old PID982842 absent; installed JS inspected for both fixes. Full own-wait registry only two historical resumed, exact current absent. Same original requestId retry accepted and separately status-read back waiting: wait_1c84ce639ceae5e8029b19b7e73204eb scheduled2026-11-07T10:18:49.705Z. Exactly one pending next wake; no second scheduler. Evidence review-evidence/astra-resume-queue/runtime-readback.json. Actual future delivery not yet due.",
+  "wait_reason": ""
+}

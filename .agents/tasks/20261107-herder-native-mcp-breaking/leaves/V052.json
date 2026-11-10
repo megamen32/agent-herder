@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V052 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V052 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V052",
   "created_at": "2026-11-07T01:52:26+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:24+03:00",
+  "updated_at": "2026-11-07T04:36:44+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:26+03:00",
@@ -76,10 +76,32 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:33:39+03:00",
+      "note": "Объединяю V052A protocol/version и V052B isolated live correlation в capability matrix; точно отделяю объявленные, проверенные live и не проверенные операции.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:36:44+03:00",
+      "note": "Capability matrix and exact negative method response are recorded; direct native checks and untested limits are separated.",
+      "changes": {
+        "status": "done",
+        "result": "Codex native route/capability matrix recorded in acceptance/contracts/codex.md on isolated worktree. Live: initialize/initialized, thread/start, turn/start, turn/completed, thread/read; exact same turn ref ties unique input and fixture answer, V052B evidence cited. Read-only unsupported request tasks/list returned JSON-RPC -32600 unknown variant. Declared but unverified: thread/list, turn/steer, turn/interrupt. Explicitly separates app-server JSON-RPC from Herder public MCP 2026-07-28 and preserves the removable translator boundary. No adapter/MCP/install/consumer proof claimed."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Codex native route/capability matrix recorded in acceptance/contracts/codex.md on isolated worktree. Live: initialize/initialized, thread/start, turn/start, turn/completed, thread/read; exact same turn ref ties unique input and fixture answer, V052B evidence cited. Read-only unsupported request tasks/list returned JSON-RPC -32600 unknown variant. Declared but unverified: thread/list, turn/steer, turn/interrupt. Explicitly separates app-server JSON-RPC from Herder public MCP 2026-07-28 and preserves the removable translator boundary. No adapter/MCP/install/consumer proof claimed."
 }

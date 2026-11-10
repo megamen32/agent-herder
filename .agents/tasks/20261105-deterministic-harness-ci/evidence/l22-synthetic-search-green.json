@@ -1,0 +1,20 @@
+{
+  "fixtureChunks": 300000,
+  "elapsedMs": 18539,
+  "eventLoopMaxMs": 460,
+  "httpRequests": 342,
+  "httpMaxMs": 419,
+  "indexedChunks": 300001,
+  "tailFound": true,
+  "result": "PASS",
+  "test_command": "L22_SYNTHETIC=1 npx vitest run --root . --config vitest.config.ts tests/session-search-responsiveness.test.ts",
+  "before_event_loop_max_ms": 11937,
+  "regression_suite": "23 tests passed: session-search, deep-link, indexer and worker",
+  "red": "8192-chunk replacement observer saw new generation only after ingest instead of old generation during ingest",
+  "scope": "synthetic fixture; no production causation or installation claim",
+  "sha256": {
+    "src/session-search.ts": "d58d45eb6e372fd2e06f38f7296de43bd3e9e3ac00cfd60eafebc8f3eb60bde1",
+    "tests/session-search.test.ts": "dadd72fb45440007f2648a20c7ac058485351717cb606d7a6fd0346b75a35625",
+    "tests/session-search-responsiveness.test.ts": "137eecb2b46120b5b1f9ae03cc3cb25a50d247f39734630be03a36497f742b17"
+  }
+}

@@ -11,18 +11,18 @@
   ],
   "parent": "S04",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V063 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V063 обязателен в конце цепочки.",
+  "note": "V063B implementation and source verification complete. Commit 7665e586 sent to Terra. Await no integration to continue independent authorized ready leaves.",
   "created_at": "2026-11-07T03:53:19+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:19+03:00",
+  "updated_at": "2026-11-07T05:46:26+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:19+03:00",
@@ -51,6 +51,36 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:19:17+03:00",
+      "note": "V063A native list and stable addresses done; V063B adds latest user/assistant projection with explicit IDs and partial semantics.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:25:58+03:00",
+      "note": "Implemented owned OpenCode recent-message projection in crates/herder/src/adapters/opencode/read.rs: GET history independently filtered newest-first user and assistant slots; preserves native message IDs/time/text, extracts assistant text parts, leaves turn/reply refs and truncation unknown, and derives partial=false only when native completion timestamp exists. Auth/address validation and request IDs retained. Verified diff --check and rustfmt +stable. `cargo check --manifest-path crates/herder/Cargo.toml` succeeds for origin/main’s crate, but does not compile this reader because central lib.rs currently exposes only opencode::connection. Fresh origin/main advanced to 67aebe8b and removes read.rs while changing connection and main integrates; main-thread module wiring remains central ownership (lib.rs/Cargo.toml excluded). Need Terra’s integration decision/current source boundary before an honest compile + commit/rebase; no tests run per instruction.",
+      "changes": {},
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:46:26+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Реализован `OpenCodeSessionReader::recent_messages` в `crates/herder/src/adapters/opencode/read.rs`; commit `7665e586324397490e5bcd5ead229d54c448d33b` поверх `origin/main` d457e401, single owned path. Новейшие user/assistant читаются отдельными native history filters; сохраняются IDs, timestamps и текст; turn/reply/truncation остаются unknown без явной native связи. Проверки: isolated import harness с фактическим `.tmp/v061b/native-messages.json` — 2/2; `cargo test --manifest-path crates/herder/Cargo.toml` на crate с экспортированным `opencode::read` — 52/52. Commit SHA отправлен Тере для интеграции. Consumer create→deliver→recent через новый MCP пока не проверен.",
+        "note": "V063B implementation and source verification complete. Commit 7665e586 sent to Terra. Await no integration to continue independent authorized ready leaves."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Реализован `OpenCodeSessionReader::recent_messages` в `crates/herder/src/adapters/opencode/read.rs`; commit `7665e586324397490e5bcd5ead229d54c448d33b` поверх `origin/main` d457e401, single owned path. Новейшие user/assistant читаются отдельными native history filters; сохраняются IDs, timestamps и текст; turn/reply/truncation остаются unknown без явной native связи. Проверки: isolated import harness с фактическим `.tmp/v061b/native-messages.json` — 2/2; `cargo test --manifest-path crates/herder/Cargo.toml` на crate с экспортированным `opencode::read` — 52/52. Commit SHA отправлен Тере для интеграции. Consumer create→deliver→recent через новый MCP пока не проверен."
 }

@@ -1,0 +1,36 @@
+{
+  "schema": "herder.accepted-goal.v1",
+  "attribution": "chatgpt-all-harness-ci-20261109",
+  "native_session_id": null,
+  "actor": {
+    "harness": "chatgpt",
+    "session_id": null
+  },
+  "authority": "User asked to recheck all harnesses through Vibe in a browser, prove working sessions are visible, and make this part of CI. Root delegated creation of CIVISIBLE and validator/tests scope.",
+  "before": "Existing workflow only runs routing and validator unit tests; V1 report can PASS five lanes without Vibe/native/UI evidence.",
+  "after": "Existing V1 gate rejects missing or uncertain Vibe session evidence, inconsistent native/UI identity or state, incomplete native coverage, and active native sessions absent from UI. Live runner and workflow remain explicit pending acceptance.",
+  "required_harnesses": [
+    "chatgpt",
+    "zai",
+    "opencode",
+    "codex",
+    "zcode"
+  ],
+  "scope_owned": [
+    "tests/native/candidate_release_gate.py",
+    "tests/native/test_candidate_release_gate.py"
+  ],
+  "recon": [
+    "Only .github/workflows/fleet-session.yml exists and runs mocked/contract tests :: tracked workflow at8695a149",
+    "V1 gate already requires five lanes but no UI evidence :: tests/native/candidate_release_gate.py V1_HARNESSES/V1_CHECKS/validate_v1_report",
+    "--validate-v1 has no actual execution wiring beyond its unit tests :: bounded rg in tracked source",
+    "Native context unavailable in ChatGPT; attribution remains declared and session_id null :: current runtime context"
+  ],
+  "decision": "Extend existing validator and exact tests; retain candidate/installed distinction. Root adds actual Vibe runner and CI invocation after real browser findings.",
+  "source_head": "8695a14907809b1d801e138ef92ef41d0c3a2972",
+  "source_sha256": {
+    "tests/native/candidate_release_gate.py": "b38ce856ce2074181515cdaf64e17253c5d178200ac7741a76de7e2083939850",
+    "tests/native/test_candidate_release_gate.py": "df282c6c0cb28b7c7b7bd50e412eb7c9475faf179bd82d76ae61edb131e28811"
+  },
+  "recorded_at": "2026-11-08T22:49:41.709696+00:00"
+}

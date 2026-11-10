@@ -1,0 +1,110 @@
+{
+  "id": "V064PORT",
+  "label": "OpenCode: native create с точным instance и receipt",
+  "description": "Независимая native часть V064A: реализовать create port над готовым OpenCode connection по существующему контракту NativeCreateControl. Не ждать application composition V023; не менять core interface.",
+  "acceptance": "Изолированная native create операция возвращает точный SessionAddress данного instance; timeout/disconnect после возможной отправки даёт UNKNOWN без retry, preflight отказ без эффекта. Проверка источника ответа и отсутствие второй create через управляемый fixture. Общий application/MCP proof сохраняется в V064A/B/V064.",
+  "depends_on": [
+    "V062"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/opencode/create.rs",
+    "acceptance/native/opencode/"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "estimate_minutes": 15,
+  "note": "Выделено из V064A для параллельного выполнения после V029; существующий native seam, Cargo/lib/mod интегрирует Terra.",
+  "created_at": "2026-11-07T09:20:01+03:00",
+  "updated_at": "2026-11-07T12:49:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T09:20:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "V064PORT",
+        "label": "OpenCode: native create с точным instance и receipt",
+        "description": "Независимая native часть V064A: реализовать create port над готовым OpenCode connection по существующему контракту NativeCreateControl. Не ждать application composition V023; не менять core interface.",
+        "acceptance": "Изолированная native create операция возвращает точный SessionAddress данного instance; timeout/disconnect после возможной отправки даёт UNKNOWN без retry, preflight отказ без эффекта. Проверка источника ответа и отсутствие второй create через управляемый fixture. Общий application/MCP proof сохраняется в V064A/B/V064.",
+        "depends_on": [
+          "V062"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/opencode/create.rs",
+          "acceptance/native/opencode/"
+        ],
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "estimate_minutes": 15,
+        "note": "Выделено из V064A для параллельного выполнения после V029; существующий native seam, Cargo/lib/mod интегрирует Terra."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T09:27:36+03:00",
+      "note": "Подтверждён актуальный origin/main d366364d; PORT-only leaf: adapter OpenCode create.rs и acceptance/native/opencode. Общий application/MCP и Cargo/lib exports остаются у Теры.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:25:57+03:00",
+      "note": "Owned port закоммичен 0ea46b50 и передан Тере; выделяю отдельную bounded live native readback проверку.",
+      "changes": {
+        "status": "done",
+        "result": "Реализован native create port и fixture acceptance: scoped commit 0ea46b50, только crates/herder/src/adapters/opencode/create.rs и acceptance/native/opencode/session-create-response.json. Embedded mock tests: 4/4 passed, включая exact response ID/instance, preflight без POST, timeout UNKNOWN с ровно одним POST. Временный lib export восстановлен. Live native API и MCP proof не входят в этот результат; выделены отдельно."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:42:36+03:00",
+      "note": "Create-local validation classification awaits shared-core integration by owner. After the two listed shared changes, classify invalid request key/specification/parentID as DefinitelyNotSent and preserve Unknown after any possible POST. No shared files changed.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Shared core contract lacks DefinitelyNotSent, and lib.rs does not export adapters::opencode::create; both paths are Terra-owned.",
+        "blocker_details": {
+          "target_rs": "NativeCreateOutcome currently has only Confirmed and Unknown; add DefinitelyNotSent { reason: String }.",
+          "lib_rs": "Export pub mod create in adapters::opencode."
+        }
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:46:35+03:00",
+      "note": "Earlier blocked annotation was based on stale parent 2413cbca. Verified integrated candidate d7b560d3 contains the core variant and create module export; no shared files changed.",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "blocker_details": {},
+        "result": "OpenCode native create validation fixed on integrated candidate d7b560d3 as commit 395eb202 (create.rs only). Invalid request key, invalid JSON/specification (including caller-selected id), and invalid parentID return NativeCreateOutcome::DefinitelyNotSent before POST. Request construction failures and proven connect failures map to DefinitelyNotSent; timeout/interrupted response, any non-success HTTP response, malformed response or post-response body failure remain Unknown without retry. Fixture confirms invalid inputs produce zero POST and timeout after POST is Unknown with one POST. In the 8-test OpenCode module suite, create/control passed 8/8."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:49:47+03:00",
+      "note": "Verified integrated candidate d7b560d3 contains shared core DefinitelyNotSent and OpenCode create export; no shared files changed.",
+      "changes": {
+        "result": "OpenCode native create validation fixed on integrated candidate d7b560d3 as commit 395eb202 (create.rs only). Invalid request key, invalid JSON/specification (including caller-selected id), and invalid parentID return NativeCreateOutcome::DefinitelyNotSent before POST. Request construction failures and proven connect failures map to DefinitelyNotSent; timeout/interrupted response, any non-success HTTP response, malformed response or post-response body failure remain Unknown without retry. Fixture confirms invalid inputs produce zero POST and timeout after POST is Unknown with one POST. Evidence: evidence/V064PORT/opencode-fixtures-green.txt; OpenCode fixture suite passed 8/8."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "result": "OpenCode native create validation fixed on integrated candidate d7b560d3 as commit 395eb202 (create.rs only). Invalid request key, invalid JSON/specification (including caller-selected id), and invalid parentID return NativeCreateOutcome::DefinitelyNotSent before POST. Request construction failures and proven connect failures map to DefinitelyNotSent; timeout/interrupted response, any non-success HTTP response, malformed response or post-response body failure remain Unknown without retry. Fixture confirms invalid inputs produce zero POST and timeout after POST is Unknown with one POST. Evidence: evidence/V064PORT/opencode-fixtures-green.txt; OpenCode fixture suite passed 8/8.",
+  "blocker": "",
+  "blocker_details": {}
+}

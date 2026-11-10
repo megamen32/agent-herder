@@ -8,14 +8,14 @@
     "CONFIG",
     "REPORT"
   ],
-  "status": "blocked",
+  "status": "running",
   "estimate_minutes": 15,
   "owner": "Terra",
   "harness": "codex",
   "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
   "model": "gpt-6.1-terra",
   "created_at": "2026-11-07T21:29:29+03:00",
-  "updated_at": "2026-11-08T00:12:53+03:00",
+  "updated_at": "2026-11-08T15:53:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:29+03:00",
@@ -129,11 +129,184 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T01:02:41+03:00",
+      "note": "5ea28f independent run: public preflight OK; create task 6be51843 rejected before native submission by Codex quota guard; seven-check acceptance incomplete.",
+      "changes": {
+        "blocker": "Candidate 5ea28f: typed quota guard rejected localhost fixture before native submission; safe provider-aware adapter fix and rebuilt artifact required.",
+        "note": "Evidence: evidence/codex-v1-5ea28f-result.md. New run NOT_SENT, no replay of historical UNKNOWN; next prove fixture/provider route without bypassing account quota, implement TDD and test new artifact."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T02:20:34+03:00",
+      "note": "Pinned bin preflight on 5ea28f: AHAP init Remote, no create/send; exact systemd-run diagnostic: no /run/user/0/bus inside sandbox.",
+      "changes": {
+        "blocker": "AHAP_CODEX_BIN uses systemd-run --user; isolated launch.py sandbox has no user D-Bus, so AHAP init fails before create. No supported proven child-in-netns/provider identity contract.",
+        "note": "Evidence: evidence/codex-v1-5ea28f-result.md. Scope fixture published b9f192a2; bin preflight failed before create, subscription guard unchanged; need supported product-owned isolated child launch/provider proof, then TDD fix and consumer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T05:07:13+03:00",
+      "note": "814759 independent public MCP preflight passed; create rejected before submission by quota guard, no 7-check acceptance.",
+      "changes": {
+        "blocker": "Candidate 814759: typed Codex quota guard rejects fixture before native thread/start; provider-aware supported fix and new pinned candidate required.",
+        "note": "Evidence evidence/codex-v1-814759-result.md: new independent create task d4d00396 definitely_not_sent, no second delivery; old UNKNOWN untouched. Next fix supported isolated provider contract without bypassing subscription quota, rebuild and re-run."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T05:40:47+03:00",
+      "note": "Config investigation: official OpenAI ChatGPT-plan example uses custom provider and requires_openai_auth=false; current socket config cannot prove native owner or proxy destination. No safe source fix proven.",
+      "changes": {
+        "blocker": "No trusted binding between configured custom endpoint/socket owner and non-subscription route; custom provider and requires_openai_auth=false can still use ChatGPT plan; localhost proxy is not proof. Guard must remain fail-closed.",
+        "note": "Evidence evidence/codex-v1-814759-result.md. Exact 814759 create rejected before submit; no new mutations. Need verified child/netns/endpoint provenance contract before safe provider-aware TDD and pinned candidate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T06:33:24+03:00",
+      "note": "Owner 06:03 criteria checked; bin child startup fails before PID evidence, so guard remains unchanged; fixture config auth policy corrected and published.",
+      "changes": {
+        "blocker": "Owner-required owned AHAP_CODEX_BIN child PID/exe/env/netns cannot be proven: sandbox systemd-run --user has no D-Bus, AHAP init fails before child starts.",
+        "note": "Evidence evidence/codex-v1-814759-result.md: explicit requires_openai_auth=false fixture published 6e46873d; 8 focused tests pass. No adapter guard exemption or component digest yet; next supported isolated native child launch/proof, then TDD full owner conditions."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:04:51+03:00",
+      "note": "Owner four conditions demonstrated for standalone adapter child; public core env_clear and owner whitelist prevent propagating isolation=off, so condition child ownership on public path remains unproven.",
+      "changes": {
+        "blocker": "Pinned public core env_clear plus codex owner env whitelist strips and rejects AGENT_HERDER_WORKLOAD_ISOLATION=off; public AHAP_CODEX_BIN child cannot start in isolated sandbox without user bus. Core/profile owned by product.",
+        "note": "Evidence evidence/codex-v1-814759-result.md: direct standalone pinned AHAP child proved PID/exe/env/netns and no credentials with isolation=off, but not public core path. Need product-supported flag propagation/owned direct child then fail-closed TDD; guard unchanged."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:27:55+03:00",
+      "note": "Core flag whitelist dependency published; no quota adapter fix or candidate proof yet. Avoid treating stubbed boolean predicate as runtime proof.",
+      "changes": {
+        "blocker": "Provider-aware guard TDD and generation-bound owned child credential/namespace proof not yet implemented; immutable candidate with 9f4cd928 core and new guard unavailable.",
+        "note": "9f4cd928 is on main. Evidence codex-v1-814759-result.md. Need implement and test full live child/effective provider proof, including socket, resumed foreign thread and auth changes; then publish and verify candidate. No new create/send."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:36:03+03:00",
+      "note": "Core 9f4cd dependency verified on exact immutable bytes; owned child PID/exe/env/netns read-only proof passed with zero sends; guard fix remains.",
+      "changes": {
+        "status": "running",
+        "note": "Public core 805fd477final direct owned child preflight PASS, evidence codex-v1-805fd-owned-proof-02.log; fixture source ee6ed6e0. Provider-aware fail-closed guard still to implement and prove, no acceptance yet."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:44:12+03:00",
+      "note": "Prepared portable public consumer with two receipts, native export/search/projects and restart no resend; no new mutations pending owner guard handoff.",
+      "changes": {
+        "note": "Fixture seven-check source published 377b28b0; 14 focused tests and 805fd public read-only preflight pass. Await root adapter guard fix/new exact candidate; full seven-check runtime not yet executed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:51:21+03:00",
+      "note": "Before acceptance corrected turn receipt versus message ID correlation (RED→GREEN); final candidate not yet visible in releases.",
+      "changes": {
+        "note": "Guard be109a18 and generation recheck 6237dca1 confirmed main. Consumer typed Codex turn receipt fix ead75904, 15 focused tests. Waiting Astra's immutable final manifest; full run has not started."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:53:46+03:00",
+      "note": "Exact candidate consumer self-reported seven PASS, but success cleanup destroyed detailed receipt/authority; preserve as limited evidence, no resend. Future run writes evidence to stdout.",
+      "changes": {
+        "note": "78e747 manifest bf570d... run codex-v1-189f409a reported 7/7 PASS, but launcher deleted successful scratch and receipts; not independent acceptance. Fixture success stdout persistence fixed 98ef60fa, 16 tests. Evidence codex-v1-78e747-result.md. No automatic repeat of successful sends."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b77b-aed7-79c1-956a-5678680c0d56",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 3,
-  "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
-  "blocker": "Original create UNKNOWN; missing historical error stage, retry forbidden",
+  "note": "78e747 manifest bf570d... run codex-v1-189f409a reported 7/7 PASS, but launcher deleted successful scratch and receipts; not independent acceptance. Fixture success stdout persistence fixed 98ef60fa, 16 tests. Evidence codex-v1-78e747-result.md. No automatic repeat of successful sends.",
+  "blocker": "Provider-aware guard TDD and generation-bound owned child credential/namespace proof not yet implemented; immutable candidate with 9f4cd928 core and new guard unavailable.",
   "result": "Terra readonly complete: logs0/threads0/no sessions; stderr discarded. quota guard hypothesis (herder-test not exempt, unknown quota denies) not proven historicalcause. Schema20checks valid from coreowner. Original task68ebef496b1d5ca9265c1a8c605ac631 preserved; no resend. Probe19dcfc9c; evidence codex-v1-result.md."
 }

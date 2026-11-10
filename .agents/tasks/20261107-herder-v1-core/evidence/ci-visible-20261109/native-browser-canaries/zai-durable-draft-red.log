@@ -1,0 +1,74 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/zai-durable-draft-read.test.ts (3 tests | 3 failed) 47ms
+     × resolves the admitted original handle without an account history scan or ID replacement 26ms
+     × reads the exact admitted conversation messages in a fresh process 10ms
+     × fails before loading an old draft when the pinned account changed 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zai-durable-draft-read.test.ts > Zai durable draft reads in a fresh driver > resolves the admitted original handle without an account history scan or ID replacement
+AssertionError: promise rejected "Error: unrelated_history_scan_forbidden" instead of resolving
+ ❯ tests/zai-durable-draft-read.test.ts:44:47
+     42|   it("resolves the admitted original handle without an account history…
+     43|     const f = await fixture();
+     44|     await expect(f.driver.getChat(f.draft.id)).resolves.toMatchObject(…
+       |                                               ^
+     45|       pendingRemoteCreation: false, sourceRoute: "https://chat.z.ai/c/…
+     46|     expect(f.call.mock.calls.every(([name]) => name === "list_pages" |…
+
+Caused by: Error: unrelated_history_scan_forbidden
+ ❯ Object.<anonymous> tests/zai-durable-draft-read.test.ts:34:11
+ ❯ ZaiCdpDriver.snapshot src/adapters/zai-cdp-driver.ts:222:24
+ ❯ src/adapters/zai-cdp-driver.ts:536:30
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/zai-durable-draft-read.test.ts > Zai durable draft reads in a fresh driver > reads the exact admitted conversation messages in a fresh process
+AssertionError: expected null to deeply equal [ { id: 'reply', …(2) } ]
+
+- Expected:
+[
+  {
+    "id": "reply",
+    "role": "assistant",
+    "text": "OWN_TOKEN",
+  },
+]
+
++ Received:
+null
+
+ ❯ tests/zai-durable-draft-read.test.ts:51:51
+     49|   it("reads the exact admitted conversation messages in a fresh proces…
+     50|     const f = await fixture();
+     51|     await expect(f.driver.getMessages(f.draft.id)).resolves.toEqual([{…
+       |                                                   ^
+     52|   });
+     53|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/zai-durable-draft-read.test.ts > Zai durable draft reads in a fresh driver > fails before loading an old draft when the pinned account changed
+AssertionError: expected [Function] to throw error including 'pinned browser account scope mismatch' but got 'unrelated_history_scan_forbidden'
+
+Expected: "pinned browser account scope mismatch"
+Received: "unrelated_history_scan_forbidden"
+
+ ❯ tests/zai-durable-draft-read.test.ts:57:47
+     55|     const f = await fixture();
+     56|     f.changeAccount();
+     57|     await expect(f.driver.getChat(f.draft.id)).rejects.toThrow("pinned…
+       |                                               ^
+     58|   });
+     59| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  04:43:02
+   Duration  584ms (transform 281ms, setup 38ms, import 299ms, tests 47ms, environment 0ms)
+

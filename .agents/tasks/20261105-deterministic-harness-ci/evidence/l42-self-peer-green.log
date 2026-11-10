@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: only preserve a linked complete native transcript and explicit exact search coverage
+ok 1 - only preserve a linked complete native transcript and explicit exact search coverage
+  ---
+  duration_ms: 2.054812
+  type: 'test'
+  ...
+# Subtest: isolated fleet contains only its own loopback peer
+ok 2 - isolated fleet contains only its own loopback peer
+  ---
+  duration_ms: 0.289904
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 105.619768

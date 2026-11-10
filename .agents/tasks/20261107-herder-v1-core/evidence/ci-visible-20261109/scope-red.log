@@ -1,0 +1,221 @@
+test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) ... test_vibe_all_active_native_sessions_must_be_visible (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_canary_raw_label_does_not_replace_the_canonical_state (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) ... test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) ... test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_idle_session_and_extra_visible_inactive_sessions_are_valid (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_stopped_canary_can_pass_before_cleanup_with_archived_history (test_candidate_release_gate.V1ReportTest) ... ERROR
+test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_unregistered_authorized_active_session_must_be_visible (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_validation_does_not_echo_private_browser_values (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) ... ok
+
+======================================================================
+ERROR: test_vibe_stopped_canary_can_pass_before_cleanup_with_archived_history (test_candidate_release_gate.V1ReportTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 353, in test_vibe_stopped_canary_can_pass_before_cleanup_with_archived_history
+    self.assertEqual(candidate_release_gate.validate_v1_report(
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/candidate_release_gate.py", line 163, in validate_v1_report
+    validate_vibe_browser_evidence(lane.get('browser_evidence'), harness, run_id)
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/candidate_release_gate.py", line 109, in validate_vibe_browser_evidence
+    raise ValueError(f'V1 {harness} native/UI state missing, unknown or inconsistent')
+ValueError: V1 codex native/UI state missing, unknown or inconsistent
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_complete', value=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_complete', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_complete', value=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_complete', value='true')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_ref', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_catalog_ref', value='')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_raw_state_ref', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_state_contract', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_active_catalog_and_raw_state_require_complete_source_receipts (test_candidate_release_gate.V1ReportTest) (field='native_state_contract', value='inferred_from_provider_timestamps')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 311, in test_vibe_active_catalog_and_raw_state_require_complete_source_receipts
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='control_scope', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='control_scope', value='all_native_sessions')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='native_catalog_scope', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='native_catalog_scope', value='authorized_registered_sessions')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='native_catalog_scope', value='global_database_catalog')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='observation_phase', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_catalog_scope_is_separate_from_mutation_scope (test_candidate_release_gate.V1ReportTest) (field='observation_phase', value='after_cleanup')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 297, in test_vibe_catalog_scope_is_separate_from_mutation_scope
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='native_active_states', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 334, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='ui_session_states', value=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 334, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='native_active_states', value={})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 334, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='ui_session_states', value={})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 334, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='ui_session_states', value='idle')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 342, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='ui_session_states', value='UNKNOWN')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 342, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='native_active_states', value='unknown')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 342, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_each_authorized_active_state_must_match_the_rendered_state (test_candidate_release_gate.V1ReportTest) (field='native_active_states', value='stopped')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 342, in test_vibe_each_authorized_active_state_must_match_the_rendered_state
+    with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.025s
+
+FAILED (failures=24, errors=1)

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T08:15:56+00:00",
+  "details": "Чередующееся чтение одного и того же 429 из двух вкладок увеличивало strikes при каждом проходе и могло надолго остановить обновление. Добавлена ограниченная сохраняемая дедупликация; нужны конечные доказательства и выпуск.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T08:15:56+00:00",
+      "changes": {
+        "details": "Чередующееся чтение одного и того же 429 из двух вкладок увеличивало strikes при каждом проходе и могло надолго остановить обновление. Добавлена ограниченная сохраняемая дедупликация; нужны конечные доказательства и выпуск.",
+        "source": "RED/GREEN tests/chatgpt-background-budget.test.ts",
+        "status": "open",
+        "title": "ChatGPT: повторные наблюдения двух 429 ошибочно увеличивают backoff"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T08:21:31+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/chatgpt-budget-green-20261107.log",
+            "red_proof_path": "evidence/chatgpt-budget-red-20261107.log",
+            "red_result": "1 failed",
+            "red_sha256": "f2bbb3775c7788fe6e22b90ad81a0467381a3364adbf32e63b460184ffaea257",
+            "result": "1 passed",
+            "sha256": "c877faf1197e140290213e54a2b740ecbeb39eddf52c2617b9d4ee7a019b99fe",
+            "test_command": "vitest run tests/chatgpt-background-budget.test.ts -t 'two tabs repeatedly'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Ba519623a7dd84db0998f",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/chatgpt-budget-green-20261107.log",
+      "red_proof_path": "evidence/chatgpt-budget-red-20261107.log",
+      "red_result": "1 failed",
+      "red_sha256": "f2bbb3775c7788fe6e22b90ad81a0467381a3364adbf32e63b460184ffaea257",
+      "result": "1 passed",
+      "sha256": "c877faf1197e140290213e54a2b740ecbeb39eddf52c2617b9d4ee7a019b99fe",
+      "test_command": "vitest run tests/chatgpt-background-budget.test.ts -t 'two tabs repeatedly'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "RED/GREEN tests/chatgpt-background-budget.test.ts",
+  "status": "fixed",
+  "title": "ChatGPT: повторные наблюдения двух 429 ошибочно увеличивают backoff",
+  "updated_at": "2026-11-07T08:21:31+00:00"
+}

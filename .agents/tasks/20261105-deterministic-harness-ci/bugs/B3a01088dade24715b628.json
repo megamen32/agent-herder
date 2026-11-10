@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:50:56+00:00",
+  "details": "После устранения direct_peer_limit настоящий Hermes выполнил 2 запроса fixture, но getRawTranscript вернул observed-cli-output вместо обязательного native-file; интеграционный adapter не содержал ранее проверенные Hermes SQLite export hunks, reader не поддерживал Hermes JSONL.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Tesla",
+      "at": "2026-11-06T16:50:56+00:00",
+      "changes": {
+        "details": "После устранения direct_peer_limit настоящий Hermes выполнил 2 запроса fixture, но getRawTranscript вернул observed-cli-output вместо обязательного native-file; интеграционный adapter не содержал ранее проверенные Hermes SQLite export hunks, reader не поддерживал Hermes JSONL.",
+        "source": "L33 server-44 candidate canary evidence/l33-v5-hermes-fleet-fix.json",
+        "status": "open",
+        "title": "Hermes integration candidate не экспортирует native transcript"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Tesla",
+      "at": "2026-11-06T16:59:50+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l33-hermes-native-green.log",
+            "red_proof_path": "evidence/l33-hermes-native-red.log",
+            "red_result": "6 failed",
+            "red_sha256": "ccdf6a4c9c7dfa5900a43f4b651112927bbc3f07d7badb03ed5e758584cd3627",
+            "result": "8 passed",
+            "sha256": "752628fe7893f112963e3261bf69801c3a71122823a36190586d897928550c47",
+            "test_command": "vitest run tests/hermes-native-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/hermes-active-native-id.test.ts tests/integrator-transcript-browser.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B3a01088dade24715b628",
+  "owner": "Tesla",
+  "reporter": "Tesla",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l33-hermes-native-green.log",
+      "red_proof_path": "evidence/l33-hermes-native-red.log",
+      "red_result": "6 failed",
+      "red_sha256": "ccdf6a4c9c7dfa5900a43f4b651112927bbc3f07d7badb03ed5e758584cd3627",
+      "result": "8 passed",
+      "sha256": "752628fe7893f112963e3261bf69801c3a71122823a36190586d897928550c47",
+      "test_command": "vitest run tests/hermes-native-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/hermes-active-native-id.test.ts tests/integrator-transcript-browser.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 server-44 candidate canary evidence/l33-v5-hermes-fleet-fix.json",
+  "status": "fixed",
+  "title": "Hermes integration candidate не экспортирует native transcript",
+  "updated_at": "2026-11-06T16:59:50+00:00"
+}

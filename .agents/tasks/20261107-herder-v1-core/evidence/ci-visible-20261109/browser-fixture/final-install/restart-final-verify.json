@@ -1,0 +1,34 @@
+{
+  "observed_at": "2026-11-09T02:51:44.751Z",
+  "outcome": "RECEIVED",
+  "returncode": 0,
+  "proof": {
+    "schema": "agent-herder.ci-browser-proof.v1",
+    "status": "PASS",
+    "managed": true,
+    "profile_path": "/home/roomhacker/.local/state/agent-herder/ci-ui-browser-20261109",
+    "namespace": "herderci1109",
+    "session": "herderci1109",
+    "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+    "generation": "0e01b3d1afaf62a34decf41aa1ad6f21cb8ef78a9746b6dbb012ee5b11dbe861",
+    "daemon_pid": 613402,
+    "daemon_start_ticks": "81319210",
+    "browser_pid": 613637,
+    "browser_start_ticks": "81319267",
+    "relay_pid": 612164,
+    "relay_start_ticks": "81318837",
+    "relay": {
+      "agent_port": 19898,
+      "extension_port": 19899,
+      "state_dir": "/home/roomhacker/.local/state/agent-herder/ci-vibe-relay-20261109",
+      "session_id": "session_1"
+    },
+    "authenticated": true,
+    "api_status": 200,
+    "api_content_type": "application/json; charset=utf-8",
+    "origin": "https://agent.bezrabotnyi.com",
+    "cli_tab_id": "t1",
+    "vibe_page_correlated": false,
+    "observed_at": "2026-11-09T02:51:44.725Z"
+  }
+}

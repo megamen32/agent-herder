@@ -1,0 +1,14 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [32m✓[39m tests/installed-browser-bindings.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 188[2mms[22m[39m
+ [32m✓[39m tests/installed-native-worker.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 7948[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves UNKNOWN owned-view close receipt and never dispatches another close [33m 3105[2mms[22m[39m
+     [33m[2m✓[22m[39m does not close a browser view when its formerly idle native session is now running [33m 3073[2mms[22m[39m
+     [33m[2m✓[22m[39m retains the timed-out prepare receipt and serializes close after the original read without replay [33m 1464[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 05:09:01
+[2m   Duration [22m 9.60s[2m (transform 1.86s, setup 73ms, import 2.72s, tests 8.14s, environment 0ms)[22m
+

@@ -1,0 +1,7 @@
+{"action": "register", "actor": "CI Astra", "at": "2026-11-07T19:04:53+00:00", "id": "B8baf202952e74d0e9875", "sha256": "73f1e5157d8ea52ad9e31ba753608bff360cda3bd99dcc9e4ae165a82006fd32", "status": "open"}
+{"action": "register", "actor": "CI Astra", "at": "2026-11-07T19:55:03+00:00", "id": "Baf7506d1dc904dbd82ee", "sha256": "e62d403d40c0702df4734779b306a110b79d2b7d852048402ad76f7d0fc9d43a", "status": "open"}
+{"action": "resolve", "actor": "CI Astra", "at": "2026-11-07T19:59:14+00:00", "id": "Baf7506d1dc904dbd82ee", "sha256": "9f1444f775315830142fba32e41d363fd4702e3da1daf0504ecf2cd7165f6558", "status": "fixed"}
+{"action": "register", "actor": "CI Astra", "at": "2026-11-07T21:04:24+00:00", "id": "B4982e2843bef46019488", "sha256": "347b2a900273b01a7b0924edd6557de6972aa1ddaf78efe7f3eea46c7c75356d", "status": "open"}
+{"action": "resolve", "actor": "CI Astra", "at": "2026-11-07T21:08:06+00:00", "id": "B4982e2843bef46019488", "sha256": "2eda71674eb3d035e8d67d895117fc7f61df36683dc14ade5cb91b212715b6d0", "status": "fixed"}
+{"action": "register", "actor": "CI Astra", "at": "2026-11-07T21:21:44+00:00", "id": "Bd1707ccab10747bfba61", "sha256": "1c75c7a6fb23b61e3d186e80aaf03153a8e9e5f142da9c4b6b169c898b29a910", "status": "open"}
+{"action": "resolve", "actor": "CI Astra", "at": "2026-11-07T21:22:32+00:00", "id": "Bd1707ccab10747bfba61", "sha256": "b401f12f0399b4ee3740e4962b621e5cfb6a1e97693bbb7574c30db162825418", "status": "fixed"}

@@ -12,7 +12,7 @@
   "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
   "model": "gpt-6-astra",
   "created_at": "2026-11-07T21:29:31+03:00",
-  "updated_at": "2026-11-08T00:12:17+03:00",
+  "updated_at": "2026-11-08T16:22:59+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:31+03:00",
@@ -207,11 +207,68 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:15:17+03:00",
+      "note": "SHA manifest 78e проверен; запрос exact target/claim/config доставлен CI с inputId zai-handoff-01a1b7a8-20261108. Новых Z.ai отправок не было.",
+      "changes": {
+        "blocker": "Нет подтверждённого CI handoff с актуальным Z.ai target, claim и account scope; старые идентификаторы вкладок недействительны.",
+        "blocker_details": {
+          "evidence": "evidence/zai-v1-78e-prepared.json",
+          "next": "Получить handoff CI, проверить владельца вкладки и account scope, затем выполнить новый независимый consumer case без повтора старого UNKNOWN."
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:21:18+03:00",
+      "note": "Candidate 78e SHA подтверждён; после создания одной пустой вкладки page 50 занята существующим чатом и меняла route. Новых model sends, claim и запуска fixture нет; чужой чат сохранён.",
+      "changes": {
+        "blocker": "Созданная пустая page 50 теперь показывает существующий чат; её маршрут изменился между read-only проверками, поэтому эксклюзивный target не подтверждён.",
+        "blocker_details": {
+          "evidence": "evidence/zai-v1-78e-target-collision.json",
+          "next": "Выяснить владение и идентичность page 50 через QA authority; получить уникальный контролируемый пустой target до отдельного consumer case. Старый UNKNOWN не повторять."
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T16:22:59+03:00",
+      "note": "Передача browser ownership по поручению владельца; новых browser действий, claim или sends не начинал.",
+      "changes": {
+        "note": "Browser ownership передан session 01a1bb0c-4fd3-75e2-ae2a-2c18a99462de; checkpoint evidence/zai-v1-78e-ownership-handoff.json. Exact page identity и transport schema проверяет новый исполнитель."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 1,
-  "note": "Exact resource collision sent once to productowner inputci-browser-target-disappeared-2307; don't create new tabs until resolved. ChatGPTpage10 also disappeared.",
-  "blocker": "Z.ai GLM-5.3 at capacity after native click; prompt UNKNOWN, no retry",
-  "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay."
+  "note": "Browser ownership передан session 01a1bb0c-4fd3-75e2-ae2a-2c18a99462de; checkpoint evidence/zai-v1-78e-ownership-handoff.json. Exact page identity и transport schema проверяет новый исполнитель.",
+  "blocker": "Созданная пустая page 50 теперь показывает существующий чат; её маршрут изменился между read-only проверками, поэтому эксклюзивный target не подтверждён.",
+  "result": "a836 preflight14tools PASS. One create confirms session51ff45f3cbdf769f0a147c520bb5cb5c; prompt UNKNOWN/retry forbidden. UI page7 native /c/c2c581df-d3a7-4a3b-8f57-4b8edff81fd3 shows model capacity and retained exact draft. Full retained root ci-zai-native-a836-0010. Evidence zai-a836-{receipt,reconcile-read,native-blocker}.json. No second send/model switch/replay.",
+  "blocker_details": {
+    "evidence": "evidence/zai-v1-78e-target-collision.json",
+    "next": "Выяснить владение и идентичность page 50 через QA authority; получить уникальный контролируемый пустой target до отдельного consumer case. Старый UNKNOWN не повторять."
+  }
 }

@@ -1,0 +1,74 @@
+{
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QZCODEJOIN",
+  "label": "Подключить рабочий ZCode adapter из старого CI",
+  "parent": "S05",
+  "owner": "roomhacker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "depends_on": [],
+  "description": "Вход CI L45 dcb01f5e реальный ZCode3.17.2; использовать готовый adapter/native driver через AHAP, без повторного writer V072D UNKNOWN. Первая задача только bounded composition, native case отдельно V078.",
+  "acceptance": "Один опубликованный source composition + focused contract, точный argv/evidence manifest; native acceptance не заявлен.",
+  "created_at": "2026-11-07T18:15:43+03:00",
+  "updated_at": "2026-11-07T18:59:51+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:43+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QZCODEJOIN",
+        "label": "Подключить рабочий ZCode adapter из старого CI",
+        "parent": "S05",
+        "owner": "ZCode worker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "depends_on": [],
+        "description": "Вход CI L45 dcb01f5e реальный ZCode3.17.2; использовать готовый adapter/native driver через AHAP, без повторного writer V072D UNKNOWN. Первая задача только bounded composition, native case отдельно V078.",
+        "acceptance": "Один опубликованный source composition + focused contract, точный argv/evidence manifest; native acceptance не заявлен."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:51:26+03:00",
+      "note": "Resuming source-only composition publication after QBROWSERJOIN schema repair; no native ZCode calls.",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:58:07+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Опубликован source composition commit 4cc4cd85f4c8d55873d3f054ce5fdd6288c127f1 на origin/main. Owned paths only: src/ahap-zcode-runner.ts, tests/ahap-zcode-runner.test.ts, acceptance/native/zcode/ahap-contract.json. Проверки на чистой базе после npm ci и npm run build:core: `./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts` — 4/4 passed; `./node_modules/.bin/tsc --noEmit --pretty false` — exit 0; `git diff --cached --check` — passed. Manifest argv: [\"$AHAP_ZCODE_SERVER_NODE\", \"$AHAP_ZCODE_SERVER_ENTRY\"], cwd=$AHAP_ZCODE_CWD; required env AHAP_VERSION=0.1, AHAP_HARNESS=zcode and the three absolute AHAP_ZCODE_* paths. Reuses existing ZcodeAdapter/native driver; ambiguous mutation UNKNOWN, no retry. Native case NOT RUN, remains V078; V072D/E UNKNOWN were not replayed. Foreign WIP in shared Luna checkout and other ZCode worktrees preserved."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:59:51+03:00",
+      "note": "",
+      "changes": {
+        "result": "Опубликован source composition commit 4cc4cd85093f22e2926dc44fae39e8458b1c3e04 на origin/main. Owned paths only: src/ahap-zcode-runner.ts, tests/ahap-zcode-runner.test.ts, acceptance/native/zcode/ahap-contract.json. Проверки на чистой базе после npm ci и npm run build:core: `./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts` — 4/4 passed; `./node_modules/.bin/tsc --noEmit --pretty false` — exit 0; `git diff --cached --check` — passed. Manifest argv: [\"$AHAP_ZCODE_SERVER_NODE\", \"$AHAP_ZCODE_SERVER_ENTRY\"], cwd=$AHAP_ZCODE_CWD; required env AHAP_VERSION=0.1, AHAP_HARNESS=zcode and the three absolute AHAP_ZCODE_* paths. Reuses existing ZcodeAdapter/native driver; ambiguous mutation UNKNOWN, no retry. Native case NOT RUN, remains V078; V072D/E UNKNOWN were not replayed. Foreign WIP in shared Luna checkout and other ZCode worktrees preserved."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "harness": "codex",
+  "result": "Опубликован source composition commit 4cc4cd85093f22e2926dc44fae39e8458b1c3e04 на origin/main. Owned paths only: src/ahap-zcode-runner.ts, tests/ahap-zcode-runner.test.ts, acceptance/native/zcode/ahap-contract.json. Проверки на чистой базе после npm ci и npm run build:core: `./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts` — 4/4 passed; `./node_modules/.bin/tsc --noEmit --pretty false` — exit 0; `git diff --cached --check` — passed. Manifest argv: [\"$AHAP_ZCODE_SERVER_NODE\", \"$AHAP_ZCODE_SERVER_ENTRY\"], cwd=$AHAP_ZCODE_CWD; required env AHAP_VERSION=0.1, AHAP_HARNESS=zcode and the three absolute AHAP_ZCODE_* paths. Reuses existing ZcodeAdapter/native driver; ambiguous mutation UNKNOWN, no retry. Native case NOT RUN, remains V078; V072D/E UNKNOWN were not replayed. Foreign WIP in shared Luna checkout and other ZCode worktrees preserved."
+}

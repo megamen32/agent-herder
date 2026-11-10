@@ -1,0 +1,73 @@
+{
+  "id": "CIINSTALLED",
+  "label": "Установить штатный маршрут к собственной тестовой сессии",
+  "parent": "CISHIP",
+  "kind": "research",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 15
+  },
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "description": "Переиспользовать текущие L102/L103 результаты; не запускать конкурирующее создание. Точный supported session/instance selection в установленном Herder; без запрещённого отдельного test route и без смены рабочих настроек. Если отсутствует, один concrete product gap для Terra.",
+  "acceptance": "Evidence supported route/runtime identity или точная недостающая операция и bounded fix. Исследование само не является installed consumer PASS.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:17:11+03:00",
+  "updated_at": "2026-11-07T19:28:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:17:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIINSTALLED",
+        "label": "Установить штатный маршрут к собственной тестовой сессии",
+        "parent": "CISHIP",
+        "kind": "research",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 15
+        },
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "description": "Переиспользовать текущие L102/L103 результаты; не запускать конкурирующее создание. Точный supported session/instance selection в установленном Herder; без запрещённого отдельного test route и без смены рабочих настроек. Если отсутствует, один concrete product gap для Terra.",
+        "acceptance": "Evidence supported route/runtime identity или точная недостающая операция и bounded fix. Исследование само не является installed consumer PASS.",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:30:44+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "На server-44 штатный POST /api/sessions создал тестовый Codex thread 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b; installed 70d2ead8 PID 590955 возвращает exact GET, пустой complete transcript и list. Отправку не запускали. Точный gap: общий app-server привязан к process-wide provider, thread/start override возвращает modelProviderMismatch при turn/start; project provider фильтруется, отдельный CODEX_HOME работает только в отдельном процессе. Нет доказанного выбора тестового native instance через обычный установленный API без смены рабочего провайдера. Нужна универсальная поддержка выбора реального native instance на уровне продукта, согласуемая с запретом отдельного test route; это не installed PASS. Evidence L102/L103 и evidence/codex-thread-provider-probe.md.",
+        "note": "CIGATEINSTALLED не запускать до подтверждённого штатного выбора instance; product gap передать через план без повторных create/send."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:22:38+03:00",
+      "note": "",
+      "changes": {
+        "note": "Единственный ready-dependency alert Terra/QCODEXJOIN доставлен при idle, inputId ciinst-qcodexjoin-20261107-62e19737, delivery accepted, turn 01a1b6d1-748d-7d73-bfac-e7a9ddca53a5. Повтор не выполнять; L102 test session повторно не создавать. Full installed gate ждёт actual route proof."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:28:04+03:00",
+      "note": "",
+      "changes": {
+        "note": "Terra/QCODEXJOIN прочитал переданный exact thread и product gap, записал в своём leaf: AHAP composition обязан сохранить Rust authority/no-replay, modelProviderMismatch не является installed route proof. Product leaf waiting; повторно сообщение/создание/отправку не выполнять."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    }
+  ],
+  "result": "На server-44 штатный POST /api/sessions создал тестовый Codex thread 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b; installed 70d2ead8 PID 590955 возвращает exact GET, пустой complete transcript и list. Отправку не запускали. Точный gap: общий app-server привязан к process-wide provider, thread/start override возвращает modelProviderMismatch при turn/start; project provider фильтруется, отдельный CODEX_HOME работает только в отдельном процессе. Нет доказанного выбора тестового native instance через обычный установленный API без смены рабочего провайдера. Нужна универсальная поддержка выбора реального native instance на уровне продукта, согласуемая с запретом отдельного test route; это не installed PASS. Evidence L102/L103 и evidence/codex-thread-provider-probe.md.",
+  "note": "Terra/QCODEXJOIN прочитал переданный exact thread и product gap, записал в своём leaf: AHAP composition обязан сохранить Rust authority/no-replay, modelProviderMismatch не является installed route proof. Product leaf waiting; повторно сообщение/создание/отправку не выполнять."
+}

@@ -1,0 +1,138 @@
+{
+  "label": "Fast Agent: первый изолированный запуск",
+  "description": "Выяснить реальный бинарник и конфигурацию провайдера; получить или явно опровергнуть первый нативный canary.",
+  "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+  "estimate_minutes": null,
+  "model": "gpt-6-luna",
+  "origin": "L04",
+  "id": "L14",
+  "created_at": "2026-11-06T15:51:30+03:00",
+  "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+  "harness": "codex",
+  "updated_at": "2026-11-06T19:09:54+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T15:51:30+03:00",
+      "note": "",
+      "changes": {
+        "label": "Fast Agent: первый изолированный запуск",
+        "description": "Выяснить реальный бинарник и конфигурацию провайдера; получить или явно опровергнуть первый нативный canary.",
+        "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+        "estimate_minutes": 15,
+        "model": "gpt-6-luna",
+        "origin": "L04"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:53:18+03:00",
+      "note": "Исполнитель запущен параллельно; первая задача — проверяемый изолированный canary, время полного покрытия пока неизвестно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b0ea-c201-7ff1-8434-cfc277133427",
+        "owner": "Sartre"
+      },
+      "session": "01a1b0ea-c201-7ff1-8434-cfc277133427",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:59:22+03:00",
+      "note": "CLI с лжемоделью подтверждён; проверяем доставку и транскрипты через Herder.",
+      "changes": {
+        "session": "01a1b0f0-916d-7ca2-af37-89be74007baa",
+        "owner": "Raman"
+      },
+      "session": "01a1b0f0-916d-7ca2-af37-89be74007baa",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:00:52+03:00",
+      "note": "Проверяю два создания и отправки через реальный адаптер в отдельном сетевом namespace с локальной моделью.",
+      "changes": {},
+      "session": "01a1b0f0-916d-7ca2-af37-89be74007baa",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:03:25+03:00",
+      "note": "Два создания и синхронные отправки через FastAgentFileAdapter прошли в сетевом namespace с локальной моделью; оба transcript и ID сохранены в scripts/native-fast-agent-adapter-receipt.json. Каталог проектов и поиск пока не проверены.",
+      "changes": {},
+      "session": "01a1b0f0-916d-7ca2-af37-89be74007baa",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:04:37+03:00",
+      "note": "Результат: две сессии FastAgentFileAdapter, обе отправки и полные нативные transcript подтверждены локальной моделью без внешней сети; квитанция scripts/native-fast-agent-adapter-receipt.json, опубликовано a3c31c6b. Поиск и каталог проекта не подтверждены.",
+      "changes": {},
+      "session": "01a1b0f0-916d-7ca2-af37-89be74007baa",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:06:51+03:00",
+      "note": "Две реальные сессии через FastAgentFileAdapter подтверждены на server-100; расширяем до обычного API Herder и server-44.",
+      "changes": {
+        "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+        "owner": "Rawls"
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:12:06+03:00",
+      "note": "Прежние 15 минут не отражали реальное оставшееся время; оценка уточняется по фактическим результатам, срок полного этапа пока неизвестен.",
+      "changes": {
+        "estimate_minutes": null
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:16:55+03:00",
+      "note": "На server-44 через HTTP API созданы две Fast Agent сессии, получены ответы и проект; transcript вернул 422, поиск unsupported и active не подтверждён. Исправления переданы двум исполнителям с раздельным владением.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:28:50+03:00",
+      "note": "На server-44 две Fast Agent сессии получили ответы, найдены поиском и одна подтверждена active при удержании модели. Transcript 422 исправляется отдельно.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:37:20+03:00",
+      "note": "На server-44 повторный candidate run подтвердил две сессии, точный поиск, active и 3 обращения к лжемодели; обе попытки полного transcript вернули 422, CI остаётся FAIL. Подготовлен неприменённый patch интеграции Fast Agent в runner.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:45:03+03:00",
+      "note": "L14 независимая проверка: native Fast Agent 0.10.43 сохраняет agent.message_history в history_<agent>.json и указывает активный history_file в continuation.agents; выбор по mtime может вернуть previous. RED тест получил старый checkpoint вместо полного; адаптер выбирает snapshot-ссылку по точному session_id, отклоняет неоднозначные/многоагентные записи и проверяет стабильность чтения; 24 теста GREEN. HTTP transcript пока не доказан: integrator-transcript.ts отклоняет fast-agent до адаптера и поддерживает JSON лишь для некоторых harness; интерфейс передан Lead в очередь, общий файл не менялся. Повтор server-44 ожидает согласованной поддержки paginator. Runner patch не применять: node-side пакет не содержит sidecar validator native-fast-agent-ci.py.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:59:14+03:00",
+      "note": "Текущий исходный кандидат: исходный изолированный Fast Agent сценарий на server-44 прошёл две сессии, transcript по две страницы, поиск и активный ход; отдельная квитанция в scripts/native-fast-agent-transcript-receipt-l15.json.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:09:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "На отдельном кандидате server-44 две сессии Fast Agent, ответы, постраничный transcript и поиск; полная поисковая выдача evidence/l23-fast-search-f87636.json. Общий кандидат и installed PID остаются открыты."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "owner": "Rawls",
+  "result": "На отдельном кандидате server-44 две сессии Fast Agent, ответы, постраничный transcript и поиск; полная поисковая выдача evidence/l23-fast-search-f87636.json. Общий кандидат и installed PID остаются открыты."
+}

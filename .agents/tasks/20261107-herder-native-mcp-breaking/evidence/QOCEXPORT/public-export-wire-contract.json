@@ -1,0 +1,16 @@
+{
+  "source_commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+  "manifest_sha256": "cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac",
+  "core_sha256": "58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c",
+  "wire_contract": {
+    "tool": "export",
+    "arguments": {
+      "action": "export",
+      "session_ref": "<new fixture session_ref>",
+      "format": "common"
+    },
+    "declared_read_scope": "export",
+    "implementation_gap": "ApplicationPort returns None for an unconnected operation; public tools/call returns structuredContent code=unsupported,effect=none,message=operation is not connected",
+    "scope": "read-only public export check; no export implementation or Rust core edit"
+  }
+}

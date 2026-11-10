@@ -1,0 +1,61 @@
+{
+  "scope": "isolated-rust-connection-only",
+  "zcode_cli_version": "0.17.1",
+  "zcode_server_version": "3.17.2-linux-x64-88a41b337faa",
+  "proxy_certificate_autowriter": {
+    "zai_proxy_keeper_unit": "not-installed (systemctl: Unit not found)",
+    "zai_mitm_proxy_unit": "not-installed (systemctl: Unit not found)",
+    "matching_keeper_process": "none",
+    "unrelated_video_watching_mitmdump": "left-running-untouched"
+  },
+  "normal_cli_fresh_launch": {
+    "binary": "/home/roomhacker/.zcode/server/bin/zcode",
+    "args": [
+      "--help"
+    ],
+    "exit_code": 0,
+    "proxy_tls_env_names": [
+      "NO_PROXY",
+      "no_proxy"
+    ],
+    "settings_hashes_unchanged": true,
+    "settings_sha256": {
+      "/home/roomhacker/.zcode/v2/config.json": "354f9b7b2450956637d96cc5e35b93f11282e671ac737297b80070ba54e9e654",
+      "/home/roomhacker/.zcode/v2/provider_config.json": "98bd52099f8c7b51fe22b38e9e9f519bd1431e07351d873082c0cfc0a4a44541",
+      "/home/roomhacker/.zcode/v2/bot-config.json": "e3c058fe063977ae3232594ba80cf5e993f12d9572bf5056e0f842a0868d4477",
+      "/home/roomhacker/.zcode/cli/config.json": "f3d32f7a3aaa9043574e0fc3be5fe15e0628ed8df41c4770b4a9ed5eab3b30da"
+    }
+  },
+  "fresh_isolated_supervisor": {
+    "root": "/tmp/herder-zcode-rust-v071b-kf29pye0/server-root",
+    "state": "ready",
+    "host": "127.0.0.1",
+    "generation": 1,
+    "process_environment_proxy_tls_names": [
+      "NO_PROXY",
+      "no_proxy"
+    ],
+    "inference_requests": 0,
+    "cleanup": "owned process group stopped"
+  },
+  "rust_adapter": {
+    "module": "crates/herder/src/adapters/zcode/connection.rs",
+    "connect": "ok",
+    "native_initialize": {
+      "request_id": 1,
+      "response_id": 1,
+      "response_type": 201,
+      "available": false
+    },
+    "owned_process_id": null,
+    "close": "ok",
+    "listSessions_attempt": "native error: ZCode Agent runtime is not running; no model input was sent",
+    "previous_independent_listSessions_receipt": ".tmp/run-v070b-zcode/official-websocket-receipt.json"
+  },
+  "not_proven": [
+    "session creation",
+    "input delivery",
+    "nonempty transcript",
+    "response timeout under induced latency"
+  ]
+}

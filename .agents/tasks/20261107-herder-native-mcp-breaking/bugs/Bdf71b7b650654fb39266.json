@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T08:57:47+00:00",
+  "details": "The initial V093A projection used LowerHex formatting on sha2::Digest output, but the pinned sha2 generic array does not implement LowerHex. Focused build failed before tests. Fix with explicit byte-to-hex conversion.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T08:57:47+00:00",
+      "changes": {
+        "details": "The initial V093A projection used LowerHex formatting on sha2::Digest output, but the pinned sha2 generic array does not implement LowerHex. Focused build failed before tests. Fix with explicit byte-to-hex conversion.",
+        "source": "cargo test --manifest-path crates/herder/Cargo.toml --offline zai::tests::transcript_projection_preserves_chat_message_identity_and_known_limits -- --nocapture",
+        "status": "open",
+        "title": "Z.ai transcript projection snapshot digest does not compile"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:00:13+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V093A-green.txt",
+            "red_proof_path": "evidence/V093A-red.txt",
+            "red_result": "error[E0277]",
+            "red_sha256": "d3c0121f10081c839064cb91a8a76beeb0b1439a6d7b43c158f3bf7947629ad6",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "e6b149d688771f45948094cedfd49f3cb5bfb491d6ce829c79e8e72967adc265",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline zai::tests::transcript_projection_preserves_chat_message_identity_and_known_limits -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bdf71b7b650654fb39266",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V093A-green.txt",
+      "red_proof_path": "evidence/V093A-red.txt",
+      "red_result": "error[E0277]",
+      "red_sha256": "d3c0121f10081c839064cb91a8a76beeb0b1439a6d7b43c158f3bf7947629ad6",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "e6b149d688771f45948094cedfd49f3cb5bfb491d6ce829c79e8e72967adc265",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline zai::tests::transcript_projection_preserves_chat_message_identity_and_known_limits -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo test --manifest-path crates/herder/Cargo.toml --offline zai::tests::transcript_projection_preserves_chat_message_identity_and_known_limits -- --nocapture",
+  "status": "fixed",
+  "title": "Z.ai transcript projection snapshot digest does not compile",
+  "updated_at": "2026-11-07T09:00:13+00:00"
+}

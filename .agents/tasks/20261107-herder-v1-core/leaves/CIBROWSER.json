@@ -1,0 +1,68 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Managed isolated Vibe QA fixture source",
+  "description": "Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.",
+  "acceptance": "Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.",
+  "affected_files": [
+    "deploy/fleet/ci-browser-fixture.mjs"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/ci_browser_finish",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+  "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
+  "id": "CIBROWSER",
+  "created_at": "2026-11-09T03:29:52+03:00",
+  "updated_at": "2026-11-09T03:57:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T03:29:52+03:00",
+      "note": "Resume approved explicit scope split after context recovery.",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Managed isolated Vibe QA fixture source",
+        "description": "Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.",
+        "acceptance": "Complete reviewed fixed manager source, unit/config templates and focused tests for exact own profile, relay, process identity, anchor and auth. Installed changes are a separate root-owned step.",
+        "affected_files": [
+          "deploy/fleet/ci-browser-fixture.mjs"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/ci_browser_finish",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+        "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T03:57:36+03:00",
+      "note": "Close only root-reviewed source proof; separate installed fixture ownership.",
+      "changes": {
+        "status": "done",
+        "result": "Reviewed manager source only: six owned source/test/template files accepted by root; Node22.22.2 17 tests, syntax and whitespace PASS. Canonical evidence evidence/ci-visible-20261109/browser-fixture/source-result.json SHA256 89d1ab902aef9423b715e38fc8b3704e73ffb55535489e2f2a21d1c30d291cef; manager SHA256 46a621e1b0c6772b27269bab4ff426cd38df923b457aa4e1cdc0db18d189f000. Installed changes zero; actual fixture migration/live acceptance continues in CIBROWSERINSTALL; all-five installed acceptance incomplete."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    }
+  ],
+  "result": "Reviewed manager source only: six owned source/test/template files accepted by root; Node22.22.2 17 tests, syntax and whitespace PASS. Canonical evidence evidence/ci-visible-20261109/browser-fixture/source-result.json SHA256 89d1ab902aef9423b715e38fc8b3704e73ffb55535489e2f2a21d1c30d291cef; manager SHA256 46a621e1b0c6772b27269bab4ff426cd38df923b457aa4e1cdc0db18d189f000. Installed changes zero; actual fixture migration/live acceptance continues in CIBROWSERINSTALL; all-five installed acceptance incomplete."
+}

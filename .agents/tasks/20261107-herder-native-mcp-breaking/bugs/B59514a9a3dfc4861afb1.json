@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T16:38:46+00:00",
+  "details": "На разрешённой передаче ownership if_running вернул skipped_inactive/sessionStatus idle; immediate app wait_threads подтвердил active/inProgress того же текущего turn. Retry only known-not-delivered same inputId activationalways accepted в том же turn. Требует проверки источника native activity в старом Herder, не повторять accepted input. Не стопит QOCJOIN; конкретный совместимый маршрут уже доставил решение. Source repair пока не назначен; canonical record preserves evidence.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T16:38:46+00:00",
+      "changes": {
+        "details": "На разрешённой передаче ownership if_running вернул skipped_inactive/sessionStatus idle; immediate app wait_threads подтвердил active/inProgress того же текущего turn. Retry only known-not-delivered same inputId activationalways accepted в том же turn. Требует проверки источника native activity в старом Herder, не повторять accepted input. Не стопит QOCJOIN; конкретный совместимый маршрут уже доставил решение. Source repair пока не назначен; canonical record preserves evidence.",
+        "source": "astra-terra-port-ownership-20261107T1635-v1; native wait_threads turn01a1b6d9-0c5e-7ce3-b529-b406717afc7d",
+        "status": "open",
+        "title": "deliver if_running пропускает активный native turn Terra"
+      }
+    }
+  ],
+  "id": "B59514a9a3dfc4861afb1",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "astra-terra-port-ownership-20261107T1635-v1; native wait_threads turn01a1b6d9-0c5e-7ce3-b529-b406717afc7d",
+  "status": "open",
+  "title": "deliver if_running пропускает активный native turn Terra",
+  "updated_at": "2026-11-07T16:38:46+00:00"
+}

@@ -1,0 +1,65 @@
+{
+  "id": "CIERROR",
+  "label": "CI: объяснять отказ candidate preflight",
+  "parent": "CISHIP",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 10,
+  "owner": "CI lead",
+  "description": "Конечный остаток после опубликованного CIGUARD0797c520: ограниченная понятная причина отказа существующего runner без secret/env disclosure. Повторно не делать CIGUARD и не расширять rollout/framework. Завершить текущие2ownedfiles, scoped publish, checkpoint.",
+  "acceptance": "Regression скрытой причины RED→GREEN; успешный preflight остаётся допускающим (positive check, если не покрыт существующим тестом). Один scoped опубликованный commit и evidence. Full installed/five-adapter остаются INCOMPLETE; внешние blocked зависимости не превращать в running.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T19:47:42+03:00",
+  "updated_at": "2026-11-07T19:51:58+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:47:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIERROR",
+        "label": "CI: объяснять отказ candidate preflight",
+        "parent": "CISHIP",
+        "kind": "task",
+        "status": "running",
+        "estimate_minutes": 10,
+        "owner": "CI lead",
+        "description": "Ошибка candidate preflight должна показывать причину отказа без раскрытия окружения или секретов, чтобы выпуск можно было исправить.",
+        "acceptance": "При ошибке runner показывается ограниченная безопасная причина; тест воспроизводит прежнее скрытие и проходит после исправления.",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:50:23+03:00",
+      "note": "Сверка concurrent publication: CIGUARD не повторять, закончить существующий CIERROR.",
+      "changes": {
+        "description": "Конечный остаток после опубликованного CIGUARD0797c520: ограниченная понятная причина отказа существующего runner без secret/env disclosure. Повторно не делать CIGUARD и не расширять rollout/framework. Завершить текущие2ownedfiles, scoped publish, checkpoint.",
+        "acceptance": "Regression скрытой причины RED→GREEN; успешный preflight остаётся допускающим (positive check, если не покрыт существующим тестом). Один scoped опубликованный commit и evidence. Full installed/five-adapter остаются INCOMPLETE; внешние blocked зависимости не превращать в running.",
+        "affected_files": [
+          "deploy/fleet/rollout-candidate.py",
+          "tests/test_native_rollout_preflight.py"
+        ],
+        "note": "Astra приняла опубликованный CIGUARD. По прямому запросу владельца это единственный текущий остаток; после результата закрыть running leaf. Хук при отсутствии queued/running возвращает None, blocked11 не запускают его сами."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:51:58+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "0c3ff3cc59948e1d96048e6a7dfd7a2c1d269331 опубликован в main: безопасная ограниченная категория ошибки runner (timeout, fixture/model, ZCode, прочее), код возврата и подсказка, без вывода сырого stderr или секретов. RED/GREEN evidence/cierror-reason-{red,green}.txt; 9 focused tests GREEN, включая успешный preflight под настоящим тестовым release lease и положительные пути controller/owner; fake subprocess не является live acceptance. Изменены только deploy/fleet/rollout-candidate.py и tests/test_native_rollout_preflight.py. Installed/five-adapter остаются INCOMPLETE."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "affected_files": [
+    "deploy/fleet/rollout-candidate.py",
+    "tests/test_native_rollout_preflight.py"
+  ],
+  "note": "Astra приняла опубликованный CIGUARD. По прямому запросу владельца это единственный текущий остаток; после результата закрыть running leaf. Хук при отсутствии queued/running возвращает None, blocked11 не запускают его сами.",
+  "result": "0c3ff3cc59948e1d96048e6a7dfd7a2c1d269331 опубликован в main: безопасная ограниченная категория ошибки runner (timeout, fixture/model, ZCode, прочее), код возврата и подсказка, без вывода сырого stderr или секретов. RED/GREEN evidence/cierror-reason-{red,green}.txt; 9 focused tests GREEN, включая успешный preflight под настоящим тестовым release lease и положительные пути controller/owner; fake subprocess не является live acceptance. Изменены только deploy/fleet/rollout-candidate.py и tests/test_native_rollout_preflight.py. Installed/five-adapter остаются INCOMPLETE."
+}

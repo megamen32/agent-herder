@@ -1,0 +1,11 @@
+{
+  "scope": "codex-isolated-unix-boundary",
+  "sessionId": "01a1ae96-c668-73e0-8e61-acfb00ff79b3",
+  "completed": true,
+  "transcriptComplete": true,
+  "fixtureRequests": 1,
+  "isolatedNetwork": true,
+  "peerPid": 2197242,
+  "status": "PASS",
+  "source": "server-44 direct command output; peer credentials and namespaces checked before and after delivery"
+}

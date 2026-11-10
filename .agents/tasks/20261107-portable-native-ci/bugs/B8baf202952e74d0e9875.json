@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T19:04:53+00:00",
+  "details": "На page7 read-only probe passive strikes10, cooldown1794231290482 при now1794078100962. Passive hook увеличивает exponent на каждый ответ страницы; shared budget тоже считает уникальные ответы одного cooldown отдельными retry. Нужна группировка внутри действующего cooldown с сохранением максимального Retry-After и увеличением при следующей реальной попытке.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "CI Astra",
+      "at": "2026-11-07T19:04:53+00:00",
+      "changes": {
+        "details": "На page7 read-only probe passive strikes10, cooldown1794231290482 при now1794078100962. Passive hook увеличивает exponent на каждый ответ страницы; shared budget тоже считает уникальные ответы одного cooldown отдельными retry. Нужна группировка внутри действующего cooldown с сохранением максимального Retry-After и увеличением при следующей реальной попытке.",
+        "source": "Exact page7 existing MacMini gateway + tests/chatgpt-passive-backoff-burst.test.ts",
+        "status": "open",
+        "title": "ChatGPT: один всплеск 429 раздувает backoff до 42 часов"
+      }
+    }
+  ],
+  "id": "B8baf202952e74d0e9875",
+  "owner": "CI Astra",
+  "reporter": "CI Astra",
+  "source": "Exact page7 existing MacMini gateway + tests/chatgpt-passive-backoff-burst.test.ts",
+  "status": "open",
+  "title": "ChatGPT: один всплеск 429 раздувает backoff до 42 часов",
+  "updated_at": "2026-11-07T19:04:53+00:00"
+}

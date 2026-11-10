@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T12:24:50+00:00",
+  "details": "Nietzsche independent RED 98d804e0: open_owner accepts mode0666 absolute runner.js, then launcher would pass password. Scratch /tmp/ahap-owner-98d804e0-review-pfcuelf7/regression.rs, spawned_processes=0. Validate code files and ancestor chains/root or current ownership/symlink resolution before spawn. Owner Terra.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra / Nietzsche",
+      "at": "2026-11-07T12:24:50+00:00",
+      "changes": {
+        "details": "Nietzsche independent RED 98d804e0: open_owner accepts mode0666 absolute runner.js, then launcher would pass password. Scratch /tmp/ahap-owner-98d804e0-review-pfcuelf7/regression.rs, spawned_processes=0. Validate code files and ancestor chains/root or current ownership/symlink resolution before spawn. Owner Terra.",
+        "source": "Independent immutable source review; 01a1b453-5507-7b81-ae21-6853827cef0e",
+        "status": "open",
+        "title": "AHAP trusted launcher accepts foreign-writable executable/script"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T12:26:51+00:00",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "V065AHAP",
+      "at": "2026-11-07T12:30:11+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V065AHAP/permissions-green.log",
+            "red_proof_path": "evidence/V065AHAP/permissions-red.log",
+            "red_result": "test result: FAILED",
+            "red_sha256": "36e505ffaa2dfbe9f294faa65bd346bef466e2247d94413a9d0a6f5b2d95821e",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "d337a9251004f7b69bb4546784e05bc2be1cdc1b2c8cbac735021e8c5b281c73",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml trusted_opencode_profile_rejects_foreign_writable_runner"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bda2fcfe5c716461fb8bd",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "Astra / Nietzsche",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V065AHAP/permissions-green.log",
+      "red_proof_path": "evidence/V065AHAP/permissions-red.log",
+      "red_result": "test result: FAILED",
+      "red_sha256": "36e505ffaa2dfbe9f294faa65bd346bef466e2247d94413a9d0a6f5b2d95821e",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "d337a9251004f7b69bb4546784e05bc2be1cdc1b2c8cbac735021e8c5b281c73",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml trusted_opencode_profile_rejects_foreign_writable_runner"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Independent immutable source review; 01a1b453-5507-7b81-ae21-6853827cef0e",
+  "status": "fixed",
+  "title": "AHAP trusted launcher accepts foreign-writable executable/script",
+  "updated_at": "2026-11-07T12:30:11+00:00"
+}

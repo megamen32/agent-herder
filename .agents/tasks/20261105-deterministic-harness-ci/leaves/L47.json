@@ -1,0 +1,56 @@
+{
+  "id": "L47",
+  "label": "Claude: сценарий на общем candidate",
+  "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+  "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Tesla",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T23:33:40+03:00",
+  "updated_at": "2026-11-07T21:30:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T23:33:40+03:00",
+      "note": "",
+      "changes": {
+        "id": "L47",
+        "label": "Claude: сценарий на общем candidate",
+        "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+        "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Tesla",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:54:18+03:00",
+      "note": "Original Claude failed transcript snapshot but saved raw stderr readback contains exact user and subsequent assistant, evidence/l47-claude-original-readback.json. CI wait fix RED/GREEN evidence/l47-claude-wait-{red,green}.log. Original isolated session directory removed after test, same-session HTTP readback unavailable; no repeated send and B126 stays open.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:01+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

@@ -1,0 +1,13 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder)
+error[E0599]: no method named `with_cursor` found for struct `rmcp::model::ListResourcesResult` in the current scope
+   --> src/mcp/resources.rs:449:10
+    |
+448 |       Ok(ListResourcesResult::with_all_items(resources)
+    |  ________-
+449 | |         .with_cursor(next_cursor)
+    | |         -^^^^^^^^^^^ method not found in `rmcp::model::ListResourcesResult`
+    | |_________|
+    |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `herder` (lib test) due to 1 previous error

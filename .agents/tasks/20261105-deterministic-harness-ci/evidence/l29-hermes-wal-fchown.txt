@@ -1,0 +1,12 @@
+/tmp/l29-hermes-fdtrace.3429081:fchown(7</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3429081:fchown(13</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427758:fchown(34</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427758:fchown(45</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427758:fchown(61</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(30</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(35</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(35</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(30</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(35</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427668:fchown(35</work/.hermes/state.db-wal>, 0, 0) = 0
+/tmp/l29-hermes-fdtrace.3427769:fchown(8</work/.hermes/state.db-wal>, 0, 0) = 0

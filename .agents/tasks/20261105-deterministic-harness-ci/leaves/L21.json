@@ -1,0 +1,113 @@
+{
+  "label": "Проверить упаковку и зависимости релиза",
+  "description": "Проверить целостность ссылок и fingerprint релизного payload; интеграция установленной identity продолжается в L27/L30.",
+  "acceptance": "Есть воспроизводимые проверки упаковки и алгоритм identity с явно отмеченными ограничениями.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Averroes",
+  "id": "L21",
+  "created_at": "2026-11-06T17:48:13+03:00",
+  "updated_at": "2026-11-06T19:12:59+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T17:48:13+03:00",
+      "note": "Выделено из L05: текущий payload digest не покрывает node_modules и полный fleet bundle.",
+      "changes": {
+        "label": "Проверить зависимости релизного артефакта",
+        "description": "Установить и подтвердить идентичность зависимостей проверенного кандидата и фактически запускаемого установленного релиза.",
+        "acceptance": "Протестированная идентичность покрывает применимые зависимости и разрешённый пакет agent-resume без ложного PASS при подмене; исходный реальный сценарий повторён.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Averroes"
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:48:26+03:00",
+      "note": "Оценка срока пока неизвестна.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Срок до завершения не измерен."
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:56:20+03:00",
+      "note": "RED→GREEN: проверка полного rollout payload и разыменованных зависимостей, require.resolve agent-resume. На изолированных Linux копиях фактических файлов совпадение; manifest тестовый. Интеграция CI/rollout, Mac и проверка загруженных модулей PID не доказаны; Lead получил отложенное сообщение.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:57:01+03:00",
+      "note": "Повтор на изолированных Linux копиях фактических dist/packages/node_modules: Node импортировал agent-resume из каждой собственной копии; изменение node_modules/zod/package.json отклонено (exit 1). Использовался тестовый manifest, штатный сценарий и Mac не подтверждены.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:02:28+03:00",
+      "note": "Lead направлен точный контракт API/receipt и условия Linux/Mac, согласование ожидается: сессия idle, доставка deferred. Реальный release 0dcb64d: оба canonical manifest fingerprint совпадают; полный staging и identity fail closed на висячей node_modules/.bin/agent-resume через shared store. Подтверждены 12 локальных releases с такой ссылкой; повтор полного комплекта заблокирован, production не менялся.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:08:43+03:00",
+      "note": "RED реального release_rules: test_native_ci_artifact_packaging.py воспроизводит битый workspace CLI в shared .bin. На изолированной материализованной копии настоящего release собственный каталог .bin разрешает ссылку и Node импортирует agent-resume и zod; это эксперимент, не fix packaging. Контракт evidence записан в scripts/native-ci-artifact-evidence.py. Ожидается согласование владельца release_rules; чужие/установленные файлы не изменены.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:09:34+03:00",
+      "note": "Две изолированные материализованные копии реального release с экспериментальным собственным .bin: identity match, CLI agent-resume contract exit 0; подмена zod/package.json отклонена exit 1. Изменение layout означает, что это не proof исходного bundle или штатного packaging fix.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:19:35+03:00",
+      "note": "Packaging RED→GREEN: release-local .bin и приватная исполнимая копия workspace CLI без изменения hardlink оригинала. Изолированные копии реального 0dcb64d: direct agent-resume contract exit 0 дважды, identity match; tamper отклонён, исходный release не изменён. L04/L20 получили deferred контракт. test_remote_release_gate.py: 28/29, ошибка expiry cleanup в чужом WIP, сообщено Lead; исходный штатный native CI не повторён, баг не закрыт.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:26:45+03:00",
+      "note": "B0b00822de0064e289b06: RED fixture останавливался на обязательном preflight до rollback; тесты обновлены без изменения product, добавлен запрет мутаций при preflight failure и проверка fenced cleanup. Исходный файл GREEN 30/30; red реконструирован из fixture без нового mock и помечен, логи evidence сохранены, баг fixed. Контракт identity L20/L23 отправлен deferred, сессии idle.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:12:59+03:00",
+      "note": "",
+      "changes": {
+        "label": "Проверить упаковку и зависимости релиза",
+        "description": "Проверить целостность ссылок и fingerprint релизного payload; интеграция установленной identity продолжается в L27/L30.",
+        "acceptance": "Есть воспроизводимые проверки упаковки и алгоритм identity с явно отмеченными ограничениями.",
+        "status": "done",
+        "result": "Dangling agent-resume исправлен через TDD в release_rules.py; artifact identity проверяет bundle и разыменованные зависимости, профильные тесты прошли. Установленные PID и загруженные модули не аттестованы; это работа L27/L30."
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Срок до завершения не измерен.",
+  "result": "Dangling agent-resume исправлен через TDD в release_rules.py; artifact identity проверяет bundle и разыменованные зависимости, профильные тесты прошли. Установленные PID и загруженные модули не аттестованы; это работа L27/L30."
+}

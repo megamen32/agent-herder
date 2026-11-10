@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/QOCJOIN/artifact-family-proof.py", line 26, in <module>
+    p.stdin.write(json.dumps(q)+'\n');p.stdin.flush();r=json.loads(p.stdout.readline()); assert 'error' not in r,(family,r)
+AssertionError: ('v2', {'jsonrpc': '2.0', 'id': 2, 'error': {'code': -32000, 'message': 'OpenCode adapter call failed', 'data': {'outcome': 'unknown', 'retryable': False}}})

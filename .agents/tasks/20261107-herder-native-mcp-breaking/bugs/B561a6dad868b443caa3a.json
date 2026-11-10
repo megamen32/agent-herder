@@ -1,0 +1,72 @@
+{
+  "created_at": "2026-11-07T08:51:27+00:00",
+  "details": "Before the fix, list_chats relied on account_scope checked during attach and did not re-check it on each read. An isolated fake-CDP case changed scope A to B in the same target/context and returned a B chat ID to an A-bound reader. No live profile was used.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T08:51:27+00:00",
+      "changes": {
+        "details": "Before the fix, list_chats relied on account_scope checked during attach and did not re-check it on each read. An isolated fake-CDP case changed scope A to B in the same target/context and returned a B chat ID to an A-bound reader. No live profile was used.",
+        "source": "Focused fake-CDP regression command: cargo test --manifest-path crates/herder/Cargo.toml --lib adapters::zai::tests::list_chats_rejects_account_changed_after_attach --offline",
+        "status": "open",
+        "title": "Z.ai list_chats can return IDs after the attached account changes"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T08:56:06+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V090SCOPE-green.txt",
+            "red_proof_path": "evidence/V090SCOPE-red.txt",
+            "red_result": "assertion `left == right` failed",
+            "red_sha256": "6b05e0106d5c81993e2020e0ea07114bbec3dfdded9eee4dda21f323ce1f2598",
+            "result": "test result: ok. 3 passed; 0 failed",
+            "sha256": "82d81580a3af72c8da338a9fb847fb0df78e0d7a2baa4f8f4e8a559e90951c8d",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline zai::tests::list_chats -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:15:00+00:00",
+      "changes": {
+        "status": "open"
+      },
+      "reason": "Canonical original finding Bcc3deeef34fc45249cf8 now owns the expanded per-list-result race and was fixed with RED/GREEN evidence; this record covers the same issue."
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:15:09+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "Bcc3deeef34fc45249cf8",
+          "kind": "duplicate",
+          "reason": "Same list account-scope defect as canonical bug Bcc3deeef34fc45249cf8; canonical record now includes per-list-result race and its RED/GREEN proof."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "B561a6dad868b443caa3a",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "resolution": {
+    "duplicate_of": "Bcc3deeef34fc45249cf8",
+    "kind": "duplicate",
+    "reason": "Same list account-scope defect as canonical bug Bcc3deeef34fc45249cf8; canonical record now includes per-list-result race and its RED/GREEN proof."
+  },
+  "source": "Focused fake-CDP regression command: cargo test --manifest-path crates/herder/Cargo.toml --lib adapters::zai::tests::list_chats_rejects_account_changed_after_attach --offline",
+  "status": "duplicate",
+  "title": "Z.ai list_chats can return IDs after the attached account changes",
+  "updated_at": "2026-11-07T09:15:09+00:00"
+}

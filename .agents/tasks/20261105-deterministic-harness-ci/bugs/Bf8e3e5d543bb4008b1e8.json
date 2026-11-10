@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T06:00:38+00:00",
+  "details": "Сетевой namespace и отдельный HOME не изолировали абсолютные пути; sentinel из /tmp был доступен. RED /tmp/herder-fs-red.log; GREEN /tmp/herder-fs-green.log, оба вида sentinel скрыты; подтверждено и на server-44.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T06:00:38+00:00",
+      "changes": {
+        "details": "Сетевой namespace и отдельный HOME не изолировали абсолютные пути; sentinel из /tmp был доступен. RED /tmp/herder-fs-red.log; GREEN /tmp/herder-fs-green.log, оба вида sentinel скрыты; подтверждено и на server-44.",
+        "source": "python3 tests/native/smoke.py",
+        "status": "open",
+        "title": "Native fixture может читать посторонние файлы хоста"
+      }
+    }
+  ],
+  "id": "Bf8e3e5d543bb4008b1e8",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "python3 tests/native/smoke.py",
+  "status": "open",
+  "title": "Native fixture может читать посторонние файлы хоста",
+  "updated_at": "2026-11-07T06:00:38+00:00"
+}

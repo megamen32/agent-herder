@@ -1,0 +1,28 @@
+(node:108) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:108) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+file:///mnt/minimax-managed-herder-probe.mjs:31
+    if(!response.ok)throw Error(`${path} HTTP ${response.status}: ${JSON.stringify(value)}`);
+                          ^
+
+Error: /api/sessions/minimax-code/mvs_f2ec2235539b47859cf82c01ad292fb7/transcript?limit=1 HTTP 422: {"error":"Native transcript page rejected: unsupported native JSONL harness"}
+    at api (file:///mnt/minimax-managed-herder-probe.mjs:31:27)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///mnt/minimax-managed-herder-probe.mjs:101:17
+
+Node.js v22.23.1
+Traceback (most recent call last):
+  File "/mnt/minimax-managed-probe.py", line 82, in <module>
+    subprocess.run(['node', str(Path(__file__).with_name('minimax-managed-herder-probe.mjs')), '/mnt/candidate/dist', str(root), receipt['sessionId'], default_receipt['sessionId']], env=env, timeout=60, check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['node', '/mnt/minimax-managed-herder-probe.mjs', '/mnt/candidate/dist', '/tmp/herder-native-model-ggm3n29q/minimax-managed-experiment', 'mvs_023c48b2562a4cf18980d966be13cdce', 'mvs_ecd3b38e13be47febc5b1c30edc2e508']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 113, in main
+    subprocess.run([sys.executable, str(HERE / 'minimax-managed-probe.py'), base, args.mcode], env=managed_env, cwd=root / 'work', timeout=110, check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/minimax-managed-probe.py', 'http://127.0.0.1:38967/v1', '/var/cli.js']' returned non-zero exit status 1.

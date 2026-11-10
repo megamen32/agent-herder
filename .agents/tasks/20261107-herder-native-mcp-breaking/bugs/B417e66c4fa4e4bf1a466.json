@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T15:29:50+00:00",
+  "details": "QBROWSERJOIN candidate: connect() ожидает open/error, timeout начинает отсчёт только после соединения; зависший handshake бесконечно блокирует любой вызов. RED /tmp/herder-browser-connect-red.log; fix применяет тот же timeout к handshake и отклоняет ранний close.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T15:29:50+00:00",
+      "changes": {
+        "details": "QBROWSERJOIN candidate: connect() ожидает open/error, timeout начинает отсчёт только после соединения; зависший handshake бесконечно блокирует любой вызов. RED /tmp/herder-browser-connect-red.log; fix применяет тот же timeout к handshake и отклоняет ранний close.",
+        "source": "tests/direct-cdp-page-tools.test.ts bounds a websocket connection that never opens",
+        "status": "open",
+        "title": "Direct CDP WebSocket connect не ограничивает ожидание открытия"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T15:30:48+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QBROWSERJOIN/connect-green.log",
+            "red_proof_path": "evidence/QBROWSERJOIN/connect-red.log",
+            "red_result": "1 failed",
+            "red_sha256": "a184ef1b3c7ce2b1a85e0b381c06a0bee09b87f0bf00a96c1effea690fc50585",
+            "result": "8 passed",
+            "sha256": "d3db8e2b74bbce35fb1e1ef6a7eb6890143eac20a48b4dab7797051814e759ee",
+            "test_command": "vitest run tests/direct-cdp-page-tools.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B417e66c4fa4e4bf1a466",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QBROWSERJOIN/connect-green.log",
+      "red_proof_path": "evidence/QBROWSERJOIN/connect-red.log",
+      "red_result": "1 failed",
+      "red_sha256": "a184ef1b3c7ce2b1a85e0b381c06a0bee09b87f0bf00a96c1effea690fc50585",
+      "result": "8 passed",
+      "sha256": "d3db8e2b74bbce35fb1e1ef6a7eb6890143eac20a48b4dab7797051814e759ee",
+      "test_command": "vitest run tests/direct-cdp-page-tools.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/direct-cdp-page-tools.test.ts bounds a websocket connection that never opens",
+  "status": "fixed",
+  "title": "Direct CDP WebSocket connect не ограничивает ожидание открытия",
+  "updated_at": "2026-11-07T15:30:48+00:00"
+}

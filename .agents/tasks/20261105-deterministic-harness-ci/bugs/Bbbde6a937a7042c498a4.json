@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-06T20:41:16+00:00",
+  "details": "Минимальный MiniMax hunk в общем reader после проверки ownership/diff; RED/GREEN evidence/l46-minimax-transcript-{red,green}.log, 11 focused tests. Настоящий server-44 локальный TLS fixture на candidate v2 SHA d1c496e110152479f0f51722512598d597918e218baab3fc2237a8eeccb8cf2a: 2 новые сессии, 2+2 pages, ответы и completed jobs, evidence/l46-minimax-v18.{json,log,err}. Search in-memory MCP находит ID, но не сохраняет partial, полное покрытие поиска не доказано; общий candidate gate FAIL.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T20:41:16+00:00",
+      "changes": {
+        "details": "В изолированном прогоне настоящего MiniMax transcript отвечает 422 unsupported native JSONL harness; требуется RED/GREEN и полный повтор.",
+        "source": "L45-L47 unified candidate isolated run",
+        "status": "open",
+        "title": "MiniMax: transcript 422 на общем candidate"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L46",
+      "at": "2026-11-06T20:53:17+00:00",
+      "changes": {
+        "details": "Минимальный MiniMax hunk в общем reader после проверки ownership/diff; RED/GREEN evidence/l46-minimax-transcript-{red,green}.log, 11 focused tests. Настоящий server-44 локальный TLS fixture на candidate v2 SHA d1c496e110152479f0f51722512598d597918e218baab3fc2237a8eeccb8cf2a: 2 новые сессии, 2+2 pages, ответы и completed jobs, evidence/l46-minimax-v18.{json,log,err}. Search in-memory MCP находит ID, но не сохраняет partial, полное покрытие поиска не доказано; общий candidate gate FAIL."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "L46",
+      "at": "2026-11-06T20:53:29+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l46-minimax-transcript-green.log",
+            "red_proof_path": "evidence/l46-minimax-transcript-red.log",
+            "red_result": "1 failed",
+            "red_sha256": "38aca63e4c17a4025f4a06e42f302c9877fa5d2b4d05256f068acb3c3d5005e1",
+            "result": "11 passed",
+            "sha256": "c552f3b62fb6a29e99946c4da675f3ba51527f68d75ddbd378c7547c02bb0b6f",
+            "test_command": "vitest run tests/native-hermes-minimax-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/fast-agent-integrator-transcript.test.ts tests/integrator-transcript-browser.test.ts tests/opencode-transcript-l36.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbbde6a937a7042c498a4",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l46-minimax-transcript-green.log",
+      "red_proof_path": "evidence/l46-minimax-transcript-red.log",
+      "red_result": "1 failed",
+      "red_sha256": "38aca63e4c17a4025f4a06e42f302c9877fa5d2b4d05256f068acb3c3d5005e1",
+      "result": "11 passed",
+      "sha256": "c552f3b62fb6a29e99946c4da675f3ba51527f68d75ddbd378c7547c02bb0b6f",
+      "test_command": "vitest run tests/native-hermes-minimax-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/fast-agent-integrator-transcript.test.ts tests/integrator-transcript-browser.test.ts tests/opencode-transcript-l36.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L45-L47 unified candidate isolated run",
+  "status": "fixed",
+  "title": "MiniMax: transcript 422 на общем candidate",
+  "updated_at": "2026-11-06T20:53:29+00:00"
+}

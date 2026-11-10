@@ -12,17 +12,17 @@
   "parent": "S01",
   "owner": "unassigned",
   "model": "gpt-6-astra",
-  "status": "queued",
+  "status": "deferred",
   "affected_files": [
     "crates/herder-compat/",
     "acceptance/compat/"
   ],
-  "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "id": "T008",
   "created_at": "2026-11-07T04:20:38+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:20:38+03:00",
+  "updated_at": "2026-11-07T15:53:14+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T04:20:38+03:00",
@@ -47,6 +47,16 @@
           "acceptance/compat/"
         ],
         "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:53:14+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"

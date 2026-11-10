@@ -1,32 +1,28 @@
 {
   "id": "E002",
   "label": "Показать первый native ответ OpenCode через новый MCP",
-  "description": "Установить dev сборку. Пройти create→deliver→read на изолированном OpenCode с лжемоделью. Полная приёмка V069 остаётся обязательной.",
+  "description": "Использовать квитанцию единственного OpenCode consumer Luna: exact source/artifact, native user/assistant IDs, model counter и reopen. Повторно не отправлять. Выход — проверяемый первый путь нового core, не финальный installed release.",
   "acceptance": "Установить dev сборку. Пройти create→deliver→read на изолированном OpenCode с лжемоделью. Полная приёмка V069 остаётся обязательной.",
   "depends_on": [
-    "V065",
-    "V063",
-    "V051",
-    "T011",
-    "V025"
+    "QOCREGRESSION"
   ],
   "affected_files": [
     "acceptance/early/opencode/"
   ],
   "parent": "S04",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "Astra",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Решение владельца: неизменённый legacy client через удаляемый translator; native endpoint строгий.",
+  "note": "Принимает отдельный regression исправленной версии в новом isolated instance. Исторический V065AHAPCIRUN UNKNOWN сохранён; тот же эффект не повторять.",
   "created_at": "2026-11-07T03:52:43+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:20:43+03:00",
+  "updated_at": "2026-11-07T20:35:40+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:43+03:00",
@@ -75,6 +71,49 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:31+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V065AHAPCIRUN"
+        ],
+        "owner": "Astra",
+        "description": "Использовать квитанцию единственного OpenCode consumer Luna: exact source/artifact, native user/assistant IDs, model counter и reopen. Повторно не отправлять. Выход — проверяемый первый путь нового core, не финальный installed release.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:18:43+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "QOCREGRESSION"
+        ],
+        "note": "Принимает отдельный regression исправленной версии в новом isolated instance. Исторический V065AHAPCIRUN UNKNOWN сохранён; тот же эффект не повторять."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:35:40+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Astra прочитала и сверила evidence/QOCREGRESSION/native-case-receipt.json с native-case-final.log (LAUNCH_EXIT=0): source1d89d04d/standb440b37c; manifestcd783293..; core→AHAP→настоящий OpenCode v2, native session ses_e48eee10affexJRqEVmWqcrikv, confirmeduser msg_1b7112059001y6Thh7Uu75wwvI, assistant msg_1b71120870012BuTJBrUNPsLrF, HERDER_TEST_MODEL_OK, model_requests=1, taskcompleted/reopenedcompleted. Namespace fresh+cleanup. Это первый candidate consumer; installedrelease/stop/context/fullAC остаются V069. ИсторическийUNKNOWN076bacd8 не трогался."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
     }
-  ]
+  ],
+  "result": "Astra прочитала и сверила evidence/QOCREGRESSION/native-case-receipt.json с native-case-final.log (LAUNCH_EXIT=0): source1d89d04d/standb440b37c; manifestcd783293..; core→AHAP→настоящий OpenCode v2, native session ses_e48eee10affexJRqEVmWqcrikv, confirmeduser msg_1b7112059001y6Thh7Uu75wwvI, assistant msg_1b71120870012BuTJBrUNPsLrF, HERDER_TEST_MODEL_OK, model_requests=1, taskcompleted/reopenedcompleted. Namespace fresh+cleanup. Это первый candidate consumer; installedrelease/stop/context/fullAC остаются V069. ИсторическийUNKNOWN076bacd8 не трогался."
 }

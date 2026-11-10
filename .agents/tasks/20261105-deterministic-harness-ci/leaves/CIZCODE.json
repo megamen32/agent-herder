@@ -1,0 +1,83 @@
+{
+  "id": "CIZCODE",
+  "label": "CI: подключить ZCode к candidate stage",
+  "parent": "CISHIP",
+  "description": "Подключить сохранённый L45 official ZCode runner к существующей candidate проверке; использовать общий candidate и лжемодель, ошибки/отсутствие lane давать INCOMPLETE/nonzero. Не создавать новый test route.",
+  "acceptance": "Один pipeline invocation исполняет Codex/OpenCode/ZCode на одном candidate с квитанциями и nonzero при неисправном ZCode; installed и пять сред отдельно INCOMPLETE.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:51:44+03:00",
+  "updated_at": "2026-11-07T19:12:07+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:51:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIZCODE",
+        "label": "CI: подключить ZCode к candidate stage",
+        "parent": "CISHIP",
+        "description": "Подключить сохранённый L45 official ZCode runner к существующей candidate проверке; использовать общий candidate и лжемодель, ошибки/отсутствие lane давать INCOMPLETE/nonzero. Не создавать новый test route.",
+        "acceptance": "Один pipeline invocation исполняет Codex/OpenCode/ZCode на одном candidate с квитанциями и nonzero при неисправном ZCode; installed и пять сред отдельно INCOMPLETE.",
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:53:06+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Подключаю ранее проверенный официальный ZCode runner к candidate stage на 44; исходный exact payload и изоляция сохраняются, никаких повторов старого receipt."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:03:32+03:00",
+      "note": "62e19737 в main: существующий candidate builder после Codex/OpenCode запускает сохранённый isolated ZCode runner на 44 для того же payload; неверный digest/пропавший runner/ZCode lane дают nonzero и receipt INCOMPLETE. Прямой комбинированный запуск до коммита на exact 52540beb: 52.209с, Codex/OpenCode 2+2 сессии, ZCode 2 сессии и 8+8 страниц; old full gate остаётся INCOMPLETE. Versioned ZCode 3.17.2 и 19 файлов runner сохранены под ~/.local/share/agent-herder-ci/versions; временные stages очищаются. 25 unit tests. Сейчас выполняется полный build 62e19737 для подтверждения точного коммита.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:06:35+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "62e19737 в main: один штатный build-release-candidate запускает Codex/OpenCode и существующий изолированный ZCode 3.17.2 на 44, связывает один candidate payload, не смешивает installed. Реальный полный build 62e19737: 15/15 сборка, 3 harness × 2 сессии, ZCode 8+8 страниц и 5 fixture вызовов, общий gate 50.126с; evidence/ci-candidate-62e19737-20261107.json. Release=INCOMPLETE. 25 unit tests, отсутствующий ZCode/плохой digest/неполный transcript блокируют CLI candidate; старый receipt сбрасывается. Собственный временный stage на 44 удалён, versioned runner и runtime сохранены. Прямой rollout bypass и installed/five-adapter остаются CIGATEINSTALLED."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:10:31+03:00",
+      "note": "",
+      "changes": {
+        "note": "ZCode runner exercise: настоящий ZCode и Herder HTTP server/adapter, но не dist/index.js entrypoint и не installed PID; его MCP search использует in-memory transport. Эти границы не подменяют общий/installed gate."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:12:07+03:00",
+      "note": "",
+      "changes": {
+        "note": "Runner использует настоящий ZCode и Herder HTTP server/adapter, но не dist/index.js entrypoint и не installed PID; MCP search in-memory. Candidate receipt опубликован в main b0f5c20d. Никаких выводов о полном/installed gate."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Runner использует настоящий ZCode и Herder HTTP server/adapter, но не dist/index.js entrypoint и не installed PID; MCP search in-memory. Candidate receipt опубликован в main b0f5c20d. Никаких выводов о полном/installed gate.",
+  "result": "62e19737 в main: один штатный build-release-candidate запускает Codex/OpenCode и существующий изолированный ZCode 3.17.2 на 44, связывает один candidate payload, не смешивает installed. Реальный полный build 62e19737: 15/15 сборка, 3 harness × 2 сессии, ZCode 8+8 страниц и 5 fixture вызовов, общий gate 50.126с; evidence/ci-candidate-62e19737-20261107.json. Release=INCOMPLETE. 25 unit tests, отсутствующий ZCode/плохой digest/неполный transcript блокируют CLI candidate; старый receipt сбрасывается. Собственный временный stage на 44 удалён, versioned runner и runtime сохранены. Прямой rollout bypass и installed/five-adapter остаются CIGATEINSTALLED."
+}

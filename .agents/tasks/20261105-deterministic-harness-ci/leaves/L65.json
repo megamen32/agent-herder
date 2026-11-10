@@ -1,0 +1,95 @@
+{
+  "id": "L65",
+  "label": "Раскатка Agent Herder: Mac M1",
+  "description": "Установить опубликованный d2df6186 или актуальный совместимый main на Mac M1, сохранить чужие сессии и выполнить consumer readback.",
+  "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T01:28:34+03:00",
+  "updated_at": "2026-11-07T21:30:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:28:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "L65",
+        "label": "Раскатка Agent Herder: Mac M1",
+        "description": "Установить опубликованный d2df6186 или актуальный совместимый main на Mac M1, сохранить чужие сессии и выполнить consumer readback.",
+        "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "Luna",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:29:50+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b2fa-cd17-7383-b23b-3eaccd454da5",
+        "note": "Назначено тому же исполнителю Mac; запуск отдельной Luna отклонён лимитом потоков."
+      },
+      "session": "01a1b2fa-cd17-7383-b23b-3eaccd454da5",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:31:39+03:00",
+      "note": "Прямое расширение владельца: единственный исполнитель обоих Mac; M1 проверяется только через reverse SSH :2222.",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2fa-cd17-7383-b23b-3eaccd454da5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:39:02+03:00",
+      "note": "Только штатный reverse SSH использован для read-only проверки. Fleet daemon остановлен, отдельный user Herder активен; процессы и данные не изменены.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Mac M1 отсутствует в действующей приватной deployment allowlist, отдельный активный runtime не совпадает с fleet node-config",
+        "blocker_details": {
+          "evidence": "Штатный reverse SSH :2222 подтвердил LocalHostName MacBook-Pro-User, MacBookPro18,2 arm64. Fleet node-config/current=b8f8470a69aa46bc0f848b813a17a2b91ee35c18; fleet LaunchAgent com.bezrabotnyi.agent-herder-fleet-node остановлен (active count 0). Отдельный com.user.agent-herder PID 1641 исполняет /Users/user/agents-projects/.fleet-candidate/releases/6966bfd4a67b8c42e4a7398f5df1e31ff0fe9113/dist/index.js; сохранён без изменений. Штатная herder-fleet-deployment.json содержит только server-44 и server-88; candidate d2df61867871e0d8761f49f632a538fb0f972a67 опубликован и собран, но M1 target descriptor отсутствует.",
+          "next": "Владелец deployment-конфигурации задаёт канонический M1 target/descriptor и указывает управляемый fleet node либо owner runtime; затем отдельный lease/CAS rollout и session_info readback.",
+          "preserved": "Никакие M1 runtime/config/state файлы и процессы не менялись."
+        },
+        "result": "BLOCKED: подтверждены origin/main=d2df61867871e0d8761f49f632a538fb0f972a67, M1 host identity, остановленный fleet node с current/config b8f8470a69aa46bc0f848b813a17a2b91ee35c18 и отдельный активный PID 1641 из 6966bfd4a67b8c42e4a7398f5df1e31ff0fe9113. Нет штатного target descriptor и однозначного выбранного runtime; consumer session_info не выполнен."
+      },
+      "session": "01a1b2fa-cd17-7383-b23b-3eaccd454da5",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:30:04+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b2fa-cd17-7383-b23b-3eaccd454da5",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "harness": "codex",
+  "blocker": "Mac M1 отсутствует в действующей приватной deployment allowlist, отдельный активный runtime не совпадает с fleet node-config",
+  "blocker_details": {
+    "evidence": "Штатный reverse SSH :2222 подтвердил LocalHostName MacBook-Pro-User, MacBookPro18,2 arm64. Fleet node-config/current=b8f8470a69aa46bc0f848b813a17a2b91ee35c18; fleet LaunchAgent com.bezrabotnyi.agent-herder-fleet-node остановлен (active count 0). Отдельный com.user.agent-herder PID 1641 исполняет /Users/user/agents-projects/.fleet-candidate/releases/6966bfd4a67b8c42e4a7398f5df1e31ff0fe9113/dist/index.js; сохранён без изменений. Штатная herder-fleet-deployment.json содержит только server-44 и server-88; candidate d2df61867871e0d8761f49f632a538fb0f972a67 опубликован и собран, но M1 target descriptor отсутствует.",
+    "next": "Владелец deployment-конфигурации задаёт канонический M1 target/descriptor и указывает управляемый fleet node либо owner runtime; затем отдельный lease/CAS rollout и session_info readback.",
+    "preserved": "Никакие M1 runtime/config/state файлы и процессы не менялись."
+  },
+  "result": "BLOCKED: подтверждены origin/main=d2df61867871e0d8761f49f632a538fb0f972a67, M1 host identity, остановленный fleet node с current/config b8f8470a69aa46bc0f848b813a17a2b91ee35c18 и отдельный активный PID 1641 из 6966bfd4a67b8c42e4a7398f5df1e31ff0fe9113. Нет штатного target descriptor и однозначного выбранного runtime; consumer session_info не выполнен."
+}

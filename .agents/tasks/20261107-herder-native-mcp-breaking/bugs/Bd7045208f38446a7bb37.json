@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:43:08+00:00",
+  "details": "Fake owner stdio: первая отправка прошла, stop фиксирует active hold; новый ключ возвращает delivery_blocked/effect none без диагностического human_stop_active. Для доказательства HumanStop нужен точный безопасный ответ с сохранением UNKNOWN для ранее принятого ключа.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:43:08+00:00",
+      "changes": {
+        "details": "Fake owner stdio: первая отправка прошла, stop фиксирует active hold; новый ключ возвращает delivery_blocked/effect none без диагностического human_stop_active. Для доказательства HumanStop нужен точный безопасный ответ с сохранением UNKNOWN для ранее принятого ключа.",
+        "source": "launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio",
+        "status": "open",
+        "title": "MCP deliver после HumanStop не различает hold от другого отказа"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:45:53+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025COMPOSE/public-hold-green.log",
+            "red_proof_path": "evidence/V025COMPOSE/public-hold-red.log",
+            "red_result": "test result: FAILED",
+            "red_sha256": "9f93a7610d71c4c9395f78b1d5ff4c831867bfb9390b549971b1638de2191c93",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "eaf9434f8a52a1ce40472e2dfc36edd35fbc2d55b2381078680b767d32856ab4",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bd7045208f38446a7bb37",
+  "owner": "V025PUBLIC",
+  "reporter": "V025PUBLIC",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025COMPOSE/public-hold-green.log",
+      "red_proof_path": "evidence/V025COMPOSE/public-hold-red.log",
+      "red_result": "test result: FAILED",
+      "red_sha256": "9f93a7610d71c4c9395f78b1d5ff4c831867bfb9390b549971b1638de2191c93",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "eaf9434f8a52a1ce40472e2dfc36edd35fbc2d55b2381078680b767d32856ab4",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio",
+  "status": "fixed",
+  "title": "MCP deliver после HumanStop не различает hold от другого отказа",
+  "updated_at": "2026-11-07T11:45:53+00:00"
+}

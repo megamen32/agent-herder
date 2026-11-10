@@ -97,3 +97,36 @@ Terra01a1b77b — CLI archive seam. Старое назначение CI install
 context и восстанавливает пропавший target по своему account marker внутри
 настроенного browser context. Избыточные scoped tabs дают явную ошибку.
 Source/fixture тест двух аккаунтов не заменяет живую проверку и установку.
+
+
+## Продолжение владельца08Nov после принятого cutover
+
+Старый Herder выключен на100/44/88/MacMini/MacM1; новый shared Rustcore
+работает через canonical GPTAdmin AgentHerder. Этот этап принят отдельно от
+полноты функций. Старые критерии INSTALL5/5 выше не отменяют уже отдельно
+разрешённое владельцем переключение с временной потерей legacy функций.
+
+Следующий прямо разрешённый результат: межхостовое управление, событийное
+автопробуждение parent после завершения child и запуск ремонта из NoticePlace.
+Функциональный подход уже заложен в ядро: сохраняем domain/application/adapters,
+чистые решения и явные эффекты. Отдельного FP rewrite, нового orchestrator или
+возврата старого daemon не требуется. Установленный общий ingress и existing
+AHAP остаются точками интеграции.
+
+Исполнители по экономии лимитов: Terra remoteAHAP/independentconsumerchecks,
+Luna corewake, Luna NoticePlace adapter. Lead преимущественно оркестратор,
+единственный интегратор shared runtime. Точные ownership в RESTORECORE,
+RESTOREREMOTE, RESTORENOTICE; прежние Sol/Astra исполнения не продолжаются.
+
+Приёмка:1) actualremoteinstance list/read/deliver с native receipt и readback;
+2) ownedchild completion приводит к одному parentwake, restart/duplicate не
+дублируют эффект, HumanStop сохраняется;3) тестовый NoticePlace incident через
+существующий consumer вызывает policy-selected OpenCode minimax-coding-plan
+repair и возвращает результат/healthreadback. Зелёный unit, catalog или
+acceptedrequest отдельно не равен completedworkflow. Тестовые чаты архивировать.
+Никаких тестовых звонков человеку. UserIOpassive0.9.13 принадлежит Dotсессии;
+старый ZIP и чужой runtime этой работой не выкладываются. Секреты не ротировать.
+
+Оценка20:29МСК: ориентир2–4часа, низкая уверенность до интеграционного прогона;
+это не новый гарантированный дедлайн и не замена исторического срока00:38.
+Первый контроль каждого slice15мин, без artificialstop/межсессионногоожидания.

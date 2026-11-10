@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-11-09T02:41:14.131Z",
+  "page_id": 582518746,
+  "closed": true,
+  "after_pages": [
+    {
+      "id": 582518677,
+      "active": false,
+      "origin": "null",
+      "pathname": "/"
+    },
+    {
+      "id": 582518744,
+      "active": false,
+      "origin": "https://agent.bezrabotnyi.com",
+      "pathname": "/"
+    },
+    {
+      "id": 582518745,
+      "active": true,
+      "origin": "null",
+      "pathname": "/settings.html"
+    }
+  ]
+}

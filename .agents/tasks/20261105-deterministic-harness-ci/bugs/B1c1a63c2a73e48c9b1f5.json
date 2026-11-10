@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T14:55:18+00:00",
+  "details": "server-44, release 1f1cfcd8, изолированный candidate_stand на установленном каталоге завершился до сценария ValueError bundle fingerprint or file count mismatch. Установщик может менять ссылки, необходимо проверить точную причину по manifest и безопасный portable fingerprint до исправления.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T14:55:18+00:00",
+      "changes": {
+        "details": "server-44, release 1f1cfcd8, изолированный candidate_stand на установленном каталоге завершился до сценария ValueError bundle fingerprint or file count mismatch. Установщик может менять ссылки, необходимо проверить точную причину по manifest и безопасный portable fingerprint до исправления.",
+        "source": "server-44 native/launch.py candidate_stand 2026-11-07",
+        "status": "open",
+        "title": "CI отклоняет установленный bundle из-за сравнения ссылок сборочной копии"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T15:01:36+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/payload-identity-green-20261107.log",
+            "red_proof_path": "evidence/payload-identity-red-20261107.log",
+            "red_result": "FAILED (errors=1)",
+            "red_sha256": "31cfdc72430d3698bbba8956191b2a66e14c508e927219896a0655533ed9f330",
+            "result": "PASS",
+            "sha256": "e40029a02ea2f18c877838d933eae240bcec03a40bb4597f580c616aba488058",
+            "test_command": "python3 -m unittest test_candidate_driver.CandidateDriverTest.test_installed_release_uses_portable_payload_when_package_links_differ"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B1c1a63c2a73e48c9b1f5",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/payload-identity-green-20261107.log",
+      "red_proof_path": "evidence/payload-identity-red-20261107.log",
+      "red_result": "FAILED (errors=1)",
+      "red_sha256": "31cfdc72430d3698bbba8956191b2a66e14c508e927219896a0655533ed9f330",
+      "result": "PASS",
+      "sha256": "e40029a02ea2f18c877838d933eae240bcec03a40bb4597f580c616aba488058",
+      "test_command": "python3 -m unittest test_candidate_driver.CandidateDriverTest.test_installed_release_uses_portable_payload_when_package_links_differ"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 native/launch.py candidate_stand 2026-11-07",
+  "status": "fixed",
+  "title": "CI отклоняет установленный bundle из-за сравнения ссылок сборочной копии",
+  "updated_at": "2026-11-07T15:01:36+00:00"
+}

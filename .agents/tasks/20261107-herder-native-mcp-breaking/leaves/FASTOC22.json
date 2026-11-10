@@ -1,0 +1,83 @@
+{
+  "id": "FASTOC22",
+  "label": "Переиспользовать работающий API OpenCode 2.2.4 в общем TS client",
+  "description": "Вход FASTOCABI: готовые request/readback в tests/native/opencode_receipt.py. Добавить explicit pinned2.2.4 routes/payload в существующий OpenCodeClient, без нового adapter/POST fallback. Режимы и native user receipt честные; если Queue не поддержан, Unsupported и typed Start composition у Terra.",
+  "acceptance": "Offline fixture create→message→read даёт exact user receipt; unsupported modes no effect; post-effect errors UNKNOWN; никаких native sends. Immutable delta передана Terra для rebuild.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "waiting",
+  "owner": "roomhacker",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "FASTOCABI"
+  ],
+  "affected_files": [
+    "packages/agent-resume/src/harness/opencode/client.ts",
+    "tests/opencode-v22-protocol.test.ts",
+    "src/ahap-opencode-runner.ts",
+    "tests/ahap-opencode-runner.test.ts"
+  ],
+  "created_at": "2026-11-07T15:58:18+03:00",
+  "updated_at": "2026-11-07T18:15:27+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:58:18+03:00",
+      "note": "",
+      "changes": {
+        "id": "FASTOC22",
+        "label": "Переиспользовать работающий API OpenCode 2.2.4 в общем TS client",
+        "description": "Вход FASTOCABI: готовые request/readback в tests/native/opencode_receipt.py. Добавить explicit pinned2.2.4 routes/payload в существующий OpenCodeClient, без нового adapter/POST fallback. Режимы и native user receipt честные; если Queue не поддержан, Unsupported и typed Start composition у Terra.",
+        "acceptance": "Offline fixture create→message→read даёт exact user receipt; unsupported modes no effect; post-effect errors UNKNOWN; никаких native sends. Immutable delta передана Terra для rebuild.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "OpenCode worker",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "FASTOCABI"
+        ],
+        "affected_files": [
+          "packages/agent-resume/src/harness/opencode/client.ts",
+          "tests/opencode-v22-protocol.test.ts",
+          "src/ahap-opencode-runner.ts",
+          "tests/ahap-opencode-runner.test.ts"
+        ]
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:02:21+03:00",
+      "note": "Implement explicit protocol v22 Start path against existing offline contract; no native sends.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:15:27+03:00",
+      "note": "",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Source готов8e051d01, авторские39tests/typecheck. Не опубликован; точная интеграция с core принадлежит QOCJOIN/Terra, не повторная реализация.",
+        "note": "Снят ложный running по прочитанному final native rollout. Рабочее дерево herder-opencode-submit сохраняется."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "Source готов8e051d01, авторские39tests/typecheck. Не опубликован; точная интеграция с core принадлежит QOCJOIN/Terra, не повторная реализация.",
+  "note": "Снят ложный running по прочитанному final native rollout. Рабочее дерево herder-opencode-submit сохраняется."
+}

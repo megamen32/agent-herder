@@ -1,0 +1,81 @@
+{
+  "id": "V064LIVE",
+  "label": "OpenCode: проверить native create и независимый readback",
+  "description": "Один изолированный loopback create через порт V064PORT с уже известным launcher/auth из V062/V063; прочитать ровно возвращённый session ID через native GET и удалить только созданную тестовую сессию. Не делать модельный вызов, не повторять create при UNKNOWN.",
+  "acceptance": "Реальный OpenCode 2.2.4 native API на loopback: точное совпадение instance и возвращённого native session ID, независимый GET readback, ровно один POST create, delete только task-created session. Сохранить redacted receipt; unit/live/MCP уровни раздельно.",
+  "depends_on": [
+    "V064PORT",
+    "V062"
+  ],
+  "affected_files": [
+    ".tmp/v064port-runtime/"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "estimate_minutes": 15,
+  "note": "Bounded live proof only; existing isolated launcher/auth recipe reused; no credential printed or stored.",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "created_at": "2026-11-07T11:26:12+03:00",
+  "updated_at": "2026-11-07T11:28:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:26:12+03:00",
+      "note": "",
+      "changes": {
+        "id": "V064LIVE",
+        "label": "OpenCode: проверить native create и независимый readback",
+        "description": "Один изолированный loopback create через порт V064PORT с уже известным launcher/auth из V062/V063; прочитать ровно возвращённый session ID через native GET и удалить только созданную тестовую сессию. Не делать модельный вызов, не повторять create при UNKNOWN.",
+        "acceptance": "Реальный OpenCode 2.2.4 native API на loopback: точное совпадение instance и возвращённого native session ID, независимый GET readback, ровно один POST create, delete только task-created session. Сохранить redacted receipt; unit/live/MCP уровни раздельно.",
+        "depends_on": [
+          "V064PORT",
+          "V062"
+        ],
+        "affected_files": [
+          ".tmp/v064port-runtime/"
+        ],
+        "parent": "V064PORT",
+        "kind": "task",
+        "status": "queued",
+        "owner": "roomhacker",
+        "estimate_minutes": 15,
+        "note": "Bounded live proof only; existing isolated launcher/auth recipe reused; no credential printed or stored.",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:26:20+03:00",
+      "note": "Исправил иерархию: leaf относится к существующему этапу S01; зависит от завершённого V064PORT.",
+      "changes": {
+        "parent": "S01"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:26:33+03:00",
+      "note": "Запускаю один isolated loopback create → native GET exact ID → delete task-created session; no model request.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:28:52+03:00",
+      "note": "Live native create/readback/delete завершены, один POST; секрет не записывался, тестовая сессия удалена.",
+      "changes": {
+        "status": "done",
+        "result": "Live isolated official OpenCode 2.2.4 loopback proof passed through OpenCodeCreateControl: exactly one POST, Confirmed exact configured instance and session ID ses_e4ae072abffe2Z3GNNzrMi42ew; independent GET /api/session/{id} confirmed exact ID and unique title; DELETE succeeded and subsequent GET was not found. No model call. Credential-free receipt: .tmp/v064port-runtime/live-receipt.json in the dedicated implementation worktree. Temporary Rust integration test removed; temporary lib export restored. Unit fixture proof remains 4/4 in V064PORT. MCP consumer proof is not claimed."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Live isolated official OpenCode 2.2.4 loopback proof passed through OpenCodeCreateControl: exactly one POST, Confirmed exact configured instance and session ID ses_e4ae072abffe2Z3GNNzrMi42ew; independent GET /api/session/{id} confirmed exact ID and unique title; DELETE succeeded and subsequent GET was not found. No model call. Credential-free receipt: .tmp/v064port-runtime/live-receipt.json in the dedicated implementation worktree. Temporary Rust integration test removed; temporary lib export restored. Unit fixture proof remains 4/4 in V064PORT. MCP consumer proof is not claimed."
+}

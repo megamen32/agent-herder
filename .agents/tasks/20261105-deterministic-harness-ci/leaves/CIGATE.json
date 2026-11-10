@@ -1,0 +1,102 @@
+{
+  "id": "CIGATE",
+  "label": "Подключить готовый candidate suite к release pipeline",
+  "parent": "CISHIP",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "depends_on": [],
+  "description": "Использовать L100 runner без новой лжемодели. Один существующий pipeline вызов: OpenCode и уже готовый Codex baseline. Невыполненные обязательные lanes дают INCOMPLETE/nonzero. ZCode подключение отдельным следующим шагом после exact CISHARE input.",
+  "acceptance": "CLI-only candidate build stage: OpenCode+Codex, failure nonzero, receipt; ZCode отдельно CIZCODE, rollout/full installed gate отдельно CIGATEINSTALLED.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:17:09+03:00",
+  "updated_at": "2026-11-07T18:52:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:17:09+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIGATE",
+        "label": "Подключить готовый candidate suite к release pipeline",
+        "parent": "CISHIP",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "depends_on": [],
+        "description": "Использовать L100 runner без новой лжемодели. Один существующий pipeline вызов: OpenCode и уже готовый Codex baseline. Невыполненные обязательные lanes дают INCOMPLETE/nonzero. ZCode подключение отдельным следующим шагом после exact CISHARE input.",
+        "acceptance": "Изолированный fixture сбой блокирует acceptance, green baseline сохраняет receipts. Candidate PASS не выдаёт installed PASS.",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:33:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Подключаю существующий изолированный CLI runner в этап сборки; отдельный CLI результат и незавершённость полного installed/five-adapter gate не смешиваются."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:41:44+03:00",
+      "note": "Опубликован 52540beb: build-release-candidate вызывает существующий isolated Codex/OpenCode runner; CLI candidate PASS отдельно от release INCOMPLETE. Прямой gate на bundle 70d2: обе среды и readback за 21.17с; намеренно изменённый ответ лжемодели дал exit 1 без receipt; 22 теста. Проверяется полный запуск через build 52540beb. Rollout ещё не проверяет обязательную квитанцию и полный five-adapter/installed gate не реализован.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:43:12+03:00",
+      "note": "Полный штатный build 52540beb прошёл CLI candidate gate: Codex/OpenCode по 2 сессии, fixture/search/transcript, gate 15.574с; evidence/ci-candidate-52540beb-20261107.json. Испорченный ответ лжемодели дал exit=1 без receipt, evidence/ci-candidate-fault-20261107.log. Коммит в main; builder stage вызывает runner, но прямой rollout пока может обойти builder, пять сред и installed receipt ещё не проверяются — release INCOMPLETE. Следующий шаг: исключить обход rollout и связать ZCode без подмены full gate.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:44:54+03:00",
+      "note": "После прохождения build 52540beb добавлена TDD-защита от старого PASS receipt: c65715df в main атомарно ставит INCOMPLETE до каждого запуска, при отказе старый успех не используется. 23 native unit tests. Текущая live-проверка была на предыдущем 52540beb; новый код ещё требует точного consumer readback. Rollout до сих пор не обязывает receipt, ZCode и installed/five-adapter остаются открыты.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:48:57+03:00",
+      "note": "ZCode 3.17.2 на server-44 прошёл отдельный isolated candidate 52540beb: 2 сессии, список/поиск/проект, 8+8 страниц, 5 fixture calls, 27.374с; evidence/zcode-candidate-52540beb-20261107.json. Payload digest a5430c9c… совпал с тем же bundle, что прошёл Codex/OpenCode build stage. Общий gate и release остаются FAIL/INCOMPLETE, установленный PID и browser lane не доказаны. Следующий шаг: связать существующие runner results в обязательной транзакции rollout.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:50:48+03:00",
+      "note": "Прямой consumer check c65715df: перед повторным запуском старый PASS перезаписан INCOMPLETE; отсутствие OpenCode вызвало exit 1, оба статуса остались INCOMPLETE. На server-44 staging 52540beb удалён, ZCode receipt сохранён. Candidate builder stage работает; полный rollout gate всё ещё не принимает ни кандидатные свидетельства, ни installed-подтверждение.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:52:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "acceptance": "CLI-only candidate build stage: OpenCode+Codex, failure nonzero, receipt; ZCode отдельно CIZCODE, rollout/full installed gate отдельно CIGATEINSTALLED.",
+        "result": "52540beb и c65715df в main: существующий build-release-candidate запускает isolated candidate suite Codex/OpenCode и сохраняет scoped receipt, без полного release PASS. Реальный build 52540beb: gate 15.574с, evidence/ci-candidate-52540beb-20261107.json; поломанный fixture exit1 evidence/ci-candidate-fault-20261107.log; старый PASS перед новой попыткой атомарно сброшен в INCOMPLETE. 23 native unit tests. ZCode отдельно прошёл на том же payload a5430c9c… на 44: evidence/zcode-candidate-52540beb-20261107.json, 27.374с, автоматическая связка CIZCODE. Прямой rollout пока может обойти builder; installed/five-adapter gate CIGATEINSTALLED не готов и release не принят."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Подключаю существующий изолированный CLI runner в этап сборки; отдельный CLI результат и незавершённость полного installed/five-adapter gate не смешиваются.",
+  "result": "52540beb и c65715df в main: существующий build-release-candidate запускает isolated candidate suite Codex/OpenCode и сохраняет scoped receipt, без полного release PASS. Реальный build 52540beb: gate 15.574с, evidence/ci-candidate-52540beb-20261107.json; поломанный fixture exit1 evidence/ci-candidate-fault-20261107.log; старый PASS перед новой попыткой атомарно сброшен в INCOMPLETE. 23 native unit tests. ZCode отдельно прошёл на том же payload a5430c9c… на 44: evidence/zcode-candidate-52540beb-20261107.json, 27.374с, автоматическая связка CIZCODE. Прямой rollout пока может обойти builder; installed/five-adapter gate CIGATEINSTALLED не готов и release не принят."
+}

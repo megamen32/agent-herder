@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:30:26+00:00",
+  "details": "Fake с per-process registry и отсутствием persisted thread даёт UNKNOWN до submit; upstream 0.167 thread/read требует owning connection для незаписанного thread и includeTurns:false для Legacy. Эта fixture reproduces проблему, но исходная операция UNKNOWN не идентифицирована и не переигрывается.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:30:26+00:00",
+      "changes": {
+        "details": "Fake с per-process registry и отсутствием persisted thread даёт UNKNOWN до submit; upstream 0.167 thread/read требует owning connection для незаписанного thread и includeTurns:false для Legacy. Эта fixture reproduces проблему, но исходная операция UNKNOWN не идентифицирована и не переигрывается.",
+        "source": "evidence/V025COMPOSE/fresh-snapshot-red.log",
+        "status": "open",
+        "title": "Owner snapshot читает свежий Codex thread через другой app-server"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:30:40+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025COMPOSE/fresh-snapshot-green.log",
+            "red_proof_path": "evidence/V025COMPOSE/fresh-snapshot-red.log",
+            "red_result": "test result: FAILED",
+            "red_sha256": "61df45fb99fc0312532f2fd1e8ec5ce22fd1cf53c74a11ba68dcc59d77f5b57a",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "454775440dd64edc7e30476cd33ee7917a0d34adda3c3a2d70635353275dd43c",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B8b9dd07415f44d7495f7",
+  "owner": "V025PUBLIC",
+  "reporter": "V025PUBLIC",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025COMPOSE/fresh-snapshot-green.log",
+      "red_proof_path": "evidence/V025COMPOSE/fresh-snapshot-red.log",
+      "red_result": "test result: FAILED",
+      "red_sha256": "61df45fb99fc0312532f2fd1e8ec5ce22fd1cf53c74a11ba68dcc59d77f5b57a",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "454775440dd64edc7e30476cd33ee7917a0d34adda3c3a2d70635353275dd43c",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/V025COMPOSE/fresh-snapshot-red.log",
+  "status": "fixed",
+  "title": "Owner snapshot читает свежий Codex thread через другой app-server",
+  "updated_at": "2026-11-07T11:30:40+00:00"
+}

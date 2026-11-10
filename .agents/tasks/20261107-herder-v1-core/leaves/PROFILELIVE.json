@@ -1,7 +1,7 @@
 {
   "id": "PROFILELIVE",
   "label": "Живая проверка двух аккаунтов ChatGPT",
-  "status": "running",
+  "status": "queued",
   "parent": "S2",
   "kind": "task",
   "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
@@ -14,7 +14,7 @@
   "acceptance": "Два verified profiles доступны через один Herder; собственные test chats: create, deliver, read, archive. Чужие чаты/профиль не меняются; число вкладок не растёт при reuse/reconnect.",
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-08T17:26:59+03:00",
-  "updated_at": "2026-11-08T17:54:55+03:00",
+  "updated_at": "2026-11-08T20:12:38+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T17:26:59+03:00",
@@ -77,8 +77,26 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:12:38+03:00",
+      "note": "Сверка после resume: старый running не означает работающего исполнителя; не запускать старую очередь.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": "owner_deferred",
+        "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
   "result": "Candidate5ff02215: один живой core обнаружил два ChatGPT instances. Первый draft pending (до клика), второй native chat6af08c6e создан, exact marker виден в UI. Full acceptance ещё INCOMPLETE; продолжается readback и cleanup исходных операций. CLI OpenCode/Codex/ZCode/compat на exact5ff PASS с archive.",
-  "note": "17:56МСК. Диагностика composer/startup latency; не новый план. Оценка остатка 35–60мин после локализации browser defect, внешний429 может увеличить срок."
+  "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено.",
+  "wait_reason": "owner_deferred"
 }

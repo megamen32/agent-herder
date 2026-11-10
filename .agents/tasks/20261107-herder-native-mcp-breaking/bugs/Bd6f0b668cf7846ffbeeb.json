@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:12:27+00:00",
+  "details": "Immutable d1f38cff mcp_create.rs объединяет mismatch instance_ref, unsupported project_ref, пустой prompt и malformed request_key в {code:invalid_request,effect:none}. Владелец требует описательные исправимые ошибки. Tesla уведомлён10:46; нужна узкая diagnostic delta: field/issue/expected/correction без secrets/prompt echo, no mutation. Не менять authorization disclosure.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T11:12:27+00:00",
+      "changes": {
+        "details": "Immutable d1f38cff mcp_create.rs объединяет mismatch instance_ref, unsupported project_ref, пустой prompt и malformed request_key в {code:invalid_request,effect:none}. Владелец требует описательные исправимые ошибки. Tesla уведомлён10:46; нужна узкая diagnostic delta: field/issue/expected/correction без secrets/prompt echo, no mutation. Не менять authorization disclosure.",
+        "source": "source review mcp_create.rs input validation",
+        "status": "open",
+        "title": "Create возвращает общий invalid_request вместо причины и исправления input"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025CREATEINPUT",
+      "at": "2026-11-07T11:19:05+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025CREATEINPUT/input-green.log",
+            "red_proof_path": "evidence/V025CREATEINPUT/input-red.log",
+            "red_result": "assertion `left == right` failed",
+            "red_sha256": "dbf40a79f46baa91141df2bd81a3f06f2353111cf0b541114e1ef00ae7735f9f",
+            "result": "test result: ok. 1 passed",
+            "sha256": "67ef4fe934b863d66e284bdc6bf27c020cdf9243564a2b1aeb4cadd880556679",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate create_wire_reports_actionable_input_errors_without_effect_or_echo -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bd6f0b668cf7846ffbeeb",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025CREATEINPUT/input-green.log",
+      "red_proof_path": "evidence/V025CREATEINPUT/input-red.log",
+      "red_result": "assertion `left == right` failed",
+      "red_sha256": "dbf40a79f46baa91141df2bd81a3f06f2353111cf0b541114e1ef00ae7735f9f",
+      "result": "test result: ok. 1 passed",
+      "sha256": "67ef4fe934b863d66e284bdc6bf27c020cdf9243564a2b1aeb4cadd880556679",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate create_wire_reports_actionable_input_errors_without_effect_or_echo -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "source review mcp_create.rs input validation",
+  "status": "fixed",
+  "title": "Create возвращает общий invalid_request вместо причины и исправления input",
+  "updated_at": "2026-11-07T11:19:05+00:00"
+}

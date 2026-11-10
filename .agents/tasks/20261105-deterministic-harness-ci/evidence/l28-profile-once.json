@@ -1,0 +1,40 @@
+{
+  "bug": "Bc391b405b78541dba751",
+  "pid": 1201064,
+  "started_utc": "2026-11-06T15:50:25.265363+00:00",
+  "method": "49Hz perf main thread, 4 sequential read-only settings requests, no response bodies retained",
+  "requests": [
+    {
+      "start_monotonic": 600822.591054751,
+      "start_utc": "2026-11-06T15:50:26.267281+00:00",
+      "status": 200,
+      "end_monotonic": 600822.706242916,
+      "seconds": 0.115
+    },
+    {
+      "start_monotonic": 600824.708055264,
+      "start_utc": "2026-11-06T15:50:28.384283+00:00",
+      "status": 200,
+      "end_monotonic": 600824.709675565,
+      "seconds": 0.002
+    },
+    {
+      "start_monotonic": 600826.711043499,
+      "start_utc": "2026-11-06T15:50:30.387272+00:00",
+      "status": 200,
+      "end_monotonic": 600826.713399304,
+      "seconds": 0.002
+    },
+    {
+      "start_monotonic": 600828.715040924,
+      "start_utc": "2026-11-06T15:50:32.391270+00:00",
+      "status": 200,
+      "end_monotonic": 600828.724273536,
+      "seconds": 0.009
+    }
+  ],
+  "perf_exit": 255,
+  "perf_error": "",
+  "slow_window_profile": null,
+  "limitation": "No request reached 10 seconds; profile cannot establish cause of earlier timeouts."
+}

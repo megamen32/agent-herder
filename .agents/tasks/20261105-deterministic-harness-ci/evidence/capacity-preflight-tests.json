@@ -1,0 +1,9 @@
+{
+  "command": "python3 -m unittest discover -s tests -p test_native_ci_capacity.py",
+  "exit_code": 0,
+  "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.005s\n\nOK\n",
+  "server44_candidate_bytes": 75764369,
+  "server44_full_run_receipt": "receipt-five-inventory-capacity.json",
+  "time": "2026-11-06T00:40:39.689832+00:00",
+  "status": "PASS"
+}

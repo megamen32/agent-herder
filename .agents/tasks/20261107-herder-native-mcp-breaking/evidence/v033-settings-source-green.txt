@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 7 tests
+test application::settings::tests::parsed_wire_revision_is_the_only_revision_used_for_compare_and_set ... ok
+test application::settings::tests::native_failure_keeps_desired_revision_without_marking_it_applied ... ok
+test application::settings::tests::parses_only_the_three_configure_contract_patches ... ok
+test application::settings::tests::rejects_empty_targets_and_does_not_claim_capability_support ... ok
+test application::settings::tests::stale_or_unsupported_patch_is_not_saved_or_applied ... ok
+test application::settings::tests::rejects_unknown_keys_and_wrong_types_without_echoing_values ... ok
+test application::settings::tests::successful_native_apply_advances_applied_to_new_desired_revision ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 145 filtered out; finished in 0.00s
+

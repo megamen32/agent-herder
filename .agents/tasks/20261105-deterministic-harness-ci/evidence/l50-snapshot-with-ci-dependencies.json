@@ -1,0 +1,417 @@
+{
+  "scope": "isolated test snapshot, includes read-only copies of candidate CI runner and sidecars; not an integrated release",
+  "parent": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "snapshot_commit": "ebe1f864a1345a8d3ba731b457d513fe1a223ef0",
+  "tree": "5e79fd21c77584da23bccd95f6e37b0ebca0e106",
+  "changes": {
+    "deploy/fleet/release_rules.py": {
+      "sha256": "c4e261bb18e8dc8a83c0675e0872f3c29e07f3f3506b6ce221a75db8d46b7d3e",
+      "blob": "e1c3e1962d520815c51641ec37afc6c8dcff5780",
+      "mode": "100755"
+    },
+    "scripts/codex-unix-boundary-client.mjs": {
+      "sha256": "55e4bf0de0a7863d326ba64fdb875209ffa4c0ad6a16fc43ec72543d7b2a6ca4",
+      "blob": "c92ded69a69bbb9af1abb0fb798f8548d7c0c317",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-boundary.py": {
+      "sha256": "5841569aa6a666019a08c976c6cdc1044446ec77b7ea3a5c4c63af62c3f13d90",
+      "blob": "e0b0d92eaf7974458e981181feff6fc956e1f7a4",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-ci-producer.py": {
+      "sha256": "3844a54e6bb5fc1216c5b1bcf5e2c6ce8f838ef942d235f614dddd0e9f02e111",
+      "blob": "794f8ae490bd35f7ef32271585f1aa7df7efe806",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-entrypoint-client.mjs": {
+      "sha256": "1c6e07c685d3480f62e621a4daf766220dac6ca13209b7201f899f3e7123ea9a",
+      "blob": "441c5852c099f876d3aedeb85e74e5df9067e9c2",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-evidence.mjs": {
+      "sha256": "d39b314964a02a131308958ff1369866aba82f8b3d73f86e88ee2f0066457abd",
+      "blob": "86f0d58b4ed6a3673289e8b4a6ab4b09dc3f0e14",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-held-active.mjs": {
+      "sha256": "de7ea5e6865c3ce78396b06c0d3ea5fc2e33cc10030aad1d310c3f92baad95d7",
+      "blob": "de8a4a01b95c31d245bc8b17292206c56415e5e0",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-http-client.mjs": {
+      "sha256": "fdff71b537687858c8a8ca0f538e20c971e0939bcaf5f42c5c90ea94ff597498",
+      "blob": "52df1fbff8272febe4462927f2a9b6de9b1f0522",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-stand-contract.md": {
+      "sha256": "869bb0f762852b638544864afab92c9b47534d15c211bba66f79f7598283ef6f",
+      "blob": "095fa6b5a153a66dc40d29a49f3793b137fd7b64",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-stand-contract.py": {
+      "sha256": "3985ea3949ec758a0a90da1e218f60dbd545931f54eee9b10f1d1c4da886e295",
+      "blob": "b7e4f90b403712ee2f674ebbe24fc3a0b078ef9f",
+      "mode": "100644"
+    },
+    "scripts/codex-unix-transaction.py": {
+      "sha256": "91c7212064aee778da0c53d076dfcad5cd2ff7967a7378551f8391df99a5b41b",
+      "blob": "6def5a183618a7f7accf30b5ec231e3885243308",
+      "mode": "100644"
+    },
+    "scripts/inspect-installed-herder.py": {
+      "sha256": "4ace06af9d5acc0f56134d53f2bbc9b58dbced17978428f665e230e88bd37d71",
+      "blob": "b45d81cc9438fc0571ac3099743195c9d61fd27c",
+      "mode": "100644"
+    },
+    "scripts/native-ci-artifact-evidence.py": {
+      "sha256": "17d058ab27ef0335a861c60a38c4032b673de78605033cd3be664e076cad1233",
+      "blob": "7f04a6ccd1053ccea36caf8230683ab85de46c55",
+      "mode": "100644"
+    },
+    "scripts/native-ci-artifact-identity.py": {
+      "sha256": "6e633c0c57d2866a75ab83fb525f8b250ee2f7c852a73463f9209b2715602702",
+      "blob": "480262b170565e8d749cc3315bfc439fd64f654f",
+      "mode": "100644"
+    },
+    "scripts/native-ci-transcript-wait.mjs": {
+      "sha256": "ec791b1d246123935dd1ec4d8cb7f35cd218da1342f1cef2a5d308e0f46a6002",
+      "blob": "8678ac76e29fa501fca37e1d3b23b74a52b0f459",
+      "mode": "100644"
+    },
+    "scripts/native-netns-launcher.py": {
+      "sha256": "baf0f4cd7178a56eb4141f6a4ebffabed1dd968420c9de65c4b71e4945d80c65",
+      "blob": "bd1b68c5f2b54b0c62fd37ede51d9b3550bd29fa",
+      "mode": "100644"
+    },
+    "scripts/test-model-server.py": {
+      "sha256": "45ccf998bd48e6be65cceb86b4fa37ab56dbd3541535e936b274f24fde5dc1ad",
+      "blob": "cf3e59606d3882a098b3571084b8888b483fbb3f",
+      "mode": "100644"
+    },
+    "src/adapters/codex-app-server.ts": {
+      "sha256": "adb0607fe373711a5bfc77ca5d50b6954a9b89d54de4a075048549ad3b261c84",
+      "blob": "d3afd1cca725ef7dedcdd76efe00d0945e9f4a0a",
+      "mode": "100644"
+    },
+    "src/adapters/codex.ts": {
+      "sha256": "c26ff3d2e4718120f7f591e3341da35d6a312363fac12bce1fa27f4377bae739",
+      "blob": "f68ee22514240db91e8e73425050a026888858ba",
+      "mode": "100755"
+    },
+    "src/index.ts": {
+      "sha256": "e22889c7d4a1453bdbe85f69521438821319bc8a9f3a2bf883f402f49290a858",
+      "blob": "9ba5eed65c2aa4f3b80d64c8dfb465e56b9530f2",
+      "mode": "100755"
+    },
+    "src/named-session.ts": {
+      "sha256": "4c8bca1167227eb3e5db712e31684f820389fbe158be97defde3bf7f7def3176",
+      "blob": "8dd7706025dc079fe86cf8f8aeb8f0c8e9a16497",
+      "mode": "100644"
+    },
+    "src/session-supervisor.ts": {
+      "sha256": "c0124cd7bdaab204b98ef296ce8010bba62a7abb4d178003a69fa96d7e7e0ced",
+      "blob": "bc623ce86ec8c0e80d7129bc386be706db1dea0c",
+      "mode": "100644"
+    },
+    "src/web/autopilot-goal-api.ts": {
+      "sha256": "fd922612f183df78c46e4c8396bca5ce1118e6280be498cf5c74b82df4bce2ad",
+      "blob": "dc16c76a2d52740494a714052fe2b0e6bf46428d",
+      "mode": "100644"
+    },
+    "src/web/native-ci-config.ts": {
+      "sha256": "853deee31523343f93e1988972f99c5873f7b82c963643686700d5a64ee746c9",
+      "blob": "14076a2926ca4bccee3cffdc1183c2dbd39a4010",
+      "mode": "100644"
+    },
+    "src/web/native-ci-dispatch.ts": {
+      "sha256": "508d3787c9c03bc552829797f3743a5a18fb5ae732db4c56e7509c03d71d9d6c",
+      "blob": "d865b63e095019e7c52bce52954e8321ebf67f6e",
+      "mode": "100644"
+    },
+    "src/web/native-ci-peer.ts": {
+      "sha256": "e451ee5681c5548bea19f58f8f356c1aadc33252fd6c401d9bbf4622980746cf",
+      "blob": "a19a511a0624c9cb2ecfab32186a613fee9c7a52",
+      "mode": "100644"
+    },
+    "src/web/native-ci-runtime.ts": {
+      "sha256": "634aad9f0dc873e8314683a1a33e17c07cc5f992397937b47e89aa6224f0cc75",
+      "blob": "69e9b9746091c47920652db09ba7ca44fc49bf2d",
+      "mode": "100644"
+    },
+    "src/web/native-ci-scoped-adapter.ts": {
+      "sha256": "cd51329734a2cd59d484b41c2183a03d4da5fdb57ae162c8df147d6cba45eac9",
+      "blob": "be8e888a9579a07a4cdb9afc3a46209a8d1f23a1",
+      "mode": "100644"
+    },
+    "src/web/native-ci-search.ts": {
+      "sha256": "979ced9508cbf8062bdd9335626d15e6354a6527332eac6733ba1a4d5e3bdff1",
+      "blob": "226b7b3ede78ac6944574707ee6e161983cb9ba2",
+      "mode": "100644"
+    },
+    "src/web/server.ts": {
+      "sha256": "6fdec3076170ba18bfc51708d1ca64bb0bfd0731992fd93a28e887ad2202cb6a",
+      "blob": "5e15715128d7ddbff33fd8b7730fff827287c4df",
+      "mode": "100644"
+    },
+    "tests/codex-app-server-home-transcript.test.ts": {
+      "sha256": "ebbae167c9f0aa97839cd594014573d237b0e32759ea3c653f290ad851966a46",
+      "blob": "7730a77627a31af31fab22f95a46f9b1ac295664",
+      "mode": "100644"
+    },
+    "tests/native-ci-config.test.ts": {
+      "sha256": "0a24840b256a911ee4d94a8102e885f0ccf5a37f59bbe5666e83f725e08e8e9a",
+      "blob": "315e29b73358367d160a85805905c960eb5b1122",
+      "mode": "100644"
+    },
+    "tests/native-ci-dispatch.test.ts": {
+      "sha256": "6110fef7b90a209f94d9979edfc228a5198c5a4348257cce834353192de89aef",
+      "blob": "dcec32c96e20a0d445b2d63d264b72c456b6d8d9",
+      "mode": "100644"
+    },
+    "tests/native-ci-goal-input-http.test.ts": {
+      "sha256": "296b8430a307e69c31d968ade33a2fd8ba893ca47bcd2c21235d7fe361ea2f2f",
+      "blob": "b2e90a67189043cd4417c0a5b180a7cdd0eb4303",
+      "mode": "100644"
+    },
+    "tests/native-ci-held-active.test.mjs": {
+      "sha256": "c685504c273ecf0e7eaa4de9bdab8e994f2fe332b69d5ef6a8195885caa717a2",
+      "blob": "f219f3572cdbaa05a6e0d97f3b9714e1ec93ab72",
+      "mode": "100644"
+    },
+    "tests/native-ci-http-route.test.ts": {
+      "sha256": "bed5b3ccb757f1b86e0e496ac412df4269b32335f47463add5ab1026047972d4",
+      "blob": "1d83bde99aeff14147ee7a01821bb8b040082435",
+      "mode": "100644"
+    },
+    "tests/native-ci-mcp-search.test.ts": {
+      "sha256": "9465cdedba1153249f870e8a49356eddd455b3cc718fe271b570c1f0cd263e6f",
+      "blob": "d93edefe6bcd7a6e5236ac70caca74fc8443815d",
+      "mode": "100644"
+    },
+    "tests/native-ci-named-session-isolation.test.ts": {
+      "sha256": "1735dddf685a8d41ed7be9d47abd2ac790ad3060a22665dbd9bd0df13857bb5d",
+      "blob": "d81121348e05b7537315e8d561e91d7b4774f216",
+      "mode": "100644"
+    },
+    "tests/native-ci-peer.test.ts": {
+      "sha256": "366a3ab9278021a3abcbc7bdef7b5584e4393e50082b36b6a6325717e1a1a873",
+      "blob": "18b24a759e64200bede67b324af3e6aa906bb276",
+      "mode": "100644"
+    },
+    "tests/native-ci-real-route.test.ts": {
+      "sha256": "8cb8c44f398ea4adf7efbd0449cafa48773bb5a659ba68ffdf44c2325054d362",
+      "blob": "869d307c6c6f6789f7d31305e5deb3107cacddb8",
+      "mode": "100644"
+    },
+    "tests/native-ci-runtime.test.ts": {
+      "sha256": "2a1489dd3001e6868e6afe70e1469864ecae454eee6cb91756212a77c19d194f",
+      "blob": "4ba27f69d3f316f6e6e83de5c66dbbae346c50a2",
+      "mode": "100644"
+    },
+    "tests/native-ci-scoped-adapter.test.ts": {
+      "sha256": "51d5ec7904b1069c575b1844f40c6ffaee62a10407f88f427728b862c1debdfe",
+      "blob": "42b031f5320e4218605d0d22430925115dbf23cb",
+      "mode": "100644"
+    },
+    "tests/native-ci-search-completeness.test.ts": {
+      "sha256": "acae93c7557c179caa66becea22ab84ccf79c1738c94806d44406b3a386ca14e",
+      "blob": "58e28c2a9645f5c2bdddacef9a0451ccf789bd74",
+      "mode": "100644"
+    },
+    "tests/native-ci-search.test.ts": {
+      "sha256": "1b9d21757cb1303ed3b3fd409b67bb60646da2479eb636d6b2702b49ced53e41",
+      "blob": "bf4d26d1aaf14c5380042a0f69d0ac2ca43f3412",
+      "mode": "100644"
+    },
+    "tests/native-ci-supervisor-isolation.test.ts": {
+      "sha256": "395b6c0c5d709f54eb92b72751a1605548a9f146fff72d2319186f8e9a6ccc7f",
+      "blob": "c2c6cdf2951d8be3d9f74259dae5e128c01e1eea",
+      "mode": "100644"
+    },
+    "tests/native-ci-transcript-wait.test.ts": {
+      "sha256": "0eb14f603613f11178ab5c05dd487c2719253620c73a4550e8e893e610b3c2d4",
+      "blob": "05561b3e4b8cf0238f2c91caacf6796ced9b98aa",
+      "mode": "100644"
+    },
+    "tests/test_codex_unix_boundary.py": {
+      "sha256": "37128409c3839f4158523f6803540fcc188e2502328e22475c3df0ea78e0fb79",
+      "blob": "7b90e12559d03523343d60a07c8768814125a637",
+      "mode": "100644"
+    },
+    "tests/test_codex_unix_stand_contract.py": {
+      "sha256": "028b30c35cfe0f73763d0e9fe982d9890b7bf93628ec90e44c0b212c8d7a7eed",
+      "blob": "c4cc094dc9b00faaaed3eafd08f5afb826a4d077",
+      "mode": "100644"
+    },
+    "tests/test_codex_unix_transaction.py": {
+      "sha256": "d16fd297a4fb9bba5bdbdf080d1d12d93e1ec8ab1a0040c7a28642cc78d50c2d",
+      "blob": "47290be2f73b4d0f174b734dde0426b1e60bffaf",
+      "mode": "100644"
+    },
+    "tests/test_installed_listener.py": {
+      "sha256": "213e823bc6e672d4e8be497579585d9671b2fbc3d4ff60c18178d100b72aac2d",
+      "blob": "a6cd574454efd8985f249b287b3de1d84b355127",
+      "mode": "100644"
+    },
+    "tests/test_l44_ci_producer.py": {
+      "sha256": "b44a296cd81a9b7bd67c8dc32d4193a9459ee30c7e6b8080202cf9ee334439c2",
+      "blob": "584eacd5c4ca0a824da9e88a87a4ac37336033c1",
+      "mode": "100644"
+    },
+    "deploy/fleet/native_ci_preflight.py": {
+      "sha256": "addd3fe1315f2e90e7e387ff5fba048f755688fc168e81ee11afc8337f3fac9a",
+      "blob": "b441387d2cff6a50eb286082b5868886239bac83",
+      "mode": "100644"
+    },
+    "scripts/run-isolated-native-ci.py": {
+      "sha256": "082cae663f69ae816ec9dc52f91d976605cab1ed53e2e59c4eff137cdc459477",
+      "blob": "2f4605d1e9fc1cf6f3a13c9ce66cd57a6ff06eaf",
+      "mode": "100644"
+    },
+    "scripts/native-model-smoke.py": {
+      "sha256": "daac956093c42d3188d905a342569ce48c8fd916cda5b3a9e1fc66e393c11233",
+      "blob": "89a304b0c1e742ac333fb596316ccc807004dc41",
+      "mode": "100644"
+    },
+    "scripts/native-entrypoint-probe.py": {
+      "sha256": "ad16b45d0adafd26e6bf3e7e26ba25b6d2c6e42915dd8f26a92e06f32fc2cf89",
+      "blob": "055d21fe8d64160c70ac7a281b8e12f393874a02",
+      "mode": "100644"
+    },
+    "scripts/native-entrypoint-search.mjs": {
+      "sha256": "c319a34b53ab967f589ffb105a92a9052b3ba32820177d799f31ae587d7c30fd",
+      "blob": "d69197a601b9220294dcefb1514f1725b816c805",
+      "mode": "100644"
+    },
+    "scripts/native-entrypoint-search-proof.mjs": {
+      "sha256": "4ade0ac009a30f330f4dade170800dfe4b7b752ed77ec34f0e8b6209bc05d79d",
+      "blob": "ce66da278f26c07627bc1ec9619cd080ccc5d693",
+      "mode": "100644"
+    },
+    "scripts/native-herder-probe.mjs": {
+      "sha256": "85f84f870fca2819c9826fb953330d464669596b6e512d328e6732615769ca08",
+      "blob": "f03d10eca8b471c9743634fff806db34d5b1d5a5",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-search-contract.mjs": {
+      "sha256": "5e7cb9ffcb52618fd17adcdf65442fa9cefa7e8682286fa6d986ae7e6385b352",
+      "blob": "3255bfdfc7df60bcef066ade495e47291281302d",
+      "mode": "100644"
+    },
+    "scripts/claude-herder-probe.mjs": {
+      "sha256": "e81ad2ab509e75180c6d3e832201d1515182ff1a7c737d8bfa9d8708f62e3638",
+      "blob": "0937ba595f789eb2b05e2427f61559207118fb22",
+      "mode": "100644"
+    },
+    "scripts/minimax-herder-probe.mjs": {
+      "sha256": "93aaf11982a53df7f80041b1bf467d50968a952660d755127bae241778661763",
+      "blob": "5b83d522b556356918d1f9cb4bf60d5817a0d801",
+      "mode": "100644"
+    },
+    "scripts/minimax-managed-probe.py": {
+      "sha256": "ce48f645d0b4d7bf9ffe8a7a4eeeaf5f3047c9670fe4e2d0ced7ce7f7e98ae16",
+      "blob": "f8443e163f39d5d970ed75107530926680dd5153",
+      "mode": "100644"
+    },
+    "scripts/minimax-managed-control-probe.mjs": {
+      "sha256": "7a1677d599eafd9b41d1eb1df03ac6069a8f096d6816b2957d918a37c6b82085",
+      "blob": "e1485cb0f98a31dd253aed98f19351b069615294",
+      "mode": "100644"
+    },
+    "scripts/minimax-managed-herder-probe.mjs": {
+      "sha256": "c26cf49d0059d32c658d3e2324b78f35f177ce6f272db0e3af9ef1d919adcc66",
+      "blob": "5f6dfefd401c697e37f328c8fa164e699a124fb6",
+      "mode": "100644"
+    },
+    "scripts/minimax-acp-create-probe.py": {
+      "sha256": "d8533235de7a4fb350230076ed8cc91394db91e7279edb81b162c44671ccf2d9",
+      "blob": "fbb06ead8184b9181f45f12ad0d951da6e0f38e2",
+      "mode": "100644"
+    },
+    "scripts/zcode-provider-probe.py": {
+      "sha256": "04bf82882ac72f654cfc6930c4bf825659022341b0410539f9e30645141c3530",
+      "blob": "bf2ab919ae0d6442089416ab9dc6a51230ce9fa5",
+      "mode": "100644"
+    },
+    "scripts/zcode-protocol-probe.mjs": {
+      "sha256": "1f17c977b4f8db91e9c1dd4b37fc6edd8c40870bc5b947439e78e7309d31976e",
+      "blob": "c167b6cb8b927766d86cb3fb42d97b809c9c0021",
+      "mode": "100644"
+    },
+    "scripts/zcode-official-probe.py": {
+      "sha256": "bf4edabd131ad4cc5c860d7a72ff102d179026e83cf61e725ab331cd2db4b037",
+      "blob": "aa8258bf620065ab7546ba4399f861c3dbf4c7f2",
+      "mode": "100644"
+    },
+    "scripts/zcode-official-probe.mjs": {
+      "sha256": "47a2ce6572bf5f4f1999be04c7320cce257358956edab3e147d20a715f577195",
+      "blob": "8dc96d8987723be055c25b1648d9a2b26eae4ba4",
+      "mode": "100644"
+    },
+    "scripts/native-qoder-report.py": {
+      "sha256": "c8b16b7c51b10d6fb014494254df387c76aa9b2f5a6c6bbb28f9ac1fe9fefaa3",
+      "blob": "4966b118c664efb704525e0e7babada15035e7d6",
+      "mode": "100644"
+    },
+    "scripts/native-fast-agent-ci.py": {
+      "sha256": "fbe8cae01a3c6e0a91f84433cd9cfc105dd966968ca68a493d6fbc2d48bf2546",
+      "blob": "83c2f0868ee10e064bbc8b82ecb67e1e8b5932c1",
+      "mode": "100644"
+    },
+    "scripts/native-fast-agent-contract.mjs": {
+      "sha256": "4518704be42220eab114e348d82e146d09cf75fc7125db14db372152e0b51140",
+      "blob": "9357b8905275337807be148565ad6fc683c98829",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-fast-agent-probe.mjs": {
+      "sha256": "58af7c878ef25dc064d0fc680578a2d7e33d2dad4fdf4855fd02a5d7886dde3d",
+      "blob": "ef168ff3b42be245f374a6c2b83b23003739c41f",
+      "mode": "100644"
+    },
+    "scripts/native-fast-agent-herder-run.sh": {
+      "sha256": "caa5f81bf70c5bc7f2690fd2ae5efdf9908b6f1276319ca23a57b324a9481eb9",
+      "blob": "57ca70327b9f4369dce277ac9bee087284654fbe",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-http-run.sh": {
+      "sha256": "f32512941163346ab35394608dc50257d83024697779837be66ea006c685c8b2",
+      "blob": "32615b6e63157a6951625f72f3942feb697dbba9",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-http.mjs": {
+      "sha256": "cc5f58317b2b1b6cc92dd98767710d1c45498703bd0ac5397ac504850a1357f7",
+      "blob": "249b381a3022549f1c61181da327aca9696aee7a",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-http-canary.py": {
+      "sha256": "d338b2952ffc3b764135b8f2ba52097d95174265f4e2ef773ff1ce2c8b1d42ca",
+      "blob": "ee3e5bfac2b10d904ff782a5893f48f2f4e000e4",
+      "mode": "100644"
+    },
+    "scripts/native-hermes-model.py": {
+      "sha256": "f0baa92c3b210264394520ab0e10b60073df5a87d639c1df285ae84bc149af44",
+      "blob": "ead747374f6426e9894a5955f133c31dc4c77566",
+      "mode": "100644"
+    },
+    "scripts/native-qoder-herder.py": {
+      "sha256": "e708cb54b6f54e068cda322b8928da7898d97536b6956eacd3d113010b8f8552",
+      "blob": "3b99aa215771f5a621882182a8170e7d52145adf",
+      "mode": "100644"
+    },
+    "scripts/native-qoder-fixtures.cjs": {
+      "sha256": "48867972cfe2c991f07b22ad34eb4c226981614a74efcb9a179422c32e58f605",
+      "blob": "77d60ec2b8f6bcf005c440610737cf44717c3b96",
+      "mode": "100644"
+    },
+    "scripts/native-qoder-herder.mjs": {
+      "sha256": "39a1d9bbd23bdb27d12fa36a7ec3fe0250cff3a2461b7e102890f6291dd29f2e",
+      "blob": "61767cb1f6f90fa688f642cfdc5b35e12098590f",
+      "mode": "100644"
+    }
+  },
+  "limitations": [
+    "runner and sidecars copied without altering parallel WIP",
+    "other integration WIP omitted; full integration equivalence unproven"
+  ]
+}

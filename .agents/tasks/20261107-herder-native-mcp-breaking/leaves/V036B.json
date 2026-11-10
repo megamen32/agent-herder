@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V036 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V036 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:55+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:55+03:00",
+  "updated_at": "2026-11-07T04:51:42+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:55+03:00",
@@ -51,6 +51,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:31:48+03:00",
+      "note": "До: типизированы authority и scope markers, но нет проверяемого чтения маркеров для offline discovery. После: storage/project/resource markers сверяются с manifest и выбранным resource до разрешения local/SSH маршрута; owner.json остаётся отдельной mutable authority. Начинаю после handoff и проверки origin/main.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:45:09+03:00",
+      "note": "V036B реализован и проверен на отдельном worktree; strict marker identity и local route fail-closed. Открыт следующий зависимый шаг V036: различить ошибки отсутствующего owner от wrong root/mount/EACCES.",
+      "changes": {
+        "status": "done",
+        "result": "StorageAuthority::read_local_resource_marker в crates/herder/src/ownership/manifest.rs разрешает только local route и абсолютный root; сверяет storage.json, resource.json и project.json для project scope, валидирует путь, требует Authorization::Authorized и возвращает точный каталог. Тест ownership::manifest::tests: 3 passed, 0 failed; git diff --check passed. Evidence: /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/.tmp/v036b/RESULT.md. Не проверяет и не создаёт owner.json; MCP/CLI integration не заявлена."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:51:42+03:00",
+      "note": "Входит в опубликованный main commit 6d1d15e4; remote readback совпал.",
+      "changes": {
+        "result": "StorageAuthority::read_local_resource_marker проверяет local route, абсолютный root, storage/resource/project identity, path component и Authorization; возвращает точный каталог лишь после проверки. Опубликовано в main: 6d1d15e41c7acca331d00bda0ab32ecf12be7449. На опубликованном SHA ownership::manifest::tests проходит 3/3; git diff --check passed. Evidence: /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/.tmp/v036b/RESULT.md. MCP/CLI integration не заявлена."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "StorageAuthority::read_local_resource_marker проверяет local route, абсолютный root, storage/resource/project identity, path component и Authorization; возвращает точный каталог лишь после проверки. Опубликовано в main: 6d1d15e41c7acca331d00bda0ab32ecf12be7449. На опубликованном SHA ownership::manifest::tests проходит 3/3; git diff --check passed. Evidence: /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/.tmp/v036b/RESULT.md. MCP/CLI integration не заявлена."
 }

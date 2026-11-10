@@ -1,0 +1,28 @@
+{
+  "scope": "isolated ZCode provider fixture setup only",
+  "zcode_cli": "0.16.9",
+  "zcode_server": "3.17.2-linux-x64-88a41b337faa",
+  "fixture_source": "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/scripts/test-model-server.py (read-only; existing verified CI fixture)",
+  "provider_config_source": "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/scripts/zcode-official-probe.py (read-only; exact fixture schema reused)",
+  "isolation": {
+    "network": "bubblewrap private network namespace; loopback-only",
+    "home": "fresh temporary HOME and XDG roots",
+    "server_root": "fresh temporary server root",
+    "provider": "fixture/herder-test pointed to local deterministic model server",
+    "personal_credentials_inherited": false
+  },
+  "result": {
+    "native_provider_ids": [
+      "fixture"
+    ],
+    "initialize_available": true,
+    "fixture_model_requests": 0
+  },
+  "cleanup": "temporary supervisor, model server and profile removed by runner finally",
+  "not_proven": [
+    "session creation",
+    "input delivery",
+    "assistant completion",
+    "native history readback"
+  ]
+}

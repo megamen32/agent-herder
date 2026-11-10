@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T10:16:36+00:00",
+  "details": "The new fake page timeout server borrowed method from a JSON request and then moved the request into its log before using method, causing Rust E0505 during the focused ChatGPT test build. Fix the test fixture by owning/copying method before storing request, then rerun the focused ChatGPT tests.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex",
+      "at": "2026-11-07T10:16:36+00:00",
+      "changes": {
+        "details": "The new fake page timeout server borrowed method from a JSON request and then moved the request into its log before using method, causing Rust E0505 during the focused ChatGPT test build. Fix the test fixture by owning/copying method before storing request, then rerun the focused ChatGPT tests.",
+        "source": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt::tests, compilation failed in crates/herder/src/adapters/chatgpt/mod.rs:728",
+        "status": "open",
+        "title": "V080B fake page fixture moves request while method borrow is live"
+      }
+    }
+  ],
+  "id": "B97d2a3e897eb4d1ba8ad",
+  "owner": "Codex",
+  "reporter": "Codex",
+  "source": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt::tests, compilation failed in crates/herder/src/adapters/chatgpt/mod.rs:728",
+  "status": "open",
+  "title": "V080B fake page fixture moves request while method borrow is live",
+  "updated_at": "2026-11-07T10:16:36+00:00"
+}

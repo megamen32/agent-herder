@@ -1,0 +1,73 @@
+{
+  "id": "QDESIGN",
+  "label": "Спроектировать тихий сбор прогресса из плана",
+  "description": "Переиспользовать LHC leaf/progress_events. Worker writes canonical leaf; lead pulls bounded changed digest through Context Mode; only decision-required messages. Определить freshness/cursors/UNKNOWN/restart и минимальную реализацию без второго task store.",
+  "acceptance": "Конкретный контракт записи/чтения, отказов и критичных уведомлений с минимальными изменениями в LHC/Herder; независимый критик проверил и замечания устранены.",
+  "kind": "task",
+  "status": "done",
+  "parent": "S00",
+  "owner": "Astra",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "created_at": "2026-11-07T18:08:53+03:00",
+  "updated_at": "2026-11-07T18:23:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:08:53+03:00",
+      "note": "",
+      "changes": {
+        "id": "QDESIGN",
+        "label": "Спроектировать тихий сбор прогресса из плана",
+        "description": "Переиспользовать LHC leaf/progress_events. Worker writes canonical leaf; lead pulls bounded changed digest through Context Mode; only decision-required messages. Определить freshness/cursors/UNKNOWN/restart и минимальную реализацию без второго task store.",
+        "acceptance": "Конкретный контракт записи/чтения, отказов и критичных уведомлений с минимальными изменениями в LHC/Herder; независимый критик проверил и замечания устранены.",
+        "kind": "task",
+        "status": "queued",
+        "parent": "S00",
+        "owner": "Astra",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        }
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:14:10+03:00",
+      "note": "Проект решения готов в own worktree QUIET-COORDINATION.md; критик проверяет границы и гонки, без новой implementation зависимости для пяти адаптеров.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:20:13+03:00",
+      "note": "Далее: принять delta-review критика; новый digest runtime ещё не реализован.",
+      "changes": {
+        "note": "Далее: принять delta-review критика; новый digest runtime ещё не реализован.",
+        "result": "Поправлены пять конкретных разрывов design; источник QUIET-COORDINATION.md. Native sends отсутствуют; writer→canonical read проверяется сейчас."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:23:52+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "QUIET-COORDINATION.md + independent QUIET-CRITIQUE.md опубликованы main99d2f29a. После5поправок критикSUPPORTED(design). Проверен canonical writer/read, fields.note==progress_events.note; evidence/quiet-canonical-read.json. Existing quiet assignments переданы четырём сессиям с accepted receipts. Нового runtime digest/message filter/Context Mode execute нет; implementation и inactive-wake proof не заявляются."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "note": "Далее: принять delta-review критика; новый digest runtime ещё не реализован.",
+  "result": "QUIET-COORDINATION.md + independent QUIET-CRITIQUE.md опубликованы main99d2f29a. После5поправок критикSUPPORTED(design). Проверен canonical writer/read, fields.note==progress_events.note; evidence/quiet-canonical-read.json. Existing quiet assignments переданы четырём сессиям с accepted receipts. Нового runtime digest/message filter/Context Mode execute нет; implementation и inactive-wake proof не заявляются."
+}

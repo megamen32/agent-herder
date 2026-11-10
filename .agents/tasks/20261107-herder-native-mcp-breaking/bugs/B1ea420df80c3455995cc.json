@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T16:41:32+00:00",
+  "details": "Текущий makeConfiguredAdapter ловит ошибку probe.json через catch(()=>null), затем выбирает v22 на null. Невалидный HTML/JSON HTTP200 становится валидным выбором протокола. Передано Terra в QOCJOIN для regression invalidJSON vs explicitnull и отказа до mutation; input astra-terra-probe-json-20261107T1642-v1.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T16:41:32+00:00",
+      "changes": {
+        "details": "Текущий makeConfiguredAdapter ловит ошибку probe.json через catch(()=>null), затем выбирает v22 на null. Невалидный HTML/JSON HTTP200 становится валидным выбором протокола. Передано Terra в QOCJOIN для regression invalidJSON vs explicitnull и отказа до mutation; input astra-terra-probe-json-20261107T1642-v1.",
+        "source": "/tmp/herder-tasks-publish-1047/src/ahap-opencode-runner.ts:199",
+        "status": "open",
+        "title": "OpenCode startup probe смешивает malformed JSON с валидным null"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T16:49:54+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QOCJOIN/json-green.log",
+            "red_proof_path": "evidence/QOCJOIN/json-red.log",
+            "red_result": "1 failed",
+            "red_sha256": "fbc126c86f1056ab585c02393d9b69582113c96e9f8f908b4078135e8f229482",
+            "result": "14 passed",
+            "sha256": "a4a01749a8d84bbd85ba0b3dd244d0b03fdbf8ec860cee1eb01e6c82fb03a845",
+            "test_command": "vitest run tests/ahap-opencode-family.test.ts tests/ahap-opencode-runner.test.ts tests/opencode-v22-protocol.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B1ea420df80c3455995cc",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QOCJOIN/json-green.log",
+      "red_proof_path": "evidence/QOCJOIN/json-red.log",
+      "red_result": "1 failed",
+      "red_sha256": "fbc126c86f1056ab585c02393d9b69582113c96e9f8f908b4078135e8f229482",
+      "result": "14 passed",
+      "sha256": "a4a01749a8d84bbd85ba0b3dd244d0b03fdbf8ec860cee1eb01e6c82fb03a845",
+      "test_command": "vitest run tests/ahap-opencode-family.test.ts tests/ahap-opencode-runner.test.ts tests/opencode-v22-protocol.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "/tmp/herder-tasks-publish-1047/src/ahap-opencode-runner.ts:199",
+  "status": "fixed",
+  "title": "OpenCode startup probe смешивает malformed JSON с валидным null",
+  "updated_at": "2026-11-07T16:49:54+00:00"
+}

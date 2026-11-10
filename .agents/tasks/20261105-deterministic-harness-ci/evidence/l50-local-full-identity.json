@@ -1,0 +1,15 @@
+{
+  "match": true,
+  "candidate_sha256": "2a6e1279621202003d3c91661742f53ff0432995297f3d5071e456fc603939a6",
+  "installed_sha256": "2a6e1279621202003d3c91661742f53ff0432995297f3d5071e456fc603939a6",
+  "candidate_resume": "dist/index.js",
+  "installed_resume": "dist/index.js",
+  "differences": [],
+  "scope": "dereferenced rollout payload and node_modules on this host",
+  "limitations": [
+    "not an attestation of modules loaded by a running process",
+    "filesystem and Node resolution may change after inspection",
+    "does not prove other package resolution outside these trees",
+    "platform-specific dependency trees require separate tested candidates"
+  ]
+}

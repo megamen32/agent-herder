@@ -1,0 +1,63 @@
+{
+  "id": "L82",
+  "label": "Лжемодель: детерминированный вызов инструмента",
+  "description": "Добавить явно выбираемый сценарий tool call в локальный fixture для Responses и Chat Completions, сохранив обычные текстовые ответы.",
+  "acceptance": "RED→GREEN для потоковых и обычных форматов; реальный изолированный CLI либо честное указание непроверенного сценария.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T13:29:23+03:00",
+  "updated_at": "2026-11-07T13:36:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:29:23+03:00",
+      "note": "",
+      "changes": {
+        "id": "L82",
+        "label": "Лжемодель: детерминированный вызов инструмента",
+        "description": "Добавить явно выбираемый сценарий tool call в локальный fixture для Responses и Chat Completions, сохранив обычные текстовые ответы.",
+        "acceptance": "RED→GREEN для потоковых и обычных форматов; реальный изолированный CLI либо честное указание непроверенного сценария.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:29:42+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:31:55+03:00",
+      "note": "RED: test_model_tool_call.py — отсутствовал --scenario; GREEN: 11 тестов native, потоковый и обычный Responses/Chat Completions. В network+filesystem namespace launcher проверен сценарий tool-call. Опубликован 6edcd41d (ровно 4 fixture-файла, remote main подтверждён). Реальный CLI вызов инструмента и установленный Herder ещё не проверены.",
+      "changes": {},
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:36:36+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "6edcd41d fixture + e9260c68 Codex canary опубликованы. RED→GREEN, 11 fixture-тестов; реальный Codex 0.167.0 на server-100 и server-44 в сетевой и файловой изоляции выполнил точный dynamic tool с аргументами, затем прочитан ответ в thread/read, по два обращения к fixture. Это прямой native test, не проверка Herder или release gate."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "result": "6edcd41d fixture + e9260c68 Codex canary опубликованы. RED→GREEN, 11 fixture-тестов; реальный Codex 0.167.0 на server-100 и server-44 в сетевой и файловой изоляции выполнил точный dynamic tool с аргументами, затем прочитан ответ в thread/read, по два обращения к fixture. Это прямой native test, не проверка Herder или release gate."
+}

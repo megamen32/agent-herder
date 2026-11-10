@@ -1,0 +1,76 @@
+--- a/deploy/fleet/remote_release_gate.py
++++ b/deploy/fleet/remote_release_gate.py
+@@ -8,6 +8,7 @@
+ import hashlib
+ import json
+ import os
++import re
+ from pathlib import Path
+ import select
+ import socket
+@@ -91,13 +92,15 @@
+ 
+ class Authority:
+     """Strict finite gate vocabulary, not a generic execution endpoint."""
+-    def __init__(self, gate, contract):
++    def __init__(self, gate, contract, *, candidate_ci_draft=None, harness_policy=None):
+         descriptor = verify_descriptor(contract["descriptor"], contract["descriptorDigest"])
+         if any(contract[key] != descriptor[key] for key in ("hostId","fleetDir","unit")):
+             raise ProtocolError("release_authority_target_mismatch")
+         self.gate, self.contract, self.sequence = gate, contract, 0
+         self.started = False
+         self.finished = False
++        self.candidate_ci_draft = json.loads(json.dumps(candidate_ci_draft)) if candidate_ci_draft is not None else None
++        self.harness_policy = json.loads(json.dumps(harness_policy)) if harness_policy is not None else None
+ 
+     def handle(self, request):
+         if (set(request) != {"sequence", "run", "method", "arguments"}
+@@ -119,6 +122,24 @@
+                                               self.contract["candidateSha"])
+             self.started = True
+         else:
++            if method == "ci-draft" and args == {}:
++                # The authority chooses these inputs. This is transport only:
++                # no caller-supplied digest or boolean can open a gate.
++                self.sequence = request["sequence"]
++                lease = self.gate.check()
++                draft = self.candidate_ci_draft
++                verify_descriptor(self.contract["descriptor"], self.contract["descriptorDigest"])
++                harnesses = self.harness_policy
++                if (not isinstance(draft,dict) or not isinstance(harnesses,list) or not harnesses
++                    or len(harnesses)!=len(set(harnesses)) or draft.get("harnesses")!=harnesses
++                    or draft.get("candidateSha")!=self.contract["candidateSha"]
++                    or not isinstance(lease,dict) or type(lease.get("fence")) is not int or lease["fence"]<=0
++                    or any(not isinstance(draft.get(k),str) or re.fullmatch(r"[0-9a-f]{64}",draft[k]) is None for k in ("report_sha256","artifact_sha256","full_artifact_sha256"))):
++                    raise RuntimeError("release_ci_context_unavailable")
++                context={k:draft[k] for k in ("report_sha256","artifact_sha256","full_artifact_sha256")}
++                context.update({k:self.contract[k] for k in ("run","candidateSha","descriptorDigest","hostId","unit")})
++                context.update(fence=lease["fence"],required_harnesses=harnesses,status="INCOMPLETE",artifactEvidenceStatus="unverified-provenance")
++                return {"sequence":self.sequence,"run":self.contract["run"],"ok":True,"context":context}
+             if method in ("check", "cleanup") and args == {}:
+                 action = lambda: self.gate.check(cleanup=method == "cleanup")
+             elif method == "ancestry" and args == {
+@@ -152,6 +173,23 @@
+         if answer != {"sequence": self.sequence, "run": self.contract["run"], "ok": True}:
+             raise RuntimeError("release_authority_refused")
+ 
++    def ci_draft(self):
++        """Receive non-authorizing CI metadata through the live authority channel."""
++        self.sequence += 1
++        self.frames.write({"sequence":self.sequence,"run":self.contract["run"],"method":"ci-draft","arguments":{}})
++        reply=self.frames.read()
++        if not isinstance(reply,dict) or set(reply)!={"sequence","run","ok","context"} or reply.get("sequence")!=self.sequence or reply.get("run")!=self.contract["run"] or reply.get("ok") is not True:
++            raise RuntimeError("release_ci_context_refused")
++        ctx=reply.get("context")
++        if (not isinstance(ctx,dict) or any(ctx.get(k)!=self.contract.get(k) for k in ("run","candidateSha","descriptorDigest","hostId","unit"))
++            or ctx.get("status")!="INCOMPLETE" or ctx.get("artifactEvidenceStatus")!="unverified-provenance"
++            or type(ctx.get("fence")) is not int or ctx["fence"]<=0
++            or not isinstance(ctx.get("required_harnesses"),list) or not ctx["required_harnesses"]
++            or any(not isinstance(h,str) or not h for h in ctx["required_harnesses"]) or len(ctx["required_harnesses"])!=len(set(ctx["required_harnesses"]))
++            or any(not isinstance(ctx.get(k),str) or re.fullmatch(r"[0-9a-f]{64}",ctx[k]) is None for k in ("report_sha256","artifact_sha256","full_artifact_sha256"))):
++            raise RuntimeError("release_ci_context_refused")
++        return ctx
++
+     def __enter__(self):
+         root = Path(self.contract["fleetDir"])
+         if (not root.is_absolute() or root.resolve() != root

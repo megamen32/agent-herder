@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T20:38:03+00:00",
+  "details": "The installed real MiniMax Code 0.6.12 creates managed Flash-Preview sessions; Herder's CLI preflight admitted only Flash and refused delivery even when the native receipt could prove the exact managed Preview model.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:38:03+00:00",
+      "changes": {
+        "details": "The installed real MiniMax Code 0.6.12 creates managed Flash-Preview sessions; Herder's CLI preflight admitted only Flash and refused delivery even when the native receipt could prove the exact managed Preview model.",
+        "source": "tests/minimax-code-adapter.test.ts; server-44 receipt-managed-default.json",
+        "status": "open",
+        "title": "Herder refused MiniMax managed Flash-Preview idle delivery"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:38:32+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/minimax-managed-send.json",
+            "result": "PASS",
+            "sha256": "c119b1dfcc21c2df709245ebef318d917f45dcadd20b16f35e6473fec1aaa324",
+            "test_command": "scripts/run-isolated-native-ci.py --managed-only --mcode on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Be206aeae1d0c4c18bb80",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/minimax-managed-send.json",
+      "result": "PASS",
+      "sha256": "c119b1dfcc21c2df709245ebef318d917f45dcadd20b16f35e6473fec1aaa324",
+      "test_command": "scripts/run-isolated-native-ci.py --managed-only --mcode on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/minimax-code-adapter.test.ts; server-44 receipt-managed-default.json",
+  "status": "fixed",
+  "title": "Herder refused MiniMax managed Flash-Preview idle delivery",
+  "updated_at": "2026-11-05T20:38:32+00:00"
+}

@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-06T20:41:16+00:00",
+  "details": "Исходный raw JSONL, выведенный в stderr после отказа, содержит для точной сессии 257fa07c-b46b-429c-9594-540a691b7b7d исходный user и следующий assistant: evidence/l47-claude-original-readback.json. Начальный HTTP snapshot при этом содержал лишь старые события. В CI probe добавлено ожидание полного нового snapshot без повторной отправки, RED/GREEN evidence/l47-claude-wait-{red,green}.log; первоначальный временный каталог уже удалён runner, поэтому HTTP readback того же ID после исправления невозможен. Повторную отправку не делали; bug остаётся open до допустимого независимого readback.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T20:41:16+00:00",
+      "changes": {
+        "details": "В изолированном прогоне Claude ответил через fixture, но проверенная страница transcript не содержит ожидаемую пару; локализовать реальную причину и повторить с TDD.",
+        "source": "L45-L47 unified candidate isolated run",
+        "status": "open",
+        "title": "Claude: ожидаемая пара сообщений отсутствует в transcript"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L47",
+      "at": "2026-11-06T20:51:27+00:00",
+      "changes": {
+        "details": "Исходный raw JSONL, выведенный в stderr после отказа, содержит для точной сессии 257fa07c-b46b-429c-9594-540a691b7b7d исходный user и следующий assistant: evidence/l47-claude-original-readback.json. Начальный HTTP snapshot при этом содержал лишь старые события. В CI probe добавлено ожидание полного нового snapshot без повторной отправки, RED/GREEN evidence/l47-claude-wait-{red,green}.log; первоначальный временный каталог уже удалён runner, поэтому HTTP readback того же ID после исправления невозможен. Повторную отправку не делали; bug остаётся open до допустимого независимого readback."
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B1263b4934d5347cd85ec",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "L45-L47 unified candidate isolated run",
+  "status": "open",
+  "title": "Claude: ожидаемая пара сообщений отсутствует в transcript",
+  "updated_at": "2026-11-06T20:51:27+00:00"
+}

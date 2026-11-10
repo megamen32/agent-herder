@@ -1,0 +1,92 @@
+{
+  "id": "L44",
+  "label": "Linux: подтвердить полный поиск и подготовить producer",
+  "description": "Полный поиск Codex и предварительный producer проверены; доверенное происхождение и installed unit продолжаются L50/L51.",
+  "acceptance": "Результаты изолированного поиска и ограничения подтверждены.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Rawls",
+  "parallel_with": [
+    "L43"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T22:43:08+03:00",
+  "updated_at": "2026-11-06T23:34:32+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T22:43:08+03:00",
+      "note": "",
+      "changes": {
+        "id": "L44",
+        "label": "Linux: доказать полный поиск и установленную generation",
+        "description": "Продолжение L42: полный обход закреплённых CI-сессий, доверенный context установленного процесса и полный collector envelope.",
+        "acceptance": "Доказаны точные PID/starttime/digest и полный поиск, сообщения и transcript через установленный runtime; неполный результат отклоняется.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Rawls",
+        "parallel_with": [
+          "L43"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:45:05+03:00",
+      "note": "CI MCP search: полный строгий JSONL snapshot по двум pinned Codex IDs, непрерывные страницы, при incomplete/malformed/missing partial=true; RED/GREEN evidence/l42-search-complete-{red,green}.log, 3 test files GREEN l42-search-suite-green.log, build l42-search-build-green.log. Реальный изолированный процесс server-44: exact два ID, поиск partial=false для каждого, 3+3 transcript и 2 completed deliveries, evidence/l44-codex-search-entrypoint.json. Это сборочный snapshot, не installed; полный identity невозможен без build-manifest, v2 в l44-search-snapshot-identity.json. Доверенное происхождение candidate CI + independent rollout generation и полный harness envelope не готовы.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:56:02+03:00",
+      "note": "Release contract: authority ReleaseGate lease owner/fence/target + RPC run, descriptor harnesses; аутентифицированного полного CI evidence и привязки transaction generation нет. Подготовлен draft binding scripts/codex-unix-transaction.py, только INCOMPLETE/unverified-provenance; RED/GREEN evidence/l44-{transaction,fence,binding-tamper}-{red,green}.log (tamper GREEN в l44-binding-green.log). Реальный изолированный systemd user unit server-44: evidence/l44-unit-fence-binding.json, PID 887311/starttime 77779999 и listener 23917 + wrapper chain неизменны, v2 ace01bcb...; test run/fence/policy и CI digests синтетические, peer/consumer отсутствуют. Cleanup l44-unit-fence-cleanup.txt; production unit active PID 2420098. Не доказаны authenticated CI origin, реальный fence binding, full bundle и все harness, gate закрыт.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:04:49+03:00",
+      "note": "Адресный неинтегрированный patch authority RPC evidence/l44-authority-proposed.patch и test evidence/l44-authority-proposed-test.py: отдача только authority-side draft полей, fence проверяется через текущий gate, клиент проверяет binding и принимает лишь INCOMPLETE/unverified; удалённый caller не может задавать digest. RED/GREEN evidence/l44-authority-{red,green,remote-red,remote-green}.log; 30 существующих тестов RPC GREEN l44-authority-existing-suite.log; ReleaseGate на синтетической lease с сменой fence l44-authority-real-lease-green.log. Owned codex-unix-transaction.py теперь вызывает ci_draft до/после collector, но tested with fake peer only (l44-authority-collector-{red,green}.log). Fleet descriptor не поддерживает harnesses; policy предлагается отдельным вводом authority, provenance и producer не реализованы. v11 candidate/release gate FAIL, нет authenticated полного CI digest. Новый installed unit с настоящим Codex именно через этот RPC пока не выполнен; прежние квитанции L27/L44 — отдельные доказательства, gate закрыт. B b929 deferred до L44.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:12:27+03:00",
+      "note": "Согласованный authority RPC patch интегрирован адресно: RED/GREEN evidence/l44-authority-integration-{red,green}.log, RPC 30 tests l44-authority-integration-rpc-suite.log, preflight и acceptance gate tests GREEN; неполный gate закрыт. Bb929: исходный RED воспроизведён evidence/bb929-current-red.log: 3 rollout errors и отдельный Qoder fixture fail. Из исходного worktree перенесён standalone native_ci_preflight.py и отказные тесты evidence/bb929-preflight-{red,green}.log; это v2/структурная проверка без аутентификации, не подключена к release. Rollout-node принадлежит L19 и не изменён; проволока receipt через authority и staging отсутствует, Bb929 остаётся open.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:17:59+03:00",
+      "note": "Rollout-candidate теперь обращается к fenced authority ci_draft через native_ci_preflight до trim/unpack и до Darwin handoff; helper передаётся в staging. Producer полного authenticated CI evidence отсутствует, поэтому helper безусловно отклоняет даже заявленный PASS; это fail-closed подготовка, не рабочая позитивная приёмка. RED/GREEN evidence/l44-route-{red,green}.log; реальный Authority/RemoteReleaseGate loop в l44-route-channel-green.log (3 tests), L19 preflight 6 и existing RPC 30 GREEN. rollout-node не изменён. Нет реальной полной manifest/bundle CI квитанции, реального consumer по этому каналу и полноты всех harness; L44 открыт, Bb929 не закрыт.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:28:01+03:00",
+      "note": "Добавлен prototype scripts/codex-unix-ci-producer.py: проверяет manifest source/builder/bundle, policy == REQUIRED_HARNESSES, fenced gate до/после CI, полную доступную inventory+Node resolution до/после, структурный candidate validator и digest отчёта; неизменно INCOMPLETE/unverified, runner callback/policy ещё не аутентифицированы, consumer/authority wiring отсутствует. Synthetic RED/GREEN evidence/l44-producer-{red,green,manifest-red,manifest-green,policy-red,policy-green}.log; положительный test использует mock candidate validator. Реальный канонический 0dcb... read-only отвергнут до CI: evidence/l44-producer-canonical-negative.json, broken node_modules/.bin/agent-resume. Точного полного подтверждённого candidate, release acceptance и нового installed Codex consumer нет; gate остаётся закрыт.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:34:32+03:00",
+      "note": "",
+      "changes": {
+        "label": "Linux: подтвердить полный поиск и подготовить producer",
+        "description": "Полный поиск Codex и предварительный producer проверены; доверенное происхождение и installed unit продолжаются L50/L51.",
+        "acceptance": "Результаты изолированного поиска и ограничения подтверждены.",
+        "status": "done",
+        "result": "На изолированном процессе Codex доказан поиск 2 ID partial=false, две доставки и transcript 3+3 страницы; evidence/l44-codex-search-entrypoint.json. Producer проверен synthetic с mock; полный bundle и provenance не доказаны. L50/L51 продолжают."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "На изолированном процессе Codex доказан поиск 2 ID partial=false, две доставки и transcript 3+3 страницы; evidence/l44-codex-search-entrypoint.json. Producer проверен synthetic с mock; полный bundle и provenance не доказаны. L50/L51 продолжают."
+}

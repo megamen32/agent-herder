@@ -1,0 +1,82 @@
+{
+  "id": "L33",
+  "label": "Общий CI: выполнить первый интеграционный прогон",
+  "description": "Первый единый прогон завершён с FAIL; повтор после исправлений продолжается в L41.",
+  "acceptance": "Сохранены candidate identity и полный результат по каждому сценарию, ошибки зарегистрированы.",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "Tesla",
+  "parallel_with": [
+    "L27",
+    "L30",
+    "L32"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T19:14:44+03:00",
+  "updated_at": "2026-11-06T20:06:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T19:14:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "L33",
+        "label": "Общий CI: интегрировать и прогнать единый кандидат",
+        "description": "Завершить перенос runner и совместимых sidecars, собрать неизменяемый кандидат и запустить все обязательные сценарии с фиксацией результата и версий.",
+        "acceptance": "Все обязательные сценарии на точном candidate проходят или release gate явно отказывает; полный receipt проверен.",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "Tesla",
+        "parallel_with": [
+          "L27",
+          "L30",
+          "L32"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:21:46+03:00",
+      "note": "Runner и все 29 sidecars присутствуют в integration; Hermes model hold/release RED→GREEN. Изоляционный source snapshot #1 собран с npm ci --offline, но во время сборки параллельно перенесены Codex/native CI файлы, поэтому его SHA не назначен общим. Snapshot #2 и #3 дали TS ошибки из-за идущего переноса session-supervisor/named-session и несоответствия recordGoalHumanInput. Последний snapshot /tmp/herder-l33-source-v3-20261106: src/session-supervisor.ts импортирует NamedSessionCreateDependencies, которого в snapshot named-session.ts ещё нет; native-ci-runtime.ts:54 вызывает recordGoalHumanInput с двумя аргументами, а текущая сигнатура принимает один. Файлы вне моего scope не меняю; после стабилизации нужен новый снимок и build. Общий SHA Rawls/Mac пока не установлен; release-gate не доказан.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:23:08+03:00",
+      "note": "После обновления named-session повторный snapshot v4 устранил две прежние ошибки, но npm run build всё ещё FAIL: src/web/native-ci-runtime.ts(54,60) TS2554 — recordGoalHumanInput вызван с 2 аргументами, интегрированная функция принимает 1. Точные SHA входных файлов и ошибка в evidence/l33-integration-build-blocked.json. Ошибка вне owned runner/sidecars, чужие файлы не менялись. Пока нет точного финального payload SHA для Rawls и Mac и нельзя запускать честный общий candidate.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:39:18+03:00",
+      "note": "Snapshot v5 candidate d94b09a8 собран; общий изолированный запуск за 121 с завершился FAIL: Browser/OpenCode transcript 422, Fast/Hermes/Qoder требуют исправлений. Browser product fix L35 проверен на Chrome fixture, но общий fixture ещё требует endpoint полного JSON; остальные среды разбираются параллельно. Итоговый candidate и installed proof не готовы.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:54:11+03:00",
+      "note": "Повтор candidate v6 cb27bf364cdf8474998bb7e66723c58b687a7108d706b0fc73f69083b811b1ee: evidence/l33-v6-unified.json общий FAIL, Browser fixture PASS evidence/l33-v6-browser-repeat.json, поиск содержимого partial. Hermes первичный direct_peer_limit исправлен изолированным self-loopback peer, B119325db663e4b7e8dde fixed RED/GREEN; новый первичный observed-cli-output вместо native-file зарегистрирован B3a01088dade24715b628, подтверждённые adapter/reader hunks перенесены без замены Browser; unit GREEN 8/8, real повтор идёт. Qoder active отсутствует, Fast active не достиг fixture; ChatGPT/ZAI реальный ответ отсутствует. Это разные ограничения, общий PASS не заявлен.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:06:44+03:00",
+      "note": "",
+      "changes": {
+        "label": "Общий CI: выполнить первый интеграционный прогон",
+        "description": "Первый единый прогон завершён с FAIL; повтор после исправлений продолжается в L41.",
+        "acceptance": "Сохранены candidate identity и полный результат по каждому сценарию, ошибки зарегистрированы.",
+        "status": "done",
+        "result": "Candidate v5 d94b09a8 общий FAIL за 121 с, evidence/l33-v5-unified.json; v6 cb27bf общий FAIL при Browser PASS, evidence/l33-v6-unified.json. Ошибки выделены по средам и исправляются; итоговый общий gate не прошёл, повтор L41."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Candidate v5 d94b09a8 общий FAIL за 121 с, evidence/l33-v5-unified.json; v6 cb27bf общий FAIL при Browser PASS, evidence/l33-v6-unified.json. Ошибки выделены по средам и исправляются; итоговый общий gate не прошёл, повтор L41."
+}

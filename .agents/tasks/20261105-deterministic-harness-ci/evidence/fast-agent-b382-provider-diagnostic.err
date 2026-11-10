@@ -1,0 +1,6 @@
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+AssertionError [ERR_ASSERTION]: new turn did not reach the held model
+    at file:///app/scripts/native-fast-agent-herder.mjs:134:14

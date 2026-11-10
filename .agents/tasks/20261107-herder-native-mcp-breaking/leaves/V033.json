@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 1,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V033 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V033 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V033",
   "created_at": "2026-11-07T01:52:23+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:58+03:00",
+  "updated_at": "2026-11-07T14:38:16+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:23+03:00",
@@ -74,9 +74,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:36:59+03:00",
+      "note": "Проверяю существующую source/fake реализацию после f6317184. Найдены stale CAS, раздельные desired/applied и тесты native failure; проверяю оставшиеся scope условия и запускаю только целевую offline группу.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:38:16+03:00",
+      "note": "Source/fake acceptance is already implemented and proven; no duplicate settings store or runtime effects introduced. Authorization and real native apply remain outside this leaf.",
+      "changes": {
+        "status": "done",
+        "result": "No source change needed: existing crates/herder/src/application/settings.rs at 4870992c7c5d922a8dd98cfdbcf7abbab9540600 already enforces wire-revision CAS before save, rejects stale/unsupported patches without writes, keeps desired advanced and applied unchanged on native failure, and advances applied only on success. Target types remain explicit (Node/Instance/Session) through SettingsPort. Focused offline source/fake suite: 7 passed; proof evidence/v033-settings-source-green.txt. Principal/ACL authorization and real native application are not implemented/proven by this source slice and remain integration acceptance."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "No source change needed: existing crates/herder/src/application/settings.rs at 4870992c7c5d922a8dd98cfdbcf7abbab9540600 already enforces wire-revision CAS before save, rejects stale/unsupported patches without writes, keeps desired advanced and applied unchanged on native failure, and advances applied only on success. Target types remain explicit (Node/Instance/Session) through SettingsPort. Focused offline source/fake suite: 7 passed; proof evidence/v033-settings-source-green.txt. Principal/ACL authorization and real native application are not implemented/proven by this source slice and remain integration acceptance."
 }

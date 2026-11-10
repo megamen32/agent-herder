@@ -1,0 +1,24 @@
+   Compiling zcode-v075b-harness v0.1.0 (/tmp/herder-v075b-harness.fxzIlX)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.92s
+     Running unittests src/lib.rs (target/debug/deps/zcode_v075b_harness-1528d32a86781a5c)
+
+running 1 test
+
+thread 'adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot' (921383) panicked at /home/roomhacker/.codex/worktrees/herder-v075b/agent-herder/crates/herder/src/adapters/zcode/transcript.rs:487:9:
+assertion failed: second.blocks.iter().any(|block|
+        {
+            block.text.as_deref() == Some("plain user body") &&
+                        block.source_field.as_deref() == Some("info.content") &&
+                    block.native_type.is_none() && block.block_index.is_none()
+        })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot ... FAILED
+
+failures:
+
+failures:
+    adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

@@ -1,0 +1,70 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Installed CI source foundations and bounded Codex proof",
+  "description": "Proven checkpoint: collector/public bindings, pinned fixed helper/installer/workflow, managed browser correlation and Codex canonical two-turn capability. Actual installed execution, native timeout cleanup and exact official ZCode scope remain separate leaves.",
+  "acceptance": "Complete reviewed collector, protected credential/process bindings, honest native scope, helper/workflow contracts and focused GREEN source proof.",
+  "affected_files": [
+    "tests/native/installed-browser-smoke.ts"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/ci_harness_finish",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+  "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
+  "id": "CICOLLECTOR",
+  "created_at": "2026-11-09T03:29:52+03:00",
+  "updated_at": "2026-11-09T04:07:39+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T03:29:52+03:00",
+      "note": "Resume approved explicit scope split after context recovery.",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Installed five-harness CI collector and binding source",
+        "description": "Complete reviewed collector, protected credential/process bindings, honest native scope, helper/workflow contracts and focused GREEN source proof.",
+        "acceptance": "Complete reviewed collector, protected credential/process bindings, honest native scope, helper/workflow contracts and focused GREEN source proof.",
+        "affected_files": [
+          "tests/native/installed-browser-smoke.ts"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/ci_harness_finish",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+        "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T04:07:39+03:00",
+      "note": "Close proven checkpoint; do not conceal later native lifecycle/scope work.",
+      "changes": {
+        "status": "done",
+        "label": "Installed CI source foundations and bounded Codex proof",
+        "description": "Proven checkpoint: collector/public bindings, pinned fixed helper/installer/workflow, managed browser correlation and Codex canonical two-turn capability. Actual installed execution, native timeout cleanup and exact official ZCode scope remain separate leaves.",
+        "result": "Source checkpoint GREEN: collector15 + Codex18 + bindings6 TypeScript tests; gate35/helper5 Python tests; manager17 Node tests; tsc and three bundles exit0. Evidence evidence/ci-visible-20261109/collector-foundation/result.json. No runner, installed fixture or all-five native acceptance claimed. Remaining CICLEANUP/CIZCODEPROOF/CIBROWSERINSTALL/CIRELEASE explicit."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    }
+  ],
+  "result": "Source checkpoint GREEN: collector15 + Codex18 + bindings6 TypeScript tests; gate35/helper5 Python tests; manager17 Node tests; tsc and three bundles exit0. Evidence evidence/ci-visible-20261109/collector-foundation/result.json. No runner, installed fixture or all-five native acceptance claimed. Remaining CICLEANUP/CIZCODEPROOF/CIBROWSERINSTALL/CIRELEASE explicit."
+}

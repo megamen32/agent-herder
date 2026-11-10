@@ -1,0 +1,11 @@
+Command: rustc --edition=2024 --test .tmp/v037a/harness.rs -L dependency=crates/herder/target/debug/deps --extern herder=<latest rlib> --extern serde=<latest rlib> --extern serde_json=<latest rlib> -o .tmp/v037a/claim-tests
+Exit: 1
+error[E0432]: unresolved import `crate::domain::resource::ResourceMarker`
+   --> crates/herder/src/ownership/claim.rs:175:9
+    |
+175 |     use crate::domain::resource::ResourceMarker;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ResourceMarker` in `domain::resource`
+help: consider importing this struct instead
+    |
+175 -     use crate::domain::resource::ResourceMarker;
+175 +     use crate::ownership::manifest::ResourceMarker;

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-fast-threeway-fMudhW
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  22:38:52
+   Duration  551ms (transform 165ms, setup 65ms, import 43ms, tests 243ms, environment 0ms)
+

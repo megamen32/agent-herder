@@ -1,0 +1,80 @@
+{
+  "id": "L41",
+  "label": "Общий CI: проверить кандидата v8 и исправить OpenCode",
+  "description": "Первый общий прогон v8 и отдельный реальный повтор OpenCode завершены; полное покрытие и следующий общий gate продолжаются L43.",
+  "acceptance": "Результаты v8, причины и непроверенные части сохранены.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Tesla",
+  "parallel_with": [
+    "L34",
+    "L37"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T20:06:41+03:00",
+  "updated_at": "2026-11-06T22:42:31+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T20:06:41+03:00",
+      "note": "",
+      "changes": {
+        "id": "L41",
+        "label": "Общий CI: повторить после исправлений всех сред",
+        "description": "Собрать стабильный единый candidate из согласованных изменений, проверить полный артефакт и запустить единый изолированный набор с отчётом.",
+        "acceptance": "Все обязательные среды и сценарии на точном candidate подтверждены; недоступные/частичные результаты дают FAIL.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Tesla",
+        "parallel_with": [
+          "L34",
+          "L37"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:09:04+03:00",
+      "note": "Integration snapshot v8 собран и проверен на отсутствие изменений исходников при сборке. Candidate v2 SHA 97d98ad4ff3f334364fc5fd231ea1d3974588732a1336800e8cc9c21220c786d; server-44 /tmp/herder-l41-v8-97d9/candidate, идентичный SHA. Включены указанные L36 OpenCode файлы и тесты, Hermes native hunks, Browser и адресный Fast reader patch Rawls; совместные focused tests 11/11 GREEN, build GREEN. Это v2 без полного хеша зависимостей и не installed PID; L37 и финальный общий gate ещё не подтверждены. Browser fixture запускается, затем общий прогон.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:11:31+03:00",
+      "note": "Состав source snapshot v8 и SHA всех файлов сохранён в evidence/l41-v8-composition.json: candidate v2 97d98ad4ff3f334364fc5fd231ea1d3974588732a1336800e8cc9c21220c786d; 1166 исходников, inventory SHA 2a448da0f8086b4609c8075064a88a120e3c4f9051c12f31150d49e04ff56ebb. Browser fixture на этом payload PASS по двум title/ID и transcript, content search partial (evidence/l41-v8-browser.json). Единый прогон server-44 выполняется; L37 ещё running, нет Mac/installed PID и полного хеша node_modules.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:17:59+03:00",
+      "note": "Единый candidate v8 97d98ad4: общий прогон 128.965 с FAIL, evidence/l41-v8-unified.json; Hermes, Qoder, Fast Agent и Browser fixture подтвердили свои сценарии на том же digest. OpenCode search не нашёл базу XDG_DATA_HOME; B237478a6ae1d419490d0 открыт, уточняется тестовый OPENCODE_DB_PATH и повтор. Реальные ChatGPT/Z AI и installed PID не доказаны.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:29:21+03:00",
+      "note": "OpenCode XDG + v2 schema исправлены RED/GREEN; на server-44 candidate 4b7ff88f настоящий OpenCode создал и нашёл две сессии, ответил и выгрузил 2+2 страницы. Probe пока не доказывает partial=false и полный scan; B237478a6ae1d419490d0 остаётся open, дорабатывается receipt. Общий gate FAIL; digest не охватывает bundle.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:42:31+03:00",
+      "note": "",
+      "changes": {
+        "label": "Общий CI: проверить кандидата v8 и исправить OpenCode",
+        "description": "Первый общий прогон v8 и отдельный реальный повтор OpenCode завершены; полное покрытие и следующий общий gate продолжаются L43.",
+        "acceptance": "Результаты v8, причины и непроверенные части сохранены.",
+        "status": "done",
+        "result": "v8 97d98ad4 общий FAIL за 128,965 с; Hermes, Fast Agent, Qoder и Browser fixture подтвердились, OpenCode search не прошёл. XDG и схема v2 исправлены RED/GREEN; отдельный repeat 4b7ff88f нашёл две сессии и транскрипты 2+2, но полнота поиска и bundle не доказаны; продолжение L43."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "v8 97d98ad4 общий FAIL за 128,965 с; Hermes, Fast Agent, Qoder и Browser fixture подтвердились, OpenCode search не прошёл. XDG и схема v2 исправлены RED/GREEN; отдельный repeat 4b7ff88f нашёл две сессии и транскрипты 2+2, но полнота поиска и bundle не доказаны; продолжение L43."
+}

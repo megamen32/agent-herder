@@ -1,0 +1,21 @@
+
+======================================================================
+FAIL: test_full_artifact_comparison_rejects_mismatch_and_digest_change (__main__.SocketBoundaryTest) (change={'differences': ['modified']})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_codex_unix_boundary.py", line 27, in test_full_artifact_comparison_rejects_mismatch_and_digest_change
+    with self.subTest(change=change),self.assertRaises(RuntimeError):
+AssertionError: RuntimeError not raised
+
+======================================================================
+FAIL: test_full_artifact_comparison_rejects_mismatch_and_digest_change (__main__.SocketBoundaryTest) (change={'differences': None})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_codex_unix_boundary.py", line 27, in test_full_artifact_comparison_rejects_mismatch_and_digest_change
+    with self.subTest(change=change),self.assertRaises(RuntimeError):
+AssertionError: RuntimeError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=2)

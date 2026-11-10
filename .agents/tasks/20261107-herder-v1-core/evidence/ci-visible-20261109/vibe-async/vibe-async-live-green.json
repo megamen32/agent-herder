@@ -1,0 +1,22 @@
+{
+  "nativeModelPrompts": 0,
+  "pageId": 1115967545,
+  "asyncValue": {
+    "value": "owned-value",
+    "count": 1
+  },
+  "rejection": "vibe_evaluation_failed",
+  "rejectionReceipt": {
+    "operationId": "85736b7c-5e2b-4539-b02f-ab11081abc52",
+    "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    "sessionId": "session_1",
+    "pageId": 1115967545,
+    "state": "failed",
+    "dispatches": 1
+  },
+  "green": true,
+  "probeStateCleanup": {
+    "completedProbeEntryAbsent": true,
+    "counterAbsent": true
+  }
+}

@@ -1,0 +1,23 @@
+E
+======================================================================
+ERROR: test_owner_collector_becoming_unavailable_does_not_trigger_rollback_restart (__main__.RolloutNodeInstallTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/rollout-node-install.test.py", line 335, in test_owner_collector_becoming_unavailable_does_not_trigger_rollback_restart
+    self.assertEqual(candidate.node_side(args),1)
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/deploy/fleet/rollout-candidate.py", line 565, in node_side
+    result = _leased_node_side_owner(arguments, gate)
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/deploy/fleet/rollout-candidate.py", line 437, in _leased_node_side_owner
+    load_fleet_installer().require_installed_ci_collector()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1177, in _execute_mock_call
+    raise result
+RuntimeError: collector not implemented
+
+----------------------------------------------------------------------
+Ran 1 test in 0.017s
+
+FAILED (errors=1)

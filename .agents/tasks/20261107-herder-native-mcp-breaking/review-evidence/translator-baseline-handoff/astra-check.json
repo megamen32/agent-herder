@@ -1,0 +1,17 @@
+{
+  "native_binary_path": "/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder/crates/herder/target/debug/herder_native_stdio",
+  "native_binary_sha256": "18090f7eff567771db70af769093dcd5bfcb771f615c237bfd9ac7f6b5c5fd35",
+  "command": "HERDER_NATIVE_BINARY=<recorded binary> HERDER_COMPAT_EVIDENCE_DIR=<this directory> cargo test --offline --locked --manifest-path crates/herder-compat/Cargo.toml --test handshakes -- --nocapture",
+  "result": "2 passed; 0 failed; 0 ignored; finished in0.04s",
+  "actual_operations": [
+    "initialize native2026-07-28",
+    "initialize downstream2025-06-18",
+    "tools/list14"
+  ],
+  "not_proven": [
+    "caller identity",
+    "Tasks business lifecycle",
+    "Codex consumer",
+    "native model sends"
+  ]
+}

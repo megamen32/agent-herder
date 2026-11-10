@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T09:28:20+00:00",
+  "details": "The newly added isolated rollback test fails before update_session runs: its CREATE TRIGGER string removes the newline without a separating space, producing session_search_stateBEGIN and SQLite syntax error. Red output saved at /tmp/herder-v030a-harness/red.log. This is an error in the new test fixture, not evidence of a production index failure.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra / 01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "at": "2026-11-07T09:28:20+00:00",
+      "changes": {
+        "details": "The newly added isolated rollback test fails before update_session runs: its CREATE TRIGGER string removes the newline without a separating space, producing session_search_stateBEGIN and SQLite syntax error. Red output saved at /tmp/herder-v030a-harness/red.log. This is an error in the new test fixture, not evidence of a production index failure.",
+        "source": "CARGO_TARGET_DIR=/tmp/herder-v030a-harness/target cargo test --offline --manifest-path /tmp/herder-v030a-harness/Cargo.toml failed_cursor_write_rolls_back_the_fts_replacement",
+        "status": "open",
+        "title": "V030A test fixture CREATE TRIGGER syntax"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra / 01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "at": "2026-11-07T09:34:06+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v030a/unit-green.log",
+            "red_proof_path": "review-evidence/v030a/rollback-fixture-red.log",
+            "red_result": "test index::tests::failed_cursor_write_rolls_back_the_fts_replacement ... FAILED",
+            "red_sha256": "d8eee8da9847e604893e65297c12b78f295c33b1757d6b20334ee214e5946d97",
+            "result": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+            "sha256": "70c63e479cd6d58629333a95b83441a6d76dd38a63d82ad700c86e9208d6c601",
+            "test_command": "CARGO_TARGET_DIR=/tmp/herder-v030a-harness/target cargo test --offline --manifest-path /tmp/herder-v030a-harness/Cargo.toml"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B61cd9af1677a4d538c27",
+  "owner": "Astra / 01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "reporter": "Astra / 01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v030a/unit-green.log",
+      "red_proof_path": "review-evidence/v030a/rollback-fixture-red.log",
+      "red_result": "test index::tests::failed_cursor_write_rolls_back_the_fts_replacement ... FAILED",
+      "red_sha256": "d8eee8da9847e604893e65297c12b78f295c33b1757d6b20334ee214e5946d97",
+      "result": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+      "sha256": "70c63e479cd6d58629333a95b83441a6d76dd38a63d82ad700c86e9208d6c601",
+      "test_command": "CARGO_TARGET_DIR=/tmp/herder-v030a-harness/target cargo test --offline --manifest-path /tmp/herder-v030a-harness/Cargo.toml"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "CARGO_TARGET_DIR=/tmp/herder-v030a-harness/target cargo test --offline --manifest-path /tmp/herder-v030a-harness/Cargo.toml failed_cursor_write_rolls_back_the_fts_replacement",
+  "status": "fixed",
+  "title": "V030A test fixture CREATE TRIGGER syntax",
+  "updated_at": "2026-11-07T09:34:06+00:00"
+}

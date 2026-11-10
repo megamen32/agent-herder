@@ -1,0 +1,77 @@
+{
+  "id": "L51",
+  "label": "Linux: доказать установленный bundle через consumer",
+  "description": "Выполнить тестовый установленный unit на точном bundle: PID, digest, реальные сценарии и квитанции.",
+  "acceptance": "TDD и проверенное доказательство exact bundle либо честный отказ.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Rawls",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T23:34:32+03:00",
+  "updated_at": "2026-11-07T21:30:02+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T23:34:32+03:00",
+      "note": "",
+      "changes": {
+        "id": "L51",
+        "label": "Linux: доказать установленный bundle через consumer",
+        "description": "Выполнить тестовый установленный unit на точном bundle: PID, digest, реальные сценарии и квитанции.",
+        "acceptance": "TDD и проверенное доказательство exact bundle либо честный отказ.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Rawls",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:34:35+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L50"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:37:24+03:00",
+      "note": "Новый тестовый bundle подготовлен на server-100; installed unit и consumer для него ещё не проверены. Квитанция evidence/l50-test-bundle-receipt.json; полный gate закрыт.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:54:35+03:00",
+      "note": "Изолированный installed unit для нового полного candidate не запускался. Копия частичного bundle server-44 инвентарно совпала с локальным SHA 2a6e1279…; ждём согласованный полный snapshot после L45–L48, не повторяя прежние сообщения.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:02+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "depends_on": [
+    "L50"
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

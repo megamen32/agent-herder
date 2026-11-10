@@ -1,0 +1,80 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Package final committed CI runtime",
+  "description": "Remaining immutable build and packaging slice from CISOURCEFINAL; exact source53cfe57f, preserved a06 full-suite receipts and proven test-only delta.",
+  "acceptance": "Owned immutable release manifest and all artifact hashes verified against final53cfe57f; build and source-equivalence evidence saved.",
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 15
+  },
+  "id": "CIBUILDFINAL",
+  "created_at": "2026-11-09T05:42:41+03:00",
+  "updated_at": "2026-11-09T06:07:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T05:42:41+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Package final committed CI runtime",
+        "description": "Remaining immutable build and packaging slice from CISOURCEFINAL; exact source53cfe57f, preserved a06 full-suite receipts and proven test-only delta.",
+        "acceptance": "Owned immutable release manifest and all artifact hashes verified against final53cfe57f; build and source-equivalence evidence saved.",
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 15
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T05:52:28+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "Immutable candidate53cfe57f built and protected successfully. Full a06 build438 tests/Python8+37+6/manager23/Rust contracts passed; exact test-only53 delta verified and8symlink-fixture tests passed. Source39 adds only native-worker fixture canonicalization and hosted Linux+macOS bothPASS. Final carry waits on the actual runner installer compatibility repair commit; current53 artifact preserved at releases/herder-ci-final-53cfe57f4309 with manifestc7fb1abb0db0d24d76667a7fbeda6f732e0c8f28f23b8badbf5b5bb9f15b800b. No shared runtime installation."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:07:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Exact immutable sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a packaged at /home/roomhacker/herder-artifacts/releases/herder-ci-final-f8f5d4141be4. Manifesteb13efe02175a562628368b84208d937db805c0ca13d12d54258c2a09311ce29; acceptance-summary49c85e7863181074708f974d19420972a53a2bcd4d7d9313d05cbef20cd3cb7d. Full a06 build438tests and Python/Rust/manager checks PASS; exactly5 reviewed CI/test deltas, runtime build inputs byte-identical, final focused8+7+12 PASS. 8components hashed,9files protected0400/0500. All17 owned command groups empty. Shared runtime not installed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Exact immutable sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a packaged at /home/roomhacker/herder-artifacts/releases/herder-ci-final-f8f5d4141be4. Manifesteb13efe02175a562628368b84208d937db805c0ca13d12d54258c2a09311ce29; acceptance-summary49c85e7863181074708f974d19420972a53a2bcd4d7d9313d05cbef20cd3cb7d. Full a06 build438tests and Python/Rust/manager checks PASS; exactly5 reviewed CI/test deltas, runtime build inputs byte-identical, final focused8+7+12 PASS. 8components hashed,9files protected0400/0500. All17 owned command groups empty. Shared runtime not installed."
+}

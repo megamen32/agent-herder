@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T10:17:44+00:00",
+  "details": "12f0d3a9 возвращал одинаковый definitely_not_sent для остановки до handoff и отказа адаптера; невозможно понять следующее исправление. Произвольный native reason нельзя выводить без фильтрации.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025COMPOSE",
+      "at": "2026-11-07T10:17:44+00:00",
+      "changes": {
+        "details": "12f0d3a9 возвращал одинаковый definitely_not_sent для остановки до handoff и отказа адаптера; невозможно понять следующее исправление. Произвольный native reason нельзя выводить без фильтрации.",
+        "source": "Независимое замечание 2026-11-07",
+        "status": "open",
+        "title": "Terminal MCP task скрывает причину HumanStop и отказ adapter"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025COMPOSE",
+      "at": "2026-11-07T10:18:31+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025COMPOSE/task-green.log",
+            "red_proof_path": "evidence/V025COMPOSE/task-red.log",
+            "red_result": "assertion `left == right` failed",
+            "red_sha256": "f731fa8bc9819b66e95a621060242fb7e2e04d7fd471c972381621ba5960f2c0",
+            "result": "test result: ok. 1 passed",
+            "sha256": "f5ab765d65cacea46fa0ef0add6df74a9c5a80eaa8f1caf22f268ef5e766ebde",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_task_wire_returns_durable_terminal_states_and_messages -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B9ba6e19d662a439b9538",
+  "owner": "V025COMPOSE",
+  "reporter": "V025COMPOSE",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025COMPOSE/task-green.log",
+      "red_proof_path": "evidence/V025COMPOSE/task-red.log",
+      "red_result": "assertion `left == right` failed",
+      "red_sha256": "f731fa8bc9819b66e95a621060242fb7e2e04d7fd471c972381621ba5960f2c0",
+      "result": "test result: ok. 1 passed",
+      "sha256": "f5ab765d65cacea46fa0ef0add6df74a9c5a80eaa8f1caf22f268ef5e766ebde",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_task_wire_returns_durable_terminal_states_and_messages -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Независимое замечание 2026-11-07",
+  "status": "fixed",
+  "title": "Terminal MCP task скрывает причину HumanStop и отказ adapter",
+  "updated_at": "2026-11-07T10:18:31+00:00"
+}

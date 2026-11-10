@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:29:12+00:00",
+  "details": "Свежий integration candidate в Browser fixture: endpoint /transcript возвращает HTTP 422 unsupported native JSONL harness, поэтому полный сценарий не проходит. Требуется воспроизвести, исправить TDD и повторить реальный fixture.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:29:12+00:00",
+      "changes": {
+        "details": "Свежий integration candidate в Browser fixture: endpoint /transcript возвращает HTTP 422 unsupported native JSONL harness, поэтому полный сценарий не проходит. Требуется воспроизвести, исправить TDD и повторить реальный fixture.",
+        "source": "L33 candidate browser fixture",
+        "status": "open",
+        "title": "Browser fixture: transcript возвращает 422 на интеграционном кандидате"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Pauli",
+      "at": "2026-11-06T16:38:13+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l35-green.txt",
+            "red_proof_path": "evidence/l35-red.txt",
+            "red_result": "1 failed",
+            "red_sha256": "7c9b481c159c2edfae01c45b3f8118b80fa28713c56b28c8678ef1b4ec67cd3e",
+            "result": "25 passed",
+            "sha256": "edd9ab76f6d5846731d9e679d03bf4f75f3eee18b9083e8a3f1c32d5d6046281",
+            "test_command": "vitest run tests/integrator-transcript-browser.test.ts tests/integrator-transcript.test.ts --config vitest.config.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B4e8c61ea9bf441949663",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l35-green.txt",
+      "red_proof_path": "evidence/l35-red.txt",
+      "red_result": "1 failed",
+      "red_sha256": "7c9b481c159c2edfae01c45b3f8118b80fa28713c56b28c8678ef1b4ec67cd3e",
+      "result": "25 passed",
+      "sha256": "edd9ab76f6d5846731d9e679d03bf4f75f3eee18b9083e8a3f1c32d5d6046281",
+      "test_command": "vitest run tests/integrator-transcript-browser.test.ts tests/integrator-transcript.test.ts --config vitest.config.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 candidate browser fixture",
+  "status": "fixed",
+  "title": "Browser fixture: transcript возвращает 422 на интеграционном кандидате",
+  "updated_at": "2026-11-06T16:38:13+00:00"
+}

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T08:33:38+00:00",
+  "details": "RED: при удерживаемом control.state.lock вызов start_thread не возвращается за 500ms при RPC timeout 100ms; последующий release в тесте допускает позднюю отправку. Нужен отказ без отправки при занятом mutex и безопасный bounded API.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T08:33:38+00:00",
+      "changes": {
+        "details": "RED: при удерживаемом control.state.lock вызов start_thread не возвращается за 500ms при RPC timeout 100ms; последующий release в тесте допускает позднюю отправку. Нужен отказ без отправки при занятом mutex и безопасный bounded API.",
+        "source": "cargo test busy_control_does_not_wait_unbounded_for_create --lib",
+        "status": "open",
+        "title": "Codex create блокируется на занятом mutex без учёта deadline"
+      }
+    }
+  ],
+  "id": "B750c8ba390f24a68950b",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "source": "cargo test busy_control_does_not_wait_unbounded_for_create --lib",
+  "status": "open",
+  "title": "Codex create блокируется на занятом mutex без учёта deadline",
+  "updated_at": "2026-11-07T08:33:38+00:00"
+}

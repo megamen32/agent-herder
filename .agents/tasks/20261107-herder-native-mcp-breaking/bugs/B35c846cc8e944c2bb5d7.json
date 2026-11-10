@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T08:41:34+00:00",
+  "details": "At 6894bbcd start_thread try_lock returns SubmitError::DefinitelyNotSent on busy control; create_sync maps every Err to NativeCreateOutcome::Unknown at create.rs:53. BoundedFreshRootCreate returns Result<_,()> and erases distinction again. Separate from fixed dispatch issue B2516eb97e1884dec8a50. Needs typed no-send throughout create admission before public wiring. Terra owner.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T08:41:34+00:00",
+      "changes": {
+        "details": "At 6894bbcd start_thread try_lock returns SubmitError::DefinitelyNotSent on busy control; create_sync maps every Err to NativeCreateOutcome::Unknown at create.rs:53. BoundedFreshRootCreate returns Result<_,()> and erases distinction again. Separate from fixed dispatch issue B2516eb97e1884dec8a50. Needs typed no-send throughout create admission before public wiring. Terra owner.",
+        "source": "Astra delta-review 6894bbcd",
+        "status": "open",
+        "title": "Codex create теряет DefinitelyNotSent и объявляет UNKNOWN до отправки"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T08:53:04+00:00",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "reason": "Исполнитель уже назначен и работает в существующей сессии; reporter не равен owner исправления."
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T08:57:59+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v055pipe/create-green.txt",
+            "red_proof_path": "review-evidence/v055pipe/create-red.txt",
+            "red_result": "test result: FAILED. 0 passed; 1 failed",
+            "red_sha256": "49ce18e75cc4e4c7d5eb4260f5218a58b634c28350a69b1204d8516adde05259",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "b5f0ec6bb491fa14c77fdedaa26df93ab8873f93b58d2b578dd13d8cc73dae0b",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate create_refused_before_write_is_durable_rejected -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B35c846cc8e944c2bb5d7",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v055pipe/create-green.txt",
+      "red_proof_path": "review-evidence/v055pipe/create-red.txt",
+      "red_result": "test result: FAILED. 0 passed; 1 failed",
+      "red_sha256": "49ce18e75cc4e4c7d5eb4260f5218a58b634c28350a69b1204d8516adde05259",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "b5f0ec6bb491fa14c77fdedaa26df93ab8873f93b58d2b578dd13d8cc73dae0b",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate create_refused_before_write_is_durable_rejected -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Astra delta-review 6894bbcd",
+  "status": "fixed",
+  "title": "Codex create теряет DefinitelyNotSent и объявляет UNKNOWN до отправки",
+  "updated_at": "2026-11-07T08:57:59+00:00"
+}

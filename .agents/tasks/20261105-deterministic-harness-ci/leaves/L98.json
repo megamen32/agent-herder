@@ -1,0 +1,44 @@
+{
+  "id": "L98",
+  "label": "Z.ai: уменьшить число передач",
+  "description": "Уменьшить число вызовов браузерного шлюза, сохранив проверку полноты и безопасный размер ответа.",
+  "acceptance": "TDD и реальный candidate/readback; выпуск только после штатных проверок. Редкий timeout остаётся открытым без подтверждения причины.",
+  "status": "done",
+  "owner": "lead",
+  "estimate_minutes": 15,
+  "kind": "task",
+  "result": "1f1cfcd8 опубликован в main и установлен server-100/44/88; leases освобождены, readiness и API на fleet узлах подтверждены. На установленном server-100 реальный Z.ai transcript: 30 событий, 3 страницы, complete=true, marker найден, 18.03 с. RED→GREEN 46 тестов, tsc, сборка 15/15. Редкий 50-секундный timeout B0a45 остаётся открытым; один замер его не устраняет.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T17:41:18+03:00",
+  "updated_at": "2026-11-07T17:48:59+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T17:41:18+03:00",
+      "note": "",
+      "changes": {
+        "id": "L98",
+        "label": "Z.ai: уменьшить число передач",
+        "description": "Уменьшить число вызовов браузерного шлюза, сохранив проверку полноты и безопасный размер ответа.",
+        "acceptance": "TDD и реальный candidate/readback; выпуск только после штатных проверок. Редкий timeout остаётся открытым без подтверждения причины.",
+        "status": "running",
+        "owner": "lead",
+        "estimate_minutes": 15,
+        "kind": "task",
+        "result": "1f1cfcd8 в main: RED пять частей вместо максимум четырёх; GREEN 46 тестов и tsc, worst-case JSON-экранирование ниже предела 512К. Кандидат собирается, real browser и установленный процесс ещё не проверены.",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T17:48:59+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "1f1cfcd8 опубликован в main и установлен server-100/44/88; leases освобождены, readiness и API на fleet узлах подтверждены. На установленном server-100 реальный Z.ai transcript: 30 событий, 3 страницы, complete=true, marker найден, 18.03 с. RED→GREEN 46 тестов, tsc, сборка 15/15. Редкий 50-секундный timeout B0a45 остаётся открытым; один замер его не устраняет."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

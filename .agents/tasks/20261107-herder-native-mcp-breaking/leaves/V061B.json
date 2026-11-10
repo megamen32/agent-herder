@@ -11,8 +11,8 @@
   ],
   "parent": "S04",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V061 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V061 обязателен в конце цепочки.",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
   "created_at": "2026-11-07T03:53:18+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:18+03:00",
+  "updated_at": "2026-11-07T04:40:14+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:18+03:00",
@@ -53,6 +53,35 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:27:19+03:00",
+      "note": "Native OpenCode 2.2.4 CLI и локальные /session,/event доступны; проверяю отдельный профиль без чтения общего сервиса.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:28:41+03:00",
+      "note": "OpenCode CLI подтверждает v2.2.4. Текущий 127.0.0.1:4095 отвечает 200 на /session и /event (V061A receipt ранее зафиксировал 401), но process/profile не идентифицирован как выделенный test instance; сессии не читаю. Запросил Astra актуальный COMPATIBILITY.md и точный isolated profile + общий T011/V051 fake-model вход. Корреляция input пока не проверена; лист открыт.",
+      "changes": {},
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:40:14+03:00",
+      "note": "Closed after isolated native session/input/result readback; preserved the two-request fixture observation and cleanup receipt.",
+      "changes": {
+        "status": "done",
+        "result": "Изолированный OpenCode 2.2.4 поднят с отдельными HOME/XDG и task-owned loopback auth; на единственный input ref v061b-input-20261107-5e7429b5 native API прочитал user message msg_1b3a66ec3001qxRDmdN2DXIlDE и assistant message msg_1b3a670a9001Z40JO1l9YfPKHo в точной сессии ses_e4c5afe46ffegA4WFmXjGvF9xS; ответ HERDER_TEST_MODEL_OK. Fake fixture requests 0→2, поэтому не заявлено, что было ровно одно completion HTTP обращение. Тестовая сессия удалена (204), оба собственных процесса остановлены. Доказательства: .tmp/v061b/evidence.json, .tmp/v061b/native-messages.json, acceptance/contracts/opencode.md. Adapter create/deliver/recent ещё не проверен."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Изолированный OpenCode 2.2.4 поднят с отдельными HOME/XDG и task-owned loopback auth; на единственный input ref v061b-input-20261107-5e7429b5 native API прочитал user message msg_1b3a66ec3001qxRDmdN2DXIlDE и assistant message msg_1b3a670a9001Z40JO1l9YfPKHo в точной сессии ses_e4c5afe46ffegA4WFmXjGvF9xS; ответ HERDER_TEST_MODEL_OK. Fake fixture requests 0→2, поэтому не заявлено, что было ровно одно completion HTTP обращение. Тестовая сессия удалена (204), оба собственных процесса остановлены. Доказательства: .tmp/v061b/evidence.json, .tmp/v061b/native-messages.json, acceptance/contracts/opencode.md. Adapter create/deliver/recent ещё не проверен."
 }

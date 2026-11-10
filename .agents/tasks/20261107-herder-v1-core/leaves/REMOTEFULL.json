@@ -1,0 +1,74 @@
+{
+  "id": "REMOTEFULL",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Проверить удалённую отправку, ответ и архивирование",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "depends_on": [
+    "RESTOREREMOTE"
+  ],
+  "acceptance": "InstalledordinaryMCPexact44instance→ownedtestcreate/deliver→readreceipt/message→archive. ExplicitLuna/Terra model; requestsboundandnotreplayed. Profile/authorityactualnode.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T21:27:53+03:00",
+  "updated_at": "2026-11-08T21:48:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T21:27:53+03:00",
+      "note": "",
+      "changes": {
+        "id": "REMOTEFULL",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Проверить удалённую отправку, ответ и архивирование",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "depends_on": [
+          "RESTOREREMOTE"
+        ],
+        "acceptance": "InstalledordinaryMCPexact44instance→ownedtestcreate/deliver→readreceipt/message→archive. ExplicitLuna/Terra model; requestsboundandnotreplayed. Profile/authorityactualnode.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T21:34:04+03:00",
+      "note": "21:35 MSK: protected per-instance model pins integrated c12f18db, 27 targeted tests PASS; no native mutation. Terra prepares exact remote44 consumer and verifies native model catalog. Installed read-only two-instance composition remains proven; wake ingress and NoticePlace autopilot are not yet installed.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T21:48:16+03:00",
+      "note": "Real consumer result accepted by integrator from exact retained receipts, no additional sends.",
+      "changes": {
+        "status": "done",
+        "result": "Installed manifest203decf5/coreb51e550e: remote44 Codex gpt-6.1-terra two prompts/two native replies confirmed, archive confirmed, restart readonlyPASS and shared GPTAdmin same2markersPASS. Exact session_ref session:252919efe23cabd6148929f0b9a3c808; evidence finish-20261108/remote44-full-canary-metadata.json, retained hashesverifiedparent. Bounded message page completefalse explicit; no claim fullhistory."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "Installed manifest203decf5/coreb51e550e: remote44 Codex gpt-6.1-terra two prompts/two native replies confirmed, archive confirmed, restart readonlyPASS and shared GPTAdmin same2markersPASS. Exact session_ref session:252919efe23cabd6148929f0b9a3c808; evidence finish-20261108/remote44-full-canary-metadata.json, retained hashesverifiedparent. Bounded message page completefalse explicit; no claim fullhistory."
+}

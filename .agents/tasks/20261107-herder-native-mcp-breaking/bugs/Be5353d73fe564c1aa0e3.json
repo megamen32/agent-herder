@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T01:56:00+00:00",
+  "details": "The V053B standalone Cargo smoke compile failed with E0308 because std::thread::Builder::name requires String but connection.rs passed &str. This is a real compile defect in the owned adapter change. Red output is in /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/connection-rpc-smoke.log; fix the constant with to_owned(), then rerun the same command for GREEN.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T01:56:00+00:00",
+      "changes": {
+        "details": "The V053B standalone Cargo smoke compile failed with E0308 because std::thread::Builder::name requires String but connection.rs passed &str. This is a real compile defect in the owned adapter change. Red output is in /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/connection-rpc-smoke.log; fix the constant with to_owned(), then rerun the same command for GREEN.",
+        "source": "cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke",
+        "status": "open",
+        "title": "Codex connection reader thread name type fails Rust compile"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:00:45+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v053b-codex-connection/green.log",
+            "red_proof_path": "review-evidence/v053b-codex-connection/red.log",
+            "red_result": "error[E0308]: mismatched types",
+            "red_sha256": "de4080963c6689769601861fd2b71f5101a9b8eb188e4db4dec03a2b95bba643",
+            "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s",
+            "sha256": "cda7ceaa111663a7f0356b298cd920235bbf86e23999e673df5d9a5eab3f2006",
+            "test_command": "HERDER_SMOKE_ROOT=<run_dir> CARGO_TARGET_DIR=<run_dir>/cargo-target cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Be5353d73fe564c1aa0e3",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v053b-codex-connection/green.log",
+      "red_proof_path": "review-evidence/v053b-codex-connection/red.log",
+      "red_result": "error[E0308]: mismatched types",
+      "red_sha256": "de4080963c6689769601861fd2b71f5101a9b8eb188e4db4dec03a2b95bba643",
+      "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s",
+      "sha256": "cda7ceaa111663a7f0356b298cd920235bbf86e23999e673df5d9a5eab3f2006",
+      "test_command": "HERDER_SMOKE_ROOT=<run_dir> CARGO_TARGET_DIR=<run_dir>/cargo-target cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke",
+  "status": "fixed",
+  "title": "Codex connection reader thread name type fails Rust compile",
+  "updated_at": "2026-11-07T02:00:45+00:00"
+}

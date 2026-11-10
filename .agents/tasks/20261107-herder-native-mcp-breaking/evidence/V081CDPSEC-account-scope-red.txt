@@ -1,0 +1,7 @@
+RED: tests/chatgpt-mac-cdp-driver.test.ts
+Command: vitest run --root . --config vitest.config.ts tests/chatgpt-mac-cdp-driver.test.ts -t 'draft creation when the site account changes'
+Observed failure before the fix:
+  AssertionError: promise resolved "{ …(8) }" instead of rejecting
+  The resolved value had pendingRemoteCreation: true.
+  The fake returned scope b...b while the runner pin was a...a.
+No live browser was used.

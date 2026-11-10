@@ -1,0 +1,41 @@
+test_controller_does_not_stage_remote_after_failed_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_controller_passed_preflight_reaches_authorized_remote (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_direct_fleet_rollout_is_refused_without_controller (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_expired_lease_prevents_starting_any_candidate_runner (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_failed_candidate_runner_never_accepts_receipt (test_native_rollout_preflight.NativeRolloutPreflightTests) ... FAIL
+test_owner_matching_archive_and_passed_preflight_reaches_rollout (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_owner_rejects_archive_other_than_tested_candidate (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_owner_rollout_does_not_mutate_after_preflight_failure (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_preflight_runs_and_validates_receipt_under_real_lease (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+
+======================================================================
+FAIL: test_failed_candidate_runner_never_accepts_receipt (test_native_rollout_preflight.NativeRolloutPreflightTests)
+----------------------------------------------------------------------
+RuntimeError: native candidate suite failed; release remains incomplete
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/tests/test_native_rollout_preflight.py", line 229, in test_failed_candidate_runner_never_accepts_receipt
+    with self.assertRaisesRegex(RuntimeError, 'deterministic model fixture') as error:
+AssertionError: "deterministic model fixture" does not match "native candidate suite failed; release remains incomplete"
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.039s
+
+FAILED (failures=1)
+== rollout plan ==
+node          : server-44 (fleet, example)
+release       : /tmp/tmpyyjz9wf8/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle        : bundle files=0
+package size  : 0.0 MiB
+live before   : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+restart       : restart
+== rollout plan ==
+node          : server-44 (fleet, example)
+release       : /tmp/tmp72kh71wy/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle        : bundle files=0
+package size  : 0.0 MiB
+live before   : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+restart       : restart
+native candidate preflight passed; full installed release acceptance remains INCOMPLETE

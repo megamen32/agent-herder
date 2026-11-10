@@ -1,0 +1,103 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [31m❯[39m tests/vibe-async-evaluation.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 27[2mms[22m[39m
+[31m     [31m×[31m awaits a Promise through read-only polls and dispatches its action exactly once[39m[32m 17[2mms[22m[39m
+[31m     [31m×[31m preserves a bound pending receipt on timeout without re-running the action[39m[32m 4[2mms[22m[39m
+[31m     [31m×[31m reports rejected Promises without leaking their private message[39m[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m     Errors [22m [1m[31m1 error[39m[22m
+[2m   Start at [22m 02:39:31
+[2m   Duration [22m 605ms[2m (transform 185ms, setup 48ms, import 328ms, tests 27ms, environment 0ms)[22m
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/vibe-async-evaluation.test.ts[2m > [22mVibe asynchronous evaluations[2m > [22mawaits a Promise through read-only polls and dispatches its action exactly once
+[31m[1mAssertionError[22m: expected {} to deeply equal { value: 'owned-value', count: 1 }[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- {[39m
+[32m-   "count": 1,[39m
+[32m-   "value": "owned-value",[39m
+[32m- }[39m
+[31m+ {}[39m
+
+[36m [2m❯[22m tests/vibe-async-evaluation.test.ts:[2m27:43[22m[39m
+    [90m 25|[39m       function: "async (value) => { globalThis.counter++; await new Pr…
+    [90m 26|[39m     })[33m;[39m
+    [90m 27|[39m     expect(parseChromeEvaluation(result)).toEqual({ value: "owned-valu…
+    [90m   |[39m                                           [31m^[39m
+    [90m 28|[39m     [34mexpect[39m(native[33m.[39mcontext[33m.[39mcounter)[33m.[39m[34mtoBe[39m([34m1[39m)[33m;[39m
+    [90m 29|[39m     expect(native.callTool.mock.calls.filter(call => String(call[1].fu…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/vibe-async-evaluation.test.ts[2m > [22mVibe asynchronous evaluations[2m > [22mpreserves a bound pending receipt on timeout without re-running the action
+[31m[1mAssertionError[22m: expected undefined to be 'vibe_evaluation_pending' // Object.is equality[39m
+
+[32m- Expected:[39m
+"vibe_evaluation_pending"
+
+[31m+ Received:[39m
+undefined
+
+[36m [2m❯[22m tests/vibe-async-evaluation.test.ts:[2m39:24[22m[39m
+    [90m 37|[39m       function: "() => { globalThis.counter++; return new Promise(() =…
+    [90m 38|[39m     })[33m.[39m[35mcatch[39m(value [33m=>[39m value)[33m;[39m
+    [90m 39|[39m     [34mexpect[39m(error[33m.[39mcode)[33m.[39m[34mtoBe[39m([32m"vibe_evaluation_pending"[39m)[33m;[39m
+    [90m   |[39m                        [31m^[39m
+    [90m 40|[39m     expect(error.receipt).toMatchObject({ target: MAC_MINI_VIBE_TARGET…
+    [90m 41|[39m     [34mexpect[39m(error[33m.[39mreceipt[33m.[39moperationId)[33m.[39m[34mtoMatch[39m([36m/^[a-f0-9-]{36}$/[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/vibe-async-evaluation.test.ts[2m > [22mVibe asynchronous evaluations[2m > [22mreports rejected Promises without leaking their private message
+[31m[1mAssertionError[22m: expected undefined to be 'vibe_evaluation_failed' // Object.is equality[39m
+
+[32m- Expected:[39m
+"vibe_evaluation_failed"
+
+[31m+ Received:[39m
+undefined
+
+[36m [2m❯[22m tests/vibe-async-evaluation.test.ts:[2m49:24[22m[39m
+    [90m 47|[39m     [35mconst[39m tools [33m=[39m [35mnew[39m [33mVibeChromeTransport[39m(binding[33m,[39m native)[33m;[39m
+    [90m 48|[39m     const error = await tools.call("evaluate_script", { pageId: 71, fu…
+    [90m 49|[39m     [34mexpect[39m(error[33m.[39mcode)[33m.[39m[34mtoBe[39m([32m"vibe_evaluation_failed"[39m)[33m;[39m
+    [90m   |[39m                        [31m^[39m
+    [90m 50|[39m     [34mexpect[39m(error[33m.[39mmessage)[33m.[39mnot[33m.[39m[34mtoContain[39m([32m"private"[39m)[33m;[39m
+    [90m 51|[39m     [34mexpect[39m(error[33m.[39mreceipt[33m.[39mstate)[33m.[39m[34mtoBe[39m([32m"failed"[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: private credential-like detail[39m
+[90m [2m❯[22m evalmachine.<anonymous>:[2m1:21[22m[39m
+[36m [2m❯[22m Object.<anonymous> tests/vibe-async-evaluation.test.ts:[2m11:64[22m[39m
+    [90m  9|[39m     // Installed Vibe wraps the function return without awaiting it. J…
+    [90m 10|[39m     // serialization turns a Promise into {}, just as the live RED pro…
+    [90m 11|[39m     const result = runInContext(String(args.function), context)(...(ar…
+    [90m   |[39m                                                                [31m^[39m
+    [90m 12|[39m     return { content: [{ type: "text", text: JSON.stringify({ success:…
+    [90m 13|[39m   })[33m;[39m
+[90m [2m❯[22m Object.Mock [as callTool] ../../../../agents-projects/agent-herder/node_modules/@vitest/spy/dist/index.js:[2m332:34[22m[39m
+[90m [2m❯[22m VibeChromeTransport.call src/adapters/vibe-chrome-transport.ts:[2m278:36[22m[39m
+[90m [2m❯[22m tests/vibe-async-evaluation.test.ts:[2m48:31[22m[39m
+[90m [2m❯[22m ../../../../agents-projects/agent-herder/node_modules/@vitest/runner/dist/chunk-artifact.js:[2m302:11[22m[39m
+[90m [2m❯[22m ../../../../agents-projects/agent-herder/node_modules/@vitest/runner/dist/chunk-artifact.js:[2m1903:26[22m[39m
+[90m [2m❯[22m ../../../../agents-projects/agent-herder/node_modules/@vitest/runner/dist/chunk-artifact.js:[2m2326:20[22m[39m
+[90m [2m❯[22m runWithCancel ../../../../agents-projects/agent-herder/node_modules/@vitest/runner/dist/chunk-artifact.js:[2m2323:10[22m[39m
+
+[31mThis error originated in "[1mtests/vibe-async-evaluation.test.ts[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+

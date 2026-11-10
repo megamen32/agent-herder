@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T13:47:54+00:00",
+  "details": "Изолированный Qoder создал две сессии и Herder обнаружил их; поиск возвращает unsupported native_persisted_history_reader_not_available.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T13:47:54+00:00",
+      "changes": {
+        "details": "Изолированный Qoder создал две сессии и Herder обнаружил их; поиск возвращает unsupported native_persisted_history_reader_not_available.",
+        "source": "scripts/native-qoder-herder-receipt.json",
+        "status": "open",
+        "title": "Поиск Herder не индексирует существующие сессии Qoder"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L12",
+      "at": "2026-11-06T14:12:51+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/qoder-l12-red-green-canary.json",
+            "result": "PASS",
+            "sha256": "119057447080a3dd32d43f31a37baeae582616e159771a78f01f38ba031b19b7",
+            "test_command": "./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/qoder-l12.test.ts; python3 scripts/native-qoder-report.py scripts/native-qoder-herder-receipt.json --candidate-sha256 d8fbca2293385469d4e77fb3bce4447301b383921039bc70b66e71933c079991"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B86d6868a30114dc7bb86",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/qoder-l12-red-green-canary.json",
+      "result": "PASS",
+      "sha256": "119057447080a3dd32d43f31a37baeae582616e159771a78f01f38ba031b19b7",
+      "test_command": "./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/qoder-l12.test.ts; python3 scripts/native-qoder-report.py scripts/native-qoder-herder-receipt.json --candidate-sha256 d8fbca2293385469d4e77fb3bce4447301b383921039bc70b66e71933c079991"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "scripts/native-qoder-herder-receipt.json",
+  "status": "fixed",
+  "title": "Поиск Herder не индексирует существующие сессии Qoder",
+  "updated_at": "2026-11-06T14:12:51+00:00"
+}

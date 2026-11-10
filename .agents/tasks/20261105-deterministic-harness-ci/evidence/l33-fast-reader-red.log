@@ -1,0 +1,29 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-fast-red
+
+ ❯ tests/fast-agent-integrator-transcript.test.ts (2 tests | 1 failed) 22ms
+   × pages all messages from the exact native history selected by the adapter 15ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/fast-agent-integrator-transcript.test.ts > pages all messages from the exact native history selected by the adapter
+Error: Native transcript page rejected: unsupported native JSONL harness
+ ❯ fail src/integrator-transcript.ts:88:9
+     86|
+     87| function fail(reason: string): never {
+     88|   throw new Error(`Native transcript page rejected: ${reason}`);
+       |         ^
+     89| }
+     90|
+ ❯ Object.reader src/integrator-transcript.ts:561:82
+ ❯ readIntegratorTranscriptPage src/integrator-transcript.ts:180:27
+ ❯ tests/fast-agent-integrator-transcript.test.ts:11:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  20:05:20
+   Duration  445ms (transform 134ms, setup 55ms, import 119ms, tests 22ms, environment 0ms)
+

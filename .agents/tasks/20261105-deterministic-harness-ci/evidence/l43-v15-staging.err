@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/tmp/herder-l43-full-v15-9e80/scripts/run-isolated-native-ci.py", line 728, in <module>
+    sys.exit(main())
+  File "/tmp/herder-l43-full-v15-9e80/scripts/run-isolated-native-ci.py", line 512, in main
+    (candidate / "node_modules/agent-resume-mcp").symlink_to("../packages/agent-resume")
+  File "/usr/lib/python3.10/pathlib.py", line 1255, in symlink_to
+    self._accessor.symlink(target, self, target_is_directory)
+PermissionError: [Errno 13] Permission denied: '../packages/agent-resume' -> '/tmp/herder-ci-bundle-ack39k0_/candidate/node_modules/agent-resume-mcp'

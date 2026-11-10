@@ -1,0 +1,10 @@
+{
+  "scope": "codex-isolated-unix-boundary",
+  "sessionId": "01a1ae88-35d4-7f50-bda4-ef8ceedd7e58",
+  "completed": true,
+  "transcriptComplete": true,
+  "fixtureRequests": 1,
+  "isolatedNetwork": true,
+  "status": "PASS",
+  "source": "server-44 direct command output; actual Herder Codex adapter, isolated native app-server; shared absolute test path"
+}

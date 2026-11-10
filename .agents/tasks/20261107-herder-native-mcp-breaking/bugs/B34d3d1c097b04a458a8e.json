@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T16:38:45+00:00",
+  "details": "require_runner_route_compat(api_family,pinned_protocol='v2') вызван без второго аргумента; actual076bacd8 runner выбираетv22, preflight falsely ready наv2 до POST/session405. detect HTTP200 null также ошибочно v2. QOCPREFLIGHT assigned Luna owned stand2files, RED/GREEN и no native mutation; старый UNKNOWN не повторять.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T16:38:45+00:00",
+      "changes": {
+        "details": "require_runner_route_compat(api_family,pinned_protocol='v2') вызван без второго аргумента; actual076bacd8 runner выбираетv22, preflight falsely ready наv2 до POST/session405. detect HTTP200 null также ошибочно v2. QOCPREFLIGHT assigned Luna owned stand2files, RED/GREEN и no native mutation; старый UNKNOWN не повторять.",
+        "source": "tests/native/ahap_opencode_stand.py:441-461,514; evidence/V065AHAPCIRUN-20261107.json",
+        "status": "open",
+        "title": "AHAP stand проверяет выдуманный default v2 вместо фактического runner protocol"
+      }
+    }
+  ],
+  "id": "B34d3d1c097b04a458a8e",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "tests/native/ahap_opencode_stand.py:441-461,514; evidence/V065AHAPCIRUN-20261107.json",
+  "status": "open",
+  "title": "AHAP stand проверяет выдуманный default v2 вместо фактического runner protocol",
+  "updated_at": "2026-11-07T16:38:45+00:00"
+}

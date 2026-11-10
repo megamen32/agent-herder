@@ -1,0 +1,103 @@
+{
+  "schema": "agent-herder.zcode-proxy-diagnosis.v1",
+  "status": "ROOT_CAUSE_CONFIRMED",
+  "created_at": "2026-11-09T01:07:27.881295+00:00",
+  "diagnosis_reads_only": true,
+  "canary_session_id": "sess_f0a57529-10c8-41d0-b7da-734b3df5aa89",
+  "failure": {
+    "source": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-real-canary-v3-20261109/native-raw-transcript-before-cleanup.json",
+    "source_sha256": "93fe5af826c30f4e8126f002d3c0903321f7a1c3d401fc84b2d8b2930d57d8db",
+    "decoded_error": "ECONNREFUSED 127.0.0.1:18973",
+    "count": 2
+  },
+  "process_observed_at": "2026-11-09T00:57:57.087427+00:00",
+  "processes": [
+    {
+      "pid": 3014880,
+      "ppid": 430399,
+      "start_ticks": "28828088",
+      "role": [
+        "/home/roomhacker/.zcode/server/releases/3.17.2-linux-x64-88a41b337faa/runtime/server-core.js"
+      ],
+      "cwd": "/home/roomhacker",
+      "proxy_fields": [],
+      "started_at": "2026-11-03T01:01:23.880000+00:00"
+    },
+    {
+      "pid": 1307210,
+      "ppid": 3014880,
+      "start_ticks": "34409338",
+      "role": [],
+      "cwd": "/home/roomhacker/agents-projects/agent-herder",
+      "proxy_fields": [
+        {
+          "key": "HTTP_PROXY",
+          "value": {
+            "scheme": "http",
+            "host": "127.0.0.1",
+            "port": 18973
+          }
+        },
+        {
+          "key": "HTTPS_PROXY",
+          "value": {
+            "scheme": "http",
+            "host": "127.0.0.1",
+            "port": 18973
+          }
+        },
+        {
+          "key": "ALL_PROXY",
+          "value": {
+            "scheme": "http",
+            "host": "127.0.0.1",
+            "port": 18973
+          }
+        },
+        {
+          "key": "ZCODE_HTTP_PROXY",
+          "value": {
+            "scheme": "http",
+            "host": "127.0.0.1",
+            "port": 18973
+          }
+        }
+      ],
+      "started_at": "2026-11-03T16:31:36.380000+00:00"
+    },
+    {
+      "pid": 804411,
+      "ppid": 3014880,
+      "start_ticks": "80452648",
+      "role": [],
+      "cwd": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+      "proxy_fields": [],
+      "started_at": "2026-11-09T00:25:29.480000+00:00"
+    }
+  ],
+  "native_read": {
+    "observed_at": "2026-11-09T01:01:31.027Z",
+    "identity": {
+      "processId": 1307210,
+      "workspaceKey": "/home/roomhacker/agents-projects/agent-herder",
+      "generation": 1
+    },
+    "setting_get_httpProxy_set": false,
+    "running_tasks": [],
+    "running_evidence_ttl_seconds": 15
+  },
+  "diagnosis": "The canonical workspace agent retains the proxy environment captured at its Nov3 launch. Global settings have no proxy; the freshly launched owned workspace has no proxy. The failed connection targets the retained proxy rather than the model provider.",
+  "supported_repair": {
+    "channel": "zcode-task",
+    "method": "restartWorkspaceProcess",
+    "args": [
+      {
+        "workspacePath": "/home/roomhacker/agents-projects/agent-herder"
+      }
+    ],
+    "implementation_source": "/home/roomhacker/.zcode/server/releases/3.17.2-linux-x64-88a41b337faa/runtime/server-core.js",
+    "implementation_sha256": "0bab21780816e6db2a6a3da566b447688f93bfca96555a722fab36fb6179a0bf",
+    "implementation": "async restartWorkspaceProcess(params) {\n      await options2.zcodeAgentService.disposeWorkspace(normalizeWorkspaceParams(params));\n    },",
+    "scope": "Dispose only this workspace process. Next normal adapter create launches its replacement. Preserve the official server and other workspaces."
+  }
+}

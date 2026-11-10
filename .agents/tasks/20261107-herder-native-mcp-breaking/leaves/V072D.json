@@ -1,0 +1,90 @@
+{
+  "id": "V072D",
+  "label": "ZCode: Создать две тестовые native сессии и turns",
+  "description": "На изолированном V072C профиле создать две native session, отправить по одному уникальному marker в локальную модель и дождаться ответа.",
+  "acceptance": "Две разные native session IDs; каждая имеет точный user marker, HERDER_TEST_MODEL_OK и native turn/input refs; fake model зафиксировал только тестовые requests.",
+  "affected_files": [
+    "crates/herder/src/adapters/zcode/read.rs"
+  ],
+  "parent": "S05",
+  "kind": "task",
+  "status": "blocked",
+  "owner": "roomhacker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "depends_on": [
+    "V072C"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "wave": 12,
+  "created_at": "2026-11-07T11:28:50+03:00",
+  "updated_at": "2026-11-07T11:43:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:28:50+03:00",
+      "note": "",
+      "changes": {
+        "id": "V072D",
+        "label": "ZCode: Создать две тестовые native сессии и turns",
+        "description": "На изолированном V072C профиле создать две native session, отправить по одному уникальному marker в локальную модель и дождаться ответа.",
+        "acceptance": "Две разные native session IDs; каждая имеет точный user marker, HERDER_TEST_MODEL_OK и native turn/input refs; fake model зафиксировал только тестовые requests.",
+        "affected_files": [
+          "crates/herder/src/adapters/zcode/read.rs"
+        ],
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "owner": "roomhacker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "depends_on": [
+          "V072C"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "wave": 12
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:51+03:00",
+      "note": "Создать ровно две новые native ZCode сессии в отдельном loopback fixture profile и по одному deterministic prompt; без повторов/платных providers.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:43:53+03:00",
+      "note": "Stopped at the explicit no-replay boundary after inspecting the remaining isolated profile. No user profile or global ZCode process was touched.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "The isolated native session writer subprocess timed out after a mutation sequence began; exact accepted state is unknown and the temporary server/session receipt was not captured.",
+        "blocker_details": {
+          "attempt_1": "createSession explicitly rejected with project.remote-project-required; no session was acknowledged",
+          "attempt_2": "after project.saveProject/readTree correction, createSession/sendPrompt/poll ran inside one 25s subprocess without step receipts; no session IDs were emitted",
+          "state_inspection": "remaining isolated profile contained only provider config; no SQLite DB, server status, receipt, matching process, or exact session IDs; fake-model request count unavailable",
+          "required_input": "A new owner-authorized test attempt or recovery method that proves the old action did not persist. Current instruction forbids replay of this UNKNOWN operation."
+        },
+        "result": "Provider fixture was available and loopback-only. First direct create returned a known rejection; second writer sequence timed out and is UNKNOWN. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V072D/zcode-native-session-timeout.json. The leftover provider-only test directory was inspected and cleaned. No retry was sent. Native session IDs, delivered prompts, fake-model request count, and history remain unproven."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "The isolated native session writer subprocess timed out after a mutation sequence began; exact accepted state is unknown and the temporary server/session receipt was not captured.",
+  "blocker_details": {
+    "attempt_1": "createSession explicitly rejected with project.remote-project-required; no session was acknowledged",
+    "attempt_2": "after project.saveProject/readTree correction, createSession/sendPrompt/poll ran inside one 25s subprocess without step receipts; no session IDs were emitted",
+    "state_inspection": "remaining isolated profile contained only provider config; no SQLite DB, server status, receipt, matching process, or exact session IDs; fake-model request count unavailable",
+    "required_input": "A new owner-authorized test attempt or recovery method that proves the old action did not persist. Current instruction forbids replay of this UNKNOWN operation."
+  },
+  "result": "Provider fixture was available and loopback-only. First direct create returned a known rejection; second writer sequence timed out and is UNKNOWN. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V072D/zcode-native-session-timeout.json. The leftover provider-only test directory was inspected and cleaned. No retry was sent. Native session IDs, delivered prompts, fake-model request count, and history remain unproven."
+}

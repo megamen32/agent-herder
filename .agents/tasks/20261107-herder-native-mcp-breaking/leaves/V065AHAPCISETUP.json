@@ -1,0 +1,99 @@
+{
+  "id": "V065AHAPCISETUP",
+  "label": "Подготовить отдельную проверку моста OpenCode с готовой лжемоделью",
+  "description": "Параллельный worker Luna использует существующий tests/native launcher/model без изменения их owned файлов. Подготовить consumer entrypoint/fixture проверку для immutable Rust AHAP core + existing TS adapter runner + real OpenCode. Исходная CI01a1ac52 продолжает прежний CI+ChatGPT scope.",
+  "acceptance": "Сохранён воспроизводимый launch contract, owned consumer entrypoint и offline checks; только модель подменяется. Existing launcher/model не продублированы и не изменены; real run отдельно после готовых artifacts.",
+  "status": "done",
+  "kind": "task",
+  "parent": "S04",
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "tier": "frontier",
+  "complexity": "M",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [],
+  "affected_files": [
+    "tests/native/ahap_opencode_consumer.py",
+    "tests/native/test_ahap_opencode_consumer.py"
+  ],
+  "note": "Explicit owner request for parallel Luna. Catalog gpt-6-luna confirmed12:03UTC; Codex allowed=true,84% weekly used. Specific current human Luna request supersedes skill-level20% allocation preference; native admission checks unchanged. No duplicate E2E send.",
+  "created_at": "2026-11-07T15:04:48+03:00",
+  "updated_at": "2026-11-07T15:21:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:04:48+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065AHAPCISETUP",
+        "label": "Подготовить отдельную проверку моста OpenCode с готовой лжемоделью",
+        "description": "Параллельный worker Luna использует существующий tests/native launcher/model без изменения их owned файлов. Подготовить consumer entrypoint/fixture проверку для immutable Rust AHAP core + existing TS adapter runner + real OpenCode. Исходная CI01a1ac52 продолжает прежний CI+ChatGPT scope.",
+        "acceptance": "Сохранён воспроизводимый launch contract, owned consumer entrypoint и offline checks; только модель подменяется. Existing launcher/model не продублированы и не изменены; real run отдельно после готовых artifacts.",
+        "status": "queued",
+        "kind": "task",
+        "parent": "S04",
+        "owner": "Astra assigns Luna",
+        "model": "gpt-6-luna",
+        "tier": "frontier",
+        "complexity": "M",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [],
+        "affected_files": [
+          "tests/native/ahap_opencode_consumer.py",
+          "tests/native/test_ahap_opencode_consumer.py"
+        ],
+        "note": "Explicit owner request for parallel Luna. Catalog gpt-6-luna confirmed12:03UTC; Codex allowed=true,84% weekly used. Specific current human Luna request supersedes skill-level20% allocation preference; native admission checks unchanged. No duplicate E2E send."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:05:36+03:00",
+      "note": "Отдельная Luna-сессия создана по прямому поручению пользователя; existing CI+ChatGPT scope не переназначается.",
+      "changes": {
+        "owner": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:06:47+03:00",
+      "note": "Luna начала независимую подготовку consumer harness. Owned paths: два новых tests/native/ahap_opencode_consumer*.py. Используется актуальный origin/main изолированно от dirty checkout.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:11:10+03:00",
+      "note": "Setup выполнен по исходным ownership boundaries; без изменения существующих launcher/model/stand файлов. Жду immutable artifact handoff для реального isolated OpenCode case.",
+      "changes": {
+        "status": "done",
+        "result": "Подготовлен isolated consumer contract поверх существующего tests/native/launch.py: immutable manifest pins artifact_root и пути к Rust core, TS runner, реальному OpenCode; test-model-server остается единственным model seam. Commit 8c2cef91; source/evidence hash зафиксированы в review-evidence/V065AHAPCISETUP/result.json. 5 offline tests, py_compile и diff check PASS. Реальный consumer run ещё не доказан; продолжить V065AHAPCIRUN только после immutable artifact handoff Терры."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:21:28+03:00",
+      "note": "Добавил fail-closed artifact digest/provenance gate после получения runner delta c3b5aa58. Both commits are pushed and main readback confirms 5d662966.",
+      "changes": {
+        "result": "Подготовлен consumer contract в main: commits 8c2cef91 и 5d662966. Второй закрепляет SHA-256 handoff digests для Rust core/TS runner/OpenCode и требует provenance с runner fix c3b5aa58 (a3a514fa alone отклоняется). Evidence result.json обновлён; 7 offline fixture tests, py_compile и diff check PASS. Immutable assembled artifact handoff ещё не получен; native case не запускался."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "result": "Подготовлен consumer contract в main: commits 8c2cef91 и 5d662966. Второй закрепляет SHA-256 handoff digests для Rust core/TS runner/OpenCode и требует provenance с runner fix c3b5aa58 (a3a514fa alone отклоняется). Evidence result.json обновлён; 7 offline fixture tests, py_compile и diff check PASS. Immutable assembled artifact handoff ещё не получен; native case не запускался."
+}

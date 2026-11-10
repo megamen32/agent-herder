@@ -1,0 +1,11 @@
+{
+  "kind_correct": true,
+  "sourceSha_matches": true,
+  "builder_object": true,
+  "builder_commit_matches": true,
+  "builder_sourceTreeDirty_is_false": false,
+  "bundleFingerprint_matches": true,
+  "dist_source_dirty": true,
+  "conclusion": "producer rejects because sourceTreeDirty is true; no other listed manifest predicate fails",
+  "scope": "actual prior test bundle; no CI execution"
+}

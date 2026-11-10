@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-07T09:05:20+00:00",
+  "details": "a3f95ac9 projects flattened NormalizedMessage text as one RawTranscriptBlock native_type=input_text/output_text inferred from role. Domain documents exact native type; actual captured content includes text/markdown blocks and block indices. Source provenance is not preserved by flattening. Browser owner requested retain observed types/indices or explicitly honest limited projection, no fabricated native types.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T09:05:20+00:00",
+      "changes": {
+        "details": "a3f95ac9 projects flattened NormalizedMessage text as one RawTranscriptBlock native_type=input_text/output_text inferred from role. Domain documents exact native type; actual captured content includes text/markdown blocks and block indices. Source provenance is not preserved by flattening. Browser owner requested retain observed types/indices or explicitly honest limited projection, no fabricated native types.",
+        "source": "Independent delta-review a3f95ac9",
+        "status": "open",
+        "title": "Z.ai transcript выдает выведенные из role labels за native block types"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T09:05:21+00:00",
+      "changes": {
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33"
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B18b78fe4433743b995b7",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "Astra",
+  "source": "Independent delta-review a3f95ac9",
+  "status": "open",
+  "title": "Z.ai transcript выдает выведенные из role labels за native block types",
+  "updated_at": "2026-11-07T09:05:21+00:00"
+}

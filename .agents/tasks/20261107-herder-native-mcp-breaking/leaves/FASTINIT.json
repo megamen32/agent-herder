@@ -1,0 +1,63 @@
+{
+  "id": "FASTINIT",
+  "label": "Исправить отказ protected profile до первой native мутации",
+  "description": "Вход Luna retained v9: FAILED_PREMUTATION invalid/untrustedprofile, modelcounter0, api_family=api-session. Проверить в namespace uid/mode/canonical ancestors executable/script/profile. Node hostroot может быть unmapped65534; использовать owner-owned readonly artifact, не ослаблять guard. Сохранить GET /api/config и /config shape/status того же binarydigest, устранить противоречие source-only protocol assumption.",
+  "acceptance": "Тот же core initialize проходит на защищённых путях; preflight отчёт с exact binary/route и modelcounter0. Только готовый source/stand reuse, no create/send. Новый native case отдельно V065AHAPCIRUN.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "Luna",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 15
+  },
+  "depends_on": [],
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py"
+  ],
+  "created_at": "2026-11-07T16:20:25+03:00",
+  "updated_at": "2026-11-07T18:15:24+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T16:20:25+03:00",
+      "note": "",
+      "changes": {
+        "id": "FASTINIT",
+        "label": "Исправить отказ protected profile до первой native мутации",
+        "description": "Вход Luna retained v9: FAILED_PREMUTATION invalid/untrustedprofile, modelcounter0, api_family=api-session. Проверить в namespace uid/mode/canonical ancestors executable/script/profile. Node hostroot может быть unmapped65534; использовать owner-owned readonly artifact, не ослаблять guard. Сохранить GET /api/config и /config shape/status того же binarydigest, устранить противоречие source-only protocol assumption.",
+        "acceptance": "Тот же core initialize проходит на защищённых путях; preflight отчёт с exact binary/route и modelcounter0. Только готовый source/stand reuse, no create/send. Новый native case отдельно V065AHAPCIRUN.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Luna",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 15
+        },
+        "depends_on": [],
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py"
+        ]
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:15:24+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Опубликовано ca4c3907 + stand70fba336. Actual retained preflight PREFLIGHT_READY/tools/list, namespace euid0/Node+ancestors uid0, model_requests0/native_mutations0; exact probe statuses/shapes и binary SHA в /home/roomhacker/herder-artifacts/evidence/ahap-stand-20261107/preflight-receipt-final.log. API family label не доказывает session/message совместимость; native case отдельно."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ],
+  "result": "Опубликовано ca4c3907 + stand70fba336. Actual retained preflight PREFLIGHT_READY/tools/list, namespace euid0/Node+ancestors uid0, model_requests0/native_mutations0; exact probe statuses/shapes и binary SHA в /home/roomhacker/herder-artifacts/evidence/ahap-stand-20261107/preflight-receipt-final.log. API family label не доказывает session/message совместимость; native case отдельно."
+}

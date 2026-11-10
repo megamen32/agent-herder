@@ -1,0 +1,20 @@
+{
+  "observed_at": "2026-11-09T02:34:29.130483+00:00",
+  "source": {
+    "deploy/fleet/ci-browser-fixture.mjs": "f2a785b52e06205b2e40fa3567bacc3f96d5699f4fd04bb622fb9fe27219967f",
+    "tests/native/ci-browser-fixture.test.mjs": "613f0b95a2be5eb84a0ccd977a1d3a325e3824bf4050afa7042289376ce73805",
+    "deploy/fleet/ci-browser-fixture.md": "fc8ea4e9f2a55a82e9fdefbd9adb87fbd2d33d30f4a0d103ab2f74c5fd42ea06",
+    "deploy/fleet/ci-browser-fixture.service": "607637cba6149583818872229be84b4df61998db46fc84f1856a06dc8af92251"
+  },
+  "tests": {
+    "tests": 23,
+    "pass": 23,
+    "fail": 0
+  },
+  "test_log_sha256": "7798acd29f4f23f571a1ee4c23cc9d47c4e4e590abed08794d1c7acbdb3b0aa1",
+  "bundle_path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/build-health/ci-browser-fixture.mjs",
+  "bundle_sha256": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2",
+  "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+  "headers_regression_receipt_sha256": "055a4e37d76345a669d5c159d8219dcb8b285dc9eeca8997a9ffa698211a5167",
+  "runtime_invoked": false
+}

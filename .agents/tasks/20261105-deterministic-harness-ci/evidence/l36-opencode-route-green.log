@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-l36-opencode
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  19:56:03
+   Duration  467ms (transform 159ms, setup 55ms, import 151ms, tests 12ms, environment 0ms)
+

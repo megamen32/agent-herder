@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T14:15:28+00:00",
+  "details": "Поиск имени читает инвентарь драйвера, но не сохраняет его; создание черновика делает пустой кэш непустым, и список Herder возвращает только черновик, скрывая найденные беседы.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L17",
+      "at": "2026-11-06T14:15:28+00:00",
+      "changes": {
+        "details": "Поиск имени читает инвентарь драйвера, но не сохраняет его; создание черновика делает пустой кэш непустым, и список Herder возвращает только черновик, скрывая найденные беседы.",
+        "source": "tests/native-browser-chat-create-inventory.test.ts; isolated Herder fixture",
+        "status": "open",
+        "title": "Browser Chat скрывает инвентарь после создания первого черновика"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L17",
+      "at": "2026-11-06T14:15:49+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l17-browser-chat-create-search.json",
+            "result": "PASS",
+            "sha256": "77caefadf1441a314ef1b3dc97bf19f0c393a29b63e707c814b9d6e8e82ca33f",
+            "test_command": "HERDER_BROWSER_TEST_PARENT_NETNS=$(readlink /proc/self/ns/net) unshare -Urn sh -c 'ip link set lo up && npx vitest run --root . --config vitest.config.ts tests/native-browser-chat-herder.test.ts'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B247be30f01f045d2b883",
+  "owner": "L17",
+  "reporter": "L17",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l17-browser-chat-create-search.json",
+      "result": "PASS",
+      "sha256": "77caefadf1441a314ef1b3dc97bf19f0c393a29b63e707c814b9d6e8e82ca33f",
+      "test_command": "HERDER_BROWSER_TEST_PARENT_NETNS=$(readlink /proc/self/ns/net) unshare -Urn sh -c 'ip link set lo up && npx vitest run --root . --config vitest.config.ts tests/native-browser-chat-herder.test.ts'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/native-browser-chat-create-inventory.test.ts; isolated Herder fixture",
+  "status": "fixed",
+  "title": "Browser Chat скрывает инвентарь после создания первого черновика",
+  "updated_at": "2026-11-06T14:15:49+00:00"
+}

@@ -1,0 +1,90 @@
+{
+  "attempt": "astra-v1-neg-lock-20261107T2001",
+  "executor": "Archimedes",
+  "lead": "Astra",
+  "source": "crates/herder/src/ownership/release_receipt.rs",
+  "source_sha256": "75ae535edb6e275472ab5559819519b3382a7c6dd606ec4aba7663f1e8364468",
+  "production_section_unchanged": true,
+  "red_log": "default-high-before-04.log",
+  "isolated_before": "isolated.log",
+  "isolated_after": "isolated-after.log",
+  "parallel_after": [
+    {
+      "log": "parallel-after-01.log",
+      "summary": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s",
+      "receipt_pass": true,
+      "failures": []
+    },
+    {
+      "log": "parallel-after-02.log",
+      "summary": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s",
+      "receipt_pass": true,
+      "failures": []
+    },
+    {
+      "log": "parallel-after-03.log",
+      "summary": "test result: FAILED. 167 passed; 11 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s",
+      "receipt_pass": true,
+      "failures": [
+        "---- adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_create stdout ----",
+        "---- adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_interrupt stdout ----",
+        "---- adapters::codex::control::tests::interrupt_uses_one_deadline_across_status_pages stdout ----",
+        "---- adapters::codex::control::tests::interrupts_only_the_exact_active_turn stdout ----",
+        "---- adapters::codex::control::tests::timeout_reads_back_exact_turn_without_repeating_interrupt stdout ----",
+        "---- adapters::codex::control::tests::timeout_with_still_running_exact_turn_remains_unknown stdout ----",
+        "---- adapters::codex::control::tests::wrong_instance_and_stale_turn_are_refused_before_interrupt stdout ----",
+        "---- adapters::codex::control::tests::timed_out_submission_is_unknown_and_is_not_retried stdout ----",
+        "---- adapters::codex::control::tests::queue_is_rejected_before_native_submission stdout ----",
+        "---- adapters::codex::control::tests::starts_only_a_controller_created_thread_and_correlates_read_only_receipt stdout ----",
+        "---- adapters::codex::create::tests::invalid_key_is_definitely_not_sent_by_both_ports stdout ----"
+      ]
+    },
+    {
+      "log": "parallel-after-04.log",
+      "summary": "test result: FAILED. 177 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.99s",
+      "receipt_pass": true,
+      "failures": [
+        "---- adapters::codex::connection::deadline_tests::stalled_pipe_obeys_request_deadline_and_is_not_reused stdout ----"
+      ]
+    },
+    {
+      "log": "parallel-after-05.log",
+      "summary": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.17s",
+      "receipt_pass": true,
+      "failures": []
+    },
+    {
+      "log": "parallel-after-06.log",
+      "summary": "test result: FAILED. 168 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s",
+      "receipt_pass": true,
+      "failures": [
+        "---- adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_create stdout ----",
+        "---- adapters::codex::control::tests::interrupt_uses_one_deadline_across_status_pages stdout ----",
+        "---- adapters::codex::control::tests::interrupts_only_the_exact_active_turn stdout ----",
+        "---- adapters::codex::control::tests::timeout_reads_back_exact_turn_without_repeating_interrupt stdout ----",
+        "---- adapters::codex::control::tests::timeout_with_still_running_exact_turn_remains_unknown stdout ----",
+        "---- adapters::codex::control::tests::wrong_instance_and_stale_turn_are_refused_before_interrupt stdout ----",
+        "---- adapters::codex::control::tests::busy_control_does_not_wait_unbounded_for_interrupt stdout ----",
+        "---- adapters::codex::control::tests::starts_only_a_controller_created_thread_and_correlates_read_only_receipt stdout ----",
+        "---- adapters::codex::control::tests::timed_out_submission_is_unknown_and_is_not_retried stdout ----",
+        "---- adapters::codex::control::tests::queue_is_rejected_before_native_submission stdout ----"
+      ]
+    },
+    {
+      "log": "parallel-after-07.log",
+      "summary": "test result: FAILED. 177 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s",
+      "receipt_pass": true,
+      "failures": [
+        "---- adapters::codex::connection::deadline_tests::stalled_pipe_obeys_request_deadline_and_is_not_reused stdout ----"
+      ]
+    },
+    {
+      "log": "parallel-after-08.log",
+      "summary": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.05s",
+      "receipt_pass": true,
+      "failures": []
+    }
+  ],
+  "committed": false,
+  "runtime_changed": false
+}

@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V053 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V053 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:53:15+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:15+03:00",
+  "updated_at": "2026-11-07T05:03:12+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:15+03:00",
@@ -51,6 +51,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:48:41+03:00",
+      "note": "Добавляю request ID correlation, bounded timeout and disconnect behavior к отдельному Codex app-server process; проверю на fake/loopback transport.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:03:12+03:00",
+      "note": "Request correlation, timeout and disconnect are implemented and pass isolated stdio transport checks; no retry is performed. Code is rebased atop latest origin/main; public integration is pending core wiring.",
+      "changes": {
+        "status": "done",
+        "result": "Extended crates/herder/src/adapters/codex/connection.rs in commit ace1a5d6 (rebased onto origin/main ca6b8c91). Each JSON-RPC call has a monotonic request ID; response correlation is exact, unrelated/late IDs are ignored, and notifications are retained. Timeout, partial write, malformed/read failure and disconnect carry the sent request ID and are marked outcome-unknown; no automatic retry exists. A pre-send dead process returns NotRunning. The same Cargo smoke harness passed 4/4: IDs/notification, late response after timeout followed by a new request, disconnect, malformed response. RED/GREEN compiler evidence: review-evidence/v053b-codex-connection/{red.log,green.log}; harness/outputs also in /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/. The V053 connection leaves are complete at transport layer; actual Herder crate export/integration still awaits Terra-owned lib.rs wiring."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Extended crates/herder/src/adapters/codex/connection.rs in commit ace1a5d6 (rebased onto origin/main ca6b8c91). Each JSON-RPC call has a monotonic request ID; response correlation is exact, unrelated/late IDs are ignored, and notifications are retained. Timeout, partial write, malformed/read failure and disconnect carry the sent request ID and are marked outcome-unknown; no automatic retry exists. A pre-send dead process returns NotRunning. The same Cargo smoke harness passed 4/4: IDs/notification, late response after timeout followed by a new request, disconnect, malformed response. RED/GREEN compiler evidence: review-evidence/v053b-codex-connection/{red.log,green.log}; harness/outputs also in /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/. The V053 connection leaves are complete at transport layer; actual Herder crate export/integration still awaits Terra-owned lib.rs wiring."
 }

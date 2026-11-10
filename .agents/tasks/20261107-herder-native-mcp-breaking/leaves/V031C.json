@@ -1,0 +1,116 @@
+{
+  "id": "V031C",
+  "label": "Подключить production inventory к sessions/list",
+  "description": "Вход V031A/B/V031 и существующий application/list.rs. Подключить готовый inventory provider к действующему native application вместо fixture injection. Не писать новый discovery/index. Проверка: две existing source fixtures разных instance и явный offline/partial; shared lib/wiring только у Теры.",
+  "acceptance": "Обычный клиент получает список живого изолированного instance через штатный launcher; недоступный источник виден как неполное покрытие.",
+  "parent": "S01",
+  "status": "queued",
+  "kind": "task",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "affected_files": [
+    "crates/herder/src/application/list.rs"
+  ],
+  "created_at": "2026-11-07T07:13:26+03:00",
+  "updated_at": "2026-11-07T16:12:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T07:13:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "V031C",
+        "label": "Подключить production inventory к sessions/list",
+        "description": "Связать application list с авторитетным inventory и opaque ref bindings штатного launcher, сохраняя ACL и coverage.",
+        "acceptance": "Обычный клиент получает список живого изолированного instance через штатный launcher; недоступный источник виден как неполное покрытие.",
+        "parent": "S01",
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "affected_files": [
+          "crates/herder/src/application/list.rs"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:18:12+03:00",
+      "note": "Worker 01a1b3c3-f4cc-7780-b360-22eadc8f48ff registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T07:18:12+03:00"
+        },
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "status": "running"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:28:47+03:00",
+      "note": "Локальный 32cd29d8 на f2da8394: ConfiguredListInventory сверяет все instance с Config и supplied authoritative source bindings, использует настоящий SQLite Writer v2 SessionRegistry.resolve для каждого candidate session_ref, читает одну страницу опубликованным OpenCode reader, не генерирует refs/project refs и сохраняет incomplete coverage без перечисления bindings. 3 теста, ранее 3 list MCP regression, и реальный изолированный OpenCode→Rust reader→тестовый SQLite v2 Writer→MCP с тестовым заранее записанным binding прошли. Production миграции/записи/issuer и enumeration нет, штатный launcher не подключён, ref в тесте предварительно внесён только в disposable SQLite; production consumer не доказан. HTTP/schema/lib/Cargo не менялись, push нет.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:34:46+03:00",
+      "note": "Опубликован независимый composition slice.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Нет production create binding и композиции в штатном launcher",
+        "result": "49afd980: ConfiguredListInventory на SQLite v2 и native reader, три теста и изолированный OpenCode→SQLite→MCP прошли; binding создан в test DB, production остаётся открытым."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:06:33+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V031B"
+        ],
+        "owner": "Тера",
+        "description": "Вход V031A/B/V031 и существующий application/list.rs. Подключить готовый inventory provider к действующему native application вместо fixture injection. Не писать новый discovery/index. Проверка: две existing source fixtures разных instance и явный offline/partial; shared lib/wiring только у Теры.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
+        "status": "queued"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:12:47+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "worker": {
+    "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+    "registered_at": "2026-11-07T07:18:12+03:00"
+  },
+  "owner": "Тера",
+  "wait_reason": "Нет production create binding и композиции в штатном launcher",
+  "result": "49afd980: ConfiguredListInventory на SQLite v2 и native reader, три теста и изолированный OpenCode→SQLite→MCP прошли; binding создан в test DB, production остаётся открытым.",
+  "depends_on": [
+    "V031B"
+  ],
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex"
+}

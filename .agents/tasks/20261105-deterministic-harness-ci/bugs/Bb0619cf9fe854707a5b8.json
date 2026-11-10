@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-06T15:05:48+00:00",
+  "details": "На 12 локальных release node_modules/.bin/agent-resume указывает в shared store на отсутствующий agent-resume-mcp/dist/cli.js; реальный cli.js внутри release существует. Требуется определить влияние на consumer и устранить дефект упаковки при подтверждении.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T15:05:48+00:00",
+      "changes": {
+        "details": "На 12 локальных release node_modules/.bin/agent-resume указывает в shared store на отсутствующий agent-resume-mcp/dist/cli.js; реальный cli.js внутри release существует. Требуется определить влияние на consumer и устранить дефект упаковки при подтверждении.",
+        "source": "L21 identity comparison on release 0dcb64d",
+        "status": "open",
+        "title": "Release .bin agent-resume является неразрешимой ссылкой"
+      }
+    }
+  ],
+  "id": "Bb0619cf9fe854707a5b8",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "L21 identity comparison on release 0dcb64d",
+  "status": "open",
+  "title": "Release .bin agent-resume является неразрешимой ссылкой",
+  "updated_at": "2026-11-06T15:05:48+00:00"
+}

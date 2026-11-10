@@ -1,0 +1,53 @@
+{
+  "result": "GREEN: 84 passed",
+  "red_result": "RED: 2 failed before implementation",
+  "typecheck": "passed, exit 0",
+  "native_model_prompts": 0,
+  "live_reopen": {
+    "stage": "independent_invocation",
+    "pageId": 1115967538,
+    "modelPrompts": 0,
+    "snapshot_marker": true,
+    "exact_ref": true,
+    "evaluation_marker": true,
+    "exact_url": true,
+    "green": true
+  },
+  "wrong_scope": {
+    "stage": "foreign_scope_rejected",
+    "modelPrompts": 0,
+    "error": "vibe_tool_refused",
+    "missing_scope_receipt": true,
+    "green": true
+  },
+  "cleanup": {
+    "stage": "owned_page_cleanup",
+    "pageId": 1115967538,
+    "modelPrompts": 0,
+    "page_absent": true,
+    "green": true,
+    "independent_readback": true
+  },
+  "fixture_cleanup": {
+    "host": "mac-mini-2012.lan",
+    "pid": 72617,
+    "port": 50285,
+    "listen_absent": true,
+    "remaining_owned_stdio_pids": []
+  },
+  "source_sha256": {
+    "src/adapters/vibe-chrome-transport.ts": "51ef0166cce0f599268c0e7d87cc5ba25adcd1f4343bd801c1520c2ef9f8e8d8",
+    "src/ahap-browser-runner.ts": "660c68271f378159206f7b7b66b3d4498eab4b823256e2a683cf085ef936686f",
+    "tests/vibe-chrome-transport.test.ts": "d1e235ed55fa69d4a297aa8ed3d56fea377c80fc459e7d232f608dd885a042ec",
+    "tests/ahap-browser-vibe-selection.test.ts": "35bc5a3ee6cd554d1323e650d03bb482935e2ade9c756edd1e8befa1bd53481a"
+  },
+  "evidence_sha256": {
+    "vibe-selection-red.log": "078bf29188384b0df93d33d14926e396a5eccf5db1df3d4065ed16ea94dcef93",
+    "vibe-focused-green.log": "a6f9764f215c016057735e0baeea76f41f083645143af4eb3d877b076ef86a9b",
+    "vibe-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vibe-live-create.json": "08c0c01279e08e90b1ac98440821392673c8a493960e82b72debd8cd1973761d",
+    "vibe-live-reopen.json": "96335ed640eeb4780781e4b9718084d7f5fea620ccd9ef527b27c9a6770b435d",
+    "vibe-live-wrong-scope.json": "f90c3f74a63e045bbddbd780119e26f537262157b1e12a275f36296acba8a54f",
+    "vibe-live-cleanup.json": "41930c86efee471abeb61db77d190a91f1d120b8c47288f506b8d374e005f234"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "agent-herder.zcode-workspace-dispose-result.v1",
+  "observed_at": "2026-11-09T01:08:47.578Z",
+  "operation": "owned-test-workspace-cleanup",
+  "workspace_path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+  "expected_identity": {
+    "processId": 804411,
+    "workspaceKey": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+    "generation": 1
+  },
+  "dispatch_attempts": 1,
+  "native_outcome": "RECEIVED",
+  "old_process_identity_gone": true,
+  "official_server_unchanged": true,
+  "current_running": {
+    "observed_at": "2026-11-09T01:08:47.576Z",
+    "expires_at": "2026-11-09T01:09:02.576Z",
+    "server_pid": 3014880,
+    "server_generation": 2,
+    "target_running_tasks": 0,
+    "other_running_tasks": 0
+  },
+  "current_native_identity": null,
+  "current_native_read_error": "native_operation_outcome_unknown",
+  "replacement_launched_by_this_operation": false,
+  "replayed": false,
+  "status": "PASS"
+}

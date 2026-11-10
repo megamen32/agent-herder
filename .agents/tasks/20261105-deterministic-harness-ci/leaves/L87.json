@@ -1,0 +1,56 @@
+{
+  "id": "L87",
+  "label": "CI: постоянный драйвер кандидатного сценария",
+  "description": "Объединить опубликованные проверки в единый запускаемый сценарий изолированного кандидата с fail-closed проверкой сети и без ложного статуса релиза.",
+  "acceptance": "Драйвер создаёт и проверяет обе среды и search в одной квитанции, доказан через кандидат на server-44; отдельно остаётся установленный PID.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T14:01:03+03:00",
+  "updated_at": "2026-11-07T14:05:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T14:01:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "L87",
+        "label": "CI: постоянный драйвер кандидатного сценария",
+        "description": "Объединить опубликованные проверки в единый запускаемый сценарий изолированного кандидата с fail-closed проверкой сети и без ложного статуса релиза.",
+        "acceptance": "Драйвер создаёт и проверяет обе среды и search в одной квитанции, доказан через кандидат на server-44; отдельно остаётся установленный PID.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:01:13+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:05:50+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "98bfc2e5: единый драйвер фиксирует версии CLI и хеш candidate entrypoint, проверяет изоляцию сети, выполняет Herder journey + MCP search для Codex/OpenCode и всегда возвращает INCOMPLETE для неисполненных installed/прочих сред. RED→GREEN 26 native тестов. server-44: candidate bafb, codex 0.167.0 + OpenCode 2.1.3, по 2 сессии/3 страницы/2 запроса fixture, оба search; драйвер 4.621s, весь запуск 47.371s, evidence/server44-candidate-driver-20261107.json. Драйвер запущен временным research stand; собственный launcher, installed PID и release gate остаются не выполнены."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "result": "98bfc2e5: единый драйвер фиксирует версии CLI и хеш candidate entrypoint, проверяет изоляцию сети, выполняет Herder journey + MCP search для Codex/OpenCode и всегда возвращает INCOMPLETE для неисполненных installed/прочих сред. RED→GREEN 26 native тестов. server-44: candidate bafb, codex 0.167.0 + OpenCode 2.1.3, по 2 сессии/3 страницы/2 запроса fixture, оба search; драйвер 4.621s, весь запуск 47.371s, evidence/server44-candidate-driver-20261107.json. Драйвер запущен временным research stand; собственный launcher, installed PID и release gate остаются не выполнены."
+}

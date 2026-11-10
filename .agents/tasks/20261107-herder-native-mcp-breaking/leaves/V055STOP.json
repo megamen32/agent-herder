@@ -1,0 +1,68 @@
+{
+  "id": "V055STOP",
+  "label": "Ограничить native interrupt общим сроком",
+  "description": "Ограничить весь путь exact interrupt, включая ожидание control mutex и дополнительные readback запросы.",
+  "acceptance": "Barrier tests busy и timeout: корректный неизвестный исход без повторного interrupt, deadline охватывает весь путь.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V055BOUND"
+  ],
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "created_at": "2026-11-07T11:41:20+03:00",
+  "updated_at": "2026-11-07T11:48:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:41:20+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055STOP",
+        "label": "Ограничить native interrupt общим сроком",
+        "description": "Ограничить весь путь exact interrupt, включая ожидание control mutex и дополнительные readback запросы.",
+        "acceptance": "Barrier tests busy и timeout: корректный неизвестный исход без повторного interrupt, deadline охватывает весь путь.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V055BOUND"
+        ],
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:46:08+03:00",
+      "note": "Review направлен Астре на плановой сверке.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимая проверка candidate 9eafde2d",
+        "result": "RED busy interrupt: 500ms timeout, GREEN try_lock; общий deadline на status pages, interrupt и exact readback; 13 Codex tests passed, candidate не опубликован."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:48:11+03:00",
+      "note": "Source integration завершена; V025PUBLIC и реальная приёмка остаются.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "result": "origin/main 9eafde2d: bounded interrupt с try_lock и единым deadline через status pages, одну отправку и readback; 13 Codex tests passed, независимый review SUPPORTED. Реальный MCP stop пока не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "wait_reason": "",
+  "result": "origin/main 9eafde2d: bounded interrupt с try_lock и единым deadline через status pages, одну отправку и readback; 13 Codex tests passed, независимый review SUPPORTED. Реальный MCP stop пока не доказан."
+}

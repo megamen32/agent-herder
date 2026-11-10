@@ -1,0 +1,355 @@
+{
+  "origin": "https://chatgpt.com",
+  "accountId": "fixture-account",
+  "project": {
+    "id": "herder-ci-project",
+    "name": "Herder CI",
+    "path": "/tmp/herder-chatgpt-canary-664iF6"
+  },
+  "drafts": [
+    {
+      "sessionId": "draft:c1dfe1bf-97cd-4648-ab1e-b65c63db5c0d",
+      "title": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-0",
+      "initialPending": true,
+      "pendingRemoteCreation": false,
+      "remoteId": "97b3d70a-ab7f-4b27-b9c8-06a92eac949a"
+    },
+    {
+      "sessionId": "draft:02db77c6-386b-4253-872f-ee4abf3ed2ba",
+      "title": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-1",
+      "initialPending": true,
+      "pendingRemoteCreation": false,
+      "remoteId": "eae0107c-b862-4596-9f27-86cc84b054d7"
+    }
+  ],
+  "createdDraft": {
+    "created": true,
+    "pendingRemoteCreation": true,
+    "noSubmission": true
+  },
+  "sessions": [
+    "97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+    "eae0107c-b862-4596-9f27-86cc84b054d7"
+  ],
+  "deliveries": [
+    true,
+    true
+  ],
+  "histories": [
+    [
+      "fixture question 1",
+      "fixture answer 1"
+    ],
+    [
+      "fixture question 2",
+      "fixture answer 2"
+    ]
+  ],
+  "transcripts": [
+    [
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "97b3d70a-ab7f-4b27-b9c8-06a92eac949a"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u1",
+            "nativeEventId": "u1",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 1"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInNlcnZlci00NFwiLFwiY2hhdGdwdFwiLFwiOTdiM2Q3MGEtYWI3Zi00YjI3LWI5YzgtMDZhOTJlYWM5NDlhXCJdIiwibmF0aXZlQ3Vyc29yIjoiZDA1NTczMjEtZjZhOS00MDEyLTkwNTctMmM0OGUxYmI2NzQ4IiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "97b3d70a-ab7f-4b27-b9c8-06a92eac949a"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a1",
+            "nativeEventId": "a1",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 1"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ],
+    [
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "eae0107c-b862-4596-9f27-86cc84b054d7"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u2",
+            "nativeEventId": "u2",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 2"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInNlcnZlci00NFwiLFwiY2hhdGdwdFwiLFwiZWFlMDEwN2MtYjg2Mi00NTk2LTlmMjctODZjYzg0YjA1NGQ3XCJdIiwibmF0aXZlQ3Vyc29yIjoiNzZmMjI5ZmYtZTYzMi00NmNjLTg2YzItZGI5OTJhMDE3ZWNhIiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "eae0107c-b862-4596-9f27-86cc84b054d7"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a2",
+            "nativeEventId": "a2",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 2"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ]
+  ],
+  "crossCursorStatus": 422,
+  "searchIds": [
+    "chatgpt::97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+    "chatgpt::eae0107c-b862-4596-9f27-86cc84b054d7"
+  ],
+  "searchResults": [
+    [
+      "chatgpt::97b3d70a-ab7f-4b27-b9c8-06a92eac949a"
+    ],
+    [
+      "chatgpt::eae0107c-b862-4596-9f27-86cc84b054d7"
+    ]
+  ],
+  "titleSearches": [
+    {
+      "query": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-0",
+      "isError": false,
+      "results": [
+        {
+          "hostId": "fixture",
+          "harness": "chatgpt",
+          "nativeSessionId": "chatgpt::97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+          "title": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-0",
+          "cwd": "/tmp/herder-chatgpt-canary-664iF6/empty/HOME/.browser-chat/chatgpt",
+          "revision": "{\"id\":\"97b3d70a-ab7f-4b27-b9c8-06a92eac949a\",\"title\":\"L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-0\",\"seenAt\":1793994699487}",
+          "chunkId": "title",
+          "snippet": "",
+          "rank": -1.1846153846153844e-05,
+          "shortId": "g0925"
+        }
+      ],
+      "partial": true
+    },
+    {
+      "query": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-1",
+      "isError": false,
+      "results": [
+        {
+          "hostId": "fixture",
+          "harness": "chatgpt",
+          "nativeSessionId": "chatgpt::eae0107c-b862-4596-9f27-86cc84b054d7",
+          "title": "L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-1",
+          "cwd": "/tmp/herder-chatgpt-canary-664iF6/empty/HOME/.browser-chat/chatgpt",
+          "revision": "{\"id\":\"eae0107c-b862-4596-9f27-86cc84b054d7\",\"title\":\"L17-a4022d4e-0cc2-4510-9b56-dc43420e05a0-1\",\"seenAt\":1793994699487}",
+          "chunkId": "title",
+          "snippet": "",
+          "rank": -1.1846153846153844e-05,
+          "shortId": "g9186"
+        }
+      ],
+      "partial": true
+    }
+  ],
+  "searchContentUnavailable": true,
+  "contentSearchCoverage": {
+    "partial": true,
+    "isError": false
+  },
+  "submissions": [
+    {
+      "remoteId": "97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+      "text": "fixture question 1"
+    },
+    {
+      "remoteId": "eae0107c-b862-4596-9f27-86cc84b054d7",
+      "text": "fixture question 2"
+    }
+  ],
+  "listed": [
+    "draft:02db77c6-386b-4253-872f-ee4abf3ed2ba",
+    "draft:c1dfe1bf-97cd-4648-ab1e-b65c63db5c0d"
+  ],
+  "requests": [
+    "/",
+    "/favicon.ico",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/api/auth/session",
+    "/",
+    "/api/auth/session",
+    "/fixture/submit",
+    "/api/auth/session",
+    "/backend-api/conversations/97b3d70a-ab7f-4b27-b9c8-06a92eac949a?num_turns=60&include_has_versions=true",
+    "/api/auth/session",
+    "/backend-api/conversation/97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+    "/api/auth/session",
+    "/backend-api/conversation/97b3d70a-ab7f-4b27-b9c8-06a92eac949a",
+    "/api/auth/session",
+    "/",
+    "/api/auth/session",
+    "/fixture/submit",
+    "/api/auth/session",
+    "/backend-api/conversations/eae0107c-b862-4596-9f27-86cc84b054d7?num_turns=60&include_has_versions=true",
+    "/api/auth/session",
+    "/backend-api/conversation/eae0107c-b862-4596-9f27-86cc84b054d7",
+    "/api/auth/session",
+    "/backend-api/conversation/eae0107c-b862-4596-9f27-86cc84b054d7",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated"
+  ],
+  "blocked": [
+    "https://outside.invalid/probe"
+  ],
+  "scope": "browser-chat-fixture",
+  "candidate_sha256": "9e8060ccc9401b4d75e05df0e6df7050bf2f4369e1183a5afaf2ae5f86d9b8ae",
+  "isolation": {
+    "namespace": "net:[4026533521]",
+    "hostNamespace": "net:[4026531840]",
+    "interfaces": [
+      "br-01ebb51e3b42",
+      "br-1b4205f246ca",
+      "br-1c70306bfcc2",
+      "br-232f17e51cc8",
+      "br-3ea228852419",
+      "br-53723821baa8",
+      "br-5c6f4ff9095d",
+      "br-737d74118f76",
+      "br-78c6397a0c6b",
+      "br-83ede6dae77d",
+      "br-9ed177cbe261",
+      "br-a9a28d31113f",
+      "br-ac993769c844",
+      "br-d3c72eae07f2",
+      "br-e346d02936f7",
+      "br-e36a0df4ba81",
+      "br-f4e549b782fd",
+      "br-ffc53643b7b4",
+      "cni0",
+      "docker0",
+      "enp4s0",
+      "enp5s0",
+      "flannel.1",
+      "lo",
+      "tailscale0",
+      "veth04618a77",
+      "veth046ac2e",
+      "veth0804bed",
+      "veth0d8308c",
+      "veth0f485ec",
+      "veth113b99e",
+      "veth12258ff",
+      "veth1784b72a",
+      "veth17b7ca6",
+      "veth17de8b0",
+      "veth1f9b006",
+      "veth26ce256d",
+      "veth2d2eb61",
+      "veth3536b08",
+      "veth39b94b2",
+      "veth40519d42",
+      "veth40f2bd2",
+      "veth4258eb68",
+      "veth4fc2496a",
+      "veth4ff6346",
+      "veth509703f5",
+      "veth5bfd389",
+      "veth61e0996",
+      "veth63c3e63",
+      "veth64b7b59",
+      "veth7234f1c",
+      "veth7759659",
+      "veth78ccad3",
+      "veth7e387de",
+      "veth8628381",
+      "veth8aec4ee",
+      "veth9dd82c2",
+      "veth9f56807",
+      "vetha02bed27",
+      "vetha1f1d91",
+      "vethaa6fe71",
+      "vethadf27dc",
+      "vethb38a749",
+      "vethb3988bd",
+      "vethb44f53d",
+      "vethb4808b72",
+      "vethb8f335e",
+      "vethbcaf7ee",
+      "vethbed9800",
+      "vethcd1d45a",
+      "vethcd93b442",
+      "vethd1351b1",
+      "vethd4863b3",
+      "vethd77c6f8",
+      "vethdc5f265",
+      "vethdd647c7",
+      "vethe4b8936",
+      "vethe4eb54b",
+      "vethf687aba",
+      "vethf901120",
+      "vethf92bb9e",
+      "vethfa3c8e4"
+    ]
+  }
+}

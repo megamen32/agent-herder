@@ -1,0 +1,16 @@
+test_controller_does_not_stage_remote_after_failed_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_direct_fleet_rollout_cannot_mutate_before_candidate_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_expired_lease_prevents_starting_any_candidate_runner (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_failed_candidate_runner_never_accepts_receipt (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.016s
+
+OK
+== rollout plan ==
+node          : server-44 (fleet, example)
+release       : /tmp/tmp1v404_o1/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle        : bundle files=0
+package size  : 0.0 MiB
+live before   : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+restart       : restart

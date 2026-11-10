@@ -1,0 +1,14 @@
+{
+  "command": [
+    "npx",
+    "vitest",
+    "run",
+    "--root",
+    ".",
+    "--config",
+    "vitest.config.ts",
+    "tests/session-sidebar.test.tsx"
+  ],
+  "exit_code": 1,
+  "observed_at": "2026-11-08T23:05:09.123511+00:00"
+}

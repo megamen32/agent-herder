@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V052 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V052 обязателен в конце цепочки.",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
   "created_at": "2026-11-07T03:53:14+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:14+03:00",
+  "updated_at": "2026-11-07T04:33:06+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:14+03:00",
@@ -53,6 +53,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:24:40+03:00",
+      "note": "Продолжаю native Codex lane в отдельном worktree; выполняю только доступность тестового профиля и точную корреляцию input.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:33:06+03:00",
+      "note": "V052B live probe succeeded after Astra identified the authorized fixture; exact refs and limitations are in the owned run directory.",
+      "changes": {
+        "status": "done",
+        "result": "Codex CLI 0.167.0 direct app-server probe passed in an isolated CODEX_HOME and loopback-only network namespace using the authorized local fake-model fixture. A unique native input and HERDER_TEST_MODEL_OK assistant item appeared in one completed turn; turn/start response, turn/started, turn/completed and thread/read matched native turn 01a1b3a1-b2aa-7512-a959-b40be3fabdce; thread 01a1b3a1-b283-7b40-bb72-83d7f28155aa; user item 01a1b3a1-b343-7640-9ace-e878747ae1da; assistant item msg_test_1; fixture received exactly one request. Evidence: /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/{RESULT.md,proof.json,native-transcript.jsonl,result.json}. This is direct app-server proof only; adapter/MCP/install/consumer are unproven."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Codex CLI 0.167.0 direct app-server probe passed in an isolated CODEX_HOME and loopback-only network namespace using the authorized local fake-model fixture. A unique native input and HERDER_TEST_MODEL_OK assistant item appeared in one completed turn; turn/start response, turn/started, turn/completed and thread/read matched native turn 01a1b3a1-b2aa-7512-a959-b40be3fabdce; thread 01a1b3a1-b283-7b40-bb72-83d7f28155aa; user item 01a1b3a1-b343-7640-9ace-e878747ae1da; assistant item msg_test_1; fixture received exactly one request. Evidence: /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/{RESULT.md,proof.json,native-transcript.jsonl,result.json}. This is direct app-server proof only; adapter/MCP/install/consumer are unproven."
 }

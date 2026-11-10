@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-06T19:45:45+00:00",
+  "details": "v9 и v10: OpenCode exact ID присутствуют, но partial native_source_changed_during_scan после повторного scan, evidence/l41-v9-opencode-partial.err и evidence/l43-v10-opencode.err. RED regression evidence/l43-opencode-wal-red.log показал, что metadata-only WAL ctime отклоняется; GREEN evidence/l43-opencode-wal-green.log допускает только при полном совпадении байтов DB/WAL, настоящие изменения и same-size edit с возвращённым mtime отклоняются. Каким именно изменением вызван реальный partial, ещё не доказано; новый candidate собирается.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T19:45:45+00:00",
+      "changes": {
+        "details": "Оба exact ID найдены, source.state=partial reason=native_source_changed_during_scan, даже после ограниченного повторного scan. Первичные файлы evidence/l41-v9-opencode-partial.{json,err}; v10 сохраняется отдельно. Причина изменения DB/WAL ещё проверяется; защиту не ослаблять.",
+        "source": "server-44 v9/v10 isolated OpenCode candidate",
+        "status": "open",
+        "title": "OpenCode поиск остаётся partial при изменении native SQLite во время scan"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L43",
+      "at": "2026-11-06T19:49:06+00:00",
+      "changes": {
+        "details": "v9 и v10: OpenCode exact ID присутствуют, но partial native_source_changed_during_scan после повторного scan, evidence/l41-v9-opencode-partial.err и evidence/l43-v10-opencode.err. RED regression evidence/l43-opencode-wal-red.log показал, что metadata-only WAL ctime отклоняется; GREEN evidence/l43-opencode-wal-green.log допускает только при полном совпадении байтов DB/WAL, настоящие изменения и same-size edit с возвращённым mtime отклоняются. Каким именно изменением вызван реальный partial, ещё не доказано; новый candidate собирается."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T19:56:15+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-opencode-wal-green.log",
+            "red_proof_path": "evidence/l43-opencode-wal-red.log",
+            "red_result": "1 failed",
+            "red_sha256": "9ec30775787009f6f8c9daf91504df0a0807784a8a3c3dffb8e8e7af77863524",
+            "result": "18 passed",
+            "sha256": "8d9453ce2088f415802fd21392e8d3b761f8a1acb9872ed134e8bf3016a4c0ee",
+            "test_command": "vitest run tests/native-hermes-opencode-wal.test.ts tests/native-hermes-opencode-v2.test.ts tests/hermes-search-wal.test.ts tests/session-search-sources.test.ts tests/qoder-l12.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bad5cfc232fbe4964a21d",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-opencode-wal-green.log",
+      "red_proof_path": "evidence/l43-opencode-wal-red.log",
+      "red_result": "1 failed",
+      "red_sha256": "9ec30775787009f6f8c9daf91504df0a0807784a8a3c3dffb8e8e7af77863524",
+      "result": "18 passed",
+      "sha256": "8d9453ce2088f415802fd21392e8d3b761f8a1acb9872ed134e8bf3016a4c0ee",
+      "test_command": "vitest run tests/native-hermes-opencode-wal.test.ts tests/native-hermes-opencode-v2.test.ts tests/hermes-search-wal.test.ts tests/session-search-sources.test.ts tests/qoder-l12.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 v9/v10 isolated OpenCode candidate",
+  "status": "fixed",
+  "title": "OpenCode поиск остаётся partial при изменении native SQLite во время scan",
+  "updated_at": "2026-11-06T19:56:15+00:00"
+}

@@ -1,0 +1,92 @@
+{
+  "id": "V081CDPDOM",
+  "label": "Подключить snapshot/fill и ChatGPT wrapper к прямому CDP",
+  "description": "Минимальная совместимая реализация оставшихся take_snapshot/fill для existing ChatGPT driver; только реально используемая driver семантика. Устойчивая привязка DOM refs к target/context и snapshot. Подключить V081AHAP к transport через explicit trusted config, не менять site operations.",
+  "acceptance": "Fake CDP contract всех6используемых методов, stale/foreign DOMrefs rejected; wrapper uses directCDP configuration and existing driver, tsc and affected tests. Live create-send-read отдельно.",
+  "depends_on": [
+    "V081CDPBASE"
+  ],
+  "affected_files": [
+    "src/adapters/direct-cdp-page-tools.ts",
+    "tests/direct-cdp-page-tools.test.ts",
+    "src/ahap-browser-runner.ts",
+    "tests/ahap-browser-runner.test.ts"
+  ],
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Source-only independent of OpenCode live consumer; existing CI+ChatGPT scope unchanged.",
+  "created_at": "2026-11-07T15:39:21+03:00",
+  "updated_at": "2026-11-07T16:07:42+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:39:21+03:00",
+      "note": "",
+      "changes": {
+        "id": "V081CDPDOM",
+        "label": "Подключить snapshot/fill и ChatGPT wrapper к прямому CDP",
+        "description": "Минимальная совместимая реализация оставшихся take_snapshot/fill для existing ChatGPT driver; только реально используемая driver семантика. Устойчивая привязка DOM refs к target/context и snapshot. Подключить V081AHAP к transport через explicit trusted config, не менять site operations.",
+        "acceptance": "Fake CDP contract всех6используемых методов, stale/foreign DOMrefs rejected; wrapper uses directCDP configuration and existing driver, tsc and affected tests. Live create-send-read отдельно.",
+        "depends_on": [
+          "V081CDPBASE"
+        ],
+        "affected_files": [
+          "src/adapters/direct-cdp-page-tools.ts",
+          "tests/direct-cdp-page-tools.test.ts",
+          "src/ahap-browser-runner.ts",
+          "tests/ahap-browser-runner.test.ts"
+        ],
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Source-only independent of OpenCode live consumer; existing CI+ChatGPT scope unchanged."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:42:13+03:00",
+      "note": "Sequentially after V081CDPBASE per owner instruction.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:02:28+03:00",
+      "note": "Six existing ChromePageTools operations are implemented via direct CDP and fake-tested.",
+      "changes": {
+        "status": "done",
+        "result": "DOM snapshot/fill and AHAP direct-CDP wiring committed in 385efc83, d0a71185, 76bd8325. take_snapshot uses Accessibility.getFullAXTree; fill resolves the current snapshot backend node on the exact target session. Refs are invalidated on snapshot/navigation/fill and foreign/stale refs reject. Runner requires explicit WS endpoint, contextId, targetId and expected account SHA; no gateway/Vibe fallback. tsc and 42 focused fake tests pass; no browser action."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:07:42+03:00",
+      "note": "",
+      "changes": {
+        "result": "DOM snapshot/fill and AHAP direct-CDP wiring committed in 385efc83, d0a71185, 76bd8325. take_snapshot uses Accessibility.getFullAXTree; fill resolves the current snapshot backend node on the exact target session. Refs are invalidated on snapshot/navigation/fill; foreign/stale refs reject. Runner requires explicit WS endpoint, contextId, targetId and expected account SHA; no gateway/Vibe fallback. tsc and 42 focused fake tests pass. No browser action."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "result": "DOM snapshot/fill and AHAP direct-CDP wiring committed in 385efc83, d0a71185, 76bd8325. take_snapshot uses Accessibility.getFullAXTree; fill resolves the current snapshot backend node on the exact target session. Refs are invalidated on snapshot/navigation/fill; foreign/stale refs reject. Runner requires explicit WS endpoint, contextId, targetId and expected account SHA; no gateway/Vibe fallback. tsc and 42 focused fake tests pass. No browser action."
+}

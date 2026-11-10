@@ -1,0 +1,118 @@
+{
+  "label": "Выпуск: отказ до переключения при отсутствии collector",
+  "description": "Не допускать гарантированный простой, если installed CI collector отсутствует; при ошибке работающего collector сохранять откат.",
+  "acceptance": "TDD подтверждает отсутствие переключения и перезапуска Linux и Darwin при отсутствии collector и сохранение fenced rollback при отказе после переключения.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Laplace",
+  "id": "L19",
+  "created_at": "2026-11-06T17:23:52+03:00",
+  "updated_at": "2026-11-06T19:43:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T17:23:52+03:00",
+      "note": "Выделено из L05 для параллельного устранения известного гарантированного простоя.",
+      "changes": {
+        "label": "Выпуск: отказ до переключения при отсутствии collector",
+        "description": "Не допускать гарантированный простой, если installed CI collector отсутствует; при ошибке работающего collector сохранять откат.",
+        "acceptance": "TDD подтверждает отсутствие переключения и перезапуска Linux и Darwin при отсутствии collector и сохранение fenced rollback при отказе после переключения.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Laplace"
+      },
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:24:15+03:00",
+      "note": "Проверяемый срок пока неизвестен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Срок до завершения не измерен."
+      },
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:25:02+03:00",
+      "note": "Проверяю отказ до любых изменений и остановки поколения; затем Linux/Darwin RED→GREEN и сохранение fenced rollback.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:32:30+03:00",
+      "note": "RED: без preflight Linux/Darwin доходили до подготовки, Darwin до проверки владельца. GREEN: installer отказывает до изменений и stop; тестовый отказ post-switch collector сохраняет fenced rollback. Ограничение: Linux rollout-candidate.py распаковывает кандидат до вызова installer, этот файл вне scope и требует preflight владельца.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:35:34+03:00",
+      "note": "LHC 1.13.0 отклонил запись L05: лист 755 мин при оценке 15 мин; владелец выделил L19. Installer: 22 теста GREEN, RED зафиксировал заход в подготовку; Darwin guard срабатывает до stop. Внешний Linux rollout-candidate.py изменяет release до вызова installer: владелец этого файла должен поднять проверку выше; сообщение Lead deferred.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:42:02+03:00",
+      "note": "Независимая проверка preflight и контракта владельцу внешнего runner; collector и Beb7f890 остаются открыты.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:52:06+03:00",
+      "note": "Повторная проверка installer preflight: отдельный процесс, поддельный receipt, Linux/Darwin симуляция без мутаций, 22 теста PASS; evidence/l19-preflight-review.json. Fleet внешний guard появился; _leased_node_side_owner в проверенном срезе остаётся без него. Контракт владельцу передан в очередь; collector и Beb7f890 остаются open.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:56:01+03:00",
+      "note": "Owner preflight B69171876ae5741ba81cf в очереди после завершения L04 по прямому условию владельца; выявлено, что проверку надо поставить до owner try/rollback, иначе исключение само вызывает restart. Код пока не менялся.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:58:43+03:00",
+      "note": "Владелец снял ожидание L04 и передал rollout-candidate.py: исправляю B69171876ae5741ba81cf до owner try/rollback, RED→GREEN.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:04:44+03:00",
+      "note": "Owner preflight до try/rollback и защита прямого вызова добавлены; RED/GREEN для двух входов и изменения доступности collector, 24+3 теста GREEN; B69171876ae5741ba81cf fixed, evidence/l19-owner-preflight.json. Реальный installed collector и Beb7f890 остаются open; deploy запрещён.",
+      "changes": {
+        "status": "done"
+      },
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:43:10+03:00",
+      "note": "",
+      "changes": {
+        "result": "Owner preflight и защита прямого вызова отказывают до переключения при отсутствии collector; RED/GREEN для двух входов, 24 installer и 3 owner теста GREEN, B69171876ae5741ba81cf fixed, evidence/l19-owner-preflight.json. Действующий collector и postdeploy proof остаются L30/L34."
+      },
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Срок до завершения не измерен.",
+  "result": "Owner preflight и защита прямого вызова отказывают до переключения при отсутствии collector; RED/GREEN для двух входов, 24 installer и 3 owner теста GREEN, B69171876ae5741ba81cf fixed, evidence/l19-owner-preflight.json. Действующий collector и postdeploy proof остаются L30/L34."
+}

@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V029 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V029 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:53+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:53+03:00",
+  "updated_at": "2026-11-07T08:19:00+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:53+03:00",
@@ -51,6 +51,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:16:34+03:00",
+      "note": "V029A done in prior leaf; same file now continues under explicit user instruction. This session retains ownership of transcript.rs; will add cursor binding to snapshot and principal only.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:19:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "В domain/transcript.rs добавлен BoundTranscriptCursor: он сохраняет opaque native cursor и связывает его с non-empty principal_id и snapshot_id; validate отклоняет mismatch principal/snapshot и не разбирает cursor. 5 targeted transcript tests passed; rustfmt +stable --check и git diff --check прошли. Scoped commit 91a42282."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "В domain/transcript.rs добавлен BoundTranscriptCursor: он сохраняет opaque native cursor и связывает его с non-empty principal_id и snapshot_id; validate отклоняет mismatch principal/snapshot и не разбирает cursor. 5 targeted transcript tests passed; rustfmt +stable --check и git diff --check прошли. Scoped commit 91a42282."
 }

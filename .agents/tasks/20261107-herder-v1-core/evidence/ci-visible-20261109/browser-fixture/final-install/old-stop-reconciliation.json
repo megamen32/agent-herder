@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-11-09T02:09:19.510275+00:00",
+  "returncode": 0,
+  "native_receipt": {
+    "status": "STOPPED",
+    "generation": "953561fa5d608d6a68325e99447284bd3bfccc9a138bc52d4fabaf5833051703",
+    "already_stopped": true
+  },
+  "state_absent": true,
+  "old_proc_stat_absent": true
+}

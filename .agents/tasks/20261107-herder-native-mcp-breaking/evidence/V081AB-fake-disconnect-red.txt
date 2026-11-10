@@ -1,0 +1,92 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings
+warning: `herder` (test "target_gate_fixture") generated 6 warnings (2 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.71s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 14 tests
+test adapters::chatgpt::read::tests::list_page_rejects_malformed_or_inconsistent_pagination ... ok
+test adapters::chatgpt::read::tests::list_page_keeps_stable_ids_and_reports_partial_by_provider_total ... ok
+test adapters::chatgpt::tests::follows_current_branch_and_filters_internal_assistant_messages ... ok
+test adapters::chatgpt::read::tests::recent_projection_preserves_roles_and_only_explicit_parent_reply ... ok
+test adapters::chatgpt::tests::rejects_a_payload_for_another_conversation ... ok
+test adapters::chatgpt::tests::rejects_chatgpt_target_from_another_browser_context_before_page_read ... ok
+test adapters::chatgpt::tests::list_rejects_account_scope_changes_after_attach ... ok
+
+thread 'adapters::chatgpt::tests::read_disconnect_returns_unknown_without_replaying_conversation_fetch' (1214487) panicked at src/adapters/chatgpt/mod.rs:903:9:
+assertion failed: matches!(result, Err(ChatGptReadError::Cdp(CdpError::OutcomeUnknown { .. })))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test adapters::chatgpt::tests::recent_read_rejects_account_switch_and_missing_current_branch ... ok
+test adapters::chatgpt::tests::list_surfaces_provider_unavailable_without_treating_it_as_empty ... ok
+test adapters::chatgpt::tests::read_disconnect_returns_unknown_without_replaying_conversation_fetch ... FAILED
+test adapters::chatgpt::tests::recent_reads_preserve_native_parent_relation_without_inventing_turns ... ok
+test adapters::chatgpt::tests::cdp_timeout_is_bound_to_one_request_id_and_is_not_retried ... ok
+test adapters::chatgpt::tests::attaches_to_exact_context_and_reads_without_create_or_send ... ok
+test adapters::chatgpt::tests::lists_direct_cdp_pages_for_the_pinned_context_and_account ... ok
+
+failures:
+
+failures:
+    adapters::chatgpt::tests::read_disconnect_returns_unknown_without_replaying_conversation_fetch
+
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 121 filtered out; finished in 0.33s
+
+error: test failed, to rerun pass `--lib`

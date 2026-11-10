@@ -1,0 +1,115 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "V1 validator and rendered session identity contract",
+  "description": "Доказанный source contract для strict V1 native/Vibe identity/state evidence и точных rendered row/detail identity hooks. Последующая installed execution вынесена в отдельные object leaves.",
+  "acceptance": "Strict V1 gate отвергает missing/UNKNOWN/native coverage gaps, невидимую authorized native active session и state mismatch. Rendered hooks связаны с native ID/harness/host/status, не с core ref. Негативные и позитивные source tests подтверждены.",
+  "affected_files": [
+    "tests/native/candidate_release_gate.py",
+    "tests/native/test_candidate_release_gate.py",
+    "src/web-ui/session-sidebar.tsx",
+    "tests/session-sidebar.test.tsx",
+    "vitest.config.ts"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Оценка относится к validator и regression tests; длительность live UI и CI wiring зависит от текущих browser/runtime findings.",
+  "note": "Existing V1 validator теперь требует Vibe evidence для всех пяти lanes. RED9tests/31failed subcases, GREEN21tests, diff-check0. Два source paths переданы root без commit. Actual live Vibe и CI invocation пока не доказаны. Native coverage в caller должна относиться к exact canary и authorized active scope до cleanup, а не к историческим archived registry rows.",
+  "id": "CIVISIBLE",
+  "created_at": "2026-11-09T01:49:41+03:00",
+  "updated_at": "2026-11-09T03:13:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T01:49:41+03:00",
+      "note": "Новая задача пользователя: все harnesses через Vibe и обязательная проверка в CI; declared attribution chatgpt-all-harness-ci-20261109.",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Сделать видимость сессий через Vibe обязательной проверкой CI",
+        "description": "Проверить пять существующих harness lanes через настоящий Vibe UI и native состояние, связать этот результат с existing release report gate и CI. Текущий исполнитель владеет только validator и его unit tests; actual runner и workflow ведёт root.",
+        "acceptance": "Все пять lanes имеют подтверждённую Vibe visibility и exact native/UI identity/state. Missing, UNKNOWN, incomplete native coverage или скрытая active session не дают PASS. Unit RED/GREEN и live Vibe/CI receipts сохранены.",
+        "affected_files": [
+          "tests/native/candidate_release_gate.py",
+          "tests/native/test_candidate_release_gate.py"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Оценка относится к validator и regression tests; длительность live UI и CI wiring зависит от текущих browser/runtime findings.",
+        "note": "Новая цель пользователя после завершённого NoticePlace handoff. Прежние completed и assigned leaves сохранены. Evidence: evidence/ci-visible-20261109/before-goal.json. Native session ID текущего ChatGPT неизвестен."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "chatgpt",
+        "session_id": null,
+        "source": "declared"
+      },
+      "session": "unknown",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T01:53:57+03:00",
+      "note": "Проверен validator; live UI и pipeline остаются обязательными.",
+      "changes": {
+        "note": "Existing V1 validator теперь требует Vibe evidence для всех пяти lanes. RED9tests/31failed subcases, GREEN21tests, diff-check0. Два source paths переданы root без commit. Actual live Vibe и CI invocation пока не доказаны. Native coverage в caller должна относиться к exact canary и authorized active scope до cleanup, а не к историческим archived registry rows.",
+        "result": "Validator regression исправлена в tests/native/candidate_release_gate.py и exact test file; evidence/ci-visible-20261109/{red,green}-result.json. Общий результат CIVISIBLE остаётся running до live UI/CI."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "chatgpt",
+        "session_id": null,
+        "source": "declared"
+      },
+      "session": "unknown",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T02:07:49+03:00",
+      "note": "Уточнён независимый owner active catalog, добавлены rendered DOM identity hooks. Native/CI actions этим агентом не выполнялись.",
+      "changes": {
+        "affected_files": [
+          "tests/native/candidate_release_gate.py",
+          "tests/native/test_candidate_release_gate.py",
+          "src/web-ui/session-sidebar.tsx",
+          "tests/session-sidebar.test.tsx",
+          "vitest.config.ts"
+        ],
+        "acceptance": "Все пять lanes имеют реальные Vibe/native identity/state receipts до cleanup. Native visibility oracle включает полный свежий authorized owner active catalog, включая незарегистрированные native sessions; mutation scope остаётся authorized_registered_sessions. Missing, UNKNOWN, incomplete coverage или скрытая active session не дают PASS. Required installed CI invocation и live production smoke подтверждены отдельными receipts.",
+        "result": "Validator GREEN 27 tests; DOM GREEN 4 tests, diff-check clean. Scope RED и DOM RED/GREEN сохранены в evidence/ci-visible-20261109. Действующих GitHub runners/secrets/env bindings не обнаружено; executable caller и required installed CI пока не завершены, CIVISIBLE остаётся running."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "chatgpt",
+        "session_id": null,
+        "source": "declared"
+      },
+      "session": "unknown",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T03:13:10+03:00",
+      "note": "Official overrun split authorized by root; only evidenced source contract closed, user acceptance incomplete",
+      "changes": {
+        "status": "done",
+        "label": "V1 validator and rendered session identity contract",
+        "description": "Доказанный source contract для strict V1 native/Vibe identity/state evidence и точных rendered row/detail identity hooks. Последующая installed execution вынесена в отдельные object leaves.",
+        "acceptance": "Strict V1 gate отвергает missing/UNKNOWN/native coverage gaps, невидимую authorized native active session и state mismatch. Rendered hooks связаны с native ID/harness/host/status, не с core ref. Негативные и позитивные source tests подтверждены.",
+        "result": "DONE только доказанный validator/DOM contract: gate33 GREEN в source-second.json, исходные DOM4 RED/GREEN; parent detail identity19 GREEN в отдельном canonical evidence. Пользовательская all5 installed/browser acceptance НЕ завершена. Остаток передан CICOLLECTOR, CIBROWSER, CINATIVE, CIRELEASE под RESTORELEGACY; CIRELEASE отвечает за commit/publish, реальные canaries и CI proof. Нет утверждения о полном browser account active census."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "chatgpt",
+        "session_id": null,
+        "source": "declared"
+      },
+      "session": "unknown",
+      "harness": "chatgpt"
+    }
+  ],
+  "result": "DONE только доказанный validator/DOM contract: gate33 GREEN в source-second.json, исходные DOM4 RED/GREEN; parent detail identity19 GREEN в отдельном canonical evidence. Пользовательская all5 installed/browser acceptance НЕ завершена. Остаток передан CICOLLECTOR, CIBROWSER, CINATIVE, CIRELEASE под RESTORELEGACY; CIRELEASE отвечает за commit/publish, реальные canaries и CI proof. Нет утверждения о полном browser account active census."
+}

@@ -13,7 +13,7 @@
     "maximum": 60
   },
   "kind": "task",
-  "status": "running",
+  "status": "done",
   "owner": "roomhacker",
   "wave": 1,
   "note": "Продолжается проверка extensions на app-server 0.167.0; фактический App/Hub остаётся непроверен.",
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T01:52:19+03:00",
   "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:23:55+03:00",
+  "updated_at": "2026-11-07T04:27:45+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:19+03:00",
@@ -120,9 +120,31 @@
       },
       "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:27:46+03:00",
+      "note": "Негатив относится к проверенной конфигурации, не ко всем возможным клиентам.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "В проверенном app-server 0.167.0 клиент не объявил Tasks; реальный вызов отклонён до создания Task с -32021. Skills discovery и subscriptions не установлены; выяснить официальный путь клиента и фактический App/Hub consumer.",
+        "result": "Probe V002: серверные Tasks/Skills видны; resource/read успешен; попытка Task отклонена без создания. Записи review-evidence/v003-app-extensions; другие режимы не исследованы."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:27:45+03:00",
+      "note": "Закрыта диагностика, не совместимость; решение владельца проверено в исходном чате Astra.",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "result": "Диагностика завершена: прямой app-server Codex 0.167.0 с opt-in работает на новом wire, но протестированный Tasks запрос отказан -32021 без побочного эффекта; штатный MCP Skills discovery/listen не найден. По прямому решению владельца используется отдельный удаляемый translator; совместимость Codex через него проверят T011/T013, это НЕ PASS прямого пути. Evidence e0ea5ed5 и review-evidence/v003-app-extensions."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
   "worker": null,
   "blocker": "",
-  "result": "Сохранены PID-specific trace и описание review-evidence/v003-app-0167: discover → list → call прошли на app-server 0.167.0. CLI 0.162.1 legacy; полноценный gate открыт."
+  "result": "Диагностика завершена: прямой app-server Codex 0.167.0 с opt-in работает на новом wire, но протестированный Tasks запрос отказан -32021 без побочного эффекта; штатный MCP Skills discovery/listen не найден. По прямому решению владельца используется отдельный удаляемый translator; совместимость Codex через него проверят T011/T013, это НЕ PASS прямого пути. Evidence e0ea5ed5 и review-evidence/v003-app-extensions."
 }

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T18:01:19+00:00",
+  "details": "На controller100 сборка опубликованного 73e7aac6 штатным build-release-candidate.py с каталогом .fleet-candidate перенаправила current с 1f1cfcd8 на 73e7aac6 до release lease, тогда как node-config и PID 2135215 оставались на 1f1cfcd8. Ссылка восстановлена на точную running revision под release lease fence 62 после проверки PID и config; источник требует отдельного TDD-исправления, исправлений builder в рамках QCONTROLINSTALL нет.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "CI lead",
+      "at": "2026-11-07T18:01:19+00:00",
+      "changes": {
+        "details": "На controller100 сборка опубликованного 73e7aac6 штатным build-release-candidate.py с каталогом .fleet-candidate перенаправила current с 1f1cfcd8 на 73e7aac6 до release lease, тогда как node-config и PID 2135215 оставались на 1f1cfcd8. Ссылка восстановлена на точную running revision под release lease fence 62 после проверки PID и config; источник требует отдельного TDD-исправления, исправлений builder в рамках QCONTROLINSTALL нет.",
+        "source": "QCONTROLINSTALL candidate build 2026-11-07",
+        "status": "open",
+        "title": "Builder переключает live current при сборке кандидата"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "CI Astra",
+      "at": "2026-11-07T18:34:26+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/B83/B83-GREEN.md",
+            "red_proof_path": "evidence/B83/B83-RED.md",
+            "red_result": "FAILED (failures=3)",
+            "red_sha256": "0f036c8f614a22373d1eb506d8e18182bc8ece32ef2d223821c4d73fd74f2af0",
+            "result": "5 tests passed",
+            "sha256": "241b44145a7ab5b8b589dd0f1d275515372edb1cde2deb010eb5f3b30e13e0a0",
+            "test_command": "python3 tests/build-release-candidate-config.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B83d137dd9a3e43ae87c1",
+  "owner": "CI lead",
+  "reporter": "CI lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/B83/B83-GREEN.md",
+      "red_proof_path": "evidence/B83/B83-RED.md",
+      "red_result": "FAILED (failures=3)",
+      "red_sha256": "0f036c8f614a22373d1eb506d8e18182bc8ece32ef2d223821c4d73fd74f2af0",
+      "result": "5 tests passed",
+      "sha256": "241b44145a7ab5b8b589dd0f1d275515372edb1cde2deb010eb5f3b30e13e0a0",
+      "test_command": "python3 tests/build-release-candidate-config.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "QCONTROLINSTALL candidate build 2026-11-07",
+  "status": "fixed",
+  "title": "Builder переключает live current при сборке кандидата",
+  "updated_at": "2026-11-07T18:34:26+00:00"
+}

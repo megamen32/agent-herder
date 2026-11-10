@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:32:55+00:00",
+  "details": "В общем прогоне candidate Qoder не подтвердил active turn; необходимо проверить причину и повторить реальный сценарий.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:32:55+00:00",
+      "changes": {
+        "details": "В общем прогоне candidate Qoder не подтвердил active turn; необходимо проверить причину и повторить реальный сценарий.",
+        "source": "L33 integrated candidate run",
+        "status": "open",
+        "title": "Qoder: не подтверждён активный ход в общем CI"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L26",
+      "at": "2026-11-06T16:54:45+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/qoder-active-l33-green.json",
+            "red_proof_path": "evidence/qoder-active-l33-red.json",
+            "red_result": "\"status\": \"FAIL\"",
+            "red_sha256": "032872d46aaac33ba343b41736aad4e9456c709e6e7327095cf5f166af199db7",
+            "result": "\"status\": \"PASS\"",
+            "sha256": "7f31ffdbbe54de90fa58d2060bdd3d29db6426190ceb888ef32fa346df9ad083",
+            "test_command": "server-44: python3 scripts/native-qoder-herder.py --candidate-root /tmp/herder-l33-v5-d94b/candidate --candidate-sha256 d94b09a86b88264406b2cc65d9b4026bfdf2f64b636b93fddeab952451d73156 --qoder-package /tmp/l23-qoder-package --synthetic-auth-dir /tmp/herder-l33-v5-auth --receipt green.json"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbe987fe6a0704964ad7c",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/qoder-active-l33-green.json",
+      "red_proof_path": "evidence/qoder-active-l33-red.json",
+      "red_result": "\"status\": \"FAIL\"",
+      "red_sha256": "032872d46aaac33ba343b41736aad4e9456c709e6e7327095cf5f166af199db7",
+      "result": "\"status\": \"PASS\"",
+      "sha256": "7f31ffdbbe54de90fa58d2060bdd3d29db6426190ceb888ef32fa346df9ad083",
+      "test_command": "server-44: python3 scripts/native-qoder-herder.py --candidate-root /tmp/herder-l33-v5-d94b/candidate --candidate-sha256 d94b09a86b88264406b2cc65d9b4026bfdf2f64b636b93fddeab952451d73156 --qoder-package /tmp/l23-qoder-package --synthetic-auth-dir /tmp/herder-l33-v5-auth --receipt green.json"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 integrated candidate run",
+  "status": "fixed",
+  "title": "Qoder: не подтверждён активный ход в общем CI",
+  "updated_at": "2026-11-06T16:54:45+00:00"
+}

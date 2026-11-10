@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/tmp/herder-l37-v8-9GAYHp/collector-scripts/codex-unix-boundary.py", line 380, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/herder-l37-v8-9GAYHp/collector-scripts/codex-unix-boundary.py", line 358, in main
+    if client.returncode:raise RuntimeError('host adapter failed: '+client.stderr[-2000:])
+RuntimeError: host adapter failed: file:///tmp/herder-l37-v8-9GAYHp/collector-scripts/codex-unix-entrypoint-client.mjs:55
+  if(child && child.exitCode!==null)throw new Error(`entrypoint exited ${child.exitCode}: ${errors}`);
+                                          ^
+
+Error: entrypoint exited 1: (node:4008115) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: none
+[agent-herder] Fatal: Error: direct_peer_limit
+    at new FleetDirectTransport (file:///tmp/herder-l37-v8-9GAYHp/candidate/dist/mesh/fleet-direct-transport.js:279:19)
+    at main (file:///tmp/herder-l37-v8-9GAYHp/candidate/dist/index.js:1128:20)
+
+    at file:///tmp/herder-l37-v8-9GAYHp/collector-scripts/codex-unix-entrypoint-client.mjs:55:43
+
+Node.js v22.23.1
+

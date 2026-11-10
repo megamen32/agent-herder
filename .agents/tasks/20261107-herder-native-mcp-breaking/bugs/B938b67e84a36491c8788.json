@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T10:59:21+00:00",
+  "details": "CodexReader initialize сообщает пустые capabilities, затем вызывает thread/items/list; fixture с требованием experimentalApi воспроизводит source_unavailable на owner stdio read. Реальный Codex consumer ещё не проверен.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025COMPOSE",
+      "at": "2026-11-07T10:59:21+00:00",
+      "changes": {
+        "details": "CodexReader initialize сообщает пустые capabilities, затем вызывает thread/items/list; fixture с требованием experimentalApi воспроизводит source_unavailable на owner stdio read. Реальный Codex consumer ещё не проверен.",
+        "source": "launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio",
+        "status": "open",
+        "title": "Codex reader запрашивает experimental items без включения experimentalApi"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025COMPOSE",
+      "at": "2026-11-07T11:00:21+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025COMPOSE/reader-experimental-green.log",
+            "red_proof_path": "evidence/V025COMPOSE/reader-experimental-red.log",
+            "red_result": "test result: FAILED",
+            "red_sha256": "47b3f2dbccb5d571b5349ebaba4082c5587835d3f1b75cd36747342f3f8547ae",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "5aaab787acf6350cda196b90b4e59269224ed4193c016ac5b575d087b88add1e",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B938b67e84a36491c8788",
+  "owner": "V025COMPOSE",
+  "reporter": "V025COMPOSE",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025COMPOSE/reader-experimental-green.log",
+      "red_proof_path": "evidence/V025COMPOSE/reader-experimental-red.log",
+      "red_result": "test result: FAILED",
+      "red_sha256": "47b3f2dbccb5d571b5349ebaba4082c5587835d3f1b75cd36747342f3f8547ae",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "5aaab787acf6350cda196b90b4e59269224ed4193c016ac5b575d087b88add1e",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "launcher_scoped_profile trusted_owner_launcher_wires_create_and_scoped_read_over_stdio",
+  "status": "fixed",
+  "title": "Codex reader запрашивает experimental items без включения experimentalApi",
+  "updated_at": "2026-11-07T11:00:21+00:00"
+}

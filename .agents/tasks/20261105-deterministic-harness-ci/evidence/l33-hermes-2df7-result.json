@@ -1,0 +1,15 @@
+{
+  "version": "Hermes Agent v0.21.7 (2026.9.24) · upstream 71d34bad\nInstall directory: /home/roomhacker/.hermes/hermes-agent\nInstall method: git\nPython: 3.11.15\nOpenAI SDK: 2.24.0",
+  "exit_code": 1,
+  "stdout": "{\"scope\":\"isolated-herder-http-cli-adapter\",\"status\":\"partial\",\"results\":[{\"harness\":\"hermes\",\"sessions\":[\"hermes-job-9bec239d-7d11-4063-a3f4-4480358592f9\",\"hermes-job-e24388c2-117f-4f7f-b5de-d3b33dc4a27f\"],\"nativeIds\":[\"20261106_165358_dcf4e6\",\"20261106_165406_9ba215\"],\"nativeExports\":[{\"jobId\":\"hermes-job-9bec239d-7d11-4063-a3f4-4480358592f9\",\"nativeId\":\"20261106_165358_dcf4e6\",\"complete\":true,\"source\":{\"kind\":\"native-file\",\"location\":\"hermes:sqlite:20261106_165358_dcf4e6\",\"format\":\"jsonl\"},\"rows\":2,\"rowIds\":[1,2],\"roles\":[\"user\",\"assistant\"]},{\"jobId\":\"hermes-job-e24388c2-117f-4f7f-b5de-d3b33dc4a27f\",\"nativeId\":\"20261106_165406_9ba215\",\"complete\":true,\"source\":{\"kind\":\"native-file\",\"location\":\"hermes:sqlite:20261106_165406_9ba215\",\"format\":\"jsonl\"},\"rows\":2,\"rowIds\":[3,4],\"roles\":[\"user\",\"assistant\"]}],\"sessionsCreated\":true,\"answer\":true,\"sessionsListed\":true,\"projectListed\":true,\"transcriptComplete\":true,\"transcriptPages\":[2,2],\"transcriptErrors\":[],\"activeDiscovered\":true,\"heldRequestReached\":true,\"activeSnapshot\":[{\"id\":\"hermes-job-9bec239d-7d11-4063-a3f4-4480358592f9\",\"harness\":\"hermes\",\"title\":\"Herder CI hermes 0\",\"runtimeHostId\":\"server-44\",\"status\":\"running\",\"activity\":{\"state\":\"active\",\"observedAt\":\"2026-11-06T16:54:00.632Z\",\"evidence\":\"hermes-owned-cli-process\",\"expiresAt\":\"2026-11-06T16:54:10.632Z\"},\"workspaces\":[]}],\"fixtureRequests\":4,\"search\":{\"transport\":\"authenticated HTTP MCP /mcp\",\"queries\":[{\"query\":\"HERDER_NATIVE_USER_hermes_0\",\"expectedNativeId\":\"20261106_165358_dcf4e6\",\"isError\":false,\"results\":[],\"coverage\":{\"partial\":true,\"run\":null,\"proofComplete\":false}},{\"query\":\"HERDER_NATIVE_USER_hermes_1\",\"expectedNativeId\":\"20261106_165406_9ba215\",\"isError\":false,\"results\":[],\"coverage\":{\"partial\":true,\"run\":null,\"proofComplete\":false}}]}}]}\n",
+  "stderr": "(node:3831462) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:3831462) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+  "fixture": {
+    "requests": 4,
+    "paths": {
+      "/api/show": 4,
+      "/v1/chat/completions": 4
+    }
+  },
+  "herder_adapter_sha256": "3aa2febed9f9445df2720921abda4b53009c61bd434bf483b37993dd895f9666",
+  "isolation": "private network namespace, restricted filesystem, empty HOME"
+}

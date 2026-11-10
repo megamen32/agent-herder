@@ -1,0 +1,68 @@
+{
+  "id": "V025TASKDELIVERY",
+  "label": "Fenced delivery и durable MCP Task",
+  "description": "Связать scoped delivery, единый SQLite и стандартный tasks/get с точной identity и диагностикой.",
+  "acceptance": "Fake wire проверяет один send, no-send/UNKNOWN/подтверждение, durable terminal status, дедупликацию и независимый read; production consumer проверяется отдельно.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "deferred",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025GUARD1"
+  ],
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
+  "created_at": "2026-11-07T13:19:46+03:00",
+  "updated_at": "2026-11-07T15:54:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:19:46+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025TASKDELIVERY",
+        "label": "Fenced delivery и durable MCP Task",
+        "description": "Связать scoped delivery, единый SQLite и стандартный tasks/get с точной identity и диагностикой.",
+        "acceptance": "Fake wire проверяет один send, no-send/UNKNOWN/подтверждение, durable terminal status, дедупликацию и независимый read; production consumer проверяется отдельно.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "running",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025GUARD1"
+        ],
+        "note": "Локальный кандидат 12f0d3a9+6c746784 на 62721357. Fake wire: tasks/get terminal, отсутствие capability запрещает эффект, conflict/replay и messages; no-send/UNKNOWN/fixture-confirmed. Диагностика HumanStop и adapter отделена, bug B9ba6e19d662a439b9538 fixed с RED/GREEN. Тесты 29 scoped pass/1 ignored, launcher 8, gate/schema 4, target 1. Нужен независимый review; production ingress/native consumer не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:43:36+03:00",
+      "note": "Лист разделён по доказанному source результату и отсутствующему native completion; whole consumer не объявлен done.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимый review принимает durable source projection, но native terminal path отсутствует: admitted остаётся Working, confirmed fixture использует SQL. Tesla получил exact receipt reconciliation delta, Terra — trusted launcher integration.",
+        "note": "Astra/Nietzsche review 12f0d3a9+6c746784: source SUPPORTED, без независимого rerun 29 author tests. ACL/capability/no replay/terminal persistence reviewed; completion от реального read-only native reconcile ещё не подключён. Текущие rebased candidates ba190395/e0002b84; create aggregate a4d57e8d/9d00677a/d1f38cff требует отдельного delta-review."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:54:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "wait_reason": "Независимый review принимает durable source projection, но native terminal path отсутствует: admitted остаётся Working, confirmed fixture использует SQL. Tesla получил exact receipt reconciliation delta, Terra — trusted launcher integration."
+}

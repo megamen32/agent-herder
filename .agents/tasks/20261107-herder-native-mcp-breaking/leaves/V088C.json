@@ -1,0 +1,116 @@
+{
+  "id": "V088C",
+  "label": "Z.ai: Добавить Rust CDP transport и provider operations",
+  "description": "Реализовать Z.ai operations поверх прямого WebSocket CDP и явной node/instance/browserContext/target identity; bounded read receipt.",
+  "affected_files": [
+    "crates/herder/src/adapters/zai/"
+  ],
+  "depends_on": [
+    "V079C"
+  ],
+  "acceptance": "Компилируемый provider operation через direct CDP; identity validated; bounded transport errors/no retry; provider-specific read semantics.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "estimate": "15m",
+  "created_at": "2026-11-07T06:00:26+03:00",
+  "updated_at": "2026-11-07T08:39:26+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T06:00:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "V088C",
+        "label": "Z.ai: Добавить Rust CDP transport и provider operations",
+        "description": "Реализовать Z.ai operations поверх прямого WebSocket CDP и явной node/instance/browserContext/target identity; bounded read receipt.",
+        "affected_files": [
+          "crates/herder/src/adapters/zai/"
+        ],
+        "depends_on": [
+          "V079C"
+        ],
+        "acceptance": "Компилируемый provider operation через direct CDP; identity validated; bounded transport errors/no retry; provider-specific read semantics.",
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "estimate": "15m"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:03:44+03:00",
+      "note": "Implement Z.ai provider operations atop shared direct CDP transport after ChatGPT transport interface is stable; retain prior live proof.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:06:36+03:00",
+      "note": "No Z.ai-specific implementation or acceptance started yet; do not close/remove the dependency.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Blocked on shared direct CDP transport/API being implemented in V079C; Z.ai-specific code depends on that transport."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:14:15+03:00",
+      "note": "Z.ai browser proof V088B stands; Rust operation not yet implemented.",
+      "changes": {
+        "depends_on": [
+          "V079D"
+        ],
+        "wait_reason": "Z.ai adapter live Rust operations depend on shared direct CDP transport and its concrete Rust attach/read acceptance in V079D."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:38:07+03:00",
+      "note": "",
+      "changes": {
+        "status": "queued",
+        "depends_on": [
+          "V079C"
+        ],
+        "wait_reason": "",
+        "note": "Частный Z.ai Rust lane разрешён владельцем независимо от ChatGPT live stop; V079C общий direct CDP transport завершён. Сопоставленный путь proven live ниже."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:38:29+03:00",
+      "note": "Live Rust Z.ai create/input/send/reply/readback завершены. Осталось scoped commit, bug closure и доказательства записаны.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:39:26+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Live Z.ai Rust provider lane proven over direct browser-level CDP WebSocket through SSH to Mac mini Chrome. Rust enumerated and attached to the exact Z.ai target/context, account scope matched, then created its own new target after verifying exact origin/account scope; it observed the input event, clicked Send once, matched the expected assistant marker, read back the same chat via provider chat_id (2 messages), and closed only its created target. Failure B565f50393c844047b64e (new-target navigation race) fixed and recorded RED/GREEN evidence under plan evidence/. Commits: 8beedf96573cc6f32c3837130b748bdb34c03d0f and c22780f1315c4e75556d271964cf02007687ed13. cargo test --lib adapters::: 4 passed; isolated CDP harness: 11 passed; git diff --check passed. rustfmt unavailable in toolchain. ChatGPT live acceptance not performed; V079D remains blocked.",
+        "note": "Z.ai live create/send/readback complete; exactly one prompt, no retries. ChatGPT lane skipped under current stop/profile restriction; tracked separately as V079D blocked."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "wait_reason": "",
+  "note": "Z.ai live create/send/readback complete; exactly one prompt, no retries. ChatGPT lane skipped under current stop/profile restriction; tracked separately as V079D blocked.",
+  "result": "Live Z.ai Rust provider lane proven over direct browser-level CDP WebSocket through SSH to Mac mini Chrome. Rust enumerated and attached to the exact Z.ai target/context, account scope matched, then created its own new target after verifying exact origin/account scope; it observed the input event, clicked Send once, matched the expected assistant marker, read back the same chat via provider chat_id (2 messages), and closed only its created target. Failure B565f50393c844047b64e (new-target navigation race) fixed and recorded RED/GREEN evidence under plan evidence/. Commits: 8beedf96573cc6f32c3837130b748bdb34c03d0f and c22780f1315c4e75556d271964cf02007687ed13. cargo test --lib adapters::: 4 passed; isolated CDP harness: 11 passed; git diff --check passed. rustfmt unavailable in toolchain. ChatGPT live acceptance not performed; V079D remains blocked."
+}

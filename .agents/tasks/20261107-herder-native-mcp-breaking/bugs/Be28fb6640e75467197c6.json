@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T16:25:10+00:00",
+  "details": "V065AHAPCIRUN manifest 076bacd8: созданный isolated instance /api/config вернул array v2; runner protocol v22 POST /session получил 405, Task create outcome_unknown retry forbidden, exact task create-operation:1d15d2739e1196ebb5b03484cb05a321, model_requests=0, retained database no session. tests/native/opencode_receipt.py определяет v22 при /api/config 404 или 200 null, иначе v2 с /api/session. Реальный outcome сохранять UNKNOWN, без повторения. Необходимо выбирать native family при trusted startup до мутации и закреплять без fallback; source tests обеих веток.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T16:25:10+00:00",
+      "changes": {
+        "details": "V065AHAPCIRUN manifest 076bacd8: созданный isolated instance /api/config вернул array v2; runner protocol v22 POST /session получил 405, Task create outcome_unknown retry forbidden, exact task create-operation:1d15d2739e1196ebb5b03484cb05a321, model_requests=0, retained database no session. tests/native/opencode_receipt.py определяет v22 при /api/config 404 или 200 null, иначе v2 с /api/session. Реальный outcome сохранять UNKNOWN, без повторения. Необходимо выбирать native family при trusted startup до мутации и закреплять без fallback; source tests обеих веток.",
+        "source": "evidence/V065AHAPCIRUN-20261107.json; tests/native/opencode_receipt.py:163; src/ahap-opencode-runner.ts",
+        "status": "open",
+        "title": "OpenCode runner жёстко выбирает v22 при v2 native API"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T16:40:53+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QOCJOIN/artifact-family-green.log",
+            "red_proof_path": "evidence/QOCJOIN/artifact-family-red.log",
+            "red_result": "AssertionError",
+            "red_sha256": "4ed3f59beec658df70e965e999f85bf9cb2ad9d17df7d60319a5e0ab5134b7aa",
+            "result": "v2 PASS",
+            "sha256": "0ef520e52d790874ee16b6156a86f2513b4ed8effab69efc3e835596b3f92011",
+            "test_command": "python3 evidence/QOCJOIN/artifact-family-proof.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Be28fb6640e75467197c6",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QOCJOIN/artifact-family-green.log",
+      "red_proof_path": "evidence/QOCJOIN/artifact-family-red.log",
+      "red_result": "AssertionError",
+      "red_sha256": "4ed3f59beec658df70e965e999f85bf9cb2ad9d17df7d60319a5e0ab5134b7aa",
+      "result": "v2 PASS",
+      "sha256": "0ef520e52d790874ee16b6156a86f2513b4ed8effab69efc3e835596b3f92011",
+      "test_command": "python3 evidence/QOCJOIN/artifact-family-proof.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/V065AHAPCIRUN-20261107.json; tests/native/opencode_receipt.py:163; src/ahap-opencode-runner.ts",
+  "status": "fixed",
+  "title": "OpenCode runner жёстко выбирает v22 при v2 native API",
+  "updated_at": "2026-11-07T16:40:53+00:00"
+}

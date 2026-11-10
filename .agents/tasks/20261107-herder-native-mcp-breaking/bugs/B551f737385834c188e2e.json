@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T02:58:26+00:00",
+  "details": "The first Cargo compile after implementing ownership/resource.rs failed with E0061 because the create branch called ensure_unique_external_identity with two arguments while its authority-aware definition requires three. Red proof saved at runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-red.txt. Fix is to pass the current StorageAuthority, then rerun the same command.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:58:26+00:00",
+      "changes": {
+        "details": "The first Cargo compile after implementing ownership/resource.rs failed with E0061 because the create branch called ensure_unique_external_identity with two arguments while its authority-aware definition requires three. Red proof saved at runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-red.txt. Fix is to pass the current StorageAuthority, then rerun the same command.",
+        "source": "R002 cargo test --manifest-path crates/herder/Cargo.toml ownership::",
+        "status": "open",
+        "title": "R002 resource registry omits authority argument during duplicate scan"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T03:00:49+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-green.txt",
+            "red_proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-red.txt",
+            "red_result": "error[E0061]: this function takes 3 arguments but 2 arguments were supplied",
+            "red_sha256": "e1ba05be06ee1d22e1132aca726d90f56648877dda777b480fe0054143327c46",
+            "result": "9 passed",
+            "sha256": "9cee673de69c9f05ede44cff2404caf833e222fbae4595e1a2e63af3eac281c2",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml ownership::"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B551f737385834c188e2e",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-green.txt",
+      "red_proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/R002/compile-red.txt",
+      "red_result": "error[E0061]: this function takes 3 arguments but 2 arguments were supplied",
+      "red_sha256": "e1ba05be06ee1d22e1132aca726d90f56648877dda777b480fe0054143327c46",
+      "result": "9 passed",
+      "sha256": "9cee673de69c9f05ede44cff2404caf833e222fbae4595e1a2e63af3eac281c2",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml ownership::"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "R002 cargo test --manifest-path crates/herder/Cargo.toml ownership::",
+  "status": "fixed",
+  "title": "R002 resource registry omits authority argument during duplicate scan",
+  "updated_at": "2026-11-07T03:00:49+00:00"
+}

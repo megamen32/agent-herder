@@ -1,0 +1,36 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-session-info/agent-herder
+
+x---------------------------------------------------------------------------
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 75 skipped (76)
+   Start at  18:19:07
+   Duration  4.12s (transform 2.49s, setup 70ms, import 3.77s, tests 40ms, environment 0ms)
+
+(node:2947272) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/codex-app-server.test.ts > Codex app-server adapter > includes loaded zero-turn threads omitted by the full native list
+AssertionError: expected [ 'persisted' ] to deeply equal [ 'empty-thread', 'persisted' ]
+
+- Expected
++ Received
+
+  [
+-   "empty-thread",
+    "persisted",
+  ]
+
+ ❯ tests/codex-app-server.test.ts:125:60
+    123|     try {
+    124|       const sessions = await adapter.listSessions();
+    125|       expect(sessions.map((session) => session.id).sort()).toEqual(["e…
+       |                                                            ^
+    126|       expect(calls.rpc).toContain("thread/loaded/list");
+    127|     } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

@@ -1,0 +1,98 @@
+{
+  "id": "L62",
+  "label": "Раскатка Agent Herder: server-44",
+  "description": "Установить опубликованный d2df6186 или актуальный совместимый main на server-44, сохранить чужие сессии и выполнить consumer readback.",
+  "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T01:28:32+03:00",
+  "updated_at": "2026-11-07T21:30:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:28:32+03:00",
+      "note": "",
+      "changes": {
+        "id": "L62",
+        "label": "Раскатка Agent Herder: server-44",
+        "description": "Установить опубликованный d2df6186 или актуальный совместимый main на server-44, сохранить чужие сессии и выполнить consumer readback.",
+        "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "Luna",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:29:48+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b2fa-b45d-7c92-b509-88ee33955ed0",
+        "note": "Исполнитель создан, результат развёртывания ещё не подтверждён."
+      },
+      "session": "01a1b2fa-b45d-7c92-b509-88ee33955ed0",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:32:32+03:00",
+      "note": "Проверяю текущий main, установленное состояние server-44, доступную release authority и сохранность runtime до переключения.",
+      "changes": {
+        "status": "running",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:56:25+03:00",
+      "note": "Target rollout done; consumer acceptance blocked by verified source WIP collision.",
+      "changes": {
+        "status": "blocked",
+        "result": "server-44 подтверждён напрямую; штатный rollout принят на origin/main d2df61867871e0d8761f49f632a538fb0f972a67. Источник node-config/current и процесс PID 1970728 совпадают с d2df; unit active, sessions/launch-policy/MCP readiness HTTP 200. Предыдущий релиз 89815744… сохранён в releases/, 508528a6… сохранён в rollback/. Lease fence 33 прошёл check, освобождён; финальный status lease=null, deploymentInProgress=false, nextFence=34. Реальный локальный MCP session_info вернул нужную сессию server-44/Codex без ошибки и lastMessage, но не latestUser/latestAssistant/recentMessages и не historyComplete/partial; критерий приёмки НЕ выполнен. Evidence: evidence/l62-server44-rollout-session-info.json. Зафиксирован баг B84321b19e22d43a4a074.",
+        "blocker": "Не выполнен обязательный installed-consumer контракт session_info: опубликованный runtime выдаёт только lastMessage. Исправление source API пересекается с чужим незавершённым WIP.",
+        "blocker_details": {
+          "foreign_worktree": "/home/roomhacker/agents-projects/agent-herder-worktrees/session-lookup-transcript",
+          "branch": "codex/session-lookup-transcript",
+          "conflicts": "src/mcp/session-tools.ts modified; src/mcp-tools/handlers.ts unresolved UU",
+          "next_action": "После освобождения точных source paths выполнить RED→fix→GREEN, опубликовать совместимый main и повторить только server-44 rollout/consumer readback с новым lease."
+        }
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:30:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "harness": "codex",
+  "result": "server-44 подтверждён напрямую; штатный rollout принят на origin/main d2df61867871e0d8761f49f632a538fb0f972a67. Источник node-config/current и процесс PID 1970728 совпадают с d2df; unit active, sessions/launch-policy/MCP readiness HTTP 200. Предыдущий релиз 89815744… сохранён в releases/, 508528a6… сохранён в rollback/. Lease fence 33 прошёл check, освобождён; финальный status lease=null, deploymentInProgress=false, nextFence=34. Реальный локальный MCP session_info вернул нужную сессию server-44/Codex без ошибки и lastMessage, но не latestUser/latestAssistant/recentMessages и не historyComplete/partial; критерий приёмки НЕ выполнен. Evidence: evidence/l62-server44-rollout-session-info.json. Зафиксирован баг B84321b19e22d43a4a074.",
+  "blocker": "Не выполнен обязательный installed-consumer контракт session_info: опубликованный runtime выдаёт только lastMessage. Исправление source API пересекается с чужим незавершённым WIP.",
+  "blocker_details": {
+    "foreign_worktree": "/home/roomhacker/agents-projects/agent-herder-worktrees/session-lookup-transcript",
+    "branch": "codex/session-lookup-transcript",
+    "conflicts": "src/mcp/session-tools.ts modified; src/mcp-tools/handlers.ts unresolved UU",
+    "next_action": "После освобождения точных source paths выполнить RED→fix→GREEN, опубликовать совместимый main и повторить только server-44 rollout/consumer readback с новым lease."
+  }
+}

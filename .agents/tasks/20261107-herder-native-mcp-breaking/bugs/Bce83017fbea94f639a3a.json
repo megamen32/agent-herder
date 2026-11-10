@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T02:01:51+00:00",
+  "details": "The new claim module's test imports ResourceMarker from crate::domain::resource, but the type is defined in crate::ownership::manifest. Reproduced by compiling .tmp/v037a/harness.rs; compile fails with E0432. RED evidence: /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/.tmp/v037a/compile-red.txt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:01:51+00:00",
+      "changes": {
+        "details": "The new claim module's test imports ResourceMarker from crate::domain::resource, but the type is defined in crate::ownership::manifest. Reproduced by compiling .tmp/v037a/harness.rs; compile fails with E0432. RED evidence: /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/.tmp/v037a/compile-red.txt.",
+        "source": "V037A direct rustc test harness compile",
+        "status": "open",
+        "title": "V037A claim test imports ResourceMarker from the wrong module"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:05:00+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/V037A/compile-green.txt",
+            "red_proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/V037A/compile-red.txt",
+            "red_result": "error[E0432]: unresolved import",
+            "red_sha256": "36d1f137448cc1679c3289c8e53886930fd8f5dba10060290ddf9aed485f6c7b",
+            "result": "test result: ok. 5 passed; 0 failed",
+            "sha256": "008c786190411519cc66087ee45e80c9c5d949a0c3a48017135a0bf1aee2dd4c",
+            "test_command": "rustc --edition=2024 --test .tmp/v037a/harness.rs -L dependency=crates/herder/target/debug/deps --extern herder=<latest rlib> --extern serde=<latest rlib> --extern serde_json=<latest rlib> -o .tmp/v037a/claim-tests && .tmp/v037a/claim-tests"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bce83017fbea94f639a3a",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/V037A/compile-green.txt",
+      "red_proof_path": "runs/01a1b399-4210-7471-8286-93750dff10b7/V037A/compile-red.txt",
+      "red_result": "error[E0432]: unresolved import",
+      "red_sha256": "36d1f137448cc1679c3289c8e53886930fd8f5dba10060290ddf9aed485f6c7b",
+      "result": "test result: ok. 5 passed; 0 failed",
+      "sha256": "008c786190411519cc66087ee45e80c9c5d949a0c3a48017135a0bf1aee2dd4c",
+      "test_command": "rustc --edition=2024 --test .tmp/v037a/harness.rs -L dependency=crates/herder/target/debug/deps --extern herder=<latest rlib> --extern serde=<latest rlib> --extern serde_json=<latest rlib> -o .tmp/v037a/claim-tests && .tmp/v037a/claim-tests"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "V037A direct rustc test harness compile",
+  "status": "fixed",
+  "title": "V037A claim test imports ResourceMarker from the wrong module",
+  "updated_at": "2026-11-07T02:05:00+00:00"
+}

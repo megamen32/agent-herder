@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T08:14:03+00:00",
+  "details": "На Mac Mini навигационный init сбрасывал привязку, новая история приходит как sectioned_conversation, первое поле ввода скрыто. При включённом polling фоновые inventory и stale refresh могли инициировать прямые запросы. Изменения в работе; конечный readback и выпуск не подтверждены.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T08:14:03+00:00",
+      "changes": {
+        "details": "На Mac Mini навигационный init сбрасывал привязку, новая история приходит как sectioned_conversation, первое поле ввода скрыто. При включённом polling фоновые inventory и stale refresh могли инициировать прямые запросы. Изменения в работе; конечный readback и выпуск не подтверждены.",
+        "source": "Реальная тестовая вкладка Mac Mini и RED-тесты chatgpt-background-passive",
+        "status": "open",
+        "title": "ChatGPT: пассивный автопилот не видит историю и может напрямую обновлять данные"
+      }
+    }
+  ],
+  "id": "B96938b7bfa4a48fd880d",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "Реальная тестовая вкладка Mac Mini и RED-тесты chatgpt-background-passive",
+  "status": "open",
+  "title": "ChatGPT: пассивный автопилот не видит историю и может напрямую обновлять данные",
+  "updated_at": "2026-11-07T08:14:03+00:00"
+}

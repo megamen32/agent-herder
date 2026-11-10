@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-06T19:56:34+00:00",
+  "details": "Первичный отказ v11 evidence/l43-v11-unified.err: entrypoint fixture задавал AGENT_HERDER_FLEET_PEERS=[]; адресно заменено на единственный self-peer loopback. RED/GREEN evidence/l43-entrypoint-peer-{red,green}.log проверяют фактически переданное Popen окружение. Реальный повтор ещё не выполнен; bug остаётся open. Текущий зафиксированный candidate v11 не содержит этого последующего изменения.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T19:56:34+00:00",
+      "changes": {
+        "details": "Candidate v11 SHA 9e8060ccc9401b4d75e05df0e6df7050bf2f4369e1183a5afaf2ae5f86d9b8ae: настоящий entrypoint завершился до проверки с direct_peer_limit, primary stderr evidence/l43-v11-unified.err; library-path Codex/OpenCode отдельно полный. Hermes self-peer исправление здесь не применяется автоматически. Требуется адресный RED/GREEN entrypoint fixture и повтор; общий gate FAIL.",
+        "source": "v11 unified candidate real entrypoint server-44",
+        "status": "open",
+        "title": "Изолированный Herder entrypoint не стартует: direct_peer_limit"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L43",
+      "at": "2026-11-06T19:57:55+00:00",
+      "changes": {
+        "details": "Первичный отказ v11 evidence/l43-v11-unified.err: entrypoint fixture задавал AGENT_HERDER_FLEET_PEERS=[]; адресно заменено на единственный self-peer loopback. RED/GREEN evidence/l43-entrypoint-peer-{red,green}.log проверяют фактически переданное Popen окружение. Реальный повтор ещё не выполнен; bug остаётся open. Текущий зафиксированный candidate v11 не содержит этого последующего изменения."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:16:45+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-entrypoint-port-green-verified.log",
+            "red_proof_path": "evidence/l43-entrypoint-peer-red.log",
+            "red_result": "FAILED",
+            "red_sha256": "8cdf1e944696d18b06ce18e20d78d865f28789db826156abb365327d1d3e88f3",
+            "result": "PASS",
+            "sha256": "6d91187c55501edc5586aec457750bce79c3991feb57e3f9d4b0593dd5e7a8ac",
+            "test_command": "python3 tests/native-hermes-entrypoint-peers.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B4555bce1954e4b6dbf70",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-entrypoint-port-green-verified.log",
+      "red_proof_path": "evidence/l43-entrypoint-peer-red.log",
+      "red_result": "FAILED",
+      "red_sha256": "8cdf1e944696d18b06ce18e20d78d865f28789db826156abb365327d1d3e88f3",
+      "result": "PASS",
+      "sha256": "6d91187c55501edc5586aec457750bce79c3991feb57e3f9d4b0593dd5e7a8ac",
+      "test_command": "python3 tests/native-hermes-entrypoint-peers.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "v11 unified candidate real entrypoint server-44",
+  "status": "fixed",
+  "title": "Изолированный Herder entrypoint не стартует: direct_peer_limit",
+  "updated_at": "2026-11-06T20:16:45+00:00"
+}

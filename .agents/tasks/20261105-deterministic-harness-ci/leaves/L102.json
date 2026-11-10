@@ -1,0 +1,80 @@
+{
+  "id": "L102",
+  "label": "server-44: transcript тестовой Codex-сессии через установленный Herder",
+  "description": "После появления безопасной собственной тестовой сессии в действующем app-server прочитать точный полный transcript через работающий PID; не использовать чужие сессии.",
+  "acceptance": "Точный ID и все страницы через установленный PID либо конкретный выявленный дефект; отправки с неизвестным исходом не повторять.",
+  "status": "deferred",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:08:12+03:00",
+  "updated_at": "2026-11-07T21:29:58+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:08:12+03:00",
+      "note": "",
+      "changes": {
+        "id": "L102",
+        "label": "server-44: transcript тестовой Codex-сессии через установленный Herder",
+        "description": "После появления безопасной собственной тестовой сессии в действующем app-server прочитать точный полный transcript через работающий PID; не использовать чужие сессии.",
+        "acceptance": "Точный ID и все страницы через установленный PID либо конкретный выявленный дефект; отправки с неизвестным исходом не повторять.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:09:41+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Проверяю возможность пустой тестовой сессии штатным thread/start без turn/start и модельного вызова; если исход неизвестен, не повторяю."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:11:41+03:00",
+      "note": "server-44 установленный Herder PID 353306 создал собственную пустую Codex-сессию 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b без turn/start; exact session GET и пустой transcript complete=true вернули 200, PID тот же. Список по точному cwd total=0; это ещё не доказывает дефект, пока thread не получил первый turn. Многостраничный transcript и отправка остаются непроверенными. Receipt ~/.local/share/agent-herder-ci/installed-probe-20261107-1508/.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:43:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Тестовая пустая сессия создана, но установленный app-server имеет process-wide provider; безопасный выбор локальной тестовой модели в существующем процессе не подтверждён. Запрещён отдельный test route; CIINSTALLED описывает product gap.",
+        "note": "Ожидать разрешённую штатную поддержку выбора native instance; не создавать вторую сессию и не отправлять на платный provider."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:29:58+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "blocker": "Тестовая пустая сессия создана, но установленный app-server имеет process-wide provider; безопасный выбор локальной тестовой модели в существующем процессе не подтверждён. Запрещён отдельный test route; CIINSTALLED описывает product gap.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

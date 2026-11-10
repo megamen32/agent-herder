@@ -1,0 +1,67 @@
+{
+  "id": "V025CREATETASK",
+  "label": "Create с prompt и составной MCP Task",
+  "description": "Создать scoped session, отдельно доставить prompt и сохранить составной Task в том же SQLite с честными частичными исходами и idempotency.",
+  "acceptance": "Fake wire проверяет tools/call→tasks/get→messages, exact policy grants, сохранение session при no-send, UNKNOWN/no replay, fixture-confirmed и conflict; production consumer проверяется отдельно.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025GUARD1"
+  ],
+  "note": "Все конкретные REVISE source aggregate закрыты дельтами. Это завершение source acceptance, не real native completion.",
+  "created_at": "2026-11-07T13:40:26+03:00",
+  "updated_at": "2026-11-07T14:08:43+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:40:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025CREATETASK",
+        "label": "Create с prompt и составной MCP Task",
+        "description": "Создать scoped session, отдельно доставить prompt и сохранить составной Task в том же SQLite с честными частичными исходами и idempotency.",
+        "acceptance": "Fake wire проверяет tools/call→tasks/get→messages, exact policy grants, сохранение session при no-send, UNKNOWN/no replay, fixture-confirmed и conflict; production consumer проверяется отдельно.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "running",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025GUARD1"
+        ],
+        "note": "Локальные кандидаты 13e1df8b/f0d374e5/3beaad62/8fab1a69/b6afd00b поверх 9d670bd5: fake wire create/delivery/tasks/get/messages, no-grant сохраняет confirmed session и prompt effect none, policy reload/send once, UNKNOWN/no replay, receipt recovery и payload conflict. Изолированные v3/v4, 30 scoped PASS + 1 ignored; launcher 10, schema/gate 4, target 1. Fixture подтверждает state SQL, не native completion; требуется независимый review, production ingress/policy и реальный bounded native snapshot/consumer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:51:03+03:00",
+      "note": "Review verdict сохранён; не принимать create aggregate до delta-review двух конкретных дефектов.",
+      "changes": {
+        "note": "Independent Nietzsche d1f38cff REVISE: 1) completed aggregate cached child result возвращается по instance Write без current exact Session Read, после revoke; 2) repeat rejected prompt теряет доказанные adapter_refused/human_stop_active effect=none и превращает их в UNKNOWN. Native replay не найден. Tesla получил bounded fixes и regression scenarios. Owner-only policy без новой grants таблицы поддержана при exact-session membership verifier и current policy, не lineage alone. Source/fake proof не native consumer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:08:43+03:00",
+      "note": "Закрыт доказанный source результат; production gate остаётся в канонических зависимостях.",
+      "changes": {
+        "status": "done",
+        "result": "Source create aggregate d1f38cff исправлен ccfd813b+ddc17d40 и принят independent Nietzsche. Exact Session Read требуется даже для cached terminal child; raw/projected no-send сохраняется на repeat; global hold не мешает read-only recovery, create только Missing, регрессия create1/submit0. Авторские fake-wire/targeted GREEN сохранены; independent reviewer проверял immutable source, без повторного запуска изменённого WIP. Live consumer и direct Task dynamic grants/reconcile отдельно V025TASKRECON/V025PUBLIC.",
+        "note": "Все конкретные REVISE source aggregate закрыты дельтами. Это завершение source acceptance, не real native completion."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Source create aggregate d1f38cff исправлен ccfd813b+ddc17d40 и принят independent Nietzsche. Exact Session Read требуется даже для cached terminal child; raw/projected no-send сохраняется на repeat; global hold не мешает read-only recovery, create только Missing, регрессия create1/submit0. Авторские fake-wire/targeted GREEN сохранены; independent reviewer проверял immutable source, без повторного запуска изменённого WIP. Live consumer и direct Task dynamic grants/reconcile отдельно V025TASKRECON/V025PUBLIC."
+}

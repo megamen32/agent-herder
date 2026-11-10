@@ -1,0 +1,39 @@
+
+======================================================================
+ERROR: test_owner_collector_preflight_prevents_any_mutation_on_both_entrypoints (__main__.RolloutNodeInstallTests) (entry='node_side')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/rollout-node-install.test.py", line 316, in test_owner_collector_preflight_prevents_any_mutation_on_both_entrypoints
+    self.assertNotEqual(candidate.node_side(args), 0)
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/deploy/fleet/rollout-candidate.py", line 556, in node_side
+    result = _leased_node_side_owner(arguments, gate)
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/deploy/fleet/rollout-candidate.py", line 463, in _leased_node_side_owner
+    unpack_release(Path(arguments.archive), release)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/usr/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+RuntimeError: unexpected unpack
+
+======================================================================
+FAIL: test_owner_collector_preflight_prevents_any_mutation_on_both_entrypoints (__main__.RolloutNodeInstallTests) (entry='direct')
+----------------------------------------------------------------------
+RuntimeError: unexpected unpack
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/rollout-node-install.test.py", line 313, in test_owner_collector_preflight_prevents_any_mutation_on_both_entrypoints
+    with self.assertRaisesRegex(RuntimeError, "collector.*not implemented"):
+AssertionError: "collector.*not implemented" does not match "unexpected unpack"
+
+----------------------------------------------------------------------
+Ran 1 test in 0.014s
+
+FAILED (failures=1, errors=1)
+the config of the node is saved: /tmp/tmpb9xrnl8x/node-config.json.bak-20261106T145924Z
+the native values of the node are written into /tmp/tmpb9xrnl8x/node-config.json
+the config of the node is saved: /tmp/tmpqvtrbevn/node-config.json.bak-20261106T145924Z
+the native values of the node are written into /tmp/tmpqvtrbevn/node-config.json

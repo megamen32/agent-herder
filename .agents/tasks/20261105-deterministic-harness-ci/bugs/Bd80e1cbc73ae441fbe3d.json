@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T12:38:35+00:00",
+  "details": "Two full builds of 362995b7 produced 14/15: the build did not write into the store = false. Investigating exact changed paths before deployment; no gate bypass.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-07T12:38:35+00:00",
+      "changes": {
+        "details": "Two full builds of 362995b7 produced 14/15: the build did not write into the store = false. Investigating exact changed paths before deployment; no gate bypass.",
+        "source": "deploy/fleet/build-release-candidate.py",
+        "status": "open",
+        "title": "Release candidate build changes shared mutable store cache"
+      }
+    }
+  ],
+  "id": "Bd80e1cbc73ae441fbe3d",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "deploy/fleet/build-release-candidate.py",
+  "status": "open",
+  "title": "Release candidate build changes shared mutable store cache",
+  "updated_at": "2026-11-07T12:38:35+00:00"
+}

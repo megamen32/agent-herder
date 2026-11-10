@@ -1,0 +1,72 @@
+{
+  "id": "CUTCLIENTS",
+  "kind": "task",
+  "parent": "FLEETCUTOVER",
+  "label": "Перевести MCP clients и убрать legacy hooks",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+  "acceptance": "Codex/OpenCode/Claude/Hermes используют общий Rust GPTAdmin endpoint; oldHerder hooks отключены; LHC/чужие config entries сохранены; transport/toolsread verified.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T20:12:39+03:00",
+  "updated_at": "2026-11-08T20:20:15+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:12:39+03:00",
+      "note": "",
+      "changes": {
+        "id": "CUTCLIENTS",
+        "kind": "task",
+        "parent": "FLEETCUTOVER",
+        "label": "Перевести MCP clients и убрать legacy hooks",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "01a1bbb7-ea1f-7781-9297-631744b6b1f0",
+        "acceptance": "Codex/OpenCode/Claude/Hermes используют общий Rust GPTAdmin endpoint; oldHerder hooks отключены; LHC/чужие config entries сохранены; transport/toolsread verified.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:17:57+03:00",
+      "note": "",
+      "changes": {
+        "result": "Codex/OpenCode/Claude/Hermes authenticated initialize/toolslist15PASS; source+installed MCPmanifests use protected hostregistration.32oldHerder hookcommands removed, LHC/AgentMemory preserved; configsCASbackupverified.2targetedtestsPASS; finalneighborregression underway.",
+        "note": "Результат сохранён server100-cutover-complete.md; последний regression delta без новых runtime операций."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:20:15+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "100Codex/OpenCode/Claude/Hermes newsharedendpoint authenticated15toolsPASS;32oldhooksremoved preservingLHC/AgentMemory. Source/installed manifestsCASverified.4suites18testsPASS inclpackage. server100-cutover-complete.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "100Codex/OpenCode/Claude/Hermes newsharedendpoint authenticated15toolsPASS;32oldhooksremoved preservingLHC/AgentMemory. Source/installed manifestsCASverified.4suites18testsPASS inclpackage. server100-cutover-complete.md.",
+  "note": "Результат сохранён server100-cutover-complete.md; последний regression delta без новых runtime операций."
+}

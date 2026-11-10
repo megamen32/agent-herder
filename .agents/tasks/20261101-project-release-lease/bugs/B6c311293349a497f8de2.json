@@ -1,0 +1,45 @@
+{
+  "blocker": "Первичные stderr/crash logs для шести auto-restart отсутствуют; сейчас сбой не воспроизводится.",
+  "created_at": "2026-11-04T19:27:18+00:00",
+  "details": "2026-11-07 live direct installed MCP readback succeeded for exact tools/call project_release_lease(status): correct canonical project, active lease fence 36, owner native session 01a1ac52-d25c-7050-a65d-3fca32642c26, deploymentInProgress=false. MCP initialize/tools/list also succeeds, but the release lease is intentionally excluded from discovery by src/mcp/catalog-policy.ts and remains callable by exact name per src/mcp/project-release-tools.ts. GPTAdmin catalog search reports local AgentHerder child schema reader failed; prior native session_info calls also returned internal -32603. Token fingerprint comparison matched the protected secret, so bearer mismatch is rejected. No lease-transaction source defect reproduced and acquire/release/restart were not run while a live owner holds the lease. Existing 3 real lease cycles and 28 focused tests were not repeated. Current runtime PID 2943608, NRestarts=0; checkout foreign WIP preserved.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker / 01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "at": "2026-11-04T19:27:18+00:00",
+      "changes": {
+        "details": "В существующей записи L06 зафиксирован internal -32603 на project_release_lease(status), coordination_note и session_info при отсутствии listener у прежнего MCP процесса. На текущем активном runtime ошибка не воспроизводится: status/acquire/check/release/status проходят; требуется определить исходную причину по первичным логам или при следующем отказе. Источник ошибки пока не отнесён к project_release_lease transaction.",
+        "source": "Историческое наблюдение и план L06; повторная реальная проверка project_release_lease успешна.",
+        "status": "open",
+        "title": "Повторяющийся internal -32603 при вызовах Agent Herder API"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "roomhacker / 01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "at": "2026-11-04T19:55:09+00:00",
+      "changes": {
+        "blocker": "Первичные stderr/crash logs для шести auto-restart отсутствуют; сейчас сбой не воспроизводится.",
+        "details": "Класс причины отказа API: MCP service/listener был недоступен; одновременно ошибки фиксировались на других Herder tools. Сейчас systemd --user показывает Active и listener работает; три реальные lease последовательности и focused tests проходят. Lease transaction дефект и причина шести автоматических перезапусков не установлены: журнал unit пуст, OOM/coredump evidence отсутствует.",
+        "status": "blocked"
+      },
+      "reason": "Текущий API восстановлен и ошибка не воспроизводится; нужны первичные stderr/crash logs при следующем отказе, чтобы подтвердить trigger повторных перезапусков."
+    },
+    {
+      "action": "update",
+      "actor": "roomhacker / 01a1a7ec-0e7e-7a41-b9d2-aee3a0f0f8f4",
+      "at": "2026-11-07T01:47:06+00:00",
+      "changes": {
+        "details": "2026-11-07 live direct installed MCP readback succeeded for exact tools/call project_release_lease(status): correct canonical project, active lease fence 36, owner native session 01a1ac52-d25c-7050-a65d-3fca32642c26, deploymentInProgress=false. MCP initialize/tools/list also succeeds, but the release lease is intentionally excluded from discovery by src/mcp/catalog-policy.ts and remains callable by exact name per src/mcp/project-release-tools.ts. GPTAdmin catalog search reports local AgentHerder child schema reader failed; prior native session_info calls also returned internal -32603. Token fingerprint comparison matched the protected secret, so bearer mismatch is rejected. No lease-transaction source defect reproduced and acquire/release/restart were not run while a live owner holds the lease. Existing 3 real lease cycles and 28 focused tests were not repeated. Current runtime PID 2943608, NRestarts=0; checkout foreign WIP preserved."
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B6c311293349a497f8de2",
+  "owner": "roomhacker / 01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+  "reporter": "roomhacker / 01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+  "source": "Историческое наблюдение и план L06; повторная реальная проверка project_release_lease успешна.",
+  "status": "blocked",
+  "title": "Повторяющийся internal -32603 при вызовах Agent Herder API",
+  "updated_at": "2026-11-07T01:47:06+00:00"
+}

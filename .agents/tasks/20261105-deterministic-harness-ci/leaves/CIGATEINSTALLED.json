@@ -1,0 +1,88 @@
+{
+  "id": "CIGATEINSTALLED",
+  "label": "Включить реальный installed consumer в приёмку релиза",
+  "parent": "CIRELEASE",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "depends_on": [
+    "CIGATE",
+    "CIINSTALLED"
+  ],
+  "description": "Вход verified existing installed route и готовый suite. Конкретный installed instance/revision+owned test-session IDs, ordinary consumer, no replay. Если CIINSTALLED нашёл gap, дополнить dependencies на fix до запуска.",
+  "acceptance": "Полный выпуск пяти INCOMPLETE/nonzero при отсутствующем ChatGPT/Z.ai installed receipt, несовместимой runtime identity или candidate вместо installed. Проверить ordinary consumer всех обязательных lanes из FIVE-ADAPTER-ACCEPTANCE.json; create/deliver/read/full transcript/isolation/restart/UNKNOWN/HumanStop имеют применимые receipts. CLI-only этап может быть принят отдельно с точным scope.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:17:14+03:00",
+  "updated_at": "2026-11-07T21:29:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:17:14+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIGATEINSTALLED",
+        "label": "Включить реальный installed consumer в приёмку релиза",
+        "parent": "CIRELEASE",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "depends_on": [
+          "CIGATE",
+          "CIINSTALLED"
+        ],
+        "description": "Вход verified existing installed route и готовый suite. Конкретный installed instance/revision+owned test-session IDs, ordinary consumer, no replay. Если CIINSTALLED нашёл gap, дополнить dependencies на fix до запуска.",
+        "acceptance": "Обычный путь действующего runtime даёт бизнес-ответ/транскрипт, receipt связывает revision и IDs; отсутствие любого mandatory proof блокирует принятие релиза.",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:20:19+03:00",
+      "note": "После критики уточнён состав полного gate; три CLI не закрывают выпуск пяти.",
+      "changes": {
+        "acceptance": "Полный выпуск пяти INCOMPLETE/nonzero при отсутствующем ChatGPT/Z.ai installed receipt, несовместимой runtime identity или candidate вместо installed. Проверить ordinary consumer всех обязательных lanes из FIVE-ADAPTER-ACCEPTANCE.json; create/deliver/read/full transcript/isolation/restart/UNKNOWN/HumanStop имеют применимые receipts. CLI-only этап может быть принят отдельно с точным scope."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:52:25+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "CIINSTALLED выявил отсутствие подтверждённого выбора изолированного native instance в работающем Herder; research done не является route proof. Отдельный test route и смена рабочего провайдера запрещены.",
+        "note": "Не запускать installed gate до штатной product поддержки и положительного route proof; candidate-only receipt не считать installed."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:29:56+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "CIINSTALLED выявил отсутствие подтверждённого выбора изолированного native instance в работающем Herder; research done не является route proof. Отдельный test route и смена рабочего провайдера запрещены.",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+}

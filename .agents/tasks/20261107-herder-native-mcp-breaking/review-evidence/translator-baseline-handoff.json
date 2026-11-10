@@ -1,0 +1,65 @@
+{
+  "source_root": "/home/roomhacker/.codex/worktrees/herder-compatibility/agent-herder",
+  "original_owner": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "source_kind": "previous T001/T002 untracked completed baseline",
+  "handoff": "Astra orchestration scope: copy only these source files into Terra integration, preserve originals and all unrelated WIP",
+  "excluded": [
+    "target/",
+    "local .agents plan copies",
+    "T011/T016 approval or live runs",
+    "credentials/config/runtime state"
+  ],
+  "acceptance_boundary": "wire/catalog only, no trusted ingress/Tasks business lifecycle proof",
+  "files": [
+    {
+      "path": "acceptance/compat/README.md",
+      "bytes": 1546,
+      "sha256": "1bdf10f799800e14adc5f810a72f037ce861245c595c22c1613886c21d35634f"
+    },
+    {
+      "path": "crates/herder-compat/Cargo.toml",
+      "bytes": 529,
+      "sha256": "426df05a5a2e5c1f6c07f52c0ed79f2f237b7c9b2fd8279807b848efafe82f07"
+    },
+    {
+      "path": "crates/herder-compat/Cargo.lock",
+      "bytes": 23440,
+      "sha256": "5e10203713aae7619149ba2b22e7771220cba9a74dcd2184f107c1a920e2c5f3"
+    },
+    {
+      "path": "crates/herder-compat/tests/handshakes.rs",
+      "bytes": 6212,
+      "sha256": "0e08eecc21e4c188dbad63d666713ada0c3fa92ba16af54c12b60dce6a112c61"
+    },
+    {
+      "path": "crates/herder-compat/src/main.rs",
+      "bytes": 1640,
+      "sha256": "6fa806c6fcf6a68583d026da47c659b81be9e299aadac27b4869ee82726549fa"
+    },
+    {
+      "path": "crates/herder-compat/src/lib.rs",
+      "bytes": 452,
+      "sha256": "ca7a77eb223b7fca17feb57c6a73a58cd1fbd21f185f240e3b16f4c10a095fdd"
+    },
+    {
+      "path": "crates/herder-compat/src/contract.rs",
+      "bytes": 1744,
+      "sha256": "15f5c602e4e541321a8a94034b63e86e3653fd56e7526beba48d7db06dae450c"
+    },
+    {
+      "path": "crates/herder-compat/src/edge.rs",
+      "bytes": 10127,
+      "sha256": "6328b392914c9d626feec276db073ed2c0c871587660b9b85d784cd4227c030a"
+    },
+    {
+      "path": "crates/herder-compat/src/error.rs",
+      "bytes": 1089,
+      "sha256": "6e835f6c9661d6094306334b8d8a8f04a289c8a05edd047e5f9e40bcc5e7f77d"
+    },
+    {
+      "path": "crates/herder-compat/src/bin/native_fixture.rs",
+      "bytes": 9344,
+      "sha256": "c3b80f4a1ed67bf5c1928d7a6ffa0069e9b08f6090ed528246d0e6ac7694dfed"
+    }
+  ]
+}

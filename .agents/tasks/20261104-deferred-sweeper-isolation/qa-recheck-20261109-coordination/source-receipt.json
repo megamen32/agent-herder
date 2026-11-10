@@ -1,0 +1,22 @@
+{
+  "startedAt": "2026-11-09T11:06:34.422346+00:00",
+  "endedAt": "2026-11-09T11:06:41.438486+00:00",
+  "exit": 0,
+  "command": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--root",
+    ".",
+    "--config",
+    "vitest.config.ts",
+    "tests/coordination-notes.test.ts",
+    "tests/remote-workspaces.test.ts",
+    "--reporter=verbose",
+    "--maxWorkers=1",
+    "--no-file-parallelism"
+  ],
+  "log": "/tmp/dot-herder-coordination-20261109-_kd5i_0k/test.log",
+  "logSha256": "87c3ad607ed5c7aaa16f6c7513f42855158ad659c3470ad30314cbea2c02a829",
+  "sourceSha": "c492b6b6d16b3bfff7532748bc03721c2f514b63",
+  "scope": "isolated temporary stores and in-memory MCP fake hosts, no live session or external delivery"
+}

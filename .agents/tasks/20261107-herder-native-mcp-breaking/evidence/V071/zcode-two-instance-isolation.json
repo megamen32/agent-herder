@@ -1,0 +1,47 @@
+{
+  "scope": "V071 two-instance isolation and auth rejection",
+  "launcher": "reused isolated official supervisor launch procedure from .tmp/v070b-official-server.py; ZCode Server 3.17.2-linux-x64-88a41b337faa",
+  "network_boundary": "fresh HOME/XDG/server_root per instance; HTTP and WebSocket loopback only; this run was not in a network namespace because unshare --net is denied on this host",
+  "profiles": [
+    {
+      "instance_id": "zcode-a",
+      "server_root": "/tmp/herder-v071-a-6528ndx4/home/.zcode/server",
+      "host": "127.0.0.1",
+      "port": 34701,
+      "state": "ready"
+    },
+    {
+      "instance_id": "zcode-b",
+      "server_root": "/tmp/herder-v071-b-h1c3c11p/home/.zcode/server",
+      "host": "127.0.0.1",
+      "port": 18073,
+      "state": "ready"
+    }
+  ],
+  "rust_probe": {
+    "commit": "dfd17b9a",
+    "binary": "temporary zcode-v071-isolation; removed after run",
+    "native_initialize_request_response_ids_match": [
+      1,
+      1
+    ],
+    "provider_available": [
+      false,
+      false
+    ],
+    "wrong_A_ingress_credential": "CapabilityUnavailable",
+    "missing_profile_root": "ProfileUnavailable",
+    "B_remained_connected_during_A_auth_failure": true,
+    "owned_process_ids": [
+      null,
+      null
+    ],
+    "inference_requests": 0,
+    "socket_close": "success"
+  },
+  "result": "PASS",
+  "limitations": [
+    "No session create/input was attempted because both isolated providers were unavailable.",
+    "Network namespace isolation was unavailable; both test supervisors bound only to loopback and inherited no auth or provider credentials."
+  ]
+}

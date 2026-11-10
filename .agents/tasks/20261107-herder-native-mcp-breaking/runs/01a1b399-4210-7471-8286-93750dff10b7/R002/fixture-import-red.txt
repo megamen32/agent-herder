@@ -1,0 +1,14 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/crates/herder)
+error[E0433]: cannot find type `ResourceDescriptor` in this scope
+   --> src/ownership/claim.rs:306:34
+    |
+306 |                 descriptor: Some(ResourceDescriptor::new(
+    |                                  ^^^^^^^^^^^^^^^^^^ use of undeclared type `ResourceDescriptor`
+    |
+help: consider importing this struct
+    |
+266 +     use crate::domain::resource::ResourceDescriptor;
+    |
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `herder` (lib test) due to 1 previous error

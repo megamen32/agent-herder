@@ -1,0 +1,106 @@
+{
+  "id": "CISHARE",
+  "label": "Передать готовые CI входы пяти адаптеров",
+  "parent": "CISHIP",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 10
+  },
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "description": "Один evidence manifest с точными source refs и argv для existing launch.py/test-model-server.py/receipts OpenCode,ChatGPT,Z.ai,ZCode,Codex; candidate vs installed различить, секреты не копировать. Данные для нового AHAP consumer, не новый framework.",
+  "acceptance": "Тера/Luna могут взять exact существующий driver; unsupported/permission scope помечены, refs резолвятся.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:17:09+03:00",
+  "updated_at": "2026-11-07T19:26:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:17:09+03:00",
+      "note": "",
+      "changes": {
+        "id": "CISHARE",
+        "label": "Передать готовые CI входы пяти адаптеров",
+        "parent": "CISHIP",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 10
+        },
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "description": "Один evidence manifest с точными source refs и argv для existing launch.py/test-model-server.py/receipts OpenCode,ChatGPT,Z.ai,ZCode,Codex; candidate vs installed различить, секреты не копировать. Данные для нового AHAP consumer, не новый framework.",
+        "acceptance": "Тера/Luna могут взять exact существующий driver; unsupported/permission scope помечены, refs резолвятся.",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:28:33+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Собираю проверенные refs существующих runner и receipt; точный путь isolated ZCode runtime и lease browser target проверяются отдельно."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:30:41+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Не восстановлены точные argv и root изолированного ZCode 3.17.2, browser QCHATCASE scope/lease не выдан; не подменять production профилем и не выдумывать handoff.",
+        "result": "Evidence manifest evidence/CI-SHARED-INPUTS-20261107.md: точный L100 argv, runner/source SHA и server-44 receipt; exact L45 receipt, исходники и их hash с неполным argv; installed ChatGPT/Z.ai scopes и Codex L102/L103. Candidate/installed разделены; runtime root ZCode и browser lease остаются открыты.",
+        "note": "Восстановить ZCode root из сохранённой L45 квитанции/runner окружения и выделить browser scope/lease прежде чем объявлять handoff полным."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:33:30+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "result": "evidence/CI-SHARED-INPUTS-20261107.md: exact L100 argv, SHA и receipt; L45 exact historical argv, digest, runtime root и receipt восстановлены из session trace и пути проверены на 44. Пять harness разграничены candidate/installed, браузерные target IDs и запрет replay указаны. Browser target lease пока не выделен, QCHATCASE ожидает отдельного scope; повторных отправок нет.",
+        "note": "CIGATE использует L100/L45 drivers; QCHATCASE не запускать до exact target lease."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:12:06+03:00",
+      "note": "",
+      "changes": {
+        "note": "Общий handoff и candidate receipt опубликованы в main b0f5c20d; exact ZCode и L100 argv внутри evidence/CI-SHARED-INPUTS-20261107.md. QCHATCASE ожидает точный browser account/context/target lease; owner разрешил один свежий create/deliver/read, UNKNOWN не повторять."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:25:13+03:00",
+      "note": "",
+      "changes": {
+        "note": "Для browser scope: Vibe текущего harness показывает локальный браузер, не Mac Mini. Только read-only диагностика уже настроенного Mac Mini gateway для exact account/context/target; без переключения чужих вкладок и без сообщений. QCHATCASE остаётся waiting до lease."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:26:49+03:00",
+      "note": "",
+      "changes": {
+        "note": "Vibe этого harness подключён к другому браузеру; read-only Mac Mini probe увидел Chrome и штатный gateway, но не обнаружил CDP remote-debug порт или Python websockets. Exact CDP context/target и эксклюзивный lease не подтверждены; QCHATCASE остаётся waiting, чужие вкладки не менялись. Handoff evidence в b0f5c20d."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Vibe этого harness подключён к другому браузеру; read-only Mac Mini probe увидел Chrome и штатный gateway, но не обнаружил CDP remote-debug порт или Python websockets. Exact CDP context/target и эксклюзивный lease не подтверждены; QCHATCASE остаётся waiting, чужие вкладки не менялись. Handoff evidence в b0f5c20d.",
+  "blocker": "",
+  "result": "evidence/CI-SHARED-INPUTS-20261107.md: exact L100 argv, SHA и receipt; L45 exact historical argv, digest, runtime root и receipt восстановлены из session trace и пути проверены на 44. Пять harness разграничены candidate/installed, браузерные target IDs и запрет replay указаны. Browser target lease пока не выделен, QCHATCASE ожидает отдельного scope; повторных отправок нет."
+}

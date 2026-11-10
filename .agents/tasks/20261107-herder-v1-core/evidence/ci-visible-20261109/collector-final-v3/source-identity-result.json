@@ -1,0 +1,52 @@
+{
+  "head": "8adf4dea76ed7236f06da44c80e64a7f09831b25",
+  "source": {
+    ".github/workflows/fleet-session.yml": "044cc60366d305406750559e9f7d740624dc4350d4ba9af8bef4ffa8ccb59bb2",
+    "deploy/fleet/build-installed-smoke.mjs": "896d484b24e9f1b00c0dbc49559e94ddd4e5fc76f206fcc26ac336252534a4ec",
+    "deploy/fleet/installed-smoke-helper.py": "f37d0553e52f32675921b1870b34ce43831b40cc01d3d7fbcb9e6dd8bb25ff20",
+    "deploy/fleet/provision-installed-smoke-runner.py": "a1a05497884c30e9016fb8abbaa70fac10e05189d22c24651a53bb89d8954479",
+    "tests/native/installed-browser-bindings.ts": "7c9ccabf3e0b5b0ae6bb4135c86199edbc5a1f293b68cfcf221639a4f41477f9",
+    "tests/native/installed-browser-entry.ts": "b3cbf7b7c91242f0b11a30c6762e50cdfba35980ec47f75775136eac0a60a8c3",
+    "tests/native/installed-browser-smoke.ts": "b2328c8350631eed83de939a49fcdc70985b990f5589d8665208b05191fbd710",
+    "tests/native/installed-codex-proof.ts": "c3d3c3395c84c2a57363556a92f4e7f293b969adb727ef76ab44f51afbfb87bc",
+    "tests/native/installed-zcode-proof.ts": "10c9bc36dd6e99497966b4c6c7fb1e3d964fc5161e9ba52d063664afae3919e9",
+    "tests/native/installed-owned-cleanup.ts": "ccce5f915fc41324c748b3d62a73a62c320efc31f06555d74fe35e4f8283e222",
+    "tests/native/installed-public-core.py": "655471cc805733784014908dd43936b811092bb96ac55c2fa8e4db310a9845e1",
+    "tests/native/candidate_release_gate.py": "1c046e773b69021812b356aacae434ab4fdd769c0013236c673275fd3eaf0397",
+    "tests/native/test_candidate_release_gate.py": "39a7c91a4e0f44ef711824a572562972189dce0c429c5b5cbaad11facb008a8a",
+    "tests/native/test_installed_smoke_helper.py": "96df26ef179d089b8375c3d06c69570da8e64ba393ee15ef6d7d8b298c19f2bc",
+    "tests/installed-browser-bindings.test.ts": "b7d4c931c86ece4ecb055f32718eb552005e695ce1502a08654ab4c85ca91160",
+    "tests/installed-browser-smoke.test.ts": "de6ddc25383355e23c0610dc18fe7622bcc2b20cc3205eaaa95ff445c3f41e22",
+    "tests/installed-codex-proof.test.ts": "a6392f975c34e01648eb85a08b8cb9d725b1d8ef32e15ba08b02b80541e1f75f",
+    "tests/installed-zcode-proof.test.ts": "7605d6da2440e084eb401cc84224418506e2de685018fb63f94192497ffc9791",
+    "tests/installed-owned-cleanup.test.ts": "396c3951a8eacd7537f7a5b47a4415f6fb88a4a025e0a8dce4aa7cd2a7289d0d",
+    "tests/installed-native-worker.test.ts": "01c0f22df7c9b0ba38a64b97250f7f4fff4dd96bceb0b3ec2ebf651e2c4a9a41",
+    "tests/ahap-zcode-model-pin.test.ts": "327b636518b8784923001f45430bb7faa2744e3633c0bfb9a03dcbf1a65d9a3f",
+    "src/ahap-zcode-runner.ts": "a3c81a873baac8d2c2f33398cf1ac7a86bfdb085ca1710bf7767ec51a0887ed8",
+    "src/adapters/zcode.ts": "780ac4ee93196327ce275c16642d469487c2bfa091360fc26d22e401903285e8"
+  },
+  "source_stable": true,
+  "checks": [
+    {
+      "name": "typescript",
+      "code": 0
+    },
+    {
+      "name": "bindings",
+      "code": 0
+    },
+    {
+      "name": "identity-order",
+      "code": 0
+    },
+    {
+      "name": "build",
+      "code": 0
+    },
+    {
+      "name": "whitespace",
+      "code": 0
+    }
+  ],
+  "runtime_invoked": false
+}

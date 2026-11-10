@@ -1,0 +1,51 @@
+{
+  "status": "PASS",
+  "host": "server-44",
+  "scope": "isolated current-source Herder artifact and loopback model fixture; not installed service",
+  "isolation": "private user and network namespace; restricted filesystem; temporary HOME",
+  "source_sha256": {
+    "src/integrator-transcript.ts": "6df9931f082673e152a21a1dcd789c53d966861bcd9671f9dfcd13b47ccbfe72",
+    "src/adapters/fast-agent.ts": "f6eb6547c4122d1121cef1cfa52b34ea9c9c2818cdd4c03a770d9765eb5dae2d"
+  },
+  "artifact_sha256": {
+    "integrator-transcript.js": "46e490b0838dc4f58874e9561e6aa852a555306bb4b16c189b50eebf4ffb38c1",
+    "adapters/fast-agent.js": "eee22e0c3e98abae60f055651761fe2ae22ed2e4a9cf181458f69638569b7fa1"
+  },
+  "version": "fast-agent-mcp v0.10.43",
+  "result": {
+    "harness": "fast-agent",
+    "sessions": [
+      "fast-agent:2611061355-0hO6N1",
+      "fast-agent:2611061355-PLfjcl"
+    ],
+    "transcripts": [
+      {
+        "sessionId": "fast-agent:2611061355-0hO6N1",
+        "pages": 2,
+        "totalEvents": 2,
+        "complete": true
+      },
+      {
+        "sessionId": "fast-agent:2611061355-PLfjcl",
+        "pages": 2,
+        "totalEvents": 2,
+        "complete": true
+      }
+    ],
+    "sessionsCreated": true,
+    "answer": true,
+    "sessionsListed": true,
+    "projectListed": true,
+    "transcriptComplete": true,
+    "transcriptPages": [
+      2,
+      2
+    ],
+    "sessionsSearched": true,
+    "searchWorker": true,
+    "activeDiscovered": true,
+    "heldModelReached": true,
+    "activeTurnCompleted": true,
+    "fixtureRequests": 3
+  }
+}

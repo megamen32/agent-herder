@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V038 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V038 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:05+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:05+03:00",
+  "updated_at": "2026-11-07T06:28:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:05+03:00",
@@ -51,6 +51,35 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:17:39+03:00",
+      "note": "V037 завершён. Проверяю owner atomic crash boundary вокруг rename/fsync.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:18:00+03:00",
+      "note": "LhcPlan снова указывает shared checkout из plan-dir; согласно owner correction исполняю только в managed worktree /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder.",
+      "changes": {},
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:28:53+03:00",
+      "note": "V038A закрыт на origin/main 3ba01b0d; далее offline consumer leaf V039A для разблокировки R004.",
+      "changes": {
+        "status": "done",
+        "result": "В claim.rs добавлены cfg(test)-only fault points до rename, после rename, до и после directory fsync; тесты находятся в crates/herder/tests/ownership/crash.rs как вложенный unit-test module. До rename: owner.json отсутствует, temp-файл удалён, повтор с тем же nonce получает Acquired. После rename/около directory fsync: owner целый, temp отсутствует, replay того же nonce даёт AlreadyOwned. Проверка: cargo test --manifest-path crates/herder/Cargo.toml claim::crash_tests:: — 2 passed, 0 failed. Commit 1268b86a381f0ae4dea543c23c18e55a82127b3c detached, diff-check чистый."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "В claim.rs добавлены cfg(test)-only fault points до rename, после rename, до и после directory fsync; тесты находятся в crates/herder/tests/ownership/crash.rs как вложенный unit-test module. До rename: owner.json отсутствует, temp-файл удалён, повтор с тем же nonce получает Acquired. После rename/около directory fsync: owner целый, temp отсутствует, replay того же nonce даёт AlreadyOwned. Проверка: cargo test --manifest-path crates/herder/Cargo.toml claim::crash_tests:: — 2 passed, 0 failed. Commit 1268b86a381f0ae4dea543c23c18e55a82127b3c detached, diff-check чистый."
 }

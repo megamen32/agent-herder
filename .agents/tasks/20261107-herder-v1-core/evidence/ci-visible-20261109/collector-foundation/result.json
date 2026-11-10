@@ -1,0 +1,28 @@
+{
+  "scope": "source-contract-only",
+  "installed_acceptance": "INCOMPLETE",
+  "observed_at": "2026-11-09T01:07:39.656663+00:00",
+  "source_baseline_at_validation": "8695a14907809b1d801e138ef92ef41d0c3a2972",
+  "subsequent_upstream_ff": "fd99743bcc1875879315ff508b551e5e722b63cc",
+  "checks": {
+    "collector_ts": 15,
+    "codex_proof_ts": 18,
+    "bindings_ts": 6,
+    "candidate_gate_py": 35,
+    "fixed_helper_py": 5,
+    "browser_manager_node": 17,
+    "typescript_exit": 0,
+    "bundle_exit": 0
+  },
+  "evidence": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-visible-20261109/source-third.json",
+  "collector_retry_evidence": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-visible-20261109/source-third-collector-bounded.log",
+  "known_first_run_issue": "Three durable fsync cases exceeded default5s; scoped15s bound retained runtime deadlines, all15 cases passed.",
+  "remaining": [
+    "CICLEANUP",
+    "CIZCODEPROOF",
+    "CIBROWSERINSTALL",
+    "CIRELEASE"
+  ],
+  "full_v1_global_gate": "unchanged_strict",
+  "actual_ci_runner_registered": false
+}

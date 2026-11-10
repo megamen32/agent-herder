@@ -1,0 +1,2 @@
+Command: cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes -- --nocapture
+Observed: test did not complete for more than 60 seconds; process was interrupted. Test server ServiceExt::serve was awaited inline, so no concurrent server reader serviced the client handshake.

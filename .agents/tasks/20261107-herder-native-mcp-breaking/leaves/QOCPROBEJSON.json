@@ -1,0 +1,79 @@
+{
+  "id": "QOCPROBEJSON",
+  "kind": "task",
+  "parent": "S04",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 10
+  },
+  "depends_on": [
+    "QOCJOIN"
+  ],
+  "label": "Отказать при невалидном JSON в выборе API OpenCode",
+  "description": "Остаток B1ea420df80c3455995cc после published1d20b7f1: parse failure нельзя превращать в JSONnull/v22. Terra уже получил точный defect и исправляет; сохранить source results QOCJOIN без fictitious closure нового remainder.",
+  "affected_files": [
+    "src/ahap-opencode-runner.ts",
+    "tests/ahap-opencode-runner.test.ts"
+  ],
+  "acceptance": "RED invalidJSON wrongly selects protocol → GREEN refusal before mutation; explicitnull still v22; publish fixed source+replacement artifact+digest, предыдущий1d20 artifact только source proof. Native UNKNOWN case не повторять.",
+  "created_at": "2026-11-07T19:43:01+03:00",
+  "updated_at": "2026-11-07T19:50:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:43:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCPROBEJSON",
+        "kind": "task",
+        "parent": "S04",
+        "status": "queued",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 10
+        },
+        "depends_on": [
+          "QOCJOIN"
+        ],
+        "label": "Отказать при невалидном JSON в выборе API OpenCode",
+        "description": "Остаток B1ea420df80c3455995cc после published1d20b7f1: parse failure нельзя превращать в JSONnull/v22. Terra уже получил точный defect и исправляет; сохранить source results QOCJOIN без fictitious closure нового remainder.",
+        "affected_files": [
+          "src/ahap-opencode-runner.ts",
+          "tests/ahap-opencode-runner.test.ts"
+        ],
+        "acceptance": "RED invalidJSON wrongly selects protocol → GREEN refusal before mutation; explicitnull still v22; publish fixed source+replacement artifact+digest, предыдущий1d20 artifact только source proof. Native UNKNOWN case не повторять."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:43:45+03:00",
+      "note": "Invalid JSON fail closed; выбранный nativeProtocol в initialize для сравнения stand.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:50:11+03:00",
+      "note": "Corrected artifact и точный handshake переданы Luna; source proof отдельно от native.",
+      "changes": {
+        "status": "done",
+        "result": "main 1d89d04dbefec21ed355533da49bd60e11ee7114: HTTP200 malformed JSON отвергается до mutation, только настоящий null выбирает v22; 404 требует /api/health 200 JSON object, 200 JSON object/array выбирает v2. Handshake result.capabilities.nativeProtocol без default. RED 1 failed→GREEN 14 passed; compiled artifact проверен на обе семьи и payload, manifest /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/manifest.json SHA256 cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac. Передан Luna; реальный consumer pending, старый UNKNOWN не replay.",
+        "note": "Следующий шаг Luna: сверить nativeProtocol с preflight и сохранить receipt отдельно разрешённого fresh case."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "result": "main 1d89d04dbefec21ed355533da49bd60e11ee7114: HTTP200 malformed JSON отвергается до mutation, только настоящий null выбирает v22; 404 требует /api/health 200 JSON object, 200 JSON object/array выбирает v2. Handshake result.capabilities.nativeProtocol без default. RED 1 failed→GREEN 14 passed; compiled artifact проверен на обе семьи и payload, manifest /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/manifest.json SHA256 cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac. Передан Luna; реальный consumer pending, старый UNKNOWN не replay.",
+  "note": "Следующий шаг Luna: сверить nativeProtocol с preflight и сохранить receipt отдельно разрешённого fresh case."
+}

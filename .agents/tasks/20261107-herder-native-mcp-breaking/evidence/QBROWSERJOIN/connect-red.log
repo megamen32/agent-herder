@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /tmp/herder-tasks-publish-1047
+
+ ❯ tests/direct-cdp-page-tools.test.ts (8 tests | 1 failed) 133ms
+     × bounds a websocket connection that never opens 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/direct-cdp-page-tools.test.ts > DirectCdpPageTools > bounds a websocket connection that never opens
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/direct-cdp-page-tools.test.ts:51:23
+     49|       const call = tools.call("list_pages").catch(() => { settled=true…
+     50|       await vi.advanceTimersByTimeAsync(101);
+     51|       expect(settled).toBe(true);
+       |                       ^
+     52|       await call;
+     53|       tools.close();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  18:29:11
+   Duration  536ms (transform 127ms, setup 44ms, import 150ms, tests 133ms, environment 0ms)
+

@@ -1,0 +1,75 @@
+{
+  "id": "V055D",
+  "label": "Codex: Подтвердить clientUserMessageId на изолированной native fixture",
+  "description": "На существующем отдельном Codex profile/fake-model fixture открыть control, выполнить один уникальный submit с clientUserMessageId и подтвердить тот же turn через read-only thread/items/list lookup. Сначала проверить fixture/session state и не повторять UNKNOWN; не трогать операторский профиль или core wiring.",
+  "acceptance": "Standalone CodexControl открывается на точной существующей изолированной fixture; один уникальный submit даёт native admission; lookup по исходному RequestKey возвращает ровно тот же turn ID и совпадающий thread/instance; независимый native readback подтверждает userMessage.clientId и turnId; повторной отправки нет.",
+  "affected_files": [
+    "crates/herder/src/adapters/codex/control.rs"
+  ],
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "V055C"
+  ],
+  "note": "Core export, HumanStop и registry wiring принадлежат Тере; это native acceptance slice.",
+  "created_at": "2026-11-07T07:37:06+03:00",
+  "updated_at": "2026-11-07T08:03:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T07:37:06+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055D",
+        "label": "Codex: Подтвердить clientUserMessageId на изолированной native fixture",
+        "description": "На существующем отдельном Codex profile/fake-model fixture открыть control, выполнить один уникальный submit с clientUserMessageId и подтвердить тот же turn через read-only thread/items/list lookup. Сначала проверить fixture/session state и не повторять UNKNOWN; не трогать операторский профиль или core wiring.",
+        "acceptance": "Standalone CodexControl открывается на точной существующей изолированной fixture; один уникальный submit даёт native admission; lookup по исходному RequestKey возвращает ровно тот же turn ID и совпадающий thread/instance; независимый native readback подтверждает userMessage.clientId и turnId; повторной отправки нет.",
+        "affected_files": [
+          "crates/herder/src/adapters/codex/control.rs"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "V055C"
+        ],
+        "note": "Core export, HumanStop и registry wiring принадлежат Тере; это native acceptance slice."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:37:29+03:00",
+      "note": "Scoped control V055C завершён e3d24adc; native acceptance по реальной изолированной Codex fixture начинается отдельно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:01:19+03:00",
+      "note": "Scoped adapter follow-up committed as ab25d716 (on top of ed07977f/e3d24adc in this worktree): lookup_request now makes bounded read-only retries for exact transient -32601 `thread/items/list is not supported yet`; standalone tests 3/3 and rustfmt +stable --check pass. Native attempts exposed runner hazards and were not replayed: (1) profile `.tmp/v055d-isolated`, key `...482f...`, native readback confirmed exact clientId/user turn `01a1b45b-d807-7900-8f7f-482aa0debf06`, but process closed early; resume showed interrupted, fixture requests 0. (2) profile `.tmp/v055d-success`, key `...7de4...`, preflight fixture health check failed connection-refused but shell proceeded; one accepted user item is correlated to turn `01a1b460-b49c-7432-bcdb-8afbcf244222`, no assistant/result, and no retry. Both profiles are isolated, no operator profile or external provider used. V055D acceptance remains incomplete: assistant response not proved. Next action for a new authorized isolated run: fixture readiness must be a hard precondition (`set -e`), write target receipt before submit, hold control process through completion, then independent readback. Never resend either accepted request.",
+      "changes": {},
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:03:29+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Native Codex acceptance завершена на Codex CLI 0.167.0 в отдельном fresh CODEX_HOME `.tmp/v055d-final` с fixture-only provider и loopback fake model. Один submit с `clientUserMessageId=herder-v055d-native-20261107-9f2931e9507940938527ded7c7c33ff3` дал thread `01a1b463-0d30-7323-9d8d-4b0439e8019d`, turn `01a1b463-0d71-7750-8521-99fac91979bd`; adapter lookup Found точный turn. Отдельный Codex app-server connection прочитал `thread/items/list`: userMessage.clientId и turnId совпали, assistant `HERDER_TEST_MODEL_OK` пришёл в тот же turn. Fixture requests: 0 до / 1 после. Полные receipts: `.tmp/v055d-final/target-before-submit.json`, `native-proof.json`, `fixture-before.json`, `fixture-after.json`; процесс fixture остановлен, порт 43887 закрыт. Предыдущие два partial isolated runs не повторялись; их receipts сохранены в `.tmp/v055d-isolated/` и `.tmp/v055d-success/`. Код lookup с bounded retries: commit `ab25d716`; standalone tests 3/3, `rustfmt +stable --check` прошёл. Не доказаны application::target::deliver, общий store/core HumanStop composition, production consumer или E001 acceptance; эти gates остаются у core/consumer plan."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "Native Codex acceptance завершена на Codex CLI 0.167.0 в отдельном fresh CODEX_HOME `.tmp/v055d-final` с fixture-only provider и loopback fake model. Один submit с `clientUserMessageId=herder-v055d-native-20261107-9f2931e9507940938527ded7c7c33ff3` дал thread `01a1b463-0d30-7323-9d8d-4b0439e8019d`, turn `01a1b463-0d71-7750-8521-99fac91979bd`; adapter lookup Found точный turn. Отдельный Codex app-server connection прочитал `thread/items/list`: userMessage.clientId и turnId совпали, assistant `HERDER_TEST_MODEL_OK` пришёл в тот же turn. Fixture requests: 0 до / 1 после. Полные receipts: `.tmp/v055d-final/target-before-submit.json`, `native-proof.json`, `fixture-before.json`, `fixture-after.json`; процесс fixture остановлен, порт 43887 закрыт. Предыдущие два partial isolated runs не повторялись; их receipts сохранены в `.tmp/v055d-isolated/` и `.tmp/v055d-success/`. Код lookup с bounded retries: commit `ab25d716`; standalone tests 3/3, `rustfmt +stable --check` прошёл. Не доказаны application::target::deliver, общий store/core HumanStop composition, production consumer или E001 acceptance; эти gates остаются у core/consumer plan."
+}

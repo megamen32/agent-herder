@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T18:35:05+00:00",
+  "details": "Focused RED tests for the published 8b3bebe7 agentInfoResult fallback fail: direct stopped and needsPermission sessions are replaced with active projection; direct humanStopHeld and durable HumanStop hold are not checked; exact idle path does not use bounded targeted native read. The current implementation also calls listActiveSessions for one session.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex session 01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "at": "2026-11-07T18:35:05+00:00",
+      "changes": {
+        "details": "Focused RED tests for the published 8b3bebe7 agentInfoResult fallback fail: direct stopped and needsPermission sessions are replaced with active projection; direct humanStopHeld and durable HumanStop hold are not checked; exact idle path does not use bounded targeted native read. The current implementation also calls listActiveSessions for one session.",
+        "source": "npx vitest run --root . --config vitest.config.ts tests/session-info-context.test.ts",
+        "status": "open",
+        "title": "agent_info active fallback overwrites stopped, permission, and HumanStop state"
+      }
+    }
+  ],
+  "id": "Bb85fea7e4c784e87b458",
+  "owner": "Codex session 01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "reporter": "Codex session 01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "source": "npx vitest run --root . --config vitest.config.ts tests/session-info-context.test.ts",
+  "status": "open",
+  "title": "agent_info active fallback overwrites stopped, permission, and HumanStop state",
+  "updated_at": "2026-11-07T18:35:05+00:00"
+}

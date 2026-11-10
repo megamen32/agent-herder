@@ -1,0 +1,36 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder
+
+(node:286221) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/zcode-adapter.test.ts (107 tests | 1 failed | 106 skipped) 277ms
+     × returns exact promoted receipt when non-durable V4 queue starts immediately 270ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zcode-adapter.test.ts > ZCode adapter > returns exact promoted receipt when non-durable V4 queue starts immediately
+AssertionError: expected { ok: false, admitted: true, …(5) } to match object { ok: true, admitted: true, …(2) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "admitted": true,
+    "inputId": "exact-start",
+    "nativeInputMessageId": "actual-user",
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ tests/zcode-adapter.test.ts:2295:107
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 106 skipped (107)
+   Start at  15:29:28
+   Duration  2.01s (transform 1.30s, setup 53ms, import 1.45s, tests 277ms, environment 0ms)
+

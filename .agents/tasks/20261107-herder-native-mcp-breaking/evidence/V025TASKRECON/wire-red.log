@@ -1,0 +1,21 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.57s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+
+thread 'scoped_delivery_application_wire_dedup_tasks_and_readback' (733757) panicked at tests/scoped_stop_gate.rs:3522:9:
+assertion `left == right` failed: {"id":2,"jsonrpc":"2.0","result":{"createdAt":"2026-11-07T10:44:23Z","lastUpdatedAt":"2026-11-07T10:44:23Z","resultType":"complete","status":"working","taskId":"mcp-delivery-task:09db56921fdc1461772d0b552db02415d678c3945c6743f6c2684dba9bde0ec4","ttlMs":null}}
+  left: String("working")
+ right: "completed"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test scoped_delivery_application_wire_dedup_tasks_and_readback ... FAILED
+
+failures:
+
+failures:
+    scoped_delivery_application_wire_dedup_tasks_and_readback
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 2.21s
+
+error: test failed, to rerun pass `--test scoped_stop_gate`

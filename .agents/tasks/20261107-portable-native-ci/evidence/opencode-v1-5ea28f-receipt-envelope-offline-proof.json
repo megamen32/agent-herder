@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "scope": "offline exact receipt envelope regression; no native launch or mutation",
+  "red": {
+    "command": "python3 -m unittest test_ahap_opencode_stand.AhapOpenCodeStandTest.test_native_completion_reader_matches_versioned_message_receipt",
+    "source_commit_parent": "55eba8b50833907012582d7f60d4a0259cde5d8c",
+    "pre_fix_stand_sha256": "ac2b4906d9c0fbaeb540484619555562ce0704c7771dc5e7fdc3a9b77fa705a4",
+    "exit_code": 1,
+    "output_ref": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-5ea28f-receipt-envelope-red.txt",
+    "output_sha256": "223d3e722352f93a7a9f8b1e87c8b3c3fd569b2fe9debceed59ba0af4a9675ac"
+  },
+  "green": {
+    "command": "PYTHONPATH=tests/native python3 -m unittest test_ahap_opencode_stand",
+    "source_commit": "38bd0ea0a5c9953a0a7a61aad1dc77fa44127251",
+    "tests_passed": 27,
+    "exit_code": 0,
+    "output_ref": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/opencode-v1-5ea28f-receipt-envelope-green.txt",
+    "output_sha256": "8f9e7f02a765d6b5d28b9871e73073bf2bfc4c82049213fb6a6bcd6cc17967a1"
+  },
+  "source_files_sha256": {
+    "tests/native/ahap_opencode_stand.py": "88313b7028689d7c3476b4392ea110adcf2b27d7ddc6727ade855e91aa863a0e",
+    "tests/native/test_ahap_opencode_stand.py": "5dcaaf6a9da8313567a2422dcf7b5248dfee5c5744762f06ebcd3e57485d25f4"
+  },
+  "native_launch_performed": false,
+  "native_mutation_performed": false
+}

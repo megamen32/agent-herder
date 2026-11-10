@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-budget-proof
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 3 skipped (4)
+   Start at  11:19:01
+   Duration  297ms (transform 41ms, setup 0ms, import 69ms, tests 10ms, environment 0ms)
+

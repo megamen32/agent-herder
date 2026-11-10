@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "process_exit": 0,
+  "manifest_sha256": "bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+  "session_ref": "session:579011e36acc12f865684957d967eef6",
+  "create_key": "zcode-v1-create-b359c8206d5a47c49c40195dec969afe",
+  "second_key": "zcode-v1-second-b359c8206d5a47c49c40195dec969afe",
+  "first_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_mw7u23fu_ce99f4ab-d283-4b87-9ecf-31ccc11bebaf\"}",
+    "outcome": "confirmed"
+  },
+  "second_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_mw7u24ia_1de96383-4373-4894-99cc-bb501ea34547\"}",
+    "outcome": "confirmed"
+  },
+  "model_requests": 3,
+  "export_complete": true,
+  "export_exact_markers": true,
+  "search_complete": true,
+  "search_exact_session": true,
+  "projects": {
+    "complete": false,
+    "limitations": [
+      "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+    ],
+    "projects": [
+      {
+        "native": null,
+        "project_ref": "/herder-owner-home/work",
+        "source": "authorized_native_session"
+      }
+    ],
+    "scope": "authorized_registered_sessions"
+  },
+  "core_reopen_no_resend": true,
+  "stdout_sha256": "6ea8c0b2e994b5a05783c87c03009ed5c3042a323260d00f56aacfbfabd4d193",
+  "scope": "isolated candidate; core reopen; supervisor restart not tested by this run"
+}

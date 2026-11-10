@@ -1,0 +1,40 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder
+
+(node:1982180) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/zcode-adapter.test.ts (105 tests | 1 failed | 104 skipped) 185ms
+     × returns the correlated native user message receipt for an admitted legacy prompt 177ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zcode-adapter.test.ts > ZCode adapter > returns the correlated native user message receipt for an admitted legacy prompt
+AssertionError: expected { ok: true, …(1) } to match object { ok: true, admitted: true, …(2) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "admitted": true,
+-   "inputId": "exact-input",
+-   "nativeInputMessageId": "actual-native-message",
+    "ok": true,
+  }
+
+ ❯ tests/zcode-adapter.test.ts:1659:22
+    1657|       await adapter.init();
+    1658|       const result = await adapter.sendMessage("session-1", {message:"…
+    1659|       expect(result).toMatchObject({ok:true, admitted:true, inputId:"e…
+       |                      ^
+    1660|       expect(result.nativeInputMessageId).not.toBe("exact-input");
+    1661|     } finally { await adapter.dispose(); await rm(root, {recursive:tru…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 104 skipped (105)
+   Start at  02:19:14
+   Duration  1.84s (transform 1.24s, setup 62ms, import 1.35s, tests 185ms, environment 0ms)
+

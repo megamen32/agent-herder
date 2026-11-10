@@ -1,0 +1,68 @@
+{
+  "label": "Общий CI: полный поиск Hermes и Browser Chat",
+  "description": "Установить причину partial WAL у Hermes и подтвердить поиск Browser Chat по точным ID на общем кандидате.",
+  "acceptance": "Реальный изолированный кандидат возвращает два точных ID каждого клиента с честной coverage; отсутствие полнотекстовой индексации отмечено отдельно.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Tesla",
+  "id": "L29",
+  "created_at": "2026-11-06T18:49:59+03:00",
+  "updated_at": "2026-11-06T19:01:02+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T18:49:59+03:00",
+      "note": "Выделено из L23 по результату candidate f87636: Qoder и Fast точный поиск прошли; Hermes остаётся partial.",
+      "changes": {
+        "label": "Общий CI: полный поиск Hermes и Browser Chat",
+        "description": "Установить причину partial WAL у Hermes и подтвердить поиск Browser Chat по точным ID на общем кандидате.",
+        "acceptance": "Реальный изолированный кандидат возвращает два точных ID каждого клиента с честной coverage; отсутствие полнотекстовой индексации отмечено отдельно.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Tesla"
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:50:09+03:00",
+      "note": "Срок не установлен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Причина изменения WAL ещё исследуется."
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:00:23+03:00",
+      "note": "Hermes WAL ctime: strace -yy доказал fchown существующего state.db-wal на прежние uid/gid внутри namespace; содержимое без изменений. RED тест ctime-only partial; fix сравнивает криптографические хеши DB/WAL при изменившихся метаданных с проверкой стабильности хеширования; GREEN также отклоняет реальную запись и same-size edit с восстановлением mtime. Реальный Hermes v0.21.7 на server-44 candidate 0237c367: HTTP MCP оба точных native ID, partial false, matching scanId, полный transcript 2 страницы. Browser fixture на том же SHA: оба exact title/ID через MCP, content search partial отдельно, не ChatGPT. Evidence l29-hermes-0237c3.json, l29-browser-0237c3.json, l29-hermes-wal-fchown.txt. Это функциональный snapshot отстающего HEAD, не финальный release и не проверка installed PID.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:01:02+03:00",
+      "note": "Выполнена функциональная приёмка L29; финальный повтор на интегрированном origin/main остаётся общей задачей релиза.",
+      "changes": {
+        "status": "done",
+        "result": "Hermes HTTP MCP: два exact native ID, завершённый scan и partial=false, полные transcripts; Browser fixture на том же функциональном payload: два точных поиска по названию и ID, поиск содержимого остаётся partial. WAL fchown подтверждён strace, fix и негативные тесты GREEN; evidence/l29-hermes-0237c3.json и l29-browser-0237c3.json. Финальный release candidate и installed PID не проверены."
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Причина изменения WAL ещё исследуется.",
+  "result": "Hermes HTTP MCP: два exact native ID, завершённый scan и partial=false, полные transcripts; Browser fixture на том же функциональном payload: два точных поиска по названию и ID, поиск содержимого остаётся partial. WAL fchown подтверждён strace, fix и негативные тесты GREEN; evidence/l29-hermes-0237c3.json и l29-browser-0237c3.json. Финальный release candidate и installed PID не проверены."
+}

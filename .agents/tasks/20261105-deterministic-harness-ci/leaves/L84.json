@@ -1,0 +1,56 @@
+{
+  "id": "L84",
+  "label": "CI: читать транскрипт через Herder HTTP",
+  "description": "Подключить строгую проверку transcript к обычному HTTP API с точным session ID, cursor и fail-closed обработкой ошибок.",
+  "acceptance": "HTTP тест с несколькими страницами доказывает последовательные cursor и отказ на ошибках/неполной истории; настоящая изолированная Herder-сессия остаётся отдельной приёмкой.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T13:42:11+03:00",
+  "updated_at": "2026-11-07T13:47:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:42:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "L84",
+        "label": "CI: читать транскрипт через Herder HTTP",
+        "description": "Подключить строгую проверку transcript к обычному HTTP API с точным session ID, cursor и fail-closed обработкой ошибок.",
+        "acceptance": "HTTP тест с несколькими страницами доказывает последовательные cursor и отказ на ошибках/неполной истории; настоящая изолированная Herder-сессия остаётся отдельной приёмкой.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:42:19+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:47:28+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "3f4a5841: HTTP клиент читает обычный transcript API, передаёт cursor, проверяет точную область и все события, ограничивает ответ и запрещает redirect/прокси. RED→GREEN, 18 native тестов. В отдельном сетевом/файловом sandbox обычный entrypoint кандидата bafb + настоящие Codex/OpenCode: по две сессии, три страницы и строгая независимая проверка каждой; 34.599 с. evidence/candidate-http-transcript-{summary-,}20261107.json. Клиент внедрён во временную копию исследовательского runner; installed PID не проверен, release gate FAIL."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "result": "3f4a5841: HTTP клиент читает обычный transcript API, передаёт cursor, проверяет точную область и все события, ограничивает ответ и запрещает redirect/прокси. RED→GREEN, 18 native тестов. В отдельном сетевом/файловом sandbox обычный entrypoint кандидата bafb + настоящие Codex/OpenCode: по две сессии, три страницы и строгая независимая проверка каждой; 34.599 с. evidence/candidate-http-transcript-{summary-,}20261107.json. Клиент внедрён во временную копию исследовательского runner; installed PID не проверен, release gate FAIL."
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T19:58:12+00:00",
+  "details": "При v11 wrapper собрал /sys/class/net, который отражает host sysfs, поэтому validator верно вернул browser-chat: network isolation not proven; evidence/l43-v11-browser.json и l43-v11-unified.json. Для следующего запуска нужен список ip -o link из самой сетевой namespace, сбор до завершения процесса, без подмены receipt; ChatGPT сервис не проверялся.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T19:58:12+00:00",
+      "changes": {
+        "details": "При v11 wrapper собрал /sys/class/net, который отражает host sysfs, поэтому validator верно вернул browser-chat: network isolation not proven; evidence/l43-v11-browser.json и l43-v11-unified.json. Для следующего запуска нужен список ip -o link из самой сетевой namespace, сбор до завершения процесса, без подмены receipt; ChatGPT сервис не проверялся.",
+        "source": "v11 browser fixture server-44",
+        "status": "open",
+        "title": "Browser fixture receipt не доказывает список интерфейсов namespace"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:04:55+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-browser-namespace-green.log",
+            "red_proof_path": "evidence/l43-browser-namespace-red.log",
+            "red_result": "# fail 1",
+            "red_sha256": "3395ea63dc46d7f2f1c6c076da85b88210a7b2cabbe447f82ebf360b1dbb44cf",
+            "result": "# pass 1",
+            "sha256": "3168aa23a5d6567b295b9af9a557217b72357e2d87f81455b6a47c329869b23d",
+            "test_command": "node --test tests/native-hermes-browser-namespace.test.mjs"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B6657d39e9e194c73bbce",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-browser-namespace-green.log",
+      "red_proof_path": "evidence/l43-browser-namespace-red.log",
+      "red_result": "# fail 1",
+      "red_sha256": "3395ea63dc46d7f2f1c6c076da85b88210a7b2cabbe447f82ebf360b1dbb44cf",
+      "result": "# pass 1",
+      "sha256": "3168aa23a5d6567b295b9af9a557217b72357e2d87f81455b6a47c329869b23d",
+      "test_command": "node --test tests/native-hermes-browser-namespace.test.mjs"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "v11 browser fixture server-44",
+  "status": "fixed",
+  "title": "Browser fixture receipt не доказывает список интерфейсов namespace",
+  "updated_at": "2026-11-06T20:04:55+00:00"
+}

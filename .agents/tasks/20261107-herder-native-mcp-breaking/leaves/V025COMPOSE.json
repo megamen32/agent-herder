@@ -1,0 +1,155 @@
+{
+  "id": "V025COMPOSE",
+  "label": "Подключить проверенную authority к MCP application",
+  "description": "Соединить trusted scoped authority, проверенный principal и точные grants с create/deliver/stop без доверия к metadata и без новой базы.",
+  "acceptance": "Изолированное authenticated приложение выполняет целевые операции, spoofed identity и imported scope запрещены; статус задачи и причины отказа читаются.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "deferred",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025OWNER",
+    "V025TASKRECON",
+    "V025CREATETASK"
+  ],
+  "created_at": "2026-11-07T12:15:31+03:00",
+  "updated_at": "2026-11-07T15:54:12+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:15:31+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025COMPOSE",
+        "label": "Подключить проверенную authority к MCP application",
+        "description": "Соединить trusted scoped authority, проверенный principal и точные grants с create/deliver/stop без доверия к metadata и без новой базы.",
+        "acceptance": "Изолированное authenticated приложение выполняет целевые операции, spoofed identity и imported scope запрещены; статус задачи и причины отказа читаются.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT",
+          "V055CREATE",
+          "V055STOP"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:30:09+03:00",
+      "note": "Terra requested same Tesla session resume after launcher/port integration. Astra assigns ready public composition slice; no duplicate worker.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:37:24+03:00",
+      "note": "Реализован независимый read/hold slice; остаток требует точной композиции и production proof.",
+      "changes": {
+        "note": "Локальный e3fdac67 на 0d9582c2: scoped MCP read и hold ApplicationPort, auth read/write и exact mapping, fake wire denied spoof/imported, stop блокирует следующий claim и после handoff честно требует interrupt/reconcile. 21 scoped tests (+1 ignored), launcher 8, schema/gate 4, target 1 PASS. Не подключены к production ingress/launcher. Остаток: create(prompt) требует отдельной bounded delivery (Codex create игнорирует specification), deliver нуждается в NativeSessionReader с проверенным snapshot/Send future, stop exact interrupt требует защищённого получения исходной ReceiptBinding; catalog не содержит Task.status. Публичный proof и terminal task semantics не заявлены."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:52:46+03:00",
+      "note": "Устранена подтверждённая гонка MCP stop; нужен повторный независимый review.",
+      "changes": {
+        "note": "REVISE исправлен локально dde52b0b поверх 41072cf4 на origin/main 703ce35d: MCP stop ждёт тот же gate, затем под ним проверяет instance+scoped mapping и пишет hold; fake wire RED scope_unavailable/effect=none → GREEN hold active/required_or_reconcile. Общие offline tests scoped 25 pass/1 ignored, launcher 8, schema/gate 4, target 1. Независимый create→prompt кандидат 42e547c1 вынесен в V025PROMPT. Production ingress/Task.status/public native proof пока не подключены."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:32:30+03:00",
+      "note": "Astra разделяет затянувшийся лист по доказанным результатам; текущая работа Tesla V025TASKDELIVERY продолжается.",
+      "changes": {
+        "status": "waiting",
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT",
+          "V055CREATE",
+          "V055STOP",
+          "V025READHOLD",
+          "V025PROMPT",
+          "V025TASKDELIVERY"
+        ],
+        "wait_reason": "Исходники read/hold и create/prompt приняты и опубликованы. Остались независимый review V025TASKDELIVERY и фактическое подключение trusted launch/ingress к application; CallerUnknown нельзя считать authenticated consumer.",
+        "note": "61 минут относились к нескольким разным source результатам. Выделены V025READHOLD, V025PROMPT, V025TASKDELIVERY; этот лист теперь только финальная композиция, без фиктивного done."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:45:53+03:00",
+      "note": "Устранено устаревшее ownership waiting; текущая Terra работа уже наблюдается, не новый worker.",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "status": "running",
+        "wait_reason": "",
+        "note": "Разделены конкретные владельцы: Terra — explicit trusted owner stdio launcher/native Reader composition; Tesla — Task/create application и V025TASKRECON. Terra active 10:44UTC, не ожидает HTTP OAuth. Source Tasks projection принят с отдельным отсутствующим terminal reconcile. Следующий полезный результат — launcher→scoped приложение; public native proof V025PUBLIC отдельно."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:01:19+03:00",
+      "note": "Локальная композиция fake wire проверена; native consumer и Task delta остаются.",
+      "changes": {
+        "note": "Terra: локально explicit trusted-owner profile, pinned policy exact create receipt и scoped create/deliver/read/stop composition; fake stdio RPC создаёт/доставляет/читает и после reopen, imported denied. NativeReader fake tests 3; experimentalApi reader RED/GREEN. Исходники пока поверх unreviewed Tesla create aggregate, не опубликованы; Task reconciliation и dynamic direct delivery task ACL требуют Tesla delta; реальный SDK + Codex readback ещё не запускался."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:08:49+03:00",
+      "note": "Переразбивка >15мин по завершённому source и конкретному integration остатку.",
+      "changes": {
+        "status": "waiting",
+        "depends_on": [
+          "V025OWNER",
+          "V025TASKRECON",
+          "V025CREATETASK"
+        ],
+        "wait_reason": "Owner launcher/policy source a3517774 independently accepted; финальная integration ждёт Tesla direct Task current grants и terminal reconciliation. Terra готовит native harness параллельно.",
+        "note": "Доказанный owner source выделен V025OWNER; остаток только интеграция Task resolver/reconciler с ним, затем V025PUBLIC. Не считать fake RPC установленным native consumer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:09:48+03:00",
+      "note": "Источник опубликован; настоящая terminal Task проверка ожидает Tesla delta.",
+      "changes": {
+        "wait_reason": "Tesla завершает reviewed direct Task grants и exact read-only reconciliation",
+        "note": "origin/main 0d4e1f7c содержит independently supported owner stdio, create aggregate и recovery; fresh scoped fake tests 31 passed/1 ignored, launcher 12/1 ignored, NativeReader/policy 5 passed. SDK one-shot harness собран; реальный Codex effect ещё не выполнялся. Терминальный Task и direct grants проходят delta у Tesla."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:54:12+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
+  "wait_reason": "Tesla завершает reviewed direct Task grants и exact read-only reconciliation"
+}

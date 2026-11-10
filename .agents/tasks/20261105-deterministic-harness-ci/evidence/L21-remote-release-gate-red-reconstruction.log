@@ -1,0 +1,41 @@
+Reconstructed pre-fix fixture: removed only the new collector mock; product unchanged.
+...........EF.F....child log
+ordinary log
+...........
+======================================================================
+ERROR: test_collector_preflight_failure_never_mutates (__main__.MutationBoundaryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/test_remote_release_gate.py", line 329, in test_collector_preflight_failure_never_mutates
+    self.mocks["require_installed_ci_collector"].side_effect=RuntimeError("collector unavailable")
+KeyError: 'require_installed_ci_collector'
+
+======================================================================
+FAIL: test_expiry_before_restart_enters_fenced_rollback (__main__.MutationBoundaryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/test_remote_release_gate.py", line 349, in test_expiry_before_restart_enters_fenced_rollback
+    self.gate.compare_cleanup_revision.assert_called_once()
+  File "/usr/lib/python3.10/unittest/mock.py", line 908, in assert_called_once
+    raise AssertionError(msg)
+AssertionError: Expected 'compare_cleanup_revision' to have been called once. Called 0 times.
+
+======================================================================
+FAIL: test_lost_channel_or_successor_fence_never_speculates_rollback (__main__.MutationBoundaryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/test_remote_release_gate.py", line 358, in test_lost_channel_or_successor_fence_never_speculates_rollback
+    self.gate.compare_cleanup_revision.assert_called_once()
+  File "/usr/lib/python3.10/unittest/mock.py", line 908, in assert_called_once
+    raise AssertionError(msg)
+AssertionError: Expected 'compare_cleanup_revision' to have been called once. Called 0 times.
+
+----------------------------------------------------------------------
+Ran 30 tests in 0.637s
+
+FAILED (failures=2, errors=1)
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+already current; no preparation or restart

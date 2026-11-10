@@ -1,0 +1,61 @@
+{
+  "id": "L91",
+  "label": "Проверить штатный выбор провайдера Codex",
+  "description": "Проверить локальную конфигурацию проекта и нативные параметры модели без изменения рабочего процесса.",
+  "acceptance": "Нативный Codex даёт проверяемый ответ, может ли отдельная сессия использовать другой endpoint без изменения общего профиля.",
+  "status": "done",
+  "owner": "lead",
+  "estimate_minutes": 15,
+  "kind": "research",
+  "result": "Изолированный Codex 0.167.0: project model применяется, project provider отфильтрован. Два варианта thread/start с modelProvider/config.model_provider дали modelProviderMismatch на turn/start. config.profile отклонён с рекомендацией --profile, однако отдельная нативная проверка показала: `codex -p fixture app-server` тоже отклоняется, так как app-server не поддерживает --profile. Рабочий ранее доказанный путь — отдельный CODEX_HOME с provider config при запуске процесса. Только локальная лжемодель; чужие сессии и настоящие ключи недоступны. Evidence: evidence/codex-thread-provider-probe.md и probe.py.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T16:32:16+03:00",
+  "updated_at": "2026-11-07T16:42:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T16:32:16+03:00",
+      "note": "",
+      "changes": {
+        "id": "L91",
+        "label": "Проверить штатный выбор провайдера Codex",
+        "description": "Проверить локальную конфигурацию проекта и нативные параметры модели без изменения рабочего процесса.",
+        "acceptance": "Нативный Codex даёт проверяемый ответ, может ли отдельная сессия использовать другой endpoint без изменения общего профиля.",
+        "status": "done",
+        "owner": "lead",
+        "estimate_minutes": 15,
+        "kind": "research",
+        "result": "Изолированный настоящий Codex 0.167.0: config/read применил project model, но отфильтровал project model_provider/model_providers. thread/start принял fixture_project, однако turn/start отказал modelProviderMismatch с текущим fixture_default. Сетевой доступ — только loopback fixture; повтор отправки не делался. Evidence: evidence/codex-project-config-probe.py и codex-thread-provider-probe.md.",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:34:24+03:00",
+      "note": "Установленный session_info ChatGPT вновь показал последние пользовательский и ассистентский ответы; история partial и полным transcript не считается.",
+      "changes": {
+        "result": "Изолированный настоящий Codex 0.167.0: project model применён, но model_provider/model_providers отфильтрованы. thread/start с modelProvider и отдельно с config.model_provider подтвердил fixture_project, но turn/start в обоих новых тестовых thread отказал modelProviderMismatch с текущим fixture_default. Сеть изолирована, платные провайдеры и чужие сессии не использованы. Evidence: evidence/codex-project-config-probe.py, codex-thread-provider-probe.md и codex-thread-override-probe.py."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:39:32+03:00",
+      "note": "Дополнительно проверен profile: нативный Codex требует профиль при старте процесса; не является доказательством работы установленного PID.",
+      "changes": {
+        "result": "Изолированный реальный Codex 0.167.0: project model применяется, project model_provider/model_providers фильтруются. Два варианта thread/start с modelProvider/config.model_provider завершились modelProviderMismatch на turn/start. Третий probe с config.profile был отклонён до создания thread: требуется --profile при старте процесса. Использована только локальная лжемодель, чужие сессии и настоящие ключи недоступны. Evidence: evidence/codex-thread-provider-probe.md и три probe.py."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:42:47+03:00",
+      "note": "Исправление предыдущего вывода: подсказка --profile не применима к app-server; проверено реальным запуском в изоляции.",
+      "changes": {
+        "result": "Изолированный Codex 0.167.0: project model применяется, project provider отфильтрован. Два варианта thread/start с modelProvider/config.model_provider дали modelProviderMismatch на turn/start. config.profile отклонён с рекомендацией --profile, однако отдельная нативная проверка показала: `codex -p fixture app-server` тоже отклоняется, так как app-server не поддерживает --profile. Рабочий ранее доказанный путь — отдельный CODEX_HOME с provider config при запуске процесса. Только локальная лжемодель; чужие сессии и настоящие ключи недоступны. Evidence: evidence/codex-thread-provider-probe.md и probe.py."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

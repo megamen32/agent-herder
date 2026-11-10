@@ -1,0 +1,76 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings
+warning: `herder` (test "target_gate_fixture") generated 6 warnings (2 duplicates)
+error[E0505]: cannot move out of `request` because it is borrowed
+   --> src/adapters/chatgpt/mod.rs:728:35
+    |
+725 |                     let request: Value = serde_json::from_str(&text).unwrap();
+    |                         ------- binding `request` declared here
+726 |                     let id = request.get("id").and_then(Value::as_u64).unwrap();
+727 |                     let method = request.get("method").and_then(Value::as_str).unwrap();
+    |                                  ------- borrow of `request` occurs here
+728 |                     requests.push(request);
+    |                                   ^^^^^^^ move out of `request` occurs here
+729 |                     if method == "Target.getTargetInfo" {
+    |                        ------ borrow later used here
+
+For more information about this error, try `rustc --explain E0505`.
+error: could not compile `herder` (lib test) due to 1 previous error

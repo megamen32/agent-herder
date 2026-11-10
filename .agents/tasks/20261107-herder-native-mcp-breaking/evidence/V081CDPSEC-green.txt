@@ -1,0 +1,5 @@
+GREEN: tsc --noEmit
+GREEN: vitest run --root . --config vitest.config.ts tests/ahap-browser-runner.test.ts tests/chatgpt-mac-cdp-driver.test.ts tests/direct-cdp-page-tools.test.ts
+Result: TypeScript compilation passed; 3 test files passed, 42 tests passed, 0 failed.
+The account-mismatch test now rejects before draft creation. Ambiguous and untyped failed sends now return outcome=unknown, retryable=false, with one adapter call.
+No CI, live browser, or send was used.

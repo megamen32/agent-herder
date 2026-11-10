@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T06:27:13+00:00",
+  "details": "Unprivileged corrupt resource.json in resource device-b exists while caller has exact Read grant only for valid device-a. Application list delegates to registry::list(Authorized), scans and parses every descriptor before ACL filtering, so it returns InvalidData instead of listing the allowed resource. RED exit 101 preserved at .tmp/herder-r003a-red.log.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T06:27:13+00:00",
+      "changes": {
+        "details": "Unprivileged corrupt resource.json in resource device-b exists while caller has exact Read grant only for valid device-a. Application list delegates to registry::list(Authorized), scans and parses every descriptor before ACL filtering, so it returns InvalidData instead of listing the allowed resource. RED exit 101 preserved at .tmp/herder-r003a-red.log.",
+        "source": "R003A RED: cargo test application::resource::tests::list_ignores_corrupt_markers_outside_the_callers_grants; output .tmp/herder-r003a-red.log",
+        "status": "open",
+        "title": "Resource list fails on malformed marker outside caller grants"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T06:33:34+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/Be3f2c5430c2b4ffa8f55-green.txt",
+            "red_proof_path": "evidence/Be3f2c5430c2b4ffa8f55-red.txt",
+            "red_result": "test application::resource::tests::list_ignores_corrupt_markers_outside_the_callers_grants ... FAILED",
+            "red_sha256": "4d3dc0981faed76fad3b7f08777da2f3ed35fd848e1f168c3815819ae46e03aa",
+            "result": "3 passed",
+            "sha256": "7f4d8e67a32671bb4a2d8c1bb2da8574775f0e9cac9be88dab5afe1c0df17220",
+            "test_command": "cargo test --manifest-path .tmp/herder-r003a-compile-20261107/Cargo.toml --lib application::resource::tests:: -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Be3f2c5430c2b4ffa8f55",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/Be3f2c5430c2b4ffa8f55-green.txt",
+      "red_proof_path": "evidence/Be3f2c5430c2b4ffa8f55-red.txt",
+      "red_result": "test application::resource::tests::list_ignores_corrupt_markers_outside_the_callers_grants ... FAILED",
+      "red_sha256": "4d3dc0981faed76fad3b7f08777da2f3ed35fd848e1f168c3815819ae46e03aa",
+      "result": "3 passed",
+      "sha256": "7f4d8e67a32671bb4a2d8c1bb2da8574775f0e9cac9be88dab5afe1c0df17220",
+      "test_command": "cargo test --manifest-path .tmp/herder-r003a-compile-20261107/Cargo.toml --lib application::resource::tests:: -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "R003A RED: cargo test application::resource::tests::list_ignores_corrupt_markers_outside_the_callers_grants; output .tmp/herder-r003a-red.log",
+  "status": "fixed",
+  "title": "Resource list fails on malformed marker outside caller grants",
+  "updated_at": "2026-11-07T06:33:34+00:00"
+}

@@ -1,0 +1,64 @@
+{
+  "schema": "agent-herder.zcode-workspace-dispose-preflight.v1",
+  "observed_at": "2026-11-09T01:08:46.529Z",
+  "operation": "canonical-workspace-repair",
+  "workspace_path": "/home/roomhacker/agents-projects/agent-herder",
+  "identity": {
+    "processId": 1307210,
+    "workspaceKey": "/home/roomhacker/agents-projects/agent-herder",
+    "generation": 1
+  },
+  "process": {
+    "pid": 1307210,
+    "ppid": 3014880,
+    "state": "S",
+    "start_ticks": "34409338",
+    "cwd": "/home/roomhacker/agents-projects/agent-herder",
+    "proxy_origins": [
+      {
+        "key": "HTTP_PROXY",
+        "scheme": "http:",
+        "host": "127.0.0.1",
+        "port": "18973"
+      },
+      {
+        "key": "HTTPS_PROXY",
+        "scheme": "http:",
+        "host": "127.0.0.1",
+        "port": "18973"
+      },
+      {
+        "key": "ALL_PROXY",
+        "scheme": "http:",
+        "host": "127.0.0.1",
+        "port": "18973"
+      },
+      {
+        "key": "ZCODE_HTTP_PROXY",
+        "scheme": "http:",
+        "host": "127.0.0.1",
+        "port": "18973"
+      }
+    ]
+  },
+  "running": {
+    "observed_at": "2026-11-09T01:08:46.523Z",
+    "expires_at": "2026-11-09T01:09:01.523Z",
+    "server_pid": 3014880,
+    "server_generation": 2,
+    "target_running_tasks": 0,
+    "other_running_tasks": 0
+  },
+  "native_setting_httpProxy_set": false,
+  "official_server": {
+    "pid": 3014880,
+    "ppid": 430399,
+    "start_ticks": "28828088",
+    "role": [
+      "/home/roomhacker/.zcode/server/releases/3.17.2-linux-x64-88a41b337faa/runtime/server-core.js"
+    ],
+    "cwd": "/home/roomhacker",
+    "proxy_fields": [],
+    "started_at": "2026-11-03T01:01:23.880000+00:00"
+  }
+}

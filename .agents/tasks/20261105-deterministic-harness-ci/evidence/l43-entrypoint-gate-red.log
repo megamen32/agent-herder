@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_entrypoint_rejects_partial_and_missing_exact_search_proofs (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 75, in test_entrypoint_rejects_partial_and_missing_exact_search_proofs
+    self.assertIn('opencode: entrypoint complete search evidence not proven',native_ci.candidate_gate_failures(receipt))
+AssertionError: 'opencode: entrypoint complete search evidence not proven' not found in ['qoder: active turn missing', 'qoder: native client version or provider compatibility not proven']
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

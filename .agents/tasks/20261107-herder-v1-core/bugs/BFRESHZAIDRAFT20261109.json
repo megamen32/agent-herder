@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-09T01:40:31+00:00",
+  "details": "Real own two-turn canary A accepted and canonical reply proven. Fresh process prepareCanaryObservation(original stable draft handle) failed native binding before B dispatch. getChat checks the empty process-local store before hydrating the verified scoped durable draft store. No first-send replay. Evidence private journal and native token/DOM receipt; regression will require no account-wide list scan.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-09T01:40:31+00:00",
+      "changes": {
+        "details": "Real own two-turn canary A accepted and canonical reply proven. Fresh process prepareCanaryObservation(original stable draft handle) failed native binding before B dispatch. getChat checks the empty process-local store before hydrating the verified scoped durable draft store. No first-send replay. Evidence private journal and native token/DOM receipt; regression will require no account-wide list scan.",
+        "source": "observed",
+        "status": "open",
+        "title": "Fresh Zai reader loses admitted durable draft binding before loading its account scope"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-09T01:59:35+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/ci-visible-20261109/native-browser-canaries/result.json",
+            "red_proof_path": "evidence/ci-visible-20261109/native-browser-canaries/zai-durable-draft-red.log",
+            "red_result": "AssertionError: promise rejected \"Error: unrelated_history_scan_forbidden\" instead of resolving",
+            "red_sha256": "a21c851caef256d7928ade927f3ac95ccddab94f21bd5e4b9535c8202bc9be22",
+            "result": "Zai original-handle resume and archive PASS",
+            "sha256": "c2959ba26f23aac8b61b592d6df1e0d3739d7a068be42c349f8bf76b2c4553e6",
+            "test_command": "npx vitest run tests/zai-durable-draft-read.test.ts tests/zai-cdp-driver.test.ts tests/zai-full-transcript.test.ts tests/browser-chat-create.test.ts tests/browser-canary-view.test.ts; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai resume; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai archive"
+          },
+          "kind": "fixed",
+          "reason": "Candidate source now provides account-verified durable original-handle reads and an owned-current native proof. Real Zai A, fresh-process B, exact replies, terminal DOM and archive all passed. ChatGPT external HTTP429 remains explicitly BLOCKED."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "BFRESHZAIDRAFT20261109",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "reporter": "chatgpt-all-harness-ci-20261109",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/ci-visible-20261109/native-browser-canaries/result.json",
+      "red_proof_path": "evidence/ci-visible-20261109/native-browser-canaries/zai-durable-draft-red.log",
+      "red_result": "AssertionError: promise rejected \"Error: unrelated_history_scan_forbidden\" instead of resolving",
+      "red_sha256": "a21c851caef256d7928ade927f3ac95ccddab94f21bd5e4b9535c8202bc9be22",
+      "result": "Zai original-handle resume and archive PASS",
+      "sha256": "c2959ba26f23aac8b61b592d6df1e0d3739d7a068be42c349f8bf76b2c4553e6",
+      "test_command": "npx vitest run tests/zai-durable-draft-read.test.ts tests/zai-cdp-driver.test.ts tests/zai-full-transcript.test.ts tests/browser-chat-create.test.ts tests/browser-canary-view.test.ts; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai resume; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai archive"
+    },
+    "kind": "fixed",
+    "reason": "Candidate source now provides account-verified durable original-handle reads and an owned-current native proof. Real Zai A, fresh-process B, exact replies, terminal DOM and archive all passed. ChatGPT external HTTP429 remains explicitly BLOCKED."
+  },
+  "source": "observed",
+  "status": "fixed",
+  "title": "Fresh Zai reader loses admitted durable draft binding before loading its account scope",
+  "updated_at": "2026-11-09T01:59:35+00:00"
+}

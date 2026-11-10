@@ -1,0 +1,5 @@
+Command: cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live
+Observed before fix (2026-11-07):
+ZAI create=failed reason=WrongOrigin
+summary chatgpt=skipped_by_HumanStop zai=false
+No prompt was sent; create_new_chat closed its own failed target.

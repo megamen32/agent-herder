@@ -1,0 +1,65 @@
+{
+  "scope": "installed-codex-consumer",
+  "sessions": [
+    "01a1b158-6434-7c82-81b2-0b4c1a8999cf",
+    "01a1b158-6e1d-7cc0-836b-6c2bbd60d897"
+  ],
+  "sessionsSearched": true,
+  "projectListed": true,
+  "transcriptPages": [
+    3,
+    3
+  ],
+  "completed": true,
+  "transcriptComplete": true,
+  "verifiedPeerPid": 3028090,
+  "status": "PASS",
+  "harness": "codex",
+  "allRequiredScenarios": false,
+  "limitations": [
+    "Codex only; other applicable harnesses not tested",
+    "test payload fingerprint does not cover full fleet bundle",
+    "loaded module bytes not independently attested"
+  ],
+  "unit": "herder-l20-test-8fc7a1193155.service",
+  "before": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3028231,
+    "entrypoint": "/dev/shm/herder-l20-test-F1k9I2Ww/release/dist/index.js",
+    "port": 36141,
+    "starttime": "75961819",
+    "indexingEnabled": true,
+    "artifact_sha256": "019d0eb5aa2200a3e78d2b918cd3a84cde0803a7a27692acb6f6ddba4e4db592",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ]
+  },
+  "after": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3028231,
+    "entrypoint": "/dev/shm/herder-l20-test-F1k9I2Ww/release/dist/index.js",
+    "port": 36141,
+    "starttime": "75961819",
+    "indexingEnabled": true,
+    "artifact_sha256": "019d0eb5aa2200a3e78d2b918cd3a84cde0803a7a27692acb6f6ddba4e4db592",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ]
+  },
+  "peerPid": 3028090,
+  "peerStarttime": "75961793",
+  "fixtureRequests": 2,
+  "fixturePaths": {
+    "/v1/responses": 2
+  },
+  "callerInitialPid": 3028231,
+  "callerInitialStarttime": "75961819"
+}

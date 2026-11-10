@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T06:48:27+00:00",
+  "details": "На чистом HEAD5c491e4c в herder-v1-v004 независимый cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate --test humanstop_schema_v3 --test humanstop_gate_pinned --test target_port exit101: pinned1/schema2 PASS, scoped16PASS/1FAIL/1ignored. delivery_requires_authority_exact_instance_and_snapshot_before_fake_submit failed line1571 expecting Admitted from deliver_scoped. Exact standalone rerun PASS. Исходный assertion скрывает фактический Err; нужен диагностируемый результат и причина флейка, не подавление проверки и не один зелёный rerun. Live ignored test не запускался. Передано Terra/Tesla.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T06:48:27+00:00",
+      "changes": {
+        "details": "На чистом HEAD5c491e4c в herder-v1-v004 независимый cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate --test humanstop_schema_v3 --test humanstop_gate_pinned --test target_port exit101: pinned1/schema2 PASS, scoped16PASS/1FAIL/1ignored. delivery_requires_authority_exact_instance_and_snapshot_before_fake_submit failed line1571 expecting Admitted from deliver_scoped. Exact standalone rerun PASS. Исходный assertion скрывает фактический Err; нужен диагностируемый результат и причина флейка, не подавление проверки и не один зелёный rerun. Live ignored test не запускался. Передано Terra/Tesla.",
+        "source": "Independent challenge of 740ac97f..5c491e4c",
+        "status": "open",
+        "title": "HumanStop: positive delivery тест нестабилен в полном наборе"
+      }
+    }
+  ],
+  "id": "B6e745bbdeb2d473899e9",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "Independent challenge of 740ac97f..5c491e4c",
+  "status": "open",
+  "title": "HumanStop: positive delivery тест нестабилен в полном наборе",
+  "updated_at": "2026-11-07T06:48:27+00:00"
+}

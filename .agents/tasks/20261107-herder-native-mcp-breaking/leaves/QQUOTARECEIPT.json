@@ -1,0 +1,67 @@
+{
+  "id": "QQUOTARECEIPT",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "Astra",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "label": "Сохранить точный отказ до отправки Codex turn/start",
+  "affected_files": [
+    "src/adapters/codex-app-server.ts",
+    "tests/codex-quota-guard.test.ts"
+  ],
+  "description": "sendNativeMessage outercatch misclassifies CodexQuotaBlockedError as admissionUnknown. Reuse quotaRefusal; preserve guard and no replay old receipts.",
+  "acceptance": "RED regression public sendMessage+receipt lookup; GREEN known notSubmitted flags, zero turn writes, true transportUNKNOWN remainsUNKNOWN; focused suite and scoped main publish. Runtime rollout separately owned.",
+  "created_at": "2026-11-07T20:36:48+03:00",
+  "updated_at": "2026-11-07T20:41:06+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:36:48+03:00",
+      "note": "",
+      "changes": {
+        "id": "QQUOTARECEIPT",
+        "parent": "S01",
+        "kind": "task",
+        "status": "running",
+        "owner": "Astra",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "label": "Сохранить точный отказ до отправки Codex turn/start",
+        "affected_files": [
+          "src/adapters/codex-app-server.ts",
+          "tests/codex-quota-guard.test.ts"
+        ],
+        "description": "sendNativeMessage outercatch misclassifies CodexQuotaBlockedError as admissionUnknown. Reuse quotaRefusal; preserve guard and no replay old receipts.",
+        "acceptance": "RED regression public sendMessage+receipt lookup; GREEN known notSubmitted flags, zero turn writes, true transportUNKNOWN remainsUNKNOWN; focused suite and scoped main publish. Runtime rollout separately owned."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:41:06+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Published origin/main ffb714b52ef9afeef4dcd7be5b54c9d602dbd2fc; remote readback verified. Moved quotaRefusal to actual turn/start catch; removed misplaced post-admission handler. RED1failure, GREEN41tests, tsc exit0, scoped2paths. Evidence/QQUOTARECEIPT/{red,green,typecheck}.txt. Source complete; running daemon unchanged, old UNKNOWN receipt preserved; runtime installation remains separate."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "result": "Published origin/main ffb714b52ef9afeef4dcd7be5b54c9d602dbd2fc; remote readback verified. Moved quotaRefusal to actual turn/start catch; removed misplaced post-admission handler. RED1failure, GREEN41tests, tsc exit0, scoped2paths. Evidence/QQUOTARECEIPT/{red,green,typecheck}.txt. Source complete; running daemon unchanged, old UNKNOWN receipt preserved; runtime installation remains separate."
+}

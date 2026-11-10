@@ -7,12 +7,13 @@
     "V012"
   ],
   "affected_files": [
-    "crates/herder/src/store/lineage.rs"
+    "crates/herder/src/store/lineage.rs",
+    "crates/herder/src/store/mod.rs"
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +23,7 @@
   "created_at": "2026-11-07T03:52:00+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:00+03:00",
+  "updated_at": "2026-11-07T06:10:48+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:00+03:00",
@@ -51,6 +52,46 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:57:40+03:00",
+      "note": "Добавить lineage store для create intent: сохранить creator и request_ref до native side effect, по контракту V022A; существующая legacy evidence прочитана до реализации.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:00:29+03:00",
+      "note": "V012 уже сохраняет principal/request_key транзакционно, но в приложении это не выражает contract creator_ref/request_ref. Добавляю тонкий типизированный store wrapper, переиспользующий atomic prepare_intent; обновляю affected_files для pub-модуля store::lineage.",
+      "changes": {},
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:00:31+03:00",
+      "note": "V022A требует публичного store::lineage API; добавлена точная module wiring path к affected_files.",
+      "changes": {
+        "affected_files": [
+          "crates/herder/src/store/lineage.rs",
+          "crates/herder/src/store/mod.rs"
+        ]
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:10:48+03:00",
+      "note": "V022A опубликован и доказан; продолжаю по зависимости V022B (native parent отдельно от creator).",
+      "changes": {
+        "status": "done",
+        "result": "Опубликован коммит 58ecc1d928843946a7da81af64c1accfa8acbe0d в origin/main (fast-forward от 554b7182). crates/herder/src/store/lineage.rs добавляет NewCreateLineageIntent и Writer::prepare_create_lineage_intent, сохраняющие creator_ref/request_ref до native side effect через существующий atomic prepare_intent; crates/herder/src/store/mod.rs экспортирует API. Проверка: cargo test -p herder store::lineage::tests::create_intent_persists_creator_and_request_ref_before_dispatch — 1 passed (после rebase). Удалённый main подтверждён на 58ecc1d9; worktree чистый. Не доказано: MCP/установленный consumer acceptance."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Опубликован коммит 58ecc1d928843946a7da81af64c1accfa8acbe0d в origin/main (fast-forward от 554b7182). crates/herder/src/store/lineage.rs добавляет NewCreateLineageIntent и Writer::prepare_create_lineage_intent, сохраняющие creator_ref/request_ref до native side effect через существующий atomic prepare_intent; crates/herder/src/store/mod.rs экспортирует API. Проверка: cargo test -p herder store::lineage::tests::create_intent_persists_creator_and_request_ref_before_dispatch — 1 passed (после rebase). Удалённый main подтверждён на 58ecc1d9; worktree чистый. Не доказано: MCP/установленный consumer acceptance."
 }

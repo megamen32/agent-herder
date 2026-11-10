@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T01:18:18+00:00",
+  "details": "ResourceScope при serde deserialization принимает project_ref у global, нарушая строгий контракт и отвергание неизвестных полей.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b390-019f-7083-8e2e-2e06e6c46d23",
+      "at": "2026-11-07T01:18:18+00:00",
+      "changes": {
+        "details": "ResourceScope при serde deserialization принимает project_ref у global, нарушая строгий контракт и отвергание неизвестных полей.",
+        "source": "V036A worker обнаружил на тестовом JSON",
+        "status": "open",
+        "title": "Global scope принимает лишние поля"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T01:47:59+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/f001/green.stdout",
+            "red_proof_path": "review-evidence/f001/red.stdout",
+            "red_result": "test result: FAILED. 0 passed; 1 failed",
+            "red_sha256": "7846c775deaf3130fa1204df32c0bc09b3b1d0e2cecb2d2f7b394e32aaa2e5a9",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "f98382aac503194047dad9b965ade56242962e68f4edf1147093a098f945a565",
+            "test_command": "review-evidence/f001/reproduce.sh"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B05de7d28746541c59261",
+  "owner": "01a1b390-019f-7083-8e2e-2e06e6c46d23",
+  "reporter": "01a1b390-019f-7083-8e2e-2e06e6c46d23",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/f001/green.stdout",
+      "red_proof_path": "review-evidence/f001/red.stdout",
+      "red_result": "test result: FAILED. 0 passed; 1 failed",
+      "red_sha256": "7846c775deaf3130fa1204df32c0bc09b3b1d0e2cecb2d2f7b394e32aaa2e5a9",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "f98382aac503194047dad9b965ade56242962e68f4edf1147093a098f945a565",
+      "test_command": "review-evidence/f001/reproduce.sh"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "V036A worker обнаружил на тестовом JSON",
+  "status": "fixed",
+  "title": "Global scope принимает лишние поля",
+  "updated_at": "2026-11-07T01:47:59+00:00"
+}

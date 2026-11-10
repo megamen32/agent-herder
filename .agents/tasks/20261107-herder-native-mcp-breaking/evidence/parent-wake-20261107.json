@@ -1,0 +1,15 @@
+{
+  "hourly": {
+    "wait_id": "wait_af49f511763aee0b8c87b18eaf55b3f5",
+    "state": "waiting",
+    "scheduled_at": "2026-11-07T16:25:17.522Z"
+  },
+  "children": {
+    "wait_id": "wait_71deae46f7e34e3671b4b6887dbc7e4a",
+    "state": "delivery_failed",
+    "reason": "Dependency CI: native turn completion is unavailable; idle alone is not completion"
+  },
+  "lhc_hook_bridge": "not_implemented",
+  "plan_leaf_registration": "blocked_by_unknown_evidence_field_in_QBROWSERJOIN",
+  "source_design": "QUIET-COORDINATION.md"
+}

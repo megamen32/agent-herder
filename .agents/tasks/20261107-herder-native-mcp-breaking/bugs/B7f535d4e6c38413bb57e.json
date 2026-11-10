@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-11-07T01:49:14+00:00",
+  "details": "Initial `cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes -- --nocapture` ran >60s without completing; the test awaited server ServiceExt::serve inline, so its transport reader could not run concurrently with the client handshake. No native endpoint or external effect was involved.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T01:49:14+00:00",
+      "changes": {
+        "details": "Initial `cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes -- --nocapture` ran >60s without completing; the test awaited server ServiceExt::serve inline, so its transport reader could not run concurrently with the client handshake. No native endpoint or external effect was involved.",
+        "source": "T002 initial compatibility SDK wire probe",
+        "status": "open",
+        "title": "Compatibility in-memory wire probe deadlocks during MCP handshake"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T02:03:54+00:00",
+      "changes": {
+        "resolution": {
+          "kind": "false_positive",
+          "reason": "The timeout was caused solely by the in-memory test harness waiting for a server ServiceExt::serve call inline; it was not a product protocol defect. The test now runs each server reader concurrently and the same wire check completes successfully; see review-evidence/run-01a1b398/green-B7-B64.txt."
+        },
+        "status": "false_positive"
+      }
+    }
+  ],
+  "id": "B7f535d4e6c38413bb57e",
+  "owner": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "reporter": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "resolution": {
+    "kind": "false_positive",
+    "reason": "The timeout was caused solely by the in-memory test harness waiting for a server ServiceExt::serve call inline; it was not a product protocol defect. The test now runs each server reader concurrently and the same wire check completes successfully; see review-evidence/run-01a1b398/green-B7-B64.txt."
+  },
+  "source": "T002 initial compatibility SDK wire probe",
+  "status": "false_positive",
+  "title": "Compatibility in-memory wire probe deadlocks during MCP handshake",
+  "updated_at": "2026-11-07T02:03:54+00:00"
+}

@@ -1,0 +1,29 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/.tmp/l35-test
+
+ ❯ tests/integrator-transcript-browser.test.ts (2 tests | 1 failed) 20ms
+     × pages the exact current conversation and rejects a cross-session cursor 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integrator-transcript-browser.test.ts > Browser Chat transcript > pages the exact current conversation and rejects a cross-session cursor
+Error: Native transcript page rejected: unsupported native JSONL harness
+ ❯ fail src/integrator-transcript.ts:88:9
+     86|
+     87| function fail(reason: string): never {
+     88|   throw new Error(`Native transcript page rejected: ${reason}`);
+       |         ^
+     89| }
+     90|
+ ❯ Object.reader src/integrator-transcript.ts:510:70
+ ❯ readIntegratorTranscriptPage src/integrator-transcript.ts:180:27
+ ❯ tests/integrator-transcript-browser.test.ts:16:41
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  19:32:21
+   Duration  513ms (transform 217ms, setup 65ms, import 197ms, tests 20ms, environment 0ms)
+

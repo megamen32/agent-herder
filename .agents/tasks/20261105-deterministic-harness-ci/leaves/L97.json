@@ -1,0 +1,34 @@
+{
+  "id": "L97",
+  "label": "CI: отпечаток зависимостей кандидата",
+  "description": "Сохранить и сверять фактические файлы смонтированного хранилища зависимостей до и после прогона.",
+  "acceptance": "Изменение dependency-файла обнаруживается, квитанция хранит отпечаток и честные ограничения; время остаётся в пределах нескольких минут.",
+  "status": "done",
+  "owner": "lead",
+  "estimate_minutes": 15,
+  "kind": "task",
+  "result": "781b025f опубликован в main; RED отсутствующий verifier, GREEN 19 тестов, изменение dependency-файла и внешняя ссылка обнаруживаются. Runner установлен server-44: кандидат 1153f3f4, 8819 записей store, fingerprint f8ca5031…, совпадение до/после; реальные Codex 0.167.0 и OpenCode 2.1.3 по 2 сессии, поиск, по 2 вызова fixture; 14.174с, overall INCOMPLETE exit2. Квитанция ~/.local/share/agent-herder-ci/versions/781b025f/receipt-candidate-1153f3f4.json; временный candidate/store удалён. Вложенные symlink targets и подписанная идентичность store отдельно не аттестованы; установленный PID не доказан.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T17:32:16+03:00",
+  "updated_at": "2026-11-07T17:32:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T17:32:16+03:00",
+      "note": "",
+      "changes": {
+        "id": "L97",
+        "label": "CI: отпечаток зависимостей кандидата",
+        "description": "Сохранить и сверять фактические файлы смонтированного хранилища зависимостей до и после прогона.",
+        "acceptance": "Изменение dependency-файла обнаруживается, квитанция хранит отпечаток и честные ограничения; время остаётся в пределах нескольких минут.",
+        "status": "done",
+        "owner": "lead",
+        "estimate_minutes": 15,
+        "kind": "task",
+        "result": "781b025f опубликован в main; RED отсутствующий verifier, GREEN 19 тестов, изменение dependency-файла и внешняя ссылка обнаруживаются. Runner установлен server-44: кандидат 1153f3f4, 8819 записей store, fingerprint f8ca5031…, совпадение до/после; реальные Codex 0.167.0 и OpenCode 2.1.3 по 2 сессии, поиск, по 2 вызова fixture; 14.174с, overall INCOMPLETE exit2. Квитанция ~/.local/share/agent-herder-ci/versions/781b025f/receipt-candidate-1153f3f4.json; временный candidate/store удалён. Вложенные symlink targets и подписанная идентичность store отдельно не аттестованы; установленный PID не доказан.",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

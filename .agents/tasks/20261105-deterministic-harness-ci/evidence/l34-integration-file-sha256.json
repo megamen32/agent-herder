@@ -1,0 +1,209 @@
+{
+  "scope": "l34-integration-owned-file-inventory",
+  "integrationHead": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "snapshot": "/tmp/herder-l27-integration-check-LY7sJO",
+  "snapshotBuild": "PASS; not an immutable release candidate",
+  "files": [
+    {
+      "path": "scripts/codex-unix-boundary-client.mjs",
+      "sha256": "55e4bf0de0a7863d326ba64fdb875209ffa4c0ad6a16fc43ec72543d7b2a6ca4",
+      "snapshotSha256": "55e4bf0de0a7863d326ba64fdb875209ffa4c0ad6a16fc43ec72543d7b2a6ca4"
+    },
+    {
+      "path": "scripts/codex-unix-boundary.py",
+      "sha256": "8c92a1e75cadec01ff41c118ad4dbf4e6a569702637d27db1f7cc1fda4c6db7c",
+      "snapshotSha256": "8c92a1e75cadec01ff41c118ad4dbf4e6a569702637d27db1f7cc1fda4c6db7c"
+    },
+    {
+      "path": "scripts/codex-unix-entrypoint-client.mjs",
+      "sha256": "f9d7c7dcf4b975b7ce11fd12af1a94233a867ee56c05430a616ac151538a6d97",
+      "snapshotSha256": "f9d7c7dcf4b975b7ce11fd12af1a94233a867ee56c05430a616ac151538a6d97"
+    },
+    {
+      "path": "scripts/codex-unix-held-active.mjs",
+      "sha256": "de7ea5e6865c3ce78396b06c0d3ea5fc2e33cc10030aad1d310c3f92baad95d7",
+      "snapshotSha256": "de7ea5e6865c3ce78396b06c0d3ea5fc2e33cc10030aad1d310c3f92baad95d7"
+    },
+    {
+      "path": "scripts/codex-unix-http-client.mjs",
+      "sha256": "fdff71b537687858c8a8ca0f538e20c971e0939bcaf5f42c5c90ea94ff597498",
+      "snapshotSha256": "fdff71b537687858c8a8ca0f538e20c971e0939bcaf5f42c5c90ea94ff597498"
+    },
+    {
+      "path": "scripts/codex-unix-stand-contract.md",
+      "sha256": "08ae064d9028db0f1775800cfb64d926c1a7783ff73d172e564ae71d802bbd44",
+      "snapshotSha256": "08ae064d9028db0f1775800cfb64d926c1a7783ff73d172e564ae71d802bbd44"
+    },
+    {
+      "path": "scripts/codex-unix-stand-contract.py",
+      "sha256": "3985ea3949ec758a0a90da1e218f60dbd545931f54eee9b10f1d1c4da886e295",
+      "snapshotSha256": "3985ea3949ec758a0a90da1e218f60dbd545931f54eee9b10f1d1c4da886e295"
+    },
+    {
+      "path": "scripts/inspect-installed-herder.py",
+      "sha256": "4ace06af9d5acc0f56134d53f2bbc9b58dbced17978428f665e230e88bd37d71",
+      "snapshotSha256": "4ace06af9d5acc0f56134d53f2bbc9b58dbced17978428f665e230e88bd37d71"
+    },
+    {
+      "path": "scripts/native-ci-transcript-wait.mjs",
+      "sha256": "ec791b1d246123935dd1ec4d8cb7f35cd218da1342f1cef2a5d308e0f46a6002",
+      "snapshotSha256": "ec791b1d246123935dd1ec4d8cb7f35cd218da1342f1cef2a5d308e0f46a6002"
+    },
+    {
+      "path": "src/adapters/codex-app-server.ts",
+      "sha256": "adb0607fe373711a5bfc77ca5d50b6954a9b89d54de4a075048549ad3b261c84",
+      "snapshotSha256": "adb0607fe373711a5bfc77ca5d50b6954a9b89d54de4a075048549ad3b261c84"
+    },
+    {
+      "path": "src/adapters/codex.ts",
+      "sha256": "c26ff3d2e4718120f7f591e3341da35d6a312363fac12bce1fa27f4377bae739",
+      "snapshotSha256": "c26ff3d2e4718120f7f591e3341da35d6a312363fac12bce1fa27f4377bae739"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "e22889c7d4a1453bdbe85f69521438821319bc8a9f3a2bf883f402f49290a858",
+      "snapshotSha256": "e22889c7d4a1453bdbe85f69521438821319bc8a9f3a2bf883f402f49290a858"
+    },
+    {
+      "path": "src/named-session.ts",
+      "sha256": "4c8bca1167227eb3e5db712e31684f820389fbe158be97defde3bf7f7def3176",
+      "snapshotSha256": "4c8bca1167227eb3e5db712e31684f820389fbe158be97defde3bf7f7def3176"
+    },
+    {
+      "path": "src/session-supervisor.ts",
+      "sha256": "c0124cd7bdaab204b98ef296ce8010bba62a7abb4d178003a69fa96d7e7e0ced",
+      "snapshotSha256": "c0124cd7bdaab204b98ef296ce8010bba62a7abb4d178003a69fa96d7e7e0ced"
+    },
+    {
+      "path": "src/web/autopilot-goal-api.ts",
+      "sha256": "fd922612f183df78c46e4c8396bca5ce1118e6280be498cf5c74b82df4bce2ad",
+      "snapshotSha256": "fd922612f183df78c46e4c8396bca5ce1118e6280be498cf5c74b82df4bce2ad"
+    },
+    {
+      "path": "src/web/native-ci-config.ts",
+      "sha256": "853deee31523343f93e1988972f99c5873f7b82c963643686700d5a64ee746c9",
+      "snapshotSha256": "853deee31523343f93e1988972f99c5873f7b82c963643686700d5a64ee746c9"
+    },
+    {
+      "path": "src/web/native-ci-dispatch.ts",
+      "sha256": "508d3787c9c03bc552829797f3743a5a18fb5ae732db4c56e7509c03d71d9d6c",
+      "snapshotSha256": "508d3787c9c03bc552829797f3743a5a18fb5ae732db4c56e7509c03d71d9d6c"
+    },
+    {
+      "path": "src/web/native-ci-peer.ts",
+      "sha256": "e451ee5681c5548bea19f58f8f356c1aadc33252fd6c401d9bbf4622980746cf",
+      "snapshotSha256": "e451ee5681c5548bea19f58f8f356c1aadc33252fd6c401d9bbf4622980746cf"
+    },
+    {
+      "path": "src/web/native-ci-runtime.ts",
+      "sha256": "1d58e8ac04b38957707b371b5aad26cf0784056893550614ca96a4b54dc8ce67",
+      "snapshotSha256": "1d58e8ac04b38957707b371b5aad26cf0784056893550614ca96a4b54dc8ce67"
+    },
+    {
+      "path": "src/web/native-ci-scoped-adapter.ts",
+      "sha256": "cd51329734a2cd59d484b41c2183a03d4da5fdb57ae162c8df147d6cba45eac9",
+      "snapshotSha256": "cd51329734a2cd59d484b41c2183a03d4da5fdb57ae162c8df147d6cba45eac9"
+    },
+    {
+      "path": "src/web/native-ci-search.ts",
+      "sha256": "12a9b71529c6855352957076f68568a294716d933226677f7b858b2218a02430",
+      "snapshotSha256": "12a9b71529c6855352957076f68568a294716d933226677f7b858b2218a02430"
+    },
+    {
+      "path": "src/web/server.ts",
+      "sha256": "6fdec3076170ba18bfc51708d1ca64bb0bfd0731992fd93a28e887ad2202cb6a",
+      "snapshotSha256": "6fdec3076170ba18bfc51708d1ca64bb0bfd0731992fd93a28e887ad2202cb6a"
+    },
+    {
+      "path": "tests/codex-app-server-home-transcript.test.ts",
+      "sha256": "ebbae167c9f0aa97839cd594014573d237b0e32759ea3c653f290ad851966a46",
+      "snapshotSha256": "ebbae167c9f0aa97839cd594014573d237b0e32759ea3c653f290ad851966a46"
+    },
+    {
+      "path": "tests/native-ci-config.test.ts",
+      "sha256": "0a24840b256a911ee4d94a8102e885f0ccf5a37f59bbe5666e83f725e08e8e9a",
+      "snapshotSha256": "0a24840b256a911ee4d94a8102e885f0ccf5a37f59bbe5666e83f725e08e8e9a"
+    },
+    {
+      "path": "tests/native-ci-dispatch.test.ts",
+      "sha256": "6110fef7b90a209f94d9979edfc228a5198c5a4348257cce834353192de89aef",
+      "snapshotSha256": "6110fef7b90a209f94d9979edfc228a5198c5a4348257cce834353192de89aef"
+    },
+    {
+      "path": "tests/native-ci-goal-input-http.test.ts",
+      "sha256": "296b8430a307e69c31d968ade33a2fd8ba893ca47bcd2c21235d7fe361ea2f2f",
+      "snapshotSha256": "296b8430a307e69c31d968ade33a2fd8ba893ca47bcd2c21235d7fe361ea2f2f"
+    },
+    {
+      "path": "tests/native-ci-held-active.test.mjs",
+      "sha256": "c685504c273ecf0e7eaa4de9bdab8e994f2fe332b69d5ef6a8195885caa717a2",
+      "snapshotSha256": "c685504c273ecf0e7eaa4de9bdab8e994f2fe332b69d5ef6a8195885caa717a2"
+    },
+    {
+      "path": "tests/native-ci-http-route.test.ts",
+      "sha256": "bed5b3ccb757f1b86e0e496ac412df4269b32335f47463add5ab1026047972d4",
+      "snapshotSha256": "bed5b3ccb757f1b86e0e496ac412df4269b32335f47463add5ab1026047972d4"
+    },
+    {
+      "path": "tests/native-ci-mcp-search.test.ts",
+      "sha256": "08cf67a32d88f8b70c2b64b2497e05eac5a8d23a2733a5a79db2eaa7d0066a13",
+      "snapshotSha256": "08cf67a32d88f8b70c2b64b2497e05eac5a8d23a2733a5a79db2eaa7d0066a13"
+    },
+    {
+      "path": "tests/native-ci-named-session-isolation.test.ts",
+      "sha256": "1735dddf685a8d41ed7be9d47abd2ac790ad3060a22665dbd9bd0df13857bb5d",
+      "snapshotSha256": "1735dddf685a8d41ed7be9d47abd2ac790ad3060a22665dbd9bd0df13857bb5d"
+    },
+    {
+      "path": "tests/native-ci-peer.test.ts",
+      "sha256": "366a3ab9278021a3abcbc7bdef7b5584e4393e50082b36b6a6325717e1a1a873",
+      "snapshotSha256": "366a3ab9278021a3abcbc7bdef7b5584e4393e50082b36b6a6325717e1a1a873"
+    },
+    {
+      "path": "tests/native-ci-real-route.test.ts",
+      "sha256": "8cb8c44f398ea4adf7efbd0449cafa48773bb5a659ba68ffdf44c2325054d362",
+      "snapshotSha256": "8cb8c44f398ea4adf7efbd0449cafa48773bb5a659ba68ffdf44c2325054d362"
+    },
+    {
+      "path": "tests/native-ci-runtime.test.ts",
+      "sha256": "2a1489dd3001e6868e6afe70e1469864ecae454eee6cb91756212a77c19d194f",
+      "snapshotSha256": "2a1489dd3001e6868e6afe70e1469864ecae454eee6cb91756212a77c19d194f"
+    },
+    {
+      "path": "tests/native-ci-scoped-adapter.test.ts",
+      "sha256": "51d5ec7904b1069c575b1844f40c6ffaee62a10407f88f427728b862c1debdfe",
+      "snapshotSha256": "51d5ec7904b1069c575b1844f40c6ffaee62a10407f88f427728b862c1debdfe"
+    },
+    {
+      "path": "tests/native-ci-search.test.ts",
+      "sha256": "1b9d21757cb1303ed3b3fd409b67bb60646da2479eb636d6b2702b49ced53e41",
+      "snapshotSha256": "1b9d21757cb1303ed3b3fd409b67bb60646da2479eb636d6b2702b49ced53e41"
+    },
+    {
+      "path": "tests/native-ci-supervisor-isolation.test.ts",
+      "sha256": "395b6c0c5d709f54eb92b72751a1605548a9f146fff72d2319186f8e9a6ccc7f",
+      "snapshotSha256": "395b6c0c5d709f54eb92b72751a1605548a9f146fff72d2319186f8e9a6ccc7f"
+    },
+    {
+      "path": "tests/native-ci-transcript-wait.test.ts",
+      "sha256": "0eb14f603613f11178ab5c05dd487c2719253620c73a4550e8e893e610b3c2d4",
+      "snapshotSha256": "0eb14f603613f11178ab5c05dd487c2719253620c73a4550e8e893e610b3c2d4"
+    },
+    {
+      "path": "tests/test_codex_unix_boundary.py",
+      "sha256": "6748e6f1cc8d4bf06553df3c02b762a62801cdd375b1573d2ffc826b6797b76c",
+      "snapshotSha256": "6748e6f1cc8d4bf06553df3c02b762a62801cdd375b1573d2ffc826b6797b76c"
+    },
+    {
+      "path": "tests/test_codex_unix_stand_contract.py",
+      "sha256": "028b30c35cfe0f73763d0e9fe982d9890b7bf93628ec90e44c0b212c8d7a7eed",
+      "snapshotSha256": "028b30c35cfe0f73763d0e9fe982d9890b7bf93628ec90e44c0b212c8d7a7eed"
+    },
+    {
+      "path": "tests/test_installed_listener.py",
+      "sha256": "213e823bc6e672d4e8be497579585d9671b2fbc3d4ff60c18178d100b72aac2d",
+      "snapshotSha256": "213e823bc6e672d4e8be497579585d9671b2fbc3d4ff60c18178d100b72aac2d"
+    }
+  ],
+  "mismatches": []
+}

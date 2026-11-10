@@ -1,0 +1,123 @@
+{
+  "scope": "installed-codex-consumer",
+  "sessions": [
+    "01a1b19f-0a30-7ff0-83c3-5cdf0700b1bb",
+    "01a1b19f-16f0-7c83-a0e2-399da7c40a9c"
+  ],
+  "sessionsSearched": true,
+  "projectListed": true,
+  "transcriptPages": [
+    3,
+    3
+  ],
+  "completed": true,
+  "transcriptComplete": true,
+  "verifiedPeerPid": 3534760,
+  "heldActive": {
+    "sessionId": "01a1b19f-0a30-7ff0-83c3-5cdf0700b1bb",
+    "harness": "codex",
+    "status": "running",
+    "fixtureHeld": true,
+    "released": true
+  },
+  "status": "INCOMPLETE",
+  "codexScenarioStatus": "PASS",
+  "harness": "codex",
+  "allRequiredScenarios": false,
+  "limitations": [
+    "Codex only; other applicable harnesses not tested",
+    "artifact evidence provenance and runtime resolution environment not authenticated",
+    "file inventory and separate Node resolution do not attest already loaded modules"
+  ],
+  "artifactEvidenceStatus": "unverified-provenance",
+  "fullArtifactComparison": {
+    "match": true,
+    "candidate_sha256": "8c3615d77445a2b0079f0e0b048868062c21fb9a0e8f7ecaa5e8f7d3efe1845f",
+    "installed_sha256": "8c3615d77445a2b0079f0e0b048868062c21fb9a0e8f7ecaa5e8f7d3efe1845f",
+    "candidate_resume": "dist/index.js",
+    "installed_resume": "dist/index.js",
+    "differences": [],
+    "scope": "dereferenced rollout payload and node_modules on this host",
+    "limitations": [
+      "not an attestation of modules loaded by a running process",
+      "filesystem and Node resolution may change after inspection",
+      "does not prove other package resolution outside these trees",
+      "platform-specific dependency trees require separate tested candidates"
+    ]
+  },
+  "unit": "herder-l27-ci-held.service",
+  "before": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3534898,
+    "entrypoint": "/dev/shm/herder-l27-codex-8OyaY6sZ/full-release/dist/index.js",
+    "port": 33151,
+    "starttime": "76416453",
+    "indexingEnabled": true,
+    "artifact_sha256": "8a1e4913c8e6cb84afad7b48248cd0fc9f54ede5503555e5552f384840fd950c",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ],
+    "unitProcessChain": [
+      {
+        "pid": 3534719,
+        "starttime": "76416389"
+      },
+      {
+        "pid": 3534727,
+        "starttime": "76416392"
+      },
+      {
+        "pid": 3534728,
+        "starttime": "76416395"
+      },
+      {
+        "pid": 3534898,
+        "starttime": "76416453"
+      }
+    ]
+  },
+  "after": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3534898,
+    "entrypoint": "/dev/shm/herder-l27-codex-8OyaY6sZ/full-release/dist/index.js",
+    "port": 33151,
+    "starttime": "76416453",
+    "indexingEnabled": true,
+    "artifact_sha256": "8a1e4913c8e6cb84afad7b48248cd0fc9f54ede5503555e5552f384840fd950c",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ],
+    "unitProcessChain": [
+      {
+        "pid": 3534719,
+        "starttime": "76416389"
+      },
+      {
+        "pid": 3534727,
+        "starttime": "76416392"
+      },
+      {
+        "pid": 3534728,
+        "starttime": "76416395"
+      },
+      {
+        "pid": 3534898,
+        "starttime": "76416453"
+      }
+    ]
+  },
+  "peerPid": 3534760,
+  "peerStarttime": "76416430",
+  "fixtureRequests": 2,
+  "fixturePaths": {
+    "/v1/responses": 2
+  }
+}

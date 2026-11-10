@@ -1,0 +1,99 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+warning: unused variable: `account_scope`
+   --> src/adapters/zai/mod.rs:657:5
+    |
+657 |     account_scope: &str,
+    |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_account_scope`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (lib) generated 1 warning (run `cargo fix --lib -p herder` to apply 1 suggestion)
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings (2 duplicates)
+warning: `herder` (test "target_gate_fixture") generated 6 warnings
+warning: `herder` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.63s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 3 tests
+
+thread 'adapters::zai::tests::snapshot_fields_are_length_delimited_even_when_values_contain_nul' (2982980) panicked at src/adapters/zai/mod.rs:1155:9:
+assertion `left != right` failed
+  left: Array([19, 226, 40, 86, 126, 130, 73, 252, 229, 51, 55, 242, 93, 121, 112, 222, 59, 214, 138, 178, 101, 52, 36, 199, 184, 249, 253, 5, 227, 60, 174, 223])
+ right: Array([19, 226, 40, 86, 126, 130, 73, 252, 229, 51, 55, 242, 93, 121, 112, 222, 59, 214, 138, 178, 101, 52, 36, 199, 184, 249, 253, 5, 227, 60, 174, 223])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test application::list::tests::snapshot_pages_keep_cached_timestamps_and_report_offline_and_missing_sources ... ok
+test adapters::zai::tests::snapshot_fields_are_length_delimited_even_when_values_contain_nul ... FAILED
+
+thread 'adapters::zai::tests::transcript_snapshot_binds_full_session_account_and_principal' (2982981) panicked at src/adapters/zai/mod.rs:1129:9:
+assertion `left != right` failed
+  left: "zai:216bedb8f6236dfd6b38629f1500807f93c5470f74aa3b59141b9d48a0b48aca"
+ right: "zai:216bedb8f6236dfd6b38629f1500807f93c5470f74aa3b59141b9d48a0b48aca"
+test adapters::zai::tests::transcript_snapshot_binds_full_session_account_and_principal ... FAILED
+
+failures:
+
+failures:
+    adapters::zai::tests::snapshot_fields_are_length_delimited_even_when_values_contain_nul
+    adapters::zai::tests::transcript_snapshot_binds_full_session_account_and_principal
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 109 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

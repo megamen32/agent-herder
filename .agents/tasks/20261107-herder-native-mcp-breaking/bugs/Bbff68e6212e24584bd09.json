@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:44:07+00:00",
+  "details": "read_authorized accepted URI task-a with current ACL/owner task-a when ResourceValue::Task.task_ref was task-a but its embedded GetTaskResult task ID was task-b, returning task-b JSON under task-a URI. Added guard requiring both references to equal the URI and a wrapper-level regression.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex",
+      "at": "2026-11-07T11:44:07+00:00",
+      "changes": {
+        "details": "read_authorized accepted URI task-a with current ACL/owner task-a when ResourceValue::Task.task_ref was task-a but its embedded GetTaskResult task ID was task-b, returning task-b JSON under task-a URI. Added guard requiring both references to equal the URI and a wrapper-level regression.",
+        "source": "Independent Nietzsche review and failing focused test evidence/v017b-task-payload-mismatch-red.txt",
+        "status": "open",
+        "title": "Authorized Task read can project mismatched payload task ID"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex",
+      "at": "2026-11-07T11:44:39+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/v017b-task-payload-mismatch-green.txt",
+            "red_proof_path": "evidence/v017b-task-payload-mismatch-red.txt",
+            "red_result": "assertion failed: matches!",
+            "red_sha256": "93cc087fe02d815f0636e3f4811854e57a46b3feb0eb1fb37f27cd1a9d40b6ef",
+            "result": "10 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out",
+            "sha256": "39177c4c12a571588248956dd90cb42a58c11580049f75bb98c72796a1c6ff3e",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbff68e6212e24584bd09",
+  "owner": "Codex",
+  "reporter": "Codex",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/v017b-task-payload-mismatch-green.txt",
+      "red_proof_path": "evidence/v017b-task-payload-mismatch-red.txt",
+      "red_result": "assertion failed: matches!",
+      "red_sha256": "93cc087fe02d815f0636e3f4811854e57a46b3feb0eb1fb37f27cd1a9d40b6ef",
+      "result": "10 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out",
+      "sha256": "39177c4c12a571588248956dd90cb42a58c11580049f75bb98c72796a1c6ff3e",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Independent Nietzsche review and failing focused test evidence/v017b-task-payload-mismatch-red.txt",
+  "status": "fixed",
+  "title": "Authorized Task read can project mismatched payload task ID",
+  "updated_at": "2026-11-07T11:44:39+00:00"
+}

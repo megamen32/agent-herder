@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-08T22:51:58+00:00",
+  "details": "Existing five-lane report can pass despite missing UI observation, wrong or absent exact native ID, contradictory native/UI state and native_coverage_complete=false. Nine regression tests show31 failing subcases before implementation. Extend existing validator and exact tests; actual browser/runner wiring remains separate required acceptance.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T22:51:58+00:00",
+      "changes": {
+        "details": "Existing five-lane report can pass despite missing UI observation, wrong or absent exact native ID, contradictory native/UI state and native_coverage_complete=false. Nine regression tests show31 failing subcases before implementation. Extend existing validator and exact tests; actual browser/runner wiring remains separate required acceptance.",
+        "source": "evidence/ci-visible-20261109/red.log",
+        "status": "open",
+        "title": "V1 release report accepts PASS without Vibe session evidence"
+      }
+    }
+  ],
+  "id": "CIVIBE_REQUIRED_EVIDENCE",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "reporter": "chatgpt-all-harness-ci-20261109",
+  "source": "evidence/ci-visible-20261109/red.log",
+  "status": "open",
+  "title": "V1 release report accepts PASS without Vibe session evidence",
+  "updated_at": "2026-11-08T22:51:58+00:00"
+}

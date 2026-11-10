@@ -1,0 +1,84 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling serde_core v1.0.229
+   Compiling libc v0.2.191
+   Compiling pin-project-lite v0.2.17
+   Compiling memchr v2.8.3
+   Compiling futures-core v0.3.34
+   Compiling futures-sink v0.3.34
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling getrandom v0.4.3
+   Compiling itoa v1.0.18
+   Compiling serde_json v1.0.154
+   Compiling ref-cast v1.0.27
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling pkg-config v0.3.34
+   Compiling vcpkg v0.2.15
+   Compiling slab v0.4.12
+   Compiling cfg-if v1.0.5
+   Compiling once_cell v1.21.4
+   Compiling foldhash v0.1.5
+   Compiling thiserror v2.0.21
+   Compiling bytes v1.12.1
+   Compiling const-oid v0.10.2
+   Compiling cpufeatures v0.3.1
+   Compiling equivalent v1.0.3
+   Compiling dyn-clone v1.0.20
+   Compiling rmcp v3.9.0
+   Compiling hashbrown v0.17.1
+   Compiling bitflags v2.13.2
+   Compiling fallible-iterator v0.3.0
+   Compiling smallvec v1.16.5
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling pastey v0.2.3
+   Compiling cc v1.11.1
+   Compiling futures-channel v0.3.34
+   Compiling hashbrown v0.15.5
+   Compiling tracing-core v0.1.36
+   Compiling num-traits v0.2.19
+   Compiling hashlink v0.10.0
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling hybrid-array v0.4.15
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling libsqlite3-sys v0.35.0
+   Compiling uuid v1.29.0
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling digest v0.11.3
+   Compiling sha2 v0.11.1
+   Compiling indexmap v2.14.2
+   Compiling serde_path_to_error v0.1.20
+   Compiling serde_derive_internals v0.30.0
+   Compiling serde_derive v1.0.229
+   Compiling futures-macro v0.3.34
+   Compiling ref-cast-impl v1.0.27
+   Compiling tokio-macros v2.7.2
+   Compiling thiserror-impl v2.0.21
+   Compiling schemars_derive v1.2.3
+   Compiling tokio v1.54.1
+   Compiling futures-util v0.3.34
+   Compiling tracing-attributes v0.1.31
+   Compiling tracing v0.1.44
+   Compiling chrono v0.4.45
+   Compiling futures-executor v0.3.34
+   Compiling futures v0.3.34
+   Compiling schemars v1.2.3
+   Compiling tokio-util v0.7.20
+   Compiling rusqlite v0.37.0
+   Compiling herder v0.1.0 (/tmp/herder-f001.ALf6AU1p/red/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.91s
+     Running unittests src/lib.rs (/tmp/herder-f001.ALf6AU1p/target-red/debug/deps/herder-c3c26d2f03e2ccd8)
+
+thread 'domain::resource::tests::resource_scope_rejects_extra_fields_and_accepts_valid_json' (3871586) panicked at src/domain/resource.rs:117:13:
+accepted {"type":"global","project_ref":"p"}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--lib`

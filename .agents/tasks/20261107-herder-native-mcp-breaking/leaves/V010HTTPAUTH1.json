@@ -1,0 +1,64 @@
+{
+  "id": "V010HTTPAUTH1",
+  "label": "Подготовить request-scoped OAuth gate для native application",
+  "description": "Разделить HTTP authority от длительного MCP соединения; проверять живую authority на каждом запросе до native application и определить стык с единственным существующим store.",
+  "acceptance": "Доказать повторную проверку, отказ после отзыва до application, сохранить subject; обозначить точный неготовый HTTP и legacy стык.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/mcp/transport.rs",
+    "crates/herder/tests"
+  ],
+  "created_at": "2026-11-07T06:16:01+03:00",
+  "updated_at": "2026-11-07T06:20:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T06:16:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010HTTPAUTH1",
+        "label": "Подготовить request-scoped OAuth gate для native application",
+        "description": "Разделить HTTP authority от длительного MCP соединения; проверять живую authority на каждом запросе до native application и определить стык с единственным существующим store.",
+        "acceptance": "Доказать повторную проверку, отказ после отзыва до application, сохранить subject; обозначить точный неготовый HTTP и legacy стык.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/mcp/transport.rs",
+          "crates/herder/tests"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:16:06+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:20:41+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "3438693a: request-scoped OAuth gate; isolated real compiled McpOAuthTokenStore issues and revokes token, same gate checks again and denies before application. Test uses application spy and private test pipe. HTTP transport, trusted bridge to live store and real HTTP-to-native-recent acceptance remain open; exact seam in tests/oauth_ingress_handoff.md."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "3438693a: request-scoped OAuth gate; isolated real compiled McpOAuthTokenStore issues and revokes token, same gate checks again and denies before application. Test uses application spy and private test pipe. HTTP transport, trusted bridge to live store and real HTTP-to-native-recent acceptance remain open; exact seam in tests/oauth_ingress_handoff.md."
+}

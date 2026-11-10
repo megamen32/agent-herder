@@ -1,0 +1,29 @@
+   Compiling herder v0.1.0 (/tmp/herder-tasks-publish-1047/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.05s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 7 tests
+
+thread 'adapters::ahap_opencode::tests::duplicate_native_id_across_roles_is_unknown' (3101664) panicked at src/adapters/ahap_opencode.rs:320:10:
+called `Result::unwrap()` on an `Err` value: BeforeSend
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test adapters::ahap_opencode::tests::duplicate_native_id_across_roles_is_unknown ... FAILED
+
+thread 'adapters::ahap::tests::ambiguous_result_and_null_error_poisons_connection' (3101660) panicked at src/adapters/ahap.rs:384:9:
+assertion failed: matches!(c.call("sendMessage", json!({})), Err(AhapError::OutcomeUnknown))
+test adapters::ahap::tests::ambiguous_result_and_null_error_poisons_connection ... FAILED
+test adapters::ahap_opencode::tests::missing_native_receipt_stays_unknown_and_wrong_instance_does_not_send ... ok
+test adapters::ahap::tests::capabilities_and_instance_are_explicit ... ok
+test adapters::ahap_opencode::tests::exact_queue_receipt_and_native_readback ... ok
+test adapters::ahap::tests::timeout_never_replays_a_possibly_sent_mutation ... ok
+test adapters::ahap::tests::blocked_stdin_is_bounded_and_never_retried ... ok
+
+failures:
+
+failures:
+    adapters::ahap::tests::ambiguous_result_and_null_error_poisons_connection
+    adapters::ahap_opencode::tests::duplicate_native_id_across_roles_is_unknown
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 148 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `--lib`

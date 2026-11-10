@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:52:58+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:58+03:00",
+  "updated_at": "2026-11-07T08:07:48+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:58+03:00",
@@ -51,6 +51,27 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:04:05+03:00",
+      "note": "V043A repro committed. Fixing release vs execution lock race and requiring claim/revision revalidation immediately before child spawn.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:07:48+03:00",
+      "note": "V043B closes stale-owner effect race; parent V043 now verifies max-one-effect and UNKNOWN/readback aggregate.",
+      "changes": {
+        "status": "done",
+        "result": "Исправлена гонка admission→spawn. `claim::release` теперь сначала берёт target execution lock; новый claim не может сменить владельца, пока старый effect child держит lock. Добавлен `spawn_admitted`: требует newly_admitted=true, точный target, текущий claim ID и expected revision непосредственно перед spawn; низкоуровневый spawn скрыт за crate boundary. Race test: releaser блокируется на lock, после release новый principal B занимает ресурс; задержанный admission A затем отвергается PermissionDenied, effect-файл не создаётся, владелец B остаётся. Проверка на origin/main 3c56a3f3: `cargo test --lib ownership::` — 18 passed; `cargo check --bin herder`, diff-check чистые. Commit a35057e3; файлы claim.rs, release_receipt.rs, release_races.rs."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Исправлена гонка admission→spawn. `claim::release` теперь сначала берёт target execution lock; новый claim не может сменить владельца, пока старый effect child держит lock. Добавлен `spawn_admitted`: требует newly_admitted=true, точный target, текущий claim ID и expected revision непосредственно перед spawn; низкоуровневый spawn скрыт за crate boundary. Race test: releaser блокируется на lock, после release новый principal B занимает ресурс; задержанный admission A затем отвергается PermissionDenied, effect-файл не создаётся, владелец B остаётся. Проверка на origin/main 3c56a3f3: `cargo test --lib ownership::` — 18 passed; `cargo check --bin herder`, diff-check чистые. Commit a35057e3; файлы claim.rs, release_receipt.rs, release_races.rs."
 }

@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.89s
+     Running unittests src/lib.rs (target/debug/deps/zcode_v075b_harness-146bc25a86409376)
+
+running 5 tests
+test adapters::zcode::transcript::tests::missing_native_truncation_flags_do_not_claim_complete_history ... ok
+test adapters::zcode::transcript::tests::reader_uses_exact_existing_session_and_bounded_native_history ... ok
+test adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot ... ok
+test adapters::zcode::transcript::tests::rejects_foreign_principal_changed_snapshot_and_wrong_session ... ok
+test adapters::zcode::transcript::tests::snapshot_index_reads_once_assembles_every_page_and_preserves_partial_coverage ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.01s
+

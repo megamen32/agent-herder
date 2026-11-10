@@ -1,0 +1,55 @@
+{
+  "scope": "server-44 only",
+  "origin_main": "d2df61867871e0d8761f49f632a538fb0f972a67",
+  "host": "server-44",
+  "runtime": {
+    "source_sha": "d2df61867871e0d8761f49f632a538fb0f972a67",
+    "current_target": "d2df61867871e0d8761f49f632a538fb0f972a67",
+    "process": "/usr/bin/node .../releases/d2df61867871e0d8761f49f632a538fb0f972a67/dist/index.js",
+    "pid": 1970728,
+    "unit_state": "active"
+  },
+  "rollout": {
+    "exit_code": 0,
+    "node_accepted": true,
+    "sessions_http": 200,
+    "launch_policy_http": 200,
+    "mcp_http": 200,
+    "release_bundle_sha256": "917a2c81d48b01a4f5edc7dc9026726296f9178ee9ff1c2d52d852de56657399",
+    "previous_release_retained": true,
+    "older_release_retained_in_rollback": true
+  },
+  "release_lease": {
+    "fence": 33,
+    "check_before_release": "owned_and_valid",
+    "released": true,
+    "final_status": "lease=null; deploymentInProgress=false; nextFence=34"
+  },
+  "consumer": {
+    "transport": "installed server-44 HTTP MCP",
+    "tool": "session_info",
+    "detail": "agent",
+    "session_id": "01a18529-94c9-7e60-ae66-c54ecfa156f5",
+    "session_host": "server-44",
+    "session_harness": "codex",
+    "tool_error": false,
+    "session_returned": true,
+    "lastMessage_present": true,
+    "latestUser_present": false,
+    "latestAssistant_present": false,
+    "recentMessages_present": false,
+    "historyComplete": null,
+    "partial": null,
+    "acceptance": "FAIL: required default latest user and assistant pair plus honest completeness state are absent"
+  },
+  "temporary_mcp_tokens": {
+    "issued_for_read_only_consumer_check": 2,
+    "both_revoked": true
+  },
+  "blocker": {
+    "type": "source_worktree_collision",
+    "foreign_worktree": "/home/roomhacker/agents-projects/agent-herder-worktrees/session-lookup-transcript",
+    "branch": "codex/session-lookup-transcript",
+    "evidence": "dirty worktree has modified src/mcp/session-tools.ts and unresolved UU src/mcp-tools/handlers.ts; no files from this WIP were changed or included"
+  }
+}

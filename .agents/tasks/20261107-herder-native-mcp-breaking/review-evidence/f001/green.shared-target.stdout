@@ -1,0 +1,11 @@
+
+running 1 test
+test domain::resource::tests::resource_scope_rejects_extra_fields_and_accepts_valid_json ... FAILED
+
+failures:
+
+failures:
+    domain::resource::tests::resource_scope_rejects_extra_fields_and_accepts_valid_json
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s
+

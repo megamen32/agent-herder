@@ -1,0 +1,7 @@
+Recorded tool output excerpt, before implementation; command:
+npx vitest run --root . --config vitest.config.ts tests/session-search.test.ts -t 'keeps old generation searchable'
+Exit code: 1
+FAIL tests/session-search.test.ts > disposable lexical session mirror > keeps old generation searchable while a large replacement is written in bounded batches
+AssertionError: expected { old: +0, next: 1 } to deeply equal { old: 1, next: +0 }
+Test Files 1 failed (1)
+Tests 1 failed | 15 skipped (16)

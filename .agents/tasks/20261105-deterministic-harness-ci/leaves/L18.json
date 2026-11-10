@@ -1,0 +1,78 @@
+{
+  "label": "macOS: исследовать изоляцию тестового Herder",
+  "description": "Изоляция и старый installed runtime исследованы; проверка итогового candidate выполняется в L31.",
+  "acceptance": "Подтверждены изоляционные границы и перечислены недостатки старого runtime.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Goodall",
+  "id": "L18",
+  "created_at": "2026-11-06T17:17:45+03:00",
+  "updated_at": "2026-11-06T19:11:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T17:17:45+03:00",
+      "note": "Выделено из L05 как независимая macOS среда; оценка 15 минут является размером этапа, а не обещанием срока.",
+      "changes": {
+        "label": "macOS: проверка установленного Herder",
+        "description": "Отдельный изолированный тестовый маршрут к установленному macOS PID с подтверждением запроса, транскрипта и артефакта.",
+        "acceptance": "На тестовом стенде macOS подтверждены изоляция, идентичность установленного PID и основной сценарий через Herder; без доказательства выпуск не принимается.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Goodall"
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:18:51+03:00",
+      "note": "Срок до реального измерения неизвестен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Длительность проверки ещё не измерена; 15 минут не является прогнозом."
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:51:00+03:00",
+      "note": "macOS MacBook-Pro-User arm64 через штатный SSH: PID 1641, начало Wed Nov 4 23:38:53 2026, listener 127.0.0.1:18789 и SHA-256 dist/index.js неизменны до/после изолированного эксперимента. Строгий sandbox-exec с отдельным HOME и deny mach-lookup получил один ответ loopback-лжемодели; внешний IPv4/IPv6, другой loopback, чужой Unix-сокет и два тестовых файла отклонены EPERM. scripts/native-mac-ci-receipt.json: credential_isolation_proven=false, installed_consumer_tested=false, overall_pass=false. В установленном release отсутствует native-ci-config.js; продукционный PID не изменялся. Следующий тест: проверить запрет доступа к тестовому Mach/keychain-сервису и запустить точный установленный артефакт в отдельном sandbox-стенде с безопасным CI peer, согласовав изменения общего native-ci с владельцем.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:53:32+03:00",
+      "note": "Обновлённый эксперимент: строгий sandbox allow-list успешно запускает тестовое приложение; локальная лжемодель отвечает ровно один раз, проверены EPERM для внешнего IPv4/IPv6, другого loopback, Unix-сокета и чтения/записи вне тестового каталога. Реальный RED показал разрешённую запись в чужой каталог; исправлено deny file-write* с разрешением только своего root, GREEN. Квитанция scripts/native-mac-ci-receipt.json сравнивает PID/start/listener/SHA входного файла установленного Herder до и после и сохраняет credential_isolation_proven=false и installed_consumer_tested=false: Mach/keychain и запуск настоящего артефакта на этом стенде ещё не доказаны. Следующий конкретный тест: собственный Mach/XPC сервис-ловушка, затем копия точного установленного артефакта с отдельным PID/портом в строгом sandbox; для встраивания безопасного CI peer требуется согласование владельца общего src/web/native-ci.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:11:34+03:00",
+      "note": "",
+      "changes": {
+        "label": "macOS: исследовать изоляцию тестового Herder",
+        "description": "Изоляция и старый installed runtime исследованы; проверка итогового candidate выполняется в L31.",
+        "acceptance": "Подтверждены изоляционные границы и перечислены недостатки старого runtime.",
+        "status": "done",
+        "result": "На Mac sandbox проверил запрет внешней сети, посторонних файлов, Unix и Mach; старый Herder с реальным Fast Agent получил ответы fixture, но transcript вернул 422; identity и новый candidate не доказаны, продолжение L31."
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Длительность проверки ещё не измерена; 15 минут не является прогнозом.",
+  "result": "На Mac sandbox проверил запрет внешней сети, посторонних файлов, Unix и Mach; старый Herder с реальным Fast Agent получил ответы fixture, но transcript вернул 422; identity и новый candidate не доказаны, продолжение L31."
+}

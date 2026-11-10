@@ -1,0 +1,14 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ✓ tests/vibe-chrome-transport.test.ts (17 tests) 233ms
+ ✓ tests/browser-canary-view.test.ts (4 tests) 22ms
+ ✓ tests/browser-canary-observation.test.ts (11 tests) 24ms
+ ✓ tests/browser-vibe-ownership.test.ts (9 tests) 29ms
+ ✓ tests/ahap-browser-runner.test.ts (65 tests) 65ms
+
+ Test Files  5 passed (5)
+      Tests  106 passed (106)
+   Start at  04:15:11
+   Duration  1.47s (transform 3.70s, setup 350ms, import 4.86s, tests 372ms, environment 1ms)
+

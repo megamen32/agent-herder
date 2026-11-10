@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T19:55:03+00:00",
+  "details": "AHAP list_pages is filtered to pinned page; legacy submitFirstChatMessage always opens another page then cannot identify it. Regression6failed/31passed covers ChatGPT/Z.ai pin9, existing chat and unsent draft preservation. No live send.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "CI Astra",
+      "at": "2026-11-07T19:55:03+00:00",
+      "changes": {
+        "details": "AHAP list_pages is filtered to pinned page; legacy submitFirstChatMessage always opens another page then cannot identify it. Regression6failed/31passed covers ChatGPT/Z.ai pin9, existing chat and unsent draft preservation. No live send.",
+        "source": "tests/browser-chat-create.test.ts, /tmp/herder-pinned-create-red.txt",
+        "status": "open",
+        "title": "Pinned browser first send opens invisible tab instead of using verified blank scope"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "CI Astra",
+      "at": "2026-11-07T19:59:14+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/pinned-create-green.txt",
+            "red_proof_path": "evidence/pinned-create-red.txt",
+            "red_result": "6 failed | 31 passed",
+            "red_sha256": "40a4d39301faa773cebf32dffc44d5875b8ee9536179d5b8f6317a865b540b11",
+            "result": "118 passed",
+            "sha256": "a625cf383c3dd98008a50bf8b30438e804fbcc8acb1f9e58165a77d8523911ef",
+            "test_command": "vitest run --root . --config vitest.config.ts tests/browser-chat-create.test.ts tests/ahap-browser-runner.test.ts tests/chatgpt-mac-cdp-driver.test.ts tests/zai-cdp-driver.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Baf7506d1dc904dbd82ee",
+  "owner": "CI Astra",
+  "reporter": "CI Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/pinned-create-green.txt",
+      "red_proof_path": "evidence/pinned-create-red.txt",
+      "red_result": "6 failed | 31 passed",
+      "red_sha256": "40a4d39301faa773cebf32dffc44d5875b8ee9536179d5b8f6317a865b540b11",
+      "result": "118 passed",
+      "sha256": "a625cf383c3dd98008a50bf8b30438e804fbcc8acb1f9e58165a77d8523911ef",
+      "test_command": "vitest run --root . --config vitest.config.ts tests/browser-chat-create.test.ts tests/ahap-browser-runner.test.ts tests/chatgpt-mac-cdp-driver.test.ts tests/zai-cdp-driver.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/browser-chat-create.test.ts, /tmp/herder-pinned-create-red.txt",
+  "status": "fixed",
+  "title": "Pinned browser first send opens invisible tab instead of using verified blank scope",
+  "updated_at": "2026-11-07T19:59:14+00:00"
+}

@@ -1,0 +1,138 @@
+{
+  "id": "RESTORECORE",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Реализовать первый функциональный slice нового core",
+  "status": "running",
+  "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+  "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/**",
+    "evidence/finish-20261108/restore-core-luna.md"
+  ],
+  "acceptance": "Pure domain decisions + explicit effects на существующем публичном пути; RED→GREEN, exact remaining route для3functions, no new scheduler framework.",
+  "created_at": "2026-11-08T20:23:19+03:00",
+  "updated_at": "2026-11-08T20:32:58+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:23:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "RESTORECORE",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Реализовать первый функциональный slice нового core",
+        "status": "running",
+        "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+        "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/**",
+          "evidence/finish-20261108/restore-core-luna.md"
+        ],
+        "acceptance": "Pure domain decisions + explicit effects на существующем публичном пути; RED→GREEN, exact remaining route для3functions, no new scheduler framework."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:24:37+03:00",
+      "note": "Уточнение владельца: FP уже заложен. Existing pure domain/transcript, pure settings parse и adapter/application boundaries подтверждены. Сохраняем архитектуру; никакого отдельного FP rewrite/framework. Первый результат — недостающая пользовательская функция на текущем publicroute.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:26:37+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:31:53+03:00",
+      "note": "Native toolaudit: Lunaактивна, ownedRustWIP пишет в исходном herder-quota-receipt checkout, не integration. Сохранитьтам, parentintegrates scoped diff безwholefileoverwrite; переданточныйhandoffpath. Суженоcompletionwake, дублирующиеfleet/NoticePlacedeciders сняты. Unitreducer отдельнонеравенfullresult.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:32:58+03:00",
+      "note": "Получен historicalbrowserreceipt: page14 атрибутирована UserIO navigate vk-browser:249 в18:57:49MSK; page15 exactprocess НЕдоказан, legacyopenZaiTab лишь возможный механизм. Reportedpublished39dd87bb evidence,1a882ecd isolatedreceiptregression1PASS; parent это не считает своими проверками. Legacy остаётсяoff, браузерdiagnostics/claim не являются зависимостью3restorefunctions. Claimbc0aa3cc-0bd4-4f24-a378-a77be3e518db reportedheld; безliveclaimauthority не освобождать по старомуpageID.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "executor_kind": "subagent",
+    "attempt_id": "restorecore-20261108-1",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de"
+    },
+    "state": "assigned",
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-08T17:26:37+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": []
+}

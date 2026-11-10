@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T13:35:23+00:00",
+  "details": "scripts/inspect-installed-herder.py считает только dist и agent-resume dist способом, отличным от v2 runner; package.json и алгоритм хэширования не совпадают, что не позволяет сопоставить идентичность артефакта с receipt CI.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T13:35:23+00:00",
+      "changes": {
+        "details": "scripts/inspect-installed-herder.py считает только dist и agent-resume dist способом, отличным от v2 runner; package.json и алгоритм хэширования не совпадают, что не позволяет сопоставить идентичность артефакта с receipt CI.",
+        "source": "scripts/inspect-installed-herder.py; scripts/run-isolated-native-ci.py",
+        "status": "open",
+        "title": "Инспектор установленного Herder использует устаревший fingerprint"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L05",
+      "at": "2026-11-06T13:37:29+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l05-fingerprint-green.txt",
+            "result": "PASS",
+            "sha256": "9219defcd94babbbd871826db2e6c7e0ca930bbb2aa86f8b05d8fbe72e771f8b",
+            "test_command": "python3 -m unittest discover -s tests -p test_installed_listener.py -v"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B6ef060e90075457d9c66",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l05-fingerprint-green.txt",
+      "result": "PASS",
+      "sha256": "9219defcd94babbbd871826db2e6c7e0ca930bbb2aa86f8b05d8fbe72e771f8b",
+      "test_command": "python3 -m unittest discover -s tests -p test_installed_listener.py -v"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "scripts/inspect-installed-herder.py; scripts/run-isolated-native-ci.py",
+  "status": "fixed",
+  "title": "Инспектор установленного Herder использует устаревший fingerprint",
+  "updated_at": "2026-11-06T13:37:29+00:00"
+}

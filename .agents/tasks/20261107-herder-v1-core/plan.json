@@ -11,7 +11,7 @@
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
   "current_progress": "08.11 19:13МСК: owner5minquiet выполнена300.203751s, exactChromePIDs всеresumed; проверка16:12:27Z suspended_remaining0. d08a68ae source/pacakged manifest5e21be1d verifierPASS; unchangedcore/CLIreuse, ZCode/browser changed→nativefullнепереносится. Cooldown fix70parent+82workerPASS/tsc;3profileguards54PASS. MV3assessment reuse UserIOtabs_list/eval/Dots, sync15min up to12HTTP/accountguard gaps. Browserpostpausecheck blocked: MacMiniCDP50260 launchd explicitlydisabled, localVibe8788 Notconnectedtorelay; ChromePIDs опятьсменились, активныйbrowseroperator неустановлен. CI audit runtime sources active, permission/refusalнеобходится. Native sends stopped, installedV1нет,429clearedнеclaimed; next exacttransport handoff then oneobservedread.",
-  "updated_at": "2026-11-08T19:13:18+03:00",
+  "updated_at": "2026-11-08T21:37:19+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -98,6 +98,80 @@
         "source": "mcp_metadata"
       },
       "summary": "Live ChatGPT1ae остановлен, originalUNKNOWN сохранён. Sol offline Zai statefix и MV3 assessment; Terra audit request sources; parent pause actual polling/tabs and measured quiet interval. Source9e1353d7 published, installedV1 ещёнет. Расширение не установлено."
+    },
+    {
+      "at": "2026-11-08T20:12:37+03:00",
+      "reason": "Прямое решение владельца08Nov: старый Herder выключить сразу; новый core запустить повсюду через единый GPTAdmin; остальные функции позже.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Текущий критерий: legacy units/MCP entries/hooks выключены, новый singleton Rust core доступен обычным MCP clients. Это не завершение пяти native adapters; fleet/wake/NoticePlace repair и браузерные улучшения отложены владельцем."
+    },
+    {
+      "at": "2026-11-08T20:23:19+03:00",
+      "reason": "08Nov после принятого cutover владелец поручил довести cross-host, autowake, NoticePlace repair на новом ядре и функциональном программировании; исполнители только Luna/Terra, Lead преимущественно оркестратор.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Новый результат: три реальные пользовательские цепочки на Rustcore с pure decision/state functions и отдельными effect adapters. Legacy daemon не возвращать; UserIO0.9.13 отдельный owner. Source/unit,installed и настоящий consumer проверять отдельно; старый трёхчасовой дедлайн не переписывать."
+    },
+    {
+      "at": "2026-11-08T20:29:11+03:00",
+      "reason": "Владелец спросил остаток;4REDconsumerпробела подтверждены, распределение3независимыхучастков.",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Планировочный ориентир2–4ч с низкой уверенностью, не новыйобязательныйdeadline. TerraremoteAHAP;LunaFermatcorewake;LunaLorentzNPseam;parentorchestratesintegration. Контрольпервогоusable slice15мин, полноценнаяприёмка3realinstalledpaths отдельно."
+    },
+    {
+      "at": "2026-11-08T21:37:19+03:00",
+      "reason": "Продолжение после незавершённого handoff; исходные 15-минутные slices существенно превышены",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "summary": "Published c12f18db model pins,27tests; installed core remote44 readonly proven. Current actual remainder: remote44 full consumer with pinned model; core automation ingress exact native completed-turn proof+hook; NoticePlace real owner-state+launch+autopilot arming+repair receipt. RESTORECORE/NOTICE не done: primitives/fakeHTTP отдельно. Старый daemon off, token unchanged, hourly reschedule cancelled. Native execution tests будут после integration artifact; не считать worker ACK результатом."
+    },
+    {
+      "at": "2026-11-08T20:27:45+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard acquire project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-08T20:27:53+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard release project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-08T20:53:26+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard acquire project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-08T20:53:41+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard release project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-08T21:23:23+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard acquire project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
+    },
+    {
+      "at": "2026-11-08T21:24:14+00:00",
+      "reason": "herder-bypass",
+      "summary": "herder-bypass: release-guard release project=agent-herder ok=True ref=refs/lhc/release/agent-herder"
     }
   ]
 }

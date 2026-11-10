@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T12:56:26+00:00",
+  "details": "Source 94e7d98c runner pins protocol v2, client uses /api/session; native fixture tests/native/opencode_receipt.py selects /session when /api/config returns 404, sends /session/:id/message with modelID and parts. Existing v1 uses prompt_async with different payload, cannot fix by pin change. Owner OpenCode adapter 01a1b39a-1f8d-7882-b0ba-416fe7c3dac6 identified gap; native send not attempted. Require route/payload and exact user message receipt regression and reviewed new artifact; existing artifact blocked from mutation.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T12:56:26+00:00",
+      "changes": {
+        "details": "Source 94e7d98c runner pins protocol v2, client uses /api/session; native fixture tests/native/opencode_receipt.py selects /session when /api/config returns 404, sends /session/:id/message with modelID and parts. Existing v1 uses prompt_async with different payload, cannot fix by pin change. Owner OpenCode adapter 01a1b39a-1f8d-7882-b0ba-416fe7c3dac6 identified gap; native send not attempted. Require route/payload and exact user message receipt regression and reviewed new artifact; existing artifact blocked from mutation.",
+        "source": "src/ahap-opencode-runner.ts:183; packages/agent-resume/src/harness/opencode/client.ts; tests/native/opencode_receipt.py:163-196",
+        "status": "open",
+        "title": "AHAP OpenCode runner pin v2 несовместим с маршрутом OpenCode 2.2.4"
+      }
+    }
+  ],
+  "id": "B7959893430814a8fb823",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "source": "src/ahap-opencode-runner.ts:183; packages/agent-resume/src/harness/opencode/client.ts; tests/native/opencode_receipt.py:163-196",
+  "status": "open",
+  "title": "AHAP OpenCode runner pin v2 несовместим с маршрутом OpenCode 2.2.4",
+  "updated_at": "2026-11-07T12:56:26+00:00"
+}

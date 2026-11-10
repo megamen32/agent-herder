@@ -1,0 +1,20 @@
+L05 fingerprint v2 GREEN evidence
+UTC: 2026-11-06T13:37:11.188191+00:00
+cwd: /home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder
+command: python3 -m unittest discover -s tests -p test_installed_listener.py -v
+exit code: 0
+result: PASS
+sha256 scripts/inspect-installed-herder.py: 6968e1a1d739ced7c1ac33d2431c2f62e2d00865c310ac3ebc45a7dbdc87fef5
+sha256 scripts/run-isolated-native-ci.py: dd619b4e3a9c98b42c85dd090c417eacffe349652de4fd2d42992c8ad421e82e
+sha256 tests/test_installed_listener.py: ff6cf9ccadc0f34a0bf6a839b78a7420ebe973c71430449379571f9f5118e8e2
+Scope: tested payload only; not complete fleet bundle or installed-process acceptance.
+
+test_artifact_identity_detects_changed_core_or_backend_bytes (test_installed_listener.InstalledListenerTest) ... ok
+test_fingerprint_matches_ci_v2_and_detects_each_package_manifest (test_installed_listener.InstalledListenerTest) ... ok
+test_rejects_non_loopback_and_non_listening_sockets (test_installed_listener.InstalledListenerTest) ... ok
+test_requires_exact_process_to_own_the_loopback_listening_socket (test_installed_listener.InstalledListenerTest) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.018s
+
+OK

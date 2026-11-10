@@ -1,0 +1,56 @@
+{
+  "scope": "installed-readonly-browser-transcripts",
+  "status": "INCOMPLETE",
+  "identityStable": true,
+  "before": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 188785,
+    "entrypoint": "/home/roomhacker/agents-projects/.fleet-candidate/releases/3ba6e50b2e3b9ae0ce6dd1bfa4786e429c51f155/dist/index.js",
+    "port": 18787,
+    "starttime": "67797518",
+    "indexingEnabled": true,
+    "artifact_sha256": "0aea989fe15ee6e948a59dfe75b3f7385f053bd335bc36ecd122c17c7b4f7c57",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ]
+  },
+  "after": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 188785,
+    "entrypoint": "/home/roomhacker/agents-projects/.fleet-candidate/releases/3ba6e50b2e3b9ae0ce6dd1bfa4786e429c51f155/dist/index.js",
+    "port": 18787,
+    "starttime": "67797518",
+    "indexingEnabled": true,
+    "artifact_sha256": "0aea989fe15ee6e948a59dfe75b3f7385f053bd335bc36ecd122c17c7b4f7c57",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ]
+  },
+  "results": [
+    {
+      "harness": "zai",
+      "status": "INCOMPLETE",
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "harness": "chatgpt",
+      "status": "PASS",
+      "pages": 3,
+      "events": 12,
+      "total": 12,
+      "markerFound": true,
+      "seconds": 8.01
+    }
+  ],
+  "limitations": [
+    "no send, autopilot execution, or installed native fake-model CI proof"
+  ]
+}

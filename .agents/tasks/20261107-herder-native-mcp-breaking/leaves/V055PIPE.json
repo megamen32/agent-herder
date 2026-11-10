@@ -1,0 +1,81 @@
+{
+  "id": "V055PIPE",
+  "label": "Codex: ограничить запись запроса общим deadline",
+  "description": "Подготовительный дефект V055BOUND: stdin.write_all/flush в connection.request выполняются до deadline и могут зависнуть на backpressure. Один owner Codex; core/launcher не менять.",
+  "acceptance": "Детерминированный RED с не читающим fixture app-server; GREEN возвращает bounded failure при заполненной pipe без surviving local writer. Deadline учитывает write+read; при частичной/возможной отправке UNKNOWN и без replay. Сохранить корректный полный JSON framing либо признать соединение непригодным после частичного write; не продолжать повреждённый stream.",
+  "depends_on": [
+    "V055A3"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/codex/connection.rs",
+    "crates/herder/src/adapters/codex/control.rs"
+  ],
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "note": "Установлено Terra и подтверждено Astra чтением origin/main connection.rs:288–296. При превышении15мин выделить фактический остаток; native timeout thread с живой записью не решение.",
+  "created_at": "2026-11-07T11:27:09+03:00",
+  "updated_at": "2026-11-07T11:36:48+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:27:09+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055PIPE",
+        "label": "Codex: ограничить запись запроса общим deadline",
+        "description": "Подготовительный дефект V055BOUND: stdin.write_all/flush в connection.request выполняются до deadline и могут зависнуть на backpressure. Один owner Codex; core/launcher не менять.",
+        "acceptance": "Детерминированный RED с не читающим fixture app-server; GREEN возвращает bounded failure при заполненной pipe без surviving local writer. Deadline учитывает write+read; при частичной/возможной отправке UNKNOWN и без replay. Сохранить корректный полный JSON framing либо признать соединение непригодным после частичного write; не продолжать повреждённый stream.",
+        "depends_on": [
+          "V055A3"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/codex/connection.rs",
+          "crates/herder/src/adapters/codex/control.rs"
+        ],
+        "owner": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "note": "Установлено Terra и подтверждено Astra чтением origin/main connection.rs:288–296. При превышении15мин выделить фактический остаток; native timeout thread с живой записью не решение."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:29:11+03:00",
+      "note": "Codex owner отказался от нового scope, подтвердил отсутствие edits; Astra проверила clean owned native paths. Ownership передан Terra для назначения одному существующему core worker (максимум4), повторно Codex не будить. T011 approval refusal не обходить.",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:29:19+03:00",
+      "note": "Lead принимает единоличное ownership connection.rs после handoff и проверяет не читающий app-server; без второго исполнителя.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:48+03:00",
+      "note": "Опубликован scoped commit; bug Bb94a24525c5945c68853 остаётся открыт до сохранения файлов RED/GREEN.",
+      "changes": {
+        "status": "done",
+        "result": "origin/main f18149d3, после SUPPORTED review: 100ms deadline включает pipe write и response; stalled pipe RED >700ms, GREEN ~110ms; частичная запись инвалидирует stdin, existing error mapping UNKNOWN; 10 Codex tests. Mutex/startup вне scope."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "result": "origin/main f18149d3, после SUPPORTED review: 100ms deadline включает pipe write и response; stalled pipe RED >700ms, GREEN ~110ms; частичная запись инвалидирует stdin, existing error mapping UNKNOWN; 10 Codex tests. Mutex/startup вне scope."
+}

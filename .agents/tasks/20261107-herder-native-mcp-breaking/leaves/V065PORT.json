@@ -1,0 +1,102 @@
+{
+  "id": "V065PORT",
+  "label": "OpenCode: native submit и точная квитанция без повторной отправки",
+  "description": "Независимая native часть V065A. Использовать уже проверенный connection/create и рабочий legacy send protocol, реализовать native control в adapters/opencode без core/schema. Поддерживать лишь доказанные mode; unsupported до эффекта.",
+  "acceptance": "Fake native server фиксирует ровно один submit и точный instance/session receipt. Некорректный target/mode отклонён до запроса; неоднозначный ответ/timeout UNKNOWN без retry и без выдуманного native idempotency. Реальный isolated model send/read отдельно от port source proof.",
+  "depends_on": [
+    "V062",
+    "V064PORT"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/opencode/control.rs",
+    "acceptance/native/opencode/"
+  ],
+  "owner": "roomhacker",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "note": "Astra: после выполненного V064LIVE продолжать native ветку без ожидания общей MCP приёмки; V065A/B/aggregate сохраняют прежние public/core gates.",
+  "created_at": "2026-11-07T11:31:37+03:00",
+  "updated_at": "2026-11-07T12:46:38+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:31:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065PORT",
+        "label": "OpenCode: native submit и точная квитанция без повторной отправки",
+        "description": "Независимая native часть V065A. Использовать уже проверенный connection/create и рабочий legacy send protocol, реализовать native control в adapters/opencode без core/schema. Поддерживать лишь доказанные mode; unsupported до эффекта.",
+        "acceptance": "Fake native server фиксирует ровно один submit и точный instance/session receipt. Некорректный target/mode отклонён до запроса; неоднозначный ответ/timeout UNKNOWN без retry и без выдуманного native idempotency. Реальный isolated model send/read отдельно от port source proof.",
+        "depends_on": [
+          "V062",
+          "V064PORT"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/opencode/control.rs",
+          "acceptance/native/opencode/"
+        ],
+        "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "note": "Astra: после выполненного V064LIVE продолжать native ветку без ожидания общей MCP приёмки; V065A/B/aggregate сохраняют прежние public/core gates."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:33:28+03:00",
+      "note": "Source-first: реализую только подтверждённый OpenCode native submit mode; unsupported modes отклоняются до запроса, local request key не выдаётся за native idempotency.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:54:01+03:00",
+      "note": "Owned source saved and fixture tests green; executing separate one-turn loopback dummy-provider live leaf.",
+      "changes": {
+        "status": "done",
+        "result": "Native OpenCode submit port committed as 14f9738e, owned path only crates/herder/src/adapters/opencode/control.rs, on fresh origin/main base f18149d3 plus V064 commit 223424ba. OpenAPI 2.2.4 confirmed exact steer/queue delivery values and native 200 receipt id/sessionID/delivery. Current maps to steer only with a nonempty observed turn; Queue maps exactly; Start is rejected before POST because API has no idle CAS. Local request key is metadata correlation only, not idempotency. Three embedded fake-server tests passed: one exact submit/receipt, wrong-target/mode no-effect, timeout UNKNOWN/no retry/no fabricated ID. Not proven here: live model turn; MCP consumer."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:28:21+03:00",
+      "note": "",
+      "changes": {
+        "result": "OpenCode submit implementation committed as 14f9738e (control.rs only); final scoped source+evidence commit 2413cbca1a7c2f7ce573d379ae2c8c2b63c6efd0 includes the owned import cleanup and V065LIVE receipt. On fresh origin/main base f18149d3 plus V064 commit 223424ba, OpenAPI 2.2.4 confirms steer/queue and native 200 receipt id/sessionID/delivery. Current requires nonempty observed turn; Queue maps exactly; Start fails before POST because no idle CAS. Request key is correlation metadata, not idempotency. Three fixture tests passed: exact one submit/receipt, invalid target/mode no-effect, timeout UNKNOWN/no retry/no fabricated ID. Live model send evidence is V065LIVE. No public MCP consumer proof claimed."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:42:35+03:00",
+      "note": "Port contract tightened after review.",
+      "changes": {
+        "result": "OpenCode submit correction on top of 2413cbca: Current is rejected before POST because steer cannot atomically enforce expected_turn; Queue remains supported. Regression RED was observed before fix; focused regression plus all 4 temporary control fixture tests pass. Contract updated at acceptance/contracts/opencode.md. No live send repeated. rustfmt check unavailable because rustfmt component is absent."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:46:38+03:00",
+      "note": "Current-fix commit ba67c7ec is based on Terra integration candidate d7b560d3; source proof was rerun with native module exports present.",
+      "changes": {
+        "result": "OpenCode submit correction on integrated candidate d7b560d3: Current is rejected before POST because steer cannot atomically enforce expected_turn; Queue remains supported. Source fix commit ba67c7ec. New Current regression passes; previous fixture changed to Queue. The 8-test OpenCode module suite passed 8/8, including exact receipt, one-POST timeout UNKNOWN/no retry, Current no POST, and Queue delivery. Capability contract updated at acceptance/contracts/opencode.md. No live OpenCode send repeated; V065LIVE receipt remains unchanged."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "result": "OpenCode submit correction on integrated candidate d7b560d3: Current is rejected before POST because steer cannot atomically enforce expected_turn; Queue remains supported. Source fix commit ba67c7ec. New Current regression passes; previous fixture changed to Queue. The 8-test OpenCode module suite passed 8/8, including exact receipt, one-POST timeout UNKNOWN/no retry, Current no POST, and Queue delivery. Capability contract updated at acceptance/contracts/opencode.md. No live OpenCode send repeated; V065LIVE receipt remains unchanged."
+}

@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "blocked",
+  "owner": "Tesla",
   "wave": 1,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V030 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V030 обязателен в конце цепочки.",
+  "note": "Scoped source commit 9fb76287 implements explicit session_search_keys stable ID to FTS rowid; 13 index tests PASS including rollback, VACUUM, mismatch partial, ACL and actual Rust VM-step new/unchanged/update 242/73/273 at both 100 and 10000 rows. Requires Terra v5 fenced schema/migration and combined integration tests; v4 has no keys table and must not be treated as usable. Production ingestion/consumer still absent.",
   "estimate_over_limit_reason": "",
   "id": "V030",
   "created_at": "2026-11-07T01:52:23+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:57+03:00",
+  "updated_at": "2026-11-07T14:50:32+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:23+03:00",
@@ -74,9 +74,51 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:40:46+03:00",
+      "note": "Независимая проверка завершена, leaf не закрыт: обнаружен полный обход FTS и отсутствует production caller.",
+      "changes": {
+        "status": "blocked",
+        "owner": "Tesla",
+        "blocker": "Полный FTS scan при update; схема и production ingestion требуют интеграции",
+        "blocker_details": {
+          "evidence": "origin/main 41ecb530: session_ref UNINDEXED, EXISTS и DELETE сканируют FTS; 100/10000 строк дают 1029/100029 VM steps.",
+          "next_action": "Индексируемая связь canonical session→FTS rowid со schema/version fence у Terra, затем production feed и consumer proof.",
+          "path": "evidence/V030-review-41ecb530/review.md"
+        },
+        "result": "Source fixture: 10 index tests и reopen/ACL test PASS; изменение одной записи сохраняет вторую, но no-full-scan acceptance и production ingestion не выполнены."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:46:29+03:00",
+      "note": "Готовы узкий migration/rowid контракт и воспроизводимая regression fixture; ожидается решение владельца schema.",
+      "changes": {
+        "note": "Indexed rowid seam prepared: evidence/V030-review-41ecb530/rowid-design.md and rowid-probe.py. SQL fixture 100/10000: state lookup 15/15 present, 10/10 missing; FTS rowid lookup 30/30 present, 21/21 missing. Hidden state rowid has no durable schema guarantee; recommend explicit INTEGER PRIMARY KEY and fenced v5 migration. Source implementation waits on Terra's schema contract."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:50:32+03:00",
+      "note": "Source fix saved locally; V030 remains blocked on schema v5 integration and actual ingestion.",
+      "changes": {
+        "note": "Scoped source commit 9fb76287 implements explicit session_search_keys stable ID to FTS rowid; 13 index tests PASS including rollback, VACUUM, mismatch partial, ACL and actual Rust VM-step new/unchanged/update 242/73/273 at both 100 and 10000 rows. Requires Terra v5 fenced schema/migration and combined integration tests; v4 has no keys table and must not be treated as usable. Production ingestion/consumer still absent."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "blocker": "Полный FTS scan при update; схема и production ingestion требуют интеграции",
+  "blocker_details": {
+    "evidence": "origin/main 41ecb530: session_ref UNINDEXED, EXISTS и DELETE сканируют FTS; 100/10000 строк дают 1029/100029 VM steps.",
+    "next_action": "Индексируемая связь canonical session→FTS rowid со schema/version fence у Terra, затем production feed и consumer proof.",
+    "path": "evidence/V030-review-41ecb530/review.md"
+  },
+  "result": "Source fixture: 10 index tests и reopen/ACL test PASS; изменение одной записи сохраняет вторую, но no-full-scan acceptance и production ingestion не выполнены."
 }

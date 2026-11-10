@@ -1,0 +1,8 @@
+{
+  "expected": {
+    "herderAsyncProbe": true
+  },
+  "actual": {},
+  "result": "RED: native Vibe does not await async function result",
+  "nativeModelPrompts": 0
+}

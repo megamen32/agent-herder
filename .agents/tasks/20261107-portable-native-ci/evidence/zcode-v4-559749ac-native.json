@@ -1,0 +1,42 @@
+{
+  "result": "PASS_SCOPED_ISOLATED_PUBLIC",
+  "native_session_id": "sess_996e2af7-7ae3-4591-ab04-99014b5189f9",
+  "session_ref": "session:b8eafd59dd0e7ed64c37aac7e5f4810e",
+  "first_key": "zcode-v1-create-f760b3a5dab4491a9acb7423b4305f72",
+  "first_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_mw7tb150_6c58b0ed-e70b-4041-90af-132885f718b4\"}",
+    "outcome": "confirmed"
+  },
+  "second_key": "zcode-v1-second-f760b3a5dab4491a9acb7423b4305f72",
+  "second_receipt": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_mw7tb286_48abe0d4-42d6-4d61-b532-73ce6c113a08\"}",
+    "outcome": "confirmed"
+  },
+  "model_requests": 3,
+  "export_complete": true,
+  "export_source": {
+    "format": "json",
+    "kind": "native-api",
+    "location": "zcode app-server session/read"
+  },
+  "export_both_markers": true,
+  "search_complete": true,
+  "search_hit": true,
+  "projects": {
+    "complete": false,
+    "limitations": [
+      "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+    ],
+    "projects": [
+      {
+        "native": null,
+        "project_ref": "/herder-owner-home/work",
+        "source": "authorized_native_session"
+      }
+    ],
+    "scope": "authorized_registered_sessions"
+  },
+  "restart": "PASS: supervisor and public core restarted, both messages read; no resend",
+  "candidate_manifest_sha256": "33b8ba17774408651a315aa7c0dcbb933184f2b6c93e8a5562b24323a600749d",
+  "published_source_commit": "07d54220437ccc7855f299ec7a09c857c225c2f7"
+}

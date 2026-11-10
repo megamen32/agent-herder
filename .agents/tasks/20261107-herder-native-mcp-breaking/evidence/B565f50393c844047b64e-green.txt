@@ -1,0 +1,6 @@
+Command: cargo run --manifest-path .tmp/cdp-harness/Cargo.toml --bin live
+Observed after bounded Rust polling of location.origin fix (2026-11-07):
+ZAI rust_create=ok rust_input_event=ok rust_send=clicked rust_reply=matched rust_readback=true messages=2
+summary chatgpt=not_run_per_scope zai=true
+PASS: rust_create=ok; input event observed; one send clicked; reply marker matched; same chat readback=true with 2 messages; only created target closed.
+Exactly one prompt was sent in a newly created task-owned Z.ai target. No ChatGPT prompt was sent.

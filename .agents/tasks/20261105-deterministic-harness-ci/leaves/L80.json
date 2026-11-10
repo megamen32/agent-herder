@@ -1,0 +1,47 @@
+{
+  "id": "L80",
+  "label": "OpenCode: совместимость официального CLI и fork",
+  "description": "Проверить обнаруженные различия /api/session и /session, настроить локальную лжемодель и независимое чтение.",
+  "acceptance": "Для каждого двe изолированные сессии, два ответа, точный readback и счётчик fixture; UNKNOWN не повторять.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T12:57:03+03:00",
+  "updated_at": "2026-11-07T12:59:20+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:57:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "L80",
+        "label": "OpenCode: совместимость официального CLI и fork",
+        "description": "Проверить обнаруженные различия /api/session и /session, настроить локальную лжемодель и независимое чтение.",
+        "acceptance": "Для каждого двe изолированные сессии, два ответа, точный readback и счётчик fixture; UNKNOWN не повторять.",
+        "status": "running",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex",
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:59:20+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "server-100 isolated native: official opencode v2.2.4 и fork 1.18.11 каждый создали 2 разные сессии, прочли input/ответ после завершения; fixture requests=2 на каждый бинарник. Проверка провайдера и маршрутов RED/GREEN, 9 тестов. Опубликовано origin/main 8c991aa6. Это прямой native API, не установленный Herder и не release gate."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "result": "server-100 isolated native: official opencode v2.2.4 и fork 1.18.11 каждый создали 2 разные сессии, прочли input/ответ после завершения; fixture requests=2 на каждый бинарник. Проверка провайдера и маршрутов RED/GREEN, 9 тестов. Опубликовано origin/main 8c991aa6. Это прямой native API, не установленный Herder и не release gate."
+}

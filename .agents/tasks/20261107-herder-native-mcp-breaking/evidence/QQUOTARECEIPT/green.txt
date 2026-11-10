@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+   Start at  20:38:22
+   Duration  8.94s (transform 1.71s, setup 157ms, import 1.80s, tests 7.22s, environment 0ms)
+

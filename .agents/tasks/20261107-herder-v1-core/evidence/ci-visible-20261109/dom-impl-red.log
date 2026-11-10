@@ -1,0 +1,50 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [31m❯[39m tests/session-sidebar.test.tsx [2m([22m[2m4 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 78[2mms[22m[39m
+[31m     [31m×[31m uses separate open and pin buttons and one compact identity line[39m[32m 66[2mms[22m[39m
+     [32m✓[39m disables pin before verified host/account metadata is available[32m 2[2mms[22m[39m
+[31m     [31m×[31m binds the rendered row to exact native identity, owner host and canonical status[39m[32m 5[2mms[22m[39m
+[31m     [31m×[31m uses explicit local native identity and never presents a core reference as native[39m[32m 3[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (4)[39m
+[2m   Start at [22m 02:05:08
+[2m   Duration [22m 596ms[2m (transform 257ms, setup 41ms, import 294ms, tests 78ms, environment 0ms)[22m
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/session-sidebar.test.tsx[2m > [22msidebar row (focused renderer; expected2s/max20s)[2m > [22muses separate open and pin buttons and one compact identity line
+[31m[1mAssertionError[22m: expected '<div class="session-row-actions is-pi…' to contain 'Codex · 100'[39m
+
+Expected: [32m"Codex · 100"[39m
+Received: [31m"<div class="session-row-actions is-pinned"><button class="session-row " aria-label="Long task title, Codex · Сервер 100 · 13 окт, Выполняет задачу"><span class="status-dot status-running" aria-hidden="true"></span><span class="session-copy"><strong>Long task title</strong><small class="session-identity">Codex · Сервер 100 · 13 окт</small></span></button><button type="button" class="session-pin" aria-pressed="true" aria-label="Открепить сессию: Long task title" title="Открепить сессию"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3h8M9 3v5l-3 3v3h12v-3l-3-3V3M12 14v7"></path></svg></button></div>"[39m
+
+[36m [2m❯[22m tests/session-sidebar.test.tsx:[2m10:16[22m[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/session-sidebar.test.tsx[2m > [22msidebar row (focused renderer; expected2s/max20s)[2m > [22mbinds the rendered row to exact native identity, owner host and canonical status
+[31m[1mAssertionError[22m: expected '<div class="session-row-actions"><but…' to contain 'data-native-session-id="native-chatgp…'[39m
+
+Expected: [32m"data-native-session-id="native-chatgpt""[39m
+Received: [31m"<div class="session-row-actions"><button class="session-row " aria-label="Task, ChatGPT · Сервер 100, Выполняет задачу"><span class="status-dot status-running" aria-hidden="true"></span><span class="session-copy"><strong>Task</strong><small class="session-identity">ChatGPT · Сервер 100</small></span></button><button type="button" class="session-pin" aria-pressed="false" aria-label="Закрепить сессию: Task" title="Закрепить сессию"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3h8M9 3v5l-3 3v3h12v-3l-3-3V3M12 14v7"></path></svg></button></div>"[39m
+
+[36m [2m❯[22m tests/session-sidebar.test.tsx:[2m22:17[22m[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/session-sidebar.test.tsx[2m > [22msidebar row (focused renderer; expected2s/max20s)[2m > [22muses explicit local native identity and never presents a core reference as native
+[31m[1mAssertionError[22m: expected '<div class="session-row-actions"><but…' to contain 'data-native-session-id="ses_native"'[39m
+
+Expected: [32m"data-native-session-id="ses_native""[39m
+Received: [31m"<div class="session-row-actions"><button class="session-row " aria-label="Task, OpenCode · Машина не подтверждена, Остановлена"><span class="status-dot status-idle" aria-hidden="true"></span><span class="session-copy"><strong>Task</strong><small class="session-identity">OpenCode · Машина не подтверждена</small></span></button><button type="button" class="session-pin" aria-pressed="false" aria-label="Закрепить сессию: Task" disabled="" title="Данные машины и кабинета ещё загружаются"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3h8M9 3v5l-3 3v3h12v-3l-3-3V3M12 14v7"></path></svg></button></div>"[39m
+
+[36m [2m❯[22m tests/session-sidebar.test.tsx:[2m30:65[22m[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/herder-l27-integration-check-LY7sJO
+
+
+ Test Files  1 passed (1)
+      Tests  21 passed (21)
+   Start at  19:51:46
+   Duration  3.50s (transform 2.26s, setup 74ms, import 2.53s, tests 621ms, environment 0ms)
+

@@ -1,0 +1,1 @@
+{"scope": "canonical-readonly-negative", "status": "INCOMPLETE", "reason": "unresolvable entry node_modules/.bin/agent-resume: [Errno 2] No such file or directory: '/home/roomhacker/agents-projects/.fleet-candidate/releases/0dcb64d40f3e222476fa4f9cb34b7e8c2c96a0a4/node_modules/.bin/agent-resume'", "ciCalled": false, "fence": "synthetic"}

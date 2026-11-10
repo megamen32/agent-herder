@@ -1,0 +1,13 @@
+QBROWSERSCOPE GREEN — commit ff419ea0
+
+Focused command:
+`./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/chatgpt-mac-cdp-driver.test.ts tests/ahap-browser-runner.test.ts`
+
+Result: exit 0; 2 test files passed; 40 tests passed. Includes A→B list and message rejection, same-account message read success, AHAP pre-read scope check before cached inventory access, and post-read rejection if cached adapter scope changes during a call.
+
+TypeScript command:
+`./node_modules/.bin/tsc --noEmit`
+
+Result: exit 0.
+
+`git diff --check` passed. Commit `ff419ea0` contains only the four assigned files. The temporary dependency symlink to the CI worktree's existing `node_modules` was removed after checks. No browser interaction, target selection, send, or live account operation occurred.

@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V017 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V017 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:48+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:48+03:00",
+  "updated_at": "2026-11-07T14:48:24+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:48+03:00",
@@ -51,6 +51,47 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:17:37+03:00",
+      "note": "Following accepted V017A protocol types with a read wrapper that checks current exact ACL per call, private rmcp cache hints and principal/collection-bound cursors.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:36:41+03:00",
+      "note": "Source slice committed and focused tests passed. Native wiring/consumer gate remains with Terra and parent V017.",
+      "changes": {
+        "status": "done",
+        "result": "Committed 7c8dd65a54d423e1a27b3a8b0a3da88ad5b0bcc1: crates/herder/src/mcp/resources.rs implements current per-read ACL checks, private cache hints (ttl_ms=0), and principal/collection/snapshot-bound cursors. Focused offline suite: 9 passed. RED/GREEN evidence recorded for B0257fc6615ad4704aa4a. NativeServer wiring and real consumer acceptance remain separate and unproven."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:45:41+03:00",
+      "note": "В ответ на Nietzsche REVISE добавлена проверка embedded GetTaskResult.task ID против Task URI и regression через read_authorized; focused suite 10/10. Ожидается independent delta-review; V017B намеренно не закрыт. Session/transcript URI-to-source binding документирован как обязанность authoritative resolver, runtime proof отсутствует.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:48:24+03:00",
+      "note": "Independent delta-review SHIP after verifying RED/GREEN receipts and temporary test-only export cleanup. Parent V017 remains open for integration/runtime acceptance.",
+      "changes": {
+        "status": "done",
+        "result": "Source-only V017B committed in 7c8dd65a54d423e1a27b3a8b0a3da88ad5b0bcc1 and follow-up a698aeefd5e2a3a2e0c74c12a603971aee889560. Task projection requires URI ref == ResourceValue.task_ref and embedded GetTaskResult task ID. Added authorized_task_read_rejects_result_for_different_task_id regression through read_authorized. RED: evidence/v017b-task-payload-mismatch-red.txt (expected TypeMismatch assertion failed); GREEN: evidence/v017b-task-payload-mismatch-green.txt (10 passed). Tests used temporary module export, removed before commit; no lib.rs diff. Independent delta-review SHIP. Session/transcript source binding remains an authoritative resolver contract, not runtime proof. NativeServer wiring and consumer acceptance remain separate."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Source-only V017B committed in 7c8dd65a54d423e1a27b3a8b0a3da88ad5b0bcc1 and follow-up a698aeefd5e2a3a2e0c74c12a603971aee889560. Task projection requires URI ref == ResourceValue.task_ref and embedded GetTaskResult task ID. Added authorized_task_read_rejects_result_for_different_task_id regression through read_authorized. RED: evidence/v017b-task-payload-mismatch-red.txt (expected TypeMismatch assertion failed); GREEN: evidence/v017b-task-payload-mismatch-green.txt (10 passed). Tests used temporary module export, removed before commit; no lib.rs diff. Independent delta-review SHIP. Session/transcript source binding remains an authoritative resolver contract, not runtime proof. NativeServer wiring and consumer acceptance remain separate."
 }

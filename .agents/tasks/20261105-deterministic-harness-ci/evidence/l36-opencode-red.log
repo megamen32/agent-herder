@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /tmp/herder-l36-opencode
+
+ ❯ tests/opencode-transcript-l36.test.ts (3 tests | 1 failed) 23ms
+     × handles real v2 content and terminal idle without emitting a fictitious message 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/opencode-transcript-l36.test.ts > OpenCode exact complete transcript > handles real v2 content and terminal idle without emitting a fictitious message
+Error: Native OpenCode transcript rejected: message identity or role invalid
+ ❯ fail src/opencode-transcript-l36.ts:9:44
+      7|  const issued=new Map<string,{offset:number;hash:string;total:number}>…
+      8|  return async ({scope,cursor,limit})=>{
+      9|   const fail=(reason:string):never=>{throw new Error(`Native OpenCode …
+       |                                            ^
+     10|   if(scope.hostId!==input.scope.hostId||scope.harness!=='opencode'||sc…
+     11|   const state=cursor?issued.get(cursor):undefined;if(cursor&&!state)re…
+ ❯ src/opencode-transcript-l36.ts:22:193
+ ❯ Object.reader src/opencode-transcript-l36.ts:17:74
+ ❯ readIntegratorTranscriptPage src/integrator-transcript.ts:180:15
+ ❯ tests/opencode-transcript-l36.test.ts:17:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  19:49:04
+   Duration  459ms (transform 174ms, setup 53ms, import 159ms, tests 23ms, environment 0ms)
+

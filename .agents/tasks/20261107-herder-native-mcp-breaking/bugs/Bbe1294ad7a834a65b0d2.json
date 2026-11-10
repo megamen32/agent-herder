@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T09:34:22+00:00",
+  "details": "Source review d7b560d3 adapters/opencode/control.rs: Current accepts any nonempty expected_turn then POSTs text/delivery=steer/metadata without expected-turn native precondition. domain/adapter.rs requires native enforcement. If active turnA completes andB starts before POST, input reachesB and response still validates success. Existing test passes arbitrary turn-current and asserts POST, so checks only nonempty string. Minimal fix until native exact-turn guard exists: reject Current beforePOST with descriptive unsupported reason, preserve Queue (V065LIVE proven Queue), regression no POST for observed Current. Owner OpenCode worker, Terra integration held for this delta; no native replay.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T09:34:22+00:00",
+      "changes": {
+        "details": "Source review d7b560d3 adapters/opencode/control.rs: Current accepts any nonempty expected_turn then POSTs text/delivery=steer/metadata without expected-turn native precondition. domain/adapter.rs requires native enforcement. If active turnA completes andB starts before POST, input reachesB and response still validates success. Existing test passes arbitrary turn-current and asserts POST, so checks only nonempty string. Minimal fix until native exact-turn guard exists: reject Current beforePOST with descriptive unsupported reason, preserve Queue (V065LIVE proven Queue), regression no POST for observed Current. Owner OpenCode worker, Terra integration held for this delta; no native replay.",
+        "source": "d7b560d3 control.rs NativeSessionControl::submit; domain/adapter.rs dispatch contract",
+        "status": "open",
+        "title": "OpenCode Current игнорирует expected_turn и может отправить в следующий ход"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T09:34:55+00:00",
+      "changes": {
+        "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6"
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T09:49:12+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V065PORT/current-green.txt",
+            "red_proof_path": "evidence/V065PORT/current-red.txt",
+            "red_result": "0 passed; 1 failed",
+            "red_sha256": "92009a3ca99235e3d51997bfff7c7a04d6ca35d650a7caefa90c5f01d630bcae",
+            "result": "1 passed; 0 failed",
+            "sha256": "89cb6b5e1b9b7011147733e882a2b38f1cff70d67a3a6da04ba2cf0b908df224",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission -- --exact"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbe1294ad7a834a65b0d2",
+  "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V065PORT/current-green.txt",
+      "red_proof_path": "evidence/V065PORT/current-red.txt",
+      "red_result": "0 passed; 1 failed",
+      "red_sha256": "92009a3ca99235e3d51997bfff7c7a04d6ca35d650a7caefa90c5f01d630bcae",
+      "result": "1 passed; 0 failed",
+      "sha256": "89cb6b5e1b9b7011147733e882a2b38f1cff70d67a3a6da04ba2cf0b908df224",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission -- --exact"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "d7b560d3 control.rs NativeSessionControl::submit; domain/adapter.rs dispatch contract",
+  "status": "fixed",
+  "title": "OpenCode Current игнорирует expected_turn и может отправить в следующий ход",
+  "updated_at": "2026-11-07T09:49:12+00:00"
+}

@@ -1,0 +1,67 @@
+{
+  "id": "V055A3",
+  "label": "Codex: Проверить exact interrupt на двух isolated native turns",
+  "description": "Новый isolated Codex CODEX_HOME и loopback fake model с hold/release: получить два активных native turn в разных threads, вызвать interrupt_exact ровно для первого и независимым native thread/turn readback подтвердить interrupted для первого и отсутствие воздействия на второй; после release второй должен завершиться. Не использовать operator profile, credentials, production provider и старые завершённые threads. Один interrupt; UNKNOWN — только readback.",
+  "acceptance": "Доказано на Codex app-server 0.167.0 в отдельном network namespace, где существует только lo: новый CODEX_HOME, fixture-only loopback endpoint, два свежих native thread/turn с обоими статусами inProgress; выполнен один interrupt_exact для точного turn A; нативный thread/turns/list readback через действующее соединение показывает A interrupted и B inProgress; после release B завершается с fixture assistant marker, A остаётся interrupted. Затем отдельный Codex app-server выполняет независимые read-only thread/turns/list и thread/items/list уже после settle: A interrupted, B completed, marker совпадает, новых model requests 0. UNKNOWN не возникал, retry не выполнялся; все процессы теста завершены.",
+  "affected_files": [
+    ".tmp/v055a3/*"
+  ],
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "V055A2"
+  ],
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "created_at": "2026-11-07T09:15:46+03:00",
+  "updated_at": "2026-11-07T09:33:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T09:15:46+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055A3",
+        "label": "Codex: Проверить exact interrupt на двух isolated native turns",
+        "description": "Новый isolated Codex CODEX_HOME и loopback fake model с hold/release: получить два активных native turn в разных threads, вызвать interrupt_exact ровно для первого и независимым native thread/turn readback подтвердить interrupted для первого и отсутствие воздействия на второй; после release второй должен завершиться. Не использовать operator profile, credentials, production provider и старые завершённые threads. Один interrupt; UNKNOWN — только readback.",
+        "acceptance": "Доказано: два свежих native thread/turn IDs, оба inProgress и два fake-model запроса; interrupt_exact(targetA, turnA) вызван один раз и вернул Interrupted; независимый native readback показывает A interrupted, B ещё inProgress; после release B completed с fixture assistant marker; A не переписан и повторных turn/interrupt нет. Все артефакты под .tmp/v055a3, cleanup завершён, no network beyond loopback.",
+        "affected_files": [
+          ".tmp/v055a3/*"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "V055A2"
+        ],
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:16:04+03:00",
+      "note": "Тестирую только свежий CODEX_HOME + loopback fake model; никакой учетной записи или внешнего provider.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:33:49+03:00",
+      "note": "Проверено два одновременно активных native turn, точечное прерывание A и независимый post-settle native readback.",
+      "changes": {
+        "status": "done",
+        "acceptance": "Доказано на Codex app-server 0.167.0 в отдельном network namespace, где существует только lo: новый CODEX_HOME, fixture-only loopback endpoint, два свежих native thread/turn с обоими статусами inProgress; выполнен один interrupt_exact для точного turn A; нативный thread/turns/list readback через действующее соединение показывает A interrupted и B inProgress; после release B завершается с fixture assistant marker, A остаётся interrupted. Затем отдельный Codex app-server выполняет независимые read-only thread/turns/list и thread/items/list уже после settle: A interrupted, B completed, marker совпадает, новых model requests 0. UNKNOWN не возникал, retry не выполнялся; все процессы теста завершены.",
+        "result": "Native acceptance прошла на source, точно совпадающем с интегрированным commit d52e3ac5: SHA256 crates/herder/src/adapters/codex/control.rs = 7a6dfdc0f3cedecff9b870ae090e25762622e455daf69fcc58912f718be28b78. Proof `.tmp/v055a3/native-proof.json`, тестовый лог `.tmp/v055a3/native-test.log`, independent readback `.tmp/v055a3/independent-readback.log`; полный scoped runner и локальная модель также сохранены в `.tmp/v055a3/`. Network namespace показал только lo. Результат: A inProgress → interrupt_exact(точные instance/thread/turn) → interrupted; B оставался inProgress и завершился с HERDER_TEST_MODEL_OK; независимый второй native app-server после завершения подтвердил A interrupted и B completed без новых model requests. Один вызов interrupt_exact, UNKNOWN отсутствовал, повторов не было. Подтверждён cleanup: fixture и scoped Codex app-server child завершены; посторонний app-server proxy не тронут. Ранее провалившийся probe запускал второй app-server на том же активном CODEX_HOME; это исправлено в acceptance harness и bug B9e7dea2e16624d1b8910 закрыт RED/GREEN. Не проверялась общая интеграция HumanStop authority, пользовательский MCP или full HumanStop PASS."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Native acceptance прошла на source, точно совпадающем с интегрированным commit d52e3ac5: SHA256 crates/herder/src/adapters/codex/control.rs = 7a6dfdc0f3cedecff9b870ae090e25762622e455daf69fcc58912f718be28b78. Proof `.tmp/v055a3/native-proof.json`, тестовый лог `.tmp/v055a3/native-test.log`, independent readback `.tmp/v055a3/independent-readback.log`; полный scoped runner и локальная модель также сохранены в `.tmp/v055a3/`. Network namespace показал только lo. Результат: A inProgress → interrupt_exact(точные instance/thread/turn) → interrupted; B оставался inProgress и завершился с HERDER_TEST_MODEL_OK; независимый второй native app-server после завершения подтвердил A interrupted и B completed без новых model requests. Один вызов interrupt_exact, UNKNOWN отсутствовал, повторов не было. Подтверждён cleanup: fixture и scoped Codex app-server child завершены; посторонний app-server proxy не тронут. Ранее провалившийся probe запускал второй app-server на том же активном CODEX_HOME; это исправлено в acceptance harness и bug B9e7dea2e16624d1b8910 закрыт RED/GREEN. Не проверялась общая интеграция HumanStop authority, пользовательский MCP или full HumanStop PASS."
+}

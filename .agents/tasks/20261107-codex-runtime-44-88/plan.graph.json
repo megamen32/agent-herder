@@ -1,0 +1,167 @@
+{
+  "schema_version": 2,
+  "title": "Codex 0.167.0 на server-44 и server-88",
+  "goal": "Перезапустить runtime Codex и сохранить доступ к сессиям",
+  "business_result": "",
+  "business_results": [],
+  "acceptance_scenarios": [
+    "На каждом узле штатный runtime 0.167.0, проверены PID и executable, существующая сессия читается без повторного запуска действий."
+  ],
+  "recon": [
+    "server-44: npm 0.167.0, активный app-server 0.166.0 :: codex app-server daemon version",
+    "server-88: npm 0.167.0, активный app-server 0.166.0 :: codex app-server daemon version",
+    "Оба daemon показывают managed package 0.162.1 :: daemon version; процессы запущены из удаленного npm inode"
+  ],
+  "current_progress": "",
+  "revisions": [],
+  "external_waits": "",
+  "slots": 1,
+  "updated_at": "2026-11-07T03:40:03+03:00",
+  "tasks": [
+    {
+      "id": "L01",
+      "label": "Перезапустить и проверить server-44",
+      "status": "waiting",
+      "parent": "M01",
+      "description": "Штатный runtime и чтение имеющейся сессии",
+      "acceptance": "PID и версия 0.167.0 и доступ к сессии",
+      "result": "server-44: npm runtime 0.167.0 PID 2779814; existing chat 01a15a6e-ff79-7c60-9b32-3b8bbbbc2949 read; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+      "owner": "roomhacker",
+      "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+      "harness": "codex",
+      "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T03:30:43+03:00",
+          "note": "",
+          "changes": {
+            "id": "L01",
+            "label": "Перезапустить и проверить server-44",
+            "parent": "M01",
+            "status": "queued",
+            "estimate_minutes": 15,
+            "description": "Штатный runtime и чтение имеющейся сессии",
+            "acceptance": "PID и версия 0.167.0 и доступ к сессии"
+          },
+          "session": "unknown",
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-11-07T03:31:28+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running",
+            "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+            "harness": "codex",
+            "owner": "roomhacker"
+          },
+          "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T03:40:00+03:00",
+          "note": "",
+          "changes": {
+            "status": "waiting",
+            "result": "server-44: npm runtime 0.167.0 PID 2779814; existing chat 01a15a6e-ff79-7c60-9b32-3b8bbbbc2949 read; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+            "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне."
+          },
+          "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T03:30:43+03:00",
+      "started_at": "2026-11-07T03:31:28+03:00"
+    },
+    {
+      "id": "L02",
+      "label": "Перезапустить и проверить server-88",
+      "status": "waiting",
+      "parent": "M01",
+      "description": "Штатный runtime и чтение имеющейся сессии",
+      "acceptance": "PID и версия 0.167.0 и доступ к сессии",
+      "result": "server-88: npm runtime 0.167.0 PID 2649340; existing chat 01a1ad76-780f-7f20-9150-01db6e6e5ef0 read, 28 turns; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+      "owner": "roomhacker",
+      "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+      "harness": "codex",
+      "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-07T03:30:43+03:00",
+          "note": "",
+          "changes": {
+            "id": "L02",
+            "label": "Перезапустить и проверить server-88",
+            "parent": "M01",
+            "status": "queued",
+            "estimate_minutes": 15,
+            "description": "Штатный runtime и чтение имеющейся сессии",
+            "acceptance": "PID и версия 0.167.0 и доступ к сессии"
+          },
+          "session": "unknown",
+          "harness": "unknown"
+        },
+        {
+          "at": "2026-11-07T03:31:28+03:00",
+          "note": "Начал работу в текущей сессии",
+          "changes": {
+            "status": "running",
+            "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+            "harness": "codex",
+            "owner": "roomhacker"
+          },
+          "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-07T03:40:03+03:00",
+          "note": "",
+          "changes": {
+            "status": "waiting",
+            "result": "server-88: npm runtime 0.167.0 PID 2649340; existing chat 01a1ad76-780f-7f20-9150-01db6e6e5ef0 read, 28 turns; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+            "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне."
+          },
+          "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-07T03:30:43+03:00",
+      "started_at": "2026-11-07T03:31:28+03:00"
+    }
+  ],
+  "leaf_count": 2,
+  "milestones": [
+    {
+      "id": "M01",
+      "label": "Восстановить Codex на двух серверах",
+      "status": "waiting",
+      "children": [
+        "L01",
+        "L02"
+      ],
+      "estimate_minutes": null,
+      "done": 0,
+      "total": 2
+    }
+  ],
+  "plan_origin": {
+    "at": "2026-11-07T03:30:42+03:00",
+    "source": "leaf_created_at",
+    "leaf_id": "M01",
+    "recorded_at": "2026-11-07T00:30:42.085927+00:00"
+  }
+}

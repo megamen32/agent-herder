@@ -1,0 +1,20 @@
+{
+  "phase": "GREEN",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests/native",
+    "-p",
+    "test_candidate_release_gate.py",
+    "-v"
+  ],
+  "returncode": 0,
+  "diff_check": 0,
+  "source_sha256": "092b143faa8a280e1b8b7aee30ef80c85b30fb77a8fc644ee0c99d0cb0c331ba",
+  "test_sha256": "f571bb8db695dcefd24723770492b790c117a8387c1d4b2757f5981a784ac623",
+  "recorded_at": "2026-11-08T22:52:10.846603+00:00",
+  "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-visible-20261109/green.log"
+}

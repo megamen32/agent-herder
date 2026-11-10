@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (.tmp/herder-r003a-compile-20261107/target/debug/deps/herder-003d324be0149aef)
+
+running 3 tests
+test application::resource::tests::list_ignores_corrupt_markers_outside_the_callers_grants ... ok
+test application::resource::tests::list_get_enforce_exact_grants_and_reads_preserve_claim_across_reconnect ... ok
+test application::resource::tests::attachment_availability_changes_preserve_identity_visibility_and_owner ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 83 filtered out; finished in 1.32s
+

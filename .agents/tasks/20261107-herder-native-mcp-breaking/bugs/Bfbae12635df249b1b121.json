@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-07T16:42:36+00:00",
+  "details": "Owner identified src/ahap-opencode-runner.ts 200 invalid JSON converted to null and v22; must reject before mutation. RED invalidHTML vs literal null regression; preserve prior UNKNOWN.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T16:42:36+00:00",
+      "changes": {
+        "details": "Owner identified src/ahap-opencode-runner.ts 200 invalid JSON converted to null and v22; must reject before mutation. RED invalidHTML vs literal null regression; preserve prior UNKNOWN.",
+        "source": "tests/ahap-opencode-family.test.ts: literal JSON null versus malformed 200",
+        "status": "open",
+        "title": "OpenCode protocol probe считает malformed JSON за null"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T16:49:55+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "B1ea420df80c3455995cc",
+          "kind": "duplicate",
+          "reason": "Дублирует исходное сообщение Astra о том же catch(()=>null) в том же runner; regression и исправление зарегистрированы в исходной записи."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "Bfbae12635df249b1b121",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "duplicate_of": "B1ea420df80c3455995cc",
+    "kind": "duplicate",
+    "reason": "Дублирует исходное сообщение Astra о том же catch(()=>null) в том же runner; regression и исправление зарегистрированы в исходной записи."
+  },
+  "source": "tests/ahap-opencode-family.test.ts: literal JSON null versus malformed 200",
+  "status": "duplicate",
+  "title": "OpenCode protocol probe считает malformed JSON за null",
+  "updated_at": "2026-11-07T16:49:55+00:00"
+}

@@ -1,0 +1,89 @@
+{
+  "id": "V065AHAPCIDRIVER",
+  "label": "Подготовить реальный сценарий OpenCode поверх готового CI",
+  "description": "Дописать исполняемый consumer driver create→deliver→receipt→assistant→reopen поверх существующего launcher/model. Manifest wrapper5d662966 проверяет файлы и запускает чужой argv, но сам business scenario не реализует. Эта подготовка не зависит от готовности сборки Теры.",
+  "acceptance": "Готов исполняемый driver с isolated OpenCode+profile запуском, MCP core create/deliver/Task/read/reopen, exact assistant evidence и model request counter; fake/offline проверка контракта. Native run отдельно после artifacts.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "model": "gpt-6-luna",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V065AHAPCISETUP"
+  ],
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py"
+  ],
+  "note": "No existing launcher/model edits; no live call until immutable core+runner available.",
+  "created_at": "2026-11-07T15:28:56+03:00",
+  "updated_at": "2026-11-07T18:15:25+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:28:56+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065AHAPCIDRIVER",
+        "label": "Подготовить реальный сценарий OpenCode поверх готового CI",
+        "description": "Дописать исполняемый consumer driver create→deliver→receipt→assistant→reopen поверх существующего launcher/model. Manifest wrapper5d662966 проверяет файлы и запускает чужой argv, но сам business scenario не реализует. Эта подготовка не зависит от готовности сборки Теры.",
+        "acceptance": "Готов исполняемый driver с isolated OpenCode+profile запуском, MCP core create/deliver/Task/read/reopen, exact assistant evidence и model request counter; fake/offline проверка контракта. Native run отдельно после artifacts.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Luna",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "model": "gpt-6-luna",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V065AHAPCISETUP"
+        ],
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py"
+        ],
+        "note": "No existing launcher/model edits; no live call until immutable core+runner available."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:30:08+03:00",
+      "note": "Astra verified live Luna active: reading existing owner profile/stand and implementing consumer independently of core artifact.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:30:21+03:00",
+      "note": "Подготавливаю отдельный AHAP OpenCode scripted business driver и offline tests по новому прямому указанию. Owned paths: tests/native/ahap_opencode_stand.py, tests/native/test_ahap_opencode_stand.py; существующие launch.py/test-model-server.py/candidate_stand.py только reuse. Native запуск запрещён до reviewed core+runner handoff.",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:15:25+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Stand опубликован70fba336, inline MCP preflight/namespace probes ca4c3907. Авторские14offline tests+py_compile/diff check PASS. Подготовка driver завершена; business case не выполнялся (modelrequests0/native mutations0), остаётся V065AHAPCIRUN."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ],
+  "result": "Stand опубликован70fba336, inline MCP preflight/namespace probes ca4c3907. Авторские14offline tests+py_compile/diff check PASS. Подготовка driver завершена; business case не выполнялся (modelrequests0/native mutations0), остаётся V065AHAPCIRUN."
+}

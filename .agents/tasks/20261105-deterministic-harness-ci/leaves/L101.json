@@ -1,0 +1,104 @@
+{
+  "id": "L101",
+  "label": "ChatGPT: доказать автономное продолжение",
+  "description": "Установленным Herder проверить фактический переход running→idle и единственное автоматическое продолжение только на разрешённой тестовой сессии; соблюдать backoff и не повторять UNKNOWN.",
+  "acceptance": "Квитанция источника, состояния и единственной доставки, независимый readback; иначе конкретная причина неполноты.",
+  "status": "deferred",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:07:15+03:00",
+  "updated_at": "2026-11-07T21:29:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:07:15+03:00",
+      "note": "",
+      "changes": {
+        "id": "L101",
+        "label": "ChatGPT: доказать автономное продолжение",
+        "description": "Установленным Herder проверить фактический переход running→idle и единственное автоматическое продолжение только на разрешённой тестовой сессии; соблюдать backoff и не повторять UNKNOWN.",
+        "acceptance": "Квитанция источника, состояния и единственной доставки, независимый readback; иначе конкретная причина неполноты.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:09:20+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Тот же ChatGPT test target назначен QCHATCASE; точный эксклюзивный resource lease и identity account/context ещё не выданы. Не начинать одновременные browser mutations.",
+        "note": "Read-only status: chatgpt::6aee9fd5-7ee0-83ea-a06f-a3ed148605e8 autopilot persisted enabled, session_info видит маркер; источник goal_review и running→idle не доказан. После exact lease выполнить L101, освободить target для QCHATCASE."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:28:27+03:00",
+      "note": "",
+      "changes": {
+        "note": "Read-only 2026-11-07: autopilot exact ChatGPT session persisted enabled; Vibe текущего harness показывает другой браузер, на Mac Mini обнаружены Chrome и штатный gateway, но remote-debug порт не найден. Exact CDP context/target и эксклюзивный lease не подтверждены. Переход running→idle и источник goal_review не доказаны; browser mutation не запускать."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:43:01+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Нет подтверждённого эксклюзивного lease на gateway page и точного raw CDP context/target; coordination note — только advisory. Не запускать L101/QCHATCASE до надёжного разделения доступа.",
+        "note": "07.11 read-only Mac Mini GPTAdmin shell и штатный Chrome MCP gateway: создана одна собственная вкладка через new_page(background=true) для https://chatgpt.com/c/6aee9fd5-7ee0-83ea-a06f-a3ed148605e8. Вызов вернул Navigation timeout 20000ms, сверенный job 91ffc67d0be59291ec55c36b9e8db638 completed; повторного new_page нет. list_pages выявил единственный новый pageId=7 (пространство gateway, не raw CDP target); page 1 и 3 остались обычными чатами. DOM page 7: exact path, профиль аутентифицирован, title «Техническая проверка», marker HERDER_CHATGPT_CI_OK; штатный явный read-only /api/auth/session вернул только SHA256 scope b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1, без credential. new_page без isolatedContext; raw CDP context/target не предоставлены gateway. Создано advisory coordination note 1d6d7cfc-a4b8-4937-910e-6d9a2873b80c до 18:42:43Z: L101 первый владелец, QCHATCASE только после handoff; note не является эксклюзивным lease. Unknown send не повторяли; никакой send не сделан. Следующий шаг — подтвердить существующий механизм исключительного browser lease/context, затем адресный ready handoff."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:11:01+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Точный test target и cooperative claim проверены, но история ChatGPT по-прежнему отвечает read_cooldown. Observer хранит running=true с 17:38:55Z, Herder session_info сейчас idle; исход автоматического перехода не доказан. Не запускать новый send/continuation до сверки неизвестного предыдущего исхода и завершения backoff.",
+        "note": "Controller 73e7aac6 установлен. Resource claim 21df64fc-3e0f-4f9e-8664-b40c39a840bb за CI lead подтверждён status=owned через штатный QA authority; pageId 7 gateway и account scope совпадают с manifest acceptance/native/browser/resource-scope.json. Claim cooperative по linux-euid, не CDP fencing. Session info idle и autopilot persisted enabled; observer snapshot running=true с 17:38:55Z. Явная попытка transcript export дважды до/после видимого passive cooldown вернула read_cooldown; запрошено с паузой, новую модельную отправку не выполняли. Автопилот продолжает работать; не подменять факт idle доказательством completed или единственной доставки. Дальше: дождаться полного read cooldown, прочитать exact историю и источник continuation, только после этого безопасно закончить L101 и передать QCHATCASE."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:29:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Точный test target и cooperative claim проверены, но история ChatGPT по-прежнему отвечает read_cooldown. Observer хранит running=true с 17:38:55Z, Herder session_info сейчас idle; исход автоматического перехода не доказан. Не запускать новый send/continuation до сверки неизвестного предыдущего исхода и завершения backoff.",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

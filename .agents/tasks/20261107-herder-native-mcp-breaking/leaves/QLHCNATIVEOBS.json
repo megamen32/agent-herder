@@ -1,0 +1,109 @@
+{
+  "id": "QLHCNATIVEOBS",
+  "kind": "task",
+  "label": "Сохранить точный native turn в ответе Herder для LHC",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "ZCode worker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "description": "Live на установленном73e7aac6 session_info активнойCodexсессии отдаётidle/meta.sourceRoute безnativeLastTurn. Appwait подтверждаетexactinProgress. Найтипотерюnativeobservation, reuseexistingadapter.",
+  "acceptance": "SourceRED/GREEN и реальныйsession_info содержатточныйturn/status, staleidle не заменяетactive; HumanStopсохранён. RuntimeinstallerCI.",
+  "note": "Дополнительный liveRED Astra selfwait wait_51988f58b1ae0c2991bea8f245b9743a, exactturn01a1b744-6e9e-7430-b766-a3dca5802279 immediatelydelivery_failed. Exactrootpath src/resume-after-runtime.ts getDependencyState читаетadapter.getSessiondirect, мимоagentInfoResult; нуженодинsharedexactreadhelper/adapterfix для обоихconsumers, сstopped/permission/mismatchguards. Scopeworkerрасширеннаresume-after-runtime.ts/tests/resume-after.test.ts. Сообщениеinputastra-selfwake-runtime-path-20261107T1830 отвергнутоquota_unknown/not_attempted, notSubmitted; не повторено/не обойдено. Записаноcanonicalдляследующегочтения.",
+  "created_at": "2026-11-07T21:11:41+03:00",
+  "updated_at": "2026-11-07T22:36:54+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T21:11:41+03:00",
+      "note": "",
+      "changes": {
+        "id": "QLHCNATIVEOBS",
+        "kind": "task",
+        "label": "Сохранить точный native turn в ответе Herder для LHC",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "ZCode worker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "description": "Live на установленном73e7aac6 session_info активнойCodexсессии отдаётidle/meta.sourceRoute безnativeLastTurn. Appwait подтверждаетexactinProgress. Найтипотерюnativeobservation, reuseexistingadapter.",
+        "acceptance": "SourceRED/GREEN и реальныйsession_info содержатточныйturn/status, staleidle не заменяетactive; HumanStopсохранён. RuntimeinstallerCI.",
+        "note": "Accepted input astra-native-observation-contract-20261107T1811; turn01a1b735-51d3-7c40-8de8-79aa0e6b86d0. LHC nativeproof зависиттолькоотэтогоreadcontract, sourcepatchпараллельно."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:27:17+03:00",
+      "note": "Source fix published; waiting for CI-owned install and public session_info readback.",
+      "changes": {
+        "status": "waiting",
+        "blocker": "CI install and post-install session_info readback; this worker must not install runtime",
+        "result": "Confirmed source gap in two existing read paths. readCodexActiveRuntime previously discarded activeTurnId/nativeLastTurn after native thread/read; it now performs the adapter's existing exact thread/turns/list read for each exact loaded active thread, publishes fresh turnId/status when available, drops stale cached turn metadata, and sets nativeTurnStateUnavailable plus a partial snapshot receipt when exact turn read fails. Public agentInfoResult now fills an idle direct Codex read from the same existing listActiveSessions projection only when direct metadata has no turn identity, preserving existing meta (including sourceRoute/HumanStop fields). RED: tests/session-info-context.test.ts -t 'fills missing exact native activity' failed with returned session.idle and no activeTurnId/nativeLastTurn. RED for active projection: tests/codex-active-runtime.test.ts -t 'exact native in-progress turn' returned only loaded-thread metadata. GREEN: npx vitest run --root . --config vitest.config.ts tests/codex-active-runtime.test.ts tests/codex-app-server.test.ts tests/session-info-context.test.ts — 85 passed, 1 skipped; npx tsc --noEmit and git diff --check passed. Scoped source commit 8b3bebe7fb448ce2d348825c74b189af7bd17017 on origin/main; paths src/adapters/codex-active-runtime.ts, src/mcp-tools/handlers.ts, tests/codex-active-runtime.test.ts, tests/session-info-context.test.ts. Runtime was not installed or changed. Remaining acceptance: CI-owned install, then read the same public session_info and verify exact active turn/status; no runtime mutation or native send performed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:28:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "blocker": "",
+        "note": "Source8b3bebe7 опубликован, 85passed1skipped+tsc. Astra review нашёл publicfallback без idleguard: можетпереписатьstopped/needsPermission. Доставленоодноадресноеисправление inputastra-native-observation-stop-review-20261107T1827; beforeinstall нужныnegatives. 15миностаток: guards+проверкаreadbudget, затемCIinstalledreadback."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:31:11+03:00",
+      "note": "",
+      "changes": {
+        "note": "Дополнительный liveRED Astra selfwait wait_51988f58b1ae0c2991bea8f245b9743a, exactturn01a1b744-6e9e-7430-b766-a3dca5802279 immediatelydelivery_failed. Exactrootpath src/resume-after-runtime.ts getDependencyState читаетadapter.getSessiondirect, мимоagentInfoResult; нуженодинsharedexactreadhelper/adapterfix для обоихconsumers, сstopped/permission/mismatchguards. Scopeworkerрасширеннаresume-after-runtime.ts/tests/resume-after.test.ts. Сообщениеinputastra-selfwake-runtime-path-20261107T1830 отвергнутоquota_unknown/not_attempted, notSubmitted; не повторено/не обойдено. Записаноcanonicalдляследующегочтения."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T22:36:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Source fix for observed native turn loss published to origin/main as 8495e1b72434acc119e926e764a59afb3dc0d934. Shared readExactCodexActiveSession now feeds both public agentInfoResult and resume_after readDependency. Fallback applies only to exact Codex idle with no current turn identity/permission/HumanStop/automation hold; holds checked before and after read; stopped, approval, conflicting metadata and mismatched active receipt remain unchanged. Tests: `npx vitest run tests/session-info-context.test.ts tests/codex-app-server.test.ts tests/resume-after.test.ts` — 3 files, 104 passed; `npx tsc --noEmit` passed; `git diff --check` passed. No runtime install and no live wait/send."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "",
+  "result": "Source fix for observed native turn loss published to origin/main as 8495e1b72434acc119e926e764a59afb3dc0d934. Shared readExactCodexActiveSession now feeds both public agentInfoResult and resume_after readDependency. Fallback applies only to exact Codex idle with no current turn identity/permission/HumanStop/automation hold; holds checked before and after read; stopped, approval, conflicting metadata and mismatched active receipt remain unchanged. Tests: `npx vitest run tests/session-info-context.test.ts tests/codex-app-server.test.ts tests/resume-after.test.ts` — 3 files, 104 passed; `npx tsc --noEmit` passed; `git diff --check` passed. No runtime install and no live wait/send."
+}

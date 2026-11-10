@@ -1,0 +1,13 @@
+
+> agent-herder@0.2.2 build
+> npm run build:core && tsc && vite build --config vite.config.ts && cp -R dist/web-static/. dist/web/
+
+
+> agent-herder@0.2.2 build:core
+> npm run build --workspace agent-resume-mcp
+
+
+> agent-resume-mcp@0.2.2 build
+> tsc -p tsconfig.json
+
+src/adapters/opencode.ts(1149,21): error TS2339: Property 'complete' does not exist on type 'OpenCodeRawTranscript'.

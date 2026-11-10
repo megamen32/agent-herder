@@ -1,0 +1,39 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/agents-projects/agent-herder[39m
+
+(node:810744) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/remote-workspaces.test.ts[2m > [22mactual host workspace MCP[2m > [22mdeclares100→88, preserves launch address, shares remote conflicts and separates equal local path[33m 798[2mms[22m[39m
+ [32m✓[39m tests/remote-workspaces.test.ts[2m > [22mactual host workspace MCP[2m > [22mlocates one project across the fleet with explicit absent and unreachable hosts[32m 30[2mms[22m[39m
+ [32m✓[39m tests/remote-workspaces.test.ts[2m > [22mactual host workspace MCP[2m > [22mrefuses nonexistent directories and wrong peer host without persisting a declaration[32m 15[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mreads remote-host notes by their globally unique note ID[32m 13[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mrefuses device sinks even from stale hook clients[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mcreates, injects, updates, and deletes owned TTL notes[32m 20[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mauto-reserves paths, refreshes TTL, normalizes paths, and detects overlaps[32m 6[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22misolates identical paths by host while detecting same-host conflicts[32m 5[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mpersists a bounded explicit workspace and keeps it above local hook activity until clear or expiry[32m 13[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mdefaults legacy notes and workspace operations to the local host and rejects invalid remote identities[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mrenders declared remote workspace ownership without mixing a same-path local board[32m 4[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mheartbeats all hook reservations owned by an active session[32m 8[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination notes[2m > [22mdefaults automatic inactivity leases to one minute[32m 0[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22minjects the notes block once and re-injects only on material change[32m 7[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mshares the dedup slot across channels: the peers roster does not repeat the notes block[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22msummarizes passive ownership changes and leaves the exact snapshot in note_list[32m 9[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mdoes not swallow active manual decisions or avoid notes in the passive summary[32m 4[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22msummarizes mixed hook and manual working notes but keeps avoid decisions actionable[32m 7[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mreports released working ownership by count without exposing previous roster details[32m 4[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mshows a hook reservation promoted to avoid immediately in active context[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mnever shows a session its own notes[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mdoes not periodically re-inject unchanged notes after the staleness window[32m 3[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mkeeps per-board dedup slots: two boards inject independently[32m 4[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mrenders turn-start awareness across every board the session touched[32m 8[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mkeeps passive notices limited to a scoped ownership read[32m 4[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mpublishes granular presence resource updates[32m 2[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mexposes granular session and workspace presence snapshots[32m 16[2mms[22m[39m
+ [32m✓[39m tests/coordination-notes.test.ts[2m > [22mcoordination note injection dedup[2m > [22mendSession purges hook leases and presence but keeps manual notes[32m 5[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m28 passed[39m[22m[90m (28)[39m
+[2m   Start at [22m 14:06:35
+[2m   Duration [22m 5.40s[2m (transform 2.07s, setup 820ms, import 3.04s, tests 1.00s, environment 0ms)[22m
+

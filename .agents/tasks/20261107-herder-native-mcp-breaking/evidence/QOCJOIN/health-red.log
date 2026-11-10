@@ -1,0 +1,58 @@
+
+ RUN  v4.1.10 /tmp/herder-tasks-publish-1047
+
+ ❯ tests/opencode-v22-protocol.test.ts (4 tests | 3 failed) 129ms
+   × uses pinned v22 create, initial Start, and exact new native user-message readback 64ms
+   × refuses queue and existing-session Start before POST 12ms
+   × returns UNKNOWN after a post-effect HTTP error without retrying 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/opencode-v22-protocol.test.ts > uses pinned v22 create, initial Start, and exact new native user-message readback
+Error: OpenCode http://127.0.0.1:33077 is not reachable: HTTP 404
+ ❯ OpenCodeClient.init packages/agent-resume/src/harness/opencode/client.ts:552:24
+ ❯ OpenCodeAdapter.init src/adapters/opencode.ts:413:5
+    411|
+    412|   async init(): Promise<void> {
+    413|     await this.client.init();
+       |     ^
+    414|   }
+    415|
+ ❯ tests/opencode-v22-protocol.test.ts:63:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/opencode-v22-protocol.test.ts > refuses queue and existing-session Start before POST
+Error: OpenCode http://127.0.0.1:37813 is not reachable: HTTP 404
+ ❯ OpenCodeClient.init packages/agent-resume/src/harness/opencode/client.ts:552:24
+ ❯ OpenCodeAdapter.init src/adapters/opencode.ts:413:5
+    411|
+    412|   async init(): Promise<void> {
+    413|     await this.client.init();
+       |     ^
+    414|   }
+    415|
+ ❯ tests/opencode-v22-protocol.test.ts:102:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/opencode-v22-protocol.test.ts > returns UNKNOWN after a post-effect HTTP error without retrying
+Error: OpenCode http://127.0.0.1:21377 is not reachable: HTTP 404
+ ❯ OpenCodeClient.init packages/agent-resume/src/harness/opencode/client.ts:552:24
+ ❯ OpenCodeAdapter.init src/adapters/opencode.ts:413:5
+    411|
+    412|   async init(): Promise<void> {
+    413|     await this.client.init();
+       |     ^
+    414|   }
+    415|
+ ❯ tests/opencode-v22-protocol.test.ts:120:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Start at  18:33:21
+   Duration  2.16s (transform 1.38s, setup 71ms, import 1.72s, tests 129ms, environment 0ms)
+

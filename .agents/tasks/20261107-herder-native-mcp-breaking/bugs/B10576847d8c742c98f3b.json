@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-07T09:07:31+00:00",
+  "details": "362e0606+75d22b49: Writer::open_file accepts user_version1 and skips schema validation, so v3 authority downgraded to1 passes; schema/authority read through two independently opened paths after saved stat; immediate parent trust omits writable ancestors; blocking profile open hangs on FIFO before fstat. No exploit/native action run. Minimal corrections and source evidence in review-evidence/astra-launcher-75d22b49.md; Tesla assigned; Unknown caller boundary supported, public consumer separate.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra/Nietzsche",
+      "at": "2026-11-07T09:07:31+00:00",
+      "changes": {
+        "details": "362e0606+75d22b49: Writer::open_file accepts user_version1 and skips schema validation, so v3 authority downgraded to1 passes; schema/authority read through two independently opened paths after saved stat; immediate parent trust omits writable ancestors; blocking profile open hangs on FIFO before fstat. No exploit/native action run. Minimal corrections and source evidence in review-evidence/astra-launcher-75d22b49.md; Tesla assigned; Unknown caller boundary supported, public consumer separate.",
+        "source": "Independent read-only reviewer + Astra source cross-check",
+        "status": "open",
+        "title": "Scoped launcher принимает downgraded schema и не завершает проверку доверенного файла"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T09:07:31+00:00",
+      "changes": {
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff"
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B10576847d8c742c98f3b",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "reporter": "Astra/Nietzsche",
+  "source": "Independent read-only reviewer + Astra source cross-check",
+  "status": "open",
+  "title": "Scoped launcher принимает downgraded schema и не завершает проверку доверенного файла",
+  "updated_at": "2026-11-07T09:07:31+00:00"
+}

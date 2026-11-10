@@ -11,8 +11,8 @@
   ],
   "parent": "S05",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V071 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V071 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:53:22+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:22+03:00",
+  "updated_at": "2026-11-07T07:25:43+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:22+03:00",
@@ -51,6 +51,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:11:02+03:00",
+      "note": "Добавляю native binary request/response корреляцию, deadline и disconnect handling; затем запускаю isolated ZCode profile без model input для Rust live proof.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:25:43+03:00",
+      "note": "Live isolated Rust attach and initialize correlation passed; no inference or session mutation. Existing V070B receipt is retained for empty listSessions proof.",
+      "changes": {
+        "status": "done",
+        "result": "В connection.rs добавлен native ZCode binary RPC encode/decode, монотонные request IDs, корреляция ответов, bounded deadline и OutcomeUnknown после отправки при timeout/disconnect; close закрывает только socket. cargo check прошёл. Live Rust attach к свежему isolated ZCode Server 3.17.2: handshake принят, `zcode-agent.initialize` requestId=1 получил responseId=1/type 201, available=false, owned_process_id=None, socket закрыт; inference=0. Вторая read-only listSessions попытка получила native ошибку `ZCode Agent runtime is not running`; сессии не создавались и input не отправлялся. Независимая V070B квитанция ранее подтверждает пустой listSessions ответ на том же маршруте. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V071B/zcode-rust-connection.json. Таймаут с искусственной задержкой, create, input и transcript остаются непроверенными. Scoped commit: dfd17b9a (только connection.rs); Cargo.toml/lib.rs wiring остаётся незакоммиченным WIP их владельца."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "В connection.rs добавлен native ZCode binary RPC encode/decode, монотонные request IDs, корреляция ответов, bounded deadline и OutcomeUnknown после отправки при timeout/disconnect; close закрывает только socket. cargo check прошёл. Live Rust attach к свежему isolated ZCode Server 3.17.2: handshake принят, `zcode-agent.initialize` requestId=1 получил responseId=1/type 201, available=false, owned_process_id=None, socket закрыт; inference=0. Вторая read-only listSessions попытка получила native ошибку `ZCode Agent runtime is not running`; сессии не создавались и input не отправлялся. Независимая V070B квитанция ранее подтверждает пустой listSessions ответ на том же маршруте. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V071B/zcode-rust-connection.json. Таймаут с искусственной задержкой, create, input и transcript остаются непроверенными. Scoped commit: dfd17b9a (только connection.rs); Cargo.toml/lib.rs wiring остаётся незакоммиченным WIP их владельца."
 }

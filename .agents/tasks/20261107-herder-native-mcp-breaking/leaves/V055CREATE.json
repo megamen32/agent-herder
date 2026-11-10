@@ -1,0 +1,82 @@
+{
+  "id": "V055CREATE",
+  "label": "Сохранить доказанное отсутствие native create",
+  "description": "Протянуть типизированные DefinitelyNotSent и UNKNOWN от Codex thread/start через bounded create и durable intent.",
+  "acceptance": "RED/GREEN: busy/pre-write отказ сохраняется как definitely-not-sent без повтора старого key; неизвестный исход остаётся UNKNOWN без replay.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V055BOUND"
+  ],
+  "owner": "roomhacker",
+  "created_at": "2026-11-07T11:41:19+03:00",
+  "updated_at": "2026-11-07T11:56:54+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:41:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055CREATE",
+        "label": "Сохранить доказанное отсутствие native create",
+        "description": "Протянуть типизированные DefinitelyNotSent и UNKNOWN от Codex thread/start через bounded create и durable intent.",
+        "acceptance": "RED/GREEN: busy/pre-write отказ сохраняется как definitely-not-sent без повтора старого key; неизвестный исход остаётся UNKNOWN без replay.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V055BOUND"
+        ],
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:48:26+03:00",
+      "note": "Lead устраняет типизацию native create no-send до durable intent; Tesla idle, текущая рабочая копия чиста.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:54:27+03:00",
+      "note": "RED pre-write отказ ранее записывался unknown; GREEN после fix. Review запрошен у Астры.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимая проверка 309fd821",
+        "result": "Candidate 309fd821: typed no-send propagated async/bounded→durable rejected/reason; scoped old key no replay/new key allowed, async no replay, Codex adapter preflight no POST; lib105/create5/scoped19+1 ignored/target1 PASS. Production MCP не доказан."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:56:54+03:00",
+      "note": "Source integration завершена; не объявляет MCP Task lifecycle или public acceptance.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "result": "origin/main 309fd821: typed definitely-not-sent на async и scoped bounded пути, атомарно rejected+Task result reason, no replay прежнего key; независимое review SUPPORTED, 28 tests pass +1 ignored. Task lifecycle status и человекочитаемая public диагностика требуют проверки на V025PUBLIC."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "wait_reason": "",
+  "result": "origin/main 309fd821: typed definitely-not-sent на async и scoped bounded пути, атомарно rejected+Task result reason, no replay прежнего key; независимое review SUPPORTED, 28 tests pass +1 ignored. Task lifecycle status и человекочитаемая public диагностика требуют проверки на V025PUBLIC."
+}

@@ -1,0 +1,81 @@
+{
+  "id": "V065AHAP",
+  "label": "Связать OpenCode через существующий AHAP adapter",
+  "description": "Подключить Rust core к существующему OpenCode adapter через AHAP 0.1; один authority/Task/stop, instance-pinned transport, no replay.",
+  "acceptance": "Source/fake composition AHAP→OpenCode adapter, authoritative Tasks/holds, no replay; published immutable artifact. Native consumer отдельно V065AHAPCIRUN.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "Тера",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "15be696b independent Nietzsche delta SUPPORTED12PASS (7AHAP+1perms+1fakeowner+2queue+1TSguard). All3review blockers closed in source; publication/build/handoff to Luna now unblocked. Source/offline only, native create-deliver-read not yet proven.",
+  "created_at": "2026-11-07T14:54:54+03:00",
+  "updated_at": "2026-11-07T16:20:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T14:54:54+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065AHAP",
+        "label": "Связать OpenCode через существующий AHAP adapter",
+        "description": "Подключить Rust core к существующему OpenCode adapter через AHAP 0.1; один authority/Task/stop, instance-pinned transport, no replay.",
+        "acceptance": "Fake STDIO подтверждает initialise/create/queue/exact read/reconcile, ACL и UNKNOWN no replay; затем отдельный изолированный OpenCode consumer с локальной моделью и receipt.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "running",
+        "owner": "Тера",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "TS AHAP runner у существующего OpenCode owner; Go reader только display, не receipt. Codex native case отложен."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:24:50+03:00",
+      "note": "",
+      "changes": {
+        "note": "12:23UTC independent review REVISE: malformed envelope poison, duplicate message-ID ambiguity, foreign-writable launcher code. Terra fixes; TS runner a3+c3 source supported, compiled rolldown bundle initialize/init/shutdown passed. Luna setup done5d662966; real consumer waiting assembled reviewed artifact."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:35:18+03:00",
+      "note": "",
+      "changes": {
+        "note": "15be696b independent Nietzsche delta SUPPORTED12PASS (7AHAP+1perms+1fakeowner+2queue+1TSguard). All3review blockers closed in source; publication/build/handoff to Luna now unblocked. Source/offline only, native create-deliver-read not yet proven."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:08:44+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "acceptance": "Source/fake composition AHAP→OpenCode adapter, authoritative Tasks/holds, no replay; published immutable artifact. Native consumer отдельно V065AHAPCIRUN.",
+        "result": "main94e7d98c опубликован; independent review12PASS, afterrebase7AHAP+14launcher+2Queue+4TS PASS;4artifactdigests independently matched. Этот artifact несовместим с API OpenCode2.2.4: native case не запускался, исправление FASTOC22+coredelta отдельно. Доказан source composition, не real OpenCode/production."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T16:20:29+03:00",
+      "note": "",
+      "changes": {
+        "result": "main94e7d98c и4digests independently verified; source/fake review иtestsPASS. Source ABI warning2.2.4 /api vs/session требует runtimeпроверки: Luna v9 сообщилapi-session, но core initialize FAILED_PREMUTATION из-за profile, modelcounter0. Source/fake composition готова; native/production acceptance нет. FASTINIT устраняетточныйblocker, затем выбирается готоваяподходящаяветка."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    }
+  ],
+  "result": "main94e7d98c и4digests independently verified; source/fake review иtestsPASS. Source ABI warning2.2.4 /api vs/session требует runtimeпроверки: Luna v9 сообщилapi-session, но core initialize FAILED_PREMUTATION из-за profile, modelcounter0. Source/fake composition готова; native/production acceptance нет. FASTINIT устраняетточныйblocker, затем выбирается готоваяподходящаяветка."
+}

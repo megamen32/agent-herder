@@ -1,0 +1,100 @@
+{
+  "id": "QBROWSERCLAIM",
+  "parent": "S02",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "V040BCONSUMER"
+  ],
+  "label": "Закрепить тестовую вкладку ChatGPT через готовый resource claim",
+  "description": "Применить существующую ownership library к реальному QA resource без новой lease системы. Один test-only authority на server100, явно записанный в plan и manifest. Resource identity: mac-mini-2012.lan/gateway50260/page7/chat6aee9fd5-7ee0-83ea-a06f-a3ed148605e8. CI проверил marker/account hash и единственный browser operator. LinuxCLI/status/sharedowner.json, cross-client competingclaim busy, release/CAS byowner, no browser mutations.",
+  "affected_files": [
+    "acceptance/native/browser/resource-scope.json"
+  ],
+  "acceptance": "Exact canonical testauthority path/storage_id/principal/claim_id и resourceidentity в bounded private receipt; existingCLI status owned, competingclaim busy, CI read before sideeffect. Это кооперативное исключительное владение через общий authority, не CDP fencing. Последовательная передача CI→browser без второго storage. Native browser не трогать.",
+  "created_at": "2026-11-07T20:45:21+03:00",
+  "updated_at": "2026-11-08T02:16:40+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:45:21+03:00",
+      "note": "",
+      "changes": {
+        "id": "QBROWSERCLAIM",
+        "parent": "S02",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Resources worker",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "V040BCONSUMER"
+        ],
+        "label": "Закрепить тестовую вкладку ChatGPT через готовый resource claim",
+        "description": "Применить существующую ownership library к реальному QA resource без новой lease системы. Один test-only authority на server100, явно записанный в plan и manifest. Resource identity: mac-mini-2012.lan/gateway50260/page7/chat6aee9fd5-7ee0-83ea-a06f-a3ed148605e8. CI проверил marker/account hash и единственный browser operator. LinuxCLI/status/sharedowner.json, cross-client competingclaim busy, release/CAS byowner, no browser mutations.",
+        "affected_files": [
+          "acceptance/native/browser/resource-scope.json"
+        ],
+        "acceptance": "Exact canonical testauthority path/storage_id/principal/claim_id и resourceidentity в bounded private receipt; existingCLI status owned, competingclaim busy, CI read before sideeffect. Это кооперативное исключительное владение через общий authority, не CDP fencing. Последовательная передача CI→browser без второго storage. Native browser не трогать."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:58:34+03:00",
+      "note": "Creating the explicitly authorized server100 test-only file authority and preparing CI claim/status/release instructions; no browser mutation.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b399-4210-7471-8286-93750dff10b7",
+        "source": "declared"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:03:56+03:00",
+      "note": "Private QA authority created at /home/roomhacker/.local/state/agent-herder/qa-browser-authority; registered only target page7/chat 6aee... under node scope mac-mini-2012.lan via ownership::resource::register_or_update. Built CLI with authorized cargo build. CLI proof: valid marker preclaim status=free; claim 21df64fc-3e0f-4f9e-8664-b40c39a840bb acquired; fresh CLI status=owned; independent UUID 6da1c221-7034-48c9-962a-0cf6f46055c2 returned busy; resolve original=current. Exact identities and outputs in private mode-0600 receipt /home/roomhacker/.local/state/agent-herder/qa-browser-authority-receipt.json. Shared manifest/instructions: acceptance/native/browser/resource-scope.json. Actual CLI principal is linux-euid:1000 (CI lead ref is purpose/designation; CLI has no authenticated arbitrary principal override). No browser mutation, no production resource. Direct Herder delivery to named CIlead01a1ac52 target with create=never returned not_found; leave task active until exact CI session destination is known/it reads the manifest.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-08T02:16:40+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Server100 test-only file authority and registered QA resource prepared with ownership::resource::register_or_update; only `mac-mini-2012.lan/gateway50260/page7/chat6aee9fd5-7ee0-83ea-a06f-a3ed148605e8`, node scope mac-mini-2012.lan. Built supported `herder` CLI with cargo build --manifest-path crates/herder/Cargo.toml --bin herder. CLI proof: valid marker status=free; claim 21df64fc-3e0f-4f9e-8664-b40c39a840bb acquired (principal_ref linux-euid:1000, purpose designates CIlead01a1ac52); fresh status=owned; independent second UUID returned busy; resolve original=current. Private bounded receipt mode 0600: /home/roomhacker/.local/state/agent-herder/qa-browser-authority-receipt.json. Shared scope/commands manifest: acceptance/native/browser/resource-scope.json. Herder handoff accepted and activated before any browser mutation for CI session 01a1ac52-d25c-7050-a65d-3fca32642c26, inputId qbrowclaim-ready-qa-resource-20261108-ci-lead; turnId 01a1b846-1b0c-7be1-abe6-7e1fff021dd3. No browser or production resource was touched. CI's actual status read/side effect is intentionally not claimed; the delivered instructions require verifying the exact owner before proceeding and releasing it afterward."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b399-4210-7471-8286-93750dff10b7",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    }
+  ],
+  "result": "Server100 test-only file authority and registered QA resource prepared with ownership::resource::register_or_update; only `mac-mini-2012.lan/gateway50260/page7/chat6aee9fd5-7ee0-83ea-a06f-a3ed148605e8`, node scope mac-mini-2012.lan. Built supported `herder` CLI with cargo build --manifest-path crates/herder/Cargo.toml --bin herder. CLI proof: valid marker status=free; claim 21df64fc-3e0f-4f9e-8664-b40c39a840bb acquired (principal_ref linux-euid:1000, purpose designates CIlead01a1ac52); fresh status=owned; independent second UUID returned busy; resolve original=current. Private bounded receipt mode 0600: /home/roomhacker/.local/state/agent-herder/qa-browser-authority-receipt.json. Shared scope/commands manifest: acceptance/native/browser/resource-scope.json. Herder handoff accepted and activated before any browser mutation for CI session 01a1ac52-d25c-7050-a65d-3fca32642c26, inputId qbrowclaim-ready-qa-resource-20261108-ci-lead; turnId 01a1b846-1b0c-7be1-abe6-7e1fff021dd3. No browser or production resource was touched. CI's actual status read/side effect is intentionally not claimed; the delivered instructions require verifying the exact owner before proceeding and releasing it afterward."
+}

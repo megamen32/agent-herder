@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T08:41:37+00:00",
+  "details": "Source review 6894bbcd: control.rs interrupt_exact uses state.lock(), while start_thread/submit use try_lock. ScopedAuthority calls bounded interrupt under its gate; busy mutex can delay stop/gate without deadline. read_turn_status, interrupt request and reconciliation also start separate timeout budgets; require one explicit operation budget. Existing issue, uncovered during V055BOUND, no live interrupt repeated. Terra owns fix before public HumanStop path.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T08:41:37+00:00",
+      "changes": {
+        "details": "Source review 6894bbcd: control.rs interrupt_exact uses state.lock(), while start_thread/submit use try_lock. ScopedAuthority calls bounded interrupt under its gate; busy mutex can delay stop/gate without deadline. read_turn_status, interrupt request and reconciliation also start separate timeout budgets; require one explicit operation budget. Existing issue, uncovered during V055BOUND, no live interrupt repeated. Terra owns fix before public HumanStop path.",
+        "source": "Astra delta-review 6894bbcd",
+        "status": "open",
+        "title": "Codex interrupt_exact ожидает mutex без deadline под HumanStop gate"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T08:53:05+00:00",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "reason": "Исполнитель уже назначен и работает в существующей сессии; reporter не равен owner исправления."
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T08:55:15+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v055pipe/interrupt-green.txt",
+            "red_proof_path": "review-evidence/v055pipe/interrupt-red.txt",
+            "red_result": "test result: FAILED. 0 passed; 1 failed",
+            "red_sha256": "0e98e61de03497e1e5a4f50f6bb89dcd32b944f505ebdbbe2de7cc68584f4732",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "571c4ab54a550b5a42b04a3d573dc0ecd049af19e740c2eab708b4adf8071873",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml busy_control_does_not_wait_unbounded_for_interrupt --lib -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Ba909b61b03a745309aaa",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v055pipe/interrupt-green.txt",
+      "red_proof_path": "review-evidence/v055pipe/interrupt-red.txt",
+      "red_result": "test result: FAILED. 0 passed; 1 failed",
+      "red_sha256": "0e98e61de03497e1e5a4f50f6bb89dcd32b944f505ebdbbe2de7cc68584f4732",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "571c4ab54a550b5a42b04a3d573dc0ecd049af19e740c2eab708b4adf8071873",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml busy_control_does_not_wait_unbounded_for_interrupt --lib -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Astra delta-review 6894bbcd",
+  "status": "fixed",
+  "title": "Codex interrupt_exact ожидает mutex без deadline под HumanStop gate",
+  "updated_at": "2026-11-07T08:55:15+00:00"
+}

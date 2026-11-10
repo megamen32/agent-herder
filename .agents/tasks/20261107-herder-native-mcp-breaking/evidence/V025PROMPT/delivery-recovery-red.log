@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+
+thread 'create_prompt_success_and_unknown_create_are_never_replayed' (552358) panicked at tests/scoped_stop_gate.rs:2801:13:
+exact prior receipt must be recovered: DeliveryUnknownOrBlocked { session: SessionRef("issued") }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test create_prompt_success_and_unknown_create_are_never_replayed ... FAILED
+
+failures:
+
+failures:
+    create_prompt_success_and_unknown_create_are_never_replayed
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.78s
+
+error: test failed, to rerun pass `--test scoped_stop_gate`

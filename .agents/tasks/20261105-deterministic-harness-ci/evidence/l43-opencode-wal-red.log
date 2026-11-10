@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-fast-red
+
+(node:464794) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/native-hermes-opencode-wal.test.ts (3 tests | 1 failed) 463ms
+   × accepts metadata-only WAL ctime change when DB and WAL bytes are unchanged 164ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/native-hermes-opencode-wal.test.ts > accepts metadata-only WAL ctime change when DB and WAL bytes are unchanged
+AssertionError: expected 'partial' to be 'complete' // Object.is equality
+
+Expected: "complete"
+Received: "partial"
+
+ ❯ tests/native-hermes-opencode-wal.test.ts:10:189
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  22:46:34
+   Duration  904ms (transform 209ms, setup 65ms, import 176ms, tests 463ms, environment 0ms)
+

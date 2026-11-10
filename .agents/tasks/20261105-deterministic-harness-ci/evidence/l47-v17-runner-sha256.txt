@@ -1,0 +1,3 @@
+e81ad2ab509e75180c6d3e832201d1515182ff1a7c737d8bfa9d8708f62e3638  /tmp/herder-l47-claude-v17/scripts/claude-herder-probe.mjs
+bad882a0b9c0e4a6c65200fd14d0b4861a6ba8701171776520c970662694f4fe  /tmp/herder-l47-claude-v17/scripts/native-ci-transcript-wait.mjs
+082cae663f69ae816ec9dc52f91d976605cab1ed53e2e59c4eff137cdc459477  /tmp/herder-l47-claude-v17/scripts/run-isolated-native-ci.py

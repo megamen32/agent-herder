@@ -1,0 +1,102 @@
+{
+  "acceptance": "PASS",
+  "artifact": {
+    "bootstrap_sha256": "a3b66fe5f31b143737ff60f68babe7d27cca4ba9f6b3c088bb274f6be37fae3c",
+    "component_sha256": {
+      "adapter": "5b45663eaa81fefe23073860b235b443d2992bc316269ba543d0849e83c9d556",
+      "core": "58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c",
+      "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+    },
+    "isolation": "tests/native/launch.py --candidate exact immutable release; new user+network namespace, loopback-only; bwrap filesystem namespace; fresh temporary HOME/XDG/profile and authority bootstrap",
+    "launcher_sha256": "006ed7aad1c7157b27f53756aa8b5e50c655ede9deba1dbbb19b56faf4dfd2b7",
+    "manifest_sha256": "cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac",
+    "model_fixture_sha256": "e456b650bda6c34973b06fb33c99639aea67a4eb4aba6538cb549a5d07a450ae",
+    "scope": "one new disposable OpenCode instance; prior UNKNOWN and 076bacd8 untouched",
+    "source_commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+    "stand_sha256": "af2c666c07700f1fe53b4cb5dfb9bc13860b7360bd74b322b613826563fda7c2",
+    "stand_sha_commit": "b440b37cd0a237691057f7ee5f8014e5a58e7a8d"
+  },
+  "consumer_receipt": {
+    "api_family": "v2",
+    "assistant": "HERDER_TEST_MODEL_OK",
+    "delivery_receipt": {
+      "native_receipt_id": "msg_1b7112059001y6Thh7Uu75wwvI",
+      "outcome": "confirmed"
+    },
+    "harness": "opencode",
+    "input": "AHAP_OPENCODE_FIXTURE_ecdb6207eb844a368ef463e28d9d8019",
+    "model_requests": 1,
+    "native_completion": {
+      "api_family": "v2",
+      "assistant_completed_at": 1794072715447,
+      "assistant_finish": "stop",
+      "assistant_message_id": "msg_1b71120870012BuTJBrUNPsLrF",
+      "assistant_parent_id": null,
+      "messages": [
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1b7112059001y6Thh7Uu75wwvI",
+          "role": "user"
+        },
+        {
+          "completed": 1794072715447,
+          "error": false,
+          "finish": "stop",
+          "id": "msg_1b71120870012BuTJBrUNPsLrF",
+          "role": "assistant"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1b71120bd001y7yOw29SwDgp7q",
+          "role": "idle"
+        }
+      ],
+      "session_id": "ses_e48eee10affexJRqEVmWqcrikv",
+      "user_message_id": "msg_1b7112059001y6Thh7Uu75wwvI"
+    },
+    "native_receipt_id": "msg_1b7112059001y6Thh7Uu75wwvI",
+    "native_tools": [
+      "discover",
+      "sessions",
+      "session",
+      "create",
+      "deliver",
+      "resume",
+      "stop",
+      "search",
+      "export",
+      "automation",
+      "resource",
+      "configure",
+      "permission",
+      "human_request"
+    ],
+    "opencode_url": "http://127.0.0.1:45935",
+    "profile": "/herder-owner-home/authority/profile.json",
+    "reopened_task_status": "completed",
+    "runner_protocol": "v2",
+    "session_ref": "session:06e2b65301159526f7e622aaa2bfd3ef",
+    "status": "PASS",
+    "task_id": "create-operation:e1440ce607b38baa23931fb57fe3cdde",
+    "task_status": "completed"
+  },
+  "isolation_and_cleanup": {
+    "cleanup": "launch.py removed successful disposable root; temporary carrier and diagnostic scratch removed by scoped cleanup",
+    "host_retained_root": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocregression-native/retained-run-root",
+    "launcher": "tests/native/launch.py --candidate <read-only hash-identical carrier> --retain-on-failure ...",
+    "namespace_profile": "/herder-owner-home/authority/profile.json",
+    "native_instance_origin": "fresh OpenCode server on loopback in newly created network namespace; fresh authority db/profile from fixture bootstrap",
+    "previous_unknown_replayed": false,
+    "provider": "local loopback fake model only",
+    "retained_076bacd8_touched": false
+  },
+  "manifest_pinned_node": {
+    "carrier": "temporary hardlink from the exact manifest path; bytes verified equal",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "version": "v22.22.2"
+  }
+}

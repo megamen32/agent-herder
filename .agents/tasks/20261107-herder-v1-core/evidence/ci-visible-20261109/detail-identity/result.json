@@ -1,0 +1,54 @@
+{
+  "actor": "chatgpt-all-harness-ci-20261109",
+  "scope": "confirmed rendered native detail identity and host-scoped details requests",
+  "red": {
+    "command": [
+      "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--root",
+      ".",
+      "--config",
+      "vitest.config.ts",
+      "tests/session-detail-identity.test.ts"
+    ],
+    "exit_code": 1,
+    "expected_missing_detail_identity_contract": true,
+    "time": 1794181283.8235528
+  },
+  "green": {
+    "exit_code": 0,
+    "command": [
+      "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--root",
+      ".",
+      "--config",
+      "vitest.config.ts",
+      "tests/session-detail-identity.test.ts",
+      "tests/details-read-gate.test.ts",
+      "tests/remote-session-view-transcript.test.ts",
+      "tests/session-sidebar.test.tsx"
+    ],
+    "time": 1794181369.2636523
+  },
+  "tests_passed": 19,
+  "tsc": {
+    "exit_code": 0,
+    "command": [
+      "/home/roomhacker/herder-artifacts/releases/herder-v1-restore-a3812e2c/fixture/node",
+      "node_modules/typescript/bin/tsc",
+      "--noEmit"
+    ],
+    "time": 1794181388.6673455
+  },
+  "files": {
+    "src/web-ui/main.tsx": "6188364dd42c980811f64816ec45bbcf8785a882a87e104ce548c4e698a8a246",
+    "src/web-ui/fleet/RemoteSessionView.tsx": "0904eb41e3bccdbca426a159178b576732f44e668f7c9bc6a0b61c650116c5ef",
+    "src/web-ui/session-detail-identity.ts": "eaf4421cecb203c997feb28fdf934a21f62778dd3068ded4b010ec7fed653a58",
+    "tests/session-detail-identity.test.ts": "2105d8826aff77e380534f9df4d8270daf3e50a602bd1d965d52c9b67694b7f5"
+  },
+  "runtime_deployed": false,
+  "observed_at": 1794181849.0948863
+}

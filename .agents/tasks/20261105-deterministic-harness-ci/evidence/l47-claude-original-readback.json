@@ -1,0 +1,24 @@
+{
+  "source": "saved stderr native JSONL readback after failed HTTP transcript",
+  "limitation": "original temporary session directory removed; no new send performed; does not prove HTTP transcript paging",
+  "events": [
+    {
+      "sessionId": "257fa07c-b46b-429c-9594-540a691b7b7d",
+      "role": "assistant",
+      "uuid": "7511d4fd-f6b9-4a43-8203-44f459ee0426",
+      "text": "[{\"type\": \"text\", \"text\": \"HERDER_TEST_MODEL_OK\"}]"
+    },
+    {
+      "sessionId": "257fa07c-b46b-429c-9594-540a691b7b7d",
+      "role": "user",
+      "uuid": "0a85da09-dd1b-4b23-87ce-24e7c1f02412",
+      "text": "\"HERDER_CLAUDE_USER_0\""
+    },
+    {
+      "sessionId": "257fa07c-b46b-429c-9594-540a691b7b7d",
+      "role": "assistant",
+      "uuid": "68efc065-1797-46bc-babb-6487e7412632",
+      "text": "[{\"type\": \"text\", \"text\": \"HERDER_TEST_MODEL_OK\"}]"
+    }
+  ]
+}

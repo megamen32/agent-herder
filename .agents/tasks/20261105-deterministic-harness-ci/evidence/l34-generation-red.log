@@ -1,0 +1,13 @@
+E
+======================================================================
+ERROR: test_external_generation_fences_pid_reuse_port_and_wrapper (__main__.SocketBoundaryTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_codex_unix_boundary.py", line 17, in test_external_generation_fences_pid_reuse_port_and_wrapper
+    module.verify_expected_generation(expected,expected)
+AttributeError: module 'codex_unix_boundary' has no attribute 'verify_expected_generation'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

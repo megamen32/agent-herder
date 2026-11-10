@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T14:54:32+00:00",
+  "details": "После интеграции обязательных сценариев один тест release gate FAIL и один завершился ошибкой; требуется устранить после проверки причин без ослабления доказательств.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T14:54:32+00:00",
+      "changes": {
+        "details": "После интеграции обязательных сценариев один тест release gate FAIL и один завершился ошибкой; требуется устранить после проверки причин без ослабления доказательств.",
+        "source": "L04 integration report; tests/test_native_release_gate.py",
+        "status": "open",
+        "title": "Тесты общего CI gate не соответствуют новому контракту"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L23",
+      "at": "2026-11-06T15:01:20+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l23-release-gate-green.log",
+            "red_proof_path": "evidence/l23-release-gate-red.log",
+            "red_result": "FAILED (failures=2, errors=1)",
+            "red_sha256": "ac70f8e035dcad4d53eca086a938a7f94ce4f216974e5f760dba312d9ed691cd",
+            "result": "PASS: 13 tests",
+            "sha256": "4db60b8557c3371da69b4c4982945cf3738394138f17df23177f558cf05a7475",
+            "test_command": "python3 tests/test_native_release_gate.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B4767c45f64fd429a8752",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l23-release-gate-green.log",
+      "red_proof_path": "evidence/l23-release-gate-red.log",
+      "red_result": "FAILED (failures=2, errors=1)",
+      "red_sha256": "ac70f8e035dcad4d53eca086a938a7f94ce4f216974e5f760dba312d9ed691cd",
+      "result": "PASS: 13 tests",
+      "sha256": "4db60b8557c3371da69b4c4982945cf3738394138f17df23177f558cf05a7475",
+      "test_command": "python3 tests/test_native_release_gate.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L04 integration report; tests/test_native_release_gate.py",
+  "status": "fixed",
+  "title": "Тесты общего CI gate не соответствуют новому контракту",
+  "updated_at": "2026-11-06T15:01:20+00:00"
+}

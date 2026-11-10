@@ -1,0 +1,85 @@
+{
+  "id": "L43",
+  "label": "Общий CI: проверить diagnostic v16",
+  "description": "Проверен diagnostic v16; пропущенные среды и полный gate продолжаются в L45–L49.",
+  "acceptance": "Сохранён фактический результат v16 и перечень пробелов.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Tesla",
+  "parallel_with": [
+    "L42"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T22:42:18+03:00",
+  "updated_at": "2026-11-06T23:33:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T22:42:18+03:00",
+      "note": "",
+      "changes": {
+        "id": "L43",
+        "label": "Общий CI: подтвердить полный поиск и повторить gate",
+        "description": "Продолжить текущую работу L41: завершить OpenCode full-scan proof и повторить общий candidate gate с точной идентичностью.",
+        "acceptance": "В real OpenCode доказаны два точных ID и завершённый scan, общий gate сохраняет все результаты и отказывает при неполном покрытии.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Tesla",
+        "parallel_with": [
+          "L42"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:43:29+03:00",
+      "note": "OpenCode coverage probe и gate: RED/GREEN evidence/l41-search-{proof,gate,retry}-{red,green}.log; candidate v2 SHA 4b7ff88faa9cf810d0691f4f5c6f7163cca5911690efd8a0660393b41c50e780. Реальный v9 обнаружил partial native_source_changed_during_scan; v10 добавляет ограниченный повтор scan, выполняется новый прогон. Общий gate ещё не подтверждён.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:56:37+03:00",
+      "note": "v11 server-44 candidate v2 SHA 9e8060ccc9401b4d75e05df0e6df7050bf2f4369e1183a5afaf2ae5f86d9b8ae, состав evidence/l43-v11-composition.json, unified evidence/l43-v11-unified.{json,log,err}: OpenCode exact 2 ID, 2+2 transcript, partial=false и complete scan; B237 и Bad5 fixed RED/GREEN. Общий gate FAIL: entrypoint direct_peer_limit, Browser fixture network isolation не доказана, другие обязательные среды отсутствуют; identity full bundle требует build-manifest.json; installed PID не доказан. Полный release gate suite 1 FAIL/3 ERROR, Bb9295ec92f224fafbcb2 открыт; rollout WIP за другим owner.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:58:14+03:00",
+      "note": "Дополнительно установлена причина B4555bce1954e4b6dbf70: entrypoint fixture задавал пустые fleet peers; self-peer loopback исправлен с RED/GREEN evidence/l43-entrypoint-peer-{red,green}.log. Реальный повтор не выполнялся и v11 собран до этого изменения; bug открыт. Browser v11 receipt не доказал интерфейсы namespace; все исходные логи сохранены.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:08:36+03:00",
+      "note": "v12 candidate на server-44 /tmp/herder-l43-full-v12-9e80, payload v2 SHA 9e8060ccc9401b4d75e05df0e6df7050bf2f4369e1183a5afaf2ae5f86d9b8ae; script hashes и composition evidence/l43-v12-composition.json. B665 fixed RED/GREEN и реальный Browser fixture ip -j link из отдельной namespace: только lo, validator PASS, receipt evidence/l43-v12-browser.json. Общий gate FAIL evidence/l43-v12-unified.{json,log,err}: self-peer устранил startup direct_peer_limit, далее HTTP MCP fleet search partial direct_native_listener_unavailable. Codex/OpenCode library, Hermes, Fast, Qoder, Browser отчёты сохранены; остальные среды и installed PID не доказаны. Entry-point ранее обрезал первичный stderr; файл .err содержит доступный хвост, последующие scripts изменены для полного вывода, но в v12 эти изменения не входили.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:17:12+03:00",
+      "note": "v13 настоящий dist/index.js entrypoint на server-44 payload v2 SHA 9e8060ccc9401b4d75e05df0e6df7050bf2f4369e1183a5afaf2ae5f86d9b8ae: HTTP fleet MCP все 4 exact ID, partial=false, source complete, Codex 3+3 и OpenCode 2+2 pages; evidence/l43-v13-entrypoint.{json,log,err}, runner hashes evidence/l43-v13-runner-sha256.txt. B3ba и B455 fixed RED/GREEN; B1a duplicate. Gate validator отвергает partial entrypoint proof. Qoder synthetic active owner исправлен RED/GREEN, Bb929 открыт на rollout части Rawls. Новый gate после v13 не заявлен PASS; installed PID не проверен.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:33:56+03:00",
+      "note": "",
+      "changes": {
+        "label": "Общий CI: проверить diagnostic v16",
+        "description": "Проверен diagnostic v16; пропущенные среды и полный gate продолжаются в L45–L49.",
+        "acceptance": "Сохранён фактический результат v16 и перечень пробелов.",
+        "status": "done",
+        "result": "v16 diagnostic PASS за 131,238 с, однако candidate_gate и release_gate FAIL: ZCode, MiniMax, Claude, real ChatGPT/ZAI, Browser active/version и installed PID не доказаны; evidence/l43-v16-unified.json. Digest v2 не доказывает полный bundle; продолжение L45–L49."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "v16 diagnostic PASS за 131,238 с, однако candidate_gate и release_gate FAIL: ZCode, MiniMax, Claude, real ChatGPT/ZAI, Browser active/version и installed PID не доказаны; evidence/l43-v16-unified.json. Digest v2 не доказывает полный bundle; продолжение L45–L49."
+}

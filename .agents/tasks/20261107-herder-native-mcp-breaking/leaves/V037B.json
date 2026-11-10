@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V037 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V037 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:56+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:56+03:00",
+  "updated_at": "2026-11-07T05:44:08+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:56+03:00",
@@ -51,6 +51,35 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:13:06+03:00",
+      "note": "Начинаю после V037A; проверю ownership claim.rs и продолжу renew/release по claim_id.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:39:40+03:00",
+      "note": "LhcPlan activate_leaf привязал корень worktree к canonical shared checkout /home/roomhacker/agents-projects/agent-herder, потому что worktree_root выводится из расположения task-dir и explicit workdir API не имеет. По указанию пользователя продолжение веду напрямую только в managed worktree /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder; shared checkout не использую.",
+      "changes": {},
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:44:08+03:00",
+      "note": "V037B завершён и привязан к свежему origin/main; готов корневой concurrency proof.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлены renew() и release() в crates/herder/src/ownership/claim.rs. Обе операции берут стабильный guard.lock и проверяют точный claim_id; renew атомарно сохраняет новый expires_at через owner.json+fsync, release удаляет owner.json и fsync каталога. Неверный ID даёт PermissionDenied и не меняет owner. Проверка на свежем origin/main: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 6 passed, 0 failed; git diff --check чистый. Commit 1325276061f3ef0500663ec6871133223a87cb48 detached. Не доказана межпроцессная гонка claim (корневой V037)."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлены renew() и release() в crates/herder/src/ownership/claim.rs. Обе операции берут стабильный guard.lock и проверяют точный claim_id; renew атомарно сохраняет новый expires_at через owner.json+fsync, release удаляет owner.json и fsync каталога. Неверный ID даёт PermissionDenied и не меняет owner. Проверка на свежем origin/main: cargo test --manifest-path crates/herder/Cargo.toml ownership:: — 6 passed, 0 failed; git diff --check чистый. Commit 1325276061f3ef0500663ec6871133223a87cb48 detached. Не доказана межпроцессная гонка claim (корневой V037)."
 }

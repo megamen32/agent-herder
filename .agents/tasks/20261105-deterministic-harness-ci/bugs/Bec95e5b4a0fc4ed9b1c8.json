@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T17:02:37+00:00",
+  "details": "Snapshot сборки остановился TS2339 на src/adapters/opencode.ts:1149: поле complete не определено в OpenCodeRawTranscript; выяснить причину, исправить через TDD и повторить сборку. evidence/fast-agent-threeway-build.log.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T17:02:37+00:00",
+      "changes": {
+        "details": "Snapshot сборки остановился TS2339 на src/adapters/opencode.ts:1149: поле complete не определено в OpenCodeRawTranscript; выяснить причину, исправить через TDD и повторить сборку. evidence/fast-agent-threeway-build.log.",
+        "source": "L37 npm run build",
+        "status": "open",
+        "title": "Сборка Fast snapshot: OpenCodeRawTranscript не содержит complete"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Goodall",
+      "at": "2026-11-06T17:13:14+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/bec95-build-green.log",
+            "red_proof_path": "evidence/bec95-build-red.log",
+            "red_result": "src/adapters/opencode.ts(1149,21): error TS2339: Property 'complete' does not exist on type 'OpenCodeRawTranscript'.",
+            "red_sha256": "a6b5c07f42a6ac18337ac0e1ed0200deb9630d7b132c89f7867efd3aa7fc104f",
+            "result": "PASS: npm run build exit 0 (verified command completion)",
+            "sha256": "1460a9c898409ce57fcfd78e75c9e497645f81dac1a1ea5e709919e0d060bb24",
+            "test_command": "npm run build"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bec95e5b4a0fc4ed9b1c8",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/bec95-build-green.log",
+      "red_proof_path": "evidence/bec95-build-red.log",
+      "red_result": "src/adapters/opencode.ts(1149,21): error TS2339: Property 'complete' does not exist on type 'OpenCodeRawTranscript'.",
+      "red_sha256": "a6b5c07f42a6ac18337ac0e1ed0200deb9630d7b132c89f7867efd3aa7fc104f",
+      "result": "PASS: npm run build exit 0 (verified command completion)",
+      "sha256": "1460a9c898409ce57fcfd78e75c9e497645f81dac1a1ea5e709919e0d060bb24",
+      "test_command": "npm run build"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L37 npm run build",
+  "status": "fixed",
+  "title": "Сборка Fast snapshot: OpenCodeRawTranscript не содержит complete",
+  "updated_at": "2026-11-06T17:13:14+00:00"
+}

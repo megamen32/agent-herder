@@ -1,0 +1,30 @@
+...................child log
+ordinary log
+...........
+----------------------------------------------------------------------
+Ran 30 tests in 0.687s
+
+OK
+installed CI collector preflight failed: collector unavailable; nothing was switched
+runtime state dir: /tmp/tmpd8p02bxv
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+packages: prepared
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=100
+fleet node: the release is selected by the current symlink; no release drop-in is written
+release configuration switch failed: release_lease_not_owned_or_expired
+runtime state dir: /tmp/tmpyi893xis
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+package preparation failed: release_lease_not_owned_or_expired
+runtime state dir: /tmp/tmpyi893xis
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+package preparation failed: release_authority_channel_closed
+runtime state dir: /tmp/tmp80ciq54f
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+packages: prepared
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=100
+fleet node: the release is selected by the current symlink; no release drop-in is written
+release configuration switch failed: release_authority_channel_closed
+rollback configuration restore failed: release_lease_not_owned_or_expired
+already current; no preparation or restart

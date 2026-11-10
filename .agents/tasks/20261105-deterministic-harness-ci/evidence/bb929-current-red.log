@@ -1,0 +1,55 @@
+....FE..E....E.
+======================================================================
+ERROR: test_fleet_entrypoint_rejects_missing_ci_before_claiming_or_stopping (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 91, in test_fleet_entrypoint_rejects_missing_ci_before_claiming_or_stopping
+    self.assertEqual(rollout.node_side(args),1)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py", line 538, in node_side
+    target_root = Path(arguments.catalog if arguments.kind == "owner" else arguments.fleet_dir).expanduser().resolve()
+AttributeError: 'types.SimpleNamespace' object has no attribute 'fleet_dir'
+
+======================================================================
+ERROR: test_node_refuses_missing_ci_receipt_before_package_or_service_changes (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 101, in test_node_refuses_missing_ci_receipt_before_package_or_service_changes
+    self.assertEqual(rollout_node._main(argv,release_gate=Mock()),1)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-node.py", line 1527, in _main
+    verification = verify_payload(release, arguments.sha)
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-node.py", line 44, in verify_payload
+    manifest = json.loads((dist / "fleet-deployment-manifest.json").read_text())
+  File "/usr/lib/python3.10/pathlib.py", line 1134, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/usr/lib/python3.10/pathlib.py", line 1119, in open
+    return self._accessor.open(self, mode, buffering, encoding, errors,
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/tmpr2slka6d/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/dist/fleet-deployment-manifest.json'
+
+======================================================================
+ERROR: test_rollout_refuses_unproven_or_mismatched_ci_payload (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 117, in test_rollout_refuses_unproven_or_mismatched_ci_payload
+    rollout.verify_native_ci_candidate(release, proof)
+AttributeError: module 'native_ci_rollout' has no attribute 'verify_native_ci_candidate'
+
+======================================================================
+FAIL: test_complete_candidate_does_not_claim_installed_service (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 231, in test_complete_candidate_does_not_claim_installed_service
+    self.assertEqual(native_ci.candidate_gate_failures(receipt), [])
+AssertionError: Lists differ: ['qoder: active turn missing', 'qoder: nat[52 chars]ven'] != []
+
+First list contains 2 additional elements.
+First extra element 0:
+'qoder: active turn missing'
+
++ []
+- ['qoder: active turn missing',
+-  'qoder: native client version or provider compatibility not proven']
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.085s
+
+FAILED (failures=1, errors=3)

@@ -1,0 +1,55 @@
+{
+  "id": "L32",
+  "label": "MiniMax: проверить защиту тестового endpoint от гонки",
+  "description": "Исследовать и при подтверждении устранить неатомарность между проверкой ACP и запуском CLI; применять TDD и не обращаться к платному провайдеру.",
+  "acceptance": "Проверенный риск устранён с RED/GREEN и повтором сценария либо доказано отсутствие риска.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Averroes",
+  "parallel_with": [
+    "L23",
+    "L27",
+    "L30",
+    "L31"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T19:09:37+03:00",
+  "updated_at": "2026-11-06T19:32:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T19:09:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "L32",
+        "label": "MiniMax: проверить защиту тестового endpoint от гонки",
+        "description": "Исследовать и при подтверждении устранить неатомарность между проверкой ACP и запуском CLI; применять TDD и не обращаться к платному провайдеру.",
+        "acceptance": "Проверенный риск устранён с RED/GREEN и повтором сценария либо доказано отсутствие риска.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Averroes",
+        "parallel_with": [
+          "L23",
+          "L27",
+          "L30",
+          "L31"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:32:45+03:00",
+      "note": "Проверка в исходном runner и сети server-44; config write и replacement запрещены и подтверждены receipt, состояние записывается. Отдельная проверка receipt fail closed. Изолированный canary не подтверждает общий релиз.",
+      "changes": {
+        "status": "done",
+        "result": "В CI MiniMax config.yaml перед ACP/CLI закреплён sealed snapshot read-only bind; state остаётся writable, до canary в namespace ровно один TLS fixture. RED→GREEN, server-44 исходный Herder canary: 2 сессии, 2 completed, поиск и 2 страницы transcript, по одному запросу к fixture; receipt evidence/l32-readonly-minimax-canary.json. Боевой adapter не менялся; v2 digest не доказывает полный bundle или installed PID."
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    }
+  ],
+  "result": "В CI MiniMax config.yaml перед ACP/CLI закреплён sealed snapshot read-only bind; state остаётся writable, до canary в namespace ровно один TLS fixture. RED→GREEN, server-44 исходный Herder canary: 2 сессии, 2 completed, поиск и 2 страницы transcript, по одному запросу к fixture; receipt evidence/l32-readonly-minimax-canary.json. Боевой adapter не менялся; v2 digest не доказывает полный bundle или installed PID.",
+  "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+  "harness": "codex"
+}

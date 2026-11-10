@@ -1,0 +1,52 @@
+
+======================================================================
+FAIL: test_incomplete_receipt_rolls_back_on_linux_and_darwin (__main__.L30CollectorAcceptanceTests) (platform='linux')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l30_collector_acceptance.py", line 59, in test_incomplete_receipt_rolls_back_on_linux_and_darwin
+    self.assertEqual(rollout._main(argv,stopped_generation=handoff,release_gate=gate),1)
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_incomplete_receipt_rolls_back_on_linux_and_darwin (__main__.L30CollectorAcceptanceTests) (platform='darwin')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l30_collector_acceptance.py", line 59, in test_incomplete_receipt_rolls_back_on_linux_and_darwin
+    self.assertEqual(rollout._main(argv,stopped_generation=handoff,release_gate=gate),1)
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.171s
+
+FAILED (failures=2)
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+accepted: node on aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+accepted: node on aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

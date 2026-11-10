@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T15:37:16+00:00",
+  "details": "После browser writer top-level evidence и future timestamp в QBROWSERJOIN.json canonical create_leaf отвергает весь план. Read-only handoff ошибочно поставлен done при требовании Terra review/publication. Writer notified astra-qbrowser-schema-repair-20261107T1535 accepted. Preserve evidence+history, migrate evidence refs into supported result/note, restore waiting pending integration; current tool has no unset unknown field. Native operation blocked by that false dependency must not run.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T15:37:16+00:00",
+      "changes": {
+        "details": "После browser writer top-level evidence и future timestamp в QBROWSERJOIN.json canonical create_leaf отвергает весь план. Read-only handoff ошибочно поставлен done при требовании Terra review/publication. Writer notified astra-qbrowser-schema-repair-20261107T1535 accepted. Preserve evidence+history, migrate evidence refs into supported result/note, restore waiting pending integration; current tool has no unset unknown field. Native operation blocked by that false dependency must not run.",
+        "source": "LhcPlan.create_leaf QWAKECONTRACT/QWAKEHOOK/QWAKEPROOF rejected 2026-11-07; canonical QBROWSERJOIN.json",
+        "status": "open",
+        "title": "Некорректное evidence поле QBROWSERJOIN блокирует canonical mutations"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra",
+      "at": "2026-11-07T15:48:22+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/lhc-field-repair/green.txt",
+            "red_proof_path": "evidence/lhc-field-repair/red.txt",
+            "red_result": "16 failed",
+            "red_sha256": "4ed239736d9bdb336aef4e847e262baa7f8532397e0ce36911840f64476c7303",
+            "result": "16 passed",
+            "sha256": "575e0cf7b96193d7375e76155879cd387c06ab8209b87137ed42c370ba23421b",
+            "test_command": "python3 -m pytest -q tests/test_plan_repair_field.py"
+          },
+          "kind": "fixed",
+          "reason": "Source fd039303dbd548dd25c7030d6aa15622bb47d8b7 pushed main; source repair receipt evidence/lhc-field-repair/repair-receipt.json; actual installed 1.16.1 update_leaf returncode=0 evidence/lhc-field-repair/installed-consumer.json. QBROWSERJOIN waiting pending Terra integration; evidence, original fields and prior progress history preserved."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Befd58d1de20d4075a169",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/lhc-field-repair/green.txt",
+      "red_proof_path": "evidence/lhc-field-repair/red.txt",
+      "red_result": "16 failed",
+      "red_sha256": "4ed239736d9bdb336aef4e847e262baa7f8532397e0ce36911840f64476c7303",
+      "result": "16 passed",
+      "sha256": "575e0cf7b96193d7375e76155879cd387c06ab8209b87137ed42c370ba23421b",
+      "test_command": "python3 -m pytest -q tests/test_plan_repair_field.py"
+    },
+    "kind": "fixed",
+    "reason": "Source fd039303dbd548dd25c7030d6aa15622bb47d8b7 pushed main; source repair receipt evidence/lhc-field-repair/repair-receipt.json; actual installed 1.16.1 update_leaf returncode=0 evidence/lhc-field-repair/installed-consumer.json. QBROWSERJOIN waiting pending Terra integration; evidence, original fields and prior progress history preserved."
+  },
+  "source": "LhcPlan.create_leaf QWAKECONTRACT/QWAKEHOOK/QWAKEPROOF rejected 2026-11-07; canonical QBROWSERJOIN.json",
+  "status": "fixed",
+  "title": "Некорректное evidence поле QBROWSERJOIN блокирует canonical mutations",
+  "updated_at": "2026-11-07T15:48:22+00:00"
+}

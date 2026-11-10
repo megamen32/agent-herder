@@ -1,8 +1,8 @@
 {
-  "title": "Agent Herder v1 — шаги до 15 минут и общие ресурсы",
-  "goal": "Поставить breaking Agent Herder v1 для пяти сред: Codex, OpenCode, ZCode, ChatGPT, Z.ai; durable MCP, coordination и offline ownership. Остальные адаптеры — следующее обновление.",
-  "business_result": "14 общих инструментов включая resource, 5 прямых адаптеров, durable MCP Tasks/Skills/subscriptions, creator/sender после компакции, global/project/node ресурсы с offline владением; миграция, удаление legacy и установленная приёмка.",
-  "current_progress": "Ядро, каталог и store ведёт Тера (максимум4 агента). Astra запустила шесть самостоятельных сессий: translator/resources/Codex/OpenCode/ZCode/browser. Direct Codex Tasks несовместим; владелец разрешил отдельный translator T001–T015, native core остаётся строгим. Совместимость через translator ещё не принята. Оперативные реализации и proof — в result текущих leaves.",
+  "title": "Agent Herder v1 — переиспользование и короткая очередь исполнения",
+  "goal": "Довести новый общий Agent Herder до установленного результата, переиспользуя старые adapters и готовые source/CI; сначала OpenCode, затем ChatGPT и Z.ai, после них ZCode и последним Codex.",
+  "business_result": "14 общих инструментов, один Rust core/authority/Task lifecycle, языконезависимый AHAP с reuse старых adapters; удаляемый translator; durable context и offline ресурсы; direct CDP; сохранение данных и installed acceptance пяти сред.",
+  "current_progress": "SUPERSEDED по прямому поручению владельца07.11: новая очередь .agents/tasks/20261107-herder-v1-core; Rust ядро+старыеTSadapters, срок08.11 00:38МСК. История/результаты/WIP сохранены. Старые очереди не запускать автоматически.",
   "mode": "fullcycle",
   "slots": 10,
   "recon": [
@@ -12,7 +12,7 @@
     "История ревизий вынесена из активных leaves, сохранена с контрольными суммами :: history/astra-review-before-v1-zero/SHA256.json"
   ],
   "acceptance_scenario": "Один immutable v1 candidate: Codex/OpenCode/ZCode/ChatGPT/Z.ai native lanes; реальные consumers; два Codex/OpenCode/browser profiles и две ноды; creator/sender после compaction; UNKNOWN no replay и HumanStop; offline claim/release receipt при выключенном MCP; migration/legacy removal; Linux/macOS installed acceptance. Остальные adapters не входят в v1.",
-  "updated_at": "2026-11-07T04:25:30+03:00",
+  "updated_at": "2026-11-07T22:28:59+03:00",
   "journal": [
     {
       "at": "2026-11-06T23:49:13.993699+00:00",
@@ -62,6 +62,368 @@
       "at": "2026-11-07T04:25:30+03:00",
       "reason": "Прямое решение владельца: удаляемый legacy translator и самостоятельные сессии вместо десяти подчинённых Теры",
       "summary": "T001–T015, 14 native tools и отдельные compat helpers; новый путь E001/E002/T013. Общий пул10: до4 core workers Теры +6 самостоятельных направлений под Astra. Введены волны переменной готовности без барьеров."
+    },
+    {
+      "at": "2026-11-07T04:39:08+03:00",
+      "reason": "Владелец уточнил, что native adapter-каталоги входят в мою работу; отсутствие test profile ограничивает только live lane. Развожу source DTO/normalization fixtures и live profile proof по A/B листьям.",
+      "summary": "V079A/V088A ограничены typed native-normalization DTO и offline fixtures. Авторизованный browser profile, native operations/receipt/history/context и real consumer proof остаются в V079B/V088B и конечных V079/V088 gates."
+    },
+    {
+      "at": "2026-11-07T04:48:52+03:00",
+      "reason": "Плановая консультация Astra 07.11.2026 04:48 МСК",
+      "summary": "V009 проверен независимым validator, strict scope исправлен RED/GREEN, writer и тест двух процессов опубликованы. V010A и V012B выполняются; следующий проверяемый результат — настоящий stdio handler и E001 через translator. Next consultation не позже 05:48 МСК."
+    },
+    {
+      "at": "2026-11-07T04:57:19+03:00",
+      "reason": "Прямое уточнение владельца: стандартный Chrome CDP без дополнительной зависимости Vibe",
+      "summary": "ChatGPT/Z.ai используют общий прямой CDP transport; Vibe не входит в runtime и обязательную приёмку Herder. Endpoint конфигурируемый, node/instance/context/target явно связаны. SSH tunnel допустим как сетевой доступ. Приёмка create/send/read при недоступном Vibe с сохранением чужих вкладок. Предыдущая Vibe проверка — только диагностика существующего браузера."
+    },
+    {
+      "at": "2026-11-07T05:06:47+03:00",
+      "reason": "Владелец заменил Vibe runtime на прямой CDP к Chrome Mac mini; read-only handshake подтверждён через DevToolsActivePort и WebSocket.",
+      "summary": "Обновлены V079B/V088B/V079/V088: прежний blocker Vibe/target снят прямым CDP evidence. Следующий шаг — Rust transport и provider read-only operations; live test chats остаются отдельным gate."
+    },
+    {
+      "at": "2026-11-07T05:17:49+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 02:17 UTC: отправлена содержательная сверка Astra, принята transport API; V010A2 ACL RED/GREEN, интеграция V031B/V015A и trusted identity остаются в работе."
+    },
+    {
+      "at": "2026-11-07T05:46:34+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 02:45 UTC: отправлена содержательная сверка по опубликованным reader и claim, ACL RED/GREEN и текущим исполнителям; issuer identity и live consumer остаются открыты."
+    },
+    {
+      "at": "2026-11-07T05:49:57+03:00",
+      "reason": "Owner priority before continuing ZCode adapter",
+      "summary": "Server-100 runtime evidence found zai-proxy-keeper.py's unit already disabled/inactive and zai-mitm-proxy also disabled/inactive; current config has no injected proxy/CA keys. A normal installed ZCode CLI --help launch exited 0, inherited only NO_PROXY/no_proxy, and left config/setting hashes unchanged. Existing CLI children with proxy env all predate keeper disable and were left untouched; no TLS verification setting was changed."
+    },
+    {
+      "at": "2026-11-07T05:53:43+03:00",
+      "reason": "Владелец подтвердил приоритет direct CDP результатов и запрет Vibe runtime. Новая приёмка показала работающий Z.ai own chat/read path; ChatGPT send UI остаётся disabled. Tera owns central Cargo.toml/lib.rs, поэтому plan needs provider-owned shared transport source leaves.",
+      "summary": "Добавлены готовые source steps для общего прямого CDP transport только в назначенных ChatGPT/Z.ai adapter paths; реальный Z.ai browser send/read proof записан отдельно от будущего Rust adapter consumer proof. ChatGPT live send остаётся незавершённым."
+    },
+    {
+      "at": "2026-11-07T06:46:19+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 03:46 UTC: отправлена сверка HTTP OAuth candidate, файлового Writer, native OpenCode list и текущих исполнителей; production issuer bridge и native message остаются открыты."
+    },
+    {
+      "at": "2026-11-07T07:42:51+03:00",
+      "reason": "Фактический отказ approval в T011",
+      "summary": "Официальный Codex 0.167.0 отказал MCP tool call до fixture: requires approval при approval policy never. Доставка не выполнена, T011 не считать PASS и не обходить отказ; независимые native/core работы продолжаются."
+    },
+    {
+      "at": "2026-11-07T07:46:14+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 04:46 UTC: сверены Codex control, v2 create mapping, V042A, HumanStop race и реальный T011 approval refusal; основная веха native create→deliver→read остаётся открытой."
+    },
+    {
+      "at": "2026-11-07T07:49:00+03:00",
+      "reason": "Overseer: путь к первому consumer результату",
+      "summary": "Фокус E001/E002 через V051/T011/V025/V056 и настоящий create→deliver→read; source и injected identity не приёмка. T011 остановлен фактическим approval refusal, не обходить; scoped HumanStop authority и native handoff идут независимо."
+    },
+    {
+      "at": "2026-11-07T08:37:08+03:00",
+      "reason": "Пользователь назначил продолжить разрешённый Z.ai Rust участок при соблюдении текущих ChatGPT stops.",
+      "summary": "V079D остаётся отдельной незавершённой ChatGPT acceptance: существующий Chrome route ведёт в нормальный личный профиль, а разрешённая TEST_ACCESS fixture запрещает provider turns и отдельный тестовый ChatGPT browser profile сейчас не предоставлен. Снять V088C зависимость от live ChatGPT lane и завершить Z.ai Rust create/send/read только на собственном target; ChatGPT не трогать."
+    },
+    {
+      "at": "2026-11-07T08:46:21+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 05:46 UTC: сверены Codex native proof, ресурсы, HumanStop gate и отказ T011 при approval policy never; следующий gate — isolated create→deliver→read→stop с реальным consumer."
+    },
+    {
+      "at": "2026-11-07T09:17:32+03:00",
+      "reason": "Ежечасный контроль Astra: восстановить параллельную работу и убрать лишнюю зависимость",
+      "summary": "Индивидуально проверены 8 сессий: 7 active после конкретных продолжений; translator idle, intake T016/T017 и approval refusal сохраняются без обхода. R003A выделен resources owner для независимого application list/get над существующим storage; R003 сохраняет итоговую MCP приёмку. Terra интегрировала V043/transcript/browser в main cb011f85. Прежний wake Astra resumed; следующий requestId astra-herder-hourly-20261107T0704Z дважды timeout, status не содержит новой записи. Bug Bbfac4ab43cf04586afce передан legacy CI owner, следующее пробуждение НЕ подтверждено. ChatGPT HumanStop сохранён."
+    },
+    {
+      "at": "2026-11-07T09:30:24+03:00",
+      "reason": "V088 now records the accepted direct-CDP route and proves its live Z.ai use; the old V089 paths still describe the superseded provider protocol.",
+      "summary": "Reconcile V089A/B and parent V089 to the already implemented shared CDP transport (`crates/herder/src/adapters/cdp.rs`) and Z.ai adapter (`crates/herder/src/adapters/zai/mod.rs`). V088C proves live exact target/context/account scope. The isolated transport harness proves request IDs, timeout/disconnect UNKNOWN, wrong endpoint, and context mismatch. Close only those proven slices; do not replay the accepted Z.ai send."
+    },
+    {
+      "at": "2026-11-07T09:42:06+03:00",
+      "reason": "Снять подтверждённый пробел typed configure contract",
+      "summary": "RUST-DESIGN.md задаёт минимальный конечный target/key/type allowlist: node endpoint:string; instance endpoint:string|null; session model:string, и точные capability names configure.node.endpoint/configure.instance.endpoint/configure.session.model. Pure V033A parser не объявляет поддержку и не делает I/O; capability proof, trusted target, CAS и desired/applied остаются V033B/V033. Не добавлены произвольные поля или второй settings store."
+    },
+    {
+      "at": "2026-11-07T09:46:42+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 06:46 UTC: сверены кандидаты gate и независимые направления, scoped native test не приёмка production; T011 approval refusal остаётся."
+    },
+    {
+      "at": "2026-11-07T09:50:33+03:00",
+      "reason": "Плановая консультация Астры 2026-11-07 06:50 UTC",
+      "summary": "Сверены независимый REVISE 5c491e4c, два дефекта и работа Tesla; delta-review и тесты перед интеграцией, production handoff отдельно. Сообщение советнику отправлено, tool receipt без ошибки."
+    },
+    {
+      "at": "2026-11-07T09:53:40+03:00",
+      "reason": "Интеграция V033A",
+      "summary": "origin/main 702ed4ae и 39af89c3: pure typed parser и export, три crate tests прошли; native apply/CAS остаются V033B/V033."
+    },
+    {
+      "at": "2026-11-07T10:46:07+03:00",
+      "reason": "Плановая консультация Астры 2026-11-07 07:45 UTC",
+      "summary": "Отправлен итог Tesla ef7d145b: durable rejection, доказанная причина флейка и 20 повторов тестов; запрошено независимое delta-review. Production MCP и T011 остаются отдельными ограничениями; delivery tool вернул без ошибки."
+    },
+    {
+      "at": "2026-11-07T10:46:56+03:00",
+      "reason": "Проверка владельцев V064PORT/V072 07:46 UTC",
+      "summary": "V064PORT thread idle: четыре mock tests, native readback и commit не завершены по последнему сообщению; V072 thread notLoaded: source decoder завершён, live ZCode readback не подтверждён. Глобальный active inventory partial; не создавать дубли и не объявлять задачи завершёнными по отсутствию сессий."
+    },
+    {
+      "at": "2026-11-07T10:50:09+03:00",
+      "reason": "Интеграция scoped HumanStop после независимого delta-review",
+      "summary": "В origin/main 61e51b66 опубликована серия Tesla, поверх 462f5c98: 130 merged tests pass, 1 live ignored; scoped source integration supported review Астры. Production bounded handoff/MCP, migration/cutover и формальное закрытие bug RED/GREEN не подтверждены; V025/E001 не закрывать."
+    },
+    {
+      "at": "2026-11-07T11:27:18+03:00",
+      "reason": "Production MCP соединение: проверка исходного состояния",
+      "summary": "herder_native_stdio запускает default NativeServer либо ConfigApplication с пустыми grants; последний реализует только discover nodes. ScopedAuthority::create_fresh_root/deliver_scoped не подключены к ApplicationPort; public create/deliver/stop пока unsupported. Требуется trusted principal/grants и fail-closed authority без доверия _meta; V025LAUNCH/V025PUBLIC сохраняют этот объём."
+    },
+    {
+      "at": "2026-11-07T11:28:31+03:00",
+      "reason": "V072 превысил дважды оценку и 45 минут; фактически найден подтверждённый loopback fake-model сценарий в legacy CI worktree. Остаток native acceptance разделяется по объектам и <=15 минут на leaf.",
+      "summary": "V072 переопределён как завершённое исследование fixture пути. Добавляются V072C для изолированного provider fixture, V072D для двух native turns, V072E для независимого Rust readback. Зависимый V078A будет ждать V072E."
+    },
+    {
+      "at": "2026-11-07T11:30:25+03:00",
+      "reason": "Ежечасный контроль Astra 07.11 11:22–11:35 МСК: возобновление простаивающих направлений",
+      "summary": "Проверены все8 сессий по отдельности: изначально только legacy CI active. Terra/OpenCode/ZCode/browser/resources возобновлены; Codex отказался брать новый scope, translator intake/approval refusal сохранён. V055PIPE→V055BOUND переданы Terra для единственного существующего core worker; обнаружен blocking stdin до timeout (Be873202665ba4b1c8e26). Resources делает готовый V110A. Кандидаты OpenCode0ea46b50/ZCodeaebfb3a9+a9fe2ac6/browser66e88f59 переданы Terra. HumanStop scoped61e51b66 интегрирован; production MCP отдельно. Следующий wake requestId astra-herder-hourly-20261107T0922Z timeout/no record, без retry; предыдущий timeout оказался поздней регистрацией, его wait уже resumed. В legacy observe воспроизведено40 unrelated events→43 native probes и909мс при20мс probe, evidence сохранён; runtime repair у legacy CI owner."
+    },
+    {
+      "at": "2026-11-07T11:31:47+03:00",
+      "reason": "Уточнение времени контроля и следующий готовый native участок",
+      "summary": "Предыдущая ревизия ошибочно назвала конец диапазона11:35; clock зафиксировал11:30:37 МСК, это время промежуточной проверки. OpenCode V064LIVE уже завершён (one create, exact GET/DELETE/readback, model calls0); owner продолжает выделенный V065PORT, общие V065A/B gates сохранены. Активность и результаты подтверждены wait_threads, не только отправкой задания."
+    },
+    {
+      "at": "2026-11-07T11:45:55+03:00",
+      "reason": "Плановая консультация Астры 2026-11-07 08:45 UTC",
+      "summary": "Отправлена сводка: f18149d3 и d317129c опубликованы; 9eafde2d bounded interrupt и 13 тестов ожидают delta-review; V055CREATE и launcher остаются, browser V090SCOPE не принимать без исправления. Delivery tool вернул без ошибки."
+    },
+    {
+      "at": "2026-11-07T11:58:46+03:00",
+      "reason": "V055CREATE после независимого review",
+      "summary": "origin/main 309fd821: атомарное rejected/reason для no-send async и scoped create, no replay; отдельный Task.status и public диагностика не доказаны. OpenCode 0ea46b50 и live create/read/delete proof получены; preflight no-send delta выполняет его owner, не интегрировать как полный V064 до согласования enum."
+    },
+    {
+      "at": "2026-11-07T12:08:52+03:00",
+      "reason": "Интеграция исправления очереди resume-after",
+      "summary": "origin/main b00c778d включает scoped 6195e46b. Независимо 32 tests passed, исходный прогон 66 passed; source-only, установленный legacy runtime ещё не обновлён, pending registration остаётся UNKNOWN без повторной отправки."
+    },
+    {
+      "at": "2026-11-07T12:34:41+03:00",
+      "reason": "OpenCode candidate d7b560d3 независимый review",
+      "summary": "REVISE: Current/steer не передаёт expected_turn и не имеет native CAS, возможна отправка в другой turn. Owner исправляет отказ до POST и typed create no-send; candidate не опубликован; Queue live receipt сохранён отдельно."
+    },
+    {
+      "at": "2026-11-07T12:38:13+03:00",
+      "reason": "V030A интеграция требует версии схемы",
+      "summary": "Writer сравнивает точные sqlite_schema objects; scoped launcher и authority требуют v3. Нельзя добавлять FTS таблицы прямо в v3: нужен v3→v4 migration/fence с обновлением scoped paths. Рабочая схема принадлежит Tesla V025COMPOSE, ownership согласуется; live migration запрещена без отдельного proof."
+    },
+    {
+      "at": "2026-11-07T12:40:12+03:00",
+      "reason": "Интеграция ZCode baseline",
+      "summary": "origin/main 99733d7f: connection/read/create и exports; независимое review SUPPORTED, 6/6 unit/fake. create no-send относится к createSession, initialization RPC мог быть. Matching wire fixture, diagnostics и recovery остаются; UNKNOWN native outcome не повторялся."
+    },
+    {
+      "at": "2026-11-07T12:42:22+03:00",
+      "reason": "Интеграция Z.ai list/transcript",
+      "summary": "origin/main 703ce35d: source list/recent, account-bound snapshot, plain content transcript; 12 Rust tests и 7 Node account-scope scenarios PASS. Native live send не повторялся, FTS feed и public MCP остаются отдельно."
+    },
+    {
+      "at": "2026-11-07T12:46:00+03:00",
+      "reason": "Плановая консультация Астры 2026-11-07 09:45 UTC",
+      "summary": "Отправлены результаты bounded Codex 03eccbc2, ZCode 99733d7f, Z.ai 703ce35d; Tesla делает recover/COMPOSE, V030B и V075A выполняются, V030MIG после COMPOSE; T003 ждёт handoff baseline и trusted ingress, T011 refusal сохраняется. Delivery tool вернул без ошибки."
+    },
+    {
+      "at": "2026-11-07T12:47:26+03:00",
+      "reason": "OpenCode create/control интеграция",
+      "summary": "origin/main 26e4516a: create/control exports, live Queue receipt и безопасный отказ Current до POST при отсутствии atomic turn guard. 8 adapter tests passed, review SUPPORTED; preflight create no-send follow-up открыт; public MCP не доказан."
+    },
+    {
+      "at": "2026-11-07T13:19:43+03:00",
+      "reason": "Интеграция scoped MCP read/hold и create/prompt",
+      "summary": "origin/main ae95e063: Tesla read/hold с barrier race fix и create/prompt recovery + trusted policy port; independent review supported, merged tests scoped26+1ignored/launcher8/schema4/target1 pass. Только source/fake wire: authenticated launcher, public create→deliver→read и terminal Tasks ещё не доказаны."
+    },
+    {
+      "at": "2026-11-07T13:31:24+03:00",
+      "reason": "Trusted ingress: уточнение authority и ревокации",
+      "summary": "HTTP: verified OAuth subject из единственного live owner token store, issuer/audience/scope/expiry/revocation для каждого tools/Tasks/resources/reconnect, не generic legacy mesh и не копия кэша. stdio: geteuid/profile сами по себе caller не доказывают, только явный trusted launch mode, self unknown и отдельные grants. Acceptance A/B: revoke A на том же соединении→Task/read denied, B продолжает; без второго token store и без forwarding чужому audience."
+    },
+    {
+      "at": "2026-11-07T13:34:47+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 10:34 UTC: доставлена сверка evidence ae95e063/FTS, V025TASKDELIVERY Tesla и V075B, блокеры trusted ingress и T011; запрошен независимый review Tasks и ingress. Следующая консультация не позже 11:34 UTC."
+    },
+    {
+      "at": "2026-11-07T13:36:45+03:00",
+      "reason": "Граница trusted-owner stdio",
+      "summary": "10:36 UTC: scoped launcher сейчас лишь проверяет профиль и оставляет Caller::Unknown, scoped приложения не присоединены. На main не найден production Codex NativeSessionReader (только fixture), MCP create ApplicationPort также отсутствует; для реального owner-only consumer нужны эти связи и reviewed Tasks candidate, без fake SQL/replay. HTTP T003 остаётся отдельным gate."
+    },
+    {
+      "at": "2026-11-07T13:45:46+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 10:45 UTC: доставлены status Tasks/reader/owners, риск durable exact grants и запрос review policy. V025TASKRECON у Tesla, create aggregate на delta-review. Следующая консультация не позже 11:45 UTC."
+    },
+    {
+      "at": "2026-11-07T14:44:45+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 11:44 UTC: отправлен подтверждённый SDK/Codex owner proof 9dfe147d, сохранение старого UNKNOWN и fake RED/GREEN HumanStop; запрошен race/idempotency review. Следующая консультация не позже 12:44 UTC."
+    },
+    {
+      "at": "2026-11-07T14:47:05+03:00",
+      "reason": "Прямое изменение приоритета владельцем 07.11.2026: OpenCode первым, ChatGPT и Z.ai после него, Codex последним.",
+      "summary": "Критический путь и порядок приёмки: OpenCode → ChatGPT → Z.ai; Codex-specific работа и новые Codex consumer cases отложены в конец. ZCode не опережает приоритетные три адаптера. Terra ведёт общий core+OpenCode public create→deliver→read; OpenCode исполнитель возобновлён по новому прямому назначению; browser завершает source fixes для следующей очереди; Tesla search/rowid как общий компонент; ZCode исполнитель снимает общий create dependency blocker для OpenCode. Готовый9dfe147d Codex SDK proof сохраняется, V025PUBLIC HumanStop proof пока не done. UNKNOWN/HumanStop/реальные approval refusals сохраняют силу, принятые эффекты не повторяются. Новые workers/ветки/расписания не создаются."
+    },
+    {
+      "at": "2026-11-07T14:51:31+03:00",
+      "reason": "Пересмотр пути интеграции адаптеров",
+      "summary": "Согласно сообщению Астры о новом поручении владельца: приоритет OpenCode→ChatGPT→Z.ai→Codex; изучается минимальный bridge к существующим legacy adapter operations при едином native authority/intent/Task/HumanStop. Новые wrappers приостановлены. Локальные WIP: HumanStop 9b63447b, trusted queue mode 9d1a6ff0; не опубликованы, решение после проверки точного boundary."
+    },
+    {
+      "at": "2026-11-07T14:52:44+03:00",
+      "reason": "Прямое решение владельца: сначала минимальная прослойка functional core → прежние готовые V1 Legacy adapters, включая Go; сохранить многоязычные adapters вместо повторной native переписки.",
+      "summary": "Переиспользовать existing AHAPv0.1 JSON-RPC2 NDJSON stdio (docs/external-adapter-protocol.md, external-adapters/go/sdk/sdk.go). Новый Rust core владеет authority/Task/intent/HumanStop; тонкий mapping/client вызывает готовые Go read adapters и existing TS controls через один minimal runner. Первый маршрут OpenCode create→send→read; далее ChatGPT/Z.ai directCDP, Codex последний. Go session-reader реализует чтение, TS control сохраняется до отдельной обоснованной замены; не обещать Go control которого нет. Не запускать старое управляющее ядро/daemon рядом и не переносить старый mutation fallback/retry; UNKNOWN остаётся неопределённым. Конфигурация и процессы по node+instance, без старого one-harness singleton limit. Незавершённый Rust native rewrite сохранить, новые дубли реализации не развивать. Удаление legacy означает удаление заменённых управляющих путей; используемые проверенные adapters сохраняются по новому прямому указанию."
+    },
+    {
+      "at": "2026-11-07T14:53:57+03:00",
+      "reason": "Проверен фактический AHAP контракт Go reader: потеря native input/message identity не позволяет использовать его как доказательство точной доставки.",
+      "summary": "Первый минимальный OpenCode vertical: Rust functional core→один AHAP runner→existing TS OpenCodeAdapter createSession/sendMessage/getSessionMessages с inputId/turnId. Go session-reader сохраняется optional display-read с фактическими capabilities; не используется для exact reconciliation или complete transcript, его переписывание не блокирует первый результат. Без reservation старый integrator store не включается. Вспомогательные announceIdentity/wakeInboxItem входят в bounded adapter invocation; возможный эффект при ошибке UNKNOWN, без повторной mutation/fallback. Тера получила решение продолжать implementation, новое согласование владельца не нужно."
+    },
+    {
+      "at": "2026-11-07T15:05:33+03:00",
+      "reason": "Прямая коррекция владельца: не менять работу CI01a1ac52, она правильно выполняет CI и ChatGPT; запускать отдельного параллельного worker Luna.",
+      "summary": "Отменено переназначение CI01a1ac52 на AHAP E2E и требование откладывать её исходный scope. Она продолжает CI+ChatGPT по своим текущим пользовательским поручениям. Создана отдельная сессия Luna01a1b5e5-b6de-74c3-8276-45803194a16f (requested gpt-6-luna): V065AHAPCISETUP независимая подготовка reuse existing stand и V065AHAPCIRUN новый bridge consumer после artifact handoff. Luna не меняет existing launcher/model owned файлы, не создаёт второй stand. Terra core+build, existing OpenCode owner TSrunner; Luna непосредственно под Astra, лимит4 у Terra не увеличен. Чтение LHC show_plan успешно12:03UTC; публикация веб-снимка отдельный актуальный blocker, local plan доступен."
+    },
+    {
+      "at": "2026-11-07T15:26:08+03:00",
+      "reason": "Owner correction: parallel Luna and preserve original CI+ChatGPT; verified current dependencies",
+      "summary": "Luna setup published8c2cef91+5d662966 (7offlinePASS), native OpenCode run waiting Terra reviewed assembled artifact. Three AHAP review defects recorded; Terra owns fixes. Independent ChatGPT reuse wrapper V081AHAP assigned browser worker in parallel, no live calls. Original CI01a1ac52 active own scope. show_plan succeeds; mirror receipt seq332 now synced12:25UTC, superseding earlier stale status. Hourly wait12:24 was rejected by Codex quota guard13%, not retried or bypassed."
+    },
+    {
+      "at": "2026-11-07T15:29:57+03:00",
+      "reason": "Убрано дополнительное искусственное ожидание consumer driver",
+      "summary": "Astra прочитала Luna setup5d662966: это artifact preflight, сам бизнес-сценарий ещё нужен. Создан V065AHAPCIDRIVER10–15мин для Luna; она active и пишет stand независимо от core сборки. Browser worker active пишет отдельный ChatGPT reuse wrapper V081AHAP. Terra active исправляет3AHAP дефекта. V064A source-ready waiting integration; V081A/B paused-by-route waiting, не фиктивно running/done. Один следующий часовой wait_094cbf080db3f48b0e86bc349ea02788 зарегистрирован13:27:43UTC; прежний слот был отклонён quota guard13%, без повтора."
+    },
+    {
+      "at": "2026-11-07T15:32:38+03:00",
+      "reason": "Плановая консультация с Астрой",
+      "summary": "2026-11-07 12:32 UTC: доставлена сверка candidate 15be696b, RED/GREEN и активных Luna/CI/ChatGPT-Z.ai; запрошен независимый delta-review перед интеграцией и immutable artifact для Luna. Следующая консультация не позже 13:32 UTC."
+    },
+    {
+      "at": "2026-11-07T15:34:52+03:00",
+      "reason": "Review fixes ready; verified real browser transport boundary",
+      "summary": "Terra15be696b closes3AHAP findings in source with author RED/GREEN; Nietzsche delta-review dispatched and active, live consumer not yet run. Existing ChatGPT factory uses MacMiniChromeTransport: ssh→ChromeDevTools MCPgateway, not directCDP. Browser worker preserves site logic and identifies narrow ChromePageTools transport replacement; source wrapper cannot satisfy directCDP acceptance by itself."
+    },
+    {
+      "at": "2026-11-07T15:37:50+03:00",
+      "reason": "V065AHAP source интеграция и artifact handoff",
+      "summary": "main 94e7d98c5ea7c2622fc9fd2f58f7e748715a6de4: независимый review SUPPORTED, после rebase AHAP 7, launcher 14, Queue 2, TS 4 passed; real consumer ожидается. Защищённый artifact /home/roomhacker/herder-artifacts/ahap-94e7d98c и SHA переданы Астре для Luna; readonly mount обязателен. Все три review bug records fixed с RED/GREEN."
+    },
+    {
+      "at": "2026-11-07T15:51:56+03:00",
+      "reason": "Owner requested fast reuse plan; independent critique incorporated",
+      "summary": "Короткая каноническая очередь вместо545микрозадач, snapshot+mapping+точный acceptance coverage. OpenCodeнеждётCodexcompat. Дальние этапы раскрываются по готовым входам, независимая работа не ждёт общего milestone."
+    },
+    {
+      "at": "2026-11-07T15:59:39+03:00",
+      "reason": "OpenCode 2.2.4: режим и контракт квитанции",
+      "summary": "Source 94e7: AHAP runner/owner wiring используют Queue, несовместимый с /session/:id/message 2.2.4; bug B7959893430814a8fb823 открыт, старый artifact не отправляет mutation. Существующий OpenCode control явно запрещает Start без atomic idle CAS: обычный observed Idle и локальный lock не защищают от внешнего writer. До доказательства exclusivity свежей сессии или native guard общий Start не включать. С Астрой согласуется normalized nativeInputMessageId и UNKNOWN/no retry; Luna сохраняет единственный native case."
+    },
+    {
+      "at": "2026-11-07T16:17:07+03:00",
+      "reason": "Final independent review of fast reuse plan SUPPORTED",
+      "summary": "Verified snapshotSHA and356mappings:343retired-decomposition deferred,13mandatory waiting gates. All18acceptance rows preserved verbatim and not falsely accepted. Canonical E002 dependency fixed. Source/gates remain distinct; ready resources/context work dispatched and active; core/client/Luna continue. Publication document commit4502a2d9 integrated byTerra as0a24106a."
+    },
+    {
+      "at": "2026-11-07T16:20:49+03:00",
+      "reason": "OpenCode preflight: проверка user namespace",
+      "summary": "Luna v9 FAILED_PREMUTATION/model 0: invalid untrusted profile. В эквивалентном unshare+bwrap подтверждено euid=0, /usr/local/bin/node и предки /usr uid=65534, что отвергает существующий trusted_executable. Подготовлен protected node-81925c09/node с тем же SHA256, uid отображается 0; Luna через Астру получила путь, readonly mount и необходимость не перезаписывать --node. Возможны другие причины profile; guard не ослаблялся."
+    },
+    {
+      "at": "2026-11-07T16:27:05+03:00",
+      "reason": "План исполнения упрощён по просьбе владельца; исправлена фактическая причина задержки первого consumer",
+      "summary": "Переиспользуем source/CI/adapters, отдельные owners и 5–15мин результаты. Подтверждён profile uid reject; source API hypothesis не блокирует готовую runtime ветку. V044A передан на интеграцию, V040B запущен независимо."
+    },
+    {
+      "at": "2026-11-07T16:28:21+03:00",
+      "reason": "Уточнён фактический статус отправки назначения",
+      "summary": "V040B готов и закреплён за resources, но запуск не подтверждён: app transport error. Не считать сообщение доставленным или задачу running."
+    },
+    {
+      "at": "2026-11-07T16:29:13+03:00",
+      "reason": "V044A точная зависимость и состояние связи",
+      "summary": "Plan correction опубликован main 826193e3. V044A отдельно от 5a8bcd65+export не компилирует тесты: нет store::correspondence и Writer::record_correspondence, bug Bb0ff910eb27b41e8bba7. В изолированном candidate 56d9603c включение source commit 5034cf7b устранило compile failure, 3 context tests прошли; production correspondence требует проверки и интеграции как самостоятельная зависимость, не опубликовано. Сообщение Астре о результате дало transport error после отправки: delivery UNKNOWN, read_thread также недоступен; не повторять вслепую."
+    },
+    {
+      "at": "2026-11-07T18:23:54+03:00",
+      "reason": "Прямой запрос владельца: общий результат Herder+CI и меньше отвлекающих сообщений",
+      "summary": "Два плана, пять adapter lanes, единые reused fixtures, exact source/installed proof. Исправлены все5 замечаний независимого критика. План/дизайн опубликованы99d2f29a; текущие bounded исполнители возобновлены без ACK-loop."
+    },
+    {
+      "at": "2026-11-07T18:32:41+03:00",
+      "reason": "QOCJOIN и QBROWSERJOIN source integration",
+      "summary": "QOCJOIN: main 93d502422398be3ea3135c3b6b4e10580514af49; AHAP 7, launcher 1, TS 8 passed; actual TS runner→v22 adapter→HTTP fixture POST /session/ses_fresh/message payload parts, no native mutation; artifact /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-93d50242/manifest.json SHA256 051fe4b010d579a873d5e0d52b610fbcfaa11efa0af97f4d0161dde569e50506 передан Luna одним ready handoff. QBROWSERJOIN: main 9c0c34f3b22f379850c6d6bb320600cf5cbdd232 пять source deltas + исправление зависшего handshake; 42 browser focused tests и новый RED/GREEN connect 8 passed; native browser case не выполнялся. Обновление leaf LhcPlan отклонено из-за неподдерживаемого поля evidence в QBROWSERJOIN.json; статус QOCJOIN пока running, результат зафиксирован этой revision, без ручной правки чужой записи."
+    },
+    {
+      "at": "2026-11-07T18:35:52+03:00",
+      "reason": "Владелец просит parent auto-resume после terminal reports всей дочерней группы",
+      "summary": "Hour timer verified waiting19:25:17МСК. Existing dependency wait registered but delivery_failed: exact CI native completion unavailable, idle не proof. Контракт ранней group registration/terminal outcomes/stable requestId добавлен QUIET-COORDINATION. QWAKECONTRACT/QWAKEHOOK/QWAKEPROOF registration пока отвергнут из-за чужого malformedQBROWSERJOIN.evidence; writer получил адресное исправление, evidence/parent-wake-20261107.json сохранён. Runtime hook bridge не заявлен установленным."
+    },
+    {
+      "at": "2026-11-07T18:36:54+03:00",
+      "reason": "Canonical QBROWSERJOIN repair blocked by the supported update_leaf validator rejecting its existing unsupported top-level evidence key.",
+      "summary": "Evidence at evidence/QBROWSERJOIN-source-handoff-20261107.md records the exact update_leaf API error and safe next action. No raw leaf edit was made. QBROWSERJOIN remains factually pending Terra integration and source-chain publication/review; its current done status is erroneous and native cases must not launch from it. LHC owner must repair the unknown field through a supported canonical path, then restore waiting with evidence in result/note and actual timestamp 2026-11-07 18:36 MSK."
+    },
+    {
+      "at": "2026-11-07T18:36:56+03:00",
+      "reason": "QOCJOIN: corrected ready artifact after actual health evidence",
+      "summary": "Старый artifact 93d50242 HOLD: FASTINIT доказал /api/health=404, код v22 ошибочно требовал этот маршрут. RED 3 failed→GREEN 8 passed, исправление опубликовано main 076bacd861d6ae64c996117b797c235242023c10; новый artifact /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-076bacd8/manifest.json SHA256 6e00a60d8f4c62d156351606b8131a781a90ba105945a033d993b79ad395818f; core 58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c runner 4e795a89ba7e3dcab4a1e06af5a799a294facb3a0005aa6a2683eb83e0892228. Luna предупреждена о старом artifact. Новый готов для единственной fresh isolated операции после подтверждения исхода ранее выданного handoff; runtime model proof pending. QOCJOIN leaf update заблокирован посторонним неподдерживаемым полем evidence в QBROWSERJOIN.json."
+    },
+    {
+      "at": "2026-11-07T18:40:02+03:00",
+      "reason": "Приоритет владельца: завершать Herder; событийный parent resume проверять совместно, не превращать расширение LHC в отдельный блокер",
+      "summary": "Herder владеет доставкой terminal native events и ровно одним parent resume, LHC — привязкой assignments и сохранением результата. Ошибка wait_71deae46f7e34e3671b4b6887dbc7e4a (CI exact completion unavailable) не доказывает отсутствие установленных hooks. Ближайший путь QOCJOIN→V065AHAPCIRUN и CIGATE продолжать. Приёмка жизненного цикла: две task-owned дочерние сессии, exact terminal events, один parent resume, readback canonical results, HumanStop/no replay. Никаких новых обзорных планов или separate scheduler; generic LHC digest не условие завершения адаптеров."
+    },
+    {
+      "at": "2026-11-07T18:41:05+03:00",
+      "reason": "Прямое уточнение владельца: LHC, Agent Herder, GPTAdmin и Notice Place составляют один рабочий цикл управления ИИ",
+      "summary": "LHC отвечает за планирование И руководство: назначения, зависимости, результаты и решение о следующем шаге. Herder обеспечивает native исполнение, межсессионную связь, lifecycle events/stop/resume. GPTAdmin предоставляет управляемый доступ к инфраструктуре через MCP с проверками доступа и инструкциями. Notice Place обеспечивает инциденты, уведомления и разрешённую AI-autorepair. Общая приёмка — цель человека→план→исполнители→инфраструктурное действие→результат в плане→возобновление руководителя→проверенный работающий результат; при сбое инцидент/восстановление связано с тем же заданием. Раздельные репозитории не оправдывают разрыв сценария. Текущий приоритет5адаптеров сохраняется; интеграционные дефекты владеет конкретный компонент, результат принимается сквозным consumer proof, без нового верхнего orchestration слоя."
+    },
+    {
+      "at": "2026-11-07T18:50:37+03:00",
+      "reason": "Уточнение владельца: LHC, Herder, GPTAdmin и Notice Place составляют единый workflow управления ИИ",
+      "summary": "LHC owns plan/assignments/acceptance; Herder native execution, durable communication and lifecycle wake; GPTAdmin authorized infrastructure MCP; Notice Place incidents/recovery. Acceptance must include durable child result→parent single resume→next ready plan step, restart reconciliation and HumanStop, without four competing schedulers. Current priority five adapters unchanged; hooks/digest not claimed implemented. Schema blocker fixed LHCfd039303; QOCJOIN076bacd8 recorded. Luna preflight-only proved Astra FASTINIT stage (native source delegation), not human permanent stop; V065AHAPCIRUN resumed with corrected artifact. ZCode publication and Terra browser join proceed independently."
+    },
+    {
+      "at": "2026-11-07T19:32:04+03:00",
+      "reason": "Ежечасный контроль: продолжить nearest consumer path, не оставлять исправимые дефекты в ожидании",
+      "summary": "Проверены individually8session+Luna. Native OpenCode case076bacd8 выявил POST/session405 и create UNKNOWN; тот же эффект не повторять. Terra resumed QOCJOIN protocol selection+artifact (Be28fb/Be5c0); browser resumed QBROWSERSCOPE A→B account-read bug; resources resumed readyV040B common MCP/CLI claim. CI active CIGATE done, installed instance-provider gap distinct. ZCode composition4cc4cd85 done; native proof pending. Translator prior approval refusal preserved, Codex refused scope not reawakened. Один следующий hourly wait7456119d8a87b79fbf1b3dd8c009f90a scheduled2026-11-07T17:29:35Z; no pending duplicates. Actual readback of resumed workers and new artifacts still required."
+    },
+    {
+      "at": "2026-11-07T19:34:58+03:00",
+      "reason": "Готовый ZCode runner ещё ограничен OpenCode-only core port; независимый bounded reuse вместо ожидания",
+      "summary": "QAHAPPORT назначен существующему ZCode worker: только crates/herder/src/adapters/ahap.rs и ahap_opencode.rs, минимальная параметризация verified harness/opaque IDs/initial-send policy; текущий OpenCode behavior сохраняется, no native calls. Terra owns TS protocol fix+artifact и Cargo/lib/schema/owner launch, не ждать QAHAPPORT для OpenCode. Сообщение Terra о разделении paths input astra-terra-port-ownership-20261107T1635-v1 вернуло skipped_inactive несмотря на app active; не считать доставленным. Ownership записан в canonical leaf."
+    },
+    {
+      "at": "2026-11-07T19:38:47+03:00",
+      "reason": "Устранить подтверждённый ложный preflight параллельно с runtime protocol fix",
+      "summary": "Luna resumed QOCPREFLIGHT: owned stand2files, проверяемый actual runner protocol вместо defaultv2, согласовать native200null semantics, RED/GREEN, no native mutation. Terra ownership notification ранее skipped успешно доставлено тем же inputId activationalways в тот же native turn; результат accepted, не replay. Теперь Terra QOCJOIN, browserQBROWSERSCOPE, ZCodeQAHAPPORT, resourcesV040B, LunaQOCPREFLIGHT имеют непересекающиеся scopes, CI сохраняет свой scope."
+    },
+    {
+      "at": "2026-11-07T22:28:59+03:00",
+      "reason": "Owner ordered new V1 plan",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "native_environment"
+      },
+      "summary": "SUPERSEDED по прямому поручению владельца07.11: новая очередь .agents/tasks/20261107-herder-v1-core; Rust ядро+старыеTSadapters, срок08.11 00:38МСК. История/результаты/WIP сохранены. Старые очереди не запускать автоматически."
     }
-  ]
+  ],
+  "external_waits": "Полный ETA неизвестен до OpenCode consumer, разрешённого ChatGPT test profile и legacy client proof. Старые deferred карточки означают заменённую декомпозицию, а не отмену требований: ACCEPTANCE-COVERAGE.json обязателен. UNKNOWN, HumanStop и approval refusals сохраняются."
 }
