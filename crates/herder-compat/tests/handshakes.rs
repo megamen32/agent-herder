@@ -5,7 +5,7 @@ use rmcp::{
     ClientServiceExt, ErrorData, RoleServer, ServerHandler, ServiceExt,
     model::{
         ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
-        ServerCapabilities, ServerConfig,
+        ServerCapabilities, ServerConfig, ListToolsResult, PaginatedRequestParams, Tool,
     },
     service::{ClientLifecycleMode, RequestContext},
     transport::TokioChildProcess,
@@ -27,6 +27,13 @@ impl ServerHandler for NativeProbe {
     }
 
     async fn ping(&self, _: RequestContext<RoleServer>) -> Result<(), ErrorData> { Ok(()) }
+
+    async fn list_tools(&self, _: Option<PaginatedRequestParams>, _: RequestContext<RoleServer>) -> Result<ListToolsResult, ErrorData> {
+        let mut listing = ListToolsResult::default();
+        let schema = serde_json::json!({"oneOf":[{"type":"object","properties":{"action":{"const":"read"}},"required":["action"]},{"type":"object","properties":{"action":{"const":"other"}},"required":["action"]}]});
+        listing.tools = vec![Tool::new("probe", "schema probe", schema.as_object().unwrap().clone())];
+        Ok(listing)
+    }
 }
 
 #[tokio::test]
@@ -62,6 +69,11 @@ async fn native_and_legacy_handshakes_keep_their_explicit_protocol_versions() {
     let legacy_client = tokio::time::timeout(std::time::Duration::from_secs(5), legacy_config.serve(legacy_client_io)).await.unwrap().unwrap();
     let downstream_version = legacy_client.peer().peer_info().unwrap().protocol_version.clone();
     assert_eq!(downstream_version, ProtocolVersion::V_2025_06_18);
+    let original = native_client.peer().list_tools(None).await.unwrap();
+    let forwarded = legacy_client.peer().list_tools(None).await.unwrap();
+    let mut expected = (*original.tools[0].input_schema).clone();
+    expected.insert("type".into(), serde_json::json!("object"));
+    assert_eq!(*forwarded.tools[0].input_schema, expected);
     let record = serde_json::json!({
         "probe": "rmcp-3.9.0 in-memory wire handshake",
         "upstream_protocol": upstream_version.to_string(),
@@ -112,6 +124,14 @@ async fn real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade() {
     let listing = legacy_client.peer().list_tools(None).await.unwrap();
     assert_eq!(listing.tools.len(), 14);
     assert!(listing.tools.iter().any(|tool| tool.name == "resource"));
+    let native_listing = native_client.peer().list_tools(None).await.unwrap();
+    for (legacy, native) in listing.tools.iter().zip(&native_listing.tools) {
+        assert_eq!(legacy.name, native.name);
+        let mut expected = (*native.input_schema).clone();
+        expected.insert("type".into(), serde_json::json!("object"));
+        assert_eq!(*legacy.input_schema, expected, "{}", legacy.name);
+        assert!(!legacy.input_schema["oneOf"].as_array().unwrap().is_empty());
+    }
 
     let record = serde_json::json!({
         "probe": "official rmcp client through LegacyEdge to compiled herder_native_stdio",

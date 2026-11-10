@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use rmcp::{
     ErrorData, Peer, RoleClient, RoleServer, ServerHandler,
@@ -77,6 +77,14 @@ impl ServerHandler for LegacyEdge {
         let names = listing.tools.iter().map(|tool| tool.name.to_string()).collect::<HashSet<_>>();
         if names.iter().any(|name| LEGACY_TOOLS.contains(&name.as_str())) {
             return Err(ErrorData::internal_error("Native discovery collides with a reserved compatibility tool", None));
+        }
+        for tool in &mut listing.tools {
+            let schema = Arc::make_mut(&mut tool.input_schema);
+            match schema.get("type") {
+                None => { schema.insert("type".to_owned(), json!("object")); }
+                Some(Value::String(kind)) if kind == "object" => {}
+                Some(_) => return Err(ErrorData::internal_error("Native tool input schema is not an object", None)),
+            }
         }
         if listing.next_cursor.is_none() {
             listing.tools.extend(LEGACY_TOOLS.iter().filter(|name| self.helper_available(name)).map(|name| helper_tool(name)));
