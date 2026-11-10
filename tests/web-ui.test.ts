@@ -96,8 +96,8 @@ describe("non-blocking session loading", () => {
     expect(reactSource).toContain("session-skeletons");
     expect(reactSource).toContain("Загружаю свежие сообщения");
     expect(reactSource).toContain("подгружаю историю и метрики");
-    expect(reactSource).toContain("?limit=12&quick=1");
-    expect(reactSource).toContain("?limit=50");
+    expect(reactSource).toContain("detailQuery(12, true, runtimeHostId)");
+    expect(reactSource).toContain("detailQuery(50, false, runtimeHostId)");
   });
 
   it("restores the selected session across page reloads", () => {

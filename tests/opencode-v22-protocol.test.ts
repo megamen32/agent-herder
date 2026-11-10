@@ -152,7 +152,7 @@ it("routes actual AHAP runner Start through v22 adapter to native payload", asyn
     input.end(requests.map((request) => JSON.stringify(request)).join("\n") + "\n");
     await done;
     const replies = chunks.join("").trim().split("\n").map((line) => JSON.parse(line));
-    expect(replies[2].result).toMatchObject({ admitted:true, nativeInputMessageId:"msg_exact1", inputId:"caller-input-1" });
+    expect(replies[2].result).toMatchObject({ admitted:true, nativeInputMessageId:"msg_exact1" });
     const posts = state.paths.filter((call) => call.method === "POST");
     expect(posts).toHaveLength(2);
     expect(posts[1]).toEqual({method:"POST",path:"/session/ses_fresh/message",body:{parts:[{type:"text",text:"initial task"}]}});

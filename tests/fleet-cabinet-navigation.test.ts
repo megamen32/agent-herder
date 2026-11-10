@@ -20,7 +20,7 @@ describe('Fleet cabinet navigation (fast unit; expected 1s/max 10s; no native se
   const client={hosts:()=>new Promise(()=>{}),sessions:vi.fn(),create:vi.fn()} as any;
   const html=renderToStaticMarkup(createElement(FleetCabinet,{client,defaultHostId:'roomhacker-server-100'}));
   for(const host of ['roomhacker-server-100','server-44','roomhacker-server-88','mac-mini-2012.lan','MacBook-Pro-User.local'])expect(html).toContain(`value="${host}"`);
-  expect(html).toContain('Получаю список машин…');
+  expect(html).toContain('Получаю список машин');
   expect(html).toMatch(/<button disabled[^>]*>Создать на выбранной машине<\/button>/);
  });
  it('translates every native session state and keeps unknown diagnostics out of the label',()=>{

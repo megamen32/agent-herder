@@ -49,6 +49,9 @@ async function buildPayloadAndArtifact(root: string, capture: string): Promise<{
   await mkdir(modules, { recursive: true });
   const payload = join(root, "payload");
   await exec(process.execPath, [builder, "--out", payload, "--repo", repoRoot, "--dist", dist, "--node-modules", modules]);
+  // The projection validates a native HTTP MCP route. Keep this test input
+  // explicit even when the checkout's portable MCP manifest is empty.
+  await writeFile(join(payload, ".mcp.json"), JSON.stringify({ mcpServers: { "agent-herder": { type: "http", url: "http://127.0.0.1:18787/mcp" } } }), "utf8");
   const artifact = join(root, "native-0.2.6");
   await prepareCodexNativeProjection(payload, artifact, "0.2.6");
   return { payload, artifact };

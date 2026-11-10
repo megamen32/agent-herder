@@ -41,8 +41,10 @@ it("emits the same exact capacity evidence on native terminal failure events", a
   const events: any[] = [];
   native.threads.set("target", { id: "target", model: "gpt-6.1-sol" });
   native.emitEvent = (event: unknown) => events.push(event);
+  native.readFailedQuotaEvidence = async () => undefined;
   try {
     native.consumeMessage({ method: "turn/completed", params: { threadId: "target", turn } });
+    await Promise.resolve();
     expect(events.find(event => event.kind === "turn.failed")?.data).toMatchObject({ turnId: turn.id, capacityFailure: { classification: "model_capacity", errorCode: "serverOverloaded" } });
   } finally { await adapter.dispose(); }
 });
