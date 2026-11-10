@@ -15,7 +15,7 @@
   ],
   "model": "gpt-6.1-sol",
   "created_at": "2026-11-07T23:01:48+03:00",
-  "updated_at": "2026-11-07T23:12:19+03:00",
+  "updated_at": "2026-11-11T01:54:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T23:01:48+03:00",
@@ -74,6 +74,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:48:03+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:46+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -114,6 +145,7 @@
     ]
   },
   "assignment_history": [],
-  "result": "Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
-  "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch."
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
+  "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch.",
+  "status": "deferred"
 }

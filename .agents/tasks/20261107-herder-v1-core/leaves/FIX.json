@@ -11,7 +11,7 @@
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "pending",
+  "status": "deferred",
   "acceptance": "Если sourcebytesизменены, новыйimmutablemanifest+affectedlanes/NEG re-gate. Если измененийнет сохраняетсяdigest. 5/5mandatoryPASSдоinstall.",
   "parent": "S3",
   "id": "FIX",
@@ -19,7 +19,7 @@
   "created_at": "2026-11-07T22:06:07+03:00",
   "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
   "harness": "codex",
-  "updated_at": "2026-11-08T17:36:36+03:00",
+  "updated_at": "2026-11-11T01:54:45+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:07+03:00",
@@ -149,6 +149,37 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:48:01+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:45+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "note": "Текущий конкретный остаток выделен PROFILEISO, MULTICORE, PROFILELIVE, FINALBUNDLE, NCHAT/NZAI. Старое running с 07.11 больше не означает активную работу.",
@@ -190,5 +221,5 @@
     ]
   },
   "assignment_history": [],
-  "result": "Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required."
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required."
 }

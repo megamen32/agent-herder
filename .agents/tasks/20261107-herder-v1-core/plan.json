@@ -1,7 +1,7 @@
 {
   "title": "Herder V1: новое ядро с готовыми адаптерами",
   "goal": "Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.",
-  "business_result": "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов.",
+  "business_result": "Обычный MCP Herder работает в пяти средах. Одно расширение UserIO обслуживает рабочее и личное подключения с выбором получателей для каждого аккаунта. VK, ChatGPT и Z.ai доступны через него; подтверждены нативные квитанции, изоляция, чтение после перезапуска, поиск, проекты и полный экспорт по контракту.",
   "deliverable": "implementation",
   "decomposition": "progressive",
   "default_model": "gpt-6.1-terra",
@@ -10,8 +10,8 @@
     "leaf_cap_minutes": 15,
     "reason": "Поручение владельца: листы по 15 минут; общий лимит три часа, включая кворум."
   },
-  "current_progress": "10.11: installed Herdercebecc manifesteb62 запускаетсячерезSDKза2.7с,5instances; GPTAdminchildrestart/discoverPASS. UserIOreceipt-tailа3e установленfence56: results11319→6мс,SDKChatGPT10/10read114→22с. НовыйChatGPTfirstcanary taskc411 далUNKNOWN; exactnativecommand37e074 reconciledpreclickcomposer_not_empty_or_ready, resend0. Terraфиксируетfirstcomposer+Zai auth/archive иpackage0.9.32. ZaiCarevioauthpage;guestbindingremoved,Defaultprofileпроверяется. SESSIONREPLIESвочереди. ПолныйV1непринят.",
-  "updated_at": "2026-11-10T23:32:23+03:00",
+  "current_progress": "Rust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.",
+  "updated_at": "2026-11-11T01:48:06+03:00",
   "mode": "fullcycle",
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -20,7 +20,7 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "acceptance_scenario": "Один capture/core и native IDs. Две связи Рабочий UserIO/Личный UserIO: аккаунт A разрешён обоим, B только личному; правильные credentials, commands/results и delivery receipts изолированы поconnection/account. UserIO читает свои сообщения, Herder получаетChatGPT изтого же canonical snapshot. UI/reload сохраняетнастройки; VK capability видна. Existing singleconnection мигрирует без потериданных. Installedprofile и ordinaryMCP readback, CLI lifecycle, restart/no-replay/HumanStop доказаны отдельно.",
+  "acceptance_scenario": "Одно расширение, два независимо авторизованных подключения: аккаунт A идёт в Рабочий и Личный UserIO, B — только в Личный; команды и квитанции изолированы, выбор сохраняется после reload, VK виден и читается, UserIO и Herder читают один нативный снимок ChatGPT. В установленном пути подтверждаются первая квитанция ChatGPT, полный цикл Z.ai, connected MCP, restart/no-replay/HumanStop и архив своих canaries. Полный многостраничный нативный экспорт с доказанной полнотой и происхождение проектов обязательны по CONTRACT.md. Partial, UNKNOWN и обязательное unsupported не считаются PASS.",
   "revisions": [
     {
       "at": "2026-11-07T23:24:43+03:00",
@@ -271,6 +271,19 @@
         "source": "mcp_metadata"
       },
       "summary": "BROWSERINSTALL12 закрыт установленным SDK10/10 и connected discovery/context. Длинное чтение GPTAdmin фиксируется отдельным integration gap. Двухэтапные ответы остаются в очереди."
+    },
+    {
+      "at": "2026-11-11T01:48:06+03:00",
+      "reason": "Сокращение V1 по запросу владельца и разбору Астры: четыре результата до приёмки",
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "summary": "Четыре существующих пункта. Дубли убраны из остатка, история и исходные квитанции сохранены. Контракт не ослаблен."
     }
-  ]
+  ],
+  "summary": "Осталось четыре результата V1:\n1. Подтвердить загрузку UserIO 0.9.36 в точных профилях и первую нативную квитанцию ChatGPT.\n2. Устранить сбой до отправки Z.ai и пройти полный цикл в личном подключении.\n3. Проверить одно расширение на рабочих и личных получателях, VK и общей истории UserIO и Herder.\n4. Свести приёмку установленного Herder: полный нативный экспорт, проекты, GPTAdmin, перезапуск, защита от повтора, HumanStop и уборка своих тестов.\n\nRust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.\n\nВ истории остаются прежние результаты. Отдельные Rust-адаптеры вне V1; CDP и Vibe экспериментальные. Chrome Extension MCP ведёт отдельная сессия; автоматические ответы между сессиями отложены.",
+  "critique": "Убраны дубли приёмки и историческая диагностика. История, назначения и исходные квитанции сохранены. Установка файлов не доказывает загрузку расширения; source/tests не заменяют потребительскую проверку."
 }

@@ -3,7 +3,7 @@
   "kind": "task",
   "parent": "RESTORELEGACY",
   "label": "Реализовать первый функциональный slice нового core",
-  "status": "running",
+  "status": "deferred",
   "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
   "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
   "model": "gpt-6-luna",
@@ -14,7 +14,7 @@
   ],
   "acceptance": "Pure domain decisions + explicit effects на существующем публичном пути; RED→GREEN, exact remaining route для3functions, no new scheduler framework.",
   "created_at": "2026-11-08T20:23:19+03:00",
-  "updated_at": "2026-11-08T20:32:58+03:00",
+  "updated_at": "2026-11-11T01:54:49+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T20:23:19+03:00",
@@ -95,6 +95,50 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:09:03+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:48:05+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:49+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -119,7 +163,14 @@
     "state": "assigned",
     "dispatch": null,
     "wake": null,
-    "observed_runtime": null,
+    "observed_runtime": {
+      "state": "idle",
+      "observed_at": "2026-11-10T22:09:03.831753+00:00",
+      "source": "native_verified",
+      "turn_id": "01a1bc7c-50a6-70f3-980c-f75adf29ac10",
+      "model": "gpt-6-luna",
+      "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+    },
     "events": [
       {
         "at": "2026-11-08T17:26:37+00:00",
@@ -131,8 +182,30 @@
         },
         "from": null,
         "to": "assigned"
+      },
+      {
+        "at": "2026-11-10T22:09:03+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "source": "native_environment"
+        },
+        "from": "assigned",
+        "to": "assigned",
+        "receipt": {
+          "observed_runtime": {
+            "state": "idle",
+            "observed_at": "2026-11-10T22:09:03.831753+00:00",
+            "source": "native_verified",
+            "turn_id": "01a1bc7c-50a6-70f3-980c-f75adf29ac10",
+            "model": "gpt-6-luna",
+            "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+          }
+        }
       }
     ]
   },
-  "assignment_history": []
+  "assignment_history": [],
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел."
 }

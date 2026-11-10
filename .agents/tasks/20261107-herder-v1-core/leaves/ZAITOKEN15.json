@@ -1,0 +1,75 @@
+{
+  "parent": "MRESUME10",
+  "label": "Завершить установленный Z.ai через личное подключение",
+  "status": "queued",
+  "owner": "Lead",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
+  "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии.",
+  "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer.",
+  "id": "ZAITOKEN15",
+  "created_at": "2026-11-11T00:31:25+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-11T01:47:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T00:31:25+03:00",
+      "note": "",
+      "changes": {
+        "parent": "MRESUME10",
+        "label": "Подключить личный Z.ai после входа в UserIO",
+        "status": "blocked",
+        "owner": "Lead",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "description": "DefaultZai реальныйauthenticatedscope1aa02989 подтверждён иUserIObindingchecked. PersonalUserIOUI/login незалогинен,служебныйtoken403can_managefalse. Одинвопросовходеужезадан,ответнеполучен.",
+        "acceptance": "ПослеобычногологинавUserIO создатьотдельныйnamedintegrationtokenчерезразрешённыйUIбезвыводазначения,scopedpermanentprofile,одинnativecycle. Необходить403/неcopyservicecredential.",
+        "result": "ЗависиттолькоотобычноговходавUserIOChromeDefault. Scope/binding ART/zai-default14; вопросpending. ПараллельнаяChatGPTприёмкапродолжается."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:28:32+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:47:57+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "queued",
+        "label": "Завершить установленный Z.ai через личное подключение",
+        "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
+        "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ]
+}

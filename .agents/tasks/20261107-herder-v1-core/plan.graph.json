@@ -2,12 +2,25 @@
   "schema_version": 2,
   "title": "Herder V1: новое ядро с готовыми адаптерами",
   "goal": "Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.",
-  "business_result": "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов.",
+  "goal_control": {
+    "goal_status": "unknown",
+    "frontier": "admission_unknown",
+    "next_decision": "none",
+    "fingerprint": "94a1ccc192788907af2ea961d97dcb163bf99cd04e1921d42e4ae929efa453e0",
+    "decision_fresh": false,
+    "candidates": [
+      "ZAITOKEN15",
+      "EXTRELEASE10"
+    ],
+    "decision": null,
+    "reason": "native_lead_ref_ambiguous"
+  },
+  "business_result": "Обычный MCP Herder работает в пяти средах. Одно расширение UserIO обслуживает рабочее и личное подключения с выбором получателей для каждого аккаунта. VK, ChatGPT и Z.ai доступны через него; подтверждены нативные квитанции, изоляция, чтение после перезапуска, поиск, проекты и полный экспорт по контракту.",
   "business_results": [
-    "Один установленный публичный consumer путь нового ядра к прежним адаптерам; создание, отправка, чтение, транскрипт, поиск и проекты проверяются без приватных test-only маршрутов."
+    "Обычный MCP Herder работает в пяти средах. Одно расширение UserIO обслуживает рабочее и личное подключения с выбором получателей для каждого аккаунта. VK, ChatGPT и Z.ai доступны через него; подтверждены нативные квитанции, изоляция, чтение после перезапуска, поиск, проекты и полный экспорт по контракту."
   ],
   "acceptance_scenarios": [
-    "Один capture/core и native IDs. Две связи Рабочий UserIO/Личный UserIO: аккаунт A разрешён обоим, B только личному; правильные credentials, commands/results и delivery receipts изолированы поconnection/account. UserIO читает свои сообщения, Herder получаетChatGPT изтого же canonical snapshot. UI/reload сохраняетнастройки; VK capability видна. Existing singleconnection мигрирует без потериданных. Installedprofile и ordinaryMCP readback, CLI lifecycle, restart/no-replay/HumanStop доказаны отдельно."
+    "Одно расширение, два независимо авторизованных подключения: аккаунт A идёт в Рабочий и Личный UserIO, B — только в Личный; команды и квитанции изолированы, выбор сохраняется после reload, VK виден и читается, UserIO и Herder читают один нативный снимок ChatGPT. В установленном пути подтверждаются первая квитанция ChatGPT, полный цикл Z.ai, connected MCP, restart/no-replay/HumanStop и архив своих canaries. Полный многостраничный нативный экспорт с доказанной полнотой и происхождение проектов обязательны по CONTRACT.md. Partial, UNKNOWN и обязательное unsupported не считаются PASS."
   ],
   "recon": [
     "Существующие AHAP runners уже вызывают старые адаптеры, но не весь их контракт :: src/ahap-opencode-runner.ts",
@@ -16,7 +29,9 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "current_progress": "10.11: installed Herdercebecc manifesteb62 запускаетсячерезSDKза2.7с,5instances; GPTAdminchildrestart/discoverPASS. UserIOreceipt-tailа3e установленfence56: results11319→6мс,SDKChatGPT10/10read114→22с. НовыйChatGPTfirstcanary taskc411 далUNKNOWN; exactnativecommand37e074 reconciledpreclickcomposer_not_empty_or_ready, resend0. Terraфиксируетfirstcomposer+Zai auth/archive иpackage0.9.32. ZaiCarevioauthpage;guestbindingremoved,Defaultprofileпроверяется. SESSIONREPLIESвочереди. ПолныйV1непринят.",
+  "summary": "Осталось четыре результата V1:\n1. Подтвердить загрузку UserIO 0.9.36 в точных профилях и первую нативную квитанцию ChatGPT.\n2. Устранить сбой до отправки Z.ai и пройти полный цикл в личном подключении.\n3. Проверить одно расширение на рабочих и личных получателях, VK и общей истории UserIO и Herder.\n4. Свести приёмку установленного Herder: полный нативный экспорт, проекты, GPTAdmin, перезапуск, защита от повтора, HumanStop и уборка своих тестов.\n\nRust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.\n\nВ истории остаются прежние результаты. Отдельные Rust-адаптеры вне V1; CDP и Vibe экспериментальные. Chrome Extension MCP ведёт отдельная сессия; автоматические ответы между сессиями отложены.",
+  "critique": "Убраны дубли приёмки и историческая диагностика. История, назначения и исходные квитанции сохранены. Установка файлов не доказывает загрузку расширения; source/tests не заменяют потребительскую проверку.",
+  "current_progress": "Rust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.",
   "deliverable": "implementation",
   "decomposition": "progressive",
   "revisions": [
@@ -149,11 +164,16 @@
       "at": "2026-11-10T21:40:15+03:00",
       "reason": "Подтверждена установка общего ChatGPT профиля; устранён устаревший lease blocker.",
       "summary": "BROWSERINSTALL12 закрыт установленным SDK10/10 и connected discovery/context. Длинное чтение GPTAdmin фиксируется отдельным integration gap. Двухэтапные ответы остаются в очереди."
+    },
+    {
+      "at": "2026-11-11T01:48:06+03:00",
+      "reason": "Сокращение V1 по запросу владельца и разбору Астры: четыре результата до приёмки",
+      "summary": "Четыре существующих пункта. Дубли убраны из остатка, история и исходные квитанции сохранены. Контракт не ослаблен."
     }
   ],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-10T23:32:23+03:00",
+  "updated_at": "2026-11-11T01:54:49+03:00",
   "tasks": [
     {
       "id": "BACKENDCONTRACT11",
@@ -382,9 +402,10 @@
     {
       "id": "BROWSERRECOVER",
       "label": "Восстановить managed browser/gateway и точный ChatGPT clientroute",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Рабочее чтение gateway/DOM; сохранены persistentprofile/login/history/foreigndrafts. Штатныйrepair/restart/reload разрешён владельцем; account+exactQAclaim перед nativecase. Original modelUNKNOWN no replay.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.",
       "owner": "CI",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -426,6 +447,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:02+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:43+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -785,10 +837,10 @@
     {
       "id": "CHATB2",
       "label": "ChatGPT B: полный сценарий после follow-up исправления",
-      "status": "blocked",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Two inputs/replies, export/search/projects/restart/archive on packaged1ae; full receipt.",
-      "result": "Fresh1ae consumer stopped before public task response; retained authority and receipt root chatgpt-b-1ae8b85f-1900/owner-pause.json. Do not claimPASS or repeat.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Fresh1ae consumer stopped before public task response; retained authority and receipt root chatgpt-b-1ae8b85f-1900/owner-pause.json. Do not claimPASS or repeat.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex",
@@ -839,6 +891,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:01+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Fresh1ae consumer stopped before public task response; retained authority and receipt root chatgpt-b-1ae8b85f-1900/owner-pause.json. Do not claimPASS or repeat."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:44+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -990,11 +1073,12 @@
     },
     {
       "id": "CHATNATIVE14",
-      "label": "Проверить новый ChatGPT чат через установленный Herder",
-      "status": "running",
+      "label": "Принять реальный ChatGPT цикл двух сообщений и archive",
+      "status": "done",
       "parent": "MRESUME10",
       "description": "Singlefreshnativecanary stablekeys. OriginalfirsttaskUNKNOWN reconciledsourcecommand37e… resultpreclickcomposer_not_empty_or_ready; no secondsend. Sourcefixfirstcomposerinprogress.",
-      "acceptance": "Afterfixedextension firstnativeinput+assistant,secondinput+assistant,restart/messages/raw,exactownarchive. Originalreceipts retained; no replays ofuncertainmutation.",
+      "acceptance": "14c exactproviderfirsteffectreadback,second034confirmed,restartreadобаответа,raw/searchhonestpartial,context,ownarchiveverifiedbyprovider. Новыйfirst034receiptотдельныйRECEIPTNATIVE14.",
+      "result": "14cfirstuser21658394/assistant1b54bb83;second034confirmeduser57e82db3/assistant99634f50,обаterminal,endTurntrue. НовыйSDKprocessпрочитал4IDs;raw/searchpartial,context,exactownarchiveconfirmedпослеproviderGET. OriginalfirstUNKNOWNсверенreadback,resend0. ART/native-chatgpt14c; новыйfirst034receiptостаётсяRECEIPTNATIVE14,неPASS.",
       "owner": "Lead",
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex",
@@ -1024,6 +1108,39 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:01:35+03:00",
+          "note": "",
+          "changes": {
+            "result": "RealfirstChatGPT033oneUIclick native6af3844e,user21658394,assistant1b54bb83 exactHERDER_NATIVE14C_FIRST_OK/endTurntrue viaordinarySDK. OriginalcoretaskUNKNOWNretained, resend0. Receiptfix034inprogress; then secondsend/restart/archive. ZaiDefaultauthenticatedscope1aa confirmed; persistentpersonalcredentialawaitshumanlogin."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:26:23+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "label": "Принять реальный ChatGPT цикл двух сообщений и archive",
+            "acceptance": "14c exactproviderfirsteffectreadback,second034confirmed,restartreadобаответа,raw/searchhonestpartial,context,ownarchiveverifiedbyprovider. Новыйfirst034receiptотдельныйRECEIPTNATIVE14.",
+            "result": "14cfirstuser21658394/assistant1b54bb83;second034confirmeduser57e82db3/assistant99634f50,обаterminal,endTurntrue. НовыйSDKprocessпрочитал4IDs;raw/searchpartial,context,exactownarchiveconfirmedпослеproviderGET. OriginalfirstUNKNOWNсверенreadback,resend0. ART/native-chatgpt14c; новыйfirst034receiptостаётсяRECEIPTNATIVE14,неPASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -1032,7 +1149,8 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-10T23:31:33+03:00",
-      "started_at": "2026-11-10T23:31:33+03:00"
+      "started_at": "2026-11-10T23:31:33+03:00",
+      "finished_at": "2026-11-11T00:26:23+03:00"
     },
     {
       "id": "CHROMEPROFILE10",
@@ -1519,13 +1637,14 @@
     {
       "id": "CIINSTALLFINAL",
       "label": "Complete actual installed five-harness CI acceptance",
-      "status": "blocked",
+      "status": "deferred",
       "parent": "RESTORELEGACY",
       "description": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
       "acceptance": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
-      "result": "Actual final CI infrastructure works; installed smoke executed and FAIL native_profiles_missing(chatgpt,zai,zcode), model effects NOT_SUBMITTED, cleanup PASS. All-five lane/runtime identity UNKNOWN and global inventory UNVERIFIED. Shared deployment lease e0864aac active until05:18UTC without handoff; old core manifestce1c/UIprocessfd997/NoticePlaceprocessabd9 remain. Final f8f5 artifact ready. Native ChatGPT fresh03:04 auth200/conversation429, oneA/noB/nativechatunverified; Codex reserve14% refused before submission. No quota/profile bypass or shared deployment.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Actual final CI infrastructure works; installed smoke executed and FAIL native_profiles_missing(chatgpt,zai,zcode), model effects NOT_SUBMITTED, cleanup PASS. All-five lane/runtime identity UNKNOWN and global inventory UNVERIFIED. Shared deployment lease e0864aac active until05:18UTC without handoff; old core manifestce1c/UIprocessfd997/NoticePlaceprocessabd9 remain. Final f8f5 artifact ready. Native ChatGPT fresh03:04 auth200/conversation429, oneA/noB/nativechatunverified; Codex reserve14% refused before submission. No quota/profile bypass or shared deployment.",
       "owner": "chatgpt-all-harness-ci-20261109/root",
-      "harness": "chatgpt",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6-astra",
       "estimate_unknown_reason": "Implementation checkpoint only; external provider and live release handoff waits are explicit dependencies.",
       "origin": "",
@@ -1605,6 +1724,37 @@
           },
           "session": "unknown",
           "harness": "unknown"
+        },
+        {
+          "at": "2026-11-11T01:48:01+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Actual final CI infrastructure works; installed smoke executed and FAIL native_profiles_missing(chatgpt,zai,zcode), model effects NOT_SUBMITTED, cleanup PASS. All-five lane/runtime identity UNKNOWN and global inventory UNVERIFIED. Shared deployment lease e0864aac active until05:18UTC without handoff; old core manifestce1c/UIprocessfd997/NoticePlaceprocessabd9 remain. Final f8f5 artifact ready. Native ChatGPT fresh03:04 auth200/conversation429, oneA/noB/nativechatunverified; Codex reserve14% refused before submission. No quota/profile bypass or shared deployment."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:44+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -1622,13 +1772,14 @@
     {
       "id": "CINATIVE",
       "label": "Namespaced Vibe transport and native capability proof",
-      "status": "blocked",
+      "status": "deferred",
       "parent": "RESTORELEGACY",
       "description": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
       "acceptance": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
-      "result": "Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15, ZAITOKEN15 и DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete.",
       "owner": "chatgpt-all-harness-ci-20261109/native_harness_audit",
-      "harness": "chatgpt",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6-astra",
       "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
       "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
@@ -1694,6 +1845,37 @@
           },
           "session": "unknown",
           "harness": "unknown"
+        },
+        {
+          "at": "2026-11-11T01:48:05+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15, ZAITOKEN15 и DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:44+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -3373,12 +3555,77 @@
       "finished_at": "2026-11-08T18:38:04+03:00"
     },
     {
+      "id": "FIRSTRECEIPT15",
+      "label": "Подтвердить загрузку расширения и первую квитанцию ChatGPT",
+      "status": "blocked",
+      "parent": "MRESUME10",
+      "description": "UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.",
+      "acceptance": "Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить.",
+      "owner": "Lead + Terra Archimedes",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T00:57:42+03:00",
+          "note": "",
+          "changes": {
+            "parent": "MRESUME10",
+            "label": "Принять первую отправку ChatGPT с нативной квитанцией",
+            "status": "running",
+            "owner": "Lead + Terra Archimedes",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "035frame-loss/querysamechatreceiptfixactualbaselineRED/GREEN+141suite. Publishowned5paths,installZIPbackendMacexactscope,onefreshcanaryafterownrestoredmarkerpurged. AllpriorUNKNOWNunchanged.",
+            "acceptance": "Exact035artifactloadedbothprofiles/server;onefirstcreateconfirmednativeuserreceipt,terminalreplyrestartreadback,exactownarchive. Noresend/foreigndraftwipe/authweaken."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:57+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "blocked",
+            "label": "Подтвердить загрузку расширения и первую квитанцию ChatGPT",
+            "description": "UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.",
+            "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.",
+            "acceptance": "Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T00:57:42+03:00",
+      "started_at": "2026-11-11T00:57:42+03:00"
+    },
+    {
       "id": "FIXBI",
       "label": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN",
-      "result": "Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS.",
       "owner": "Ampere",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -3433,6 +3680,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:02+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:45+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -3544,10 +3822,10 @@
     {
       "id": "FIXQC",
       "label": "Сохранить доказанный отказ Codex до отправки: Singer",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "RED→GREEN exact typed thread/start quota refusal; generic errors remain UNKNOWN; no native replay",
-      "result": "561951cc: exact harness+method strict frame/data classification;32AHAP checks PASS + original create UNKNOWN restart/no-replay regression1PASS. evidence/fixq-core.md",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: 561951cc: exact harness+method strict frame/data classification;32AHAP checks PASS + original create UNKNOWN restart/no-replay regression1PASS. evidence/fixq-core.md",
       "owner": "Singer",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -3609,6 +3887,37 @@
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:03+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: 561951cc: exact harness+method strict frame/data classification;32AHAP checks PASS + original create UNKNOWN restart/no-replay regression1PASS. evidence/fixq-core.md"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:46+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "assignment": {
@@ -3663,10 +3972,10 @@
     {
       "id": "FIXQW",
       "label": "Сохранить доказанный отказ Codex до отправки: Ampere",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "RED→GREEN exact typed thread/start quota refusal; generic errors remain UNKNOWN; no native replay",
-      "result": "b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md",
       "owner": "Ampere",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -3726,6 +4035,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:03+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:46+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -4693,11 +5033,11 @@
     {
       "id": "NETDIAG",
       "label": "Локализовать маршрут browser→ChatGPT HTTP2 без изменений инфраструктуры",
-      "status": "queued",
+      "status": "deferred",
       "kind": "research",
       "parent": "S2",
       "acceptance": "Точный маршрут/каноническийrunbook/owner и минимальный следующийшаг; readonly, no browseractions or networkconfig changes; evidence/network-route-triage.md",
-      "result": "Readonlytriage complete: network-route-triage.md. Mac hosts pinschatgpt toVUSA bypassingLANfallback; gatewayhealthresponds but DOMnotproven. Registerednetworkowner not_found on explicitCodexroute, noacceptedhandoff. CI now solemanagedbrowser/clientroute recovery bylatestownerauthority.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Readonlytriage complete: network-route-triage.md. Mac hosts pinschatgpt toVUSA bypassingLANfallback; gatewayhealthresponds but DOMnotproven. Registerednetworkowner not_found on explicitCodexroute, noacceptedhandoff. CI now solemanagedbrowser/clientroute recovery bylatestownerauthority.",
       "owner": "Archimedes",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -4752,6 +5092,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:04+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Readonlytriage complete: network-route-triage.md. Mac hosts pinschatgpt toVUSA bypassingLANfallback; gatewayhealthresponds but DOMnotproven. Registerednetworkowner not_found on explicitCodexroute, noacceptedhandoff. CI now solemanagedbrowser/clientroute recovery bylatestownerauthority."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:47+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -5177,10 +5548,10 @@
     {
       "id": "QUIET429",
       "label": "Пять минут тишины браузера и один диагностический read",
-      "status": "blocked",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Pause exact browser processes and background polling, >=300s, resume own pids, inspect requests and single read withoutsend.",
-      "result": "All9ownpausedChromePIDs SIGCONT16:08:20.525Z. AppleScript0windows/tabs afterresume. User-requested5min quiet achieved; postpause providercheck notperformed,429cleared notclaimed. evidence owner-browser-quiet-receipt.json. No suspendedPIDs left.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: All9ownpausedChromePIDs SIGCONT16:08:20.525Z. AppleScript0windows/tabs afterresume. User-requested5min quiet achieved; postpause providercheck notperformed,429cleared notclaimed. evidence owner-browser-quiet-receipt.json. No suspendedPIDs left.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex",
@@ -5231,6 +5602,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:04+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: All9ownpausedChromePIDs SIGCONT16:08:20.525Z. AppleScript0windows/tabs afterresume. User-requested5min quiet achieved; postpause providercheck notperformed,429cleared notclaimed. evidence owner-browser-quiet-receipt.json. No suspendedPIDs left."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:48+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -5448,9 +5850,10 @@
     {
       "id": "RESTORECONTRACTS",
       "label": "Проверить контракты трёх потребителей и собрать acceptance tests",
-      "status": "running",
+      "status": "deferred",
       "parent": "RESTORELEGACY",
       "acceptance": "Exact existing APIs и executable RED acceptance для трёх путей; fake-only checks не выдавать за livePASS.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел.",
       "owner": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
       "session": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
       "model": "gpt-6.1-terra",
@@ -5510,6 +5913,50 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:09:36+03:00",
+          "note": "",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:05+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:49+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "assignment": {
@@ -5534,7 +5981,14 @@
         "state": "assigned",
         "dispatch": null,
         "wake": null,
-        "observed_runtime": null,
+        "observed_runtime": {
+          "state": "idle",
+          "observed_at": "2026-11-10T22:09:36.734147+00:00",
+          "source": "native_verified",
+          "turn_id": "01a1bc81-8968-72e1-a899-cf56ce5d0e79",
+          "model": "gpt-6.1-terra",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+        },
         "events": [
           {
             "at": "2026-11-08T17:26:37+00:00",
@@ -5546,6 +6000,27 @@
             },
             "from": null,
             "to": "assigned"
+          },
+          {
+            "at": "2026-11-10T22:09:36+00:00",
+            "actor": {
+              "host_id": null,
+              "harness": "codex",
+              "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+              "source": "native_environment"
+            },
+            "from": "assigned",
+            "to": "assigned",
+            "receipt": {
+              "observed_runtime": {
+                "state": "idle",
+                "observed_at": "2026-11-10T22:09:36.734147+00:00",
+                "source": "native_verified",
+                "turn_id": "01a1bc81-8968-72e1-a899-cf56ce5d0e79",
+                "model": "gpt-6.1-terra",
+                "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+              }
+            }
           }
         ]
       },
@@ -5565,9 +6040,10 @@
     {
       "id": "RESTORECORE",
       "label": "Реализовать первый функциональный slice нового core",
-      "status": "running",
+      "status": "deferred",
       "parent": "RESTORELEGACY",
       "acceptance": "Pure domain decisions + explicit effects на существующем публичном пути; RED→GREEN, exact remaining route для3functions, no new scheduler framework.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел.",
       "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
       "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
       "model": "gpt-6-luna",
@@ -5653,6 +6129,50 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:09:03+03:00",
+          "note": "",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:05+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Прежняя попытка assigned, dispatch отсутствует, исполнитель idle; приёмка исходного attempt не доказана. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:49+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "assignment": {
@@ -5677,7 +6197,14 @@
         "state": "assigned",
         "dispatch": null,
         "wake": null,
-        "observed_runtime": null,
+        "observed_runtime": {
+          "state": "idle",
+          "observed_at": "2026-11-10T22:09:03.831753+00:00",
+          "source": "native_verified",
+          "turn_id": "01a1bc7c-50a6-70f3-980c-f75adf29ac10",
+          "model": "gpt-6-luna",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+        },
         "events": [
           {
             "at": "2026-11-08T17:26:37+00:00",
@@ -5689,6 +6216,27 @@
             },
             "from": null,
             "to": "assigned"
+          },
+          {
+            "at": "2026-11-10T22:09:03+00:00",
+            "actor": {
+              "host_id": null,
+              "harness": "codex",
+              "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+              "source": "native_environment"
+            },
+            "from": "assigned",
+            "to": "assigned",
+            "receipt": {
+              "observed_runtime": {
+                "state": "idle",
+                "observed_at": "2026-11-10T22:09:03.831753+00:00",
+                "source": "native_verified",
+                "turn_id": "01a1bc7c-50a6-70f3-980c-f75adf29ac10",
+                "model": "gpt-6-luna",
+                "worktree": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder"
+              }
+            }
           }
         ]
       },
@@ -6014,11 +6562,14 @@
     {
       "id": "SESSIONREPLIES13",
       "label": "Этап · Два автоматических ответа на сообщение между сессиями",
-      "status": "queued",
+      "status": "deferred",
       "kind": "milestone",
       "description": "Поручение владельца 10.11: включить в будущую работу двухэтапный ответ между сессиями. По умолчанию отправитель получает ранний фактический текст получателя после его рассуждений и инструментов, затем конкретный итоговый ответ. expect_reply=false («не ждать ответа») отключает оба ответа и напоминания. Если итог не пришёл за заданное время, существующий хук напоминает получателю ответить и подсказывает точный способ. Реализацию начать после текущего установленного Herder.",
       "acceptance": "Send без нового аргумента: ранний и итоговый текст из связанного хода получателя доставляются отправителю по одному разу. Пересылать только текст assistant, без reasoning, результатов инструментов и машинного ACK. expect_reply=false: никаких обратных ответов и напоминаний. Получатель может быть неактивен в момент отправки. Корреляция и восстановление используют существующие durable delivery/reply_to и hook, без второго планировщика и повторной исходной отправки. Напоминание ожидает только отсутствующий итог, имеет дедупликацию и учитывает HumanStop, needs_input и разрешения. Ответ на ответ не создаёт цикл. Проверить default/false, задержку, рестарт, неактивные сессии и cross-host.",
+      "result": "Отложено владельцем: функция раннего и итогового ответа между сессиями поставлена в будущую работу владельцем; вернуться при отдельном запуске.",
       "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6.1-terra",
       "estimate_unknown_reason": "Это пункт будущей работы. Перед реализацией исследовать существующие delivery/reply hooks и уточнить объём.",
       "origin": "",
@@ -6061,6 +6612,22 @@
             "harness": "codex",
             "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
             "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:06+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred",
+            "result": "Отложено владельцем: функция раннего и итогового ответа между сессиями поставлена в будущую работу владельцем; вернуться при отдельном запуске."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
@@ -6236,10 +6803,13 @@
     {
       "id": "USERIOQUIET",
       "label": "UserIO MV3: убрать лишние фоновые запросы к ChatGPT",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "By explicit owner scope extension change: silent default/startup, no overlapping sync, durable429RetryAfter, explicit manual sync works; artifact+tests and installed claim separated.",
+      "result": "Отложено владельцем: оптимизация фоновой синхронизации отложена решением от 08.11 в начале CONTRACT.md; вернуться при отдельном запуске.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6.1-sol",
       "note": "Owner directly expanded scope08.11; reuse currentUserIO main, preserve canonicaldirtyWIP. MV3 preferreddistribution, CDP diagnosticfallback.",
       "wait_reason": "owner_deferred_core_start_first",
@@ -6302,6 +6872,22 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:06+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred",
+            "result": "Отложено владельцем: оптимизация фоновой синхронизации отложена решением от 08.11 в начале CONTRACT.md; вернуться при отдельном запуске."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "affected_files": [
@@ -6319,10 +6905,12 @@
     {
       "id": "WORKSPACEAUTO",
       "label": "Автоматически показывать реальные и объявленные workspaces",
-      "status": "queued",
+      "status": "deferred",
       "acceptance": "Автообнаружение actual native execution paths с источником observed отдельно от declared; active inventory находит UserIO owner без ручной регистрации. Исправлен legacy workspace declare success → durable get null. Никаких догадок по GUI/launchcwd.",
-      "result": "Дефект воспроизведён08Nov16:27Z. Владелец отложил реализацию до минимального запуска нового core; worker сохраняет read-only findings, активного внедрения нет.",
+      "result": "Отложено владельцем: автоопределение workspaces отложено решением от 08.11 в начале CONTRACT.md; вернуться при отдельном запуске.\n\nПрежний результат: Дефект воспроизведён08Nov16:27Z. Владелец отложил реализацию до минимального запуска нового core; worker сохраняет read-only findings, активного внедрения нет.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6.1-sol",
       "wait_reason": "owner_deferred_core_start_first",
       "origin": "",
@@ -6350,6 +6938,22 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:06+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred",
+            "result": "Отложено владельцем: автоопределение workspaces отложено решением от 08.11 в начале CONTRACT.md; вернуться при отдельном запуске.\n\nПрежний результат: Дефект воспроизведён08Nov16:27Z. Владелец отложил реализацию до минимального запуска нового core; worker сохраняет read-only findings, активного внедрения нет."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -6424,11 +7028,12 @@
     },
     {
       "id": "ZAIARCHAUTH14",
-      "label": "Исправить проверку входа Z.ai и точную квитанцию archive",
-      "status": "running",
+      "label": "Отклонять гостевой Z.ai и подтверждать точный archive",
+      "status": "done",
       "parent": "S2",
       "description": "Guestidentity falsely succeeded whilepage/auth. Nativefetch lackedsiteAuthorization. Archivepage returns ok only although driver needs exactid+archived. Repairexistingextension source andpackage0.9.31; no newstore.",
-      "acceptance": "RED/GREEN realpagefunctions rejectunauth/guestscope; token stayspage; exact archiveconfirmation andwrongusernegative. Mainpublish+ZIPprovenance, nativeChromeinstall/readback andhonestloginlimit.",
+      "acceptance": "Auth/archive sourceRED/GREEN,package034installedbothprofiles,guestrefusal+authenticatedDefaultscope. ПолныйличныйZailifecycle/tokenотдельныйZAITOKEN15blocked.",
+      "result": "Source0.9.31–034 опубликован/установлен:guest/authrejected,tokenstaypage,exactchat_ref+archivedafterGET/PATCH/GET. TestsвART/userio-zai-archive-0931/auth-red.log,auth-green.log,auth-full.log;Defaultnativeauthenticatedscope1aa02989 иcheckedbindingfence59. Carevioguestbindingснятfence55;providerwrites0. ПолныйZailifecycleнеPASS,personalUserIOlogin/token403ожидаетZAITOKEN15.",
       "owner": "Terra",
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex",
@@ -6458,6 +7063,24 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:31:25+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "label": "Отклонять гостевой Z.ai и подтверждать точный archive",
+            "acceptance": "Auth/archive sourceRED/GREEN,package034installedbothprofiles,guestrefusal+authenticatedDefaultscope. ПолныйличныйZailifecycle/tokenотдельныйZAITOKEN15blocked.",
+            "result": "Source0.9.31–034 опубликован/установлен:guest/authrejected,tokenstaypage,exactchat_ref+archivedafterGET/PATCH/GET. TestsвART/userio-zai-archive-0931/auth-red.log,auth-green.log,auth-full.log;Defaultnativeauthenticatedscope1aa02989 иcheckedbindingfence59. Carevioguestbindingснятfence55;providerwrites0. ПолныйZailifecycleнеPASS,personalUserIOlogin/token403ожидаетZAITOKEN15."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -6466,7 +7089,8 @@
         "maximum": 15.0
       },
       "created_at": "2026-11-10T23:19:00+03:00",
-      "started_at": "2026-11-10T23:19:00+03:00"
+      "started_at": "2026-11-10T23:19:00+03:00",
+      "finished_at": "2026-11-11T00:31:25+03:00"
     },
     {
       "id": "ZAILIVE14",
@@ -6664,6 +7288,87 @@
       "created_at": "2026-11-08T18:55:35+03:00",
       "started_at": "2026-11-08T18:55:35+03:00",
       "finished_at": "2026-11-08T19:04:02+03:00"
+    },
+    {
+      "id": "ZAITOKEN15",
+      "label": "Завершить установленный Z.ai через личное подключение",
+      "status": "queued",
+      "parent": "MRESUME10",
+      "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
+      "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии.",
+      "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T00:31:25+03:00",
+          "note": "",
+          "changes": {
+            "parent": "MRESUME10",
+            "label": "Подключить личный Z.ai после входа в UserIO",
+            "status": "blocked",
+            "owner": "Lead",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "description": "DefaultZai реальныйauthenticatedscope1aa02989 подтверждён иUserIObindingchecked. PersonalUserIOUI/login незалогинен,служебныйtoken403can_managefalse. Одинвопросовходеужезадан,ответнеполучен.",
+            "acceptance": "ПослеобычногологинавUserIO создатьотдельныйnamedintegrationtokenчерезразрешённыйUIбезвыводазначения,scopedpermanentprofile,одинnativecycle. Необходить403/неcopyservicecredential.",
+            "result": "ЗависиттолькоотобычноговходавUserIOChromeDefault. Scope/binding ART/zai-default14; вопросpending. ПараллельнаяChatGPTприёмкапродолжается."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:28:32+03:00",
+          "note": "",
+          "changes": {
+            "status": "running",
+            "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:57+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "queued",
+            "label": "Завершить установленный Z.ai через личное подключение",
+            "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
+            "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T00:31:25+03:00",
+      "started_at": "2026-11-11T01:28:32+03:00"
     },
     {
       "id": "ZARCHPROOF",
@@ -7232,10 +7937,10 @@
     {
       "id": "C13",
       "label": "Сохранить существующий bootstrap в source и явно provision storev4",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S1",
       "acceptance": "Тот же CLI/profileseed, currentcandidate source, v4 underpinnedgate, freshonly и повторнеперезаписывает. Source/testrecipeврепо, не /tmp singleton.",
-      "result": "SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1.",
       "owner": "Singer",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -7355,6 +8060,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:59+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:43+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -7721,80 +8457,14 @@
       "finished_at": "2026-11-07T22:49:22+03:00"
     },
     {
-      "id": "DELIVER10",
-      "label": "Установить согласованные profiles и принять ordinary consumer",
-      "status": "running",
+      "id": "EXTRELEASE10",
+      "label": "Принять одно расширение, рабочее и личное подключения",
+      "status": "queued",
       "parent": "MRESUME10",
-      "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main.",
-      "owner": "roomhacker",
+      "description": "В живом расширении проверить два независимых подключения UserIO и маршрутизацию по аккаунтам. Проверки изоляции можно вести независимо от времени ответа моделей.",
+      "acceptance": "A → оба получателя, B → только личный; credentials, команды и результаты изолированы. После reload сохранён выбор, VK виден и доступное чтение работает. UserIO и Herder читают один native snapshot. Артефакт и установленная версия совпадают; миграция сохраняет настройки и аккаунты. Сохранены чужие профили и черновики, свои тесты убраны.",
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex",
-      "model": "gpt-6-astra",
-      "origin": "",
-      "supersedes": [],
-      "progress_events": [
-        {
-          "at": "2026-11-10T15:11:04+03:00",
-          "note": "",
-          "changes": {
-            "id": "DELIVER10",
-            "kind": "task",
-            "parent": "MRESUME10",
-            "label": "Установить согласованные profiles и принять ordinary consumer",
-            "status": "queued",
-            "model": "gpt-6-astra",
-            "estimate_minutes": 15,
-            "depends_on": [
-              "ZCODE10",
-              "BROWSER10"
-            ],
-            "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main."
-          },
-          "actor": {
-            "host_id": null,
-            "harness": "codex",
-            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-            "source": "mcp_metadata"
-          },
-          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-          "harness": "codex"
-        },
-        {
-          "at": "2026-11-10T15:14:37+03:00",
-          "note": "Lead prepares release/CAS and independent readback; dependent mutations wait for worker stage results.",
-          "changes": {
-            "status": "running",
-            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-            "harness": "codex",
-            "owner": "roomhacker"
-          },
-          "actor": {
-            "host_id": null,
-            "harness": "codex",
-            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-            "source": "mcp_metadata"
-          },
-          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-          "harness": "codex"
-        }
-      ],
-      "depends_on": [
-        "ZCODE10",
-        "BROWSER10"
-      ],
-      "estimate_minutes": {
-        "minimum": 15.0,
-        "maximum": 15.0
-      },
-      "created_at": "2026-11-10T15:11:04+03:00",
-      "started_at": "2026-11-10T15:14:37+03:00"
-    },
-    {
-      "id": "EXTRELEASE10",
-      "label": "Опубликовать расширение и проверить оба потребителя",
-      "status": "queued",
-      "parent": "MEXT10",
-      "acceptance": "Ownedsource onmain, deterministicversionedzip, installedownscope, UserIO+Herder samenativechatreadback, work/personalaccountisolationproven, foreignbrowserstatepreserved.",
       "model": "gpt-6-astra",
       "origin": "",
       "supersedes": [],
@@ -7823,6 +8493,24 @@
             "harness": "codex",
             "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
             "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:58+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "parent": "MRESUME10",
+            "label": "Принять одно расширение, рабочее и личное подключения",
+            "description": "В живом расширении проверить два независимых подключения UserIO и маршрутизацию по аккаунтам. Проверки изоляции можно вести независимо от времени ответа моделей.",
+            "acceptance": "A → оба получателя, B → только личный; credentials, команды и результаты изолированы. После reload сохранён выбор, VK виден и доступное чтение работает. UserIO и Herder читают один native snapshot. Артефакт и установленная версия совпадают; миграция сохраняет настройки и аккаунты. Сохранены чужие профили и черновики, свои тесты убраны."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
@@ -7927,9 +8615,10 @@
     {
       "id": "READBACK",
       "label": "Installed consumer и cleanup своего test state",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S3",
       "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.",
       "owner": "CI",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -7975,6 +8664,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:59+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:49+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -8345,10 +9065,10 @@
     {
       "id": "C14",
       "label": "Упаковать Rust core и прежние TS runners в immutable candidate",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S1",
       "acceptance": "Versioned command composes core/bootstrap + four bundled TS entrypoints with source SHA/component SHA256; fresh output only, no current switch or runtime install.",
-      "result": "Source accepted and published70d11532; build-v1-core.py/test-build-v1-core.py produce immutable all5kind bundle. Final candidate d66c9c07 built with this recipe and passed hashes/initialize/duplicate-refusal, plus public NEG. Packaging/install are separate. C14 development complete; LHC assigned acceptance lifecycle unresolved independently, no re-dispatch.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Source accepted and published70d11532; build-v1-core.py/test-build-v1-core.py produce immutable all5kind bundle. Final candidate d66c9c07 built with this recipe and passed hashes/initialize/duplicate-refusal, plus public NEG. Packaging/install are separate. C14 development complete; LHC assigned acceptance lifecycle unresolved independently, no re-dispatch.",
       "owner": "Singer",
       "model": "gpt-6.1-sol",
       "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено.",
@@ -8457,6 +9177,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:59+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Source accepted and published70d11532; build-v1-core.py/test-build-v1-core.py produce immutable all5kind bundle. Final candidate d66c9c07 built with this recipe and passed hashes/initialize/duplicate-refusal, plus public NEG. Packaging/install are separate. C14 development complete; LHC assigned acceptance lifecycle unresolved independently, no re-dispatch."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:44+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -8745,12 +9496,106 @@
       "finished_at": "2026-11-07T22:53:49+03:00"
     },
     {
+      "id": "DELIVER10",
+      "label": "Проверить финальную приёмку установленного Herder V1",
+      "status": "queued",
+      "parent": "MRESUME10",
+      "description": "Свести уже принятые нативные проверки и выполнить только недостающее по CONTRACT.md. Привязать доказательства к точной установленной сборке и обычному MCP.",
+      "acceptance": "Шесть экземпляров через обычный и подключённый MCP, результаты пяти сред по CONTRACT.md, многостраничный нативный экспорт с доказанной полнотой и происхождение проектов, readback после перезапуска, no-replay и HumanStop; уборка только своих canaries. Partial и обязательное unsupported оставляют критерий открытым. Опубликовать только проверенные результаты и ограничения.",
+      "owner": "roomhacker",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T15:11:04+03:00",
+          "note": "",
+          "changes": {
+            "id": "DELIVER10",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Установить согласованные profiles и принять ordinary consumer",
+            "status": "queued",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "ZCODE10",
+              "BROWSER10"
+            ],
+            "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T15:14:37+03:00",
+          "note": "Lead prepares release/CAS and independent readback; dependent mutations wait for worker stage results.",
+          "changes": {
+            "status": "running",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex",
+            "owner": "roomhacker"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:58+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "queued",
+            "depends_on": [
+              "FIRSTRECEIPT15",
+              "ZAITOKEN15",
+              "EXTRELEASE10"
+            ],
+            "label": "Проверить финальную приёмку установленного Herder V1",
+            "description": "Свести уже принятые нативные проверки и выполнить только недостающее по CONTRACT.md. Привязать доказательства к точной установленной сборке и обычному MCP.",
+            "acceptance": "Шесть экземпляров через обычный и подключённый MCP, результаты пяти сред по CONTRACT.md, многостраничный нативный экспорт с доказанной полнотой и происхождение проектов, readback после перезапуска, no-replay и HumanStop; уборка только своих canaries. Partial и обязательное unsupported оставляют критерий открытым. Опубликовать только проверенные результаты и ограничения."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "FIRSTRECEIPT15",
+        "ZAITOKEN15",
+        "EXTRELEASE10"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T15:11:04+03:00",
+      "started_at": "2026-11-10T15:14:37+03:00"
+    },
+    {
       "id": "NCHAT",
       "label": "ChatGPT: выделенный scope через public core",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
-      "result": "Историческая сеть восстановлена: 08.11 verified account двух страниц, visible empty composer есть. Full native create/deliver/read/archive ещё не принят. Старые UNKNOWN сохранены отдельно.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Историческая сеть восстановлена: 08.11 verified account двух страниц, visible empty composer есть. Full native create/deliver/read/archive ещё не принят. Старые UNKNOWN сохранены отдельно.",
       "owner": "CI",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -8896,6 +9741,37 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:01+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Историческая сеть восстановлена: 08.11 verified account двух страниц, visible empty composer есть. Full native create/deliver/read/archive ещё не принят. Старые UNKNOWN сохранены отдельно."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:47+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -8910,11 +9786,13 @@
     {
       "id": "PROFILELIVE",
       "label": "Живая проверка двух аккаунтов ChatGPT",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Два verified profiles доступны через один Herder; собственные test chats: create, deliver, read, archive. Чужие чаты/профиль не меняются; число вкладок не растёт при reuse/reconnect.",
-      "result": "Candidate5ff02215: один живой core обнаружил два ChatGPT instances. Первый draft pending (до клика), второй native chat6af08c6e создан, exact marker виден в UI. Full acceptance ещё INCOMPLETE; продолжается readback и cleanup исходных операций. CLI OpenCode/Codex/ZCode/compat на exact5ff PASS с archive.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в EXTRELEASE10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Candidate5ff02215: один живой core обнаружил два ChatGPT instances. Первый draft pending (до клика), второй native chat6af08c6e создан, exact marker виден в UI. Full acceptance ещё INCOMPLETE; продолжается readback и cleanup исходных операций. CLI OpenCode/Codex/ZCode/compat на exact5ff PASS с archive.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
       "model": "gpt-6.1-sol",
       "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено.",
       "wait_reason": "owner_deferred",
@@ -8999,6 +9877,37 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:05+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в EXTRELEASE10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Candidate5ff02215: один живой core обнаружил два ChatGPT instances. Первый draft pending (до клика), второй native chat6af08c6e создан, exact marker виден в UI. Full acceptance ещё INCOMPLETE; продолжается readback и cleanup исходных операций. CLI OpenCode/Codex/ZCode/compat на exact5ff PASS с archive."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:48+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -9016,9 +9925,10 @@
     {
       "id": "R3",
       "label": "Публикация приёмки либо невыполненных критериев",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S3",
       "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.",
       "owner": "Astra",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -9079,6 +9989,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:00+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:48+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -9549,10 +10490,10 @@
     {
       "id": "B13",
       "label": "Проверить idle Codex send через прежний TS adapter",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S1",
       "acceptance": "Isolated native websocket получает turn/start при queue activeTurnOnly=false; duplicate inputId не повторяет эффект.",
-      "result": "SOURCE/ISOLATED-TRANSPORT PROOF: tests/ahap-codex-runner.test.ts adds idle queue regression using real CodexAppServerAdapter + Unix WebSocket + native receipt journal. activeTurnOnly:false: exactly one thread/resume and one turn/start with exact session/message, native turnId/inputId receipt; duplicate inputId returns same receipt and no second effect. Negative activeTurnOnly:true: skipped_inactive before resume/start, zero steer. Existing active-turn steer proof preserved. npx vitest run tests/ahap-codex-runner.test.ts --reporter=verbose: 8/8 pass, 1.77s; scoped git diff --check exit0. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/B13-codex-idle-tests.log. Only test source changed; no model/native Codex process, src/adapters/runtime/credentials/commits untouched. Attempt astra-v1-codex-idle-20261107T1957; ready for Astra integration, not installed consumer proof.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE/ISOLATED-TRANSPORT PROOF: tests/ahap-codex-runner.test.ts adds idle queue regression using real CodexAppServerAdapter + Unix WebSocket + native receipt journal. activeTurnOnly:false: exactly one thread/resume and one turn/start with exact session/message, native turnId/inputId receipt; duplicate inputId returns same receipt and no second effect. Negative activeTurnOnly:true: skipped_inactive before resume/start, zero steer. Existing active-turn steer proof preserved. npx vitest run tests/ahap-codex-runner.test.ts --reporter=verbose: 8/8 pass, 1.77s; scoped git diff --check exit0. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/B13-codex-idle-tests.log. Only test source changed; no model/native Codex process, src/adapters/runtime/credentials/commits untouched. Attempt astra-v1-codex-idle-20261107T1957; ready for Astra integration, not installed consumer proof.",
       "owner": "roomhacker",
       "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
       "harness": "codex",
@@ -9636,6 +10577,37 @@
           },
           "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:58+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE/ISOLATED-TRANSPORT PROOF: tests/ahap-codex-runner.test.ts adds idle queue regression using real CodexAppServerAdapter + Unix WebSocket + native receipt journal. activeTurnOnly:false: exactly one thread/resume and one turn/start with exact session/message, native turnId/inputId receipt; duplicate inputId returns same receipt and no second effect. Negative activeTurnOnly:true: skipped_inactive before resume/start, zero steer. Existing active-turn steer proof preserved. npx vitest run tests/ahap-codex-runner.test.ts --reporter=verbose: 8/8 pass, 1.77s; scoped git diff --check exit0. Evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/B13-codex-idle-tests.log. Only test source changed; no model/native Codex process, src/adapters/runtime/credentials/commits untouched. Attempt astra-v1-codex-idle-20261107T1957; ready for Astra integration, not installed consumer proof."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:43+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "assignment": {
@@ -9692,10 +10664,10 @@
     {
       "id": "N1",
       "label": "Исправить regression каталога и проверить освобождение execution lock",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Полный lib178 проходит; public discover projects schema покрыта; lock child completion сохраняет гарантию без runtime изменений.",
-      "result": "Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure.",
       "owner": "Astra/Archimedes",
       "model": "gpt-6.1-sol",
       "note": "Evidence evidence/astra-v1-neg-lock-20261107T2001/REPORT.md; executor final received, source accepted. LHC assigned transition problem separate, no re-dispatch.",
@@ -9758,6 +10730,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:03+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Catalog projects schema regression fixed targeted GREEN. release_receipt fixture isolated subprocess cfg(test) only, no retries, original assertions intact. RED177/1→GREEN178/178 four runs; exact target8/8. Other repeated-test nativeRust Codex flakiness captured in evidence, outside V1 TS reuse and not represented as installed failure."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:46+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -9953,10 +10956,10 @@
     {
       "id": "FIXC",
       "label": "Сверить create контракт Codex с native schema без повторной отправки",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Точный schema mismatch или подтверждение соответствия, без нового native create/send; CI получает только необходимое исправление.",
-      "result": "Official Codex 0.167.0 schema matches reconstructed request;20offline checks. No justified serviceTier fix. Original UNKNOWN retained. evidence/codex-schema-triage/REPORT.md",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Official Codex 0.167.0 schema matches reconstructed request;20offline checks. No justified serviceTier fix. Original UNKNOWN retained. evidence/codex-schema-triage/REPORT.md",
       "owner": "Archimedes",
       "model": "gpt-6.1-sol",
       "origin": "",
@@ -10013,6 +11016,37 @@
             "source": "native_environment"
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:03+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Official Codex 0.167.0 schema matches reconstructed request;20offline checks. No justified serviceTier fix. Original UNKNOWN retained. evidence/codex-schema-triage/REPORT.md"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:45+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -10140,9 +11174,10 @@
     {
       "id": "FIXZ",
       "label": "Подключить штатный ZCode app-server через thin runner",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Официальный argv и существующий provider config проходят native init без modelsend; typed allowlist не пропускает processloader overrides.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.",
       "owner": "Singer/Astra",
       "model": "gpt-6.1-sol",
       "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено.",
@@ -10264,6 +11299,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:47:59+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:46+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -10818,10 +11884,10 @@
     {
       "id": "NZAI",
       "label": "Z.ai: выделенный scope через public core",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
-      "result": "Нынешний preflight5ff PASS14tools. Старый capacity/UNKNOWN сохранён. Новый owned test draft f804 доказан pending до клика; исправлена native textarea selection aa111101 (RED/GREEN). Проверяется новый exactcandidate; старые prompts не повторяются.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в ZAITOKEN15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Нынешний preflight5ff PASS14tools. Старый capacity/UNKNOWN сохранён. Новый owned test draft f804 доказан pending до клика; исправлена native textarea selection aa111101 (RED/GREEN). Проверяется новый exactcandidate; старые prompts не повторяются.",
       "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -10937,6 +12003,37 @@
             "source": "mcp_metadata"
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:04+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в ZAITOKEN15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Нынешний preflight5ff PASS14tools. Старый capacity/UNKNOWN сохранён. Новый owned test draft f804 доказан pending до клика; исправлена native textarea selection aa111101 (RED/GREEN). Проверяется новый exactcandidate; старые prompts не повторяются."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:47+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
         }
       ],
@@ -11152,10 +12249,10 @@
     {
       "id": "FIX",
       "label": "Исправление конкретных consumer регрессий",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S3",
       "acceptance": "Если sourcebytesизменены, новыйimmutablemanifest+affectedlanes/NEG re-gate. Если измененийнет сохраняетсяdigest. 5/5mandatoryPASSдоinstall.",
-      "result": "Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required.",
       "owner": "Ampere (thin browser wrapper); Astra integration",
       "session": "01a1b776-3e9f-7ec1-b821-faa93a4f6935",
       "harness": "codex",
@@ -11292,6 +12389,37 @@
           },
           "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:01+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Ampere browser-init source fix, attempt astra-v1-browser-init-20261107T2034. ONLY src/ahap-browser-runner.ts + tests/ahap-browser-runner.test.ts. init resets accountVerified, awaits passive init then explicit verifyPinnedAccountScope before exact scope assertion. Z.ai factory retains only explicitly observed matching scope when passive driver cache is empty; clears verifier evidence before each check; mismatch still fails closed. No drivers/native browser/model calls or commits. RED: 4 new fresh-cache regressions fail before init fix (FIX-browser-init-red.log); Z.ai concrete factory test additionally RED before scope-evidence fallback (FIX-browser-zai-scope-red.log). Final targeted browser+legacy-read suite: evidence/FIX-browser-init-final-green.log. Existing read-time scope-change regression preserved by switching account after successful init verification. Owner rebuild + CI native candidate acceptance still required."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:45+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "assignment": {
@@ -11350,9 +12478,10 @@
     {
       "id": "R2",
       "label": "Фиксация принятого candidate и реальных gaps",
-      "status": "queued",
+      "status": "deferred",
       "parent": "S2",
       "acceptance": "Принять5/5+NEG receipts exactdigest; gap значит BLOCKED, не разрешениеinstall.",
+      "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.",
       "owner": "Astra",
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex",
@@ -11420,6 +12549,37 @@
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:48:00+03:00",
+          "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+          "changes": {
+            "status": "deferred_ai",
+            "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T01:54:48+03:00",
+          "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+          "changes": {
+            "status": "deferred"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [
@@ -11437,7 +12597,7 @@
       "created_at": "2026-11-07T22:06:07+03:00"
     }
   ],
-  "leaf_count": 125,
+  "leaf_count": 127,
   "milestones": [
     {
       "id": "FLEETCUTOVER",
@@ -11459,14 +12619,13 @@
     {
       "id": "MEXT10",
       "label": "Единое расширение для рабочих и личных подключений",
-      "status": "running",
+      "status": "done",
       "children": [
         "CAREVIOLIVE12",
         "EXTCONN10",
         "EXTCORE10",
         "EXTINSTALL13",
         "EXTPOLL10",
-        "EXTRELEASE10",
         "EXTUI10"
       ],
       "estimate_minutes": {
@@ -11474,12 +12633,12 @@
         "maximum": 45.0
       },
       "done": 6,
-      "total": 7
+      "total": 6
     },
     {
       "id": "MRESUME10",
       "label": "Завершить установленный V1 и подтвердить потребительский путь",
-      "status": "running",
+      "status": "blocked",
       "children": [
         "BROWSER10",
         "BROWSERINSTALL12",
@@ -11487,6 +12646,8 @@
         "CHATNATIVE14",
         "CIROUTE10",
         "DELIVER10",
+        "EXTRELEASE10",
+        "FIRSTRECEIPT15",
         "HUMANQUOTA12",
         "INCIDENTREG11",
         "INSTALLSTARTUP13",
@@ -11497,6 +12658,7 @@
         "REGRESS10",
         "SMALLREG11",
         "STATE10",
+        "ZAITOKEN15",
         "ZCODE10",
         "ZCODEINSTALL13"
       ],
@@ -11504,13 +12666,13 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 16,
-      "total": 18
+      "done": 17,
+      "total": 21
     },
     {
       "id": "RESTORELEGACY",
       "label": "Три рабочих сценария нового ядра: fleet, wake, NoticePlace",
-      "status": "blocked",
+      "status": "done",
       "children": [
         "CIBROWSER",
         "CIBROWSERINSTALL",
@@ -11545,7 +12707,7 @@
     {
       "id": "S1",
       "label": "Подключить готовые адаптеры к единому ядру",
-      "status": "running",
+      "status": "done",
       "children": [
         "A10",
         "A11",
@@ -11573,7 +12735,7 @@
     {
       "id": "S2",
       "label": "Публичный путь на пяти настоящих средах",
-      "status": "blocked",
+      "status": "done",
       "children": [
         "BROWSERRECOVER",
         "CASETRACE",
@@ -11622,13 +12784,13 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 26,
+      "done": 27,
       "total": 42
     },
     {
       "id": "S3",
       "label": "Установка и consumer readback",
-      "status": "running",
+      "status": "done",
       "children": [
         "FIX",
         "INSTALL",
@@ -11647,7 +12809,7 @@
     {
       "id": "SESSIONREPLIES13",
       "label": "Два автоматических ответа на сообщение между сессиями",
-      "status": "queued",
+      "status": "deferred",
       "children": [],
       "estimate_minutes": {
         "minimum": 45.0,

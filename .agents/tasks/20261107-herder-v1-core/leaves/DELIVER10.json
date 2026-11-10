@@ -2,17 +2,18 @@
   "id": "DELIVER10",
   "kind": "task",
   "parent": "MRESUME10",
-  "label": "Установить согласованные profiles и принять ordinary consumer",
-  "status": "running",
+  "label": "Проверить финальную приёмку установленного Herder V1",
+  "status": "queued",
   "model": "gpt-6-astra",
   "estimate_minutes": 15,
   "depends_on": [
-    "ZCODE10",
-    "BROWSER10"
+    "FIRSTRECEIPT15",
+    "ZAITOKEN15",
+    "EXTRELEASE10"
   ],
-  "acceptance": "Release lease/CAS, readonly public instances затем own consumer scenario, independent readback и exact receipts; owned source/evidence опубликованы в main.",
+  "acceptance": "Шесть экземпляров через обычный и подключённый MCP, результаты пяти сред по CONTRACT.md, многостраничный нативный экспорт с доказанной полнотой и происхождение проектов, readback после перезапуска, no-replay и HumanStop; уборка только своих canaries. Partial и обязательное unsupported оставляют критерий открытым. Опубликовать только проверенные результаты и ограничения.",
   "created_at": "2026-11-10T15:11:04+03:00",
-  "updated_at": "2026-11-10T15:14:37+03:00",
+  "updated_at": "2026-11-11T01:47:58+03:00",
   "progress_events": [
     {
       "at": "2026-11-10T15:11:04+03:00",
@@ -57,9 +58,33 @@
       },
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:47:58+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "queued",
+        "depends_on": [
+          "FIRSTRECEIPT15",
+          "ZAITOKEN15",
+          "EXTRELEASE10"
+        ],
+        "label": "Проверить финальную приёмку установленного Herder V1",
+        "description": "Свести уже принятые нативные проверки и выполнить только недостающее по CONTRACT.md. Привязать доказательства к точной установленной сборке и обычному MCP.",
+        "acceptance": "Шесть экземпляров через обычный и подключённый MCP, результаты пяти сред по CONTRACT.md, многостраничный нативный экспорт с доказанной полнотой и происхождение проектов, readback после перезапуска, no-replay и HumanStop; уборка только своих canaries. Partial и обязательное unsupported оставляют критерий открытым. Опубликовать только проверенные результаты и ограничения."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
   "harness": "codex",
-  "owner": "roomhacker"
+  "owner": "roomhacker",
+  "description": "Свести уже принятые нативные проверки и выполнить только недостающее по CONTRACT.md. Привязать доказательства к точной установленной сборке и обычному MCP."
 }

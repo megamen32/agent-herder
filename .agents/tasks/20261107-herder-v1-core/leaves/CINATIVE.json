@@ -7,16 +7,16 @@
   "affected_files": [
     "src/adapters/vibe-chrome-transport.ts"
   ],
-  "status": "blocked",
+  "status": "deferred",
   "owner": "chatgpt-all-harness-ci-20261109/native_harness_audit",
-  "harness": "chatgpt",
+  "harness": "codex",
   "model": "gpt-6-astra",
   "estimate_minutes": 15,
   "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
   "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
   "id": "CINATIVE",
   "created_at": "2026-11-09T03:29:52+03:00",
-  "updated_at": "2026-11-09T06:19:31+03:00",
+  "updated_at": "2026-11-11T01:54:44+03:00",
   "progress_events": [
     {
       "at": "2026-11-09T03:29:52+03:00",
@@ -77,7 +77,39 @@
       },
       "session": "unknown",
       "harness": "unknown"
+    },
+    {
+      "at": "2026-11-11T01:48:05+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15, ZAITOKEN15 и DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:44+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
-  "result": "Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete."
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15, ZAITOKEN15 и DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete.",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6"
 }

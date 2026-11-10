@@ -14,7 +14,7 @@
   "created_at": "2026-11-08T00:12:18+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T00:18:17+03:00",
+  "updated_at": "2026-11-11T01:54:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-08T00:12:18+03:00",
@@ -68,6 +68,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:48:03+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:46+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -108,5 +139,6 @@
     ]
   },
   "assignment_history": [],
-  "result": "b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md"
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: b102a0b6: exact typed thread/start quota refusal preserved; RED5fail→GREEN10checks. Generic/ducktyped/otherop UNKNOWN. evidence/fixq-wrapper.md",
+  "status": "deferred"
 }

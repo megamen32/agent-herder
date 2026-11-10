@@ -13,7 +13,7 @@
   "created_at": "2026-11-07T22:48:26+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-08T20:12:37+03:00",
+  "updated_at": "2026-11-11T01:54:43+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:48:26+03:00",
@@ -126,6 +126,37 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:47:59+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "deferred_ai",
+        "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:54:43+03:00",
+      "note": "Совместимость с опубликованным планом: статус «отложено». Причина и история сохранены.",
+      "changes": {
+        "status": "deferred"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
   ],
   "assignment": {
@@ -194,9 +225,9 @@
     ]
   },
   "assignment_history": [],
-  "status": "queued",
+  "status": "deferred",
   "actual_minutes": 6,
-  "result": "SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1.",
+  "result": "Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.\n\nПрежний результат: SOURCE result independently received from actual Singer subagent final and accepted by Astra. Ten actual CLI checks pass: freshv4 bootstrap, unchanged old CLI, duplicate refusal preserving inode/mtime/bytes. Ready for candidate. LHC bookkeeping defect: reconcile observes idle but assignment stays assigned; accept_leaf refuses assigned→accepted. No redispatch, no fabricated runtime. Existing LHC owner to fix transition; this is not technical dependency of V1.",
   "wait_reason": "owner_deferred",
   "note": "08Nov latest cutline: прежний active статус снят. Владелец отложил остальное ради отключения legacy/запуска нового core. Сохранённые results/evidence остаются; завершение этого листа не заявлено."
 }

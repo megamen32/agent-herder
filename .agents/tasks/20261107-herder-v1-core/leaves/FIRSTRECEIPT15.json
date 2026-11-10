@@ -1,0 +1,59 @@
+{
+  "parent": "MRESUME10",
+  "label": "Подтвердить загрузку расширения и первую квитанцию ChatGPT",
+  "status": "blocked",
+  "owner": "Lead + Terra Archimedes",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.",
+  "acceptance": "Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить.",
+  "id": "FIRSTRECEIPT15",
+  "created_at": "2026-11-11T00:57:42+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-11T01:47:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T00:57:42+03:00",
+      "note": "",
+      "changes": {
+        "parent": "MRESUME10",
+        "label": "Принять первую отправку ChatGPT с нативной квитанцией",
+        "status": "running",
+        "owner": "Lead + Terra Archimedes",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "035frame-loss/querysamechatreceiptfixactualbaselineRED/GREEN+141suite. Publishowned5paths,installZIPbackendMacexactscope,onefreshcanaryafterownrestoredmarkerpurged. AllpriorUNKNOWNunchanged.",
+        "acceptance": "Exact035artifactloadedbothprofiles/server;onefirstcreateconfirmednativeuserreceipt,terminalreplyrestartreadback,exactownarchive. Noresend/foreigndraftwipe/authweaken."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T01:47:57+03:00",
+      "note": "Ревизия после разбора Астры. Критерии CONTRACT.md сохранены. Принятые нативные проверки не повторяются.",
+      "changes": {
+        "status": "blocked",
+        "label": "Подтвердить загрузку расширения и первую квитанцию ChatGPT",
+        "description": "UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.",
+        "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.",
+        "acceptance": "Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая."
+}
