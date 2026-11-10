@@ -54,5 +54,10 @@ it('wires bounded helper with private env and no credential in argv',async()=>{
  const env={NOTIFY_CENTER_EVENT_URL:'https://fixture.invalid/v1/events',NOTIFY_CENTER_TOKEN:'fixture-private'};
  await createAutostartSourceVerifierTick({autopilotStateDir:'/fixture/state',env,run:run as any})!();
  expect(run).toHaveBeenCalledTimes(1);const [binary,args,options]=run.mock.calls[0];
- expect(binary).toBe('python3');expect(args).toContain('--tick');expect(args.join(' ')).not.toContain('fixture-private');expect(options.timeout).toBe(30000);expect(options.env).toBe(env);
+ expect(binary).toBe('python3');expect(args).toContain('--tick');expect(args.join(' ')).not.toContain('fixture-private');expect(options.timeout).toBe(45000);expect(options.env).toBe(env);
+ // The kill of the helper must stay a last resort: the helper admits checks
+ // for at most 18 seconds and the official SDK gives every request 8 seconds,
+ // so the timeout has to stay above that bound. A kill in the middle of a
+ // submission leaves an intent that no receipt can confirm any more.
+ expect(options.timeout).toBeGreaterThan(18_000+8_000);
 });

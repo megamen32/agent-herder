@@ -25,13 +25,24 @@ DEFERRAL_SIGNALS=('unfinished-session-quota-blocked','unfinished-session-not-sub
 OWNED_SIGNALS=(SIGNAL,)+DEFERRAL_SIGNALS
 MAX_JSON=8*1024*1024
 MAX_TAIL=4*1024*1024
-# The server gives a due check a deadline of 300 seconds. The source answers
-# every due check of one sweep in one tick, because a check that waits behind
-# the others misses that deadline and the incident is delivered to an executor
-# again with the health of the source still unknown. The batch stays bounded:
-# the owning cycle gives the tick 30 seconds, so the admission of additional
-# checks stops before it.
-MAX_CHECKS_PER_TICK=8
+# The server gives a due check a deadline of 300 seconds and serves a due
+# page of at most SWEEP_PAGE_SIZE (20) checks. The source answers every due
+# check of one sweep in one tick, because a check that waits behind the
+# others misses that deadline and the incident is delivered to an executor
+# again with the health of the source still unknown.
+#
+# The admission is sized for the whole page, not for a fraction of it: every
+# accepted answer moves a check to the tail of the (verification_due,
+# incident_id) order, so the incident that the server re-armed most often is
+# the one that is answered last. An admission below the page size truncates
+# the sweep exactly there, and the truncated check waits for a later tick
+# while its own deadline runs out.
+#
+# The batch stays bounded by the deadline instead of by the count: the
+# owning cycle gives the tick 45 seconds, one check costs a local read and
+# one HTTP round trip, and the admission deadline stops the batch long before
+# that. The count only has to stay above what the deadline can still admit.
+MAX_CHECKS_PER_TICK=40
 TICK_DEADLINE_SECONDS=18
 
 @dataclass(frozen=True)
