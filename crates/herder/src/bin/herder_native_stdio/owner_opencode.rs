@@ -1,5 +1,5 @@
 //! Trusted owner composition for one pinned legacy adapter AHAP subprocess.
-use super::{owner_launch::Ids, owner_policy::OwnerPolicy, scoped_profile::OpenedOwner};
+use super::{owner_launch::Ids, owner_policy::OwnerPolicy, scoped_profile::{OpenedOwner, OwnerProfile}};
 use herder::{
     adapters::{
         ahap::{AhapClient, AhapConfig},
@@ -183,27 +183,23 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Error>> {
-    let instance = InstanceRef {
-        node: NodeRef(opened.owner.node.clone()),
-        instance_id: opened.owner.instance.clone(),
-    };
-    let script = opened
-        .owner
-        .ahap_script
+pub(super) fn open_adapter(owner: &OwnerProfile, instance: &InstanceRef)
+    -> Result<(Arc<AhapOpenCode>, SendMode), Box<dyn std::error::Error>> {
+    let script = owner
+        .ahap_script.clone()
         .ok_or("missing trusted AHAP script")?;
-    let harness = opened.owner.kind.clone();
+    let harness = owner.kind.clone();
     let mut env = vec![
         (
             "HOME".into(),
-            opened.owner.code_home.to_string_lossy().into_owned(),
+            owner.code_home.to_string_lossy().into_owned(),
         ),
         ("PATH".into(), "/usr/bin:/bin".into()),
     ];
-    if let Some(endpoint) = opened.owner.ahap_base_url {
+    if let Some(endpoint) = owner.ahap_base_url.clone() {
         env.push(("AHAP_OPENCODE_BASE_URL".into(), endpoint));
     }
-    env.extend(opened.owner.ahap_env);
+    env.extend(owner.ahap_env.clone());
     if harness == "opencode" && !env.iter().any(|(name, _)| name == "AHAP_OPENCODE_PASSWORD")
         && let Some(password) = std::env::var_os("AHAP_OPENCODE_PASSWORD") {
         env.push((
@@ -216,9 +212,9 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
     let client = AhapClient::open(AhapConfig {
         instance_id: instance.instance_id.clone(),
         harness: harness.clone(),
-        executable: opened.owner.executable,
+        executable: owner.executable.clone(),
         args: vec![script.to_string_lossy().into_owned()],
-        cwd: opened.owner.cwd.clone(),
+        cwd: owner.cwd.clone(),
         env,
         // Browser operations compose several existing 30-second transport calls
         // (inventory, pinned-page lookup, account verification). The outer
@@ -239,12 +235,22 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
         AhapOpenCode::new_with_policy(
             Arc::new(client),
             instance.clone(),
-            opened.owner.cwd,
+            owner.cwd.clone(),
             "Herder".into(),
             AhapPortPolicy { harness: harness.clone(), initial_delivery_mode: delivery_mode },
         )
         .map_err(|_| "AHAP capabilities invalid")?,
     );
+    Ok((adapter, delivery_mode))
+}
+
+pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Error>> {
+    let instance = InstanceRef {
+        node: NodeRef(opened.owner.node.clone()),
+        instance_id: opened.owner.instance.clone(),
+    };
+    let harness = opened.owner.kind.clone();
+    let (adapter, delivery_mode) = open_adapter(&opened.owner, &instance)?;
     let principal = PrincipalId(opened.owner.principal);
     let identity = ConnectionIdentity::new(
         Caller::Principal(VerifiedPrincipal {
@@ -261,6 +267,7 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
         action: Action::Write,
     }];
     let policy = Arc::new(OwnerPolicy {
+        existing_sessions: opened.owner.existing_sessions,
         principal,
         instance: instance.clone(),
         harness: harness.clone(),

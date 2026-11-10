@@ -8,7 +8,7 @@ describe("explicit Vibe owner selection", () => {
       AHAP_HARNESS: "chatgpt",
       AHAP_BROWSER_TRANSPORT: "vibe",
       AHAP_BROWSER_ACCOUNT_SCOPE: "a".repeat(64),
-      AHAP_BROWSER_VIBE_TARGET: "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+      AHAP_BROWSER_VIBE_TARGET: "mac-mini",
       AHAP_BROWSER_VIBE_SESSION_ID: "session_1",
     }, {
       macMini() { throw new Error("unexpected legacy gateway"); },
@@ -19,7 +19,7 @@ describe("explicit Vibe owner selection", () => {
       },
     });
     expect(selected).toEqual([{
-      target: "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+      target: "mac-mini",
       sessionId: "session_1",
     }]);
   });
@@ -29,7 +29,7 @@ describe("explicit Vibe owner selection", () => {
       AHAP_HARNESS: "zai",
       AHAP_BROWSER_TRANSPORT: "vibe",
       AHAP_BROWSER_ACCOUNT_SCOPE: "a".repeat(64),
-      AHAP_BROWSER_VIBE_TARGET: "mcp:shell:roomhacker-server-100:VibeServer100Local",
+      AHAP_BROWSER_VIBE_TARGET: "server-100",
     })).toThrow("Exact Vibe target and browser session are required");
   });
 
@@ -37,7 +37,7 @@ describe("explicit Vibe owner selection", () => {
     let closed = false;
     const adapter = makeConfiguredAdapter({
       AHAP_HARNESS: "chatgpt", AHAP_BROWSER_TRANSPORT: "vibe", AHAP_BROWSER_ACCOUNT_SCOPE: "a".repeat(64),
-      AHAP_BROWSER_VIBE_TARGET: "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal", AHAP_BROWSER_VIBE_SESSION_ID: "session_1",
+      AHAP_BROWSER_VIBE_TARGET: "mac-mini", AHAP_BROWSER_VIBE_SESSION_ID: "session_1",
     }, {
       macMini() { throw new Error("unexpected legacy gateway"); }, directCdp() { throw new Error("unexpected direct CDP"); },
       vibe() { return { async call() { return ""; }, async close() { await new Promise(resolve => setTimeout(resolve, 5)); closed = true; } }; },

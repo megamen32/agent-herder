@@ -29,13 +29,51 @@ pub struct OwnerPolicy {
     pub generation: String,
     pub db: std::path::PathBuf,
     pub gate: std::path::PathBuf,
+    pub existing_sessions: Vec<herder::application::scoped_stop::enroll::ExistingSessionApproval>,
 }
 impl OwnerPolicy {
-    pub fn is_member(&self, db: &Connection, session: &SessionRef) -> rusqlite::Result<bool> {
-        herder::application::scoped_stop::registration::is_owned_session_for_harness(
-            db, &self.principal.0, &self.instance, &self.generation, session, &self.harness,
-        )
+    /// The allowlist is loaded only from the protected launch profile. A
+    /// retained enrollment receipt alone never grants access after removal.
+    pub fn membership_source(&self, db: &Connection, session: &SessionRef) -> rusqlite::Result<Option<&'static str>> {
+        use herder::application::scoped_stop::registration;
+        // Enrollment provenance remains restricted even after allowlist removal,
+        // an invalid receipt, or a contradictory public registration proof.
+        if !registration::enrollment_provenance_present(
+            db, &self.principal.0, &self.instance, session,
+        )? {
+            return registration::membership_source_for_harness(
+                db, &self.principal.0, &self.instance, &self.generation, session, &self.harness,
+            );
+        }
+        if self.harness != "chatgpt" || self.existing_sessions.is_empty()
+            || registration::public_provenance_present(
+                db, &self.principal.0, &self.instance, session,
+            )? {
+            return Ok(None);
+        }
+        let target = serde_json::to_string(&self.instance).map_err(|_|rusqlite::Error::InvalidQuery)?;
+        let mut stmt = db.prepare("SELECT i.request_key,i.native_receipt,b.native_session_id,h.scope_generation FROM intents i JOIN session_bindings b ON b.session_ref=?4 JOIN humanstop_sessions h ON h.session_ref=b.session_ref JOIN lineage l ON l.session_ref=b.session_ref JOIN humanstop_authority a ON a.singleton=1 WHERE i.principal=?1 AND i.target=?2 AND i.state='confirmed' AND i.payload_hash LIKE 'owner-enroll-v1:%' AND i.native_receipt IS NOT NULL AND b.node_ref=?5 AND b.instance_id=?6 AND h.authority_generation=?3 AND a.generation=?3 AND l.creator_ref=?1 AND l.parent_ref IS NULL AND l.sender_ref='owner-explicit-existing-session' AND EXISTS(SELECT 1 FROM humanstop_scopes x WHERE x.session_ref=b.session_ref AND x.scope_ref='global') AND EXISTS(SELECT 1 FROM humanstop_scopes x WHERE x.session_ref=b.session_ref AND x.scope_ref='session:'||b.session_ref)")?;
+        let rows = stmt.query_map(params![self.principal.0,target,self.generation,session.0,self.instance.node.0,self.instance.instance_id],
+            |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?)))?;
+        let mut count = 0;
+        for row in rows {
+            let (key, raw, native, scope_generation) = row?;
+            if raw.len() > 65536 { continue }
+            let Ok(receipt) = serde_json::from_str::<herder::application::scoped_stop::enroll::EnrollmentReceipt>(&raw) else { continue };
+            if receipt.request_key != key || receipt.session_ref != session.0
+                || receipt.native_session_id != native || receipt.scope_generation != scope_generation { continue }
+            if self.existing_sessions.iter().filter(|approval|
+                receipt.matches(approval, &self.instance, &self.generation)).count() == 1 {
+                count += 1;
+                if count > 1 { return Ok(None) }
+            }
+        }
+        Ok((count == 1).then_some("owner-explicit-existing-session"))
     }
+    pub fn is_member(&self, db: &Connection, session: &SessionRef) -> rusqlite::Result<bool> {
+        Ok(self.membership_source(db, session)?.is_some())
+    }
+
 
     fn grant(
         &self,
@@ -112,7 +150,7 @@ mod tests {
     use herder::domain::address::NodeRef;
     fn setup() -> (Connection, InstanceRef, SessionRef) {
         let c = Connection::open_in_memory().unwrap();
-        c.execute_batch("CREATE TABLE intents(principal TEXT,target TEXT,state TEXT,payload_hash TEXT,native_receipt TEXT,request_key TEXT); CREATE TABLE session_bindings(session_ref TEXT,node_ref TEXT,instance_id TEXT,native_session_id TEXT); CREATE TABLE humanstop_sessions(session_ref TEXT,authority_generation TEXT); CREATE TABLE lineage(session_ref TEXT,creator_ref TEXT,parent_ref TEXT); CREATE TABLE humanstop_authority(singleton INTEGER,generation TEXT); CREATE TABLE humanstop_scopes(session_ref TEXT,scope_ref TEXT); INSERT INTO humanstop_authority VALUES(1,'g'); INSERT INTO session_bindings VALUES('s','n','i','native'); INSERT INTO humanstop_sessions VALUES('s','g'); INSERT INTO lineage VALUES('s','owner',NULL); INSERT INTO humanstop_scopes VALUES('s','global'),('s','session:s');").unwrap();
+        c.execute_batch("CREATE TABLE intents(principal TEXT,target TEXT,state TEXT,payload_hash TEXT,native_receipt TEXT,request_key TEXT); CREATE TABLE session_bindings(session_ref TEXT,node_ref TEXT,instance_id TEXT,native_session_id TEXT); CREATE TABLE humanstop_sessions(session_ref TEXT,authority_generation TEXT); CREATE TABLE lineage(session_ref TEXT,creator_ref TEXT,parent_ref TEXT,sender_ref TEXT); CREATE TABLE humanstop_authority(singleton INTEGER,generation TEXT); CREATE TABLE humanstop_scopes(session_ref TEXT,scope_ref TEXT); INSERT INTO humanstop_authority VALUES(1,'g'); INSERT INTO session_bindings VALUES('s','n','i','native'); INSERT INTO humanstop_sessions VALUES('s','g'); INSERT INTO lineage VALUES('s','owner',NULL,NULL); INSERT INTO humanstop_scopes VALUES('s','global'),('s','session:s');").unwrap();
         let i = InstanceRef {
             node: NodeRef("n".into()),
             instance_id: "i".into(),
@@ -182,8 +220,52 @@ mod tests {
                 generation: "g".into(),
                 db: std::path::PathBuf::new(),
                 gate: std::path::PathBuf::new(),
+                existing_sessions: Vec::new(),
             };
             assert_eq!(policy.is_member(&c, &session).unwrap(), expected);
         }
+    }
+    #[test]
+    fn enrollment_needs_current_allowlist_and_its_distinct_receipt() {
+        use herder::application::scoped_stop::enroll::{ExistingSessionApproval,EnrollmentReceipt};
+        let (c,i,s)=setup();
+        let public_receipt: String = c.query_row("SELECT native_receipt FROM intents", [], |r| r.get(0)).unwrap();
+        c.execute_batch("ALTER TABLE humanstop_sessions ADD COLUMN scope_generation TEXT; UPDATE lineage SET sender_ref='owner-explicit-existing-session'; UPDATE humanstop_sessions SET scope_generation='scope'; DELETE FROM intents;").unwrap();
+        let approval=ExistingSessionApproval{request_key:"enrollment-key".into(),native_session_id:"native".into(),account_scope:"b".repeat(64)};
+        let receipt=EnrollmentReceipt{version:1,provenance:"owner-explicit-existing-session".into(),request_key:approval.request_key.clone(),instance:i.clone(),native_session_id:"native".into(),session_ref:s.0.clone(),account_scope:approval.account_scope.clone(),authority_generation:"g".into(),scope_generation:"scope".into()};
+        c.execute("INSERT INTO intents VALUES(?1,?2,'confirmed','owner-enroll-v1:hash',?3,?4)",
+            params!["owner",serde_json::to_string(&i).unwrap(),serde_json::to_string(&receipt).unwrap(),approval.request_key]).unwrap();
+        let mut policy=OwnerPolicy{principal:herder::auth::identity::PrincipalId("owner".into()),instance:i.clone(),harness:"chatgpt".into(),generation:"g".into(),db:"/unused".into(),gate:"/unused".into(),existing_sessions:vec![approval.clone()]};
+        assert!(!is_member(&c,"owner",&i,"g",&s).unwrap());
+        assert_eq!(policy.membership_source(&c,&s).unwrap(),Some("owner-explicit-existing-session"));
+        let public_member = || herder::application::scoped_stop::registration::is_owned_session_for_harness(
+            &c, "owner", &i, "g", &s, "chatgpt",
+        ).unwrap();
+        assert!(!public_member());
+        c.execute("INSERT INTO intents VALUES(?1,?2,'admitted','create-v1:hash',?3,'k')",
+            params!["owner",serde_json::to_string(&i).unwrap(),public_receipt]).unwrap();
+        assert!(!policy.is_member(&c,&s).unwrap());
+        policy.existing_sessions.clear();
+        assert!(!public_member());
+        assert!(!policy.is_member(&c,&s).unwrap());
+        c.execute("UPDATE lineage SET sender_ref=NULL",[]).unwrap();
+        assert!(!public_member(), "retained enrollment pointer must prevent public fallback");
+        assert!(!policy.is_member(&c,&s).unwrap());
+        c.execute("UPDATE lineage SET sender_ref='owner-explicit-existing-session'",[]).unwrap();
+        c.execute("DELETE FROM intents WHERE payload_hash LIKE 'owner-enroll-v1:%'",[]).unwrap();
+        assert!(!public_member(), "retained lineage marker must prevent public fallback");
+        policy.existing_sessions=vec![approval.clone()];
+        assert!(!policy.is_member(&c,&s).unwrap());
+        c.execute("DELETE FROM intents WHERE payload_hash LIKE 'create-v1:%'",[]).unwrap();
+        c.execute("INSERT INTO intents VALUES(?1,?2,'confirmed','owner-enroll-v1:hash',?3,?4)",
+            params!["owner",serde_json::to_string(&i).unwrap(),serde_json::to_string(&receipt).unwrap(),approval.request_key]).unwrap();
+        assert!(policy.is_member(&c,&s).unwrap());
+        policy.harness="zai".into();assert!(!policy.is_member(&c,&s).unwrap());
+        policy.harness="chatgpt".into();
+        policy.existing_sessions.clear();assert!(!policy.is_member(&c,&s).unwrap());
+        policy.existing_sessions=vec![approval.clone()];policy.existing_sessions[0].account_scope="a".repeat(64);assert!(!policy.is_member(&c,&s).unwrap());
+        policy.existing_sessions=vec![approval.clone()];c.execute("UPDATE intents SET state='unknown'",[]).unwrap();assert!(!policy.is_member(&c,&s).unwrap());
+        c.execute("UPDATE intents SET state='confirmed'",[]).unwrap();c.execute("UPDATE humanstop_sessions SET scope_generation='swapped'",[]).unwrap();assert!(!policy.is_member(&c,&s).unwrap());
+        c.execute("UPDATE humanstop_sessions SET scope_generation='scope'",[]).unwrap();c.execute("INSERT INTO intents SELECT * FROM intents",[]).unwrap();assert!(!policy.is_member(&c,&s).unwrap());
     }
 }

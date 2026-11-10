@@ -9,7 +9,8 @@ import { getHumanStopStore } from "../human-stop-store.js";
 
 /** Uses the existing daemon jobs/Stop judge/native writers. No subprocess or extra loop. */
 export class BackgroundAutopilotStop {
-  private tail: Promise<unknown> = Promise.resolve();
+  // A busy provider for one session must not hold every other ChatGPT profile.
+  private readonly tails = new Map<string, Promise<void>>();
   private readonly pending = new Map<string, number>();
   private queued = 0;
   constructor(private readonly options: {
@@ -41,9 +42,14 @@ export class BackgroundAutopilotStop {
     if (this.queued >= 32) throw new Error("Background Autopilot queue is full");
     const target = `${input.harness}:${input.sessionId}`;
     this.pending.set(target, (this.pending.get(target) ?? 0) + 1); this.queued++;
-    const previous = this.tail;
-    let release!: () => void;
-    this.tail = new Promise<void>(r => { release = r; });
+    const previous = this.tails.get(target) ?? Promise.resolve();
+    let finish!: () => void;
+    const tail = new Promise<void>(r => { finish = r; });
+    this.tails.set(target, tail);
+    const release = () => {
+      finish();
+      if (this.tails.get(target) === tail) this.tails.delete(target);
+    };
     try {
       return this.options.jobs.start({ kind: "Разбор завершённого хода Автопилотом", ownerSessionId: input.sessionId,
         idempotencyKey: attemptKey, requestFingerprint: fingerprint,
@@ -63,6 +69,7 @@ export class BackgroundAutopilotStop {
             progress(.1, "Программа уже отпущена; Автопилот проверяет следующий шаг");
             if (input.lastAssistantMessage && before.lastAssistant && input.lastAssistantMessage.trim() !== before.lastAssistant.trim()) return { decision: "stale" };
             const result = await this.options.evaluate({ ...input,
+              signal,
               lastUserMessage: before.lastUser ?? input.lastUserMessage,
               lastAssistantMessage: before.lastAssistant ?? input.lastAssistantMessage,
               nativeReportObservation: before.nativeReportObservation,
@@ -154,12 +161,29 @@ export class BackgroundAutopilotStop {
       ? await passive.getBackgroundMessages?.(session.id)
       : await adapter.getSessionMessages?.(session.id, 50);
     if (!messages || (!messages.length && !await autopilotGoalArmed(input))) return null;
-    const fingerprint = createHash("sha256").update(JSON.stringify(messages.map(m => [m.id, m.role, m.text, m.parts]))).digest("hex");
+    const fingerprint = createHash("sha256").update(JSON.stringify(messages.map(m => [m.id, m.role, m.text, m.parts, m.phase, m.completionStatus, m.endTurn]))).digest("hex");
     let nativeReportObservation = observeNativeReport(input, messages, fingerprint);
     if (nativeReportObservation.status === "observed" && !await autopilotGoalNativeReportAdmissible(input, messages, nativeReportObservation.messageId)) {
       nativeReportObservation = { status: "unavailable", nativeFingerprint: fingerprint, reason: "no matching current-goal continuation is linked to this assistant message" };
     }
-    return { session, fingerprint, messages, nativeReportObservation, lastUser: [...messages].reverse().find(m => m.role === "user")?.text, lastAssistant: [...messages].reverse().find(m => m.role === "assistant")?.text };
+    const latestFirst = [...messages].reverse();
+    let lastUser: string | undefined;
+    for (const message of latestFirst) {
+      if (message.role !== "user") continue;
+      const text = message.text ?? message.parts.filter(part => part.type === "text").map(part => part.text ?? "").join("\n");
+      if (!text.trim()) continue;
+      if (await getHumanStopStore().isGeneratedPrompt(input.harness, input.sessionId, { text, ...(message.inputId ? { turnId: message.inputId } : {}) })) continue;
+      lastUser = text;
+      break;
+    }
+    const assistant = latestFirst.find(message => message.role === "assistant");
+    if (input.harness === "chatgpt" && assistant) {
+      const assistantIndex=latestFirst.indexOf(assistant),latestUserIndex=latestFirst.findIndex(message=>message.role==="user");
+      if ((latestUserIndex>=0 && latestUserIndex<assistantIndex) || assistant.endTurn===false
+        || (assistant.completionStatus!==undefined && assistant.completionStatus!=="finished_successfully")) return null;
+    }
+    const lastAssistant = assistant?.text ?? assistant?.parts.filter(part => part.type === "text").map(part => part.text ?? "").join("\n");
+    return { session, fingerprint, messages, nativeReportObservation, lastUser, lastAssistant };
   }
 }
 

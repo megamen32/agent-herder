@@ -369,6 +369,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     private readonly pinnedPageId?: number,
     private readonly openWaitMs = 5_000,
     private readonly expectedAccountScope?: string,
+    private readonly options: { autoRespondToPrompts?: boolean } = {},
   ) {}
 
   /** The one tab this driver owns, remembered by its own URL path. */
@@ -566,7 +567,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       // navigates such a tab to /c/<id> and re-checks the composer there.
       throw new Error("ChatGPT Mac mini tab is not an authenticated page");
     }
-    if (result.modalPrompts && result.modalPrompts.length) {
+    if (this.options.autoRespondToPrompts !== false && result.modalPrompts && result.modalPrompts.length) {
       void this.respondToModalPrompts(pageId, result.modalPrompts).catch((error) => {
         console.error("[agent-herder] chatgpt_prompt respond_error " + String((error as Error)?.message || error).slice(0, 200));
       });
@@ -579,6 +580,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // readComposerDraft/restoreComposerDraft), so it no longer counts as
     // busy. Only an active generation or the post-send guard blocks the next send.
     return s.phase !== "idle" ||
+      (this.options.autoRespondToPrompts === false && !!s.modalPrompts?.length) ||
       Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS;
   }
 
@@ -612,7 +614,8 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     // That is the only honest busy signal for a conversation not open in the
     // observed tab; the DOM Stop control exists only on the selected page.
     const nativeRunning = !selected && typeof asyncStatus === "number" && asyncStatus !== 0;
-    const working = selected ? this.busy(s) : (nativeRunning || recentlyRunning);
+    const blockedModal = this.options.autoRespondToPrompts === false && !!s.modalPrompts?.length;
+    const working = blockedModal || (selected ? this.busy(s) : (nativeRunning || recentlyRunning));
     return {
       id, title, updatedAt: typeof at === "number" && at > 0
         ? new Date(at < 1e12 ? at * 1000 : at).toISOString() : new Date().toISOString(),
@@ -1051,7 +1054,7 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
     }
     if (!NATIVE_CHAT_ID.test(chatId)) return null;
     let result: { error?: string; trace?: unknown; messages?: Array<{ id: string; role: string; text: string;
-      timestamp?: string; model?: string }> } = { error: "no_readable_tab" };
+      timestamp?: string; model?: string; phase?: string; completionStatus?: string; endTurn?: boolean }> } = { error: "no_readable_tab" };
     for await (const candidate of this.readablePages()) {
       this.assertHistoryReady();
       const localCooldown = parseChromeEvaluation<{ cooldownUntil?: number }>(await this.tools.call("evaluate_script", {
@@ -1088,6 +1091,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       typeof message.text === "string" && typeof message.id === "string").map(message => ({
       id: message.id, role: message.role as "user" | "assistant",
       text: message.text, parts: [{ type: "text" as const, text: message.text }],
+      ...(message.phase ? { phase: message.phase } : {}),
+      ...(typeof message.completionStatus === "string" ? { completionStatus: message.completionStatus } : {}),
+      ...(typeof message.endTurn === "boolean" ? { endTurn: message.endTurn } : {}),
       ...(message.timestamp ? { timestamp: message.timestamp } : {}),
       ...(message.model ? { model: message.model } : {}),
     }));
@@ -1250,6 +1256,9 @@ export class ChatGptMacCdpDriver implements BrowserChatDriver {
       if (!known) throw new Error("ChatGPT conversation absent from authenticated inventory");
       const page = await this.page();
       let state = await this.snapshot(page.id);
+      if (this.options.autoRespondToPrompts === false && state.modalPrompts?.length) {
+        throw new Error("ChatGPT permission prompt requires human action; message not sent");
+      }
       // Never navigate away from an active turn, even when another chat is
       // requested or the current conversation uses a project-scoped route.
       if (state.phase === "generating" || Date.now() - this.lastSubmittedAt < POST_SEND_GUARD_MS) {

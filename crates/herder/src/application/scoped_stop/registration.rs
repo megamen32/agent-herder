@@ -168,6 +168,58 @@ pub fn membership_source_for_harness(
     membership_source_inner(db, principal, instance, generation, session, Some(harness))
 }
 
+/// Enrollment is a separate protected-profile authorization path. Its marker
+/// or retained receipt prevents public registration from adopting that binding,
+/// including after allowlist revocation or partial provenance damage.
+pub fn enrollment_provenance_present(
+    db: &Connection,
+    principal: &str,
+    instance: &InstanceRef,
+    session: &SessionRef,
+) -> rusqlite::Result<bool> {
+    let marked: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM lineage WHERE session_ref=?1 AND sender_ref='owner-explicit-existing-session')",
+        params![session.0], |row| row.get(0),
+    )?;
+    Ok(marked || receipt_pointer_present(db, principal, instance, session, true)?)
+}
+
+/// A contradictory public proof pointer cannot be ignored when resolving an
+/// enrolled session. Replay markers carry no native receipt and do not count.
+pub fn public_provenance_present(
+    db: &Connection,
+    principal: &str,
+    instance: &InstanceRef,
+    session: &SessionRef,
+) -> rusqlite::Result<bool> {
+    receipt_pointer_present(db, principal, instance, session, false)
+}
+
+fn receipt_pointer_present(
+    db: &Connection,
+    principal: &str,
+    instance: &InstanceRef,
+    session: &SessionRef,
+    enrollment: bool,
+) -> rusqlite::Result<bool> {
+    let target = serde_json::to_string(instance).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let mut statement = db.prepare(
+        "SELECT native_receipt FROM intents WHERE principal=?1 AND target=?2 AND native_receipt IS NOT NULL AND ((?3=1 AND payload_hash LIKE 'owner-enroll-v1:%') OR (?3=0 AND (payload_hash LIKE 'create-v1:%' OR payload_hash LIKE 'register-v1:%')))",
+    )?;
+    let rows = statement.query_map(params![principal, target, enrollment],
+        |row| row.get::<_, String>(0))?;
+    for row in rows {
+        let raw = row?;
+        if raw.len() > 65536 { return Err(rusqlite::Error::InvalidQuery); }
+        if serde_json::from_str::<serde_json::Value>(&raw).ok()
+            .and_then(|value| value.get("session_ref").and_then(serde_json::Value::as_str).map(str::to_owned))
+            .as_deref() == Some(session.0.as_str()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn membership_source_inner(
     db: &Connection,
     principal: &str,
@@ -186,6 +238,9 @@ fn membership_source_inner(
     .iter()
     .any(|s| !valid(s))
     {
+        return Ok(None);
+    }
+    if enrollment_provenance_present(db, principal, instance, session)? {
         return Ok(None);
     }
     let target = serde_json::to_string(instance).map_err(|_| rusqlite::Error::InvalidQuery)?;

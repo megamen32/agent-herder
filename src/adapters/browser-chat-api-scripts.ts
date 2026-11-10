@@ -215,18 +215,33 @@ export function chatgptMessagesApiScript(chatId: string): string {
         && (role==='user'||!m.recipient||m.recipient==='all');
     }).map(m=>{
       const text=(Array.isArray(m.content?.parts)?m.content.parts.map(readPart).join('\\n'):
-        typeof m.content?.text==='string'?m.content.text:'').trim().slice(0,14000);
+        typeof m.content?.text==='string'?m.content.text:'').trim();
       return {id:String(m.id||''),role:m.author.role,text,
+        phase:typeof m.channel==='string'?m.channel:undefined,
+        completionStatus:typeof m.status==='string'?m.status:undefined,
+        endTurn:typeof m.end_turn==='boolean'?m.end_turn:undefined,
         timestamp:typeof m.create_time==='number'&&m.create_time>0
           ?new Date(m.create_time*1000).toISOString():undefined,
         model:typeof m.metadata?.model_slug==='string'?m.metadata.model_slug:undefined};
     }).filter(m=>m.id&&m.text).slice(-180);
-    const tail=[];let used=0;
-    for(let i=messages.length-1;i>=0;i--){
-      const size=messages[i].text.length+160;
-      if(used+size>210000)break;
-      used+=size;tail.unshift(messages[i]);
+    // Reserve the latest user/assistant messages before trimming older context.
+    // The former per-message 14k slice silently destroyed long task requirements.
+    const budget=512*1024,encoder=new TextEncoder();
+    const bytes=value=>encoder.encode(JSON.stringify(value)).length;
+    const required=new Set();
+    for(const role of ['user','assistant']){
+      for(let i=messages.length-1;i>=0;i--)if(messages[i].role===role){required.add(i);break;}
     }
+    const chosen=[...required].sort((a,b)=>a-b);
+    let used=bytes(chosen.map(i=>messages[i]));
+    if(used>budget)return {error:'mandatory_message_context_too_large',trace};
+    for(let i=messages.length-1;i>=0;i--){
+      if(required.has(i))continue;
+      const extra=bytes(messages[i])+1;
+      if(used+extra>budget)break;
+      used+=extra;chosen.push(i);
+    }
+    const tail=chosen.sort((a,b)=>a-b).map(i=>messages[i]);
     return {messages:tail,trace};
   }`;
 }

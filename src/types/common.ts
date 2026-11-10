@@ -56,6 +56,10 @@ export interface SessionMessageView {
   /** Native turn identity; absent when the transcript does not prove it. */
   turnId?: string;
   phase?: string;
+  /** Native message completion status; a final channel alone does not prove completion. */
+  completionStatus?: string;
+  /** Explicit native end-of-turn marker, preserved without inferring from role/channel. */
+  endTurn?: boolean;
   /** Native input→result parent linkage; absent when the harness does not prove it. */
   nativeParentMessageId?: string;
   /**

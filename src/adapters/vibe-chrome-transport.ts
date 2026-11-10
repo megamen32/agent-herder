@@ -1,12 +1,303 @@
-import { Client } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { getDefaultEnvironment, StdioClientTransport, type StdioServerParameters } from "@modelcontextprotocol/client/stdio";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import type { ChromePageTools } from "./mac-mini-chrome-transport.js";
+import { evaluateVibeAsync } from "./vibe-async-evaluation.js";
+import { browserTransportSettingsFromEnv, resolveVibeSettings, type BrowserTransportSettings, type VibeTargetAlias } from "./browser-runtime-settings.js";
 
-export const MAC_MINI_VIBE_TARGET = "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal";
-export const SERVER100_VIBE_TARGET = "mcp:shell:roomhacker-server-100:VibeServer100Local";
+
+export type VibeChromeMcpClient = {
+  connect(transport: unknown): Promise<void>;
+  callTool(input: { name: string; arguments: Record<string, unknown> }, options?: { timeout?: number }): Promise<unknown>;
+  close(): Promise<void>;
+};
+export type VibeChromePageToolsOptions = {
+  url: string;
+  tokenProvider: () => Promise<string>;
+  /** AHAP drivers must never see/adopt tabs created outside this MCP client. */
+  ownedPagesOnly?: boolean;
+  clientFactory?: () => VibeChromeMcpClient;
+  transportFactory?: (url: URL, tokenProvider: () => Promise<string>) => unknown;
+};
+const MAX_BYTES = 3 * 1024 * 1024;
+const STATE_SEPARATOR = "\n\n---\n# Current browser state:";
+const SUPPORTED = new Set(["list_pages", "new_page", "evaluate_script", "take_snapshot", "fill", "navigate_page", "close_page"]);
+function failure(code: string): Error { return new Error("vibe_chrome_" + code); }
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw failure("invalid_response");
+  return value as Record<string, unknown>;
+}
+function bounded(value: unknown): void {
+  let encoded: string | undefined;
+  try { encoded = JSON.stringify(value); } catch { throw failure("invalid_payload"); }
+  if (encoded === undefined || Buffer.byteLength(encoded, "utf8") > MAX_BYTES) throw failure("payload_exceeds_bound");
+}
+function pageId(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw failure("invalid_page_id");
+  return value;
+}
+function pageUrl(value: unknown): string {
+  if (typeof value !== "string" || !value.trim() || /[\u0000-\u0020\u007f]/u.test(value)) throw failure("invalid_page_url");
+  let url: URL;
+  try { url = new URL(value); } catch { throw failure("invalid_page_url"); }
+  if (!["http:", "https:"].includes(url.protocol) && url.href !== "about:blank" || url.username || url.password) throw failure("invalid_page_url");
+  return url.href;
+}
+function timeout(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 120_000) throw failure("invalid_timeout");
+  return value;
+}
+function onlyKeys(args: Record<string, unknown>, allowed: string[]): void {
+  if (Object.keys(args).some(key => !allowed.includes(key))) throw failure("unsupported_argument");
+}
+function responseText(value: unknown): string {
+  bounded(value);
+  const outer = record(value);
+  if (outer.isError === true) throw failure("tool_refused_or_failed");
+  if (!Array.isArray(outer.content) || outer.content.some(item => !item || typeof item !== "object")) throw failure("invalid_response");
+  const parts = outer.content.filter(item => item.type === "text").map(item => item.text);
+  if (!parts.length || parts.some(item => typeof item !== "string")) throw failure("missing_text_response");
+  const text = parts.join("\n");
+  if (/^\s*(?:Error:|Tool execution failed)/u.test(text)) throw failure("tool_refused_or_failed");
+  return text;
+}
+function primaryText(text: string): string {
+  const at = text.indexOf(STATE_SEPARATOR);
+  return at < 0 ? text : text.slice(0, at);
+}
+/** Scan the first JSON object. Braces and Markdown fences inside JSON strings
+ * cannot consume or inject the appended browser-state report. */
+function firstObject(text: string): Record<string, unknown> {
+  const source = text.trimStart();
+  if (!source.startsWith("{")) throw failure("invalid_evaluation_envelope");
+  let depth = 0, quoted = false, escaped = false;
+  for (let index = 0; index < source.length; index++) {
+    const character = source[index]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') { quoted = true; continue; }
+    if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(source.slice(0, index + 1)); } catch { throw failure("invalid_evaluation_envelope"); }
+      const trailing = source.slice(index + 1);
+      if (trailing.trim() && !trailing.startsWith(STATE_SEPARATOR)) throw failure("invalid_evaluation_suffix");
+      return record(parsed);
+    }
+  }
+  throw failure("incomplete_evaluation_envelope");
+}
+function evaluation(text: string): string {
+  const envelope = firstObject(text);
+  if (envelope.success !== true || !Object.prototype.hasOwnProperty.call(envelope, "result")) throw failure("evaluation_failed");
+  const fence = String.fromCharCode(96).repeat(3);
+  return fence + "json\n" + JSON.stringify(envelope.result) + "\n" + fence;
+}
+function pageListing(text: string): string {
+  const rows: Array<{ id: number; active: boolean; url?: string }> = [];
+  let current: { id: number; active: boolean; url?: string } | undefined;
+  const source = primaryText(text);
+  const count = source.match(/^\s*Found (\d+) page\(s\):\s*(?:\r?\n|$)/u);
+  const expectedCount = count ? Number(count[1]) : undefined;
+  if (expectedCount !== undefined && !Number.isSafeInteger(expectedCount)) throw failure("invalid_page_listing");
+  const inventoryUrl = (value: string): string => {
+    // Inventory may include browser-internal pages; they are never adopted.
+    try {
+      const parsed = new URL(value);
+      if (/[\u0000-\u0020\u007f]/u.test(value) || parsed.username || parsed.password) throw failure("invalid_page_listing");
+      return parsed.href.replace(/\(/gu, "%28").replace(/\)/gu, "%29");
+    } catch { throw failure("invalid_page_listing"); }
+  };
+  for (const line of source.split(/\r?\n/u)) {
+    // Standalone list_pages differs from the appended browser-state report.
+    const page = line.match(/^\s*Page\s+(\d+)(?:\s+(\[ACTIVE\]))?\s*:\s*"(.*)"\s+-\s+(\S+)\s*$/u);
+    if (page) {
+      current = { id: pageId(Number(page[1])), active: !!page[2], url: inventoryUrl(page[4]!) };
+      if (rows.some(row => row.id === current!.id)) throw failure("duplicate_page_id");
+      rows.push(current); continue;
+    }
+    if (/^\s*Page\s+/u.test(line)) throw failure("invalid_page_listing");
+    const header = line.match(/^\s*(?:\d+\.\s*)?Tab\s+(\d+)(?:\s+(\[ACTIVE\]))?\s*:\s*(.*)$/u);
+    if (header) {
+      current = { id: pageId(Number(header[1])), active: !!header[2] || /\s\[ACTIVE\]\s*$/u.test(header[3]!) };
+      if (rows.some(row => row.id === current!.id)) throw failure("duplicate_page_id");
+      rows.push(current); continue;
+    }
+    const url = line.match(/^\s*URL:\s*(\S.*?)\s*$/u);
+    if (url) {
+      if (!current || current.url) throw failure("invalid_page_listing");
+      current.url = inventoryUrl(url[1]!);
+    }
+  }
+  if (expectedCount !== undefined && rows.length !== expectedCount) throw failure("incomplete_page_listing");
+  if (!rows.length) {
+    if (expectedCount === 0 || /^\s*No (?:open )?(?:tabs|pages)(?: (?:are )?(?:currently )?open)?[.!]?\s*$/iu.test(source)) return "";
+    throw failure("invalid_page_listing");
+  }
+  if (rows.some(row => !row.url)) throw failure("incomplete_page_listing");
+  // Titles are not needed by ChromePageTools consumers and could contain text
+  // resembling the legacy page-list syntax. Preserve only authoritative IDs/URLs.
+  return rows.map(row => row.id + ": Page (" + row.url + ")" + (row.active ? " [selected]" : "")).join("\n");
+}
+
+function snapshot(text: string): string {
+  return primaryText(text).split(/\r?\n/u).map(line => {
+    const row = line.match(/^(\s*)(?:-\s+)?(.+?)\s+uid=([\w-]+)(.*)$/u);
+    return row ? row[1] + "uid=" + row[3] + " " + row[2] + row[4] : line;
+  }).join("\n");
+}
+
+/** Vibe's tool ownership is scoped to this persistent MCP session. Only IDs
+ * returned by this client's successful new_page are eligible for page actions.
+ * The caller must additionally fence URL/account changes before every action. */
+export class VibeChromePageTools implements ChromePageTools {
+  private readonly url: URL;
+  private readonly owned = new Set<number>();
+  private client?: VibeChromeMcpClient;
+  private connecting?: Promise<VibeChromeMcpClient>;
+  private closing?: Promise<void>;
+  private closed = false;
+  constructor(private readonly options: VibeChromePageToolsOptions) {
+    try { this.url = new URL(options.url); } catch { throw failure("invalid_mcp_url"); }
+    if (this.url.protocol !== "https:" || this.url.username || this.url.password || this.url.search || this.url.hash) throw failure("invalid_mcp_url");
+    if (typeof options.tokenProvider !== "function") throw failure("missing_token_provider");
+  }
+  private connected(): Promise<VibeChromeMcpClient> {
+    if (this.closed) return Promise.reject(failure("closed"));
+    if (this.client) return Promise.resolve(this.client);
+    if (!this.connecting) {
+      this.connecting = (async () => {
+        const client = this.options.clientFactory?.()
+          ?? new Client({ name: "agent-herder-vibe-browser", version: "1" }) as unknown as VibeChromeMcpClient;
+        let discarded = false;
+        try {
+          const transport = this.options.transportFactory
+            ? this.options.transportFactory(this.url, this.options.tokenProvider)
+            : new StreamableHTTPClientTransport(this.url, { authProvider: { token: this.options.tokenProvider } });
+          await client.connect(transport);
+          if (this.closed) { discarded = true; await client.close(); throw failure("closed"); }
+          this.client = client;
+          return client;
+        } catch {
+          if (!discarded) await client.close().catch(() => undefined);
+          throw this.closed ? failure("closed") : failure("connection_failed");
+        }
+      })().finally(() => { this.connecting = undefined; });
+    }
+    return this.connecting;
+  }
+  async call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+    if (this.closed) throw failure("closed");
+    if (!SUPPORTED.has(name)) throw failure("unsupported_tool");
+    record(args); bounded(args);
+    let mapped: Record<string, unknown>;
+    let operationTimeout = 30_000;
+    let target: number | undefined;
+    if (name === "list_pages") {
+      onlyKeys(args, []); mapped = {};
+    } else if (name === "new_page") {
+      onlyKeys(args, ["url", "background", "focus", "timeout", "timeoutMs"]);
+      if (args.focus !== undefined && args.focus !== false || args.background !== undefined && args.background !== true) throw failure("background_page_required");
+      mapped = { url: pageUrl(args.url), focus: false };
+      operationTimeout = timeout(args.timeoutMs ?? args.timeout) ?? 30_000;
+    } else {
+      target = pageId(args.pageId);
+      if (!this.owned.has(target)) throw failure("page_not_owned_by_this_session");
+      if (name === "evaluate_script") {
+        onlyKeys(args, ["pageId", "function", "args"]);
+        if (typeof args.function !== "string" || !args.function.trim() || args.args !== undefined && !Array.isArray(args.args)) throw failure("invalid_evaluation_arguments");
+        mapped = { tabId: target, function: args.function, ...(args.args !== undefined ? { args: args.args } : {}) };
+      } else if (name === "fill") {
+        onlyKeys(args, ["pageId", "uid", "value"]);
+        if (typeof args.uid !== "string" || !/^[\w-]{1,128}$/u.test(args.uid) || typeof args.value !== "string") throw failure("invalid_fill_arguments");
+        mapped = { tabId: target, uid: args.uid, value: args.value };
+      } else if (name === "take_snapshot") {
+        onlyKeys(args, ["pageId", "scopeSelector"]);
+        if (args.scopeSelector !== undefined && (typeof args.scopeSelector !== "string" || !args.scopeSelector.trim())) throw failure("invalid_snapshot_arguments");
+        mapped = { pageId: target, format: "accessibility_tree", compact: true,
+          ...(args.scopeSelector !== undefined ? { scopeSelector: args.scopeSelector } : {}) };
+      } else if (name === "navigate_page") {
+        onlyKeys(args, ["pageId", "type", "url", "timeout", "timeoutMs"]);
+        if (!["url", "reload", "back", "forward"].includes(String(args.type))) throw failure("invalid_navigation_type");
+        if (args.type !== "url" && args.url !== undefined) throw failure("unexpected_navigation_url");
+        const wait = timeout(args.timeoutMs ?? args.timeout);
+        mapped = { pageId: target, type: args.type, ...(args.type === "url" ? { url: pageUrl(args.url) } : {}),
+          ...(wait !== undefined ? { timeoutMs: wait } : {}) };
+        operationTimeout = wait ?? 30_000;
+      } else {
+        onlyKeys(args, ["pageId"]); mapped = { pageId: target };
+      }
+    }
+    const client = await this.connected();
+    if (this.closed) throw failure("closed");
+    if (name === "evaluate_script") {
+      return evaluateVibeAsync({
+        functionDeclaration: args.function as string,
+        ...(args.args !== undefined ? { args: args.args as unknown[] } : {}),
+        timeoutMs: operationTimeout,
+        evaluateOnce: async (declaration, values) => {
+          if (this.closed || !this.owned.has(target!)) throw failure("page_not_owned_by_this_session");
+          const argumentsForCall = { tabId: target, function: declaration,
+            ...(values !== undefined ? { args: values } : {}) };
+          bounded(argumentsForCall);
+          let response: unknown;
+          try { response = await client.callTool({ name: "evaluate_script", arguments: argumentsForCall }, { timeout: operationTimeout }); }
+          catch { throw failure("operation_outcome_unavailable_do_not_replay"); }
+          return evaluation(responseText(response));
+        },
+      });
+    }
+    // Never retry a transport error: a mutating operation may already have run.
+    let response: unknown;
+    try { response = await client.callTool({ name, arguments: mapped }, { timeout: operationTimeout }); }
+    catch { throw failure("operation_outcome_unavailable_do_not_replay"); }
+    const text = responseText(response);
+    if (name === "list_pages") {
+      const listing = pageListing(text);
+      if (!this.options.ownedPagesOnly) return listing;
+      return listing.split("\n").filter(line => {
+        const id = line.match(/^(\d+):/u);
+        return !!id && this.owned.has(Number(id[1]));
+      }).join("\n");
+    }
+    if (name === "take_snapshot") return snapshot(text);
+    if (name === "new_page") {
+      const created = primaryText(text).match(/^Successfully created new background page \(ID: (\d+)\)(?:[.,!]|\s|$)/u);
+      if (!created) throw failure("new_page_receipt_unavailable_do_not_adopt");
+      const id = pageId(Number(created[1]));
+      if (this.owned.has(id)) throw failure("duplicate_new_page_receipt");
+      if (this.closed) throw failure("closed");
+      this.owned.add(id);
+    } else if (name === "close_page") this.owned.delete(target!);
+    return primaryText(text);
+  }
+  close(): Promise<void> {
+    if (!this.closing) {
+      this.closed = true;
+      this.closing = (async () => {
+        const client = this.client ?? await this.connecting?.catch(() => undefined);
+        this.client = undefined;
+        this.owned.clear();
+        if (client) await client.close();
+      })();
+    }
+    return this.closing;
+  }
+}
+
+// Legacy/installed-Vibe transport and native receipt helpers from the owner workflow.
+
+/** Opaque public aliases. The actual MCP target and child paths are private
+ * owner settings injected at process launch. */
+export const MAC_MINI_VIBE_TARGET: VibeTargetAlias = "mac-mini";
+export const SERVER100_VIBE_TARGET: VibeTargetAlias = "server-100";
 
 export interface VibeChromeConfig {
   target: string;
@@ -16,6 +307,7 @@ export interface VibeChromeConfig {
   /** Required for a separate relay. Never shares its pid/state with the default relay. */
   relayStateDir?: string;
   timeoutMs?: number;
+  runtimeSettings?: BrowserTransportSettings;
 }
 
 export interface VibeMcpClient {
@@ -82,7 +374,7 @@ export class VibeMcpPort implements VibeToolPort {
     } catch (cause) {
       // An exception after dispatch is not proof of no effect. A caller may read
       // the provider state, but must not automatically submit the operation again.
-      const native = record(cause)?.data;
+      const native = mainRecord(cause)?.data;
       throw new VibeTransportError("vibe_mcp_outcome_unknown", {
         tool: name, outcome: "unknown", replayed: false,
         ...(native === undefined ? {} : { native }),
@@ -106,14 +398,19 @@ export class VibeMcpPort implements VibeToolPort {
 }
 
 /** Fixed installed child paths and SSH identity, with an explicit extension-session pin. */
-export function vibeStdioParameters(config: VibeChromeConfig): StdioServerParameters {
-  if (![MAC_MINI_VIBE_TARGET, SERVER100_VIBE_TARGET].includes(config.target)) throw new VibeTransportError("vibe_target_not_configured");
+function validateVibeShape(config: VibeChromeConfig): { port: number; state?: string } {
+  if (![MAC_MINI_VIBE_TARGET, SERVER100_VIBE_TARGET].includes(config.target as VibeTargetAlias)) throw new VibeTransportError("vibe_target_not_configured");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/u.test(config.sessionId)) throw new VibeTransportError("vibe_browser_session_required");
   const port = config.relayPort ?? 19888;
   if (!Number.isSafeInteger(port) || port < 1024 || port > 65534) throw new VibeTransportError("vibe_invalid_relay_port");
   const state = config.relayStateDir;
   if (port !== 19888 && !state) throw new VibeTransportError("vibe_custom_relay_requires_isolated_state");
   if (state && (!/^\/[a-zA-Z0-9_./-]+$/u.test(state) || state.split("/").includes(".."))) throw new VibeTransportError("vibe_invalid_relay_state");
+  return { port, ...(state ? { state } : {}) };
+}
+
+export function vibeStdioParameters(config: VibeChromeConfig): StdioServerParameters {
+  const { port, state } = validateVibeShape(config);
   const env = {
     ...getDefaultEnvironment(),
     VIBE_REMOTE_URL: "", VIBE_EXTENSION_UUID: "", VIBE_RELAY_UUID: "",
@@ -121,10 +418,13 @@ export function vibeStdioParameters(config: VibeChromeConfig): StdioServerParame
     ...(state ? { VIBE_MCP_STATE_DIR: state, VIBE_MCP_PID_FILE: `${state}/vibebrowser-relay.pid` } : {}),
   };
   const flags = ["start", "--transport", "stdio", "--session", config.sessionId, "--port", String(port)];
+  let runtime: ReturnType<typeof resolveVibeSettings>;
+  try { runtime = resolveVibeSettings(config.target, config.runtimeSettings ?? browserTransportSettingsFromEnv()); }
+  catch (error) { throw new VibeTransportError(error instanceof Error ? error.message : "vibe_runtime_settings_invalid"); }
   if (config.target === SERVER100_VIBE_TARGET) {
     return {
       command: process.execPath,
-      args: ["/home/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/cli.js", ...flags],
+      args: [runtime.cliPath, ...flags],
       env,
       stderr: "pipe",
     };
@@ -139,8 +439,8 @@ export function vibeStdioParameters(config: VibeChromeConfig): StdioServerParame
   return {
     command: "/usr/bin/ssh",
     args: ["-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=5",
-      "roomhacker@192.168.2.4", "/usr/bin/env", ...remoteEnv, "/usr/local/bin/node",
-      "/Users/roomhacker/.local/share/vibebrowser/mcp/node_modules/@vibebrowser/mcp/dist/cli.js", ...flags],
+      runtime.sshTarget!, "/usr/bin/env", ...remoteEnv, runtime.nodePath!,
+      runtime.cliPath, ...flags],
     env,
     stderr: "pipe",
   };
@@ -150,7 +450,7 @@ export function vibeStdioParameters(config: VibeChromeConfig): StdioServerParame
  * default relay keeps its native default state/pid layout. An explicit state
  * path has a different pid layout even when it names the default data folder. */
 export function vibeOwnershipNamespace(config: VibeChromeConfig): string {
-  vibeStdioParameters(config);
+  validateVibeShape(config);
   const binding = ["vibe-ownership-v1", config.target, config.sessionId,
     config.relayPort ?? 19888, config.relayStateDir ? posix.normalize(config.relayStateDir).replace(/\/$/u, "") : "default"];
   return "vibe-" + createHash("sha256").update(JSON.stringify(binding)).digest("hex");
@@ -160,23 +460,23 @@ export function vibeOwnershipNamespace(config: VibeChromeConfig): string {
  * different Vibe session. Match the observed full literal and the exact page. */
 export function isVibePageOwnershipRefusal(cause: unknown, pageId: number): boolean {
   if (!(cause instanceof VibeTransportError) || cause.code !== "vibe_tool_refused" || !Number.isSafeInteger(pageId) || pageId <= 0) return false;
-  const response = record(cause.receipt);
+  const response = mainRecord(cause.receipt);
   if (!Array.isArray(response?.content)) return false;
-  const parts = response.content.map(record);
+  const parts = response.content.map(mainRecord);
   if (!parts.length || parts.some(part => part?.type !== "text" || typeof part.text !== "string")) return false;
   return withoutPageState(parts.map(part => part!.text as string).join("\n")) ===
     `Error: tabId ${pageId} is not authorized for this session \u2014 only the tab this session started on, or tabs it opened itself, can be scripted`;
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
+function mainRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 export function vibeResultText(response: unknown): string {
-  const result = record(response);
+  const result = mainRecord(response);
   if (!result) throw new VibeTransportError("vibe_invalid_response", response);
   if (result.isError === true) throw new VibeTransportError("vibe_tool_refused", response);
-  const structured = record(result.structuredContent);
+  const structured = mainRecord(result.structuredContent);
   for (const envelope of [result, structured]) {
     if (!envelope) continue;
     if (envelope.task || envelope.taskId || envelope.job_id || ["accepted", "pending", "running", "working", "unknown"].includes(String(envelope.status))) {
@@ -185,7 +485,7 @@ export function vibeResultText(response: unknown): string {
   }
   if (!Array.isArray(result.content)) throw new VibeTransportError("vibe_invalid_response", response);
   const text = result.content.map(part => {
-    const item = record(part);
+    const item = mainRecord(part);
     if (item?.type !== "text" || typeof item.text !== "string") throw new VibeTransportError("vibe_expected_text_response", response);
     return item.text;
   }).join("\n");
@@ -210,7 +510,7 @@ export function vibeCreatedPageId(text: string): number {
 
 export function parseVibeEvaluation<T = unknown>(response: unknown): T {
   let value: Record<string, unknown> | undefined;
-  try { value = record(JSON.parse(withoutPageState(vibeResultText(response)))); }
+  try { value = mainRecord(JSON.parse(withoutPageState(vibeResultText(response)))); }
   catch (error) {
     if (error instanceof VibeTransportError) throw error;
     throw new VibeTransportError("vibe_evaluation_invalid", response);
@@ -254,7 +554,7 @@ export function normalizeVibeSnapshot(response: unknown): string {
     "$1uid=$4 $2 $3$5");
 }
 
-function pageId(args: Record<string, unknown>): number {
+function mainPageId(args: Record<string, unknown>): number {
   const value = args.pageId;
   if (!Number.isSafeInteger(value) || Number(value) < 1) throw new VibeTransportError("vibe_exact_page_required");
   if (args.tabId !== undefined && args.tabId !== value) throw new VibeTransportError("vibe_conflicting_page_binding");
@@ -279,9 +579,9 @@ export type VibeOperationReceipt = {
 /** Safe metadata for AHAP errors. Native content, function text and values stay private. */
 export function vibeOperationReceipt(error: unknown): VibeOperationReceipt | undefined {
   if (!(error instanceof VibeTransportError)) return undefined;
-  const value = record(error.receipt);
+  const value = mainRecord(error.receipt);
   if (!value || typeof value.operationId !== "string" || !OPERATION_ID.test(value.operationId)
-    || ![MAC_MINI_VIBE_TARGET, SERVER100_VIBE_TARGET].includes(String(value.target))
+    || ![MAC_MINI_VIBE_TARGET, SERVER100_VIBE_TARGET].includes(String(value.target) as VibeTargetAlias)
     || typeof value.sessionId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/u.test(value.sessionId)
     || !Number.isSafeInteger(value.pageId) || Number(value.pageId) < 1
     || !["pending", "missing", "complete", "failed", "undefined", "not_json", "too_large", "capacity", "conflict"].includes(String(value.state))) return undefined;
@@ -351,7 +651,7 @@ export class VibeChromeTransport implements ChromePageTools {
       }
       case "navigate_page": {
         if (!["url", "back", "forward", "reload"].includes(String(args.type))) throw new VibeTransportError("vibe_invalid_arguments");
-        mapped = { pageId: pageId(args), type: args.type };
+        mapped = { pageId: mainPageId(args), type: args.type };
         if (args.type === "url") mapped.url = boundedString(args.url, 64 * 1024);
         const timeout = args.timeoutMs ?? args.timeout;
         if (timeout !== undefined) {
@@ -360,14 +660,14 @@ export class VibeChromeTransport implements ChromePageTools {
         }
         break;
       }
-      case "take_snapshot": mapped = { pageId: pageId(args), format: "accessibility_tree" }; break;
+      case "take_snapshot": mapped = { pageId: mainPageId(args), format: "accessibility_tree" }; break;
       case "fill": {
         const uid = boundedString(args.uid, 40);
         if (!/^A[0-9]+$/u.test(uid)) throw new VibeTransportError("vibe_invalid_accessibility_ref");
-        mapped = { tabId: pageId(args), uid, value: boundedString(args.value, 512 * 1024) };
+        mapped = { tabId: mainPageId(args), uid, value: boundedString(args.value, 512 * 1024) };
         break;
       }
-      case "close_page": mapped = { pageId: pageId(args) }; break;
+      case "close_page": mapped = { pageId: mainPageId(args) }; break;
       default: throw new VibeTransportError("vibe_unsupported_tool");
     }
     const result = await this.port.callTool(name, mapped);
@@ -380,7 +680,7 @@ export class VibeChromeTransport implements ChromePageTools {
   async close(): Promise<void> { await this.port.close?.(); }
 
   private async evaluate(args: Record<string, unknown>): Promise<string> {
-    const tab = pageId(args), fn = boundedString(args.function, 512 * 1024);
+    const tab = mainPageId(args), fn = boundedString(args.function, 512 * 1024);
     if (args.args !== undefined && (!Array.isArray(args.args) || !args.args.every(item => typeof item === "string"))) throw new VibeTransportError("vibe_invalid_arguments");
     const operationId = randomUUID();
     const receipt: VibeOperationReceipt = { operationId, target: this.config.target, sessionId: this.config.sessionId,

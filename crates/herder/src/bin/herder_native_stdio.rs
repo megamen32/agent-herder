@@ -33,6 +33,10 @@ mod native_reader;
 #[path = "herder_native_stdio/scoped_profile.rs"]
 mod scoped_profile;
 
+#[cfg(target_os = "linux")]
+#[path = "herder_native_stdio/owner_enroll.rs"]
+mod owner_enroll;
+
 use herder::{
     auth::identity::Caller,
     config::Config,
@@ -65,6 +69,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 owner_launch::serve(profiles.remove(0)).await
             } else {
                 owner_multi::serve(profiles).await
+            }
+        }
+        #[cfg(target_os = "linux")]
+        Some(flag) if flag == "--enroll-existing-owner-profile" => {
+            let path = args.next().ok_or("--enroll-existing-owner-profile requires a path")?;
+            let selection = args.next().ok_or(
+                "existing-session enrollment requires --request-key KEY or --all-approved",
+            )?;
+            if selection == "--all-approved" {
+                if args.next().is_some() {
+                    return Err("--all-approved cannot be combined with other enrollment arguments".into());
+                }
+                let opened = scoped_profile::open_owner(std::path::Path::new(&path))?;
+                let stdout = io::stdout();
+                owner_enroll::run_all(opened, &mut stdout.lock())
+            } else if selection == "--request-key" {
+                let key = args.next().ok_or("--request-key requires an exact profile entry key")?
+                    .into_string().map_err(|_| "invalid request key encoding")?;
+                if args.next().is_some() { return Err("unexpected arguments".into()) }
+                let opened = scoped_profile::open_owner(std::path::Path::new(&path))?;
+                let receipt = owner_enroll::run(opened, &key)?;
+                println!("{}", serde_json::to_string(&receipt)?);
+                Ok(())
+            } else {
+                Err("existing-session enrollment requires --request-key KEY or --all-approved".into())
             }
         }
         Some(flag) if flag == "--config" => {
@@ -107,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(_) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: herder_native_stdio [--config PATH [--scoped-profile PATH]]",
+            "usage: herder_native_stdio [--config PATH [--scoped-profile PATH]] | --trusted-owner-profile PATH ... | --enroll-existing-owner-profile PATH (--request-key KEY | --all-approved)",
         )
         .into()),
     }

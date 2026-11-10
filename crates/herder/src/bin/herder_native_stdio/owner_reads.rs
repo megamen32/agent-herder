@@ -212,9 +212,8 @@ fn handle(
             };
             let address = authorize(identity, policy, instance, &session)?;
             let db = read_store(policy)?;
-            let source = registration::membership_source_for_harness(&db, &principal.id.0, instance,
-                &policy.generation, &session, &policy.harness).map_err(|_| "scope_unavailable")?
-                .ok_or("unauthorized")?;
+            let source = policy.membership_source(&db, &session)
+                .map_err(|_| "scope_unavailable")?.ok_or("unauthorized")?;
             let workspace = registration::read_workspace(&db, &session).map_err(|_| "scope_unavailable")?;
             let is_self = identity.require_self(Some(&session)).is_ok();
             let grant = session_read_grant(identity, policy, instance, &session)?;
@@ -231,7 +230,8 @@ fn handle(
                 "human_stop":{"held":held},
                 "message_target":{"tool":"deliver","action":"session","session_ref":session.0},
                 "lineage":{"parent_ref":null,"source":source,
-                    "native_ancestry_known":source=="verified_fresh_root_receipt"}}))
+                    "native_ancestry_known":source=="verified_fresh_root_receipt",
+                    "parent_verified":source=="verified_fresh_root_receipt"}}))
         }
         Request::Sessions(Sessions::List {
             project_ref,
@@ -837,6 +837,7 @@ mod tests {
             Self {
                 root,
                 policy: OwnerPolicy {
+                    existing_sessions: Vec::new(),
                     principal: PrincipalId("alice".into()),
                     harness: "opencode".into(),
                     instance: InstanceRef {
@@ -1376,6 +1377,7 @@ for line in sys.stdin:
             )
         };
         let policy = Arc::new(OwnerPolicy {
+            existing_sessions: Vec::new(),
             principal: f.policy.principal.clone(),
             harness: f.policy.harness.clone(),
             instance: f.policy.instance.clone(),

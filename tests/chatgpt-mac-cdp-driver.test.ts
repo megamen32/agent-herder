@@ -112,12 +112,12 @@ describe("ChatGPT on existing Mac mini CDP", () => {
         return json({ scope: "a".repeat(64) });
       }
       if (name === "evaluate_script" && String(args.function).includes("conversation_read")) {
-        return json({ messages: [{ id: "m1", role: "assistant", text: "same account" }] });
+        return json({ messages: [{ id: "m1", role: "assistant", text: "same account", phase: "final", completionStatus: "in_progress", endTurn: false }] });
       }
       throw new Error(`unexpected tool ${name}`);
     } };
     const driver = new ChatGptMacCdpDriver(tools, 7, 0, "a".repeat(64));
-    await expect(driver.getMessages(ID)).resolves.toMatchObject([{ id: "m1", text: "same account" }]);
+    await expect(driver.getMessages(ID)).resolves.toMatchObject([{ id: "m1", text: "same account", phase: "final", completionStatus: "in_progress", endTurn: false }]);
     expect(scopeReads).toBe(2);
   });
 
@@ -568,8 +568,8 @@ describe("bounded list failure diagnostics", () => {
   it.each([
     ["list_http_429", "list_http_429"],
     ["read_cooldown", "read_cooldown"],
-    ["private-code-state-cookie-sentinel", "unknown_error"],
-    [{ secret: "private-code-state-cookie-sentinel" }, "unknown_error"],
+    ["fixture-cookie", "unknown_error"],
+    [{ secret: "fixture-cookie" }, "unknown_error"],
   ])("never emits arbitrary CDP list errors", async (error, expected) => {
     const fixture = new BrowserFixture();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -579,7 +579,7 @@ describe("bounded list failure diagnostics", () => {
     try {
       expect(await new ChatGptMacCdpDriver(tools).listChats()).toMatchObject([{ id: ID }]);
       expect(warn.mock.calls.flat().join(" ")).toContain(expected);
-      expect(warn.mock.calls.flat().join(" ")).not.toContain("private-code-state-cookie-sentinel");
+      expect(warn.mock.calls.flat().join(" ")).not.toContain("fixture-cookie");
     } finally { warn.mockRestore(); }
   });
 });
