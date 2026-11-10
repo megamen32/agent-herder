@@ -114,9 +114,9 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
       expected_account_scope:this.config.accountScope});
     if(value.chat_ref!==chatId||(!value.latest_user&&!Array.isArray(value.messages)))
       throw new Error("userio_read_invalid");
-    if(value.account_scope!==undefined&&value.account_scope!==this.config.accountScope)
+    if(value.account_scope!==this.config.accountScope)
       throw new Error("userio_read_account_mismatch");
-    if(value.messages!==undefined&&(!Array.isArray(value.messages)||value.account_scope!==this.config.accountScope))
+    if(value.messages!==undefined&&!Array.isArray(value.messages))
       throw new Error("userio_read_invalid");
     return value as GptRead;
   }

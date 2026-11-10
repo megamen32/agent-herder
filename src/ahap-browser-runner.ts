@@ -21,7 +21,7 @@ type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 type BrowserAdapterPort = Pick<BrowserChatAdapter,
   "init" | "listSessions" | "getSession" | "getSessionMessages" | "sendMessage" | "createSession">
-  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; getAccountScope(): string | undefined; getOwnedPageNamespace?(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; prepareCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryViewReceipt>; getCanaryViewReceipt?(): unknown; closeCanaryObservation?(): Promise<{ page_id?: number; closed: boolean }>; readCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryObservation>; close?(): void | Promise<void> };
+  & Partial<Pick<BrowserChatAdapter, "archiveSession" | "supportsArchive">> & LegacyReadPort & { readonly type: string; readonly name: string; readonly browserFeatures: unknown; readonly addressedReadsVerifyPinnedScope?: true; getAccountScope(): string | undefined; getOwnedPageNamespace?(): string | undefined; verifyPinnedAccountScope?(): Promise<void>; prepareCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryViewReceipt>; getCanaryViewReceipt?(): unknown; closeCanaryObservation?(): Promise<{ page_id?: number; closed: boolean }>; readCanaryObservation?(nativeSessionId: string): Promise<BrowserCanaryObservation>; close?(): void | Promise<void> };
 
 const METHODS = ["init", "listSessions", "getSession", "getSessionMessages", "sendMessage", "createSession"];
 const CONTROL_CAPABILITIES = {
@@ -136,6 +136,12 @@ export async function serveBrowserChatAhap(
     await adapter.verifyPinnedAccountScope?.();
     assertAccount();
   };
+  // Only a driver whose addressed native read freshly checks and returns the
+  // pinned scope may omit separate remote checks around that same read.
+  const assertAddressedReadAccount = async () => {
+    if (adapter.addressedReadsVerifyPinnedScope) assertAccount();
+    else await assertCurrentAccount();
+  };
 
   for await (const line of lines) {
     if (!line.trim() || stopped) continue;
@@ -194,12 +200,16 @@ export async function serveBrowserChatAhap(
           result = null;
           break;
         case "listSessions":
-        case "getRawTranscript":
         case "listProjects":
           if (request.method === "listProjects" && (adapter.browserFeatures as {projects?:boolean} | undefined)?.projects === false) { error(id, -32601, "projects not supported"); continue; }
           await assertCurrentAccount();
           result = await legacyRead(adapter, request.method, params);
           await assertCurrentAccount();
+          break;
+        case "getRawTranscript":
+          await assertAddressedReadAccount();
+          result = await legacyRead(adapter, request.method, params);
+          await assertAddressedReadAccount();
           break;
         case "getSession":
           await assertCurrentAccount();
@@ -208,14 +218,14 @@ export async function serveBrowserChatAhap(
           await assertCurrentAccount();
           break;
         case "getSessionMessages":
-          await assertCurrentAccount();
+          await assertAddressedReadAccount();
           if (typeof params.id !== "string" || !params.id.trim()
             || (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) < 1 || Number(params.limit) > 200))) {
             error(id, -32602, "getSessionMessages requires session id and a limit from 1 to 200");
             continue;
           }
           result = await adapter.getSessionMessages(params.id, params.limit as number | undefined);
-          await assertCurrentAccount();
+          await assertAddressedReadAccount();
           break;
         case "sendMessage": {
           assertAccount();
@@ -493,6 +503,7 @@ export function makeConfiguredAdapter(
       harness, cwd: process.cwd() } as const;
     const adapter = new BrowserChatAdapter(driver, provider, process.cwd(), true, true);
     return Object.assign(adapter, {
+      ...(harness === "chatgpt" ? { addressedReadsVerifyPinnedScope: true as const } : {}),
       getRawTranscript: (id:string) => driver.getRawTranscript(browserChatNativeId(id, harness, true)),
       getAccountScope: () => driver.getAccountScope(),
       verifyPinnedAccountScope: async () => {

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { PassThrough } from "node:stream";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UserIoChatGptDriver, type UserIoConfig } from "../src/adapters/chatgpt-userio-driver.js";
-import { makeConfiguredAdapter } from "../src/ahap-browser-runner.js";
+import { makeConfiguredAdapter, serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
 import { userIoAccountScope } from "../src/adapters/userio-agent-channel.js";
 
 const CHAT = "11111111-1111-4111-8111-111111111111";
@@ -53,7 +54,7 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
   return {driver:new UserIoChatGptDriver(config),config,events,faults};
 }
 const read={
-  ok:true,chat_ref:CHAT,ready:true,phase:"idle",
+  ok:true,chat_ref:CHAT,account_scope:SCOPE,ready:true,phase:"idle",
   latest_user:{id:USR,role:"user",text:"User's original prompt",status:"finished_successfully",
     end_turn:true,create_time:1,update_time:1,phase:"final"},
   latest_assistant:{id:ASST,role:"assistant",text:"Original assistant response",status:"finished_successfully",
@@ -61,6 +62,58 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it.each([undefined, 'b'.repeat(64)])('rejects latest-pair reads without the exact scope: %s',async(account_scope)=>{
+    const {driver}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
+      gpt_scope:{ok:true,account_scope:SCOPE},gpt_read:{...read,account_scope}});
+    await driver.verifyPinnedAccountScope();
+    await expect(driver.getMessages(CHAT)).rejects.toThrow('userio_read_account_mismatch');
+    await expect(driver.getRawTranscript(CHAT)).rejects.toThrow('userio_read_account_mismatch');
+  },10000);
+  it('runs addressed reads through real AHAP and UserIO channel without duplicate account probes',async()=>{
+    const f=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
+      gpt_scope:{ok:true,account_scope:SCOPE},gpt_list:{ok:true,chats:[]},gpt_read:read});
+    vi.stubGlobal('fetch',f.config.fetcher);
+    try {
+      const adapter=makeConfiguredAdapter({AHAP_HARNESS:'chatgpt',AHAP_BROWSER_TRANSPORT:'userio',
+        AHAP_BROWSER_ACCOUNT_SCOPE:SCOPE,AHAP_USERIO_ENDPOINT:f.config.endpoint,
+        AHAP_USERIO_AGENT_ID:f.config.agentId,AHAP_USERIO_INSTANCE_ID:INSTANCE,AHAP_USERIO_TOKEN_FILE:f.config.tokenFile});
+      const input=new PassThrough(),output=new PassThrough();let data='';
+      output.setEncoding('utf8');output.on('data',chunk=>{data+=chunk;});
+      const serving=serveBrowserChatAhap(adapter,input,output,SCOPE);
+      const requests=[{method:'initialize',params:{harness:'chatgpt',ahapVersion:'0.1'}},
+        {method:'init',params:{}},{method:'getSessionMessages',params:{id:CHAT}},
+        {method:'getRawTranscript',params:{id:CHAT}}];
+      input.end(requests.map((v,i)=>JSON.stringify({jsonrpc:'2.0',id:i+1,...v})).join('\n')+'\n');
+      await serving;
+      const replies=data.trim().split('\n').map(x=>JSON.parse(x));
+      expect(replies.every(r=>!r.error)).toBe(true);
+      expect(replies[2].result).toHaveLength(2);
+      expect(f.events.map(e=>e.action)).toEqual(['gpt_session_proof','gpt_scope','gpt_list','gpt_read','gpt_read']);
+      expect(f.events.filter(e=>e.action==='gpt_read').every(e=>e.args.expected_account_scope===SCOPE)).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  },15000);
+  it.each([undefined, 'b'.repeat(64)])('AHAP rejects addressed data with missing or wrong native scope: %s',async(account_scope)=>{
+    const f=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
+      gpt_scope:{ok:true,account_scope:SCOPE},gpt_list:{ok:true,chats:[]},gpt_read:{...read,account_scope}});
+    vi.stubGlobal('fetch',f.config.fetcher);
+    try {
+      const adapter=makeConfiguredAdapter({AHAP_HARNESS:'chatgpt',AHAP_BROWSER_TRANSPORT:'userio',
+        AHAP_BROWSER_ACCOUNT_SCOPE:SCOPE,AHAP_USERIO_ENDPOINT:f.config.endpoint,
+        AHAP_USERIO_AGENT_ID:f.config.agentId,AHAP_USERIO_INSTANCE_ID:INSTANCE,AHAP_USERIO_TOKEN_FILE:f.config.tokenFile});
+      const input=new PassThrough(),output=new PassThrough();let data='';
+      output.setEncoding('utf8');output.on('data',chunk=>{data+=chunk;});
+      const serving=serveBrowserChatAhap(adapter,input,output,SCOPE);
+      const requests=[{method:'initialize',params:{harness:'chatgpt',ahapVersion:'0.1'}},
+        {method:'init',params:{}},{method:'getSessionMessages',params:{id:CHAT}},
+        {method:'getRawTranscript',params:{id:CHAT}}];
+      input.end(requests.map((v,i)=>JSON.stringify({jsonrpc:'2.0',id:i+1,...v})).join('\n')+'\n');
+      await serving;
+      const replies=data.trim().split('\n').map(x=>JSON.parse(x));
+      expect(replies[2].error).toBeDefined();expect(replies[3].error).toBeDefined();
+      expect(data).not.toContain("User's original prompt");
+      expect(f.events.map(e=>e.action)).toEqual(['gpt_session_proof','gpt_scope','gpt_list','gpt_read','gpt_read']);
+    } finally { vi.unstubAllGlobals(); }
+  },15000);
   it('discards pending draft and archives admitted alias only with exact native confirmation',async()=>{
     const root=mkdtempSync(join(tmpdir(),'herder-draft-test-')); homes.push(root);
     const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
