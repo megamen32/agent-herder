@@ -7,6 +7,7 @@ import {
   modelCatalogIssue,
   modelValueIssue,
   updateAllowedHarness,
+  updateIncidentModel,
   updatePreferredHarness,
   updateProjectRoute,
   updateProjectRouteModel,
@@ -14,6 +15,7 @@ import {
   type LaunchPolicy,
 } from "../src/web-ui/launch-policy-settings.js";
 import { resolveProjectLaunch, validateAutomationLaunchPolicy } from "../src/automation-launch-policy.js";
+import { healthModelForHarness, normalizeIncidentExecution } from "../src/health-remediation.js";
 
 const component = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx", import.meta.url), "utf8");
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
@@ -119,6 +121,21 @@ describe("new session launch policy settings", () => {
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/hand-typed-model"])).toBeUndefined();
     // An empty catalog carries no verdict about the model.
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", [])).toBeUndefined();
+  });
+
+  it("switches Luna to direct MiniMax and back using the saved execution route", () => {
+    const luna = { runtime: "opencode", provider: "omniroute", model: "omniroute/cx/gpt-6-luna", reasoning: "default", topic: "health" } as const;
+    const directRoute = "minimax-coding-plan/MiniMax-M3.1-Flash";
+    const direct = normalizeIncidentExecution(updateIncidentModel(luna, directRoute));
+    expect(direct.provider).toBe("minimax-coding-plan");
+    expect(healthModelForHarness("opencode", direct)).toBe(directRoute);
+    const back = normalizeIncidentExecution(updateIncidentModel(direct, luna.model));
+    expect(back).toEqual(luna);
+    expect(healthModelForHarness("opencode", back)).toBe(luna.model);
+    const short = normalizeIncidentExecution(updateIncidentModel(direct, "MiniMax-M3.1-Flash"));
+    expect(short.provider).toBe("minimax-coding-plan");
+    expect(healthModelForHarness("opencode", short)).toBe(directRoute);
+    expect(component).toContain("updateIncidentModel(policy.incidentExecution ?? INCIDENT_EXECUTION, event.target.value)");
   });
 
   it("accepts valid incident models and rejects malformed input", () => {
