@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createContext, runInContext } from "node:vm";
+import { createContext, runInContext, type Context } from "node:vm";
 import { Readable, Writable } from "node:stream";
 import { MAC_MINI_VIBE_TARGET, SERVER100_VIBE_TARGET, VibeChromeTransport, VibeTransportError, VibeMcpPort, normalizeVibePages, parseVibeEvaluation, parseVibeOpenedPage, vibeStdioParameters, type VibeMcpClient, VibeChromePageTools } from "../src/adapters/vibe-chrome-transport.js";
 import { serveBrowserChatAhap } from "../src/ahap-browser-runner.js";
-import { createContext, runInContext, type Context } from "node:vm";
 import { evaluateVibeAsync, VIBE_ASYNC_EVALUATION_PROTOCOL } from "../src/adapters/vibe-async-evaluation.js";
 import { parseChromeEvaluation } from "../src/adapters/mac-mini-chrome-transport.js";
 

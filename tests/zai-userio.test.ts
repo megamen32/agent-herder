@@ -9,9 +9,9 @@ import { ZaiUserIoJudgeSlot } from "../src/autopilot/zai-userio-judge.js";
 import { makeConfiguredAdapter } from "../src/ahap-browser-runner.js";
 import { validateV1BrowserAutopilotConfig } from "../src/automation/v1-browser-runtime.js";
 
-const REF="fixture-chat-"+randomUUID();
-const USER="fixture-user-"+randomUUID();
-const ASST="fixture-assistant-"+randomUUID();
+const REF=randomUUID();
+const USER=randomUUID();
+const ASST=randomUUID();
 const SCOPE=createHash("sha256").update(randomUUID()).digest("hex");
 const INSTANCE="browser-"+randomUUID();
 const folders:string[]=[];
