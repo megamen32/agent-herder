@@ -13,8 +13,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b389-f791-7522-8d47-8f51b04540c8",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,9 +22,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V009 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V009 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:50:59+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:45+03:00",
+  "updated_at": "2026-11-07T04:10:19+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:50:59+03:00",
@@ -68,6 +68,47 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:05:44+03:00",
+      "note": "Исполнитель 01a1b389-f791-7522-8d47-8f51b04540c8, отдельное рабочее дерево.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:06:40+03:00",
+      "note": "Worker 01a1b389-f791-7522-8d47-8f51b04540c8 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b389-f791-7522-8d47-8f51b04540c8",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T04:06:40+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v009a",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b389-f791-7522-8d47-8f51b04540c8"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:10:19+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Строгие типы входных вариантов 14 инструментов, включая resource, опубликованы f0b0b96f; 24 теста прошли. JSON Schema discovery и dispatch ещё не подключены."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "Строгие типы входных вариантов 14 инструментов, включая resource, опубликованы f0b0b96f; 24 теста прошли. JSON Schema discovery и dispatch ещё не подключены."
 }

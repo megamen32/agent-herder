@@ -1,0 +1,20 @@
+(node:3) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: none
+[agent-herder] native CI disabled: isolated configuration or peer verification failed
+[agent-herder] Fatal: SystemError [ERR_SYSTEM_ERROR]: A system error occurred: uv_os_get_passwd returned ENOENT (no such file or directory)
+    at userInfo (node:os:306:11)
+    at createConfiguredFleetApiHandler (file:///dev/shm/herder-l20-production-like-UAA2Dao1/release/dist/web/fleet-wiring.js:34:38)
+    at main (file:///dev/shm/herder-l20-production-like-UAA2Dao1/release/dist/index.js:1479:30)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  code: 'ERR_SYSTEM_ERROR',
+  info: {
+    errno: -2,
+    code: 'ENOENT',
+    message: 'no such file or directory',
+    syscall: 'uv_os_get_passwd'
+  },
+  errno: [Getter/Setter: -2],
+  syscall: [Getter/Setter: 'uv_os_get_passwd']
+}

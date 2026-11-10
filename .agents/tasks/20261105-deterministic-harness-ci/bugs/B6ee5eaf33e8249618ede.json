@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T10:10:13+00:00",
+  "details": "Изолированная копия установленного d2df618 через обычный API создала тестовую сессию, но /transcript?limit=1 вернул HTTP 422: native adapter has no supported complete JSONL export. Доказательство evidence/server44-d2-entrypoint-stderr-20261107.log. Новые данные или настоящие сессии не использовались.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T10:10:13+00:00",
+      "changes": {
+        "details": "Изолированная копия установленного d2df618 через обычный API создала тестовую сессию, но /transcript?limit=1 вернул HTTP 422: native adapter has no supported complete JSONL export. Доказательство evidence/server44-d2-entrypoint-stderr-20261107.log. Новые данные или настоящие сессии не использовались.",
+        "source": "server-44 isolated actual-entrypoint-candidate",
+        "status": "open",
+        "title": "server-44: старый Herder не выдаёт полный транскрипт Codex"
+      }
+    }
+  ],
+  "id": "B6ee5eaf33e8249618ede",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "server-44 isolated actual-entrypoint-candidate",
+  "status": "open",
+  "title": "server-44: старый Herder не выдаёт полный транскрипт Codex",
+  "updated_at": "2026-11-07T10:10:13+00:00"
+}

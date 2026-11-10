@@ -1,0 +1,91 @@
+{
+  "id": "I001",
+  "label": "Собрать общий adapters namespace и зависимости",
+  "description": "Интегрировать подтверждённые owned commits Codex, OpenCode и browser normalizers; единый adapters namespace и только необходимые Cargo зависимости. Не считать тесты native acceptance.",
+  "acceptance": "Все подключённые modules компилируются и их тесты проходят на объединённом source; нет Vibe runtime dependency, явно указаны версии и границы незавершённых маршрутов.",
+  "affected_files": [
+    "crates/herder/src/lib.rs",
+    "crates/herder/Cargo.toml",
+    "crates/herder/Cargo.lock"
+  ],
+  "depends_on": [
+    "V006"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "created_at": "2026-11-07T05:08:12+03:00",
+  "updated_at": "2026-11-07T05:15:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T05:08:12+03:00",
+      "note": "",
+      "changes": {
+        "id": "I001",
+        "label": "Собрать общий adapters namespace и зависимости",
+        "description": "Интегрировать подтверждённые owned commits Codex, OpenCode и browser normalizers; единый adapters namespace и только необходимые Cargo зависимости. Не считать тесты native acceptance.",
+        "acceptance": "Все подключённые modules компилируются и их тесты проходят на объединённом source; нет Vibe runtime dependency, явно указаны версии и границы незавершённых маршрутов.",
+        "affected_files": [
+          "crates/herder/src/lib.rs",
+          "crates/herder/Cargo.toml",
+          "crates/herder/Cargo.lock"
+        ],
+        "depends_on": [
+          "V006"
+        ],
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:09:46+03:00",
+      "note": "Исполнитель 01a1b3c3-f8d7-73d2-91d5-105790aa28be.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:09:50+03:00",
+      "note": "Worker 01a1b3c3-f8d7-73d2-91d5-105790aa28be registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f8d7-73d2-91d5-105790aa28be",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder",
+          "registered_at": "2026-11-07T05:09:50+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder/.tmp/i001",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b3c3-f8d7-73d2-91d5-105790aa28be"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:15:01+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "Codex/OpenCode connections и ChatGPT/Z.ai DTO с единым adapters namespace и reqwest 0.12.28 объединены в main 47ff0fba; 46 unit tests passed. Native/browser runtime, auth и полная приёмка ещё не доказаны; Vibe не является dependency."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "owner": "01a1b3c3-f8d7-73d2-91d5-105790aa28be",
+  "worker": null,
+  "result": "Codex/OpenCode connections и ChatGPT/Z.ai DTO с единым adapters namespace и reqwest 0.12.28 объединены в main 47ff0fba; 46 unit tests passed. Native/browser runtime, auth и полная приёмка ещё не доказаны; Vibe не является dependency."
+}

@@ -1,0 +1,28 @@
+{
+  "binding": {
+    "target": "mcp:shell:mac-mini-2012.lan:VibeMacMiniLocal",
+    "sessionId": "session_1"
+  },
+  "modelPrompts": 0,
+  "historyReads": 0,
+  "observedAt": "2026-11-08T23:35:04.975Z",
+  "pages": [
+    {
+      "site": "chatgpt",
+      "pageId": 1115967545,
+      "probe": {
+        "scope": "b3f35cdebc0da7360763bc2c80426ee6e86e15d3239d581616ba35c634d055f1"
+      },
+      "probedWithAsyncBridge": true
+    },
+    {
+      "site": "zai",
+      "pageId": 1115967548,
+      "probe": {
+        "scope": "1aa02989cb1349edca3ce1f9edae68a068369e5de570e9a6be3a53916595df0a",
+        "identityField": "id"
+      },
+      "probedWithAsyncBridge": true
+    }
+  ]
+}

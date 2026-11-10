@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T15:15:50+00:00",
+  "details": "Изолированный unified candidate server-44 c5620ac43f6953bc61cc6c5582546bb93ef3dab39a1d3fec282f71181ac35612: настоящий Qoder создал два session ID, evidence.listed_ids содержит только первый; исходный Qoder validator вернул PASS, общий gate это отклонил. Полнота поискового ответа отсутствует в отчёте; не изменять файлы владельца Qoder без распределения.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L23",
+      "at": "2026-11-06T15:15:50+00:00",
+      "changes": {
+        "details": "Изолированный unified candidate server-44 c5620ac43f6953bc61cc6c5582546bb93ef3dab39a1d3fec282f71181ac35612: настоящий Qoder создал два session ID, evidence.listed_ids содержит только первый; исходный Qoder validator вернул PASS, общий gate это отклонил. Полнота поискового ответа отсутствует в отчёте; не изменять файлы владельца Qoder без распределения.",
+        "source": "evidence/l23-unified-candidate.json; scripts/native-qoder-report.py",
+        "status": "open",
+        "title": "Qoder candidate report marks PASS when only one of two created sessions is listed"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L25",
+      "at": "2026-11-06T15:50:52+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/native-qoder-l25-green-proof.txt",
+            "red_proof_path": "evidence/native-qoder-l25-red.log",
+            "red_result": "FAILED (failures=7)",
+            "red_sha256": "1a7c89e4a9664b52ccd28ec5ee78f43f11160672efb707463e8ec1ba9ead0a29",
+            "result": "PASS",
+            "sha256": "5c635b5408b46cbb830c2bc31080625f88de26650d14a194411426c88f741bf1",
+            "test_command": "python3 tests/native-qoder-report.test.py"
+          },
+          "kind": "fixed",
+          "reason": "Qoder producer and validator enforce exact created/listed IDs and source-backed complete search responses; network-none candidate f87636 receipt independently validated in evidence/native-qoder-l25-f87636-validation.log. Scope: in-memory MCP; digest excludes full node_modules."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B8a88ae17a75b43e19ed4",
+  "owner": "L23",
+  "reporter": "L23",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/native-qoder-l25-green-proof.txt",
+      "red_proof_path": "evidence/native-qoder-l25-red.log",
+      "red_result": "FAILED (failures=7)",
+      "red_sha256": "1a7c89e4a9664b52ccd28ec5ee78f43f11160672efb707463e8ec1ba9ead0a29",
+      "result": "PASS",
+      "sha256": "5c635b5408b46cbb830c2bc31080625f88de26650d14a194411426c88f741bf1",
+      "test_command": "python3 tests/native-qoder-report.test.py"
+    },
+    "kind": "fixed",
+    "reason": "Qoder producer and validator enforce exact created/listed IDs and source-backed complete search responses; network-none candidate f87636 receipt independently validated in evidence/native-qoder-l25-f87636-validation.log. Scope: in-memory MCP; digest excludes full node_modules."
+  },
+  "source": "evidence/l23-unified-candidate.json; scripts/native-qoder-report.py",
+  "status": "fixed",
+  "title": "Qoder candidate report marks PASS when only one of two created sessions is listed",
+  "updated_at": "2026-11-06T15:50:52+00:00"
+}

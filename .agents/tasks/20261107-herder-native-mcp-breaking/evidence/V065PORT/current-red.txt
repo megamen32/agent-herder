@@ -1,0 +1,22 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-opencode-submit/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.60s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 1 test
+test adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission ... FAILED
+
+failures:
+
+---- adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission stdout ----
+
+thread 'adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission' (3691255) panicked at src/adapters/opencode/control.rs:394:9:
+assertion failed: matches!(result, Err(SubmitError::DefinitelyNotSent { .. }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    adapters::opencode::control::tests::current_with_observed_turn_is_rejected_before_native_submission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 114 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`

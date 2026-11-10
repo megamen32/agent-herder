@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T05:50:17+00:00",
+  "details": "До исправления из процесса тестовой модели доступен listening socket host loopback; RED /tmp/herder-native-net-red.log. Изолированный user/net namespace с loopback-only прошёл локально и на server-44; доступ к файловой системе пока отдельно не ограничен.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T05:50:17+00:00",
+      "changes": {
+        "details": "До исправления из процесса тестовой модели доступен listening socket host loopback; RED /tmp/herder-native-net-red.log. Изолированный user/net namespace с loopback-only прошёл локально и на server-44; доступ к файловой системе пока отдельно не ограничен.",
+        "source": "python3 tests/native/smoke.py",
+        "status": "open",
+        "title": "Native test launcher доступен к сети хоста и внешним endpoint"
+      }
+    }
+  ],
+  "id": "Bad399a5834b04437bb50",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "python3 tests/native/smoke.py",
+  "status": "open",
+  "title": "Native test launcher доступен к сети хоста и внешним endpoint",
+  "updated_at": "2026-11-07T05:50:17+00:00"
+}

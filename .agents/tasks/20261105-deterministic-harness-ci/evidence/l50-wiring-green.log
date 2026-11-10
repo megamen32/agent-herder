@@ -1,0 +1,13 @@
+test_authority_draft_cannot_open_staging (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_failed_runner_never_produces_a_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_fence_change_or_wrong_policy_is_refused (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_mismatched_transaction_evidence_is_refused (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_real_authority_channel_delivers_incomplete_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_transaction_prepares_authority_owned_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.157s
+
+OK
+
+PASS: 6 tests

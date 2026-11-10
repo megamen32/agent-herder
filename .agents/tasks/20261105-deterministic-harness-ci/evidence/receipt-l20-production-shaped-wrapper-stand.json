@@ -1,0 +1,91 @@
+{
+  "scope": "installed-codex-consumer",
+  "sessions": [
+    "01a1b171-e928-7283-b63f-a66801ef9c18",
+    "01a1b171-f1c3-7f91-85db-e6663c3525e6"
+  ],
+  "sessionsSearched": true,
+  "projectListed": true,
+  "transcriptPages": [
+    3,
+    3
+  ],
+  "completed": true,
+  "transcriptComplete": true,
+  "verifiedPeerPid": 3211187,
+  "status": "PASS",
+  "harness": "codex",
+  "allRequiredScenarios": false,
+  "limitations": [
+    "Codex only; other applicable harnesses not tested",
+    "test payload fingerprint does not cover full fleet bundle",
+    "loaded module bytes not independently attested",
+    "Synthetic HOME and credentials; not a production installed proof",
+    "Herder unit itself was not filesystem- or network-sandboxed; observed synthetic models metadata cache, external traffic not fully traced",
+    "CI search reads at most 1000 recent messages per pinned session",
+    "full suite for other applicable harnesses not run"
+  ],
+  "unit": "herder-l20-prodlike-2dfc71fe4d0f.service",
+  "before": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3211311,
+    "entrypoint": "/dev/shm/herder-l20-production-like-UAA2Dao1/release/dist/index.js",
+    "port": 44403,
+    "starttime": "76129045",
+    "indexingEnabled": true,
+    "artifact_sha256": "8a1e4913c8e6cb84afad7b48248cd0fc9f54ede5503555e5552f384840fd950c",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ],
+    "unitProcessChain": [
+      {
+        "pid": 3211304,
+        "starttime": "76129043"
+      },
+      {
+        "pid": 3211311,
+        "starttime": "76129045"
+      }
+    ]
+  },
+  "after": {
+    "scope": "installed-readonly-identity",
+    "status": "PASS",
+    "pid": 3211311,
+    "entrypoint": "/dev/shm/herder-l20-production-like-UAA2Dao1/release/dist/index.js",
+    "port": 44403,
+    "starttime": "76129045",
+    "indexingEnabled": true,
+    "artifact_sha256": "8a1e4913c8e6cb84afad7b48248cd0fc9f54ede5503555e5552f384840fd950c",
+    "artifactMatch": true,
+    "limitations": [
+      "no test-session or delivery proof",
+      "loaded module bytes not independently attested",
+      "tested payload digest does not cover the complete fleet bundle"
+    ],
+    "unitProcessChain": [
+      {
+        "pid": 3211304,
+        "starttime": "76129043"
+      },
+      {
+        "pid": 3211311,
+        "starttime": "76129045"
+      }
+    ]
+  },
+  "peerPid": 3211187,
+  "peerStarttime": "76129017",
+  "fixtureRequests": 2,
+  "fixturePaths": {
+    "/v1/responses": 2
+  },
+  "standType": "independent-production-shaped-test-only",
+  "syntheticProductionFilesUnchanged": true,
+  "syntheticForeignSearchAbsent": true,
+  "wrapperChainVerified": true
+}

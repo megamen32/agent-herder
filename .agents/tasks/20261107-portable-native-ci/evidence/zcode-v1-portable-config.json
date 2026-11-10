@@ -1,0 +1,15 @@
+{
+  "python": "/usr/bin/python3",
+  "launcher": "/home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder/tests/native/launch.py",
+  "stand": "/home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder/tests/native/v1_zcode_stand.py",
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-805fd477final/manifest.json",
+  "manifest_sha256": "93c2c25bbfcf3b7d91772dd98e942d2ab43ac4be7a8d16d81583d6a04c9d17fe",
+  "zcode_runtime": "/tmp/herder-zcode-v1-runtime-recovered-6ad71fab/runtime",
+  "zcode_client_dist": "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/dist",
+  "retain_root": "/tmp/herder-zcode-v1-portable-candidate-01",
+  "capabilities": {
+    "os": "linux",
+    "arch": "x86_64",
+    "backend": "linux-netns-bwrap"
+  }
+}

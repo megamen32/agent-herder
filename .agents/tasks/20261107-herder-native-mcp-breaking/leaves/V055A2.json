@@ -1,0 +1,68 @@
+{
+  "id": "V055A2",
+  "label": "Codex: Добавить exact native turn interrupt adapter",
+  "description": "Реализовать bounded stop adapter slice в crates/herder/src/adapters/codex/control.rs: проверять адрес instance/thread и точный active turn через read-only thread/turns/list; выполнять ровно один turn/interrupt для переданного turn_id; pre-send refusal отделять от UNKNOWN, а при неопределённом результате делать только read-only exact-turn readback без повтора. Не менять HumanStop core/store, create.rs или чужой leaf.",
+  "acceptance": "Unit/fake-server tests доказывают точную пару thread/turn, mismatch/stale отказ до interrupt, один interrupt при timeout, и readback interrupted против inProgress. Формат request/response соответствует локальной официальной schema. Rustfmt и scoped tests проходят. Изолированный live test only when test profile isolated; иначе явно ограничить доказательство fixtures.",
+  "affected_files": [
+    "crates/herder/src/adapters/codex/control.rs"
+  ],
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "V053",
+    "V055A1"
+  ],
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "created_at": "2026-11-07T08:27:31+03:00",
+  "updated_at": "2026-11-07T08:38:51+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T08:27:31+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055A2",
+        "label": "Codex: Добавить exact native turn interrupt adapter",
+        "description": "Реализовать bounded stop adapter slice в crates/herder/src/adapters/codex/control.rs: проверять адрес instance/thread и точный active turn через read-only thread/turns/list; выполнять ровно один turn/interrupt для переданного turn_id; pre-send refusal отделять от UNKNOWN, а при неопределённом результате делать только read-only exact-turn readback без повтора. Не менять HumanStop core/store, create.rs или чужой leaf.",
+        "acceptance": "Unit/fake-server tests доказывают точную пару thread/turn, mismatch/stale отказ до interrupt, один interrupt при timeout, и readback interrupted против inProgress. Формат request/response соответствует локальной официальной schema. Rustfmt и scoped tests проходят. Изолированный live test only when test profile isolated; иначе явно ограничить доказательство fixtures.",
+        "affected_files": [
+          "crates/herder/src/adapters/codex/control.rs"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "V053",
+          "V055A1"
+        ],
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:27:43+03:00",
+      "note": "Исполняю только exact interrupt adapter в control.rs; чужой HumanStop core и create.rs не меняю.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:38:51+03:00",
+      "note": "Scoped exact-turn adapter slice завершён; чужой core/store и create-port не затронуты.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен `CodexControl::interrupt_exact(&SessionAddress, native_turn_id)` в `crates/herder/src/adapters/codex/control.rs`, commit `c261af7b`. Перед send сверяются точный instance/thread/turn, и read-only thread/turns/list подтверждает active status; stale/mismatch отказываются до interrupt. Отправляется ровно один turn/interrupt; pre-send/remote refusal отделён от transport UNKNOWN, после неопределённой отправки выполняется только read-only exact-turn readback: interrupted подтверждается, inProgress/ошибка остаются UNKNOWN без retry. Fake-server тесты: 7/7 прошли; rustfmt +stable --edition 2024 --check и git diff --check прошли. RED/GREEN для ETXTBSY fixture зарегистрирован и закрыт (bug Ba9635d8b1c884ec8a969), доказательства в плане .tmp/v055a2. Не доказаны экспорт control-модуля, live isolated Codex interrupt, интеграция с HumanStop authority/core, public MCP или общий HumanStop PASS. Commit создан в переданной detached worktree, не опубликован в ветку."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Добавлен `CodexControl::interrupt_exact(&SessionAddress, native_turn_id)` в `crates/herder/src/adapters/codex/control.rs`, commit `c261af7b`. Перед send сверяются точный instance/thread/turn, и read-only thread/turns/list подтверждает active status; stale/mismatch отказываются до interrupt. Отправляется ровно один turn/interrupt; pre-send/remote refusal отделён от transport UNKNOWN, после неопределённой отправки выполняется только read-only exact-turn readback: interrupted подтверждается, inProgress/ошибка остаются UNKNOWN без retry. Fake-server тесты: 7/7 прошли; rustfmt +stable --edition 2024 --check и git diff --check прошли. RED/GREEN для ETXTBSY fixture зарегистрирован и закрыт (bug Ba9635d8b1c884ec8a969), доказательства в плане .tmp/v055a2. Не доказаны экспорт control-модуля, live isolated Codex interrupt, интеграция с HumanStop authority/core, public MCP или общий HumanStop PASS. Commit создан в переданной detached worktree, не опубликован в ветку."
+}

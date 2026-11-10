@@ -1,0 +1,83 @@
+{
+  "id": "L67",
+  "label": "Минимальный CI: OpenCode",
+  "description": "Проверить сохранённый сценарий OpenCode на общем согласованном кандидате и установленном маршруте, не повторяя UNKNOWN.",
+  "acceptance": "Две сессии, доставка, ответ, поиск, проекты и полный постраничный transcript через Herder; точная версия и границы proof.",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T03:59:53+03:00",
+  "updated_at": "2026-11-07T21:30:05+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:59:53+03:00",
+      "note": "",
+      "changes": {
+        "id": "L67",
+        "label": "Минимальный CI: OpenCode",
+        "description": "Проверить сохранённый сценарий OpenCode на общем согласованном кандидате и установленном маршруте, не повторяя UNKNOWN.",
+        "acceptance": "Две сессии, доставка, ответ, поиск, проекты и полный постраничный transcript через Herder; точная версия и границы proof.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T04:45:58+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "В общем прогоне Herder остановился на Codex до проверки OpenCode; отдельный старый candidate PASS не подтверждает установленный процесс.",
+        "note": "Изолированный probe d2df618: OpenCode CLI->лжемодель PASS, Herder сценарий не достигнут. Не помечать как полный PASS."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:01:15+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "OpenCode: transcript HTTP 422 unsupported native JSONL harness на изолированном реальном приложении.",
+        "note": "Отдельный probe server-44 d2df618 создал сессию и доставил сообщение, но полный транскрипт не прочитан. /tmp/herder-minci-01a1ac52/opencode-independent/err2.log"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:24:19+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Кандидат прошёл; installed consumer и общий gate ещё не проверены.",
+        "note": "server-44: изолированный штатный Herder entrypoint + реальные Codex 0.167.0 и OpenCode 2.1.3 прошли 2 сессии, отправку, поиск, проект и полный transcript 3+3 страниц; общий прогон 27.85 с, evidence/l66-l67-combined-candidate.json. Исходники опубликованы до 529dc7b9; точный установленный релиз не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:05+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Кандидат прошёл; installed consumer и общий gate ещё не проверены.",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

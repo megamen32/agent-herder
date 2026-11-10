@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T09:48:02+00:00",
+  "details": "Independent source review e3fdac67: ScopedStopApplication resolve_session uses nonblocking lock before stop(lock_wait). During in-progress handoff it returns Busy/scope_unavailable without recording hold, so expected wait-for-handoff then durable hold never occurs. Source refs scoped_stop/mcp_stop.rs70, scoped_stop.rs357/554. Minimal fix under one waiting gate: verify exact mapping/instance/scope and install hold; no reentrant lock or skipped imported-scope checks. Regression through actual MCP port with fake handoff barrier; read-port itself supported. Tesla same session owns fix; no native replay.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra/Nietzsche",
+      "at": "2026-11-07T09:48:02+00:00",
+      "changes": {
+        "details": "Independent source review e3fdac67: ScopedStopApplication resolve_session uses nonblocking lock before stop(lock_wait). During in-progress handoff it returns Busy/scope_unavailable without recording hold, so expected wait-for-handoff then durable hold never occurs. Source refs scoped_stop/mcp_stop.rs70, scoped_stop.rs357/554. Minimal fix under one waiting gate: verify exact mapping/instance/scope and install hold; no reentrant lock or skipped imported-scope checks. Regression through actual MCP port with fake handoff barrier; read-port itself supported. Tesla same session owns fix; no native replay.",
+        "source": "Independent review of e3fdac67; existing MCP sequential fixtures2PASS do not cover concurrent gate",
+        "status": "open",
+        "title": "MCP Stop теряет waiting hold при занятом handoff gate"
+      }
+    }
+  ],
+  "id": "B570ab1592ac24b828615",
+  "owner": "Astra/Nietzsche",
+  "reporter": "Astra/Nietzsche",
+  "source": "Independent review of e3fdac67; existing MCP sequential fixtures2PASS do not cover concurrent gate",
+  "status": "open",
+  "title": "MCP Stop теряет waiting hold при занятом handoff gate",
+  "updated_at": "2026-11-07T09:48:02+00:00"
+}

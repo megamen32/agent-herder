@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /tmp/herder-l27-integration-check-LY7sJO
+
+ ❯ tests/fast-agent-file-adapter.test.ts (21 tests | 1 failed | 20 skipped) 31ms
+     × resumes a completed managed session with its exact provider-qualified model 28ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/fast-agent-file-adapter.test.ts > Fast Agent persisted observer > resumes a completed managed session with its exact provider-qualified model
+AssertionError: expected 'herder-test' to be 'openai.herder-test' // Object.is equality
+
+Expected: "openai.herder-test"
+Received: "herder-test"
+
+ ❯ tests/fast-agent-file-adapter.test.ts:43:70
+     41|     const isolated=vi.spyOn(workloadLauncher,"spawnIsolatedWorkload");
+     42|     const adapter=new FastAgentFileAdapter({home,cwd:home,fastAgentBin…
+     43|     expect((await adapter.getSession("fast-agent:model-id"))?.model).t…
+       |                                                                      ^
+     44|     expect(await adapter.sendMessage("fast-agent:model-id",{message:"r…
+     45|     const args=isolated.mock.calls.at(-1)?.[1] ?? [];
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 skipped (21)
+   Start at  19:44:17
+   Duration  2.01s (transform 1.44s, setup 56ms, import 1.66s, tests 31ms, environment 0ms)
+

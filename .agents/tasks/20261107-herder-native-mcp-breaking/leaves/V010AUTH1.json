@@ -1,0 +1,73 @@
+{
+  "id": "V010AUTH1",
+  "label": "Разделить target ACL и self binding в core",
+  "description": "Внешний verified principal может читать разрешённый target без self; self-зависимые операции отказывают при отсутствующем или неверном binding.",
+  "acceptance": "Два principal, точные target grants, отсутствие и подмена self проверены, изоляция контекстов; локальный commit без Cargo/lib.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/auth/identity.rs",
+    "crates/herder/src/mcp/transport.rs"
+  ],
+  "created_at": "2026-11-07T05:42:45+03:00",
+  "updated_at": "2026-11-07T05:52:56+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T05:42:45+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010AUTH1",
+        "label": "Разделить target ACL и self binding в core",
+        "description": "Внешний verified principal может читать разрешённый target без self; self-зависимые операции отказывают при отсутствующем или неверном binding.",
+        "acceptance": "Два principal, точные target grants, отсутствие и подмена self проверены, изоляция контекстов; локальный commit без Cargo/lib.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/auth/identity.rs",
+          "crates/herder/src/mcp/transport.rs"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:42:50+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:47:42+03:00",
+      "note": "Контракт core завершён; обычный launcher по-прежнему Unknown.",
+      "changes": {
+        "status": "done",
+        "result": "Локальный 3e956bce от d457e401: connection identity разделяет principal и optional verified self; exact target ACL проверяется без self, session/context отказывает до application при отсутствии или несовпадении. Тесты двух principals и wire, существующие ACL и stdio GREEN. Внешний issuer и настоящий target handler не подключены."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:52:56+03:00",
+      "note": "Интегрировано; следует стыковать с доверенным issuer.",
+      "changes": {
+        "result": "Опубликован e8a9df96: connection identity с раздельными target ACL и optional self binding. Два wire-теста контракта, два transport-теста и stdio отказ прошли; issuer principal и реальный target handler не доказаны."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "Опубликован e8a9df96: connection identity с раздельными target ACL и optional self binding. Два wire-теста контракта, два transport-теста и stdio отказ прошли; issuer principal и реальный target handler не доказаны."
+}

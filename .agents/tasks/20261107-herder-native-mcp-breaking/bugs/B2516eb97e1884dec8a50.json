@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T06:48:26+00:00",
+  "details": "Read-only challenge HEAD5c491e4c: application/scoped_stop.rs handoff match outcome accepts only valid Ok admission; Err(SubmitError::DefinitelyNotSent{reason}) falls through None and writes intents.state=unknown, humanstop_dispatches.finished. scope_unsettled denies every subsequent intent on same target for any unknown intent. Native adapter has explicit pre-write DefinitelyNotSent refusals, so no uncertain native effect exists. Preserve durable rejected/effect=none and reason without auto replay same key; allow later independent request if no real holds/unknown. Required RED: fake bounded control DefinitelyNotSent, persist/reopen, same key no second invocation, next distinct key can claim. Actual UNKNOWN remains fenced. Assigned to sole HumanStop DRI Tesla via Terra.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T06:48:26+00:00",
+      "changes": {
+        "details": "Read-only challenge HEAD5c491e4c: application/scoped_stop.rs handoff match outcome accepts only valid Ok admission; Err(SubmitError::DefinitelyNotSent{reason}) falls through None and writes intents.state=unknown, humanstop_dispatches.finished. scope_unsettled denies every subsequent intent on same target for any unknown intent. Native adapter has explicit pre-write DefinitelyNotSent refusals, so no uncertain native effect exists. Preserve durable rejected/effect=none and reason without auto replay same key; allow later independent request if no real holds/unknown. Required RED: fake bounded control DefinitelyNotSent, persist/reopen, same key no second invocation, next distinct key can claim. Actual UNKNOWN remains fenced. Assigned to sole HumanStop DRI Tesla via Terra.",
+        "source": "Independent challenge of 740ac97f..5c491e4c",
+        "status": "open",
+        "title": "HumanStop: доказанный DefinitelyNotSent превращается в UNKNOWN и блокирует сессию"
+      }
+    }
+  ],
+  "id": "B2516eb97e1884dec8a50",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "Independent challenge of 740ac97f..5c491e4c",
+  "status": "open",
+  "title": "HumanStop: доказанный DefinitelyNotSent превращается в UNKNOWN и блокирует сессию",
+  "updated_at": "2026-11-07T06:48:26+00:00"
+}

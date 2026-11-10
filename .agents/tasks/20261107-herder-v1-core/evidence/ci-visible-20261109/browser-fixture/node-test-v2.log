@@ -1,0 +1,112 @@
+TAP version 13
+# Subtest: config requires dedicated exact profile, relay, and reviewed URL
+ok 1 - config requires dedicated exact profile, relay, and reviewed URL
+  ---
+  duration_ms: 2.602506
+  type: 'test'
+  ...
+# Subtest: every CLI call pins all launch settings and clears external auto-attach selectors
+ok 2 - every CLI call pins all launch settings and clears external auto-attach selectors
+  ---
+  duration_ms: 0.909712
+  type: 'test'
+  ...
+# Subtest: proc stat handles names with spaces and parentheses
+ok 3 - proc stat handles names with spaces and parentheses
+  ---
+  duration_ms: 0.394156
+  type: 'test'
+  ...
+# Subtest: process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+ok 4 - process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+  ---
+  duration_ms: 2.248273
+  type: 'test'
+  ...
+# Subtest: generation binds boot, exact source config and all three process start times
+ok 5 - generation binds boot, exact source config and all three process start times
+  ---
+  duration_ms: 1.078723
+  type: 'test'
+  ...
+# Subtest: anchor matching scans only own CLI tab handles and restores original selection
+ok 6 - anchor matching scans only own CLI tab handles and restores original selection
+  ---
+  duration_ms: 0.677739
+  type: 'test'
+  ...
+# Subtest: ambiguous and missing anchors fail after restoring tab selection
+ok 7 - ambiguous and missing anchors fail after restoring tab selection
+  ---
+  duration_ms: 0.547114
+  type: 'test'
+  ...
+# Subtest: failed read and failed restore cannot produce PASS
+ok 8 - failed read and failed restore cannot produce PASS
+  ---
+  duration_ms: 0.342742
+  type: 'test'
+  ...
+# Subtest: UNKNOWN close is reconciled once, with no replay and only exact owned session
+ok 9 - UNKNOWN close is reconciled once, with no replay and only exact owned session
+  ---
+  duration_ms: 0.996579
+  type: 'test'
+  ...
+# Subtest: unconfirmed cleanup retains durable state and never retries close
+ok 10 - unconfirmed cleanup retains durable state and never retries close
+  ---
+  duration_ms: 1.018609
+  type: 'test'
+  ...
+# Subtest: orphan browser cannot trigger a new daemon or an unbound close
+ok 11 - orphan browser cannot trigger a new daemon or an unbound close
+  ---
+  duration_ms: 0.450679
+  type: 'test'
+  ...
+# Subtest: fixed inspection bounds auth GET and never includes caller JavaScript or session body
+ok 12 - fixed inspection bounds auth GET and never includes caller JavaScript or session body
+  ---
+  duration_ms: 0.347091
+  type: 'test'
+  ...
+# Subtest: restore acknowledgement alone cannot hide a changed selected tab
+ok 13 - restore acknowledgement alone cannot hide a changed selected tab
+  ---
+  duration_ms: 0.292332
+  type: 'test'
+  ...
+# Subtest: a modified stored process tuple is rejected even with an unchanged generation label
+ok 14 - a modified stored process tuple is rejected even with an unchanged generation label
+  ---
+  duration_ms: 0.307562
+  type: 'test'
+  ...
+# Subtest: crash and reboot recovery require proven disappearance plus a valid dedicated relay
+ok 15 - crash and reboot recovery require proven disappearance plus a valid dedicated relay
+  ---
+  duration_ms: 0.56854
+  type: 'test'
+  ...
+# Subtest: a healthy existing generation resumes without open or close effects
+ok 16 - a healthy existing generation resumes without open or close effects
+  ---
+  duration_ms: 0.628012
+  type: 'test'
+  ...
+# Subtest: failed recovery cannot reach a browser launch or erase the prior state
+ok 17 - failed recovery cannot reach a browser launch or erase the prior state
+  ---
+  duration_ms: 0.35395
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 112.859288

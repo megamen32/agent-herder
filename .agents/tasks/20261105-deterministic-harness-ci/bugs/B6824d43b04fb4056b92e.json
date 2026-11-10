@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T01:24:55+00:00",
+  "details": "На авторизованном Mac Mini создана тестовая draft-сессия; штатный deliver вернул not_attempted, ChatGPT first message not submitted: New-chat textbox not found. Vibe видит composer. До отправки не дошло.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T01:24:55+00:00",
+      "changes": {
+        "details": "На авторизованном Mac Mini создана тестовая draft-сессия; штатный deliver вернул not_attempted, ChatGPT first message not submitted: New-chat textbox not found. Vibe видит composer. До отправки не дошло.",
+        "source": "live Herder ChatGPT test 2026-11-07",
+        "status": "open",
+        "title": "ChatGPT: Herder не находит поле ввода при первом сообщении"
+      }
+    }
+  ],
+  "id": "B6824d43b04fb4056b92e",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "live Herder ChatGPT test 2026-11-07",
+  "status": "open",
+  "title": "ChatGPT: Herder не находит поле ввода при первом сообщении",
+  "updated_at": "2026-11-07T01:24:55+00:00"
+}

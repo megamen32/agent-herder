@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_opencode_rejects_partial_or_missing_search_evidence (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 71, in test_opencode_rejects_partial_or_missing_search_evidence
+    self.assertIn('opencode: complete search evidence not proven',native_ci.candidate_gate_failures(receipt))
+AssertionError: 'opencode: complete search evidence not proven' not found in ['qoder: active turn missing', 'qoder: native client version or provider compatibility not proven']
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

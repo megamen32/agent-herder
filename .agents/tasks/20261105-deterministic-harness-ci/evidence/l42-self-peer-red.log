@@ -1,0 +1,31 @@
+TAP version 13
+# file:///home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/codex-unix-evidence.test.mjs:3
+# import {pageEvidence,searchEvidence,isolatedFleetPeers} from '../scripts/codex-unix-evidence.mjs';
+#                                     ^^^^^^^^^^^^^^^^^^
+# SyntaxError: The requested module '../scripts/codex-unix-evidence.mjs' does not provide an export named 'isolatedFleetPeers'
+#     at ModuleJob._instantiate (node:internal/modules/esm/module_job:226:21)
+#     at async ModuleJob.run (node:internal/modules/esm/module_job:335:5)
+#     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+#     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+# Node.js v22.22.2
+# Subtest: tests/codex-unix-evidence.test.mjs
+not ok 1 - tests/codex-unix-evidence.test.mjs
+  ---
+  duration_ms: 91.888738
+  type: 'test'
+  location: '/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/codex-unix-evidence.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 106.876939

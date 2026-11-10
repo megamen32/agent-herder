@@ -1,0 +1,52 @@
+{
+  "identity": {
+    "head": "0ebc4eb40d676bf55630f143fd0dfa2372cf15d5",
+    "source": {
+      "tests/native/installed-browser-bindings.ts": "e39a9aec9e9f73a971c059830769b91a6280503cc8805b54662287a643c01f06",
+      "tests/native/installed-browser-smoke.ts": "ad4414e7ab7bfbcc28da9e50a106f22108a56d0297bd455bfa804929834d24fd",
+      "tests/native/installed-codex-proof.ts": "c3d3c3395c84c2a57363556a92f4e7f293b969adb727ef76ab44f51afbfb87bc",
+      "tests/native/installed-zcode-proof.ts": "10c9bc36dd6e99497966b4c6c7fb1e3d964fc5161e9ba52d063664afae3919e9",
+      "tests/native/installed-owned-cleanup.ts": "ccce5f915fc41324c748b3d62a73a62c320efc31f06555d74fe35e4f8283e222",
+      "src/ahap-browser-runner.ts": "3bd04f46e6d609ccda77f0ef6a3f03b3405fe8a273856fdf58f1d6732980f2f9",
+      "src/adapters/browser-vibe-transport.ts": null,
+      "src/ahap-zcode-runner.ts": "a3c81a873baac8d2c2f33398cf1ac7a86bfdb085ca1710bf7767ec51a0887ed8",
+      "src/adapters/zcode.ts": "780ac4ee93196327ce275c16642d469487c2bfa091360fc26d22e401903285e8",
+      "deploy/fleet/ci-browser-fixture.mjs": "d66d3280068b4c4c5950b6582b92f3568797ff602073d2cd380ae0e91d40e4f5"
+    }
+  },
+  "checks": [
+    {
+      "name": "typescript",
+      "code": 0
+    },
+    {
+      "name": "tests",
+      "code": 0
+    },
+    {
+      "name": "gate",
+      "code": 0
+    },
+    {
+      "name": "build",
+      "code": 0
+    },
+    {
+      "name": "whitespace",
+      "code": 0
+    }
+  ],
+  "identity_after": {
+    "tests/native/installed-browser-bindings.ts": "e39a9aec9e9f73a971c059830769b91a6280503cc8805b54662287a643c01f06",
+    "tests/native/installed-browser-smoke.ts": "ad4414e7ab7bfbcc28da9e50a106f22108a56d0297bd455bfa804929834d24fd",
+    "tests/native/installed-codex-proof.ts": "c3d3c3395c84c2a57363556a92f4e7f293b969adb727ef76ab44f51afbfb87bc",
+    "tests/native/installed-zcode-proof.ts": "10c9bc36dd6e99497966b4c6c7fb1e3d964fc5161e9ba52d063664afae3919e9",
+    "tests/native/installed-owned-cleanup.ts": "ccce5f915fc41324c748b3d62a73a62c320efc31f06555d74fe35e4f8283e222",
+    "src/ahap-browser-runner.ts": "3bd04f46e6d609ccda77f0ef6a3f03b3405fe8a273856fdf58f1d6732980f2f9",
+    "src/adapters/browser-vibe-transport.ts": null,
+    "src/ahap-zcode-runner.ts": "a3c81a873baac8d2c2f33398cf1ac7a86bfdb085ca1710bf7767ec51a0887ed8",
+    "src/adapters/zcode.ts": "780ac4ee93196327ce275c16642d469487c2bfa091360fc26d22e401903285e8",
+    "deploy/fleet/ci-browser-fixture.mjs": "d66d3280068b4c4c5950b6582b92f3568797ff602073d2cd380ae0e91d40e4f5"
+  },
+  "source_stable": true
+}

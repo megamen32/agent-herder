@@ -1,0 +1,17 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 10 tests
+test mcp::resources::tests::authorized_task_read_rejects_result_for_different_task_id ... ok
+test mcp::resources::tests::list_projection_uses_rmcp_resource_and_deduplicates_uris ... ok
+test mcp::resources::tests::parser_rejects_ambiguous_noncanonical_and_invalid_uris ... ok
+test mcp::resources::tests::session_and_transcript_results_must_carry_the_uri_session_ref ... ok
+test mcp::resources::tests::resource_uris_round_trip_opaque_references_canonically ... ok
+test mcp::resources::tests::current_grants_are_checked_before_each_private_read ... ok
+test mcp::resources::tests::read_projection_requires_matching_uri_and_typed_source_result ... ok
+test mcp::resources::tests::source_identity_must_match_uri_for_task_and_registered_resource ... ok
+test mcp::resources::tests::task_reads_require_owner_and_exact_session_grant ... ok
+test mcp::resources::tests::list_cursor_is_private_and_bound_to_principal_collection_and_snapshot ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.00s
+

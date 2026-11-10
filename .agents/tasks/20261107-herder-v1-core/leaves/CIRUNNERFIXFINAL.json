@@ -1,0 +1,64 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Finish reviewed runner continuation after archive failure",
+  "description": "Remaining bounded slice from CIRUNNERFINAL: commit reviewed Python3.10 symlink-filter compatibility and actual bin/runsvc.sh path fixes, review exact root-protected partial-install plan, execute once, observe queued workflow.",
+  "acceptance": "Safe archive tests and actual official extraction PASS; source committed; exact failed pre-registration receipt reconciled; one guarded continuation installs online runner and real CI result is preserved.",
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 15
+  },
+  "id": "CIRUNNERFIXFINAL",
+  "created_at": "2026-11-09T06:01:56+03:00",
+  "updated_at": "2026-11-09T06:19:30+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T06:01:56+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Finish reviewed runner continuation after archive failure",
+        "description": "Remaining bounded slice from CIRUNNERFINAL: commit reviewed Python3.10 symlink-filter compatibility and actual bin/runsvc.sh path fixes, review exact root-protected partial-install plan, execute once, observe queued workflow.",
+        "acceptance": "Safe archive tests and actual official extraction PASS; source committed; exact failed pre-registration receipt reconciled; one guarded continuation installs online runner and real CI result is preserved.",
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 15
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:19:30+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Infrastructure PASS: runner21 herder-installed-server100 online/idle, service enabled active/running,6artifact/helper/fixture pins exact, credentials0600. One reviewed continuation CONFIRMED exit0; no duplicate registration. Final sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a, hosted Linux/macOS PASS. Actual installedjob128956411915/run42554202875 FAIL native_profiles_missing(chatgpt,zai,zcode), NOT_SUBMITTED, NOT_CREATED, exit2, cleanup_verified true. Canonical resulte569804b5d1bcbfc8d2da25affe2f172b24315b0926243f61f0f80d57422f059 and independent audite32d81533df9087f422dbb5fdddc776f8eb1b820ad4423fe51ac81b84ee82346. Full five-lane remains CIINSTALLFINAL blocked."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Infrastructure PASS: runner21 herder-installed-server100 online/idle, service enabled active/running,6artifact/helper/fixture pins exact, credentials0600. One reviewed continuation CONFIRMED exit0; no duplicate registration. Final sourcef8f5d4141be48f0ff5aefe0fcd8bd028755ac64a, hosted Linux/macOS PASS. Actual installedjob128956411915/run42554202875 FAIL native_profiles_missing(chatgpt,zai,zcode), NOT_SUBMITTED, NOT_CREATED, exit2, cleanup_verified true. Canonical resulte569804b5d1bcbfc8d2da25affe2f172b24315b0926243f61f0f80d57422f059 and independent audite32d81533df9087f422dbb5fdddc776f8eb1b820ad4423fe51ac81b84ee82346. Full five-lane remains CIINSTALLFINAL blocked."
+}

@@ -1,0 +1,109 @@
+{
+  "id": "V055BOUND",
+  "label": "Codex: предоставить штатный bounded create/submit порт",
+  "description": "Выделенная native часть V025PROD, выполняется владельцем Codex. Вывести существующий synchronous bounded RPC из async-only оболочки в обычные методы, которые используют и native trait, и HumanStop composition. Без test-only poll-once и без нового writer.",
+  "acceptance": "Штатные bounded методы create/submit сохраняют exact instance/ref, timeout и DefinitelyNotSent/UNKNOWN. Вызов возвращается только после ограниченного native RPC; никакой отложенный writer не получает возможность писать после возврата. Async port переиспользует тот же код. Fake tests подтверждают один native write и no replay; production MCP proof отдельно.",
+  "depends_on": [
+    "V055PIPE"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/codex/control.rs",
+    "crates/herder/src/adapters/codex/create.rs"
+  ],
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "note": "Astra hourly dispatch. Common scoped_stop/launcher у Tesla/Terra; native files только Codex owner. API согласовать точным сообщением, не ждать подтверждения для независимого кода.",
+  "created_at": "2026-11-07T11:26:00+03:00",
+  "updated_at": "2026-11-07T11:46:07+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:26:00+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055BOUND",
+        "label": "Codex: предоставить штатный bounded create/submit порт",
+        "description": "Выделенная native часть V025PROD, выполняется владельцем Codex. Вывести существующий synchronous bounded RPC из async-only оболочки в обычные методы, которые используют и native trait, и HumanStop composition. Без test-only poll-once и без нового writer.",
+        "acceptance": "Штатные bounded методы create/submit сохраняют exact instance/ref, timeout и DefinitelyNotSent/UNKNOWN. Вызов возвращается только после ограниченного native RPC; никакой отложенный writer не получает возможность писать после возврата. Async port переиспользует тот же код. Fake tests подтверждают один native write и no replay; production MCP proof отдельно.",
+        "depends_on": [
+          "V055A3"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/codex/control.rs",
+          "crates/herder/src/adapters/codex/create.rs"
+        ],
+        "owner": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "note": "Astra hourly dispatch. Common scoped_stop/launcher у Tesla/Terra; native files только Codex owner. API согласовать точным сообщением, не ждать подтверждения для независимого кода."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:27:12+03:00",
+      "note": "Нельзя объявить существующий RPC bounded: blocking write до deadline. Сначала V055PIPE, затем production native API; общий control mutex также должен уважать bound.",
+      "changes": {
+        "depends_on": [
+          "V055PIPE"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:29:12+03:00",
+      "note": "Codex owner отказался от нового scope, подтвердил отсутствие edits; Astra проверила clean owned native paths. Ownership передан Terra для назначения одному существующему core worker (максимум4), повторно Codex не будить. T011 approval refusal не обходить.",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:29:22+03:00",
+      "note": "Тот же исполнитель после V055PIPE; другие native paths пока не редактируются.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:36:47+03:00",
+      "note": "Точный RED mutex подтверждён, GREEN 11/11; review запрошен у Астры.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимый review кандидата 6894bbcd перед интеграцией",
+        "result": "Candidate 6894bbcd: synchronous create/handoff и try_lock busy отказ, Codex tests 11/11, scoped 18/18, 1 ignored, target 1/1; public consumer и production wiring ещё не доказаны."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:42:18+03:00",
+      "note": "Исправлено замечание о Linux cfg; оставшиеся замечания вынесены в отдельные обязательные leaves.",
+      "changes": {
+        "wait_reason": "Delta-review d317129c (cfg guard) после REVISE",
+        "result": "Candidate 6894bbcd + d317129c: synchronous create/handoff, try_lock busy отказ, Linux guards для scoped impl; Codex tests 11/11. V055CREATE и V055STOP выделены отдельно. Mac build не проверен."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:46:07+03:00",
+      "note": "Закрыта только часть API, остальные обязательные review findings в V055CREATE/V055STOP.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "result": "origin/main d317129c: sync Codex create/submit и busy try_lock, Linux cfg; независимый review SUPPORTED, 11 Codex tests. Mac build и production MCP не доказаны; create classification и interrupt вынесены."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "wait_reason": "",
+  "result": "origin/main d317129c: sync Codex create/submit и busy try_lock, Linux cfg; независимый review SUPPORTED, 11 Codex tests. Mac build и production MCP не доказаны; create classification и interrupt вынесены."
+}

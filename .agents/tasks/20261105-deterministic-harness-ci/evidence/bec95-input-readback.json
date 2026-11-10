@@ -1,0 +1,18 @@
+{
+  "source": "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder",
+  "snapshot": "/tmp/herder-l36-build-bec95",
+  "checks": {
+    "packages/agent-resume/src": {
+      "count": 14,
+      "unchanged": true,
+      "changed": []
+    },
+    "src": {
+      "count": 435,
+      "unchanged": true,
+      "changed": []
+    }
+  },
+  "build_exit": 0,
+  "at": "2026-11-06T17:13:36.705736+00:00"
+}

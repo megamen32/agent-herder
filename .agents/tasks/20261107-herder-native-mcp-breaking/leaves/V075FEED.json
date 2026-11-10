@@ -1,0 +1,72 @@
+{
+  "id": "V075FEED",
+  "parent": "S05",
+  "kind": "task",
+  "label": "ZCode: собрать страницы и проверить запись общего индекса",
+  "description": "Остаток V075B после module/build blocker: использовать существующий transcript WIP, подключить его к локальным тестам; собрать bounded snapshot и вызвать index_transcript_snapshot один раз.",
+  "acceptance": "Ненулевые тесты partial/source_field и многостраничного snapshot; поздняя страница находится поиском, partial сохраняется, чужой snapshot/session отклонён, нет native вызовов. Commit owned source и handoff shared registration.",
+  "status": "done",
+  "owner": "roomhacker",
+  "depends_on": [
+    "V075A",
+    "V030B"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "note": "Тот же существующий исполнитель уже active; отдельный worker не создаётся. Предыдущий V075B потратил47мин на missing build/module exports и дал0tests — это не GREEN. Существующий WIP сохраняется.",
+  "created_at": "2026-11-07T13:47:11+03:00",
+  "updated_at": "2026-11-07T14:01:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:47:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "V075FEED",
+        "parent": "S05",
+        "kind": "task",
+        "label": "ZCode: собрать страницы и проверить запись общего индекса",
+        "description": "Остаток V075B после module/build blocker: использовать существующий transcript WIP, подключить его к локальным тестам; собрать bounded snapshot и вызвать index_transcript_snapshot один раз.",
+        "acceptance": "Ненулевые тесты partial/source_field и многостраничного snapshot; поздняя страница находится поиском, partial сохраняется, чужой snapshot/session отклонён, нет native вызовов. Commit owned source и handoff shared registration.",
+        "status": "running",
+        "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "depends_on": [
+          "V075A",
+          "V030B"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "note": "Тот же существующий исполнитель уже active; отдельный worker не создаётся. Предыдущий V075B потратил47мин на missing build/module exports и дал0tests — это не GREEN. Существующий WIP сохраняется."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:55:27+03:00",
+      "note": "Продолжаю существующий V075B WIP без нового worker: assembling existing bounded ZCode payload into one feed snapshot; native read запрещён в этом source-only leaf.",
+      "changes": {
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:01:45+03:00",
+      "note": "V075FEED source/feed acceptance met in detached worktree commit f5f27200. Native route remains uncalled; shared module registration is separate Terra-owned integration.",
+      "changes": {
+        "status": "done",
+        "result": "Committed f5f27200: ZcodeTranscriptReader::index_snapshot_with_transport reads one existing bounded payload, assembles local pages with snapshot/cursor progress checks, and calls index_transcript_snapshot once after terminal assembly. Projection keeps truncated=true without verified completion signal and distinguishes content vs info.content. Actual connection.rs compiled in the existing source harness; 5 named transcript tests passed, including first/last page search, one native seam read, partial coverage and single session state row. RED/GREEN evidence: review-evidence/V075FEED/{partial-red,partial-green,source-field-red,source-field-green,transcript-green}. Native read not run; shared zcode::transcript module registration handed to Terra."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "result": "Committed f5f27200: ZcodeTranscriptReader::index_snapshot_with_transport reads one existing bounded payload, assembles local pages with snapshot/cursor progress checks, and calls index_transcript_snapshot once after terminal assembly. Projection keeps truncated=true without verified completion signal and distinguishes content vs info.content. Actual connection.rs compiled in the existing source harness; 5 named transcript tests passed, including first/last page search, one native seam read, partial coverage and single session state row. RED/GREEN evidence: review-evidence/V075FEED/{partial-red,partial-green,source-field-red,source-field-green,transcript-green}. Native read not run; shared zcode::transcript module registration handed to Terra."
+}

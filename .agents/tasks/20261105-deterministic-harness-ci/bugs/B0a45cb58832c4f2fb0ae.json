@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T14:08:08+00:00",
+  "details": "Identity-fenced installed 3ba6e50b browser transcript read timed out after 50s; same Z.ai session later returned 30 events in 3 pages in 28s, while ChatGPT transcript passed in 8s and Herder settings returned 200 in 0.046s. Mac CDP gateway responds HTTP 405 in 0.018s and session_info returns partial content. Cause not yet isolated; no model sends, no unknown send replay.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-07T14:08:08+00:00",
+      "changes": {
+        "details": "Identity-fenced installed 3ba6e50b browser transcript read timed out after 50s; same Z.ai session later returned 30 events in 3 pages in 28s, while ChatGPT transcript passed in 8s and Herder settings returned 200 in 0.046s. Mac CDP gateway responds HTTP 405 in 0.018s and session_info returns partial content. Cause not yet isolated; no model sends, no unknown send replay.",
+        "source": "evidence/installed-browser-identity-20261107.json and subsequent bounded read",
+        "status": "open",
+        "title": "Z.ai full transcript sometimes exceeds 50 second client timeout"
+      }
+    }
+  ],
+  "id": "B0a45cb58832c4f2fb0ae",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "evidence/installed-browser-identity-20261107.json and subsequent bounded read",
+  "status": "open",
+  "title": "Z.ai full transcript sometimes exceeds 50 second client timeout",
+  "updated_at": "2026-11-07T14:08:08+00:00"
+}

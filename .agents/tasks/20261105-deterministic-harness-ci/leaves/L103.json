@@ -1,0 +1,43 @@
+{
+  "id": "L103",
+  "label": "Codex: показывать созданные пустые сессии",
+  "description": "Исправить полный список Codex для native loaded threads с проверкой identity и пагинацией; TDD и реальный readback server-44.",
+  "acceptance": "Созданная тестовая сессия находится в полном списке через установленный PID без отправки; RED→GREEN.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T18:14:14+03:00",
+  "updated_at": "2026-11-07T18:24:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:14:14+03:00",
+      "note": "",
+      "changes": {
+        "id": "L103",
+        "label": "Codex: показывать созданные пустые сессии",
+        "description": "Исправить полный список Codex для native loaded threads с проверкой identity и пагинацией; TDD и реальный readback server-44.",
+        "acceptance": "Созданная тестовая сессия находится в полном списке через установленный PID без отправки; RED→GREEN.",
+        "status": "running",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:24:04+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "70d2ead8 опубликован в main, собран 15/15 и штатно установлен только на server-44. TDD RED/GREEN evidence/loaded-list-{red,green}-20261107.log, 75 тестов + новый тест пагинации и tsc. Установленный PID 590955 вернул exact ID ранее созданной 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b в фильтрованном списке total=1; до исправления total=0. Сессия та же, повторного create/send нет. B9e0b fixed. Дальше CISHARE и gate, fleet повторно не раскатывать."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "70d2ead8 опубликован в main, собран 15/15 и штатно установлен только на server-44. TDD RED/GREEN evidence/loaded-list-{red,green}-20261107.log, 75 тестов + новый тест пагинации и tsc. Установленный PID 590955 вернул exact ID ранее созданной 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b в фильтрованном списке total=1; до исправления total=0. Сессия та же, повторного create/send нет. B9e0b fixed. Дальше CISHARE и gate, fleet повторно не раскатывать."
+}

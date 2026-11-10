@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T20:23:42+00:00",
+  "details": "Общий прогон v14 остановился до запуска сценариев с PermissionError: runner дважды копировал один sidecar, после read-only защиты вторая копия недоступна. Необходимо RED/GREEN, сверка содержимого и повтор без дублирования неизвестных действий.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T20:23:42+00:00",
+      "changes": {
+        "details": "Общий прогон v14 остановился до запуска сценариев с PermissionError: runner дважды копировал один sidecar, после read-only защиты вторая копия недоступна. Необходимо RED/GREEN, сверка содержимого и повтор без дублирования неизвестных действий.",
+        "source": "L43 candidate v14 packaging",
+        "status": "open",
+        "title": "CI runner v14: повторная копия sidecar не проходит на read-only snapshot"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:31:01+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-staging-green-verified.log",
+            "red_proof_path": "evidence/l43-sidecar-staging-red.log",
+            "red_result": "FAILED",
+            "red_sha256": "2a3ce532553975b59371e7db2648ed8c4be90855adc52dcc9835ed033082ef1c",
+            "result": "PASS",
+            "sha256": "5b0b23f241d387b89a417787a613f3169c951117216d51d85139de820ac3c142",
+            "test_command": "python3 tests/native-hermes-sidecar-staging.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bc940895131be4eb9a6e4",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-staging-green-verified.log",
+      "red_proof_path": "evidence/l43-sidecar-staging-red.log",
+      "red_result": "FAILED",
+      "red_sha256": "2a3ce532553975b59371e7db2648ed8c4be90855adc52dcc9835ed033082ef1c",
+      "result": "PASS",
+      "sha256": "5b0b23f241d387b89a417787a613f3169c951117216d51d85139de820ac3c142",
+      "test_command": "python3 tests/native-hermes-sidecar-staging.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L43 candidate v14 packaging",
+  "status": "fixed",
+  "title": "CI runner v14: повторная копия sidecar не проходит на read-only snapshot",
+  "updated_at": "2026-11-06T20:31:01+00:00"
+}

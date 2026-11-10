@@ -1,0 +1,39 @@
+{
+  "pid": 1201064,
+  "requests": [
+    {
+      "start": 598595.311055075,
+      "utc": "2026-11-06T15:13:18.987284+00:00",
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598595.316684215,
+      "seconds": 0.006
+    },
+    {
+      "start": 598597.318835492,
+      "utc": "2026-11-06T15:13:20.995065+00:00",
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598597.321051208,
+      "seconds": 0.002
+    },
+    {
+      "start": 598599.323044455,
+      "utc": "2026-11-06T15:13:22.999272+00:00",
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598599.3244667,
+      "seconds": 0.001
+    },
+    {
+      "start": 598601.326052171,
+      "utc": "2026-11-06T15:13:25.002282+00:00",
+      "path": "/api/settings/background-indexing",
+      "status": 200,
+      "end": 598601.328962073,
+      "seconds": 0.003
+    }
+  ],
+  "slow_window_profiles": [],
+  "limitations": "Symbols only, JIT addresses may be unresolved; no request body or response data recorded."
+}

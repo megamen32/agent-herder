@@ -8,14 +8,14 @@
     "CONFIG",
     "REPORT"
   ],
-  "status": "blocked",
+  "status": "running",
   "estimate_minutes": 15,
   "owner": "Terra",
   "harness": "codex",
   "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
   "model": "gpt-6.1-terra",
   "created_at": "2026-11-07T21:29:30+03:00",
-  "updated_at": "2026-11-08T00:23:31+03:00",
+  "updated_at": "2026-11-08T15:53:59+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T21:29:30+03:00",
@@ -146,11 +146,116 @@
       },
       "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T01:01:30+03:00",
+      "note": "Новый независимый regression остановлен на UNKNOWN; исходный UNKNOWN не тронут.",
+      "changes": {
+        "blocker": "Новый public initial prompt outcome_unknown; native input promoted, повтор запрещён.",
+        "blocker_details": {
+          "evidence": "evidence/zcode-v1-5ea28f-outcome.txt",
+          "next": "Сверить и исправить public dispatch в разрешённом owner scope без повторной отправки."
+        },
+        "result": "Изолированное создание сессии подтверждено; prompt достиг native storage, public receipt unknown; семь проверок не завершены."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T02:26:02+03:00",
+      "note": "Новый run остановлен после UNKNOWN; сохранены exact IDs, native readback и результат модели.",
+      "changes": {
+        "blocker": "Публичный prompt снова UNKNOWN; native input и ответ локальной модели подтверждены, повтор запрещён.",
+        "blocker_details": {
+          "evidence": "evidence/zcode-v1-receipt-dispatch-outcome.txt",
+          "next": "Разобрать V4 queue admission и точную квитанцию без повторной отправки; сохранить семантику отложенной очереди."
+        },
+        "result": "Legacy source receipt RED/GREEN, 113 тестов; независимый native run получил ответ модели, но публичный receipt UNKNOWN."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:34:20+03:00",
+      "note": "Изолированный public ZCode scenario подтверждён; projects ограничен authorized_registered_sessions и complete=false. Старые UNKNOWN не повторялись.",
+      "changes": {
+        "status": "running",
+        "result": "Изолированный public ZCode: два разных подтверждённых native message receipt, ответы локальной модели, complete native export, search hit и readback после restart без resend; source опубликован 07d54220. Общий immutable candidate и installed acceptance ещё не проверены.",
+        "blocker": "",
+        "blocker_details": {
+          "evidence": "evidence/zcode-v4-559749ac-native.json",
+          "next": "Проверить опубликованный adapter в общем immutable candidate и интегрировать fixture orchestration без временного pin."
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:42:52+03:00",
+      "note": "Текущий 805fd477final имеет другой adapter SHA и не используется для финальной проверки.",
+      "changes": {
+        "result": "Portable fixture опубликован 2ee73f04, 11 проверок включая isolated preflight GREEN; argv подготовлен. Полный proof на новом общем candidate ожидает exact manifest с опубликованным adapter 07d54220.",
+        "blocker": "Общий immutable candidate с ZCode adapter 07d54220 ещё не предоставлен.",
+        "blocker_details": {
+          "evidence": "evidence/zcode-v1-portable-publication.txt",
+          "next": "Сверить manifest и adapter bytes нового candidate, обновить конфигурацию и выполнить полный isolated fixture; UNKNOWN не повторять."
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T15:53:59+03:00",
+      "note": "Данный run повторно открыл core; supervisor restart доказан отдельно предыдущим isolated run. Projects complete=false по авторизованному корпусу.",
+      "changes": {
+        "result": "Portable fixture опубликован aec667b5: stdout полная receipt, exit 0; 12 тестов GREEN. Candidate 78e747be isolated public consumer PASS: два confirmed native ID, ответы локальной модели, полный export, search, provenance и core reopen без resend.",
+        "blocker": "",
+        "blocker_details": {
+          "evidence": "evidence/zcode-v1-78e747be-summary.json",
+          "next": "Интегратор принимает candidate receipt; installed release отдельно."
+        }
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
+      "harness": "codex"
     }
   ],
   "estimate_unknown_reason": "15 минут — подключение/диагностический результат. Полная положительная приёмка зависит от внешнего product launch/функций; общий срок не установлен.",
   "wave": 3,
   "note": "Native exactcandidate d66c9c0729fe / manifest2db3cc41; explicit solelaneoperator, deterministic model isolated, publicMCP; nolegacycurrent/install, UNKNOWNnoreplay.",
-  "blocker": "Original a836 createUNKNOWN no replay; source setup now fixed, native fullcase remains unproven",
-  "result": "Published6150354810e80bb35cec4ab40addbb48591088ea, exact2files,7GREEN. OfficialWS14tools and registeredproject exactroot confirmed on isolatedsupervisor,0modelcalls. Original a836 createUNKNOWN taskefccb595dadfbc9e413b39fdb1cb26d7 retained, no replay. Full lane/installed NOTPASS."
+  "blocker": "",
+  "result": "Portable fixture опубликован aec667b5: stdout полная receipt, exit 0; 12 тестов GREEN. Candidate 78e747be isolated public consumer PASS: два confirmed native ID, ответы локальной модели, полный export, search, provenance и core reopen без resend.",
+  "blocker_details": {
+    "evidence": "evidence/zcode-v1-78e747be-summary.json",
+    "next": "Интегратор принимает candidate receipt; installed release отдельно."
+  }
 }

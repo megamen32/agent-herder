@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_minimax_managed_rejects_missing_or_partial_search_proof (__main__.NativeReleaseGateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_native_release_gate.py", line 73, in test_minimax_managed_rejects_missing_or_partial_search_proof
+    self.assertIn('minimax-code: complete search evidence not proven',native_ci.candidate_gate_failures(receipt))
+AssertionError: 'minimax-code: complete search evidence not proven' not found in ['minimax-code: activeDiscovered not proven']
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

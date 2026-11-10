@@ -1,0 +1,4 @@
+ISOLATED_RETAINED_ROOT /tmp/herder-native-model-opencode-v1-5ea28f-ccc78c838ca9
+AHAP OpenCode stand failed: completed assistant has an exact marker but its user ID differs from the Task receipt: expected=ahap-receipt:v1:{"kind":"message","native_id":"msg_1b80d1952001VKROlOzFCkBRaK"} observed=msg_1b80d1952001VKROlOzFCkBRaK
+ISOLATED_FAILURE_RETAINED /tmp/herder-native-model-opencode-v1-5ea28f-ccc78c838ca9
+LAUNCHER_EXIT=2

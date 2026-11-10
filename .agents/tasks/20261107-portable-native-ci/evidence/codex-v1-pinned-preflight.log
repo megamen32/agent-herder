@@ -1,0 +1,2 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-portable-native-ci/evidence/codex-v1-pinned-preflight-retained
+{"model_requests": 0, "native_sends": 0, "result": "PREFLIGHT_READY", "tools": ["discover", "sessions", "session", "create", "deliver", "resume", "stop", "search", "export", "automation", "resource", "configure", "permission", "human_request"]}

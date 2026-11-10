@@ -1,0 +1,112 @@
+{
+  "id": "RESTORECONTRACTS",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Проверить контракты трёх потребителей и собрать acceptance tests",
+  "status": "running",
+  "owner": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+  "session": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "tests/v1-restored-workflows/**",
+    "evidence/finish-20261108/restore-contracts-terra.md"
+  ],
+  "acceptance": "Exact existing APIs и executable RED acceptance для трёх путей; fake-only checks не выдавать за livePASS.",
+  "created_at": "2026-11-08T20:23:19+03:00",
+  "updated_at": "2026-11-08T20:28:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:23:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "RESTORECONTRACTS",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Проверить контракты трёх потребителей и собрать acceptance tests",
+        "status": "running",
+        "owner": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+        "session": "01a1bbb7-ecc3-7651-a228-96c0171c7964",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "tests/v1-restored-workflows/**",
+          "evidence/finish-20261108/restore-contracts-terra.md"
+        ],
+        "acceptance": "Exact existing APIs и executable RED acceptance для трёх путей; fake-only checks не выдавать за livePASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:26:37+03:00",
+      "note": "",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:28:10+03:00",
+      "note": "Terra опубликовал exactcontract и4REDreadinesschecks, новыеmodelsend0. Контрактный результат проверен parent. Native subagent API отдаёт submission/session ID, exactnative turn недоступен; assignment acceptance через LHC не подделываем. Исполнитель получил readyследующийslice RESTOREREMOTE, безожидания.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "assignment": {
+    "schema_version": 1,
+    "executor_kind": "subagent",
+    "attempt_id": "restorecontracts-20261108-1",
+    "lead": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de"
+    },
+    "executor": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bbb7-ecc3-7651-a228-96c0171c7964"
+    },
+    "parent": {
+      "host_id": "roomhacker-server-100",
+      "harness": "codex",
+      "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de"
+    },
+    "state": "assigned",
+    "dispatch": null,
+    "wake": null,
+    "observed_runtime": null,
+    "events": [
+      {
+        "at": "2026-11-08T17:26:37+00:00",
+        "actor": {
+          "host_id": null,
+          "harness": "codex",
+          "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "source": "mcp_metadata"
+        },
+        "from": null,
+        "to": "assigned"
+      }
+    ]
+  },
+  "assignment_history": []
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T06:23:17+00:00",
+  "details": "Initial V055A3 isolated probe created two fresh native threads/turns against loopback-only held fake model, but before interrupt the independent thread/turn list did not show both exact turns as inProgress. Guard aborted before calling interrupt_exact; no stop was sent. Need capture exact statuses and fixture request count on a fresh isolated profile before deciding whether Codex permits two concurrent inProgress turns.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "at": "2026-11-07T06:23:17+00:00",
+      "changes": {
+        "details": "Initial V055A3 isolated probe created two fresh native threads/turns against loopback-only held fake model, but before interrupt the independent thread/turn list did not show both exact turns as inProgress. Guard aborted before calling interrupt_exact; no stop was sent. Need capture exact statuses and fixture request count on a fresh isolated profile before deciding whether Codex permits two concurrent inProgress turns.",
+        "source": "unshare --user --map-root-user --net ... cargo run --manifest-path crates/herder/Cargo.toml --bin v055a3_live (run3.log)",
+        "status": "open",
+        "title": "Isolated Codex two-turn probe did not reach dual active state"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "at": "2026-11-07T06:31:01+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": ".tmp/v055a3/native-test.log",
+            "red_proof_path": ".tmp/v055a3/diagnostic-red.log",
+            "red_result": "Error: \"both exact turns were not inProgress before interrupt",
+            "red_sha256": "8ce9dd61af5cd0e284fa30575aff014e844ab35942c9209597d9ae57eaf718b1",
+            "result": "1 passed; 0 failed",
+            "sha256": "57b0aabc6d86f0de3f04dd0b000ae6b9c70d7cef9beebd9ac687a74e41eb5a7d",
+            "test_command": "unshare --user --map-root-user --net; cargo test --manifest-path crates/herder/Cargo.toml --lib live_exact_interrupt_isolated_two_turns -- --nocapture --test-threads=1"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B9e7dea2e16624d1b8910",
+  "owner": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "reporter": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "resolution": {
+    "evidence": {
+      "proof_path": ".tmp/v055a3/native-test.log",
+      "red_proof_path": ".tmp/v055a3/diagnostic-red.log",
+      "red_result": "Error: \"both exact turns were not inProgress before interrupt",
+      "red_sha256": "8ce9dd61af5cd0e284fa30575aff014e844ab35942c9209597d9ae57eaf718b1",
+      "result": "1 passed; 0 failed",
+      "sha256": "57b0aabc6d86f0de3f04dd0b000ae6b9c70d7cef9beebd9ac687a74e41eb5a7d",
+      "test_command": "unshare --user --map-root-user --net; cargo test --manifest-path crates/herder/Cargo.toml --lib live_exact_interrupt_isolated_two_turns -- --nocapture --test-threads=1"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "unshare --user --map-root-user --net ... cargo run --manifest-path crates/herder/Cargo.toml --bin v055a3_live (run3.log)",
+  "status": "fixed",
+  "title": "Isolated Codex two-turn probe did not reach dual active state",
+  "updated_at": "2026-11-07T06:31:01+00:00"
+}

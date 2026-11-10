@@ -1,0 +1,30 @@
+node:internal/fs/promises:639
+  return new FileHandle(await PromisePrototypeThen(
+                        ^
+
+Error: ENOENT: no such file or directory, open '/zofficial/manifest.json'
+    at async open (node:internal/fs/promises:639:25)
+    at async readFile (node:internal/fs/promises:1252:14)
+    at async file:///mnt/zcode-official-probe.mjs:14:29 {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/zofficial/manifest.json'
+}
+
+Node.js v22.23.1
+official test files: [".zcode/backup/tasks_index-1793997437679-222f124b-db33-42ed-bcfa-c0d8da42f0e3/backup.json", ".zcode/backup/tasks_index-1793997437679-222f124b-db33-42ed-bcfa-c0d8da42f0e3/tables.sqlite", ".zcode/v2/setting.json", ".zcode/v2/provider_config.json", ".zcode/v2/bot-state.v3.json", ".zcode/v2/bot-config.v3.json", ".zcode/v2/tasks-index.sqlite-shm", ".zcode/v2/tasks-index.sqlite-wal", ".zcode/v2/tasks-index.sqlite", ".zcode/v2/telemetry-state.json", ".zcode/v2/runtime/provider/linux-x86_64/3.17.2/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin-refresh.json", ".zcode/v2/runtime/provider/linux-x86_64/3.17.2/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin.json", ".zcode/v2/certs/zcode-network-ca.key", ".zcode/v2/certs/zcode-network-ca.pem", ".zcode/server/install.json", ".zcode/server/run/status.json", ".zcode/server/run/ingress-token", ".zcode/server/run/server.lock"]
+Traceback (most recent call last):
+  File "/mnt/zcode-official-probe.py", line 61, in <module>
+    subprocess.run(['node','/mnt/zcode-official-probe.mjs',sys.argv[2],str(project),sys.argv[1].removesuffix('/v1')],env=env,cwd=project,check=True,timeout=55)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['node', '/mnt/zcode-official-probe.mjs', '/mnt/candidate/dist', '/tmp/herder-native-model-1i38wj19/zcode-official-project', 'http://127.0.0.1:34667']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 109, in main
+    subprocess.run([sys.executable,str(HERE / 'zcode-official-probe.py'),base,args.herder_dist],env=env,cwd=root / 'work',check=True,timeout=75)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/zcode-official-probe.py', 'http://127.0.0.1:34667/v1', '/mnt/candidate/dist']' returned non-zero exit status 1.

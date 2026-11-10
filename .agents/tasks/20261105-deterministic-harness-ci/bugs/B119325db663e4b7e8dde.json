@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-06T16:32:54+00:00",
+  "details": "Первичный stderr evidence/l33-v5-hermes-primary.json: FleetDirectTransport бросает direct_peer_limit при старте createWebServer; до вызова fixture, requests=0. Исправить причину и повторить настоящий сценарий.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:32:54+00:00",
+      "changes": {
+        "details": "В общем прогоне candidate Hermes не сформировал читаемый отчёт; необходимо сохранить исходный stderr и устранить первичную ошибку.",
+        "source": "L33 integrated candidate run",
+        "status": "open",
+        "title": "Hermes: отсутствует отчёт в общем CI"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "lead",
+      "at": "2026-11-06T16:36:19+00:00",
+      "changes": {
+        "details": "Первичный stderr evidence/l33-v5-hermes-primary.json: FleetDirectTransport бросает direct_peer_limit при старте createWebServer; до вызова fixture, requests=0. Исправить причину и повторить настоящий сценарий."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "Tesla",
+      "at": "2026-11-06T16:45:40+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l33-hermes-peer-green.log",
+            "red_proof_path": "evidence/l33-hermes-peer-red.log",
+            "red_result": "FAILED (errors=1)",
+            "red_sha256": "40af369e133eef30d1146a7338cf1ca784eaed03824bdee38439b9c9300ad66c",
+            "result": "PASS: 2 tests",
+            "sha256": "aab6b9b73bef9ddb915bdce464c0ae0c207071b9ccb0732d2a9ac95167d4c9e5",
+            "test_command": "python3 tests/native-hermes-model.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B119325db663e4b7e8dde",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l33-hermes-peer-green.log",
+      "red_proof_path": "evidence/l33-hermes-peer-red.log",
+      "red_result": "FAILED (errors=1)",
+      "red_sha256": "40af369e133eef30d1146a7338cf1ca784eaed03824bdee38439b9c9300ad66c",
+      "result": "PASS: 2 tests",
+      "sha256": "aab6b9b73bef9ddb915bdce464c0ae0c207071b9ccb0732d2a9ac95167d4c9e5",
+      "test_command": "python3 tests/native-hermes-model.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 integrated candidate run",
+  "status": "fixed",
+  "title": "Hermes: отсутствует отчёт в общем CI",
+  "updated_at": "2026-11-06T16:45:40+00:00"
+}

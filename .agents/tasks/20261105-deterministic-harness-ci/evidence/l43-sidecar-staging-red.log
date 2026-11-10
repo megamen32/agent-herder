@@ -1,0 +1,13 @@
+E
+======================================================================
+ERROR: test_reuses_identical_readonly_sidecar_and_rejects_different_bytes (__main__.StagingTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/native-hermes-sidecar-staging.test.py", line 8, in test_reuses_identical_readonly_sidecar_and_rejects_different_bytes
+    m.stage_sidecar(a,dest);m.stage_sidecar(a,dest);self.assertEqual(dest.read_text(),'same')
+AttributeError: module 'runner' has no attribute 'stage_sidecar'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (errors=1)

@@ -12,18 +12,18 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V054 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V054 обязателен в конце цепочки.",
+  "note": "Актуальный origin/main проверен после публикации центральной интеграции: crates/herder/src/lib.rs экспортирует adapters::codex::read. Прямые refs 83324aa7+99da1176 не являются ancestry-коммитами удалённой ветки, source tree/экспорт подтверждены по свежему remote.",
   "created_at": "2026-11-07T03:52:19+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:19+03:00",
+  "updated_at": "2026-11-07T05:52:47+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:19+03:00",
@@ -53,6 +53,71 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:04:58+03:00",
+      "note": "V053 and V028 are complete. Implementing the Codex native thread-list read path and checking stable IDs with the existing isolated profile.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:05:31+03:00",
+      "note": "Плановый порядок восстановлен: сначала агрегировать готовые V053A/B в корневой V053; V054A ждёт V053 и V028. Реализация V054A ещё не начата.",
+      "changes": {
+        "status": "queued",
+        "owner": "unassigned",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:10:54+03:00",
+      "note": "Назначено текущей сессии; V053 и V028 закрыты. Готов к запуску по зависимостям.",
+      "changes": {
+        "owner": "roomhacker",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:11:16+03:00",
+      "note": "Dependencies V053 and V028 verified done; implementing native thread/list and stable ID read path.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:21:46+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Реализован CodexReader: initialize проверяет совпадение CODEX_HOME, затем отправляет initialized; list_threads читает native thread/list, сохраняет устойчивый thread id, cwd, status и cursors. Direct Codex app-server smoke: 6/6; список дважды вернул тот же session ID 01a1b3a1-b283-7b40-bb72-83d7f28155aa, count=1, next_cursor=None. Evidence: .tmp/v052b-codex-profile-20261107/v054a-native-list.log. Коммиты после переноса на origin/main: 83324aa7 (V053B request correlation) и 99da1176 (V054A reader). Не доказано: экспорт read модуля в lib.rs, Herder MCP consumer и установленный consumer; нужна строка pub mod read, путь lib.rs принадлежит Тере.",
+        "actual_minutes": 15,
+        "note": "V054A source и direct app-server read доказаны в isolated smoke. Wiring lib.rs оставлен владельцу Тере, передан coordination note 93120d5f-2f64-4178-bfee-3b02e909b5bb. После rebase target refs: 83324aa7, 99da1176."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:52:47+03:00",
+      "note": "",
+      "changes": {
+        "result": "Реализован CodexReader: initialize сверяет CODEX_HOME, list_threads читает native thread/list и сохраняет устойчивые session IDs, cwd, status и cursors. Direct app-server smoke 6/6; один профиль повторно вернул session ID 01a1b3a1-b283-7b40-bb72-83d7f28155aa. Evidence: .tmp/v052b-codex-profile-20261107/v054a-native-list.log. Центральный экспорт pub mod read подтверждён в актуальном origin/main после commit 0e062d58; сообщённый Тере suite 50 tests не запускался повторно этой сессией. Не доказаны MCP/installed consumer; они остаются отдельным acceptance.",
+        "note": "Актуальный origin/main проверен после публикации центральной интеграции: crates/herder/src/lib.rs экспортирует adapters::codex::read. Прямые refs 83324aa7+99da1176 не являются ancestry-коммитами удалённой ветки, source tree/экспорт подтверждены по свежему remote."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Реализован CodexReader: initialize сверяет CODEX_HOME, list_threads читает native thread/list и сохраняет устойчивые session IDs, cwd, status и cursors. Direct app-server smoke 6/6; один профиль повторно вернул session ID 01a1b3a1-b283-7b40-bb72-83d7f28155aa. Evidence: .tmp/v052b-codex-profile-20261107/v054a-native-list.log. Центральный экспорт pub mod read подтверждён в актуальном origin/main после commit 0e062d58; сообщённый Тере suite 50 tests не запускался повторно этой сессией. Не доказаны MCP/installed consumer; они остаются отдельным acceptance.",
+  "actual_minutes": 15
 }

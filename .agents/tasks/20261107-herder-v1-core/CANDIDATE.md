@@ -1,27 +1,3 @@
-# Текущий candidate 54f93706-diagnostic
-
-Manifest /home/roomhacker/herder-artifacts/releases/herder-v1-54f93706-diagnostic/manifest.json
-SHA25691610caa9295935ef51a019b2de8bfc106718f2ae75d9990249dd9f897e8d861.
-Source54f937063e5c603bec30b91be02de170a176f63c. One core/multi-profile, foreground
-reads, ordinary history separate from export, bounded send diagnostics.
-82b packagePASS; exactNEG3d samecore PASS. Browser full/installed notPASS.
-ZCode full native fixture now exposes unsupported archive; fixing existing seam.
-SoleV1 installer integrator01a1bb0c; legacy current unchanged.
-
-# Текущий candidate — 08.11 18:06 МСК
-
-`herder-v1-aa111101-browser/manifest.json`, manifestSHA256
-`bb4fdcb05e69fd3684274b6d2adcfe4f98a05ae11e85813e1d3c60300019bde1`.
-Source`aa1111019d77503eabd05b8ac8bb1b826148c774`. Один core принимает несколько
-protected owner profiles. Browser composer/lazy account reads исправлены;130testsPASS.
-CLI4consumer proofs5ff переиспользуются после exact hashes всех компонентов,
-см.evidence/finish-20261108/cli-aa111101-exact-reuse.json.
-Browser live2accounts/Z.ai и installed acceptance ещё не завершены.
-Soleinstaller — integrator01a1bb0c по прямому поручению владельца.
-Исторические назначения CI installer ниже заменены. Legacycurrent не меняется.
-
----
-
 # Current candidate 805fd477final
 
 # Current candidate 78e747befinal

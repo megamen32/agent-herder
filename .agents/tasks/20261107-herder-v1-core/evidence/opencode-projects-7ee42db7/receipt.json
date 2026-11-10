@@ -1,0 +1,218 @@
+{
+  "after_core_reopen": {
+    "content": [
+      {
+        "text": "{\"complete\":false,\"limitations\":[\"Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive.\"],\"projects\":[{\"native\":null,\"project_ref\":\"/herder-owner-home/work\",\"source\":\"authorized_native_session\"}],\"scope\":\"authorized_registered_sessions\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "complete": false,
+      "limitations": [
+        "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+      ],
+      "projects": [
+        {
+          "native": null,
+          "project_ref": "/herder-owner-home/work",
+          "source": "authorized_native_session"
+        }
+      ],
+      "scope": "authorized_registered_sessions"
+    }
+  },
+  "after_registration": {
+    "content": [
+      {
+        "text": "{\"complete\":false,\"limitations\":[\"Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive.\"],\"projects\":[{\"native\":null,\"project_ref\":\"/herder-owner-home/work\",\"source\":\"authorized_native_session\"}],\"scope\":\"authorized_registered_sessions\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "complete": false,
+      "limitations": [
+        "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+      ],
+      "projects": [
+        {
+          "native": null,
+          "project_ref": "/herder-owner-home/work",
+          "source": "authorized_native_session"
+        }
+      ],
+      "scope": "authorized_registered_sessions"
+    }
+  },
+  "api_family": "v2",
+  "before_registration": {
+    "content": [
+      {
+        "text": "{\"complete\":false,\"limitations\":[\"No native project observed for the authorized registered corpus.\"],\"projects\":[],\"scope\":\"authorized_registered_sessions\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "complete": false,
+      "limitations": [
+        "No native project observed for the authorized registered corpus."
+      ],
+      "projects": [],
+      "scope": "authorized_registered_sessions"
+    }
+  },
+  "cleanup": {
+    "core_stopped": true,
+    "opencode_stopped": true,
+    "launcher_removed_disposable_root": true
+  },
+  "completion": {
+    "api_family": "v2",
+    "assistant_completed_at": 1794108889250,
+    "assistant_finish": "stop",
+    "assistant_message_id": "msg_1b9391853001yQHrP3mNltxtOU",
+    "assistant_parent_id": null,
+    "messages": [
+      {
+        "completed": null,
+        "error": false,
+        "finish": null,
+        "id": "msg_1b939180e001enlaBCiH9axMws",
+        "role": "user"
+      },
+      {
+        "completed": 1794108889250,
+        "error": false,
+        "finish": "stop",
+        "id": "msg_1b9391853001yQHrP3mNltxtOU",
+        "role": "assistant"
+      },
+      {
+        "completed": null,
+        "error": false,
+        "finish": null,
+        "id": "msg_1b93918ab001sO1Zt4BB4Qewly",
+        "role": "idle"
+      }
+    ],
+    "session_id": "ses_e46c6e97bffeLO0fQTqayVukqf",
+    "status": "confirmed",
+    "user_message_id": "msg_1b939180e001enlaBCiH9axMws"
+  },
+  "component_sha256": {
+    "bootstrap": "c6d5f2bc6844948674e02901821c8c56390efb706202771446bc4a68d6fb2fd7",
+    "core": "71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569",
+    "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+    "runner": "af867ab7464b4ff75aee3f57a0fa3ef5da5d7947cdd7e8a6822787a8ffd00d45"
+  },
+  "create": {
+    "createdAt": "2026-11-08T03:34:49Z",
+    "lastUpdatedAt": "2026-11-08T03:34:49Z",
+    "resultType": "task",
+    "status": "working",
+    "taskId": "create-operation:72d0f7ed8414b0e0f2118e8df4e474ac",
+    "ttlMs": null
+  },
+  "isolation": {
+    "fresh_authority": {
+      "database": "/herder-owner-home/authority/state.db",
+      "gate": "/herder-owner-home/authority/gate",
+      "generation": "ahap-owner-1794108885674828023",
+      "profile_seed": "/herder-owner-home/authority/seed.json"
+    },
+    "home": "/herder-owner-home",
+    "instance": "d12-projects-f53350ec37cd41dba93163878bc79efe",
+    "interfaces": [
+      "lo"
+    ],
+    "routes4": [],
+    "routes6": []
+  },
+  "model_requests": 1,
+  "native_session_id": "ses_e46c6e97bffeLO0fQTqayVukqf",
+  "no_replay": true,
+  "public_create_submissions": 1,
+  "registered_sessions": {
+    "content": [
+      {
+        "text": "{\"complete\":true,\"limitations\":[],\"native_coverage_complete\":true,\"next_cursor\":null,\"scope\":\"authorized_registered_sessions\",\"sessions\":[{\"address\":{\"instance\":{\"instance_id\":\"d12-projects-f53350ec37cd41dba93163878bc79efe\",\"node\":\"isolated-native-node\"},\"native_session_id\":\"ses_e46c6e97bffeLO0fQTqayVukqf\"},\"native\":{\"costUsd\":0,\"cwd\":\"/herder-owner-home/work\",\"harness\":\"opencode\",\"hostId\":\"roomhacker-server-100\",\"id\":\"ses_e46c6e97bffeLO0fQTqayVukqf\",\"lastActivity\":\"2026-11-08T03:34:49.250Z\",\"needsPermission\":false,\"status\":\"idle\",\"title\":\"Herder\"},\"session_ref\":\"session:37c770724f7c06929f9af46bdeeb2851\",\"source\":\"registered_and_native\"}]}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "complete": true,
+      "limitations": [],
+      "native_coverage_complete": true,
+      "next_cursor": null,
+      "scope": "authorized_registered_sessions",
+      "sessions": [
+        {
+          "address": {
+            "instance": {
+              "instance_id": "d12-projects-f53350ec37cd41dba93163878bc79efe",
+              "node": "isolated-native-node"
+            },
+            "native_session_id": "ses_e46c6e97bffeLO0fQTqayVukqf"
+          },
+          "native": {
+            "costUsd": 0,
+            "cwd": "/herder-owner-home/work",
+            "harness": "opencode",
+            "hostId": "roomhacker-server-100",
+            "id": "ses_e46c6e97bffeLO0fQTqayVukqf",
+            "lastActivity": "2026-11-08T03:34:49.250Z",
+            "needsPermission": false,
+            "status": "idle",
+            "title": "Herder"
+          },
+          "session_ref": "session:37c770724f7c06929f9af46bdeeb2851",
+          "source": "registered_and_native"
+        }
+      ]
+    }
+  },
+  "request_key": "d12-create-09a2f6e390cc40ddbe6831ba2940f826",
+  "runner_protocol": "v2",
+  "separate_deliver_submissions": 0,
+  "session_ref": "session:37c770724f7c06929f9af46bdeeb2851",
+  "source_commit": "7ee42db728ed50f731e80e61c2a7bb7ef1a7328c",
+  "status": "PASS_PROJECT_ATTRIBUTION",
+  "task": {
+    "createdAt": "2026-11-08T03:34:49Z",
+    "lastUpdatedAt": "2026-11-08T03:34:49Z",
+    "result": {
+      "content": [
+        {
+          "text": "{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:37c770724f7c06929f9af46bdeeb2851\"},\"prompt\":{\"native_receipt_id\":\"ahap-receipt:v1:{\\\"kind\\\":\\\"message\\\",\\\"native_id\\\":\\\"msg_1b939180e001enlaBCiH9axMws\\\"}\",\"outcome\":\"confirmed\"}}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "resultType": "complete",
+      "structuredContent": {
+        "create": {
+          "effect": "confirmed",
+          "session_ref": "session:37c770724f7c06929f9af46bdeeb2851"
+        },
+        "prompt": {
+          "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1b939180e001enlaBCiH9axMws\"}",
+          "outcome": "confirmed"
+        }
+      }
+    },
+    "resultType": "complete",
+    "status": "completed",
+    "taskId": "create-operation:72d0f7ed8414b0e0f2118e8df4e474ac",
+    "ttlMs": null
+  },
+  "evidence_written_at": "2026-11-08T03:35:59.244815+00:00",
+  "qualification": "Newly built core7ee42db7 with unchanged814759 Node/bootstrap/AHAP OpenCode bundle and pinned OpenCode2.2.4; project attribution acceptance only, not whole candidate or installation."
+}

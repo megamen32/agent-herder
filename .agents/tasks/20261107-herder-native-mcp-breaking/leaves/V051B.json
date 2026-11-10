@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:53:01+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:01+03:00",
+  "updated_at": "2026-11-07T05:58:44+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:01+03:00",
@@ -51,6 +51,46 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:52:06+03:00",
+      "note": "Worker 01a1b3c3-f4cc-7780-b360-22eadc8f48ff registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T05:52:06+03:00"
+        },
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:56:35+03:00",
+      "note": "Локальный b58d4ba6 от e8a9df96: отдельный harness runner через изолированный launcher читает shared test-model /models и публичный herder_native_stdio: discovery, tools/list, deliver unsupported/effect none; старый wire-probe отклонён. Модель не подключена к MCP adapter; E001/E002 и реальный create/deliver/read не проверены. Без push; интеграция и native adapter принадлежат другим владельцам.",
+      "changes": {},
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:58:44+03:00",
+      "note": "Проверен public MCP fixture smoke на свежей базе.",
+      "changes": {
+        "status": "done",
+        "result": "Опубликован 9fa6ed76: launcher запустил общую fixture и публичный Rust MCP; discovery/tools прошли, deliver вернул unsupported effect none. Native adapter/E001/E002 ещё не связаны."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": {
+    "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+    "registered_at": "2026-11-07T05:52:06+03:00"
+  },
+  "result": "Опубликован 9fa6ed76: launcher запустил общую fixture и публичный Rust MCP; discovery/tools прошли, deliver вернул unsupported effect none. Native adapter/E001/E002 ещё не связаны."
 }

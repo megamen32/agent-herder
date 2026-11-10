@@ -1,0 +1,2 @@
+bwrap: execvp --retain-on-failure: No such file or directory
+LAUNCH_EXIT=1

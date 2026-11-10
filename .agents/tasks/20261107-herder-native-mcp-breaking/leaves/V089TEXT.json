@@ -1,0 +1,62 @@
+{
+  "id": "V089TEXT",
+  "label": "Сохранить plain content без выдуманной метки",
+  "description": "Общий transcript DTO различает native block и message field content, не теряет текст и не выдумывает type/index.",
+  "acceptance": "Serde roundtrip plain content с None type/index и source_field content; существующие блоки сохраняют type/index, consumers/schema соответствуют новому контракту.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "created_at": "2026-11-07T12:18:35+03:00",
+  "updated_at": "2026-11-07T12:22:55+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:18:35+03:00",
+      "note": "",
+      "changes": {
+        "id": "V089TEXT",
+        "label": "Сохранить plain content без выдуманной метки",
+        "description": "Общий transcript DTO различает native block и message field content, не теряет текст и не выдумывает type/index.",
+        "acceptance": "Serde roundtrip plain content с None type/index и source_field content; существующие блоки сохраняют type/index, consumers/schema соответствуют новому контракту.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        }
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:21:54+03:00",
+      "note": "Астра согласовала форму; delta-review запрошен.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимая проверка candidate a5c3a405",
+        "result": "Candidate a5c3a405: optional block_index/native_type и source_field, plain content roundtrip; RED null→u32, GREEN 8 tests, cargo check all-targets passed, внешних schema на имена не найдено. Provider projection ещё отдельно."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:22:55+03:00",
+      "note": "Закрыт общий DTO, не provider proof.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "result": "origin/main a5c3a405: optional native type/index и source_field; 8 transcript tests и cargo check --all-targets passed, Astra SUPPORTED. Реальная Z.ai projection и user text regression остаются browser owner."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "wait_reason": "",
+  "result": "origin/main a5c3a405: optional native type/index и source_field; 8 transcript tests и cargo check --all-targets passed, Astra SUPPORTED. Реальная Z.ai projection и user text regression остаются browser owner."
+}

@@ -1,0 +1,15 @@
+{
+  "version": "Hermes Agent v0.21.7 (2026.9.24) · upstream 71d34bad\nInstall directory: /home/roomhacker/.hermes/hermes-agent\nInstall method: git\nPython: 3.11.15\nOpenAI SDK: 2.24.0",
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "(node:3719718) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:3719718) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'observed-cli-output'\n- 'native-file'\n\n    at file:///fixture/native-hermes-http.mjs:91:14\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'observed-cli-output',\n  expected: 'native-file',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.1\n",
+  "fixture": {
+    "requests": 2,
+    "paths": {
+      "/api/show": 2,
+      "/v1/chat/completions": 2
+    }
+  },
+  "herder_adapter_sha256": "a5ad78081fe400c6ea9f42f5eca5db7fd7d41c9cb63c93b452a48af3d544fd13",
+  "isolation": "private network namespace, restricted filesystem, empty HOME"
+}

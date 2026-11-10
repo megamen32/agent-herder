@@ -1,0 +1,71 @@
+{
+  "id": "L55",
+  "label": "Session Info: развернуть кандидат",
+  "description": "Выпустить проверенные изменения и подтвердить работу установленного процесса.",
+  "acceptance": "Проверяемый результат и доказательство в плане; при дефектах RED→fix→GREEN.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "lead",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T00:06:11+03:00",
+  "updated_at": "2026-11-07T01:26:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:06:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "L55",
+        "label": "Session Info: развернуть кандидат",
+        "description": "Выпустить проверенные изменения и подтвердить работу установленного процесса.",
+        "acceptance": "Проверяемый результат и доказательство в плане; при дефектах RED→fix→GREEN.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "lead",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:11:33+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L53",
+          "L54"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:30:05+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L53",
+          "L54",
+          "L58"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:26:19+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Установлен owner runtime d2df61867871e0d8761f49f632a538fb0f972a67, кандидат 15/15, штатный переключатель и rollback сохранены; процесс и node-config совпадают."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "depends_on": [
+    "L53",
+    "L54",
+    "L58"
+  ],
+  "result": "Установлен owner runtime d2df61867871e0d8761f49f632a538fb0f972a67, кандидат 15/15, штатный переключатель и rollback сохранены; процесс и node-config совпадают."
+}

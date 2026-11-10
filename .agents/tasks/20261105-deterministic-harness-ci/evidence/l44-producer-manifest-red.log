@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_forged_manifest_cannot_become_candidate_evidence (__main__.ProducerTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_ci_producer.py", line 20, in test_forged_manifest_cannot_become_candidate_evidence
+    with self.assertRaisesRegex(ValueError,'manifest'):m.produce(self.gate,self.contract,self.root,['codex'],lambda:{'status':'PASS'})
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.117s
+
+FAILED (failures=1)

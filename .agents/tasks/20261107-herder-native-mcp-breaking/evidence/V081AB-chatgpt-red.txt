@@ -1,0 +1,17 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+error[E0621]: explicit lifetime required in the type of `current_node`
+   --> src/adapters/chatgpt/read.rs:217:5
+    |
+217 |     result
+    |     ^^^^^^ lifetime `'a` required
+    |
+help: add explicit lifetime `'a` to the type of `current_node`
+    |
+202 -     current_node: Option<&str>,
+202 +     current_node: std::option::Option<&'a str>,
+    |
+
+For more information about this error, try `rustc --explain E0621`.
+error: could not compile `herder` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `herder` (lib test) due to 1 previous error

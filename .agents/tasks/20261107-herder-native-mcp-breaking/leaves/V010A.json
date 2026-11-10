@@ -4,27 +4,25 @@
   "description": "Подключить stdio к application и проверке metadata. Частный результат исходного V010: Транспорт SDK, обязательная request metadata, shutdown; application entrypoint. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V009, V003, V008.",
   "acceptance": "Получен проверяемый результат: Подключить stdio к application и проверке metadata. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V009",
-    "V002",
-    "V008"
+    "V010A2"
   ],
   "affected_files": [
     "crates/herder/src/mcp/transport.rs"
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "deferred",
+  "owner": "01a1b3ac-dace-79e3-8616-f1c647a8e0bf",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V010 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V010 обязателен в конце цепочки. Решение владельца: неизменённый legacy client через удаляемый translator; native endpoint строгий.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "created_at": "2026-11-07T03:51:57+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:20:42+03:00",
+  "updated_at": "2026-11-07T15:53:23+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:51:57+03:00",
@@ -69,6 +67,82 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:44:28+03:00",
+      "note": "Исполнитель 01a1b3ac-dace-79e3-8616-f1c647a8e0bf.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:44:32+03:00",
+      "note": "Worker 01a1b3ac-dace-79e3-8616-f1c647a8e0bf registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3ac-dace-79e3-8616-f1c647a8e0bf",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder",
+          "registered_at": "2026-11-07T04:44:32+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder/.tmp/v010a",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b3ac-dace-79e3-8616-f1c647a8e0bf"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:51:46+03:00",
+      "note": "Частичный результат принят как probe; полный V010A не закрыт.",
+      "changes": {
+        "status": "waiting",
+        "worker": null,
+        "result": "Native stdio endpoint опубликован 514b46e6: discover/list/typed validation, 14 tools и safe unsupported подтверждены wire. Metadata клиента не даёт identity; все application операции пока отключены — подключение реального application handler и binding ещё не выполнено."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:54:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "queued",
+        "depends_on": [
+          "V010A1"
+        ],
+        "note": "Остаток application/binding выделен V010A1; stdio probe уже опубликован 514b46e6."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:01:58+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V010A2"
+        ],
+        "note": "Application port с fake test опубликован ca6b8c91; штатный binary ещё без handler. Реальный read handler — V010A2."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:53:23+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "Native stdio endpoint опубликован 514b46e6: discover/list/typed validation, 14 tools и safe unsupported подтверждены wire. Metadata клиента не даёт identity; все application операции пока отключены — подключение реального application handler и binding ещё не выполнено."
 }

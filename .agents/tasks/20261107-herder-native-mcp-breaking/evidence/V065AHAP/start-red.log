@@ -1,0 +1,23 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 1 test
+test adapters::ahap_opencode::tests::exact_start_receipt_and_native_readback ... FAILED
+
+failures:
+
+---- adapters::ahap_opencode::tests::exact_start_receipt_and_native_readback stdout ----
+
+thread 'adapters::ahap_opencode::tests::exact_start_receipt_and_native_readback' (4095150) panicked at src/adapters/ahap_opencode.rs:329:9:
+assertion `left == right` failed
+  left: Queue
+ right: Start
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    adapters::ahap_opencode::tests::exact_start_receipt_and_native_readback
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--lib`

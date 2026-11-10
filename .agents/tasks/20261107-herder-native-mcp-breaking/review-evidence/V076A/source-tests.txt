@@ -1,0 +1,10 @@
+   Compiling zcode-v075b-harness v0.1.0 (/tmp/herder-v075b-harness.fxzIlX)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.19s
+     Running unittests src/lib.rs (target/debug/deps/zcode_v075b_harness-146bc25a86409376)
+
+running 2 tests
+test adapters::zcode::control::tests::stale_unknown_and_foreign_turns_are_rejected_before_any_native_operation ... ok
+test adapters::zcode::control::tests::matching_observation_remains_unsupported_without_an_atomic_native_turn_guard ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s
+

@@ -1,20 +1,19 @@
 {
   "id": "V075A",
   "label": "ZCode: Прочитать native transcript страницами",
-  "description": "ZCode: Прочитать native transcript страницами. Частный результат исходного V075: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V029, V030.",
+  "description": "Source ZCode transcript reader/projection on existing captured native history and bound snapshot cursor. Search indexing integration is separate V075B and depends on V030. No new native create/send for this slice; previous V072D UNKNOWN remains.",
   "acceptance": "Получен проверяемый результат: ZCode: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
     "V071",
-    "V029",
-    "V030"
+    "V029"
   ],
   "affected_files": [
     "crates/herder/src/adapters/zcode/transcript.rs"
   ],
   "parent": "S05",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -24,7 +23,7 @@
   "created_at": "2026-11-07T03:52:26+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:26+03:00",
+  "updated_at": "2026-11-07T12:56:31+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:26+03:00",
@@ -55,6 +54,45 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:40:28+03:00",
+      "note": "Removed false dependency on search index from read-only transcript source; preserved index gate on V075B. Reuses existing ZCode owner.",
+      "changes": {
+        "depends_on": [
+          "V071",
+          "V029"
+        ],
+        "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "status": "running",
+        "description": "Source ZCode transcript reader/projection on existing captured native history and bound snapshot cursor. Search indexing integration is separate V075B and depends on V030. No new native create/send for this slice; previous V072D UNKNOWN remains."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:56:16+03:00",
+      "note": "Source-only V075A finished in scoped commit; local fake proof green. Capture absence and no live native read are explicitly recorded; shared export remains a separate owner step.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T12:56:01+03:00",
+        "actual_minutes": 15,
+        "result": "Scoped commit e13487a6 adds crates/herder/src/adapters/zcode/transcript.rs and acceptance/native/zcode/transcript-legacy.json. Reader uses the exact existing session with runtimePolicy=existing-only and messageLimit=200, verifies returned session ID, preserves typed raw parts/native type/index and legacy plain user content via source_field=content, and binds page cursors to principal plus a snapshot hash over node/instance/session and full response. Local pages are explicitly slices of the bounded native batch; truncation is independent and conservatively true at the 200-message cap or when native payload says truncated. Fake-source harness tests: 3/3 passed; shared domain transcript tests: 8/8 passed; `rustfmt +stable --check`, JSON parse and diff checks passed. V072B records no native ZCode transcript capture, so the acceptance fixture honestly reuses its synthetic legacy DTO shape; no live read, create, send or model action was performed. Shared lib/Cargo export was not changed; runtime/consumer readback is not claimed."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:56:31+03:00",
+      "note": "Rounded elapsed time up to 16 minutes from recorded leaf start and live clock.",
+      "changes": {
+        "actual_minutes": 16
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T12:56:01+03:00",
+  "actual_minutes": 16,
+  "result": "Scoped commit e13487a6 adds crates/herder/src/adapters/zcode/transcript.rs and acceptance/native/zcode/transcript-legacy.json. Reader uses the exact existing session with runtimePolicy=existing-only and messageLimit=200, verifies returned session ID, preserves typed raw parts/native type/index and legacy plain user content via source_field=content, and binds page cursors to principal plus a snapshot hash over node/instance/session and full response. Local pages are explicitly slices of the bounded native batch; truncation is independent and conservatively true at the 200-message cap or when native payload says truncated. Fake-source harness tests: 3/3 passed; shared domain transcript tests: 8/8 passed; `rustfmt +stable --check`, JSON parse and diff checks passed. V072B records no native ZCode transcript capture, so the acceptance fixture honestly reuses its synthetic legacy DTO shape; no live read, create, send or model action was performed. Shared lib/Cargo export was not changed; runtime/consumer readback is not claimed."
 }

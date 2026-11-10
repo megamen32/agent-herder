@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T12:24:49+00:00",
+  "details": "Nietzsche independent RED b4aa58f8: exact msg_ABC exists both user and assistant; filtering role before uniqueness returns Confirmed. Select all exact-ID messages, require one, then user role. Owner Terra.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra / Nietzsche",
+      "at": "2026-11-07T12:24:49+00:00",
+      "changes": {
+        "details": "Nietzsche independent RED b4aa58f8: exact msg_ABC exists both user and assistant; filtering role before uniqueness returns Confirmed. Select all exact-ID messages, require one, then user role. Owner Terra.",
+        "source": "Independent immutable source review; 01a1b453-5507-7b81-ae21-6853827cef0e",
+        "status": "open",
+        "title": "OpenCode AHAP duplicate message ID can falsely confirm delivery"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T12:26:51+00:00",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "V065AHAP",
+      "at": "2026-11-07T12:30:14+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V065AHAP/review-green.log",
+            "red_proof_path": "evidence/V065AHAP/review-red.log",
+            "red_result": "test result: FAILED",
+            "red_sha256": "8c28e6e9d10b0e75f0136842f4045147fd0c3404170185db4a6d4aad3e4c8da2",
+            "result": "test result: ok. 7 passed; 0 failed",
+            "sha256": "a50008add8194bc803da4b173adc1da33936763b52fbdb1c8a83fc8a865dcbef",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml duplicate_native_id_across_roles_is_unknown"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bebcd1e2d03f14124a877",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "Astra / Nietzsche",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V065AHAP/review-green.log",
+      "red_proof_path": "evidence/V065AHAP/review-red.log",
+      "red_result": "test result: FAILED",
+      "red_sha256": "8c28e6e9d10b0e75f0136842f4045147fd0c3404170185db4a6d4aad3e4c8da2",
+      "result": "test result: ok. 7 passed; 0 failed",
+      "sha256": "a50008add8194bc803da4b173adc1da33936763b52fbdb1c8a83fc8a865dcbef",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml duplicate_native_id_across_roles_is_unknown"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Independent immutable source review; 01a1b453-5507-7b81-ae21-6853827cef0e",
+  "status": "fixed",
+  "title": "OpenCode AHAP duplicate message ID can falsely confirm delivery",
+  "updated_at": "2026-11-07T12:30:14+00:00"
+}

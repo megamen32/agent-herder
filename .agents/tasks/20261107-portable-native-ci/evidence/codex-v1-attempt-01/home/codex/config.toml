@@ -1,0 +1,7 @@
+model = "herder-test"
+model_provider = "fixture"
+[model_providers.fixture]
+name = "fixture"
+base_url = "http://127.0.0.1:38573/v1"
+wire_api = "responses"
+env_key = "HERDER_FIXTURE_KEY"

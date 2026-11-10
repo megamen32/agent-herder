@@ -1,0 +1,102 @@
+{
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QBROWSERJOIN",
+  "label": "Принять готовую direct-CDP delta без нового transport",
+  "parent": "S06",
+  "owner": "roomhacker",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "depends_on": [],
+  "description": "Готовые ed1acd95/429d39b0/385efc83/d0a71185/76bd8325, source42tests. Одна delta-review account scope/UNKNOWN, согласовать пересечение site-driver с CI, включить точные patches. No browser send.",
+  "acceptance": "Review замечания устранены или конкретно зарегистрированы, точная source цепочка опубликована; native case отдельно.",
+  "created_at": "2026-11-07T18:15:35+03:00",
+  "updated_at": "2026-11-07T18:54:09+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:35+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QBROWSERJOIN",
+        "label": "Принять готовую direct-CDP delta без нового transport",
+        "parent": "S06",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "depends_on": [],
+        "description": "Готовые ed1acd95/429d39b0/385efc83/d0a71185/76bd8325, source42tests. Одна delta-review account scope/UNKNOWN, согласовать пересечение site-driver с CI, включить точные patches. No browser send.",
+        "acceptance": "Review замечания устранены или конкретно зарегистрированы, точная source цепочка опубликована; native case отдельно."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:55:00+03:00",
+      "note": "Exact source chain and current CI overlap recorded from read-only worktrees; no send or CI edits.",
+      "changes": {
+        "status": "done",
+        "result": "Read-only source handoff recorded: exact five-commit chain preserved; current CI site-driver overlap mapped by file/hunk. No browser send or CI mutation. Waiting for accepted core artifact and exact delegated browser scope from CISHARE before browser case; QCHATCASE/QZAICASE remain queued and L101 untouched.",
+        "evidence": [
+          "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/QBROWSERJOIN-source-handoff-20261107.md"
+        ]
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:47:35+03:00",
+      "note": "Read-only handoff не является accepted source publication review; ожидается интеграция Terra. Канонический repair перенёс evidence в note с сохранением значения и всей истории.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Ожидает Terra integration и accepted source publication review."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:51:03+03:00",
+      "note": "Возобновление по прямому поручению владельца.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": "",
+        "note": "Владелец поручил выполнить source review и интеграцию опубликованной цепочки."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:51:26+03:00",
+      "note": "Проверка опубликованной цепочки и CI overlap.",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:54:09+03:00",
+      "note": "Source chain опубликована, фактический read-scope дефект зарегистрирован; CI overlap сохранён, browser не запускался.",
+      "changes": {
+        "status": "done",
+        "result": "Точная direct-CDP цепочка и handshake fix 9c0c34f3 опубликованы и входят в origin/main c65715df; build:core, tsc и 43 focused tests прошли. Account/UNKNOWN source review: mutation проверяет pinned account, timeout/disconnect UNKNOWN; обнаружен и зарегистрирован B720e95cbcdcd484ab0f8 — read может вернуть данные после смены account, исправить до browser acceptance. CI site-driver overlap проверен, чужой WIP сохранён. Evidence evidence/QBROWSERJOIN/source-review-20261107.md; native browser не запускался.",
+        "note": "Следующий шаг browser owner: закрыть B720e95cbcdcd484ab0f8 и получить exact delegated target+lease; native proof отдельно."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "result": "Точная direct-CDP цепочка и handshake fix 9c0c34f3 опубликованы и входят в origin/main c65715df; build:core, tsc и 43 focused tests прошли. Account/UNKNOWN source review: mutation проверяет pinned account, timeout/disconnect UNKNOWN; обнаружен и зарегистрирован B720e95cbcdcd484ab0f8 — read может вернуть данные после смены account, исправить до browser acceptance. CI site-driver overlap проверен, чужой WIP сохранён. Evidence evidence/QBROWSERJOIN/source-review-20261107.md; native browser не запускался.",
+  "note": "Следующий шаг browser owner: закрыть B720e95cbcdcd484ab0f8 и получить exact delegated target+lease; native proof отдельно.",
+  "wait_reason": "",
+  "harness": "codex"
+}

@@ -1,0 +1,82 @@
+{
+  "id": "RESTORENOTICE",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Установить базовый NoticePlace facade и проверить реальный запуск Rust",
+  "status": "done",
+  "owner": "01a1bc34-85e5-7e11-a4a6-cf7a9056df02",
+  "session": "01a1bc34-85e5-7e11-a4a6-cf7a9056df02",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "src/automation/v1-noticeplace-*.ts",
+    "tests/v1-noticeplace-*.test.ts",
+    "evidence/finish-20261108/restore-noticeplace-luna.md"
+  ],
+  "acceptance": "Existing policy/launch endpoints → shared Rust create → actual OpenCode direct MiniMax repair of owned fixture. Full automatic lifecycle defects tracked separately NPIDENTITY/NPLIVEFINAL.",
+  "created_at": "2026-11-08T20:28:57+03:00",
+  "updated_at": "2026-11-08T22:56:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:28:57+03:00",
+      "note": "",
+      "changes": {
+        "id": "RESTORENOTICE",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Подключить NoticePlace к операциям нового ядра",
+        "status": "running",
+        "owner": "01a1bc34-85e5-7e11-a4a6-cf7a9056df02",
+        "session": "01a1bc34-85e5-7e11-a4a6-cf7a9056df02",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "src/automation/v1-noticeplace-*.ts",
+          "tests/v1-noticeplace-*.test.ts",
+          "evidence/finish-20261108/restore-noticeplace-luna.md"
+        ],
+        "acceptance": "Typed thin productionseam дляexistingNP policy/launch→Rustcreate/deliver/tasks; preserveincidentbinding/model/stop/idempotency. Existingconsumercontract exacttests, nolegacydaemon/newframework. Realinstalledgate отдельно."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T20:33:54+03:00",
+      "note": "Luna6tests+tscPASS isolatedadapter, NOTconnected. Parentнепринялкакwholefunction. Расширеноowned src/v1-noticeplace-server.ts + v1-noticeplace-*; reuseexistingTS policy/router/stores допустим вV1, actualoperationsRust. Следующийresult HTTPconsumer→newcoreport/compat_task durable receipts безlegacydaemon. Model runtimevalidation требуется, не TS type-only. Native live OpenCodeprofile parent/Terra.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T22:56:57+03:00",
+      "note": "Split overdue integration by actual proven result and two concrete remaining objects; full original acceptance retained in remainder leaves.",
+      "changes": {
+        "label": "Установить базовый NoticePlace facade и проверить реальный запуск Rust",
+        "status": "done",
+        "acceptance": "Existing policy/launch endpoints → shared Rust create → actual OpenCode direct MiniMax repair of owned fixture. Full automatic lifecycle defects tracked separately NPIDENTITY/NPLIVEFINAL.",
+        "result": "3ddca5b3 source integrated,41b42847 installed secret-reference correction; real session ses_e434b3fc0ffeNkQ5AJ1nuWLYgl repaired own fixture HTTP200 repairs1. Original incident inc_c2f37bfe20d448369d6a9218283ddcfc resolved via independent SourceVerifier after manual native binding correction. No human deliveries. Not full autonomous acceptance: NPIDENTITY and NPLIVEFINAL retain that remainder."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "3ddca5b3 source integrated,41b42847 installed secret-reference correction; real session ses_e434b3fc0ffeNkQ5AJ1nuWLYgl repaired own fixture HTTP200 repairs1. Original incident inc_c2f37bfe20d448369d6a9218283ddcfc resolved via independent SourceVerifier after manual native binding correction. No human deliveries. Not full autonomous acceptance: NPIDENTITY and NPLIVEFINAL retain that remainder."
+}

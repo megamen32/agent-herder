@@ -1,0 +1,13 @@
+E
+======================================================================
+ERROR: test_timeout_preserves_both_partial_streams (__main__.TimeoutOutputTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/native-hermes-timeout-output.test.py", line 7, in test_timeout_preserves_both_partial_streams
+    self.assertEqual(m.timeout_output(error),('out-start','err-start'))
+AttributeError: module 'native_ci' has no attribute 'timeout_output'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

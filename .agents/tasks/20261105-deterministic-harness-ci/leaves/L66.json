@@ -1,0 +1,83 @@
+{
+  "id": "L66",
+  "label": "Минимальный CI: Codex",
+  "description": "Проверить сохранённый сценарий Codex на общем согласованном кандидате и установленном маршруте, не повторяя UNKNOWN.",
+  "acceptance": "Две сессии, доставка, ответ, поиск, проекты и полный постраничный transcript через Herder; точная версия и границы proof.",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T03:59:50+03:00",
+  "updated_at": "2026-11-07T21:30:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:59:50+03:00",
+      "note": "",
+      "changes": {
+        "id": "L66",
+        "label": "Минимальный CI: Codex",
+        "description": "Проверить сохранённый сценарий Codex на общем согласованном кандидате и установленном маршруте, не повторяя UNKNOWN.",
+        "acceptance": "Две сессии, доставка, ответ, поиск, проекты и полный постраничный transcript через Herder; точная версия и границы proof.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T04:45:58+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Codex transcript HTTP 422 при отдельном CODEX_HOME: raw reader ищет не тот каталог; исправление пересекается с чужим WIP.",
+        "note": "Изолированный probe артефакта d2df618 на server-44: CLI->лжемодель PASS; Herder transcript FAIL. Receipt /tmp/herder-minci-01a1ac52/diagnostic-2.json, подробности diagnostic-2.err."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:49:55+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Изолированный кандидат прошёл Codex, но установленный процесс и общий прогон не доказаны.",
+        "note": "origin/main fee51138: CODEX_HOME и промах кэша. RED/GREEN /tmp/herder-codex-home-red.log и /tmp/herder-codex-cache-{red,green}.log; реальный общий прогон server-44 достиг OpenCode после двух Codex сессий /tmp/herder-minci-01a1ac52/codex-candidate2/probe.err."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:24:17+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Кандидат прошёл; installed consumer и общий gate ещё не проверены.",
+        "note": "server-44: изолированный штатный Herder entrypoint + реальные Codex 0.167.0 и OpenCode 2.1.3 прошли 2 сессии, отправку, поиск, проект и полный transcript 3+3 страниц; общий прогон 27.85 с, evidence/l66-l67-combined-candidate.json. Исходники опубликованы до 529dc7b9; точный установленный релиз не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:04+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Кандидат прошёл; installed consumer и общий gate ещё не проверены.",
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

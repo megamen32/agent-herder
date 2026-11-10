@@ -1,28 +1,29 @@
 {
   "id": "V093B",
   "label": "Z.ai: Нормализовать snapshot и обновить общий индекс",
-  "description": "Z.ai: Нормализовать snapshot и обновить общий индекс. Частный результат исходного V093: Подтверждённая native history route, snapshot cursor/raw blocks, feed индекса. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V093A.",
+  "description": "Source feed from a normalized Z.ai TranscriptPage into the existing index API. Use canonical full SessionAddress, snapshot_id and original text; preserve truncated=true into content_truncated. Source/fake SQLite fixture only; integrated v4/consumer proof remains in V093 and V030.",
   "acceptance": "Получен проверяемый результат: Z.ai: Нормализовать snapshot и обновить общий индекс. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V093A"
+    "V093A",
+    "V030B"
   ],
   "affected_files": [
     "crates/herder/src/adapters/z_ai/transcript.rs"
   ],
   "parent": "S07",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V093 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V093 обязателен в конце цепочки.",
+  "note": "Search-index dependency applies here, not native read. V093A can run independently; complete export/search acceptance preserved.",
   "created_at": "2026-11-07T03:53:32+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:32+03:00",
+  "updated_at": "2026-11-07T13:03:41+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:32+03:00",
@@ -51,6 +52,56 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:42:32+03:00",
+      "note": "Убрана ложная последовательность: native чтение независимо от search index.",
+      "changes": {
+        "depends_on": [
+          "V093A",
+          "V030"
+        ],
+        "note": "Search-index dependency applies here, not native read. V093A can run independently; complete export/search acceptance preserved."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:49:53+03:00",
+      "note": "Index source API 0342d129+d7d6cbee is ready; native adapter feed can proceed independently of production migration. No live profile actions.",
+      "changes": {
+        "depends_on": [
+          "V093A",
+          "V030B"
+        ],
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "status": "running",
+        "description": "Source feed from a normalized Z.ai TranscriptPage into the existing index API. Use canonical full SessionAddress, snapshot_id and original text; preserve truncated=true into content_truncated. Source/fake SQLite fixture only; integrated v4/consumer proof remains in V093 and V030."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:57:45+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:57:45.403Z",
+        "result": "Implemented `application::transcript_index::index_transcript_page` to feed one normalized TranscriptPage into the existing `search::index::update_session`. It passes the complete SessionAddress, page.snapshot_id, and page.truncated directly as content_truncated; indexes only blocks already classified Text with present text, validates every block carries the same full session address, and leaves non-text blocks unflattened. Reused the completed API from 0342d129 (index implementation) and d7d6cbee (ACL/search coverage), brought in as dependency commits a71454996297e3b8adeb6083e5a369a6ac99ce0b and c114baa54ff129f279eba0e414d3d29349222ae5; did not reimplement or change the index API. Owned source commit: 9ca0408c589a20da614f33c7b48e2b634097838e, only crates/herder/src/application/transcript_index.rs and crates/herder/src/lib.rs. SQLite in-memory fixture command `cargo test --manifest-path crates/herder/Cargo.toml application::transcript_index::tests`: 2 passed, 0 failed; searches find user question and assistant answer, foreign session text is excluded by the target session allowlist, and truncated input yields Partial coverage. Exact output evidence/V093B-green.txt (SHA-256 b481d6272161f17fbc22ff58d7d20c007c249f4207cd56430d832666ea660799). `rustfmt --edition 2024 --check` on the new source file and `git diff --check` passed. Source/fixture only: no production v4 schema/export, full-history behavior, or public consumer proof is claimed."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:03:41+03:00",
+      "note": "",
+      "changes": {
+        "result": "The feed is now named `application::transcript_index::index_transcript_snapshot` and accepts only a locally assembled batch with `next_cursor=None`; continuation pages are rejected before any `update_session` write. Caller must gather all local pages first. The independent `truncated` bit is preserved as `content_truncated` to reflect bounded native history (including Z.ai's current 180-ID window); this does not claim full provider history. Text-only indexing, full SessionAddress validation, user/assistant search, cross-session ACL isolation, and Partial coverage remain covered by the in-memory SQLite fixture. Source feed commit 9ca0408c589a20da614f33c7b48e2b634097838e; pagination guard/regression commit 0c3ce215d8432f4152e64527c25ca36570351ca8. TDD evidence: evidence/V093B-pagination-red.txt shows `test result: FAILED. 0 passed; 1 failed`; evidence/V093B-pagination-green.txt shows the same test `1 passed; 0 failed`; evidence/V093B-post-pagination-green.txt shows all 3 feed tests passed. Exact focused GREEN SHA-256 c69543c65c5b06792b6eb516829f612b2a735e91705a6b4de3276d0ef0641db7; full fixture SHA-256 8d8fc0e48ed3f57776536b2dd46d01bb88171955ca077f1aa3e4dc96eb1f630d. Canonical bug Be6c689fb915b4de48926 is resolved with RED/GREEN receipts. Existing index implementation dependencies are 0342d129 and d7d6cbee; they were reused unchanged. The lib.rs registration hunk is carried by 9ca0408c for Terra to apply manually against current main, checking for an existing search module and avoiding duplicate exports. Production v4 schema/export and public consumer proof remain outside this source leaf."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T09:57:45.403Z",
+  "result": "The feed is now named `application::transcript_index::index_transcript_snapshot` and accepts only a locally assembled batch with `next_cursor=None`; continuation pages are rejected before any `update_session` write. Caller must gather all local pages first. The independent `truncated` bit is preserved as `content_truncated` to reflect bounded native history (including Z.ai's current 180-ID window); this does not claim full provider history. Text-only indexing, full SessionAddress validation, user/assistant search, cross-session ACL isolation, and Partial coverage remain covered by the in-memory SQLite fixture. Source feed commit 9ca0408c589a20da614f33c7b48e2b634097838e; pagination guard/regression commit 0c3ce215d8432f4152e64527c25ca36570351ca8. TDD evidence: evidence/V093B-pagination-red.txt shows `test result: FAILED. 0 passed; 1 failed`; evidence/V093B-pagination-green.txt shows the same test `1 passed; 0 failed`; evidence/V093B-post-pagination-green.txt shows all 3 feed tests passed. Exact focused GREEN SHA-256 c69543c65c5b06792b6eb516829f612b2a735e91705a6b4de3276d0ef0641db7; full fixture SHA-256 8d8fc0e48ed3f57776536b2dd46d01bb88171955ca077f1aa3e4dc96eb1f630d. Canonical bug Be6c689fb915b4de48926 is resolved with RED/GREEN receipts. Existing index implementation dependencies are 0342d129 and d7d6cbee; they were reused unchanged. The lib.rs registration hunk is carried by 9ca0408c for Terra to apply manually against current main, checking for an existing search module and avoiding duplicate exports. Production v4 schema/export and public consumer proof remain outside this source leaf."
 }

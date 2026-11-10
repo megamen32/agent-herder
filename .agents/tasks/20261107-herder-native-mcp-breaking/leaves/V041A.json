@@ -12,8 +12,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -23,7 +23,7 @@
   "created_at": "2026-11-07T03:52:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:05+03:00",
+  "updated_at": "2026-11-07T07:29:40+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:05+03:00",
@@ -53,6 +53,27 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:24:52+03:00",
+      "note": "R004 ждёт незаконченный V017→R003. Продолжаю готовый ресурсный prerequisite V041A на target-local runner lock.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:29:40+03:00",
+      "note": "V041A готов; V041B теперь может проверять live claim и expected revision внутри полученного target lock.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен ownership::release_runner::TargetExecutionLock: создаёт стабильный `execution.lock` у зарегистрированного ResourceRef, получает эксклюзивный File lock и после ожидания повторно сверяет marker identity; RAII держит lock до drop. Изолированный test проверяет эксклюзивность (contender получает TryLockError::WouldBlock) и получение того же lock после release; cargo test ownership::release_runner::tests:: — 1 passed, 0 failed после rebase на origin/main 82a3d2ca; diff-check чистый. Commit f539c9e6 (lib.rs добавлен ровно pub mod release_runner; + новый release_runner.rs); передан Терe."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен ownership::release_runner::TargetExecutionLock: создаёт стабильный `execution.lock` у зарегистрированного ResourceRef, получает эксклюзивный File lock и после ожидания повторно сверяет marker identity; RAII держит lock до drop. Изолированный test проверяет эксклюзивность (contender получает TryLockError::WouldBlock) и получение того же lock после release; cargo test ownership::release_runner::tests:: — 1 passed, 0 failed после rebase на origin/main 82a3d2ca; diff-check чистый. Commit f539c9e6 (lib.rs добавлен ровно pub mod release_runner; + новый release_runner.rs); передан Терe."
 }

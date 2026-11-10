@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V088 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V088 обязателен в конце цепочки.",
+  "note": "Origin main already contains provider source under commits 8ce54d93/cb011f85. Documentation and redacted V088C receipt published in c5946f40. Do not repeat the accepted Z.ai prompt.",
   "estimate_over_limit_reason": "",
   "id": "V088",
   "created_at": "2026-11-07T01:52:33+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:41+03:00",
+  "updated_at": "2026-11-07T09:28:10+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:33+03:00",
@@ -76,10 +76,86 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:47:28+03:00",
+      "note": "Оставлен blocked до независимого live profile proof; fixtures не считаются provider compatibility evidence.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Z.ai live profile gate V088B не пройден",
+        "blocker_details": {
+          "source": "V088B blocked: Vibe list_pages возвращает Protocol error (Network.enable): Target crashed; исторический TEST_ACCESS не содержит разрешённого Z.ai profile scope.",
+          "consequence": "Нельзя подтвердить версии и нативные operations/receipt/history/context по разрешённому real consumer.",
+          "next": "Восстановить Vibe и предоставить явно разрешённый Z.ai test profile; затем продолжить capability matrix."
+        },
+        "result": "Capability matrix не заявляется как завершённая. V088A доказал только offline DTO normalization; V088B live operation/profile proof отсутствует."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:54:23+03:00",
+      "note": "Blocker обновлён по свежему owner-specified CI evidence; не заявляется отсутствие аккаунта/profile.",
+      "changes": {
+        "blocker": "Текущий Z.ai live gate не может подтвердить безопасный test target",
+        "blocker_details": {
+          "source": "CI fragment подтверждает авторизованную Z.ai page в Vibe на Mac mini; ранее созданный draft связался с рабочей беседой.",
+          "current": "Настроенный Vibe list_pages сейчас возвращает `Protocol error (Network.enable): Target crashed`.",
+          "next": "Восстановить existing Vibe route; создать однозначно task-owned test chat; подтвердить native capability matrix на точном target."
+        },
+        "result": "V088A offline normalization fixture завершён. V088B и исходный live capability matrix не подтверждены; к рабочей беседе не отправлять."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:07:36+03:00",
+      "note": "Переведено с Vibe на прямой CDP. Live acceptance не закрыта.",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "blocker_details": {
+          "previous": "Vibe target error and missing task-owned reference",
+          "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+          "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+        },
+        "result": "V088A fixture готов; устаревший Vibe blocker снят прямым CDP evidence. Product transport, operations и безопасная input correlation не доказаны."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:17:39+03:00",
+      "note": "На свежем origin/main уже опубликованы идентичные Rust commits 8ce54d93 и cb011f85. Уточняю matrix по V088A/B и V088C live proof; никаких Z.ai запросов не повторяю.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:28:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Capability matrix and redacted linked live receipt are published in origin/main commit c5946f4009ae27e1e178327ea44f99930c79cde5: acceptance/contracts/z-ai.md and acceptance/native/z-ai/live-rust-cdp-20261107.md. Provider/CDP source was already published by 8ce54d93 and cb011f85; no duplicate source commits. Matrix records direct CDP route, exact profile/context/account checks, read_chat endpoints, one-send/readback behavior, and the exact current adapter gap ZaiReader::list_chats() (full list not implemented; V090A). ChatGPT remains held. Reconfirmed cargo test --manifest-path crates/herder/Cargo.toml --lib adapters::: 13 passed. Linked receipt is a summary; raw chat_id was not retained.",
+        "note": "Origin main already contains provider source under commits 8ce54d93/cb011f85. Documentation and redacted V088C receipt published in c5946f40. Do not repeat the accepted Z.ai prompt."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
   ],
   "parent": "S07",
   "model": "gpt-6.1-terra",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
-  "wait_reason": ""
+  "wait_reason": "",
+  "blocker": "",
+  "blocker_details": {
+    "previous": "Vibe target error and missing task-owned reference",
+    "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+    "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+  },
+  "result": "Capability matrix and redacted linked live receipt are published in origin/main commit c5946f4009ae27e1e178327ea44f99930c79cde5: acceptance/contracts/z-ai.md and acceptance/native/z-ai/live-rust-cdp-20261107.md. Provider/CDP source was already published by 8ce54d93 and cb011f85; no duplicate source commits. Matrix records direct CDP route, exact profile/context/account checks, read_chat endpoints, one-send/readback behavior, and the exact current adapter gap ZaiReader::list_chats() (full list not implemented; V090A). ChatGPT remains held. Reconfirmed cargo test --manifest-path crates/herder/Cargo.toml --lib adapters::: 13 passed. Linked receipt is a summary; raw chat_id was not retained."
 }

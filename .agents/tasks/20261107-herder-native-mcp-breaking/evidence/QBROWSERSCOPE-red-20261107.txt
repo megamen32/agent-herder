@@ -1,0 +1,11 @@
+QBROWSERSCOPE RED — captured before implementation
+
+Command:
+`./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/chatgpt-mac-cdp-driver.test.ts`
+
+Exit: 1. Test file: 32 tests, 2 failed, 30 passed.
+
+A→B list regression: expected rejection for pinned account mismatch, but `listChats()` resolved with the other-account chat (`title: "Other account"`).
+A→B message regression: expected rejection, but `getMessages()` resolved with `[{id:"m1", role:"assistant", text:"other account"}]`.
+
+This proves cross-scope provider data could escape before the fix. This was an isolated fake-CDP source test; no browser session or send occurred.

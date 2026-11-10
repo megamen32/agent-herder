@@ -1,0 +1,91 @@
+{
+  "recordedAt": "2026-11-05T23:58:11.623974+00:00",
+  "pid": 1201064,
+  "path": "/api/settings/background-indexing",
+  "deadlineSeconds": 2,
+  "intervalSeconds": 1,
+  "attempts": [
+    {
+      "outcome": "ok",
+      "seconds": 0.004
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "ok",
+      "seconds": 1.09
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.206
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.004
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.003
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.003
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    },
+    {
+      "outcome": "ok",
+      "seconds": 1.28
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.634
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.127
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.008
+    },
+    {
+      "outcome": "ok",
+      "seconds": 0.008
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.003
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.003
+    },
+    {
+      "outcome": "timeout",
+      "seconds": 2.002
+    }
+  ],
+  "result": "11 of 20 read-only requests timed out",
+  "cause": "unknown"
+}

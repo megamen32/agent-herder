@@ -1,0 +1,76 @@
+{
+  "id": "L49",
+  "label": "Общий CI: итоговый gate точного candidate",
+  "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+  "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Tesla",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T23:33:42+03:00",
+  "updated_at": "2026-11-07T21:30:01+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T23:33:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "L49",
+        "label": "Общий CI: итоговый gate точного candidate",
+        "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+        "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Tesla",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:33:57+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L45",
+          "L46",
+          "L47",
+          "L48"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T09:19:27+03:00",
+      "note": "На server-44 из опубликованного launcher c user/net namespace и bubblewrap реальный исполняемый OpenCode v2.1.3 успешно запускается и сообщает версию; отправка/ответ в этой конфигурации и полноценный Herder gate ещё не доказаны.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:01+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "depends_on": [
+    "L45",
+    "L46",
+    "L47",
+    "L48"
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

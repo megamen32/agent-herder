@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V039 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V039 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:05+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:05+03:00",
+  "updated_at": "2026-11-07T07:05:23+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:05+03:00",
@@ -51,6 +51,35 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:29:19+03:00",
+      "note": "V037 + R002 библиотека интегрированы в origin/main; строю offline status/claim поверх общей библиотеки, без daemon/SQLite.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:29:42+03:00",
+      "note": "Plan activation inferred shared checkout from plan-dir; all source work stays in managed worktree /home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder per owner instruction.",
+      "changes": {},
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:05:23+03:00",
+      "note": "V039A завершён в изолированном worktree; следующий шаг — V039B/R004.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлены offline-команды herder ownership status|claim через общую ownership-библиотеку. Повтор того же claim ID восстанавливает исходный acquired_at при полном совпадении resource/principal/session/ID/purpose/expiry; изменённый payload отклоняется, строгая claim() сохранена. Commit 56e1001b3cd150d851053a301392aaabd836198c; передан Тере для интеграции вместе с точным diff lib.rs (одна строка pub mod cli;). Доказательства: cargo check --bin herder; cargo test ownership::claim::tests 5/5; offline fixture status free -> acquired -> already_owned -> changed purpose rejected -> status owned с исходным acquired_at. cargo fmt недоступен: rustfmt отсутствует для 1.96.1. Не доказаны интеграция Терой и R004."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлены offline-команды herder ownership status|claim через общую ownership-библиотеку. Повтор того же claim ID восстанавливает исходный acquired_at при полном совпадении resource/principal/session/ID/purpose/expiry; изменённый payload отклоняется, строгая claim() сохранена. Commit 56e1001b3cd150d851053a301392aaabd836198c; передан Тере для интеграции вместе с точным diff lib.rs (одна строка pub mod cli;). Доказательства: cargo check --bin herder; cargo test ownership::claim::tests 5/5; offline fixture status free -> acquired -> already_owned -> changed purpose rejected -> status owned с исходным acquired_at. cargo fmt недоступен: rustfmt отсутствует для 1.96.1. Не доказаны интеграция Терой и R004."
 }

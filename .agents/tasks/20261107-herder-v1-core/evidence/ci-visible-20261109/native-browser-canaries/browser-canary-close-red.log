@@ -1,0 +1,41 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/browser-canary-view.test.ts (5 tests | 1 failed) 34ms
+     ✓ opens an authorized chatgpt view of the maintained native conversation and closes only that view 15ms
+     ✓ opens an authorized zai view of the maintained native conversation and closes only that view 3ms
+     ✓ rejects a foreign provider handle before opening any page 2ms
+     ✓ never navigates to an arbitrary URL from metadata 1ms
+     × invalidates earlier idle proof before a send and requires a fresh terminal read before closing 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-canary-view.test.ts > independent owned canary view > invalidates earlier idle proof before a send and requires a fresh terminal read before closing
+AssertionError: promise resolved "{ page_id: 2, closed: true }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "closed": true,
++   "page_id": 2,
+  }
+
+ ❯ tests/browser-canary-view.test.ts:81:56
+     79|       await expect(f.adapter.sendMessage(f.control, { message: "OWN_TO…
+     80|       expect(send).toHaveBeenCalledTimes(1);
+     81|       await expect(f.adapter.closeCanaryObservation!()).rejects.toThro…
+       |                                                        ^
+     82|       expect(f.call.mock.calls.some(([name]) => name === "close_page")…
+     83|       await f.adapter.readCanaryObservation!(f.control);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  04:47:32
+   Duration  1.54s (transform 1.02s, setup 70ms, import 1.24s, tests 34ms, environment 0ms)
+

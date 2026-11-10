@@ -1,0 +1,4 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocregression-run2/retained-run-root
+AHAP OpenCode stand failed: exact AHAP runner initialize returned invalid JSON; refusing create/send
+ISOLATED_FAILURE_RETAINED /home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocregression-run2/retained-run-root
+LAUNCH_EXIT=1; FAILED_PREMUTATION: prior attempt used /usr/bin/node v12.22.9 and the exact runner rejected modern syntax; model_requests_at_failure=0. No create/send occurred.

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T20:28:22+00:00",
+  "details": "Новый candidate после исправления sidecar остановился при создании workspace-ссылки в собственной временной копии node_modules из-за read-only; сценарии не стартовали. Исправить TDD и повторить безопасно.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T20:28:22+00:00",
+      "changes": {
+        "details": "Новый candidate после исправления sidecar остановился при создании workspace-ссылки в собственной временной копии node_modules из-за read-only; сценарии не стартовали. Исправить TDD и повторить безопасно.",
+        "source": "L43 candidate v15 staging",
+        "status": "open",
+        "title": "CI runner v15: read-only node_modules блокирует staging workspace link"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:31:04+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-staging-green-verified.log",
+            "red_proof_path": "evidence/l43-workspace-staging-red.log",
+            "red_result": "FAILED",
+            "red_sha256": "53c30f4616cd0a45c803083e1276cf1e92e03c03d1e4a2b9e8e1bd0a671dd618",
+            "result": "PASS",
+            "sha256": "5b0b23f241d387b89a417787a613f3169c951117216d51d85139de820ac3c142",
+            "test_command": "python3 tests/native-hermes-sidecar-staging.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B46b47bfd24184a4a8917",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-staging-green-verified.log",
+      "red_proof_path": "evidence/l43-workspace-staging-red.log",
+      "red_result": "FAILED",
+      "red_sha256": "53c30f4616cd0a45c803083e1276cf1e92e03c03d1e4a2b9e8e1bd0a671dd618",
+      "result": "PASS",
+      "sha256": "5b0b23f241d387b89a417787a613f3169c951117216d51d85139de820ac3c142",
+      "test_command": "python3 tests/native-hermes-sidecar-staging.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L43 candidate v15 staging",
+  "status": "fixed",
+  "title": "CI runner v15: read-only node_modules блокирует staging workspace link",
+  "updated_at": "2026-11-06T20:31:04+00:00"
+}

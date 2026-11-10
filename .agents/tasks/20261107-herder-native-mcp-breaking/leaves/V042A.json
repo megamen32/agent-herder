@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:52:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:05+03:00",
+  "updated_at": "2026-11-07T07:43:20+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:05+03:00",
@@ -51,6 +51,27 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:38:56+03:00",
+      "note": "V041 done; начинаю следующую разблокированную часть V042 durable receipt до spawn.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:43:20+03:00",
+      "note": "V042A done; передаю persistent admission receipt для интеграции.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен ownership::release_receipt::admit: под удерживаемым TargetExecutionLock перепроверяет актуальную revision и claim ID, затем до spawn пишет в authority `release-receipts/<request_key>.json` immutable receipt со статусом admitted, storage/resource/claim identities, UUID request_key и 64-char request_hash. Файл mode 0600, sync_all + directory fsync. Точный повтор того же key/payload возвращает исходный receipt; тот же key с иным hash отклоняется InvalidInput. Изолированный тест прошёл после rebase на origin/main fa84e08c: cargo test ownership::release_receipt::tests:: — 1 passed; diff-check чистый. Commit 48fd3744; затронуты lib.rs (одна строка export) и новый release_receipt.rs. Интеграция передана Терe. Child spawn/lock transfer и readback outcome пока не доказаны, они следующие leaves V042B/V042."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен ownership::release_receipt::admit: под удерживаемым TargetExecutionLock перепроверяет актуальную revision и claim ID, затем до spawn пишет в authority `release-receipts/<request_key>.json` immutable receipt со статусом admitted, storage/resource/claim identities, UUID request_key и 64-char request_hash. Файл mode 0600, sync_all + directory fsync. Точный повтор того же key/payload возвращает исходный receipt; тот же key с иным hash отклоняется InvalidInput. Изолированный тест прошёл после rebase на origin/main fa84e08c: cargo test ownership::release_receipt::tests:: — 1 passed; diff-check чистый. Commit 48fd3744; затронуты lib.rs (одна строка export) и новый release_receipt.rs. Интеграция передана Терe. Child spawn/lock transfer и readback outcome пока не доказаны, они следующие leaves V042B/V042."
 }

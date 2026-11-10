@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-05T23:54:46+00:00",
+  "details": "Два независимых read-only запроса к установленному процессу PID 1201064 истекли через 10 секунд: /api/sessions и /api/settings/background-indexing; непосредственные повторные запросы отвечали. Причина не определена, повторяющиеся отправки не выполнялись.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-05T23:54:46+00:00",
+      "changes": {
+        "details": "Два независимых read-only запроса к установленному процессу PID 1201064 истекли через 10 секунд: /api/sessions и /api/settings/background-indexing; непосредственные повторные запросы отвечали. Причина не определена, повторяющиеся отправки не выполнялись.",
+        "source": "local read-only HTTP probes, systemd PID and inspect-installed-herder.py",
+        "status": "open",
+        "title": "Установленный Herder иногда не отвечает на локальный HTTP за 10 секунд"
+      }
+    }
+  ],
+  "id": "Bc391b405b78541dba751",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "local read-only HTTP probes, systemd PID and inspect-installed-herder.py",
+  "status": "open",
+  "title": "Установленный Herder иногда не отвечает на локальный HTTP за 10 секунд",
+  "updated_at": "2026-11-05T23:54:46+00:00"
+}

@@ -1,0 +1,86 @@
+{
+  "label": "MiniMax: первый тест создания через Herder",
+  "description": "Уже проверены отправка, транскрипты, поиск, проекты и активность двух CLI-сессий. Первый шаг: доказать точную модель и создать сессию через Herder, соблюдая TDD и запрет повторов UNKNOWN.",
+  "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+  "estimate_minutes": null,
+  "model": "gpt-6-luna",
+  "origin": "L04",
+  "id": "L11",
+  "created_at": "2026-11-06T15:51:30+03:00",
+  "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+  "harness": "codex",
+  "updated_at": "2026-11-06T19:09:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T15:51:30+03:00",
+      "note": "",
+      "changes": {
+        "label": "MiniMax: первый тест создания через Herder",
+        "description": "Уже проверены отправка, транскрипты, поиск, проекты и активность двух CLI-сессий. Первый шаг: доказать точную модель и создать сессию через Herder, соблюдая TDD и запрет повторов UNKNOWN.",
+        "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+        "estimate_minutes": 15,
+        "model": "gpt-6-luna",
+        "origin": "L04"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:53:14+03:00",
+      "note": "Исполнитель запущен параллельно; первая задача — проверяемый изолированный canary, время полного покрытия пока неизвестно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b0ea-b2fb-7a50-b4ad-2fba0f8d076d",
+        "owner": "Faraday"
+      },
+      "session": "01a1b0ea-b2fb-7a50-b4ad-2fba0f8d076d",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:58:14+03:00",
+      "note": "Исполнитель продолжает следующий подтверждаемый шаг; остальные среды работают параллельно.",
+      "changes": {
+        "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+        "owner": "Goodall"
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:12:06+03:00",
+      "note": "Прежние 15 минут не отражали реальное оставшееся время; оценка уточняется по фактическим результатам, срок полного этапа пока неизвестен.",
+      "changes": {
+        "estimate_minutes": null
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:16:54+03:00",
+      "note": "Выявлен риск повторного создания UNKNOWN; исправлен через TDD и сохранённую отметку. MCP schema допускает MiniMax; ACP-create и подтверждение первого provider/model ещё не готовы.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T17:02:48+03:00",
+      "note": "MiniMax: в изолированном candidate server-44 Herder MCP создал 2 реальные сессии, provider/model подтверждены до отправки, оба сообщения завершены, transcript по 2 страницы и поиск получены; fixture вызван. Scoped receipt 49,2 с; общий candidate/release gate FAIL, установленный PID не проверен. Между ACP-проверкой и запуском CLI сохраняется неатомарный промежуток.",
+      "changes": {},
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:09:49+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "На отдельном кандидате server-44 две настоящие MiniMax сессии через MCP Herder: отправка, два полных transcript и поиск; локальная модель вызвана, receipt /tmp/herder-l11-receipts-01a1b0ed/create-attempt-3.json. Единый кандидат и installed PID не проверены; риск гонки выделен в L32."
+      },
+      "session": "01a1b0ed-e8a7-73d2-8fde-ec72e34a2b77",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "owner": "Goodall",
+  "result": "На отдельном кандидате server-44 две настоящие MiniMax сессии через MCP Herder: отправка, два полных transcript и поиск; локальная модель вызвана, receipt /tmp/herder-l11-receipts-01a1b0ed/create-attempt-3.json. Единый кандидат и installed PID не проверены; риск гонки выделен в L32."
+}

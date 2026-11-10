@@ -1,0 +1,11 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder
+
+(node:3262782) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 17 skipped (18)
+   Start at  18:35:47
+   Duration  1.16s (transform 232ms, setup 73ms, import 212ms, tests 653ms, environment 0ms)
+

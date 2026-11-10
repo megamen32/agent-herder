@@ -1,0 +1,35 @@
+{
+  "blocker": "tests/target_port.rs and application/target.rs are owned by Tesla/Tera (01a1b3c3-f4cc-7780-b360-22eadc8f48ff)",
+  "created_at": "2026-11-07T06:20:58+00:00",
+  "details": "On clean verification worktree at origin/main cb011f85 with V029 delta applied, `cargo test --no-run --manifest-path .tmp/v029-integrated-check/crates/herder/Cargo.toml --test target_port` fails with seven E0624/E0599 errors. tests/target_port.rs locally includes ../src/application/target.rs instead of importing the already exported herder::application::target module, so crate-private Writer methods are compiled outside the library crate and SessionRegistry trait is not in scope. RED output saved at .tmp/v029-runtime/target-port-red.log.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "at": "2026-11-07T06:20:58+00:00",
+      "changes": {
+        "details": "On clean verification worktree at origin/main cb011f85 with V029 delta applied, `cargo test --no-run --manifest-path .tmp/v029-integrated-check/crates/herder/Cargo.toml --test target_port` fails with seven E0624/E0599 errors. tests/target_port.rs locally includes ../src/application/target.rs instead of importing the already exported herder::application::target module, so crate-private Writer methods are compiled outside the library crate and SessionRegistry trait is not in scope. RED output saved at .tmp/v029-runtime/target-port-red.log.",
+        "source": "cargo test --no-run --test target_port",
+        "status": "open",
+        "title": "Integrated-main target_port harness fails to compile"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "at": "2026-11-07T06:26:32+00:00",
+      "changes": {
+        "blocker": "tests/target_port.rs and application/target.rs are owned by Tesla/Tera (01a1b3c3-f4cc-7780-b360-22eadc8f48ff)",
+        "status": "blocked"
+      },
+      "reason": "Current origin/main d366364d still reproduces seven compile errors. Human explicitly prohibited parallel repair due active ownership; RED retained and exact diagnostics sent to owner. Next action is owner rerun on her current base and resolve/close the bug there."
+    }
+  ],
+  "id": "Bac988b4b500a401a9edc",
+  "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "reporter": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "source": "cargo test --no-run --test target_port",
+  "status": "blocked",
+  "title": "Integrated-main target_port harness fails to compile",
+  "updated_at": "2026-11-07T06:26:32+00:00"
+}

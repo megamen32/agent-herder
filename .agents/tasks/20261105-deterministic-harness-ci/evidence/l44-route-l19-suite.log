@@ -1,0 +1,44 @@
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.306s
+
+OK
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: collector not implemented; nothing was changed
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was changed
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: post-switch collector failed
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: post-switch collector failed
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved

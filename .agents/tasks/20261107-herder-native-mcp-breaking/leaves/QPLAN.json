@@ -1,0 +1,53 @@
+{
+  "id": "QPLAN",
+  "label": "Согласовать два плана вокруг пяти адаптеров",
+  "description": "Прямой запрос владельца: использовать текущие результаты Herder и deterministic CI; зафиксировать раздельные owners и общую проверку пяти адаптеров без повторной реализации. Источники FAST-PATH, CI leaves/receipts, текущие session results.",
+  "acceptance": "Два канонических плана содержат общий порядок, ближайшие executable leaves <=15мин и ссылки на переиспользуемые результаты; независимые работы не ждут unrelated adapter.",
+  "kind": "task",
+  "status": "done",
+  "parent": "S00",
+  "owner": "Astra",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "created_at": "2026-11-07T18:08:51+03:00",
+  "updated_at": "2026-11-07T18:23:51+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:08:51+03:00",
+      "note": "",
+      "changes": {
+        "id": "QPLAN",
+        "label": "Согласовать два плана вокруг пяти адаптеров",
+        "description": "Прямой запрос владельца: использовать текущие результаты Herder и deterministic CI; зафиксировать раздельные owners и общую проверку пяти адаптеров без повторной реализации. Источники FAST-PATH, CI leaves/receipts, текущие session results.",
+        "acceptance": "Два канонических плана содержат общий порядок, ближайшие executable leaves <=15мин и ссылки на переиспользуемые результаты; независимые работы не ждут unrelated adapter.",
+        "kind": "task",
+        "status": "running",
+        "parent": "S00",
+        "owner": "Astra",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        }
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:23:51+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Два канонических плана согласованы для5адаптеров; JOINT-EXECUTION.md обоих планов + FIVE-ADAPTER-ACCEPTANCE.json опубликованы main99d2f29a. Устаревшие running исправлены по receipts; FASTINIT/driver реально готовы, QOCJOIN у Теры running. CI L102/L103 не дублируются; CIGATE/installed этапы добавлены. Это план/назначения, не готовые5адаптеров."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "result": "Два канонических плана согласованы для5адаптеров; JOINT-EXECUTION.md обоих планов + FIVE-ADAPTER-ACCEPTANCE.json опубликованы main99d2f29a. Устаревшие running исправлены по receipts; FASTINIT/driver реально готовы, QOCJOIN у Теры running. CI L102/L103 не дублируются; CIGATE/installed этапы добавлены. Это план/назначения, не готовые5адаптеров."
+}

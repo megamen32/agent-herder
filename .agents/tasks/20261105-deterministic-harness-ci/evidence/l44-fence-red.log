@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_post_generation_and_fence_must_match_before_and_after (__main__.BindingTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_codex_unix_transaction.py", line 28, in test_post_generation_and_fence_must_match_before_and_after
+    with self.assertRaises(ValueError):m.check_observation(binding,{**contract,**contract_delta},{**generation,**generation_delta})
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)

@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-11-08T11:12:36.635920+00:00",
+  "exit": 0,
+  "command": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--root",
+    ".",
+    "--config",
+    "vitest.config.ts",
+    "tests/deferred-delivery-sweeper.test.ts",
+    "--reporter=verbose",
+    "--maxWorkers=1",
+    "--no-file-parallelism"
+  ],
+  "log": "/tmp/dot-herder-sweeper-20261108-10t5d9an/test.log",
+  "logSha256": "4cfeb835db0c1304884ddb7d6e3c518c7deb07cc41b34c7d0406cbd28813ada1",
+  "sourceSha": "e9d56ed31f0b5a4b2aeba34eb62e8d9dae744962",
+  "scope": "isolated unit fixtures, fake adapters, no real session delivery"
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T15:21:23+00:00",
+  "details": "tests/test_remote_release_gate.py test_expiry_before_restart_enters_fenced_rollback fails: compare_cleanup_revision called 0 times; preflight reports installed PID consumer CI collector not implemented. Product vs fixture cause under investigation.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L21",
+      "at": "2026-11-06T15:21:23+00:00",
+      "changes": {
+        "details": "tests/test_remote_release_gate.py test_expiry_before_restart_enters_fenced_rollback fails: compare_cleanup_revision called 0 times; preflight reports installed PID consumer CI collector not implemented. Product vs fixture cause under investigation.",
+        "source": "python3 tests/test_remote_release_gate.py",
+        "status": "open",
+        "title": "Remote release gate expiry rollback test stops before cleanup"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L21",
+      "at": "2026-11-06T15:26:27+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/L21-remote-release-gate-green.log",
+            "red_proof_path": "evidence/L21-remote-release-gate-red-reconstruction.log",
+            "red_result": "FAIL: test_expiry_before_restart_enters_fenced_rollback",
+            "red_sha256": "0677fff101580145955d2a7af5593c2222539c99512a023b8402b663a39347be",
+            "result": "PASS: unittest process exited 0",
+            "sha256": "81ae637a58d275251ba174d7a94a5736bf2d861babdc092590abc5d922610f48",
+            "test_command": "python3 tests/test_remote_release_gate.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B0b00822de0064e289b06",
+  "owner": "L21",
+  "reporter": "L21",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/L21-remote-release-gate-green.log",
+      "red_proof_path": "evidence/L21-remote-release-gate-red-reconstruction.log",
+      "red_result": "FAIL: test_expiry_before_restart_enters_fenced_rollback",
+      "red_sha256": "0677fff101580145955d2a7af5593c2222539c99512a023b8402b663a39347be",
+      "result": "PASS: unittest process exited 0",
+      "sha256": "81ae637a58d275251ba174d7a94a5736bf2d861babdc092590abc5d922610f48",
+      "test_command": "python3 tests/test_remote_release_gate.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "python3 tests/test_remote_release_gate.py",
+  "status": "fixed",
+  "title": "Remote release gate expiry rollback test stops before cleanup",
+  "updated_at": "2026-11-06T15:26:27+00:00"
+}

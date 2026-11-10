@@ -1,0 +1,151 @@
+{
+  "id": "V025PORT",
+  "label": "Codex: bounded handoff под scoped gate",
+  "description": "Реальный transport выполняет ограниченный native submit, пока gate удерживается; завершает все отправляющие операции до освобождения gate.",
+  "acceptance": "Barrier tests доказывают handoff/stop ordering, ошибки до отправки и UNKNOWN без повтора; тесты штатного Codex port.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025GUARD1",
+    "V055BOUND"
+  ],
+  "created_at": "2026-11-07T11:24:43+03:00",
+  "updated_at": "2026-11-07T12:29:02+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:24:43+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025PORT",
+        "label": "Codex: bounded handoff под scoped gate",
+        "description": "Реальный transport выполняет ограниченный native submit, пока gate удерживается; завершает все отправляющие операции до освобождения gate.",
+        "acceptance": "Barrier tests доказывают handoff/stop ordering, ошибки до отправки и UNKNOWN без повтора; тесты штатного Codex port.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025GUARD1"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:25:03+03:00",
+      "note": "Lead проверяет реальную границу handoff и безопасное удержание gate; без параллельных правок исходного worktree Tesla.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:25:44+03:00",
+      "note": "Source inspection: CodexConnection::request вызывает blocking stdin.write_all/flush до вычисления deadline (connection.rs:288-296). Поэтому текущий submit нельзя объявить bounded под gate; необходим deadline-aware write без живого delegated writer после возврата. Проверить владельца Codex adapter перед изменением.",
+      "changes": {},
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:27:29+03:00",
+      "note": "Найдена небезопасная блокирующая запись до deadline, передана владельцу Codex через Астру; параллельную правку не начинаю.",
+      "changes": {
+        "status": "waiting",
+        "depends_on": [
+          "V025GUARD1",
+          "V055BOUND"
+        ],
+        "wait_reason": "Codex owner выполняет V055PIPE и V055BOUND; соединение gate со штатным transport следует после подтверждённого bounded API."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:16:19+03:00",
+      "note": "Prerequisite V055BOUND опубликован; возобновляю изолированный proof реальных bounded traits.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": ""
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:16:27+03:00",
+      "note": "Проверка реальных bounded Codex traits под scoped gate.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:24:17+03:00",
+      "note": "Workspace activity paths зарезервированы без конфликтов, но coordination_note create и list по scoped_stop_gate.rs не работают. Исходник не менялся, прежние UNKNOWN не повторены.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Agent Herder coordination_note create/list отвечает MCP -32603 Internal error после rollout; требуется восстановить рабочую координацию перед edit shared test paths."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:26:07+03:00",
+      "note": "MCP coordination_note list/create вновь работает; адресная заметка 1b5f643e, можно продолжать изолированный proof.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": ""
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:26:14+03:00",
+      "note": "Заменить poll-once wrapper реальными bounded traits и проверить isolated Codex.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:28:08+03:00",
+      "note": "Одно изолированное выполнение; receipt review-evidence/v025port/native-bounded-20261107.txt, повторять send не требуется.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимый review 03eccbc2",
+        "result": "Candidate 03eccbc2 удаляет poll-once wrapper: scoped guard вызывает штатные Codex bounded create/submit; scoped tests 19 pass+1 ignored, отдельный isolated native test 1/1, thread 01a1b555-3995-7502-8c62-e46b02dda17e turn 01a1b555-3ad5-7ca0-b741-8a98cea4bb31, readback interrupted, next claim denied. Public MCP не доказан."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:29:02+03:00",
+      "note": "Receipt review-evidence/v025port/native-bounded-20261107.txt; no replay.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "result": "origin/main 03eccbc2: live fixture uses actual Codex bounded traits under scoped guard, 19 unit/barrier tests + isolated native test pass; unique thread/turn readback interrupted and next claim denied. Independent Astra review SUPPORTED; public MCP composition not proven."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "wait_reason": "",
+  "result": "origin/main 03eccbc2: live fixture uses actual Codex bounded traits under scoped guard, 19 unit/barrier tests + isolated native test pass; unique thread/turn readback interrupted and next claim denied. Independent Astra review SUPPORTED; public MCP composition not proven."
+}

@@ -1,0 +1,19 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.07s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+
+thread 'scoped_create_application_wire_preserves_session_and_deduplicates_prompt' (868431) panicked at tests/scoped_stop_gate.rs:3842:17:
+revoked session read must deny cached aggregate: {"id":80,"jsonrpc":"2.0","result":{"createdAt":"2026-11-07T10:50:56Z","lastUpdatedAt":"2026-11-07T10:50:56Z","result":{"content":[{"text":"{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"issued\"},\"prompt\":{\"native_turn_id\":\"turn\",\"outcome\":\"confirmed\"}}","type":"text"}],"isError":false,"resultType":"complete","structuredContent":{"create":{"effect":"confirmed","session_ref":"issued"},"prompt":{"native_turn_id":"turn","outcome":"confirmed"}}},"resultType":"complete","status":"completed","taskId":"create-operation:4e220593bf1864adc8b10c9fb3c61daf","ttlMs":null}}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test scoped_create_application_wire_preserves_session_and_deduplicates_prompt ... FAILED
+
+failures:
+
+failures:
+    scoped_create_application_wire_preserves_session_and_deduplicates_prompt
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 5.28s
+
+error: test failed, to rerun pass `--test scoped_stop_gate`

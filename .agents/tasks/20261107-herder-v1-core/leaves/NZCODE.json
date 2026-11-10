@@ -6,7 +6,7 @@
   ],
   "estimate_minutes": 15,
   "kind": "task",
-  "status": "running",
+  "status": "done",
   "acceptance": "Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.",
   "parent": "S2",
   "id": "NZCODE",
@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:06+03:00",
   "session": "01a1b7a8-f171-7d73-bb09-ad2081d226a3",
   "harness": "codex",
-  "updated_at": "2026-11-08T18:37:49+03:00",
+  "updated_at": "2026-11-08T18:49:17+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:06+03:00",
@@ -170,9 +170,25 @@
       },
       "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T18:49:17+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Exactc5a84dec candidate full nativeZCode localfake modelPASS, включая новую настоящую archive квитанцию effectconfirmed. evidence finish-20261108/zcode-c5a-full-result.json. Старый retained82b archive отдельноUNKNOWN, no replay; его cleanup не объявленPASS. Installed отдельно."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
     }
   ],
   "note": "Correction of earlier unqualified archivePASS; evidence zcode-82b-result.json.",
   "blocker": "Original ZCodecreateUNKNOWN remains. Fixture projectsetup is now fixed/published61503548 with7tests inclreal supervisor preflight. That does not reconcile originalmutation; CI owns exactnative recovery/no replay.",
-  "result": "82b91db9 local native ZCode fixture: create/deliver/read/export/search/projects/restartPASS; новый archive gate вернул unsupported_archive effectnone, поэтому fullcaseINCOMPLETE. Старый5ffPASS не проверялarchive. SolMaxwell чинит существующий native archive seam; retainedroot zcode-82b91db9-archive-ede4cb8ab457, no replays."
+  "result": "Exactc5a84dec candidate full nativeZCode localfake modelPASS, включая новую настоящую archive квитанцию effectconfirmed. evidence finish-20261108/zcode-c5a-full-result.json. Старый retained82b archive отдельноUNKNOWN, no replay; его cleanup не объявленPASS. Installed отдельно."
 }

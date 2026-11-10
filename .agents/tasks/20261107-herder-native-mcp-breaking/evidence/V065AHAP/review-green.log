@@ -1,0 +1,15 @@
+   Compiling herder v0.1.0 (/tmp/herder-tasks-publish-1047/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.19s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 7 tests
+test adapters::ahap::tests::ambiguous_result_and_null_error_poisons_connection ... ok
+test adapters::ahap_opencode::tests::duplicate_native_id_across_roles_is_unknown ... ok
+test adapters::ahap_opencode::tests::missing_native_receipt_stays_unknown_and_wrong_instance_does_not_send ... ok
+test adapters::ahap::tests::capabilities_and_instance_are_explicit ... ok
+test adapters::ahap_opencode::tests::exact_queue_receipt_and_native_readback ... ok
+test adapters::ahap::tests::timeout_never_replays_a_possibly_sent_mutation ... ok
+test adapters::ahap::tests::blocked_stdin_is_bounded_and_never_retried ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 148 filtered out; finished in 0.28s
+

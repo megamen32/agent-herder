@@ -1,0 +1,10 @@
+
+running 5 tests
+test ownership::manifest::tests::markers_are_distinct_and_scope_does_not_encode_authority ... ok
+test ownership::claim::tests::claim_requires_a_valid_nonce_and_never_claims_unauthorized_resources ... ok
+test ownership::manifest::tests::fixture_roundtrip_keeps_scopes_and_resource_identity_across_locations ... ok
+test ownership::manifest::tests::local_resource_lookup_checks_storage_resource_project_and_route_markers ... ok
+test ownership::claim::tests::claim_writes_one_owner_and_replay_reads_it_without_replacing_guard ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

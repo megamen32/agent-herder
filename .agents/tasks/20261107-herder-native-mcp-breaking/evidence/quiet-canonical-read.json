@@ -1,0 +1,7 @@
+{
+  "source": "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/leaves/QDESIGN.json",
+  "reader_cwd": "/home/roomhacker/.codex/worktrees/herder-v1-implementation/agent-herder",
+  "sha256": "8d97222cd13611855c4989102e6c7e2104afd6883e6f5931b33d938ad2dece4b",
+  "note_matches_progress_event": true,
+  "new_digest_implemented": false
+}

@@ -1,0 +1,20 @@
+{
+  "scope": "codex-isolated-entrypoint-boundary",
+  "pid": 2397746,
+  "sessions": [
+    "01a1b0fe-d7b4-7c40-92ea-260f5948fb03",
+    "01a1b0fe-da10-7900-9d56-4eb96a6d56ed"
+  ],
+  "transcriptPages": [
+    3,
+    3
+  ],
+  "completed": true,
+  "transcriptComplete": true,
+  "verifiedPeerPid": 2397595,
+  "fixtureRequests": 2,
+  "isolatedNetwork": true,
+  "peerPid": 2397595,
+  "status": "PASS",
+  "note": "Observed stdout from server-44 scripts/codex-unix-boundary.py --entrypoint; candidate test process, not installed service."
+}

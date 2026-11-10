@@ -1,0 +1,13 @@
+E
+======================================================================
+ERROR: test_complete_fixture_and_missing_or_conflicting_fields (__main__.ReceiptVerifierTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l30_receipt_verifier.py", line 35, in test_complete_fixture_and_missing_or_conflicting_fields
+    self.assertIsNone(rollout.validate_installed_ci_receipt_structure(receipt,expected))
+AttributeError: module 'rollout_node_l30' has no attribute 'validate_installed_ci_receipt_structure'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

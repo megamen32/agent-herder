@@ -1,0 +1,69 @@
+{
+  "id": "V072RUNNER",
+  "label": "ZCode: сохранять пошаговые receipts при timeout тестового runner",
+  "parent": "S05",
+  "kind": "task",
+  "status": "done",
+  "depends_on": [
+    "V072C"
+  ],
+  "owner": "roomhacker",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "acceptance/native/zcode/"
+  ],
+  "description": "Исправить диагностический дефект испытательного runner, который потерял IDs и fake-model count при таймауте. Использовать существующий owned runner/history; не повторять UNKNOWN native create/send.",
+  "acceptance": "Offline fake subprocess emits one step receipt then hangs: receipt survives timeout, stdout/stderr and fixture count persisted, owned process cleanup proven, test state retained on failure. No native create/send or real provider. V072D outcome stays UNKNOWN; later live proof separate.",
+  "created_at": "2026-11-07T11:45:54+03:00",
+  "updated_at": "2026-11-07T12:12:32+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:45:54+03:00",
+      "note": "",
+      "changes": {
+        "id": "V072RUNNER",
+        "label": "ZCode: сохранять пошаговые receipts при timeout тестового runner",
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "depends_on": [
+          "V072C"
+        ],
+        "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "acceptance/native/zcode/"
+        ],
+        "description": "Исправить диагностический дефект испытательного runner, который потерял IDs и fake-model count при таймауте. Использовать существующий owned runner/history; не повторять UNKNOWN native create/send.",
+        "acceptance": "Offline fake subprocess emits one step receipt then hangs: receipt survives timeout, stdout/stderr and fixture count persisted, owned process cleanup proven, test state retained on failure. No native create/send or real provider. V072D outcome stays UNKNOWN; later live proof separate."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:47:20+03:00",
+      "note": "Исправить только runner receipts/preservation; выполнить offline timeout subprocess receipt→hang→timeout проверку. Не запускать native create/send.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:12:32+03:00",
+      "note": "Offline runner proof completed; scoped files committed. Preserve UNKNOWN V072D and blocked V072E; no native retry.",
+      "changes": {
+        "status": "done",
+        "result": "Scoped commit a79ed7f8 adds acceptance/native/zcode/runner.py, test_runner.py, journal.mjs. Offline command `python3 -m unittest acceptance/native/zcode/test_runner.py`: 1 test passed; confirmed durable step receipt before hanging child, timeout/reap, fixture request count, stdout/stderr retained and profile preserved. No ZCode launch or native create/send. README remains uncommitted; unrelated Cargo/lib/contract WIP excluded."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "result": "Scoped commit a79ed7f8 adds acceptance/native/zcode/runner.py, test_runner.py, journal.mjs. Offline command `python3 -m unittest acceptance/native/zcode/test_runner.py`: 1 test passed; confirmed durable step receipt before hanging child, timeout/reap, fixture request count, stdout/stderr retained and profile preserved. No ZCode launch or native create/send. README remains uncommitted; unrelated Cargo/lib/contract WIP excluded."
+}

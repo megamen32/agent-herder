@@ -1,6 +1,6 @@
 {
   "label": "Передать caller identity и ACL через translator",
-  "description": "Реализовать только этот проверяемый шаг по COMPATIBILITY.md. Входы: T002, V008. При неизвестном SDK/consumer маршруте сначала назвать минимальный пробел; не форкать Codex.",
+  "description": "Вход crates/herder-compat/src/edge.rs + готовый protected caller boundary. Передать verified transport identity upstream, не принимать principal из model metadata. Проверить два principals и unknown identity до effect. Существующий refused T016 не повторять; stopped translator worker не будить.",
   "acceptance": "Два downstream principal остаются разными upstream; подмена session/Task ref отвергнута.",
   "depends_on": [
     "T002",
@@ -11,19 +11,19 @@
     "maximum": 15
   },
   "parent": "S01",
-  "owner": "unassigned",
+  "owner": "Тера",
   "model": "gpt-6-astra",
   "status": "queued",
   "affected_files": [
     "crates/herder-compat/",
     "acceptance/compat/"
   ],
-  "note": "Самостоятельная compatibility сессия. Центральные Cargo/lib/schema изменения согласовать с владельцем core; своих исполнителей без назначения Astra не создавать.",
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
   "id": "T003",
   "created_at": "2026-11-07T04:20:35+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:20:35+03:00",
+  "updated_at": "2026-11-07T16:12:50+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T04:20:35+03:00",
@@ -52,6 +52,59 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:44:02+03:00",
+      "note": "Не дублирую и не переношу чужой WIP; approval T011 не обходится.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "T002 translator baseline находится как незакоммиченный чужой WIP в herder-compatibility, отсутствует в origin/main; authenticated ingress и COMPOSE не готовы.",
+        "note": "Обнаружен реальный baseline untracked crates/herder-compat; main запускает upstream child и LegacyEdge из Peer без verified principal boundary. Нельзя считать env/_meta доказанной identity. Сначала scoped handoff/publish baseline и согласованный проверенный ingress, потом два principal + подмена refs."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:53:07+03:00",
+      "note": "Устранён baseline source handoff; T003 не закрыт, T011 refusal не обходился.",
+      "changes": {
+        "wait_reason": "T002 baseline опубликован; остаётся trusted ingress contract и V025COMPOSE для двух независимых principals.",
+        "note": "origin/main 4faceef0+62721357: точные handoff source files, проверенные hashes, baseline wire 2/2 с явным бинарником. Native wire test теперь явно ignored без HERDER_NATIVE_BINARY; spoof-proof identity и ACL ещё не доказаны."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:31:16+03:00",
+      "note": "Уточнение trusted ingress по прочитанным source; отказ T011/T016 и live profile stops не изменены.",
+      "changes": {
+        "note": "Astra приняла boundary: per-request verified subject, self=None, exact grants из policy. Source gaps: legacy server.ts схлопывает subject в TRUSTED_MESH_MCP_CLIENT_ID; OAuthRequestGate.call не покрывает Tasks/resources; второй McpOAuthTokenStore cache не видит revoke. IPC/credential channel пока не доказан. Local stdio owner mode только explicit trusted launch/server-selected profile, без self и без утверждения two-principal isolation.",
+        "wait_reason": "Нужен конкретный trusted credential channel и isolated proof A/B ACL + revoke A на уже открытом соединении для Tasks/read. HTTP gate не блокирует отдельно обозначенный single-owner stdio consumer."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:42+03:00",
+      "note": "",
+      "changes": {
+        "owner": "Тера",
+        "description": "Вход crates/herder-compat/src/edge.rs + готовый protected caller boundary. Передать verified transport identity upstream, не принимать principal из model metadata. Проверить два principals и unknown identity до effect. Существующий refused T016 не повторять; stopped translator worker не будить.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
+        "status": "queued"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:12:50+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "wait_reason": "Нужен конкретный trusted credential channel и isolated proof A/B ACL + revoke A на уже открытом соединении для Tasks/read. HTTP gate не блокирует отдельно обозначенный single-owner stdio consumer."
 }

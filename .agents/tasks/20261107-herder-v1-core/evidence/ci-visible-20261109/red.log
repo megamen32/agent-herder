@@ -1,0 +1,256 @@
+test_vibe_all_active_native_sessions_must_be_visible (test_candidate_release_gate.V1ReportTest) ... FAIL
+test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) ... test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) ... test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) ... test_vibe_idle_session_and_extra_visible_inactive_sessions_are_valid (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) ... test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) ... test_vibe_validation_does_not_echo_private_browser_values (test_candidate_release_gate.V1ReportTest) ... FAIL
+test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) ... 
+======================================================================
+FAIL: test_vibe_all_active_native_sessions_must_be_visible (test_candidate_release_gate.V1ReportTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 255, in test_vibe_all_active_native_sessions_must_be_visible
+    with self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='transport')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='run_id')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='harness')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='instance_ref')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='core_session_ref')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='native_receipt_ref')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) (key='browser_snapshot_ref')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 210, in test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts
+    with self.subTest(key=key), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) (harness='chatgpt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 186, in test_vibe_evidence_is_required_even_when_all_status_checks_pass
+    with self.subTest(harness=harness), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) (harness='zai')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 186, in test_vibe_evidence_is_required_even_when_all_status_checks_pass
+    with self.subTest(harness=harness), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) (harness='opencode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 186, in test_vibe_evidence_is_required_even_when_all_status_checks_pass
+    with self.subTest(harness=harness), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) (harness='codex')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 186, in test_vibe_evidence_is_required_even_when_all_status_checks_pass
+    with self.subTest(harness=harness), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) (harness='zcode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 186, in test_vibe_evidence_is_required_even_when_all_status_checks_pass
+    with self.subTest(harness=harness), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) (change='different_detail')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 236, in test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot
+    with self.subTest(change=change), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) (change='list_missing_exact_id')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 236, in test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot
+    with self.subTest(change=change), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) (change='core_ref_as_native')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 236, in test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot
+    with self.subTest(change=change), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) (coverage=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 220, in test_vibe_incomplete_native_coverage_never_becomes_green
+    with self.subTest(coverage=coverage), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) (coverage=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 220, in test_vibe_incomplete_native_coverage_never_becomes_green
+    with self.subTest(coverage=coverage), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) (coverage=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 220, in test_vibe_incomplete_native_coverage_never_becomes_green
+    with self.subTest(coverage=coverage), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) (coverage='true')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 220, in test_vibe_incomplete_native_coverage_never_becomes_green
+    with self.subTest(coverage=coverage), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) (native='running', ui='idle')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 247, in test_vibe_ui_and_native_state_must_match_and_be_known
+    with self.subTest(native=native, ui=ui), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) (native='UNKNOWN', ui='UNKNOWN')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 247, in test_vibe_ui_and_native_state_must_match_and_be_known
+    with self.subTest(native=native, ui=ui), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) (native='unknown', ui='unknown')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 247, in test_vibe_ui_and_native_state_must_match_and_be_known
+    with self.subTest(native=native, ui=ui), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) (native='invented', ui='invented')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 247, in test_vibe_ui_and_native_state_must_match_and_be_known
+    with self.subTest(native=native, ui=ui), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) (native=None, ui=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 247, in test_vibe_ui_and_native_state_must_match_and_be_known
+    with self.subTest(native=native, ui=ui), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_validation_does_not_echo_private_browser_values (test_candidate_release_gate.V1ReportTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 273, in test_vibe_validation_does_not_echo_private_browser_values
+    with self.assertRaises(ValueError) as context:
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) (state=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 198, in test_vibe_visibility_check_cannot_be_missing_or_nonpass
+    with self.subTest(state=state), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) (state='UNKNOWN')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 198, in test_vibe_visibility_check_cannot_be_missing_or_nonpass
+    with self.subTest(state=state), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) (state='UNSUPPORTED')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 198, in test_vibe_visibility_check_cannot_be_missing_or_nonpass
+    with self.subTest(state=state), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) (state='BLOCKED')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 198, in test_vibe_visibility_check_cannot_be_missing_or_nonpass
+    with self.subTest(state=state), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) (state='FAIL')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/native/test_candidate_release_gate.py", line 198, in test_vibe_visibility_check_cannot_be_missing_or_nonpass
+    with self.subTest(state=state), self.assertRaises(ValueError):
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.008s
+
+FAILED (failures=31)

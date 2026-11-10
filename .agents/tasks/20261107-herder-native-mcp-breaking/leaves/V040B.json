@@ -1,28 +1,29 @@
 {
   "id": "V040B",
   "label": "Направить MCP resource claim в общую файловую библиотеку",
-  "description": "Направить MCP resource claim в общую файловую библиотеку. Частный результат исходного V040: Project/worktree identity/scopes/notes; MCP ownership вызывает ту же библиотеку. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V040A.",
+  "description": "Подключить MCP resource claim/release к уже работающей ownership/file library. Один authority/storage для MCP и CLI. Проверка: MCP и CLI конкурируют за один exact resource, один победитель; device/S21 не трогать.",
   "acceptance": "Получен проверяемый результат: Направить MCP resource claim в общую файловую библиотеку. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V040A"
+    "R002",
+    "V037"
   ],
   "affected_files": [
     "crates/herder/src/application/workspace.rs"
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V040 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V040 обязателен в конце цепочки.",
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
   "created_at": "2026-11-07T03:53:42+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:42+03:00",
+  "updated_at": "2026-11-07T20:24:15+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:42+03:00",
@@ -51,6 +52,57 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:40+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "R002",
+          "V037"
+        ],
+        "owner": "Resources worker",
+        "description": "Подключить MCP resource claim/release к уже работающей ownership/file library. Один authority/storage для MCP и CLI. Проверка: MCP и CLI конкурируют за один exact resource, один победитель; device/S21 не трогать.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:12:45+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:35:38+03:00",
+      "note": "Начат по прямому назначению. Использую существующие ownership::claim + cli::ownership::execute; owned write path — новый application/workspace.rs и tests. Проверю общий file authority, wrong-owner/ACL reject и reopen; shared export оставлю Терe.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:24:15+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Source slice committed 74d4cf6c: workspace MCP adapter delegates claim/release to canonical ownership file authority, enforces verified principal and exact write ACL, creates stable UUID claim IDs and reports errors/statuses. `cargo test application::workspace::tests --lib` PASS 2/2: shared temp authority race against offline CLI had exactly one winner; wrong principal release rejected; missing ACL denied; reopened authority readback succeeded. User explicitly authorized the single `pub mod workspace;` export hunk, included. Not proven: resource.claim via NativeServer MCP wire consumer; commit published to current main."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
     }
-  ]
+  ],
+  "result": "Source slice committed 74d4cf6c: workspace MCP adapter delegates claim/release to canonical ownership file authority, enforces verified principal and exact write ACL, creates stable UUID claim IDs and reports errors/statuses. `cargo test application::workspace::tests --lib` PASS 2/2: shared temp authority race against offline CLI had exactly one winner; wrong principal release rejected; missing ACL denied; reopened authority readback succeeded. User explicitly authorized the single `pub mod workspace;` export hunk, included. Not proven: resource.claim via NativeServer MCP wire consumer; commit published to current main."
 }

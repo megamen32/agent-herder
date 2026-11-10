@@ -1,0 +1,41 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-zcode-v1-ci/agent-herder
+
+(node:23362) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/zcode-adapter.test.ts (106 tests | 1 failed | 105 skipped) 188ms
+     × recovers V4 queue receipt only from the exact promoted native input 179ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/zcode-adapter.test.ts > ZCode adapter > recovers V4 queue receipt only from the exact promoted native input
+AssertionError: expected { Object (ok, inputId, ...) } to match object { ok: true, admitted: true, …(2) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "admitted": true,
+    "inputId": "v4-exact",
+    "nativeInputMessageId": "native-user-42",
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ tests/zcode-adapter.test.ts:2272:22
+    2270|       await adapter.init();
+    2271|       const result = await adapter.sendMessage("session-1",{message:"f…
+    2272|       expect(result).toMatchObject({ok:true,admitted:true,inputId:"v4-…
+       |                      ^
+    2273|       expect(client.calls.filter(c=>c.method==="sendConversationComman…
+    2274|     } finally {await adapter.dispose();db.close();await rm(root,{recur…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 105 skipped (106)
+   Start at  06:34:29
+   Duration  1.84s (transform 1.16s, setup 71ms, import 1.30s, tests 188ms, environment 0ms)
+

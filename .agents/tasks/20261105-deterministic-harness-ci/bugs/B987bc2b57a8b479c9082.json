@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T19:13:24+00:00",
+  "details": "Isolated native ZCode request reached held local model, but Herder active list omitted the exact running session when the desktop tasks index was absent. Candidate fix confirms recent admitted candidates via exact existing runtime.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:13:24+00:00",
+      "changes": {
+        "details": "Isolated native ZCode request reached held local model, but Herder active list omitted the exact running session when the desktop tasks index was absent. Candidate fix confirms recent admitted candidates via exact existing runtime.",
+        "source": "server-44 receipt-zcode-herder-api-active.json",
+        "status": "open",
+        "title": "ZCode active list omitted admitted standalone session"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:17:20+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/zcode-active.json",
+            "result": "PASS",
+            "sha256": "f15d97aa3a09e54a9564903c2a2c5039047bbc37516b8b5f3c1937bbdfa14444",
+            "test_command": "scripts/run-isolated-native-ci.py --zcode-root on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B987bc2b57a8b479c9082",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/zcode-active.json",
+      "result": "PASS",
+      "sha256": "f15d97aa3a09e54a9564903c2a2c5039047bbc37516b8b5f3c1937bbdfa14444",
+      "test_command": "scripts/run-isolated-native-ci.py --zcode-root on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 receipt-zcode-herder-api-active.json",
+  "status": "fixed",
+  "title": "ZCode active list omitted admitted standalone session",
+  "updated_at": "2026-11-05T19:17:20+00:00"
+}

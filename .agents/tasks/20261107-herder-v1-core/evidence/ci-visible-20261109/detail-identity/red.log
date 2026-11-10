@@ -1,0 +1,24 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [31m❯[39m tests/session-detail-identity.test.ts [2m([22m[2m0 test[22m[2m)[22m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [2mno tests[22m
+[2m   Start at [22m 02:41:23
+[2m   Duration [22m 285ms[2m (transform 41ms, setup 39ms, import 0ms, tests 0ms, environment 0ms)[22m
+
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Suites 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/session-detail-identity.test.ts[2m [ tests/session-detail-identity.test.ts ][22m
+[31m[1mError[22m: Cannot find module '../src/web-ui/session-detail-identity.js' imported from /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/tests/session-detail-identity.test.ts[39m
+[36m [2m❯[22m tests/session-detail-identity.test.ts:[2m2:1[22m[39m
+    [90m  1|[39m [35mimport[39m { describe[33m,[39m expect[33m,[39m it } [35mfrom[39m [32m'vitest'[39m[33m;[39m
+    [90m  2|[39m import { detailQuery, resolveDetailHost, verifiedDetailAttributes } fr…
+    [90m   |[39m [31m^[39m
+    [90m  3|[39m
+    [90m  4|[39m const expected = { id: 'ses_native', harness: 'opencode', hostId: 'ser…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+

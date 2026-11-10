@@ -1,0 +1,114 @@
+{
+  "id": "L45",
+  "label": "ZCode: сценарий на общем candidate",
+  "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+  "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Tesla",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T23:33:34+03:00",
+  "updated_at": "2026-11-07T21:30:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T23:33:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "L45",
+        "label": "ZCode: сценарий на общем candidate",
+        "description": "Продолжение текущей задачи L43 в существующей сессии; проверить точный snapshot и сохранить доказательства, без повторов UNKNOWN.",
+        "acceptance": "Точные результаты сценария и версии на едином candidate либо явный FAIL.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Tesla",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:54:17+03:00",
+      "note": "v16 server-44 ZCode 3.17.2 isolated: original runtime missing manifest stopped before native sessions; after adding exact official manifest, Herder project endpoint returns HTTP 501 before creating sessions. evidence/l45-zcode-9e80-v2.{json,log,err}; B89e85e36157847dbae17 open; no PASS.",
+      "changes": {},
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:06:51+03:00",
+      "note": "",
+      "changes": {
+        "note": "ZCode: метод чтения нативного project.readTree реализован; RED /tmp/herder-zcode-project-red.log, GREEN /tmp/herder-zcode-project-green.log, локальный commit 75717d6c. Сборка и реальный сценарий ещё не подтверждены."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:10:06+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "ZCode transcript HTTP 422 unsupported native JSONL harness; каталог проектов и одна доставка подтверждены на тестовом кандидате.",
+        "note": "RED/GREEN тесты /tmp/herder-zcode-project-{red,green}.log; source commit 75717d6c; реальный повтор server-44 /tmp/herder-minci-01a1ac52/zcode-candidate/probe2.err, полный сценарий ещё не прошёл."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:12:10+03:00",
+      "note": "",
+      "changes": {
+        "note": "В origin/main опубликован ea1d93fb: каталог ZCode; RED/GREEN /tmp/herder-zcode-project-{red,green}.log, после переноса на main зелёный повтор /tmp/herder-zcode-project-main-green.log. На server-44 реальный кандидат прошёл список проектов, создание и ответ; затем transcript HTTP 422, /tmp/herder-minci-01a1ac52/zcode-candidate/probe2.err. Выпуск и полный сценарий не подтверждены."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:17:16+03:00",
+      "note": "",
+      "changes": {
+        "note": "origin/main: ea1d93fb каталог проектов и f0dbfaf2 защита от ложной полноты при one-message fallback. RED /tmp/herder-zcode-complete-red.log, GREEN /tmp/herder-zcode-post-rebase-green.log; реальный пробег первого исправления /tmp/herder-minci-01a1ac52/zcode-candidate/probe2.err, каталог и ответ прошли, transcript HTTP 422. Новые коммиты не установлены, полный сценарий не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:34:33+03:00",
+      "note": "",
+      "changes": {
+        "note": "TDD postpagin ZCode: HTTP RED /tmp/herder-zcode-route-red.log, GREEN /tmp/herder-zcode-route-green.log; сборка прошла. Идёт реальный изолированный ZCode probe кандидата на server-44 /tmp/herder-minci-01a1ac52/zcode-candidate2."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:36:31+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Изолированный кандидат прошёл; точный установленный релиз и общий CI ещё не подтверждены.",
+        "note": "origin/main dcb01f5e, TDD RED /tmp/herder-zcode-route-red.log GREEN /tmp/herder-zcode-route-main-green.log. server-44 реальный ZCode 3.17.2: 26.6 с, 2 сессии, проект, поиск, ответ, транскрипт 8+8 страниц, 5 запросов лжемодели; evidence/l45-zcode-transcript-candidate.json. Это не installed proof."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:30:00+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "blocker": "Изолированный кандидат прошёл; точный установленный релиз и общий CI ещё не подтверждены.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

@@ -1,30 +1,31 @@
 {
   "id": "V065A",
-  "label": "OpenCode: Передать message с request key в поддерживаемом режиме",
-  "description": "OpenCode: Передать message с request key в поддерживаемом режиме. Частный результат исходного V065: Одна native send route; поддерживаемые modes кодируются явно; native receipt. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V064, V024, V025.",
+  "label": "OpenCode: доставить через готовый adapter и общий admission",
+  "description": "Functional core admission→тонкий AHAP mapping→existing OpenCodeAdapter.sendMessage/Queue. Legacy result map сохраняет admitted/confirmed/unknown, без mutation fallback/retry. Переиспользовать доказанные native операции.",
   "acceptance": "Получен проверяемый результат: OpenCode: Передать message с request key в поддерживаемом режиме. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
     "V064",
     "V024",
-    "V025"
+    "V025",
+    "V065PORT"
   ],
   "affected_files": [
     "crates/herder/src/adapters/opencode/deliver.rs"
   ],
   "parent": "S04",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "deferred",
+  "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V065 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V065 обязателен в конце цепочки.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S04 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "created_at": "2026-11-07T03:52:23+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:23+03:00",
+  "updated_at": "2026-11-07T15:56:07+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:23+03:00",
@@ -52,6 +53,41 @@
           "maximum": 15
         },
         "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V065 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V065 обязателен в конце цепочки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:31:40+03:00",
+      "note": "Native adapter выделен в V065PORT и выполняется параллельно core; общая application/MCP приёмка не снята.",
+      "changes": {
+        "depends_on": [
+          "V064",
+          "V024",
+          "V025",
+          "V065PORT"
+        ]
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:52:46+03:00",
+      "note": "Новый shortest path по прямому указанию пользователя; один runner и тот же adapter owner. Exact receipt readback/reconciliation и public consumer обязательны отдельно, старые V065LIVE не повторять.",
+      "changes": {
+        "label": "OpenCode: доставить через готовый adapter и общий admission",
+        "description": "Functional core admission→тонкий AHAP mapping→existing OpenCodeAdapter.sendMessage/Queue. Legacy result map сохраняет admitted/confirmed/unknown, без mutation fallback/retry. Переиспользовать доказанные native операции.",
+        "owner": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:56:07+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S04 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"

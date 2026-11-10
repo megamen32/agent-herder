@@ -1,0 +1,2 @@
+Command: npx vitest run --root . --config vitest.config.ts tests/chatgpt-passive-backoff-burst.test.ts tests/chatgpt-background-budget.test.ts
+Before source edit, tool chunk7a9e08: 2 failed | 4 passed (6). Passive burst expected1 strike, got10; shared budget reserve after300000ms expectedtrue, gotfalse.

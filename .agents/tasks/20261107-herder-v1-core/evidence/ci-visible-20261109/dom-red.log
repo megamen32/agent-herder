@@ -1,0 +1,9 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+[31mNo test files found, exiting with code 1
+[39m
+[2mfilter: [22m[33mtests/session-sidebar.test.tsx[39m
+[2minclude: [22m[33mtests/**/*.test.ts[2m, [22msrc/**/*.test.ts[39m
+[2mexclude:  [22m[33mvendor/**[2m, [22mnode_modules/**[39m
+

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T05:21:27+00:00",
+  "details": "Пассивный observer передавал ход общему Stop consumer, но тот на проверке и перепроверке вызывал getSessionMessages, что запускает прямой сетевой запрос. RED и GREEN сохранены; реальное развёртывание и end-to-end ещё не выполнены.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T05:21:27+00:00",
+      "changes": {
+        "details": "Пассивный observer передавал ход общему Stop consumer, но тот на проверке и перепроверке вызывал getSessionMessages, что запускает прямой сетевой запрос. RED и GREEN сохранены; реальное развёртывание и end-to-end ещё не выполнены.",
+        "source": "tests/autopilot-background-stop.test.ts",
+        "status": "open",
+        "title": "ChatGPT background Stop повторно запрашивает историю напрямую"
+      }
+    }
+  ],
+  "id": "B9df95b642b1f4115be7f",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "tests/autopilot-background-stop.test.ts",
+  "status": "open",
+  "title": "ChatGPT background Stop повторно запрашивает историю напрямую",
+  "updated_at": "2026-11-07T05:21:27+00:00"
+}

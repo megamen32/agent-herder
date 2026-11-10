@@ -1,0 +1,73 @@
+COMMAND: python3 -m unittest discover -s tests/native -p test_ahap_opencode_stand.py
+BASE: ca4c39078da75ccf857fb038ec255e5867c4746e
+EXIT: 1
+STDOUT:
+
+STDERR:
+..F....E.EE.EE..
+======================================================================
+ERROR: test_owner_profile_never_falls_back_to_unprotected_provider_route (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 155, in test_owner_profile_never_falls_back_to_unprotected_provider_route
+    with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, config, True)):
+  File "/usr/lib/python3.10/unittest/mock.py", line 1447, in __enter__
+    original, local = self.get_original()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1420, in get_original
+    raise AttributeError(
+AttributeError: <module 'ahap_opencode_stand' from '/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py'> does not have the attribute 'native_api_read_detail'
+
+======================================================================
+ERROR: test_read_only_protocol_detection_matches_receipt_route_families (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 91, in test_read_only_protocol_detection_matches_receipt_route_families
+    with patch("ahap_opencode_stand.native_api_read_detail", return_value=(200, config, True)):
+  File "/usr/lib/python3.10/unittest/mock.py", line 1447, in __enter__
+    original, local = self.get_original()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1420, in get_original
+    raise AttributeError(
+AttributeError: <module 'ahap_opencode_stand' from '/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py'> does not have the attribute 'native_api_read_detail'
+
+======================================================================
+ERROR: test_read_only_protocol_probe_retries_startup_503 (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 106, in test_read_only_protocol_probe_retries_startup_503
+    with patch("ahap_opencode_stand.native_api_read_detail", side_effect=[
+  File "/usr/lib/python3.10/unittest/mock.py", line 1447, in __enter__
+    original, local = self.get_original()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1420, in get_original
+    raise AttributeError(
+AttributeError: <module 'ahap_opencode_stand' from '/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py'> does not have the attribute 'native_api_read_detail'
+
+======================================================================
+ERROR: test_runner_choice_comes_from_exact_artifact_initialize_without_mutation (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 133, in test_runner_choice_comes_from_exact_artifact_initialize_without_mutation
+    choice = stand.probe_runner_protocol(sys.executable, str(runner), {})
+AttributeError: module 'ahap_opencode_stand' has no attribute 'probe_runner_protocol'
+
+======================================================================
+ERROR: test_runner_protocol_choice_is_required_and_must_match_server (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 82, in test_runner_protocol_choice_is_required_and_must_match_server
+    require_runner_route_compat("v2")
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py", line 459, in require_runner_route_compat
+    raise RuntimeError(
+RuntimeError: AHAP runner pinned v2 expects /api routes, but read-only OpenCode probes found v2; refusing create/send before any session mutation
+
+======================================================================
+FAIL: test_malformed_200_config_is_unknown_not_v22 (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/test_ahap_opencode_stand.py", line 119, in test_malformed_200_config_is_unknown_not_v22
+    with self.assertRaisesRegex(RuntimeError, "unrecognized|malformed|unknown"):
+AssertionError: RuntimeError not raised
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.047s
+
+FAILED (failures=1, errors=5)

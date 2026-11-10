@@ -1,0 +1,54 @@
+{
+  "id": "L58",
+  "label": "Workspace: понятные ошибки и описания",
+  "description": "Воспроизвести ошибку declare из примера, исправить объяснения валидации и подсказку reserve через RED/GREEN.",
+  "acceptance": "При неправильных полях пользователь получает конкретную причину и верный следующий вызов; корректные варианты не сломаны.",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T00:17:44+03:00",
+  "updated_at": "2026-11-07T01:26:18+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T00:17:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "L58",
+        "label": "Workspace: понятные ошибки и описания",
+        "description": "Воспроизвести ошибку declare из примера, исправить объяснения валидации и подсказку reserve через RED/GREEN.",
+        "acceptance": "При неправильных полях пользователь получает конкретную причину и верный следующий вызов; корректные варианты не сломаны.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T00:40:15+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "RED→GREEN: generic validation сообщает выбранную операцию и проблемы полей; workspace declare с paths подсказывает reserve, описание каталога объясняет порядок. На чистом кандидате тесты и сборка прошли; установленный MCP ещё не проверен."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:26:18+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Workspace declare с лишним paths выдаёт причину и подсказку reserve; описание каталога дополнено. RED→GREEN, коммит ef55678b в main и установленном d2df6186."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "note": "RED→GREEN: generic validation сообщает выбранную операцию и проблемы полей; workspace declare с paths подсказывает reserve, описание каталога объясняет порядок. На чистом кандидате тесты и сборка прошли; установленный MCP ещё не проверен.",
+  "result": "Workspace declare с лишним paths выдаёт причину и подсказку reserve; описание каталога дополнено. RED→GREEN, коммит ef55678b в main и установленном d2df6186."
+}

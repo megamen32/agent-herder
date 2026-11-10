@@ -1,0 +1,60 @@
+{
+  "scope": "isolated-candidate-only",
+  "candidate_sha256": "1504c777be4c4e589099e358f43879f6a3925d4fa2fa6c5ffef08e5039d26a2b",
+  "elapsed_seconds": 39.385,
+  "journeys": [
+    {
+      "status": "INCOMPLETE",
+      "harness": "codex",
+      "sessions": [
+        {
+          "id": "01a1b5a7-d24b-7720-a9be-4a77c499b705",
+          "job": "job_8dcc66525f4cee10d7a2dbfbc4e9681111c693dd5eb5601465cd2455d62a0214",
+          "pages": 3,
+          "marker": "HERDER_CI_92029ad3023943dabf3a83768ce45831"
+        },
+        {
+          "id": "01a1b5a7-d382-7c10-9c44-6452f02f2f7c",
+          "job": "job_02e76d936bfc14f70b7e2826c601916bd3a5afa923766c3a8f4ffcae0f424e48",
+          "pages": 3,
+          "marker": "HERDER_CI_f9a14e2c807d4786acdf3f71356bd553"
+        }
+      ],
+      "fixtureRequests": 2,
+      "missing": [
+        "installed-process"
+      ],
+      "searchProven": true
+    },
+    {
+      "status": "INCOMPLETE",
+      "harness": "opencode",
+      "sessions": [
+        {
+          "id": "ses_e4a582a5dffe0MeAXDUGBUS7je",
+          "job": "job_0d70cf6a20246d70f0d147d6b4659779533f61330ff57b58680bbd4b5e9b1704",
+          "pages": 3,
+          "marker": "HERDER_CI_5393e19b1a714bdbbadc4e96de6f2baa"
+        },
+        {
+          "id": "ses_e4a582814ffegGcY5zLMa7SfLG",
+          "job": "job_014f0180280d717a9cf4079ec939cd1421ca6336832d18fe3ca83f75db6855df",
+          "pages": 3,
+          "marker": "HERDER_CI_53b2ff9cc1f2495d97fa778c1479399d"
+        }
+      ],
+      "fixtureRequests": 2,
+      "missing": [
+        "installed-process"
+      ],
+      "searchProven": true
+    }
+  ],
+  "search_client_sha256": "95215bfaee2391e9941bd5ec5f53f672ba940672e74e7e10618fc277eeb7e656",
+  "validator_sha256": "cc5313e4e7067307660be67948120bb41d45f308627963d97b1e52237c1d67fe",
+  "limitations": [
+    "temporary integration into research runner",
+    "installed process not exercised",
+    "release gate FAIL"
+  ]
+}

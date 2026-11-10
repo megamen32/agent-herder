@@ -1,0 +1,124 @@
+{
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QOCJOIN",
+  "label": "Собрать готовые OpenCode core и runner в один artifact",
+  "parent": "S04",
+  "owner": "roomhacker",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "depends_on": [
+    "FASTINIT"
+  ],
+  "affected_files": [
+    "crates/herder/src",
+    "src/ahap-opencode-runner.ts",
+    "packages/agent-resume/src/harness/opencode/client.ts"
+  ],
+  "description": "Вход eeba0f8b+8e051d01+mainca4c3907. Принять точную дельту, проверить фактический TS payload для свежего Start и опубликовать один artifact для готового Luna stand. Не новая реализация, не native mutation. Точные решения JOINT-EXECUTION.md.",
+  "acceptance": "Source join опубликован, focused contract tests с фактическим runner payload зелёные, artifact manifest+digest доступны Luna. Native proof не заявлен.",
+  "created_at": "2026-11-07T18:15:31+03:00",
+  "updated_at": "2026-11-07T19:41:22+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:31+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QOCJOIN",
+        "label": "Собрать готовые OpenCode core и runner в один artifact",
+        "parent": "S04",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "depends_on": [
+          "FASTINIT"
+        ],
+        "affected_files": [
+          "crates/herder/src",
+          "src/ahap-opencode-runner.ts",
+          "packages/agent-resume/src/harness/opencode/client.ts"
+        ],
+        "description": "Вход eeba0f8b+8e051d01+mainca4c3907. Принять точную дельту, проверить фактический TS payload для свежего Start и опубликовать один artifact для готового Luna stand. Не новая реализация, не native mutation. Точные решения JOINT-EXECUTION.md.",
+        "acceptance": "Source join опубликован, focused contract tests с фактическим runner payload зелёные, artifact manifest+digest доступны Luna. Native proof не заявлен."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:22:10+03:00",
+      "note": "Объединяю reviewed core и v22 runner, затем payload и artifact.",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:49:22+03:00",
+      "note": "После canonical repair восстановлена запись готового source/artifact handoff. Native proof отдельно.",
+      "changes": {
+        "status": "done",
+        "result": "Terra source integration published 076bacd861d6ae64c996117b797c235242023c10; readiness corrected after /api/health404. Immutable manifest /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-076bacd8/manifest.json SHA256 6e00a60d8f4c62d156351606b8131a781a90ba105945a033d993b79ad395818f independently read back. Terra reports Rust AHAP7, launcher1 and TS8 tests passed; actual TS runner payload verified with HTTP fixture. Old93d50242 held; native create/deliver/read and installed acceptance remain unproven.",
+        "note": "Next: Luna V065AHAPCIRUN with corrected076bacd8 artifact; immutable hashes and command in manifest. No replay old case."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:25:28+03:00",
+      "note": "Повторно открыть integration после native evidence 405; исправить family без replay.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Native case 076bacd8 POST /session вернул HTTP405, Task create UNKNOWN; runner жёстко выбирает v22, хотя retained native /api/config имеет v2 family. Нужен исправленный startup selection с фиксацией protocol до mutation; предыдущий UNKNOWN не повторять.",
+        "note": "V065AHAPCIRUN evidence: create-operation:1d15d2739e1196ebb5b03484cb05a321 UNKNOWN, model requests 0. tests/native/opencode_receipt.py показывает v2 create /api/session."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:31:16+03:00",
+      "note": "Возобновление по прямому поручению владельца.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": "",
+        "note": "Owner назначил единственного исполнителя protocol selection до мутации; прежний UNKNOWN не replay."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:31:36+03:00",
+      "note": "Protocol определяется read-only до первого mutation, закреплён для всего runner; прежний UNKNOWN не повторяется.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:41:22+03:00",
+      "note": "QOCJOIN source и immutable artifact готовы; старый UNKNOWN неизменен.",
+      "changes": {
+        "status": "done",
+        "result": "main 1d20b7f147a6a66e8daf924a32bbf73a8da6d2a8; protocol выбирается по /api/config read-only и фиксируется до mutation. RED прежнего compiled runner: POST /session 405; GREEN исправленный compiled runner фактически выдал v2 /api/session + /prompt queue и v22 /session + /message parts; 12 TS tests, tsc passed. Immutable manifest /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d20b7f1/manifest.json SHA256 dbca738352a71f94f90e4a47f7d478359e566c520ef3a74f9664ac597936dce5 передан Luna. Старый create-operation:1d15d2739e1196ebb5b03484cb05a321 остаётся UNKNOWN, не replay; native proof нового artifact не заявлен.",
+        "note": "Один ready handoff Luna доставлен; Be28fb6640e75467197c6 fixed по RED/GREEN, Be5c0a814d0644c64afc9 остаётся UNKNOWN."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "harness": "codex",
+  "result": "main 1d20b7f147a6a66e8daf924a32bbf73a8da6d2a8; protocol выбирается по /api/config read-only и фиксируется до mutation. RED прежнего compiled runner: POST /session 405; GREEN исправленный compiled runner фактически выдал v2 /api/session + /prompt queue и v22 /session + /message parts; 12 TS tests, tsc passed. Immutable manifest /home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d20b7f1/manifest.json SHA256 dbca738352a71f94f90e4a47f7d478359e566c520ef3a74f9664ac597936dce5 передан Luna. Старый create-operation:1d15d2739e1196ebb5b03484cb05a321 остаётся UNKNOWN, не replay; native proof нового artifact не заявлен.",
+  "note": "Один ready handoff Luna доставлен; Be28fb6640e75467197c6 fixed по RED/GREEN, Be5c0a814d0644c64afc9 остаётся UNKNOWN.",
+  "wait_reason": ""
+}

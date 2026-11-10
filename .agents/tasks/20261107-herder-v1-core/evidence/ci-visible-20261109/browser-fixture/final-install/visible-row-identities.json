@@ -1,0 +1,54 @@
+{
+  "observed_at": "2026-11-09T02:51:41.767Z",
+  "generation": "0e01b3d1afaf62a34decf41aa1ad6f21cb8ef78a9746b6dbb012ee5b11dbe861",
+  "page_id": 582518886,
+  "origin": "https://agent.bezrabotnyi.com",
+  "path": "/",
+  "raw_transcripts_read": false,
+  "rows": [
+    {
+      "harness": null,
+      "host_id": null,
+      "native_session_id": null,
+      "project_id": null,
+      "row_key": null,
+      "runtime_key": null,
+      "status": null
+    },
+    {
+      "harness": null,
+      "host_id": null,
+      "native_session_id": null,
+      "project_id": null,
+      "row_key": null,
+      "runtime_key": null,
+      "status": null
+    },
+    {
+      "harness": null,
+      "host_id": null,
+      "native_session_id": null,
+      "project_id": null,
+      "row_key": null,
+      "runtime_key": null,
+      "status": null
+    },
+    {
+      "harness": null,
+      "host_id": null,
+      "native_session_id": null,
+      "project_id": null,
+      "row_key": null,
+      "runtime_key": null,
+      "status": null
+    }
+  ],
+  "titles_read": false,
+  "family_status": [
+    {
+      "harness": null,
+      "status": null,
+      "count": 4
+    }
+  ]
+}

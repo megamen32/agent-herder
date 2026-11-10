@@ -1,0 +1,54 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > explicitly selects MacMiniChromeTransport and verifies the configured page and account 6ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed instead of selecting another page when the configured page is absent 4ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires an explicit transport and does not infer direct CDP from its variables 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed when Mac Mini transport lacks exact page or account scope 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects raw direct CDP only when explicitly configured and verifies its exact page 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects the existing Z.ai driver on the explicit Mac Mini transport and proves the pinned page/account 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed for Z.ai when exact page or current account proof is unavailable 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > advertises only its bounded surface and routes init and exact reads 9ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > reports the selected Z.ai harness, provider name and factual browser features 3ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires the configured account scope before any operation 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > does not return a read result if the adapter scope changes during the call 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > checks the current provider scope before consulting cached session inventory 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > preserves an ambiguous send as UNKNOWN and never retries 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > treats legacy notSubmitted send failures as UNKNOWN unless typed pre-effect proof exists 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > rejects malformed frames without preventing later valid requests 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt advertises exactly queue delivery without a steer claim 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai advertises exactly queue delivery without a steer claim 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=true) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=false) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=true) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=false) 1ms
+ × tests/ahap-browser-runner.test.ts > configured Z.ai verifier exposes its verified scope with an empty driver cache and fails closed on mismatch 11ms
+   → expected undefined to be 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/ahap-browser-runner.test.ts > configured Z.ai verifier exposes its verified scope with an empty driver cache and fails closed on mismatch
+AssertionError: expected undefined to be 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…' // Object.is equality
+
+- Expected:
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
++ Received:
+undefined
+
+ ❯ tests/ahap-browser-runner.test.ts:361:37
+    359|   expect(adapter.getAccountScope()).toBeUndefined();
+    360|   await adapter.verifyPinnedAccountScope?.();
+    361|   expect(adapter.getAccountScope()).toBe(scope);
+       |                                     ^
+    362|   observedScope = "b".repeat(64);
+    363|   await expect(adapter.verifyPinnedAccountScope?.()).rejects.toThrow("…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 21 passed (22)
+   Start at  23:44:45
+   Duration  1.78s (transform 1.38s, setup 45ms, import 1.48s, tests 57ms, environment 0ms)
+

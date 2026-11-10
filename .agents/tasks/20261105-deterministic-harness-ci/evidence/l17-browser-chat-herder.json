@@ -1,0 +1,186 @@
+{
+  "status": "PASS",
+  "scope": "isolated fixture, BrowserChatAdapter with ChatGPT driver; not installed or real provider",
+  "isolation": {
+    "namespace": "net:[4026545171]",
+    "hostNamespace": "net:[4026531840]",
+    "interfaces": [
+      "lo"
+    ]
+  },
+  "sessions": [
+    "d5277fad-8f8a-4207-be8b-058acea80cdf",
+    "47d2627d-cd54-4c1f-8f98-c83e00997172"
+  ],
+  "deliveries": [
+    true,
+    true
+  ],
+  "histories": [
+    [
+      "fixture question 1",
+      "fixture answer 1"
+    ],
+    [
+      "fixture question 2",
+      "fixture answer 2"
+    ]
+  ],
+  "transcripts": [
+    [
+      {
+        "scope": {
+          "hostId": "roomhacker-server-100",
+          "harness": "chatgpt",
+          "nativeSessionId": "d5277fad-8f8a-4207-be8b-058acea80cdf"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u1",
+            "nativeEventId": "u1",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 1",
+            "payload": {
+              "id": "u1",
+              "author": {
+                "role": "user"
+              },
+              "content": {
+                "parts": [
+                  "fixture question 1"
+                ]
+              }
+            }
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInJvb21oYWNrZXItc2VydmVyLTEwMFwiLFwiY2hhdGdwdFwiLFwiZDUyNzdmYWQtOGY4YS00MjA3LWJlOGItMDU4YWNlYTgwY2RmXCJdIiwibmF0aXZlQ3Vyc29yIjoiZDA0ZGExNmUtZTc0Ni00NzBmLWFkMmItMTI1ZjY0NWNkMjlkIiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "roomhacker-server-100",
+          "harness": "chatgpt",
+          "nativeSessionId": "d5277fad-8f8a-4207-be8b-058acea80cdf"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a1",
+            "nativeEventId": "a1",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 1",
+            "payload": {
+              "id": "a1",
+              "author": {
+                "role": "assistant"
+              },
+              "content": {
+                "parts": [
+                  "fixture answer 1"
+                ]
+              }
+            }
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ],
+    [
+      {
+        "scope": {
+          "hostId": "roomhacker-server-100",
+          "harness": "chatgpt",
+          "nativeSessionId": "47d2627d-cd54-4c1f-8f98-c83e00997172"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u2",
+            "nativeEventId": "u2",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 2",
+            "payload": {
+              "id": "u2",
+              "author": {
+                "role": "user"
+              },
+              "content": {
+                "parts": [
+                  "fixture question 2"
+                ]
+              }
+            }
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInJvb21oYWNrZXItc2VydmVyLTEwMFwiLFwiY2hhdGdwdFwiLFwiNDdkMjYyN2QtY2Q1NC00YzFmLThmOTgtYzgzZTAwOTk3MTcyXCJdIiwibmF0aXZlQ3Vyc29yIjoiMzI0MWMzMDEtMWQxOC00OGM2LThiYjUtMTk2MTcwNzdlNzkxIiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "roomhacker-server-100",
+          "harness": "chatgpt",
+          "nativeSessionId": "47d2627d-cd54-4c1f-8f98-c83e00997172"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a2",
+            "nativeEventId": "a2",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 2",
+            "payload": {
+              "id": "a2",
+              "author": {
+                "role": "assistant"
+              },
+              "content": {
+                "parts": [
+                  "fixture answer 2"
+                ]
+              }
+            }
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ]
+  ],
+  "crossCursorStatus": 422,
+  "listed": [
+    "47d2627d-cd54-4c1f-8f98-c83e00997172",
+    "d5277fad-8f8a-4207-be8b-058acea80cdf"
+  ],
+  "searchIds": [
+    "chatgpt::d5277fad-8f8a-4207-be8b-058acea80cdf",
+    "chatgpt::47d2627d-cd54-4c1f-8f98-c83e00997172"
+  ],
+  "searchContentUnavailable": true,
+  "submissions": 2
+}

@@ -1,0 +1,99 @@
+{
+  "id": "V010A3",
+  "label": "Подключить один native read handler с target ACL",
+  "description": "Соединить application с существующим native reader на изолированном instance, с точным ACL; не выдавать внедрённого principal за launcher proof.",
+  "acceptance": "Разрешённое чтение реального изолированного instance, отказ чужому target до эффекта; явно указать ограничения issuer.",
+  "parent": "S01",
+  "status": "done",
+  "kind": "task",
+  "owner": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "affected_files": [
+    "crates/herder/src/application/",
+    "crates/herder/src/mcp/transport.rs"
+  ],
+  "created_at": "2026-11-07T05:53:52+03:00",
+  "updated_at": "2026-11-07T06:09:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T05:53:52+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010A3",
+        "label": "Подключить один native read handler с target ACL",
+        "description": "Соединить application с существующим native reader на изолированном instance, с точным ACL; не выдавать внедрённого principal за launcher proof.",
+        "acceptance": "Разрешённое чтение реального изолированного instance, отказ чужому target до эффекта; явно указать ограничения issuer.",
+        "parent": "V010A",
+        "status": "running",
+        "kind": "task",
+        "owner": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "affected_files": [
+          "crates/herder/src/application/",
+          "crates/herder/src/mcp/transport.rs"
+        ]
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:54:20+03:00",
+      "note": "Подзадача V010A на уровне этапа S01.",
+      "changes": {
+        "parent": "S01"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:56:05+03:00",
+      "note": "Worker 01a1b3c3-eeec-7b93-9823-8419f79718c6 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder",
+          "registered_at": "2026-11-07T05:56:05+03:00"
+        }
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:56:56+03:00",
+      "note": "Тот же исполнитель ведёт тот же срез в V010READ1; отдельная работа не запускается.",
+      "changes": {
+        "status": "deferred",
+        "wait_reason": "Дублирует V010READ1"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:09:11+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "84de5fc7: session/recent через application и настоящий OpenCode reader на изолированном OpenCode 2.2.4; ACL, чужой ref и instance проверены; пустая тестовая история. Идентичность инъецирована, production resolver и launcher не доказаны."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "unknown"
+    }
+  ],
+  "worker": {
+    "id": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v036/agent-herder",
+    "registered_at": "2026-11-07T05:56:05+03:00"
+  },
+  "wait_reason": "Дублирует V010READ1",
+  "result": "84de5fc7: session/recent через application и настоящий OpenCode reader на изолированном OpenCode 2.2.4; ACL, чужой ref и instance проверены; пустая тестовая история. Идентичность инъецирована, production resolver и launcher не доказаны."
+}

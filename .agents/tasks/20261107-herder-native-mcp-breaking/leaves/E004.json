@@ -1,30 +1,26 @@
 {
   "id": "E004",
   "label": "Выпустить расписание и автопилот на тестовой сессии",
-  "description": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
+  "description": "Обязательный незавершённый этап S03; точные критерии AC13 в ACCEPTANCE-COVERAGE.json. Эта карточка только принимает готовый пакет результатов этапа. Перед реализацией его остаток раскрывается в owned шагах ≤15мин по уже существующим source/evidence. Не исполнять старую deferred декомпозицию и не считать source-only полным результатом.",
   "acceptance": "Установить dev артефакт; один schedule и один autopilot проходят общий admission, HumanStop прекращает новые ходы.",
-  "depends_on": [
-    "V049",
-    "V050",
-    "E001"
-  ],
+  "depends_on": [],
   "affected_files": [
     "release/dev-automation/"
   ],
   "parent": "S03",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "waiting",
+  "owner": "Тера — приёмка этапа",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей.",
+  "note": "FAST-PATH: обязательный контроль завершения этапа, не новая реализация и не независимый отчётный worker. Использовать существующие подходящие receipts; повторять только затронутые проверки.",
   "created_at": "2026-11-07T03:53:39+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:39+03:00",
+  "updated_at": "2026-11-07T16:08:30+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:39+03:00",
@@ -55,6 +51,33 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:52:46+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S03 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:08:30+03:00",
+      "note": "",
+      "changes": {
+        "status": "waiting",
+        "depends_on": [],
+        "owner": "Тера — приёмка этапа",
+        "description": "Обязательный незавершённый этап S03; точные критерии AC13 в ACCEPTANCE-COVERAGE.json. Эта карточка только принимает готовый пакет результатов этапа. Перед реализацией его остаток раскрывается в owned шагах ≤15мин по уже существующим source/evidence. Не исполнять старую deferred декомпозицию и не считать source-only полным результатом.",
+        "wait_reason": "Нет полного пакета доказательств AC13. Обязательство не отложено и не выполнено; будущие интеграционные шаги раскрываются по готовности входов.",
+        "estimate_unknown_reason": "Оценка карточки относится только к финальной проверке готового пакета; объём ещё не раскрытой реализации этапа неизвестен и не включён в общий ETA.",
+        "note": "FAST-PATH: обязательный контроль завершения этапа, не новая реализация и не независимый отчётный worker. Использовать существующие подходящие receipts; повторять только затронутые проверки."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "wait_reason": "Нет полного пакета доказательств AC13. Обязательство не отложено и не выполнено; будущие интеграционные шаги раскрываются по готовности входов.",
+  "estimate_unknown_reason": "Оценка карточки относится только к финальной проверке готового пакета; объём ещё не раскрытой реализации этапа неизвестен и не включён в общий ETA."
 }

@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:52:57+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:57+03:00",
+  "updated_at": "2026-11-07T07:32:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:57+03:00",
@@ -51,6 +51,27 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:30:22+03:00",
+      "note": "V041A lock интегрируется Терой; локально проверяю expected descriptor revision и live claim только при удержании target lock.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:32:46+03:00",
+      "note": "V041B завершён; следующий V041 проверит задержанный старый claim и конфигурационное запрещение второго runner path.",
+      "changes": {
+        "status": "done",
+        "result": "TargetExecutionLock получил verify_current_claim: пока lock удерживается, читает актуальный descriptor, сравнивает expected_revision и затем требует точного текущего claim_id через общую read_by_claim_id. Изолированный test: текущая пара resource/revision/claim проходит; чужой claim_id отвергнут PermissionDenied; устаревшая revision отвергнута WouldBlock; lock contention остаётся эксклюзивным. cargo test ownership::release_runner::tests:: — 1 passed после rebase на origin/main d77d739d; diff-check чистый. Commit b4720ad7, только release_runner.rs; передан Терe."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "TargetExecutionLock получил verify_current_claim: пока lock удерживается, читает актуальный descriptor, сравнивает expected_revision и затем требует точного текущего claim_id через общую read_by_claim_id. Изолированный test: текущая пара resource/revision/claim проходит; чужой claim_id отвергнут PermissionDenied; устаревшая revision отвергнута WouldBlock; lock contention остаётся эксклюзивным. cargo test ownership::release_runner::tests:: — 1 passed после rebase на origin/main d77d739d; diff-check чистый. Commit b4720ad7, только release_runner.rs; передан Терe."
 }

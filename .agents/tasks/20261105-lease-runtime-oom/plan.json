@@ -1,0 +1,10 @@
+{
+  "title": "Восстановить Agent Herder при ошибках lease",
+  "goal": "Устранить повторные аварии MCP, мешающие выпуску account-broker",
+  "business_result": "Штатный Agent Herder остаётся доступен, а операции lease работают без перехвата чужого владения",
+  "acceptance_scenarios": [
+    "Проверить причину аварии, состояние процесса и реальный MCP после исправления"
+  ],
+  "default_model": "gpt-6",
+  "slots": 1
+}

@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T21:59:35+00:00",
+  "details": "При заданном XDG_DATA_HOME и отсутствии OPENCODE_DB_PATH поиск открывал ~/.local/share вместо фактической базы OpenCode. Регрессионный тест изолирован и до исправления не находил тестовую сессию.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-05T21:59:35+00:00",
+      "changes": {
+        "details": "При заданном XDG_DATA_HOME и отсутствии OPENCODE_DB_PATH поиск открывал ~/.local/share вместо фактической базы OpenCode. Регрессионный тест изолирован и до исправления не находил тестовую сессию.",
+        "source": "tests/session-search-sources.test.ts: discovers the OpenCode database under the configured XDG data home",
+        "status": "open",
+        "title": "Индекс поиска OpenCode игнорирует XDG_DATA_HOME"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-05T22:02:18+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/codex-opencode-xdg-green.json",
+            "result": "PASS",
+            "sha256": "413fbf33ef0c78d23426ca2d1d47d18a5e6bd2bf6555b186cc5944d1616f0ec4",
+            "test_command": "isolated native CI server-44: exact Codex/OpenCode MCP search under XDG_DATA_HOME"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B436f78b94774447c9080",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/codex-opencode-xdg-green.json",
+      "result": "PASS",
+      "sha256": "413fbf33ef0c78d23426ca2d1d47d18a5e6bd2bf6555b186cc5944d1616f0ec4",
+      "test_command": "isolated native CI server-44: exact Codex/OpenCode MCP search under XDG_DATA_HOME"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/session-search-sources.test.ts: discovers the OpenCode database under the configured XDG data home",
+  "status": "fixed",
+  "title": "Индекс поиска OpenCode игнорирует XDG_DATA_HOME",
+  "updated_at": "2026-11-05T22:02:18+00:00"
+}

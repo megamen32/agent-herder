@@ -1,0 +1,46 @@
+{
+  "id": "RESTOREPROOF",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Установить и проверить три сценария обычным клиентом",
+  "status": "queued",
+  "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "RESTORECORE",
+    "RESTORECONTRACTS"
+  ],
+  "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
+  "model": "gpt-6.1-sol",
+  "created_at": "2026-11-08T20:23:20+03:00",
+  "updated_at": "2026-11-08T20:23:20+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T20:23:20+03:00",
+      "note": "",
+      "changes": {
+        "id": "RESTOREPROOF",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Установить и проверить три сценария обычным клиентом",
+        "status": "queued",
+        "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "RESTORECORE",
+          "RESTORECONTRACTS"
+        ],
+        "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
+        "model": "gpt-6.1-sol"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ]
+}

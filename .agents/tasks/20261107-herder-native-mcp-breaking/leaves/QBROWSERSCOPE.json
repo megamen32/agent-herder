@@ -1,0 +1,121 @@
+{
+  "id": "QBROWSERSCOPE",
+  "kind": "task",
+  "parent": "S06",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QBROWSERJOIN"
+  ],
+  "label": "Исправить чтение после смены браузерного аккаунта",
+  "description": "Исправить B720e95cbcdcd484ab0f8: pinned account проверяется по текущему provider scope при read и до возврата данных; reuse существующий direct-CDP driver, без браузерных отправок. Terra source review уже опубликован.",
+  "affected_files": [
+    "src/ahap-browser-runner.ts",
+    "src/adapters/chatgpt-mac-cdp-driver.ts",
+    "tests/ahap-browser-runner.test.ts"
+  ],
+  "acceptance": "RED A→B account change reproduces cross-account return, GREEN rejects it before data return; same-account read remains valid. Scoped source publication+evidence; no claim of live browser proof.",
+  "created_at": "2026-11-07T19:30:41+03:00",
+  "updated_at": "2026-11-07T20:24:35+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:30:41+03:00",
+      "note": "",
+      "changes": {
+        "id": "QBROWSERSCOPE",
+        "kind": "task",
+        "parent": "S06",
+        "status": "queued",
+        "owner": "Browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "QBROWSERJOIN"
+        ],
+        "label": "Исправить чтение после смены браузерного аккаунта",
+        "description": "Исправить B720e95cbcdcd484ab0f8: pinned account проверяется по текущему provider scope при read и до возврата данных; reuse существующий direct-CDP driver, без браузерных отправок. Terra source review уже опубликован.",
+        "affected_files": [
+          "src/ahap-browser-runner.ts",
+          "src/adapters/chatgpt-mac-cdp-driver.ts",
+          "tests/ahap-browser-runner.test.ts"
+        ],
+        "acceptance": "RED A→B account change reproduces cross-account return, GREEN rejects it before data return; same-account read remains valid. Scoped source publication+evidence; no claim of live browser proof."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:36:58+03:00",
+      "note": "Owner directly assigned bounded account-scope bugfix; Terra is not a dependency. Preserve CI WIP and run only scoped source tests; no browser send or target selection.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:49:06+03:00",
+      "note": "Source-only fix complete; CI transcript insertion remains independent and must be retained during later integration. Focused source proof only; no browser send/target selection.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T19:48:50+03:00",
+        "result": "Fixed B720e95cbcdcd484ab0f8 and published scoped local commit ff419ea0 (only src/ahap-browser-runner.ts, src/adapters/chatgpt-mac-cdp-driver.ts, tests/ahap-browser-runner.test.ts, tests/chatgpt-mac-cdp-driver.test.ts). AHAP now verifies current pinned account on the exact configured page before and after cached list/session/message reads; ChatGPT driver rejects mismatching list/passive scopes and verifies current scope before/after message reads and before returning cached chat data. RED reproduced cross-account list+message leakage; GREEN: focused 40 tests passed and tsc --noEmit passed. Evidence: evidence/QBROWSERSCOPE-red-20261107.txt, evidence/QBROWSERSCOPE-green-20261107.txt, evidence/QBROWSERSCOPE-ci-overlap-20261107.md. CI WIP hunks reviewed read-only and untouched. No live browser proof, send, or target selection performed."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:50:00+03:00",
+      "note": "Clarified delivery state: scoped commit exists locally at ff419ea0 on detached adapter worktree; no branch or remote publication was created because target integration branch is not present in this task worktree and CI overlap must be composed downstream.",
+      "changes": {
+        "updated_at": "2026-11-07T19:49:45+03:00",
+        "result": "Fixed B720e95cbcdcd484ab0f8 in local scoped commit ff419ea0 (only src/ahap-browser-runner.ts, src/adapters/chatgpt-mac-cdp-driver.ts, tests/ahap-browser-runner.test.ts, tests/chatgpt-mac-cdp-driver.test.ts; commit is on the existing detached adapter worktree and is not pushed). AHAP verifies current pinned account on the exact configured page before and after cached list/session/message reads; driver rejects mismatching provider list/passive scopes and checks current scope before/after message reads and before returning cached chat data. RED reproduced cross-account list+message leakage; GREEN: focused 40 tests passed and tsc --noEmit passed. Evidence: evidence/QBROWSERSCOPE-red-20261107.txt, evidence/QBROWSERSCOPE-green-20261107.txt, evidence/QBROWSERSCOPE-ci-overlap-20261107.md. CI WIP hunks reviewed read-only and untouched. No live browser proof, send, or target selection performed."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:19:25+03:00",
+      "note": "Коррекция false done: result прямо говорит not pushed.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Source commit ff419ea0 ещё не опубликован; acceptance требует publication. RED/GREEN40tests сохранены.",
+        "note": "Локальный commit не закрывает опубликованный результат. Существующий browser owner завершает exact scoped integration/push без чужого WIP."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:24:35+03:00",
+      "note": "Published fresh-main scoped delta; remote readback confirms main SHA 303cba8d2c522ac3b3fadd971326ee2e295a280b. Close leaf based on publication and focused proof. Native operation still separately gated by exact scope/lease.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T20:24:01+03:00",
+        "result": "Integrated the exact four-file QBROWSERSCOPE delta on fresh origin/main b440b37c and pushed commit 303cba8d2c522ac3b3fadd971326ee2e295a280b to origin/main. Remote ls-remote and fetched origin/main both read back that exact SHA; commit parent is the fresh base and commit contains only the four assigned paths. Fresh-main focused suite passed 40/40. Evidence: evidence/QBROWSERSCOPE-main-publish-20261107.md. CI transcript WIP remains untouched. tsc --noEmit was attempted and reports unrelated OpenCode v22 type mismatches in src/adapters/opencode.ts; no unrelated files changed. No browser send or target selection."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "finished_at": "2026-11-07T20:24:01+03:00",
+  "result": "Integrated the exact four-file QBROWSERSCOPE delta on fresh origin/main b440b37c and pushed commit 303cba8d2c522ac3b3fadd971326ee2e295a280b to origin/main. Remote ls-remote and fetched origin/main both read back that exact SHA; commit parent is the fresh base and commit contains only the four assigned paths. Fresh-main focused suite passed 40/40. Evidence: evidence/QBROWSERSCOPE-main-publish-20261107.md. CI transcript WIP remains untouched. tsc --noEmit was attempted and reports unrelated OpenCode v22 type mismatches in src/adapters/opencode.ts; no unrelated files changed. No browser send or target selection.",
+  "wait_reason": "Source commit ff419ea0 ещё не опубликован; acceptance требует publication. RED/GREEN40tests сохранены.",
+  "note": "Локальный commit не закрывает опубликованный результат. Существующий browser owner завершает exact scoped integration/push без чужого WIP."
+}

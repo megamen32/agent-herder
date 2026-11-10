@@ -1,0 +1,58 @@
+{
+  "id": "L81",
+  "label": "server-44: полный транскрипт Codex через Herder",
+  "description": "Исследовать HTTP 422 полного JSONL в изолированной копии установленного d2df618; проверить новый релиз и штатную установку с сохранением native owner.",
+  "acceptance": "Доказать отказ старого и чтение нового candidate; установленный PID вынести в L102.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T13:09:34+03:00",
+  "updated_at": "2026-11-07T18:08:21+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:09:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "L81",
+        "label": "server-44: полный транскрипт Codex через Herder",
+        "description": "Исследовать HTTP 422 полного JSONL в изолированной копии установленного d2df618; проверить новый релиз и штатную установку с сохранением native owner.",
+        "acceptance": "Точный полный транскрипт с несколькими страницами через Herder на server-44 и доказательство установленного процесса либо конкретный открытый дефект.",
+        "status": "running",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex",
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:20:23+03:00",
+      "note": "",
+      "changes": {
+        "note": "RED: изолированная копия старого d2 вернула 422 полного JSONL; GREEN: bafb на server-44 прошёл entrypoint Codex/OpenCode, по 2 ID и 3 страницы, 28.6s (evidence/server44-bafb-entrypoint-pass-20261107.json). bafb установлен штатно, PID 2718199, packages import/ready и sessions HTTP 200. Exact transcript через установленный PID ещё не доказан: безопасный адресный fixture route отсутствует; реальные чужие сессии не использовать. Lease освобождён."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:08:21+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "acceptance": "Доказать отказ старого и чтение нового candidate; установленный PID вынести в L102.",
+        "result": "Старый d2 вернул 422; изолированный кандидат bafb прочитал транскрипты, установлен на 44. Новейший bundle 1f1cfcd8 отдельно прошёл по двум Codex-сессиям и по 3 страницы, receipt server-44 payload-proof-1f1cfcd8. Установленный PID использует реальный Codex socket и не доказан для этих изолированных ID; отдельная проверка L102, defect B49278 остаётся открыт."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "RED: изолированная копия старого d2 вернула 422 полного JSONL; GREEN: bafb на server-44 прошёл entrypoint Codex/OpenCode, по 2 ID и 3 страницы, 28.6s (evidence/server44-bafb-entrypoint-pass-20261107.json). bafb установлен штатно, PID 2718199, packages import/ready и sessions HTTP 200. Exact transcript через установленный PID ещё не доказан: безопасный адресный fixture route отсутствует; реальные чужие сессии не использовать. Lease освобождён.",
+  "result": "Старый d2 вернул 422; изолированный кандидат bafb прочитал транскрипты, установлен на 44. Новейший bundle 1f1cfcd8 отдельно прошёл по двум Codex-сессиям и по 3 страницы, receipt server-44 payload-proof-1f1cfcd8. Установленный PID использует реальный Codex socket и не доказан для этих изолированных ID; отдельная проверка L102, defect B49278 остаётся открыт."
+}

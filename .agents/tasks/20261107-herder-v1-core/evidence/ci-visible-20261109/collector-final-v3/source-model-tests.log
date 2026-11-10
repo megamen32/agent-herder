@@ -1,0 +1,35 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+(node:3059677) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/installed-codex-proof.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/installed-owned-cleanup.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/installed-zcode-proof.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+(node:3059724) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/ahap-zcode-model-pin.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/installed-browser-bindings.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 201[2mms[22m[39m
+ [32m✓[39m tests/ahap-zcode-runner.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 697[2mms[22m[39m
+ [32m✓[39m tests/installed-native-worker.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 3398[2mms[22m[39m
+     [33m[2m✓[22m[39m preserves UNKNOWN owned-view close receipt and never dispatches another close [33m 3068[2mms[22m[39m
+ [32m✓[39m tests/installed-browser-smoke.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 83561[2mms[22m[39m
+     [33m[2m✓[22m[39m runs five lanes through native reply, same-session continuation, UI evidence and owned cleanup [33m 7126[2mms[22m[39m
+     [33m[2m✓[22m[39m fails actual native/UI coverage or cleanup gaps: {"hidden":true} [33m 6004[2mms[22m[39m
+     [33m[2m✓[22m[39m fails actual native/UI coverage or cleanup gaps: {"wrongHost":true} [33m 6894[2mms[22m[39m
+     [33m[2m✓[22m[39m fails actual native/UI coverage or cleanup gaps: {"partial":true} [33m 8266[2mms[22m[39m
+     [33m[2m✓[22m[39m fails actual native/UI coverage or cleanup gaps: {"cleanup":false} [33m 8423[2mms[22m[39m
+     [33m[2m✓[22m[39m never resends an UNKNOWN create and does not echo a private error [33m 1031[2mms[22m[39m
+     [33m[2m✓[22m[39m requires every native provider before the first native effect [33m 359[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects a visible list whose exact session details or rendered replies fail [33m 6590[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects a fresh controller-local inventory even when its receipt says exhaustive [33m 7125[2mms[22m[39m
+     [33m[2m✓[22m[39m accepts exact independent Codex completed turns with global inventory explicitly unverified [33m 7376[2mms[22m[39m
+     [33m[2m✓[22m[39m binds the owned browser view to the original control handle and actual conversation route [33m 6121[2mms[22m[39m
+     [33m[2m✓[22m[39m proves complete ZCode replies within the pinned official server and keeps its other active session visible [33m 6814[2mms[22m[39m
+     [33m[2m✓[22m[39m performs a public hold and one native cancel, then archives only after terminal native evidence [33m 10737[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m      Tests [22m [1m[32m96 passed[39m[22m[90m (96)[39m
+[2m   Start at [22m 04:44:29
+[2m   Duration [22m 84.22s[2m (transform 4.41s, setup 396ms, import 5.44s, tests 87.93s, environment 1ms)[22m
+

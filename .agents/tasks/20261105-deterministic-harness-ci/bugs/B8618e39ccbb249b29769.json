@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T01:17:38+00:00",
+  "details": "Изолированный dist/index.js с AGENT_HERDER_FLEET_PEERS=[] завершился ошибкой direct_peer_limit, хотя пустая конфигурация должна исключать соседей. Регрессионный тест RED затем GREEN, запрет неуказанных узлов сохраняется.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T01:17:38+00:00",
+      "changes": {
+        "details": "Изолированный dist/index.js с AGENT_HERDER_FLEET_PEERS=[] завершился ошибкой direct_peer_limit, хотя пустая конфигурация должна исключать соседей. Регрессионный тест RED затем GREEN, запрет неуказанных узлов сохраняется.",
+        "source": "server-44 entrypoint-search.err; tests/harness-mesh-fleet-direct.test.ts",
+        "status": "open",
+        "title": "Herder не запускается при явно пустом списке соседей"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-06T01:21:19+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-entrypoint-search3.json",
+            "result": "PASS",
+            "sha256": "76eea4f85f28bf2aeb644b0cae485bb01ee1de1c47765efb4d7ed06dc54f0a56",
+            "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B8618e39ccbb249b29769",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-entrypoint-search3.json",
+      "result": "PASS",
+      "sha256": "76eea4f85f28bf2aeb644b0cae485bb01ee1de1c47765efb4d7ed06dc54f0a56",
+      "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 entrypoint-search.err; tests/harness-mesh-fleet-direct.test.ts",
+  "status": "fixed",
+  "title": "Herder не запускается при явно пустом списке соседей",
+  "updated_at": "2026-11-06T01:21:19+00:00"
+}

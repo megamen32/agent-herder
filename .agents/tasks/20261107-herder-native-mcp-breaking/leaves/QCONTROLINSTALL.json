@@ -1,0 +1,99 @@
+{
+  "id": "QCONTROLINSTALL",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "QQUOTARECEIPT",
+    "QDEPENDENCYWAKE"
+  ],
+  "label": "Установить проверенные исправления управления сессиями штатным CI-путём",
+  "description": "Переиспользовать существующие builder/candidatepreflight/rollout, source ffb714b5 и publishedQDEPENDENCYWAKE. Один executor CI для локальной установки controller100, no fleetwide refresh. Immutable publishedsource only; respect releaselease/currentrevision and preserve timers/stops.",
+  "acceptance": "Существующий candidatepreflight наexactarchive, scoped standard rollout controller100, installedSHA/hash и readback. СтарыеUNKNOWN не менять/неповторять; no policy changes/новых тестовых sends. Если реальный build/gateblocker — точныйremaining scope/evidence, не обход.",
+  "created_at": "2026-11-07T20:54:19+03:00",
+  "updated_at": "2026-11-07T21:05:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:54:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "QCONTROLINSTALL",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "QQUOTARECEIPT",
+          "QDEPENDENCYWAKE"
+        ],
+        "label": "Установить проверенные исправления управления сессиями штатным CI-путём",
+        "description": "Переиспользовать существующие builder/candidatepreflight/rollout, source ffb714b5 и publishedQDEPENDENCYWAKE. Один executor CI для локальной установки controller100, no fleetwide refresh. Immutable publishedsource only; respect releaselease/currentrevision and preserve timers/stops.",
+        "acceptance": "Существующий candidatepreflight наexactarchive, scoped standard rollout controller100, installedSHA/hash и readback. СтарыеUNKNOWN не менять/неповторять; no policy changes/новых тестовых sends. Если реальный build/gateblocker — точныйremaining scope/evidence, не обход."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:56:38+03:00",
+      "note": "Зафиксированы published 73e7aac6 (включая ffb714b5) и controller live 1f1cfcd8; готовлю build из immutable commit, без foreign WIP.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "declared"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:04:24+03:00",
+      "note": "",
+      "changes": {
+        "note": "Candidate 73e7aac6: 15/15 builder, CLI preflight Codex/OpenCode/ZCode PASS; index SHA256 688e6e7aebb5743eebd2640bcba5077850a194a8666140e4bfbea41299b74227, bundle 3da0fa6b914db168906ae7c2b2c2cee088f658f2dccdf3fc0832b5531f6cbf3c. Builder prematurely switched catalog current before lease: bug B83d137dd9a3e43ae87c1, restored 1f1cfcd8 under actual fence62 with config+PID CAS. Scoped owner rollout process session 47451 running, candidate preflight passed; new PID 2444904 starts but port 18787 not yet listening; guarded readiness/rollback remains active. Do not retry mutation."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:05:04+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Controller100 установлен 73e7aac61431d97f3d172175a69385d7e96538bd (включает ffb714b5 и QDEPENDENCYWAKE). Immutable source build 15/15; isolated candidate Codex/OpenCode/ZCode PASS и повторный обязательный preflight под owner release lease. Штатный owner rollout fence62, версия config/current/PID 2444904 совпадают; index SHA256 688e6e7aebb5743eebd2640bcba5077850a194a8666140e4bfbea41299b74227, bundle 3da0fa6b914db168906ae7c2b2c2cee088f658f2dccdf3fc0832b5531f6cbf3c. Read-only GET /api/sessions?quick=1&limit=1 HTTP 200; lease released, rollback drop-in сохранён. Builder преждевременно переключил current до lease, восстановлен по точным config/PID перед rollout; зарегистрирован открытый B83d137dd9a3e43ae87c1 для исправления. Wake на естественном событии и полный installed/five-adapter gate не проверялись; send/UNKNOWN не повторяли."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Candidate 73e7aac6: 15/15 builder, CLI preflight Codex/OpenCode/ZCode PASS; index SHA256 688e6e7aebb5743eebd2640bcba5077850a194a8666140e4bfbea41299b74227, bundle 3da0fa6b914db168906ae7c2b2c2cee088f658f2dccdf3fc0832b5531f6cbf3c. Builder prematurely switched catalog current before lease: bug B83d137dd9a3e43ae87c1, restored 1f1cfcd8 under actual fence62 with config+PID CAS. Scoped owner rollout process session 47451 running, candidate preflight passed; new PID 2444904 starts but port 18787 not yet listening; guarded readiness/rollback remains active. Do not retry mutation.",
+  "result": "Controller100 установлен 73e7aac61431d97f3d172175a69385d7e96538bd (включает ffb714b5 и QDEPENDENCYWAKE). Immutable source build 15/15; isolated candidate Codex/OpenCode/ZCode PASS и повторный обязательный preflight под owner release lease. Штатный owner rollout fence62, версия config/current/PID 2444904 совпадают; index SHA256 688e6e7aebb5743eebd2640bcba5077850a194a8666140e4bfbea41299b74227, bundle 3da0fa6b914db168906ae7c2b2c2cee088f658f2dccdf3fc0832b5531f6cbf3c. Read-only GET /api/sessions?quick=1&limit=1 HTTP 200; lease released, rollback drop-in сохранён. Builder преждевременно переключил current до lease, восстановлен по точным config/PID перед rollout; зарегистрирован открытый B83d137dd9a3e43ae87c1 для исправления. Wake на естественном событии и полный installed/five-adapter gate не проверялись; send/UNKNOWN не повторяли."
+}

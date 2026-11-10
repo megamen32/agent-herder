@@ -1,0 +1,99 @@
+{
+  "label": "Перенести проверенные MiniMax изменения",
+  "description": "Адресно перенести проверенную MiniMax часть в integration worktree; оставшаяся интеграция runner L33 и гонка endpoint L32.",
+  "acceptance": "Изменения и профильные тесты перенесены без перезаписи чужого WIP.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+  "harness": "codex",
+  "depends_on": [
+    "L03"
+  ],
+  "status": "done",
+  "owner": "Averroes",
+  "id": "L26",
+  "created_at": "2026-11-06T18:28:33+03:00",
+  "updated_at": "2026-11-06T19:15:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T18:28:33+03:00",
+      "note": "Подготовка интеграции выполняется параллельно тестам, публикация только после проверки.",
+      "changes": {
+        "label": "Подготовить чистую интеграцию в main",
+        "description": "Определить только собственные изменения задачи и совместимость с актуальным origin/main, сохранив чужой WIP.",
+        "acceptance": "Проверенный перечень путей и конфликтов, безопасный план переноса без потери чужой работы; подготовка не публикует непроверенный кандидат.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+        "harness": "codex",
+        "depends_on": [
+          "L03"
+        ],
+        "status": "running",
+        "owner": "Averroes"
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:28:59+03:00",
+      "note": "Срок не установлен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Объём интеграции с параллельным WIP пока не измерен."
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:32:00+03:00",
+      "note": "Read-only сверка: origin/main ee7cd1f5 (ls-remote совпадает с локальной ссылкой), detached de8584c9 позади на 8, основной main 0dcb64d4 позади на 3 и имеет WIP. 41 tracked + 207 untracked в рабочем дереве; index пуст. Текстовый конфликт с upstream: src/adapters/browser-chat.ts; ChatGPT driver и web/server три-сторонне чисты. Совпадающие WIP в обоих деревьях: opencode.ts одинаков, четыре других различны (agent-resume opencode client, browser-chat-api-scripts, integrator-transcript и его test). Из 10 untracked уже в origin три различаются: native-hermes-model.py, native-zai-canary.mjs, native-zai-canary.test.ts. L21 own: release_rules.py, native-ci-artifact-{identity,evidence}.py, tests/test_native_ci_artifact_{identity,packaging}.py; tests/test_remote_release_gate.py содержит общую fixture-строку и требует согласования hunk. Другие paths по владельцам L11-L25 и receipts; неполный ownership не считать разрешением. До переноса зафиксировать инвентарь/hashes, согласовать owners, fresh изолированное дерево от точного origin/main, переносить только утверждённые hunks/новые файлы, решить конфликт, повторить CI/real proofs и сверить удалённый HEAD; без изменения текущих деревьев, publication только по последующим полномочиям.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:37:44+03:00",
+      "note": "В интеграционное дерево /home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder на ee7cd1f5 перенесены ровно 5 L21 owned путей (release_rules.py, scripts/native-ci-artifact-{identity,evidence}.py, tests/test_native_ci_artifact_{identity,packaging}.py); SHA256 совпадают с исходными. unittest artifact 5/5 и fleet-rollout-resolve 6/6, git diff --check GREEN. Общий remote-release test и integrator не перенесены; общий CI и доставка после интеграции остальных изменений.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:55:53+03:00",
+      "note": "В integration ee7cd1f5 перенесены раздельные L19 collector preflight/rollback hunks в rollout-candidate.py и rollout-node.py; подтверждённый источник совпадает с SHA из evidence/l19-owner-preflight.json. Добавлены tests/test_l19_collector_preflight.py (6/6) и минимальные fixture обновления профильных installer/owner тестов (19/19 и 3/3); fleet resolve 6/6, L21 artifact 5/5, diff check GREEN. native_ci_preflight.py и незавершённый runner L23 не перенесены: receipt verifier динамически импортирует runner и зависимые валидаторы; общий tests/test_remote_release_gate.py не перенесён. Текущий remote gate 28/29: прежний fixture FAIL compare_cleanup_revision, необходим согласованный перенос общего теста после объединения L23. Сохранены L21/L22 WIP, deploy/commit/push отсутствуют.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:57:56+03:00",
+      "note": "В integration перенесён только fixture-fix B0b00822de0064e289b06: mock require_installed_ci_collector для rollback, отдельный negative preflight без мутаций и assert fenced cleanup. Соседний mock verify_native_ci_receipt и связанная проверка принадлежат L23 и не перенесены: функции пока нет в integration. Исходный remote gate 30/30 GREEN, diff --check GREEN; SHA256 теста 2f0f59f6fcaf3902ac5e7767336b6900ca487e910d1d09c1ee2cebdcf20f519c. Source WIP и runner не менялись.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:08:39+03:00",
+      "note": "L11 selective: перенесены MiniMax adapter/control/ACP, schema hunks и tests, 5 scripts/minimax*; в named-session только durable UNKNOWN fence, инъекции isolated state L23 не перенесены. 12 копированных файлов совпадают по SHA256 с источником; общие файлы внесены отдельными hunks, без перезаписи Qoder/L21/L22. На временном снимке integration с локальными зависимостями 4 focused файла, 52 теста PASS; npm run build PASS; git diff --check PASS. Прежний server-44 receipt L11 относится к другому кандидату, native canary на новом полном составе не повторён. Модель/provider recheck и запуск CLI неатомарны; объединение с L23 требует ручного согласования.",
+      "changes": {},
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:15:36+03:00",
+      "note": "",
+      "changes": {
+        "label": "Перенести проверенные MiniMax изменения",
+        "description": "Адресно перенести проверенную MiniMax часть в integration worktree; оставшаяся интеграция runner L33 и гонка endpoint L32.",
+        "acceptance": "Изменения и профильные тесты перенесены без перезаписи чужого WIP.",
+        "status": "done",
+        "result": "MiniMax adapter/control/ACP и тесты, schema hunks и UNKNOWN fence перенесены; 52 теста и build прошли на временном снимке integration. Canary единого кандидата остаётся L33, риск гонки L32."
+      },
+      "session": "01a1b0f5-84c8-7202-b82e-2e88d5016fea",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Объём интеграции с параллельным WIP пока не измерен.",
+  "result": "MiniMax adapter/control/ACP и тесты, schema hunks и UNKNOWN fence перенесены; 52 теста и build прошли на временном снимке integration. Canary единого кандидата остаётся L33, риск гонки L32."
+}

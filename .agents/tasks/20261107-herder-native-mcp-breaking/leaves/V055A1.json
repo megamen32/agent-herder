@@ -1,0 +1,70 @@
+{
+  "id": "V055A1",
+  "label": "Codex: Добавить native create port для thread/start",
+  "description": "Отдельный адаптерный срез под готовый application::target::NativeCreateControl (fa84e08c). Реализовать в adapters/codex/create.rs однократный thread/start из точного выбранного CodexInstance, вернуть только ответившую native identity/receipt; не менять core/store/HumanStop и не объявлять V055A/public MCP завершёнными.",
+  "acceptance": "Codex create adapter реализует точный core NativeCreateControl contract; запускает thread/start ровно один раз в cwd выбранного процесса, возвращает Confirmed с исходным request key, точным bound instance и native thread id только по успешному native response; ошибка/timeout становится Unknown и не делает retry. Standalone compile/test проходит; уже сохранённый isolated V055D receipt подтверждает тот же native thread/start response и независимую native identity.",
+  "affected_files": [
+    "crates/herder/src/adapters/codex/create.rs"
+  ],
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "V053",
+    "V055D"
+  ],
+  "note": "V055A full application и V023 остаются отдельными acceptance gates.",
+  "created_at": "2026-11-07T08:11:16+03:00",
+  "updated_at": "2026-11-07T08:16:49+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T08:11:16+03:00",
+      "note": "",
+      "changes": {
+        "id": "V055A1",
+        "label": "Codex: Добавить native create port для thread/start",
+        "description": "Отдельный адаптерный срез под готовый application::target::NativeCreateControl (fa84e08c). Реализовать в adapters/codex/create.rs однократный thread/start из точного выбранного CodexInstance, вернуть только ответившую native identity/receipt; не менять core/store/HumanStop и не объявлять V055A/public MCP завершёнными.",
+        "acceptance": "Codex create adapter реализует точный core NativeCreateControl contract; запускает thread/start ровно один раз в cwd выбранного процесса, возвращает Confirmed с исходным request key, точным bound instance и native thread id только по успешному native response; ошибка/timeout становится Unknown и не делает retry. Standalone compile/test проходит; уже сохранённый isolated V055D receipt подтверждает тот же native thread/start response и независимую native identity.",
+        "affected_files": [
+          "crates/herder/src/adapters/codex/create.rs"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "V053",
+          "V055D"
+        ],
+        "note": "V055A full application и V023 остаются отдельными acceptance gates."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T08:11:41+03:00",
+      "note": "Исполняю только adapter port из create.rs; V055A full app/V023 остаются отдельными.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:16:49+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен `crates/herder/src/adapters/codex/create.rs`, commit `2d411261`. `CodexCreateControl::open` привязывает control и cwd к одной переданной `CodexInstance`; реализация `NativeCreateControl::create_once` вызывает `CodexControl::start_thread` один раз, формирует Confirmed только из его точного `SessionAddress`, эхо-ключ относится к текущему вызову (native API не даёт idempotency), а любые ошибки/timeout дают Unknown без повтора. `specification` остаётся core intent: пустой `thread/start` не превращает её в user message. Standalone harness с интерфейсом `NativeCreateControl` из `fa84e08c` прошёл 5/5 тестов: success exact mapping, timeout Unknown/no second thread/start, плюс 3 Codex control regression tests; `rustfmt +stable --check` и `git diff --cached --check` прошли. Переиспользован реальный isolated native proof из `.tmp/v055d-final`: точный thread `01a1b463-0d30-7323-9d8d-4b0439e8019d`, turn `01a1b463-0d71-7750-8521-99fac91979bd`, независимый native readback подтвердил эту thread identity. Не доказаны экспорт модуля в lib.rs, общий application create/store mapping, V023 readback gate, HumanStop composition или public MCP; V055A/full V055 остаются открыты."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "Добавлен `crates/herder/src/adapters/codex/create.rs`, commit `2d411261`. `CodexCreateControl::open` привязывает control и cwd к одной переданной `CodexInstance`; реализация `NativeCreateControl::create_once` вызывает `CodexControl::start_thread` один раз, формирует Confirmed только из его точного `SessionAddress`, эхо-ключ относится к текущему вызову (native API не даёт idempotency), а любые ошибки/timeout дают Unknown без повтора. `specification` остаётся core intent: пустой `thread/start` не превращает её в user message. Standalone harness с интерфейсом `NativeCreateControl` из `fa84e08c` прошёл 5/5 тестов: success exact mapping, timeout Unknown/no second thread/start, плюс 3 Codex control regression tests; `rustfmt +stable --check` и `git diff --cached --check` прошли. Переиспользован реальный isolated native proof из `.tmp/v055d-final`: точный thread `01a1b463-0d30-7323-9d8d-4b0439e8019d`, turn `01a1b463-0d71-7750-8521-99fac91979bd`, независимый native readback подтвердил эту thread identity. Не доказаны экспорт модуля в lib.rs, общий application create/store mapping, V023 readback gate, HumanStop composition или public MCP; V055A/full V055 остаются открыты."
+}

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T05:23:09+00:00",
+  "details": "В режиме приостановленного опроса listUnlocked вызывал page(), который открывал ChatGPT при отсутствии вкладок; RED/GREEN в /tmp/herder-empty-tab-{red,green}.log, реальная доставка ещё не проверена.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T05:23:09+00:00",
+      "changes": {
+        "details": "В режиме приостановленного опроса listUnlocked вызывал page(), который открывал ChatGPT при отсутствии вкладок; RED/GREEN в /tmp/herder-empty-tab-{red,green}.log, реальная доставка ещё не проверена.",
+        "source": "tests/chatgpt-background-passive.test.ts",
+        "status": "open",
+        "title": "Пассивный список ChatGPT открывает вкладку при её отсутствии"
+      }
+    }
+  ],
+  "id": "B7bf88f262b094fe79d6f",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "tests/chatgpt-background-passive.test.ts",
+  "status": "open",
+  "title": "Пассивный список ChatGPT открывает вкладку при её отсутствии",
+  "updated_at": "2026-11-07T05:23:09+00:00"
+}

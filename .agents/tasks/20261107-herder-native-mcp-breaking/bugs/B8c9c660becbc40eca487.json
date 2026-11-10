@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-11-07T03:10:55+00:00",
+  "details": "При повторной интеграционной проверке тест native_recent_wire_enforces_acl_and_instance завершился isolated OpenCode did not become ready за 10 секунд; диагностируется.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T03:10:55+00:00",
+      "changes": {
+        "details": "При повторной интеграционной проверке тест native_recent_wire_enforces_acl_and_instance завершился isolated OpenCode did not become ready за 10 секунд; диагностируется.",
+        "source": "opencode_recent_application --ignored",
+        "status": "open",
+        "title": "Изолированный OpenCode не стал ready в интеграционной проверке"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "at": "2026-11-07T03:12:39+00:00",
+      "changes": {
+        "resolution": {
+          "kind": "false_positive",
+          "reason": "Ошибка входа проверки: command -v opencode указывает shell wrapper, который запускает $HOME/bin/opencode-selected; тест намеренно заменяет HOME на пустой профиль, поэтому wrapper не может стартовать. Та же проверка с фактическим бинарником /home/roomhacker/.npm-global/lib/node_modules/@opencode/cli/bin/opencode.exe прошла 1/1; дефект сервера не воспроизведён."
+        },
+        "status": "false_positive"
+      }
+    }
+  ],
+  "id": "B8c9c660becbc40eca487",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "resolution": {
+    "kind": "false_positive",
+    "reason": "Ошибка входа проверки: command -v opencode указывает shell wrapper, который запускает $HOME/bin/opencode-selected; тест намеренно заменяет HOME на пустой профиль, поэтому wrapper не может стартовать. Та же проверка с фактическим бинарником /home/roomhacker/.npm-global/lib/node_modules/@opencode/cli/bin/opencode.exe прошла 1/1; дефект сервера не воспроизведён."
+  },
+  "source": "opencode_recent_application --ignored",
+  "status": "false_positive",
+  "title": "Изолированный OpenCode не стал ready в интеграционной проверке",
+  "updated_at": "2026-11-07T03:12:39+00:00"
+}

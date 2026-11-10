@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-06T20:41:29+00:00",
+  "details": "v16 server-44 isolated local TLS fixture: /api/sessions/minimax-code/.../transcript returns 422 unsupported native JSONL harness; evidence/l46-minimax-9e80.{json,log,err}. Production MiniMax and common transcript outside this worker scope.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T20:41:29+00:00",
+      "changes": {
+        "details": "v16 server-44 isolated local TLS fixture: /api/sessions/minimax-code/.../transcript returns 422 unsupported native JSONL harness; evidence/l46-minimax-9e80.{json,log,err}. Production MiniMax and common transcript outside this worker scope.",
+        "source": "v16 9e8060 candidate isolated real harness",
+        "status": "open",
+        "title": "MiniMax candidate transcript returns 422"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:49:30+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "Bbbde6a937a7042c498a4",
+          "kind": "duplicate",
+          "reason": "Один и тот же v16 MiniMax transcript 422."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "Bb7b19ea06a324c049854",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "duplicate_of": "Bbbde6a937a7042c498a4",
+    "kind": "duplicate",
+    "reason": "Один и тот же v16 MiniMax transcript 422."
+  },
+  "source": "v16 9e8060 candidate isolated real harness",
+  "status": "duplicate",
+  "title": "MiniMax candidate transcript returns 422",
+  "updated_at": "2026-11-06T20:49:30+00:00"
+}

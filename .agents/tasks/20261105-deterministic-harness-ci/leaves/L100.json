@@ -1,0 +1,43 @@
+{
+  "id": "L100",
+  "label": "CI: проверить выпущенный bundle на server-44",
+  "description": "Запустить имеющийся изолированный детерминированный сценарий Codex и OpenCode на точном bundle 1f1cfcd8; не выдавать кандидатный процесс за установленный.",
+  "acceptance": "Квитанция для точной версии, обе среды и полный transcript либо конкретная ошибка, сохранён статус INCOMPLETE.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T17:54:13+03:00",
+  "updated_at": "2026-11-07T18:01:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T17:54:13+03:00",
+      "note": "",
+      "changes": {
+        "id": "L100",
+        "label": "CI: проверить выпущенный bundle на server-44",
+        "description": "Запустить имеющийся изолированный детерминированный сценарий Codex и OpenCode на точном bundle 1f1cfcd8; не выдавать кандидатный процесс за установленный.",
+        "acceptance": "Квитанция для точной версии, обе среды и полный transcript либо конкретная ошибка, сохранён статус INCOMPLETE.",
+        "status": "running",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "owner": "roomhacker",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:01:50+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "На server-44 установленный bundle 1f1cfcd8 запущен отдельно в сетевой и файловой изоляции: Codex 0.167.0 и OpenCode 2.1.3, по 2 тестовые сессии, 3 страницы, exact search и по 2 обращения к лжемодели; 7.252 сек. Квитанция ~/.local/share/agent-herder-ci/versions/payload-proof-1f1cfcd8/receipt.json: INCOMPLETE, установленный PID и другие среды не покрыты. Ошибка portable fingerprint B1c1a исправлена RED→GREEN, 20 тестов, runner установлен на 44 и c32f6083 опубликован в main."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "На server-44 установленный bundle 1f1cfcd8 запущен отдельно в сетевой и файловой изоляции: Codex 0.167.0 и OpenCode 2.1.3, по 2 тестовые сессии, 3 страницы, exact search и по 2 обращения к лжемодели; 7.252 сек. Квитанция ~/.local/share/agent-herder-ci/versions/payload-proof-1f1cfcd8/receipt.json: INCOMPLETE, установленный PID и другие среды не покрыты. Ошибка portable fingerprint B1c1a исправлена RED→GREEN, 20 тестов, runner установлен на 44 и c32f6083 опубликован в main."
+}

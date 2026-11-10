@@ -1,0 +1,118 @@
+{
+  "id": "V081AHAP",
+  "label": "Подключить готовый ChatGPT adapter к AHAP без переписывания driver",
+  "description": "Минимальный TS wrapper существующих BrowserChatAdapter/provider factory для ChatGPT. Повторно использовать OpenCode runner a3a514fa+c3b5aa58 как protocol образец; общие файлы OpenCode не менять. Direct CDP, точный instance/account; fake contract без live sends. Старый CI+ChatGPT сохраняет собственный scope.",
+  "acceptance": "Compiled wrapper initialize/init/create/send/read fake contract, native IDs и неопределённый результат сохранены, no retry/fallback; capability truthfulness. Immutable commit и handoff Тере. Live acceptance отдельным этапом после OpenCode.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "browser worker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [],
+  "affected_files": [
+    "src/ahap-browser-runner.ts",
+    "tests/ahap-browser-runner.test.ts"
+  ],
+  "note": "Independent source REVISE ed1acd950cbd018d478238da3a237c0dc684bcfc: cached account scope can change inside create; legacy post-effect failure misclassified notSubmitted. Browser worker fixing before acceptance. Local draft is not native conversation; queue capability unproven. DirectCDP separate.",
+  "created_at": "2026-11-07T15:26:01+03:00",
+  "updated_at": "2026-11-07T16:07:39+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:26:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "V081AHAP",
+        "label": "Подключить готовый ChatGPT adapter к AHAP без переписывания driver",
+        "description": "Минимальный TS wrapper существующих BrowserChatAdapter/provider factory для ChatGPT. Повторно использовать OpenCode runner a3a514fa+c3b5aa58 как protocol образец; общие файлы OpenCode не менять. Direct CDP, точный instance/account; fake contract без live sends. Старый CI+ChatGPT сохраняет собственный scope.",
+        "acceptance": "Compiled wrapper initialize/init/create/send/read fake contract, native IDs и неопределённый результат сохранены, no retry/fallback; capability truthfulness. Immutable commit и handoff Тере. Live acceptance отдельным этапом после OpenCode.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [],
+        "affected_files": [
+          "src/ahap-browser-runner.ts",
+          "tests/ahap-browser-runner.test.ts"
+        ],
+        "note": "Ready independent source work parallel OpenCode core fixes; no shared lib/schema/Cargo edits."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:30:11+03:00",
+      "note": "Astra verified live browser worker active: src/ahap-browser-runner.ts written, fake contract in progress. Canonical plan path confirmed.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:33:57+03:00",
+      "note": "",
+      "changes": {
+        "note": "Astra source check12:33UTC: existing MacMiniChromeTransport uses ssh→http_stdio.py→Chrome DevTools MCP gateway, NOT direct CDP. Existing site driver reuse preserved. Current wrapper source/fake scope only; direct-CDP transport seam remains separate and cannot be claimed done. Browser worker informed."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:36:02+03:00",
+      "note": "Wrapper source and fake contract implemented in the two owned files. tsc --noEmit PASS; focused Vitest 4/4 PASS. This reuses ChatGptMacCdpDriver through its factory and keeps the existing transport; source check confirms MacMiniChromeTransport is SSH -> http_stdio.py -> Chrome DevTools MCP tools/call, not direct CDP. Exact driver tools: list_pages, new_page, evaluate_script, take_snapshot, fill, navigate_page. Project has npm ws and uses it in Codex/ZCode sockets, but no existing CDP client. Direct-CDP criterion remains open; no live/browser/send or CI run. Need compile/test receipts and immutable commit next.",
+      "changes": {},
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:37:36+03:00",
+      "note": "Committed owned files as ed1acd95e34bd3f (src/ahap-browser-runner.ts, tests/ahap-browser-runner.test.ts only). tsc --noEmit PASS; focused Vitest 4/4 PASS; fake contract covers initialize/init/create/read/send, account pin mismatch and UNKNOWN without retry. No CI, live browser or send. Direct-CDP remains a distinct open criterion: current MacMiniChromeTransport uses the six Chrome DevTools MCP tools over SSH. Source inventory shows npm package ws is available and used by Codex/ZCode WebSocket clients, but there is no existing CDP client. Proposed direct transport seam is a ChromePageTools.call implementation replacing only the transport: list_pages, new_page, evaluate_script, take_snapshot, fill, navigate_page; protocol mapping needs exact CDP command implementation and separate acceptance.",
+      "changes": {
+        "status": "waiting"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:44:45+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Independent source REVISE ed1acd950cbd018d478238da3a237c0dc684bcfc: cached account scope can change inside create; legacy post-effect failure misclassified notSubmitted. Browser worker fixing before acceptance. Local draft is not native conversation; queue capability unproven. DirectCDP separate."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:02:29+03:00",
+      "note": "V081AHAP source/fake contract complete; live consumer acceptance is outside this leaf.",
+      "changes": {
+        "status": "done",
+        "result": "AHAP ChatGPT wrapper committed as ed1acd95, then wired to scoped direct CDP and corrected per independent source review in d0a71185 and 76bd8325. It advertises only init/listSessions/getSession/getSessionMessages/sendMessage/createSession; no stop/model/resume/events claims. Pinned account checked after init and inside ChatGPT driver before create/send. Untyped failed send receipts map to UNKNOWN without retry. tsc --noEmit PASS; three focused suites 42/42 PASS. No CI, live/browser, or send."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:07:39+03:00",
+      "note": "",
+      "changes": {
+        "result": "AHAP ChatGPT wrapper committed as ed1acd95 and wired to scoped direct CDP in d0a71185/76bd8325. Source review defects B2ac48b682687459781b0 and Baccde92c75644613b99b registered and resolved with RED/GREEN proof. Wrapper advertises only init/listSessions/getSession/getSessionMessages/sendMessage/createSession; pinned scope checked before create/send; failed/untyped sends become UNKNOWN without retry. tsc --noEmit PASS; focused suites 42/42 PASS. No CI, live/browser, or send."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "result": "AHAP ChatGPT wrapper committed as ed1acd95 and wired to scoped direct CDP in d0a71185/76bd8325. Source review defects B2ac48b682687459781b0 and Baccde92c75644613b99b registered and resolved with RED/GREEN proof. Wrapper advertises only init/listSessions/getSession/getSessionMessages/sendMessage/createSession; pinned scope checked before create/send; failed/untyped sends become UNKNOWN without retry. tsc --noEmit PASS; focused suites 42/42 PASS. No CI, live/browser, or send."
+}

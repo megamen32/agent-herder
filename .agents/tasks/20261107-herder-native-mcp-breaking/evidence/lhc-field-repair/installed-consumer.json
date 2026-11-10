@@ -1,0 +1,29 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"id\": \"QBROWSERJOIN\", \"sha256\": \"ebb530a0f763cbfddb8a44ecf6d2ed11a082cb387ceee5fddfbc174d7bb34499\"}\nPlan 20261107-herder-native-mcp-breaking: 177/557 done; deliverable: implementation; decomposition: progressive; leaf cap: 15 min; running QOCJOIN; ready to start QCODEXJOIN, QZCODEJOIN, T003, V017, V027, V031C, V040B; Workers to merge and remove: V010A2, V010A3, V015A, V015B, V025GUARD1, V031, V031B, V031C.\n"
+    }
+  ],
+  "structuredContent": {
+    "argv": [
+      [
+        "/usr/bin/python3",
+        "/home/roomhacker/.codex/plugins/cache/megamen32-plugins/last-human-commit/1.16.1/tools/lhc_plan_json.py",
+        "update-leaf",
+        "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking",
+        "QBROWSERJOIN",
+        "--fields",
+        "{\"status\": \"waiting\", \"wait_reason\": \"Ожидает Terra integration и accepted source publication review.\"}",
+        "--expected-hash",
+        "9a6fc03a96e5677b52687f8260ed74b23769ee6b61f8d2ad62af6db87d733f73",
+        "--note",
+        "Read-only handoff не является accepted source publication review; ожидается интеграция Terra. Канонический repair перенёс evidence в note с сохранением значения и всей истории."
+      ]
+    ],
+    "returncode": 0,
+    "stdout": "{\"id\": \"QBROWSERJOIN\", \"sha256\": \"ebb530a0f763cbfddb8a44ecf6d2ed11a082cb387ceee5fddfbc174d7bb34499\"}\nPlan 20261107-herder-native-mcp-breaking: 177/557 done; deliverable: implementation; decomposition: progressive; leaf cap: 15 min; running QOCJOIN; ready to start QCODEXJOIN, QZCODEJOIN, T003, V017, V027, V031C, V040B; Workers to merge and remove: V010A2, V010A3, V015A, V015B, V025GUARD1, V031, V031B, V031C.\n",
+    "stderr": ""
+  },
+  "isError": false
+}

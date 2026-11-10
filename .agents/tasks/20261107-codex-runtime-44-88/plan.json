@@ -1,0 +1,12 @@
+{
+  "title": "Codex 0.167.0 на server-44 и server-88",
+  "goal": "Перезапустить runtime Codex и сохранить доступ к сессиям",
+  "mode": "fullcycle",
+  "recon": [
+    "server-44: npm 0.167.0, активный app-server 0.166.0 :: codex app-server daemon version",
+    "server-88: npm 0.167.0, активный app-server 0.166.0 :: codex app-server daemon version",
+    "Оба daemon показывают managed package 0.162.1 :: daemon version; процессы запущены из удаленного npm inode"
+  ],
+  "acceptance_scenario": "На каждом узле штатный runtime 0.167.0, проверены PID и executable, существующая сессия читается без повторного запуска действий.",
+  "updated_at": "2026-11-07T03:30:33+03:00"
+}

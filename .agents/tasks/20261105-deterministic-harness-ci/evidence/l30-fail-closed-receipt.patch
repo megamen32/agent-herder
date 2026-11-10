@@ -1,0 +1,95 @@
+--- a/deploy/fleet/rollout-node.py
++++ b/deploy/fleet/rollout-node.py
+@@ -457,6 +457,11 @@
+ def collect_installed_ci_evidence() -> None:
+     """Acceptance remains fenced until real installed-PID evidence exists."""
+     raise RuntimeError("installed PID consumer CI evidence collection is not implemented")
++
++
++def verify_installed_ci_evidence(receipt) -> None:
++    """No collector receipt can authorize release until its trusted verifier exists."""
++    raise RuntimeError("installed PID consumer CI receipt verifier not implemented")
+ 
+ 
+ class DarwinStoppedGeneration:
+@@ -1556,7 +1561,8 @@
+             # Readiness must still belong to this run's receipt after the
+             # authority roundtrip, not a later process with the same SHA.
+             candidate_generation.check_accepted_generation()
+-        collect_installed_ci_evidence()
++        receipt = collect_installed_ci_evidence()
++        verify_installed_ci_evidence(receipt)
+     except (OSError, RuntimeError, ValueError) as error:
+         print("release cancelled before acceptance:", error)
+         failed += 1
+--- /dev/null
++++ b/tests/test_l30_collector_acceptance.py
+@@ -0,0 +1,68 @@
++"""Focused release-installer invariants; no service or configuration mutations."""
++import importlib.util
++import os
++import pathlib
++import plistlib
++import subprocess
++import sys
++import tempfile
++import unittest
++import urllib.error
++from unittest.mock import patch, Mock
++from contextlib import ExitStack
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++SPEC = importlib.util.spec_from_file_location("rollout_node", ROOT / "deploy/fleet/rollout-node.py")
++rollout = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(rollout)
++SPEC_CANDIDATE = importlib.util.spec_from_file_location(
++    "rollout_candidate", ROOT / "deploy/fleet/rollout-candidate.py")
++candidate = importlib.util.module_from_spec(SPEC_CANDIDATE)
++SPEC_CANDIDATE.loader.exec_module(candidate)
++
++
++class L30CollectorAcceptanceTests(unittest.TestCase):
++    def test_incomplete_receipt_rolls_back_on_linux_and_darwin(self):
++        collector_patch = patch.object(rollout, "require_installed_ci_collector")
++        collector_patch.start(); self.addCleanup(collector_patch.stop)
++        for platform in ("linux", "darwin"):
++            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as temporary:
++                root=pathlib.Path(temporary);fleet=root/'fleet';old='b'*40;new='a'*40
++                for sha in (old,new): (fleet/'releases'/sha/'dist').mkdir(parents=True)
++                (fleet/'current').symlink_to(fleet/'releases'/old)
++                config=fleet/'node-config.json';config.write_text(__import__('json').dumps({'sourceSha':old,'nodeBin':'/usr/bin/node'}))
++                label='org.example.herder' if platform=='darwin' else 'agent-herder.service'
++                command=f'launchctl kickstart -k user/{os.getuid()}/{label}' if platform=='darwin' else 'systemctl --user restart agent-herder.service'
++                argv=['--fleet-dir',str(fleet),'--sha',new,'--previous-sha',old,'--port','19091','--restart-cmd',command,'--unit',label,'--launchd-label',label,'--kind','fleet' if platform=='darwin' else 'owner']
++                handoff=None;generation=Mock();gate=Mock()
++                if platform=='darwin':
++                    handoff=rollout.DarwinStoppedGeneration.__new__(rollout.DarwinStoppedGeneration)
++                    handoff.proof={'domain':f'user/{os.getuid()}','pid':'456'}
++                    for method in ('consume','check_stopped','transfer_to_transaction','check_configuration_after_candidate','check_stopped_owner','check_rollback_configuration'):
++                        setattr(handoff,method,Mock())
++                readiness={'reason':'ready','live_sha':new,'sessions':200,'policy':200,'mcp':200}
++                patches=[patch.object(sys,'platform',platform),patch.object(rollout.Path,'home',return_value=root),
++                                               patch.object(rollout,'canonical_mcp_bearer',return_value='fixture'),
++                      patch.object(rollout,'disarm_state',return_value='armed'),patch.object(rollout,'system_pause_state',return_value='inactive'),
++                      patch.object(rollout,'process_environment_value',return_value='/state'),patch.object(rollout,'prepare_packages',return_value='unchanged'),
++                      patch.object(rollout,'verify_payload',return_value={'source_sha_ok':True,'missing':[],'extra':[],'mismatched':[]}),
++                      patch.object(rollout,'release_budget',return_value=(2,0)),patch.object(rollout,'package_resolution',return_value='resolved'),
++                      patch.object(rollout,'wait_codex_socket',return_value=True),patch.object(rollout,'systemd_daemon_reload',return_value=True),
++                      patch.object(rollout,'restart',side_effect=lambda cmd: subprocess.CompletedProcess(cmd,0,'987' if platform=='darwin' else '','')),
++                      patch.object(rollout,'DarwinCandidateGeneration',return_value=generation) if platform=='darwin' else patch.object(rollout,'wait_port',return_value=True),
++                      patch.object(rollout,'wait_release_ready',return_value=readiness),patch.object(rollout,'wait_port',return_value=True),
++                      patch.object(rollout,'collect_installed_ci_evidence',return_value={'status':'INCOMPLETE','allRequiredScenarios':False,'artifactEvidenceStatus':'unverified-provenance'}),
++                      patch.object(rollout,'running_release',return_value=old),patch.object(rollout,'http_status',return_value=200),patch.object(rollout,'mcp_status',return_value=200)]
++                with ExitStack() as stack:
++                    for item in patches: stack.enter_context(item)
++                    # A candidate-only PASS and healthy endpoints are not installed-PID consumer proof.
++                    self.assertEqual(rollout._main(argv,stopped_generation=handoff,release_gate=gate),1)
++                self.assertEqual(__import__('json').loads(config.read_text())['sourceSha'],old)
++                self.assertEqual((fleet/'current').resolve(),fleet/'releases'/old)
++                gate.compare_cleanup_revision.assert_called()
++                if platform=='darwin':
++                    generation.stop_for_rollback.assert_called_once()
++                    handoff.check_rollback_configuration.assert_called_once_with(new)
++
++
++if __name__ == "__main__": unittest.main()

@@ -5,26 +5,27 @@
   "acceptance": "Получен проверяемый результат: Z.ai: Прочитать native transcript страницами. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
     "V089",
-    "V029",
-    "V030"
+    "V029"
   ],
   "affected_files": [
-    "crates/herder/src/adapters/z_ai/transcript.rs"
+    "crates/herder/src/adapters/zai/mod.rs",
+    "acceptance/native/z-ai/",
+    "acceptance/contracts/z-ai.md"
   ],
   "parent": "S07",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V093 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V093 обязателен в конце цепочки.",
+  "note": "Astra: source-native transcript reads need identity+transcript contract, not search index. V030 dependency moved to indexing leaf V093B. Existing browser owner; direct CDP; ChatGPT hold unchanged. Use captured native shapes, preserve unknown completeness/cursor; no invented provider pagination.",
   "created_at": "2026-11-07T03:52:32+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:32+03:00",
+  "updated_at": "2026-11-07T12:58:03+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:32+03:00",
@@ -55,6 +56,77 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:42:31+03:00",
+      "note": "Убрана ложная последовательность: native чтение независимо от search index.",
+      "changes": {
+        "depends_on": [
+          "V089",
+          "V029"
+        ],
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "affected_files": [
+          "crates/herder/src/adapters/zai/mod.rs",
+          "acceptance/native/z-ai/",
+          "acceptance/contracts/z-ai.md"
+        ],
+        "note": "Astra: source-native transcript reads need identity+transcript contract, not search index. V030 dependency moved to indexing leaf V093B. Existing browser owner; direct CDP; ChatGPT hold unchanged. Use captured native shapes, preserve unknown completeness/cursor; no invented provider pagination."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:43:20+03:00",
+      "note": "Project the already captured Z.ai batch payload into shared TranscriptPage; preserve exact chat identity and report cursor/completeness limits without provider calls.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:01:08+03:00",
+      "note": "V090SCOPE dependency closed. Source projection and explicit cursor/completeness contract are implemented; no live provider/profile operation was made.",
+      "changes": {
+        "status": "done",
+        "result": "ZaiReader::transcript_page(principal_id, chat_id) projects the current ordered native batch window to TranscriptPage. The fixture-backed test preserves node_id, instance_id, exact chat ID, both message IDs, input/output block types, and text. No native continuation cursor or history-completeness signal was observed; page.truncated=true and next_cursor=None. evidence/V093A-green.txt records the focused pass; acceptance/contracts/z-ai.md documents this limitation."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:06:50+03:00",
+      "note": "Delta review: include canonical node+instance+chat, trusted principal and account scope in a length-delimited snapshot hash. Transcript block provenance must retain actual native content_blocks types/indices; omit untyped flattened content instead of inventing types. Do not start V093B.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:36:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:36:46.750Z",
+        "result": "ZaiReader::transcript_page projects the current ordered native batch window while preserving node/instance/chat identity, provider message IDs, native content_blocks types and indices, and message-level content as text with source_field=content and no fabricated native type/index. Source implementation: a3f95ac9 (transcript projection) plus scoped completion f7355c53bd31228fcfd88c6482743a0e04462e00 (only crates/herder/src/adapters/zai/mod.rs and acceptance/contracts/z-ai.md). Focused test `cargo test --manifest-path crates/herder/Cargo.toml transcript_projection_preserves_native_block_types_indices_and_known_limits`: 1 passed, 0 failed; exact output evidence/V093A-post-projection-green.txt (SHA-256 42bd4d420976b7a9857f1e6ed81091818574bd0142d5c8b013d92f27ae1bd602). Limitation: current read is capped at the last 180 history IDs; no native continuation cursor or complete-history signal was observed, so truncated=true and next_cursor=None; full history is not claimed. Node/instance/chat snapshot digest uses canonical identity, principal, account scope, and selected payload with length-delimited fields. No live read or pagination completeness is claimed; V093B remains dependent on V030."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:58:03+03:00",
+      "note": "",
+      "changes": {
+        "result": "ZaiReader::transcript_page projects the current ordered native batch window while preserving node/instance/chat identity, provider message IDs, native content_blocks types and indices, and message-level content as text with source_field=content and no fabricated native type/index. Source implementation: a3f95ac9 (transcript projection) plus scoped completion f7355c53bd31228fcfd88c6482743a0e04462e00 (only crates/herder/src/adapters/zai/mod.rs and acceptance/contracts/z-ai.md). Focused test `cargo test --manifest-path crates/herder/Cargo.toml transcript_projection_preserves_native_block_types_indices_and_known_limits`: 1 passed, 0 failed; exact output evidence/V093A-post-projection-green.txt (SHA-256 42bd4d420976b7a9857f1e6ed81091818574bd0142d5c8b013d92f27ae1bd602). Limitation: current read is capped at the last 180 history IDs; no native continuation cursor or complete-history signal was observed, so truncated=true and next_cursor=None; full history is not claimed. Node/instance/chat snapshot digest uses canonical identity, principal, account scope, and selected payload with length-delimited fields. V093B source feed is now complete in commit 9ca0408c; V093 full export/search acceptance and production v4 integration remain open."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "ZaiReader::transcript_page projects the current ordered native batch window while preserving node/instance/chat identity, provider message IDs, native content_blocks types and indices, and message-level content as text with source_field=content and no fabricated native type/index. Source implementation: a3f95ac9 (transcript projection) plus scoped completion f7355c53bd31228fcfd88c6482743a0e04462e00 (only crates/herder/src/adapters/zai/mod.rs and acceptance/contracts/z-ai.md). Focused test `cargo test --manifest-path crates/herder/Cargo.toml transcript_projection_preserves_native_block_types_indices_and_known_limits`: 1 passed, 0 failed; exact output evidence/V093A-post-projection-green.txt (SHA-256 42bd4d420976b7a9857f1e6ed81091818574bd0142d5c8b013d92f27ae1bd602). Limitation: current read is capped at the last 180 history IDs; no native continuation cursor or complete-history signal was observed, so truncated=true and next_cursor=None; full history is not claimed. Node/instance/chat snapshot digest uses canonical identity, principal, account scope, and selected payload with length-delimited fields. V093B source feed is now complete in commit 9ca0408c; V093 full export/search acceptance and production v4 integration remain open.",
+  "finished_at": "2026-11-07T09:36:46.750Z"
 }

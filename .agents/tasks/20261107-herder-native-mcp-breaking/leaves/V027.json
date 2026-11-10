@@ -1,11 +1,12 @@
 {
   "label": "Проверить ответ C вместо creator A и запрет чужого reply",
-  "description": "Проверить ответ C вместо creator A и запрет чужого reply. Частный результат исходного V027: Transaction связывает sender/recipient/message_ref с intent; reply target берётся сервером. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V027B.",
+  "description": "Вход durable correspondence+resolve_reply_target и source32bc8099. Подключить готовый reply route к application: A creator B, C sender B; reply_to выбирает C из store. Проверка чужого recipient и reopen; не изобретать второй sender store.",
   "acceptance": "C→B и ответ B адресованы C; A creator не подменяется; чужой reply_to denied. Это точка объединения всей цепочки V027A, V027B, V027.",
   "affected_files": [
-    "crates/herder/src/store/correspondence.rs"
+    "crates/herder/src/application/correspondence.rs"
   ],
   "depends_on": [
+    "V027A",
     "V027B"
   ],
   "estimate_minutes": {
@@ -14,15 +15,15 @@
   },
   "kind": "task",
   "status": "queued",
-  "owner": "unassigned",
+  "owner": "Тера",
   "wave": 1,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V027 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V027 обязателен в конце цепочки.",
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
   "estimate_over_limit_reason": "",
   "id": "V027",
   "created_at": "2026-11-07T01:52:22+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:56+03:00",
+  "updated_at": "2026-11-07T16:12:48+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:22+03:00",
@@ -75,9 +76,78 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:59:52+03:00",
+      "note": "V027 source composition slice: prepare reply route from stored correspondence under exact grants. Native consumer acceptance remains open.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:00:14+03:00",
+      "note": "Source slice committed as 365c1fdf in /home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder/src/application/correspondence.rs. prepare_reply verifies ConnectionIdentity against VerifiedSelfBinding, requires exact Write grants for recipient and stored sender, then returns destination=session-c from the reopened SQLite correspondence (reply_to=message-c-b); creator A and foreign principal are denied. Three targeted unit tests pass; they used a temporary `pub mod correspondence;` registration in lib.rs which was removed before commit. Canonical fenced delivery is not invoked here; duplicate/no-submit behavior and native consumer acceptance remain unproven. Required registration hunk for integration: add `pub mod correspondence;` under `pub mod application` in crates/herder/src/lib.rs. No external submit/delivery performed.",
+      "changes": {
+        "affected_files": [
+          "crates/herder/src/application/correspondence.rs"
+        ],
+        "result": "Source-only pure reply-route composition committed locally as 365c1fdf. It returns the stored sender route after verified identity and exact recipient/sender Write-grant checks. Targeted tests: 3 passed with temporary module registration. Required lib.rs registration hunk intentionally left for shared application integration. No native submit, canonical deliver retry proof, deployment, or native consumer acceptance."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:03:27+03:00",
+      "note": "Rebased owned commits onto current origin/main be341a2a; final source commit is now 32bc8099 (hash changed from 365c1fdf during rebase). Re-ran targeted tests after rebase: 3 passed with temporary `pub mod correspondence;` registration, removed before commit; git diff --check clean. Terra handoff attempt failed with AppServerManager RPC unavailable for roomhacker-server-100; do not treat as delivered. Shared registration hunk and canonical delivery/no-submit acceptance remain pending.",
+      "changes": {
+        "result": "Source-only pure reply-route composition at final local commit 32bc8099, rebased onto current origin/main be341a2a. `prepare_reply` returns the stored sender route after verified identity and exact recipient/sender Write-grant checks. Targeted tests: 3 passed after rebase using a temporary module registration. The registration hunk was removed before commit; handoff attempt to shared owner failed because AppServerManager RPC was unavailable. No native submit, canonical deliver retry proof, deployment, or native consumer acceptance."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:06:07+03:00",
+      "note": "Принят только готовый source; финальная native reply acceptance остаётся открытой.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Pure reply routing source32bc8099 принят, handoff Terra доставлен Astra. Осталось соединить PreparedReply с существующим fenced deliver/request_key и проверить реального consumer; native no-replay ещё не доказан.",
+        "note": "Новый ReplyDispatch удалён после source review: route preparation не делает побочных эффектов. A creator/C sender/B recipient, foreign denied и exact grants проверены3 tests+SQLite reopen. Не держать leaf running, пока owner выполняет независимый V017A."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:35+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V027A",
+          "V027B"
+        ],
+        "owner": "Тера",
+        "description": "Вход durable correspondence+resolve_reply_target и source32bc8099. Подключить готовый reply route к application: A creator B, C sender B; reply_to выбирает C из store. Проверка чужого recipient и reopen; не изобретать второй sender store.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:12:48+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "status": "queued"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "Pure reply routing source32bc8099 принят, handoff Terra доставлен Astra. Осталось соединить PreparedReply с существующим fenced deliver/request_key и проверить реального consumer; native no-replay ещё не доказан.",
+  "result": "Source-only pure reply-route composition at final local commit 32bc8099, rebased onto current origin/main be341a2a. `prepare_reply` returns the stored sender route after verified identity and exact recipient/sender Write-grant checks. Targeted tests: 3 passed after rebase using a temporary module registration. The registration hunk was removed before commit; handoff attempt to shared owner failed because AppServerManager RPC was unavailable. No native submit, canonical deliver retry proof, deployment, or native consumer acceptance."
 }

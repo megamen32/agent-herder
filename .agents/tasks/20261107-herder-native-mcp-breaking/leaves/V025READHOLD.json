@@ -1,0 +1,60 @@
+{
+  "id": "V025READHOLD",
+  "label": "Проверить scoped read и durable hold в MCP application",
+  "description": "Выделенный завершённый source срез V025COMPOSE: exact ACL/instance/scope read и stop под общим waiting gate.",
+  "acceptance": "Fake wire и source review подтверждают read ACL, отказ imported scope и сохранение hold после handoff; native interruption и production ingress отдельно.",
+  "status": "done",
+  "kind": "task",
+  "parent": "S01",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "depends_on": [
+    "V025LAUNCH",
+    "V025PORT"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "affected_files": [
+    "crates/herder/src/application/scoped_stop/mcp_read.rs",
+    "crates/herder/src/application/scoped_stop/mcp_stop.rs",
+    "crates/herder/tests/scoped_stop_gate.rs"
+  ],
+  "result": "e3fdac67+dde52b0b опубликованы main d21cf281+34c55e2d. Независимый review SUPPORTED после RED/GREEN исправления resolve-before-wait race. Stop валидирует exact scoped mapping и пишет durable hold под одним waiting gate; сообщает required_or_reconcile после handoff, не утверждает подтверждённый interrupt. Read exact grant отдельно от Write. Source/fake proof; production ingress не заявлен.",
+  "note": "Выделено из разросшегося V025COMPOSE без изменения его финальной приёмки.",
+  "created_at": "2026-11-07T13:32:29+03:00",
+  "updated_at": "2026-11-07T13:32:29+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T13:32:29+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025READHOLD",
+        "label": "Проверить scoped read и durable hold в MCP application",
+        "description": "Выделенный завершённый source срез V025COMPOSE: exact ACL/instance/scope read и stop под общим waiting gate.",
+        "acceptance": "Fake wire и source review подтверждают read ACL, отказ imported scope и сохранение hold после handoff; native interruption и production ingress отдельно.",
+        "status": "done",
+        "kind": "task",
+        "parent": "S01",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "affected_files": [
+          "crates/herder/src/application/scoped_stop/mcp_read.rs",
+          "crates/herder/src/application/scoped_stop/mcp_stop.rs",
+          "crates/herder/tests/scoped_stop_gate.rs"
+        ],
+        "result": "e3fdac67+dde52b0b опубликованы main d21cf281+34c55e2d. Независимый review SUPPORTED после RED/GREEN исправления resolve-before-wait race. Stop валидирует exact scoped mapping и пишет durable hold под одним waiting gate; сообщает required_or_reconcile после handoff, не утверждает подтверждённый interrupt. Read exact grant отдельно от Write. Source/fake proof; production ingress не заявлен.",
+        "note": "Выделено из разросшегося V025COMPOSE без изменения его финальной приёмки."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

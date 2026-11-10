@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/tmp/herder-l50-git-snapshot-62IYxNFo/source/scripts/codex-unix-ci-producer.py", line 17, in <module>
+    preflight=_load('native_ci_preflight',ROOT/'deploy/fleet/native_ci_preflight.py')
+  File "/tmp/herder-l50-git-snapshot-62IYxNFo/source/scripts/codex-unix-ci-producer.py", line 15, in _load
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+  File "<frozen importlib._bootstrap_external>", line 879, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1016, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/herder-l50-git-snapshot-62IYxNFo/source/deploy/fleet/native_ci_preflight.py'

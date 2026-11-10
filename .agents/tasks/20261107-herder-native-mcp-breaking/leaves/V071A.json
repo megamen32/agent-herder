@@ -11,8 +11,8 @@
   ],
   "parent": "S05",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V071 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V071 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:25+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:25+03:00",
+  "updated_at": "2026-11-07T07:25:08+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:25+03:00",
@@ -51,6 +51,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:50:44+03:00",
+      "note": "Implement explicit ZCode instance connection for the verified supervisor WebSocket route; keep transport state scoped to one server-root and do not add request retry or input delivery here.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:05:15+03:00",
+      "note": "Connection implementation compiled after matching tokio-tungstenite 0.28 close(None); no live attach.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен ZcodeConnection для одного явно заданного ZcodeInstance: читает только его run/status.json и run/ingress-token, получает host capability и открывает authenticated /ws/host; close закрывает только socket, process id отсутствует. Сверено с legacy src/adapters/zcode-server-control.ts. cargo check --manifest-path crates/herder/Cargo.toml -q прошёл (exit 0). Live запуск Rust attach, запрос initialize и session IO не проверялись в этом leaf."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:25:08+03:00",
+      "note": "Scoped connection module committed after live isolated Rust attach; preserved central Cargo/lib wiring WIP for its owner.",
+      "changes": {
+        "result": "Добавлен ZcodeConnection для одного явного ZcodeInstance и подтверждён live attach: status/token из выбранного server_root, host capability, authenticated /ws/host, native initialize frame. Реализация в crates/herder/src/adapters/zcode/connection.rs, commit dfd17b9a; live evidence /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V071B/zcode-rust-connection.json. cargo check прошёл. Центральная wiring-интеграция Cargo.toml/lib.rs остаётся отдельным незакоммиченным WIP владельца этих файлов."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен ZcodeConnection для одного явного ZcodeInstance и подтверждён live attach: status/token из выбранного server_root, host capability, authenticated /ws/host, native initialize frame. Реализация в crates/herder/src/adapters/zcode/connection.rs, commit dfd17b9a; live evidence /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V071B/zcode-rust-connection.json. cargo check прошёл. Центральная wiring-интеграция Cargo.toml/lib.rs остаётся отдельным незакоммиченным WIP владельца этих файлов."
 }

@@ -1,0 +1,13 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-hermes-test
+
+(node:829750) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:829770) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  4 passed (4)
+      Tests  8 passed (8)
+   Start at  19:53:01
+   Duration  1.14s (transform 873ms, setup 197ms, import 997ms, tests 598ms, environment 1ms)
+

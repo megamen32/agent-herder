@@ -1,0 +1,81 @@
+{
+  "id": "FASTOCABI",
+  "label": "Сопоставить готовый adapter с API OpenCode 2.2.4 до первой отправки",
+  "description": "Вход: main94e7d98c runner pinv2→/api, artifact OpenCode2.2.4; existing opencode_receipt.py поддерживает /session. Использовать готовую ветку старого TS client для API конкретного binary. Read-only preflight выбирает единственный pinned route до create; никаких POST fallback/retries.",
+  "acceptance": "Точные create/send/read методы и IDs существующего client для2.2.4; минимальная runner delta и offline fixture либо точный недостающий seam. Native case только Luna.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "OpenCode worker",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 15
+  },
+  "depends_on": [],
+  "affected_files": [
+    "packages/agent-resume/src/harness/opencode/client.ts",
+    "tests/native/opencode_receipt.py",
+    "tests/opencode-v2-protocol.test.ts"
+  ],
+  "note": "No matching client path: exact OpenCode 2.2.4 shared-client gap handed to Terra/Astra; preserve Luna as sole live case.",
+  "created_at": "2026-11-07T15:50:04+03:00",
+  "updated_at": "2026-11-07T15:58:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:50:04+03:00",
+      "note": "",
+      "changes": {
+        "id": "FASTOCABI",
+        "label": "Сопоставить готовый adapter с API OpenCode 2.2.4 до первой отправки",
+        "description": "Вход: main94e7d98c runner pinv2→/api, artifact OpenCode2.2.4; existing opencode_receipt.py поддерживает /session. Использовать готовую ветку старого TS client для API конкретного binary. Read-only preflight выбирает единственный pinned route до create; никаких POST fallback/retries.",
+        "acceptance": "Точные create/send/read методы и IDs существующего client для2.2.4; минимальная runner delta и offline fixture либо точный недостающий seam. Native case только Luna.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "OpenCode worker",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 15
+        },
+        "depends_on": [],
+        "affected_files": [
+          "src/ahap-opencode-runner.ts",
+          "tests/ahap-opencode-runner.test.ts"
+        ],
+        "note": "Protocol family mismatch проверяется до mutation; не переписывать adapter/CI."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:57:05+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Read-only source comparison against origin/main 94e7d98c and OpenCode 2.2.4 fixture: no existing TS client branch matches the 2.2.4 route contract. Pinned v2 uses /api; v1 uses /session?directory create and /session/:id/prompt_async queue, while fixture v2.2.4 uses /session create/read and POST /session/:id/message with model+parts. No runner-only pin change is safe. Exact shared-client gap and owned paths packages/agent-resume/src/harness/opencode/client.ts, tests/native/opencode_receipt.py, tests/opencode-v2-protocol.test.ts handed to Terra and Astra. No native mutation or new server; Luna remains sole live case. Runner/source fixes 069deb97/3073ca66 and current main 94e7d98c confirmed.",
+        "note": "No matching client path: exact OpenCode 2.2.4 shared-client gap handed to Terra/Astra; preserve Luna as sole live case.",
+        "affected_files": [
+          "packages/agent-resume/src/harness/opencode/client.ts",
+          "tests/native/opencode_receipt.py",
+          "tests/opencode-v2-protocol.test.ts"
+        ]
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:58:16+03:00",
+      "note": "",
+      "changes": {
+        "result": "OpenCode owner+Terra source verified: 94e7 runner v2 uses /api, 2.2.4 requires /session and /message payload modelID+parts; v1 prompt_async is also incompatible. Existing opencode_receipt.py is working request/readback reference. No native send; old artifact incompatible, native case held until explicit patch."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "result": "OpenCode owner+Terra source verified: 94e7 runner v2 uses /api, 2.2.4 requires /session and /message payload modelID+parts; v1 prompt_async is also incompatible. Existing opencode_receipt.py is working request/readback reference. No native send; old artifact incompatible, native case held until explicit patch."
+}

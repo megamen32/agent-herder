@@ -12,8 +12,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b399-4210-7471-8286-93750dff10b7",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -23,7 +23,7 @@
   "created_at": "2026-11-07T03:52:02+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:02+03:00",
+  "updated_at": "2026-11-07T12:39:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:02+03:00",
@@ -53,6 +53,29 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:15:52+03:00",
+      "note": "Astra live canonical dependency check: V029 and V011 done. Resources resumes independent search/index.rs slice; shared Cargo/lib/schema remains Terra.",
+      "changes": {
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7",
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:39:53+03:00",
+      "note": "V030A source slice closed per direct owner direction; V030 parent remains open pending Terra integration and later ACL/coverage proof.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:39:52.915Z",
+        "result": "Source-only module committed as 0342d129 on fresh origin/main base 0d9582c250835e71250ffc0abcfef59c6f62cc98: crates/herder/src/search/index.rs. API uses full SessionAddress identity and TranscriptPage.snapshot_id for the complete searchable snapshot (not native page cursor); equal snapshot skips, changed snapshot atomically replaces one session's FTS row/state. Isolated rusqlite harness: 7 passed (4 index + 3 address). Evidence: review-evidence/v030a/unit-green.log. Not integrated: Terra owns lib/export and v4 schema/writer fence; no production, installed, or consumer proof. Parent V030 remains open."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T09:39:52.915Z",
+  "result": "Source-only module committed as 0342d129 on fresh origin/main base 0d9582c250835e71250ffc0abcfef59c6f62cc98: crates/herder/src/search/index.rs. API uses full SessionAddress identity and TranscriptPage.snapshot_id for the complete searchable snapshot (not native page cursor); equal snapshot skips, changed snapshot atomically replaces one session's FTS row/state. Isolated rusqlite harness: 7 passed (4 index + 3 address). Evidence: review-evidence/v030a/unit-green.log. Not integrated: Terra owns lib/export and v4 schema/writer fence; no production, installed, or consumer proof. Parent V030 remains open."
 }

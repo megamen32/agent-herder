@@ -1,0 +1,59 @@
+{
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QBROWSERJOIN",
+  "label": "Принять готовую direct-CDP delta без нового transport",
+  "parent": "S06",
+  "owner": "Terra",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "depends_on": [],
+  "description": "Готовые ed1acd95/429d39b0/385efc83/d0a71185/76bd8325, source42tests. Одна delta-review account scope/UNKNOWN, согласовать пересечение site-driver с CI, включить точные patches. No browser send.",
+  "acceptance": "Review замечания устранены или конкретно зарегистрированы, точная source цепочка опубликована; native case отдельно.",
+  "created_at": "2026-11-07T18:15:35+03:00",
+  "updated_at": "2026-11-07T18:55:00+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:35+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QBROWSERJOIN",
+        "label": "Принять готовую direct-CDP delta без нового transport",
+        "parent": "S06",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "depends_on": [],
+        "description": "Готовые ed1acd95/429d39b0/385efc83/d0a71185/76bd8325, source42tests. Одна delta-review account scope/UNKNOWN, согласовать пересечение site-driver с CI, включить точные patches. No browser send.",
+        "acceptance": "Review замечания устранены или конкретно зарегистрированы, точная source цепочка опубликована; native case отдельно."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:55:00+03:00",
+      "note": "Exact source chain and current CI overlap recorded from read-only worktrees; no send or CI edits.",
+      "changes": {
+        "status": "done",
+        "result": "Read-only source handoff recorded: exact five-commit chain preserved; current CI site-driver overlap mapped by file/hunk. No browser send or CI mutation. Waiting for accepted core artifact and exact delegated browser scope from CISHARE before browser case; QCHATCASE/QZAICASE remain queued and L101 untouched.",
+        "evidence": [
+          "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/QBROWSERJOIN-source-handoff-20261107.md"
+        ]
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "result": "Read-only source handoff recorded: exact five-commit chain preserved; current CI site-driver overlap mapped by file/hunk. No browser send or CI mutation. Waiting for accepted core artifact and exact delegated browser scope from CISHARE before browser case; QCHATCASE/QZAICASE remain queued and L101 untouched.",
+  "evidence": [
+    "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/QBROWSERJOIN-source-handoff-20261107.md"
+  ]
+}

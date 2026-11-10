@@ -1,0 +1,101 @@
+{
+  "id": "QZRECEIPT",
+  "parent": "S05",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QAHAPPORT",
+    "QZCODEJOIN"
+  ],
+  "label": "Передать настоящий ZCode receipt через готовый AHAP runner",
+  "description": "Current ZCode runner returns admitted/inputId/pending without nativeInputMessageId; общий core правильно сохраняет UNKNOWN. Reuse working CI L45 native protocol/receipt, явно передать подтверждённый native identity и readback correlation без synthetic caller-ID и без retry. Допускается источник результата native adapter, никакие live UNKNOWN не повторять.",
+  "affected_files": [
+    "src/ahap-zcode-runner.ts",
+    "src/adapters/zcode.ts",
+    "tests/ahap-zcode-runner.test.ts",
+    "acceptance/native/zcode/ahap-contract.json"
+  ],
+  "acceptance": "Реальные documented/recorded native response shapes → exact receipt mapping; pending без native confirmation остаётся pending/UNKNOWN. Source contract tests positive/ambiguous/no replay+published scoped delta; новый native case только отдельно после ready artifact.",
+  "created_at": "2026-11-07T20:21:25+03:00",
+  "updated_at": "2026-11-07T20:35:14+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:21:25+03:00",
+      "note": "",
+      "changes": {
+        "id": "QZRECEIPT",
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "owner": "ZCode worker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "QAHAPPORT",
+          "QZCODEJOIN"
+        ],
+        "label": "Передать настоящий ZCode receipt через готовый AHAP runner",
+        "description": "Current ZCode runner returns admitted/inputId/pending without nativeInputMessageId; общий core правильно сохраняет UNKNOWN. Reuse working CI L45 native protocol/receipt, явно передать подтверждённый native identity и readback correlation без synthetic caller-ID и без retry. Допускается источник результата native adapter, никакие live UNKNOWN не повторять.",
+        "affected_files": [
+          "src/ahap-zcode-runner.ts",
+          "src/adapters/zcode.ts",
+          "tests/ahap-zcode-runner.test.ts",
+          "acceptance/native/zcode/ahap-contract.json"
+        ],
+        "acceptance": "Реальные documented/recorded native response shapes → exact receipt mapping; pending без native confirmation остаётся pending/UNKNOWN. Source contract tests positive/ambiguous/no replay+published scoped delta; новый native case только отдельно после ready artifact."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:22:47+03:00",
+      "note": "Receipt-only source path: reuse exact recorded L45 adapter/native evidence, no live send, no Rust edits, no replay.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "source": "declared"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:35:14+03:00",
+      "note": "Source diff tested and pushed; no live mutation.",
+      "changes": {
+        "status": "done",
+        "result": "Source published to origin/main as dc9d882103002b09e4109019a7a880f3fda3cf54 (parent 303cba8d2c522ac3b3fadd971326ee2e295a280b). Scoped paths only: src/adapters/zcode.ts, src/ahap-zcode-runner.ts, tests/ahap-zcode-runner.test.ts, acceptance/native/zcode/ahap-contract.json. Reused zcodeNativeAdmission read-only exact same-session message lookup requiring adapter-derived sourceCommandId; nativeInputMessageId is copied only from the matching native user row, with turnId separate. Caller inputId is unchanged. Missing anchor/turn-only evidence does not synthesize nativeInputMessageId; UNKNOWN/pending semantics remain. Evidence: npx vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts: 7/7 passed; npx tsc --noEmit passed; git diff --check passed. Tests cover exact receipt, turnId-only, other-session/wrong-command mismatch, and existing ambiguous no-retry. No native sends; V078 remains separate; V072D/V072E UNKNOWN not replayed. Exact signature hunk: ZcodeAdapter.sendMessage queue/steer/images branch normalizes admission, derives native correlation with zcodeInputId(callerInputId, origin), calls zcodeNativeAdmission(localDbPath, id, [nativeCommandId]), and copies only native.userMessageId to nativeInputMessageId plus native.turnId separately. Remote main readback: dc9d882103002b09e4109019a7a880f3fda3cf54."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Source published to origin/main as dc9d882103002b09e4109019a7a880f3fda3cf54 (parent 303cba8d2c522ac3b3fadd971326ee2e295a280b). Scoped paths only: src/adapters/zcode.ts, src/ahap-zcode-runner.ts, tests/ahap-zcode-runner.test.ts, acceptance/native/zcode/ahap-contract.json. Reused zcodeNativeAdmission read-only exact same-session message lookup requiring adapter-derived sourceCommandId; nativeInputMessageId is copied only from the matching native user row, with turnId separate. Caller inputId is unchanged. Missing anchor/turn-only evidence does not synthesize nativeInputMessageId; UNKNOWN/pending semantics remain. Evidence: npx vitest run --root . --config vitest.config.ts tests/ahap-zcode-runner.test.ts: 7/7 passed; npx tsc --noEmit passed; git diff --check passed. Tests cover exact receipt, turnId-only, other-session/wrong-command mismatch, and existing ambiguous no-retry. No native sends; V078 remains separate; V072D/V072E UNKNOWN not replayed. Exact signature hunk: ZcodeAdapter.sendMessage queue/steer/images branch normalizes admission, derives native correlation with zcodeInputId(callerInputId, origin), calls zcodeNativeAdmission(localDbPath, id, [nativeCommandId]), and copies only native.userMessageId to nativeInputMessageId plus native.turnId separately. Remote main readback: dc9d882103002b09e4109019a7a880f3fda3cf54."
+}

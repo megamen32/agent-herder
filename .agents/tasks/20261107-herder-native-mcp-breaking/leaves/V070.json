@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V070 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V070 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V070",
   "created_at": "2026-11-07T01:52:30+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:32+03:00",
+  "updated_at": "2026-11-07T05:50:19+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:30+03:00",
@@ -76,10 +76,36 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:49:51+03:00",
+      "note": "Aggregate native capability matrix for ZCode after V070A/B evidence; selected official supervisor WebSocket is confirmed, while model input and nonempty history remain unknown.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:50:19+03:00",
+      "note": "Capability gate объединён из V070A/B с явным разграничением доказанного штатного supervisor route и пока UNKNOWN session operations.",
+      "changes": {
+        "status": "done",
+        "result": "Capability matrix recorded in acceptance/contracts/zcode.md. Evidence: isolated supervisor route on ZCode CLI 0.16.9 / Server 3.17.2: authenticated host WebSocket, initialize request/response ID 1, listSessions request/response ID 2, empty profile; official-server-receipt.json and official-websocket-receipt.json in /home/roomhacker/.codex/worktrees/herder-zcode-native/agent-herder/.tmp/run-v070b-zcode. Selected route is the official supervisor /ws/host path; legacy direct stdio app-server's expected hello was not observed. Proven: startup, capability handshake, native request correlation and empty list. Unknown: nonempty transcript/recent, create, input delivery and context operations; profile intentionally has no provider and inference count is zero. The contract makes those boundaries explicit.",
+        "blocker": "",
+        "blocker_details": {}
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
     }
   ],
   "parent": "S05",
   "model": "gpt-6.1-terra",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Capability matrix recorded in acceptance/contracts/zcode.md. Evidence: isolated supervisor route on ZCode CLI 0.16.9 / Server 3.17.2: authenticated host WebSocket, initialize request/response ID 1, listSessions request/response ID 2, empty profile; official-server-receipt.json and official-websocket-receipt.json in /home/roomhacker/.codex/worktrees/herder-zcode-native/agent-herder/.tmp/run-v070b-zcode. Selected route is the official supervisor /ws/host path; legacy direct stdio app-server's expected hello was not observed. Proven: startup, capability handshake, native request correlation and empty list. Unknown: nonempty transcript/recent, create, input delivery and context operations; profile intentionally has no provider and inference count is zero. The contract makes those boundaries explicit.",
+  "blocker": "",
+  "blocker_details": {}
 }

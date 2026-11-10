@@ -1,0 +1,36 @@
+{
+  "scope": "isolated-candidate-only",
+  "candidate_receipt": "candidate-http-transcript-20261107.json",
+  "candidate_sha256": "1504c777be4c4e589099e358f43879f6a3925d4fa2fa6c5ffef08e5039d26a2b",
+  "elapsed_seconds": 34.599,
+  "receipt_sha256": "0d8a5a2085ade6e33a00fc04fc900da708a576f9dafd6580a465832f91ef147f",
+  "http_client_sha256": "7eb4caa507f6dc30bb8dee6bc5a295b76806b779443f2c964b41ffa5d533c157",
+  "validator_sha256": "08582f4c3aeb12f30e54eba1cd7bd3822f229c3ee03e0b4ffbc5d3985b13095d",
+  "validated": [
+    {
+      "harness": "codex",
+      "session": "01a1b59d-30d7-7a01-81e2-63b3fa64e7f3",
+      "pages": 3
+    },
+    {
+      "harness": "codex",
+      "session": "01a1b59d-3250-7b41-ab8d-f05fc55c3788",
+      "pages": 3
+    },
+    {
+      "harness": "opencode",
+      "session": "ses_e4a62b0d3ffej47W21hIiditJ9",
+      "pages": 3
+    },
+    {
+      "harness": "opencode",
+      "session": "ses_e4a62ae0fffeXeF67OfovLgsGm",
+      "pages": 3
+    }
+  ],
+  "limitations": [
+    "client invoked by a temporary modified research runner",
+    "installed Herder process not exercised",
+    "release gate remains FAIL"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:22:22+00:00",
+  "details": "При terminal outcome_unknown Fixture удалил временную SQLite и Codex profile сразу после вывода задачи; повторное чтение exact receipt/модельной статистики оказалось недоступно. Необходимо сохранить безопасный диагностический readback до cleanup, не выполняя повторного submit.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:22:22+00:00",
+      "changes": {
+        "details": "При terminal outcome_unknown Fixture удалил временную SQLite и Codex profile сразу после вывода задачи; повторное чтение exact receipt/модельной статистики оказалось недоступно. Необходимо сохранить безопасный диагностический readback до cleanup, не выполняя повторного submit.",
+        "source": "review-evidence/V025PUBLIC/owner-sdk-496483e5-run.log",
+        "status": "open",
+        "title": "Изолированный SDK harness удаляет исходные данные до диагностики UNKNOWN"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025PUBLIC",
+      "at": "2026-11-07T11:25:25+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025COMPOSE/fixture-retain-green.log",
+            "red_proof_path": "evidence/V025COMPOSE/fixture-retain-red.log",
+            "red_result": "bwrap: execvp --preserve-failure: No such file or directory",
+            "red_sha256": "26c72dcf6e3036e38d9125b4f7b75fa8d4ed18e20e2374687207de3d78004ec8",
+            "result": "PASS retained host file has the same device and inode as sandbox file",
+            "sha256": "1e821b4d8eb10b6f12f6e9608ea517f7e61a34747231546c2c06368183101899",
+            "test_command": "python3 tests/native/launch.py --retain-on-failure /tmp/herder-retain-inode-green -- /usr/bin/python3 -c <synthetic receipt and exit 4>"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B5daca6c702e044988e79",
+  "owner": "V025PUBLIC",
+  "reporter": "V025PUBLIC",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025COMPOSE/fixture-retain-green.log",
+      "red_proof_path": "evidence/V025COMPOSE/fixture-retain-red.log",
+      "red_result": "bwrap: execvp --preserve-failure: No such file or directory",
+      "red_sha256": "26c72dcf6e3036e38d9125b4f7b75fa8d4ed18e20e2374687207de3d78004ec8",
+      "result": "PASS retained host file has the same device and inode as sandbox file",
+      "sha256": "1e821b4d8eb10b6f12f6e9608ea517f7e61a34747231546c2c06368183101899",
+      "test_command": "python3 tests/native/launch.py --retain-on-failure /tmp/herder-retain-inode-green -- /usr/bin/python3 -c <synthetic receipt and exit 4>"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "review-evidence/V025PUBLIC/owner-sdk-496483e5-run.log",
+  "status": "fixed",
+  "title": "Изолированный SDK harness удаляет исходные данные до диагностики UNKNOWN",
+  "updated_at": "2026-11-07T11:25:25+00:00"
+}

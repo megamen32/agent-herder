@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T15:34:07+00:00",
+  "details": "FASTINIT real OpenCode 2.2.4 observed /api/health 404 and /global/health 200; published v22 client.init requires /api/health and fake test wrongly returned 200, so real runner init fails pre-mutation. Stop sent to Luna; RED /tmp/herder-v22-health-red.log; use observed /global/health.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T15:34:07+00:00",
+      "changes": {
+        "details": "FASTINIT real OpenCode 2.2.4 observed /api/health 404 and /global/health 200; published v22 client.init requires /api/health and fake test wrongly returned 200, so real runner init fails pre-mutation. Stop sent to Luna; RED /tmp/herder-v22-health-red.log; use observed /global/health.",
+        "source": "preflight-receipt-final.log; packages/agent-resume/src/harness/opencode/client.ts:551",
+        "status": "open",
+        "title": "OpenCode v22 runner требует недоступный /api/health"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T15:35:45+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QOCJOIN/health-green.log",
+            "red_proof_path": "evidence/QOCJOIN/health-red.log",
+            "red_result": "3 failed",
+            "red_sha256": "8138e7f59fd9d0a26bb6c9f16533813925cef020938c0c6dcac20c6d0e35c993",
+            "result": "8 passed",
+            "sha256": "7f2e70792b4d8bea7c3916c57a42480d21f3f65b555214dccde3b0cb2915234d",
+            "test_command": "vitest run tests/opencode-v22-protocol.test.ts tests/ahap-opencode-runner.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bea721d28d46f451f9a77",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QOCJOIN/health-green.log",
+      "red_proof_path": "evidence/QOCJOIN/health-red.log",
+      "red_result": "3 failed",
+      "red_sha256": "8138e7f59fd9d0a26bb6c9f16533813925cef020938c0c6dcac20c6d0e35c993",
+      "result": "8 passed",
+      "sha256": "7f2e70792b4d8bea7c3916c57a42480d21f3f65b555214dccde3b0cb2915234d",
+      "test_command": "vitest run tests/opencode-v22-protocol.test.ts tests/ahap-opencode-runner.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "preflight-receipt-final.log; packages/agent-resume/src/harness/opencode/client.ts:551",
+  "status": "fixed",
+  "title": "OpenCode v22 runner требует недоступный /api/health",
+  "updated_at": "2026-11-07T15:35:45+00:00"
+}

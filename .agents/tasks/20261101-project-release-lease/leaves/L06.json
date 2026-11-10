@@ -1,0 +1,109 @@
+{
+  "id": "L06",
+  "label": "Исправить повторяющийся сбой project_release_lease API",
+  "description": "Воспроизвести MCP -32603 на status/acquire после release, подтвердить root cause в lease transaction и внести минимальную поправку, сохраняя active sessions и весь чужой WIP.",
+  "acceptance": "Регрессия воспроизводит прежний отказ до исправления и проходит после него; реальный API проходит acquire/check/release/status без печати capability; активные сессии сохранены, restart только при доказанной необходимости.",
+  "affected_files": [
+    "src/project-release-lease.ts",
+    "tests/project-release-lease.test.ts"
+  ],
+  "status": "blocked",
+  "owner": "roomhacker",
+  "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+  "harness": "codex",
+  "model": "gpt-6",
+  "estimate_minutes": {
+    "minimum": 15,
+    "maximum": 30
+  },
+  "depends_on": [],
+  "created_at": "2026-11-04T20:10:37+03:00",
+  "updated_at": "2026-11-07T04:47:06+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-04T20:10:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "L06",
+        "label": "Исправить повторяющийся сбой project_release_lease API",
+        "description": "Воспроизвести MCP -32603 на status/acquire после release, подтвердить root cause в lease transaction и внести минимальную поправку, сохраняя active sessions и весь чужой WIP.",
+        "acceptance": "Регрессия воспроизводит прежний отказ до исправления и проходит после него; реальный API проходит acquire/check/release/status без печати capability; активные сессии сохранены, restart только при доказанной необходимости.",
+        "affected_files": [
+          "src/project-release-lease.ts",
+          "tests/project-release-lease.test.ts"
+        ],
+        "status": "running",
+        "owner": "roomhacker",
+        "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+        "harness": "codex",
+        "model": "gpt-6",
+        "estimate_minutes": {
+          "minimum": 15,
+          "maximum": 30
+        },
+        "depends_on": []
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-04T20:35:51+03:00",
+      "note": "Повторяемая MCP -32603 подтверждена на project_release_lease(status), coordination_note и session_info. Live agent-herder.service показывает ActiveState=active, но порт 127.0.0.1:18787 не слушает; прямой штатный /mcp initialize получает ConnectionRefused, NRestarts=4, текущий PID запущен 20:31:48. Release ledger доступен только для read-only проверки: у GPTAdmin сохраняется fence 28; capability не читалась. Чужие WIP/сессии не менялись. Причина падения до конкретного уровня не доказана; safe source repair/restart заблокированы отсутствием работающего MCP для диагностики и оценки активных сессий. Следующий шаг: восстановить штатный owner Herder MCP с сохранением текущих сессий, затем повторить status и локализовать transaction; никакого обхода lease.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Owner Herder MCP unavailable: systemd service active but no listener on 127.0.0.1:18787; direct MCP initialize refused, NRestarts=4. Cannot safely inspect active sessions or authorize runtime mutation; GPTAdmin ledger still has fence 28."
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-04T22:21:05+03:00",
+      "note": "Обнаружено, что прежний блокер устарел: живой project_release_lease API снова отвечает. Найден действующий runtime PID 518854 из candidate release; systemctl unit не владеет портом. Текущий main source не содержит незакоммиченных изменений в lease-коде; причины прошлого -32603 в transaction пока не воспроизводятся. Проверяю runtime/source revision и повторяемость циклов без restart.",
+      "changes": {
+        "status": "running",
+        "blocker": ""
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-04T22:57:06+03:00",
+      "note": "Установлен текущий слой отказа: listener MCP был недоступен, причём ошибки наблюдались на нескольких независимых tools; это не подтверждает дефект lease transaction. Runtime восстановился до этой проверки и без нашего restart. Реальный API readback прошёл три acquire/status/check/release цикла, focused suite 28/28. Остался только исторический trigger шести auto-restart: unit journal пуст, OOM и coredump отсутствуют; первичный stderr получить уже невозможно. Evidence: leaves/L06-live-proof.md. Не менять source без воспроизводимого RED.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Первичные stderr/crash logs шести автоматических перезапусков отсутствуют; исходный -32603 сейчас не воспроизводится. Следующий шаг: при recurrence сохранить stderr unit и journal до любого restart, затем привязать ошибку к release transaction либо MCP startup."
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:23:25+03:00",
+      "note": "Продолжение 2026-11-07: не повторял acquire/check/release и 28 тестов. Проверен текущий runtime: release ce815cdb01d47bfcbc6d3af512f78bb7ef624e8f активен, unit active, NRestarts=0, listener 127.0.0.1:18787 слушает. Status выполнен через текущий release-admin handler (тот же код из живого bundle): lease отсутствует, deploymentInProgress=false, nextFence=36; ledger сохраняет 5 active sessions. Lease code не менялся относительно ранее проверенного source. Текущая MCP обвязка не предоставляет project_release_lease tool, поэтому прямой MCP JSON-RPC status/acquire здесь проверить нельзя. Исторический crash trigger остаётся неизвестен; restart не выполнялся.",
+      "changes": {
+        "blocker": "Историческая причина шести прежних auto-restart не восстановима по имеющимся журналам. В текущей сессии native MCP tool project_release_lease отсутствует; status readback проведён предусмотренным offline handler. Не выполнять новые acquire циклы без необходимости: предыдущие циклы и регрессии уже доказали поведение, а активны 5 project sessions."
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:47:06+03:00",
+      "note": "2026-11-07 continuation: direct authenticated MCP status works on installed release and identifies an active lease owner; exact API remains intentionally hidden from discovery but callable. GPTAdmin child-schema transport is failing. No transaction defect reproduced; do not acquire or restart until the existing owner finishes/lease expires and active-work risk is reassessed.",
+      "changes": {
+        "blocker": "Точный Herder tools/call project_release_lease(status) проходит и показывает занятый lease fence 36 активной сессии; GPTAdmin child schema для Herder недоступна. Acquire небезопасен при активном владельце; restart не рассматривается без остановки активных работ.",
+        "blocker_details": {
+          "readback": "2026-11-07: MCP initialize/tools/list HTTP 200; 46 tools, lease endpoint скрыт из discovery. Точный tools/call status HTTP 200: canonical project совпал, lease present=true, fence 36, remainingSeconds 647, deploymentInProgress false, owner 01a1ac52-d25c-7050-a65d-3fca32642c26.",
+          "root": "src/mcp/catalog-policy.ts намеренно прячет project_release_lease из tools/list; src/mcp/project-release-tools.ts регистрирует точный callable endpoint. GPTAdmin search сообщает local AgentHerder child schema reader failed. Секретная fingerprint-гипотеза отвергнута без вывода секрета.",
+          "safety": "Acquire/release/restart и source edits не выполнялись. Ранее пройденные 3 lease cycles и 28 focused tests не повторялись. Service PID 2943608, NRestarts 0. Canonical checkout содержит 190 modified tracked files и 372 untracked files, чужой WIP сохранён."
+        }
+      },
+      "session": "01a1a371-d2c8-7401-9a42-4aaf3067ec1b",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Точный Herder tools/call project_release_lease(status) проходит и показывает занятый lease fence 36 активной сессии; GPTAdmin child schema для Herder недоступна. Acquire небезопасен при активном владельце; restart не рассматривается без остановки активных работ.",
+  "blocker_details": {
+    "readback": "2026-11-07: MCP initialize/tools/list HTTP 200; 46 tools, lease endpoint скрыт из discovery. Точный tools/call status HTTP 200: canonical project совпал, lease present=true, fence 36, remainingSeconds 647, deploymentInProgress false, owner 01a1ac52-d25c-7050-a65d-3fca32642c26.",
+    "root": "src/mcp/catalog-policy.ts намеренно прячет project_release_lease из tools/list; src/mcp/project-release-tools.ts регистрирует точный callable endpoint. GPTAdmin search сообщает local AgentHerder child schema reader failed. Секретная fingerprint-гипотеза отвергнута без вывода секрета.",
+    "safety": "Acquire/release/restart и source edits не выполнялись. Ранее пройденные 3 lease cycles и 28 focused tests не повторялись. Service PID 2943608, NRestarts 0. Canonical checkout содержит 190 modified tracked files и 372 untracked files, чужой WIP сохранён."
+  }
+}

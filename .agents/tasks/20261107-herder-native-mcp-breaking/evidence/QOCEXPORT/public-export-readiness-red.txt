@@ -1,0 +1,4 @@
+COMMAND: python3 -m unittest discover -s tests/native -p test_ahap_opencode_stand.py -k public_export_readiness
+EXIT: 1
+ImportError: cannot import name 'public_export_readiness' from 'ahap_opencode_stand'
+This was the expected RED before implementing the public export readiness classifier.

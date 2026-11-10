@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T10:11:57+00:00",
+  "details": "RED: при source_coverage_complete=true и ACL списке сессии без session_search_state/FTS search_page возвращает coverage Complete. Необходимо обозначить Partial при отсутствующем state или FTS для любого разрешённого session ref; ACL фильтрацию не ослаблять.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Terra",
+      "at": "2026-11-07T10:11:57+00:00",
+      "changes": {
+        "details": "RED: при source_coverage_complete=true и ACL списке сессии без session_search_state/FTS search_page возвращает coverage Complete. Необходимо обозначить Partial при отсутствующем state или FTS для любого разрешённого session ref; ACL фильтрацию не ослаблять.",
+        "source": "cargo test missing_authorized_session_cannot_claim_complete_coverage --lib",
+        "status": "open",
+        "title": "Поиск считает непроиндексированную разрешённую сессию полной выдачей"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Terra",
+      "at": "2026-11-07T10:28:25+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/v030mig/coverage-green.txt",
+            "red_proof_path": "review-evidence/v030mig/coverage-red.txt",
+            "red_result": "test result: FAILED. 0 passed; 1 failed",
+            "red_sha256": "292391c85eafa75b6e9846702b3f4c94fb7cfc8d85c6a0913971b11da34a01ab",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "f68e33125b94122b48c4d9c3e7031e2e7d1628a72fc01656de11b6d2c8d7b628",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml missing_authorized_session_cannot_claim_complete_coverage --lib -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B740390a35de541aabbb2",
+  "owner": "Terra",
+  "reporter": "Terra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/v030mig/coverage-green.txt",
+      "red_proof_path": "review-evidence/v030mig/coverage-red.txt",
+      "red_result": "test result: FAILED. 0 passed; 1 failed",
+      "red_sha256": "292391c85eafa75b6e9846702b3f4c94fb7cfc8d85c6a0913971b11da34a01ab",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "f68e33125b94122b48c4d9c3e7031e2e7d1628a72fc01656de11b6d2c8d7b628",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml missing_authorized_session_cannot_claim_complete_coverage --lib -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo test missing_authorized_session_cannot_claim_complete_coverage --lib",
+  "status": "fixed",
+  "title": "Поиск считает непроиндексированную разрешённую сессию полной выдачей",
+  "updated_at": "2026-11-07T10:28:25+00:00"
+}

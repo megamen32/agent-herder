@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_entrypoint_starts_with_one_loopback_self_peer (__main__.PeerTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/native-hermes-entrypoint-peers.test.py", line 14, in test_entrypoint_starts_with_one_loopback_self_peer
+    self.assertEqual(len(peers),1);self.assertEqual(peers[0]['hostId'],module.socket.gethostname());self.assertEqual(peers[0]['sshHost'],'127.0.0.1');self.assertEqual(peers[0]['port'],int(captured['AGENT_HERDER_WEB_PORT']))
+AssertionError: 1 != 24037
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

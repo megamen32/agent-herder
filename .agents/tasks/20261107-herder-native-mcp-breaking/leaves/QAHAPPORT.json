@@ -1,0 +1,84 @@
+{
+  "id": "QAHAPPORT",
+  "kind": "task",
+  "parent": "S05",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QZCODEJOIN"
+  ],
+  "label": "Обобщить существующий AHAP port для готовых адаптеров",
+  "description": "Reuse текущий ahap_opencode.rs: сейчас harness=opencode, ses*/msg_* и Start hardcoded, поэтому опубликованный ZCode runner нельзя подключить к общему core. Вынести только эти различия в проверенную при старте конфигурацию существующего port; не создавать новый transport, ledger или по копии core на harness. Transport сохраняет verified harness from initialize. Текущий OpenCode consumer должен остаться совместим.",
+  "affected_files": [
+    "crates/herder/src/adapters/ahap.rs",
+    "crates/herder/src/adapters/ahap_opencode.rs"
+  ],
+  "acceptance": "Focused source tests доказывают unchanged OpenCode flow и второй ZCode-shaped flow, mismatch harness/instance отказ, opaque bounded IDs и сохранённый UNKNOWN/no retry. Публикация exact delta; native/integration не заявлять. Cargo/lib/schema/owner launch принадлежат Terra и не меняются.",
+  "created_at": "2026-11-07T19:34:09+03:00",
+  "updated_at": "2026-11-07T19:50:48+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:34:09+03:00",
+      "note": "",
+      "changes": {
+        "id": "QAHAPPORT",
+        "kind": "task",
+        "parent": "S05",
+        "status": "queued",
+        "owner": "ZCode worker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "QZCODEJOIN"
+        ],
+        "label": "Обобщить существующий AHAP port для готовых адаптеров",
+        "description": "Reuse текущий ahap_opencode.rs: сейчас harness=opencode, ses*/msg_* и Start hardcoded, поэтому опубликованный ZCode runner нельзя подключить к общему core. Вынести только эти различия в проверенную при старте конфигурацию существующего port; не создавать новый transport, ledger или по копии core на harness. Transport сохраняет verified harness from initialize. Текущий OpenCode consumer должен остаться совместим.",
+        "affected_files": [
+          "crates/herder/src/adapters/ahap.rs",
+          "crates/herder/src/adapters/ahap_opencode.rs"
+        ],
+        "acceptance": "Focused source tests доказывают unchanged OpenCode flow и второй ZCode-shaped flow, mismatch harness/instance отказ, opaque bounded IDs и сохранённый UNKNOWN/no retry. Публикация exact delta; native/integration не заявлять. Cargo/lib/schema/owner launch принадлежат Terra и не меняются."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:35:25+03:00",
+      "note": "Source-only generic AHAP port; only ahap.rs and ahap_opencode.rs; no Cargo/lib/schema or native sends.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:47:02+03:00",
+      "note": "Общий AHAP port параметризован trusted harness + initial SendMode; OpenCode Start сохранён. ZCode-shaped Queue receipt без nativeInputMessageId возвращает OutcomeUnknown и sendMessage вызван один раз. Opaque bounded session/message IDs и harness/instance mismatch покрыты. cargo focused tests 11/11; изменены только ahap.rs и ahap_opencode.rs; source commit ещё впереди.",
+      "changes": {},
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:50:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Опубликован source commit 5fb51d959d1bae8d3c7f5db407f866d889530ab4 на origin/main; remote readback HEAD == origin/main. Включены только crates/herder/src/adapters/ahap.rs и crates/herder/src/adapters/ahap_opencode.rs. Точный policy signature hunk: ahap_opencode.rs:33-36 `AhapPortPolicy { harness: String, initial_delivery_mode: SendMode }`; ahap_opencode.rs:56-62 `AhapOpenCode::new_with_policy(client, instance, cwd, name, policy) -> Result<Self, RegistryUnavailable>`; ahap.rs:270-273 `AhapClient::harness() -> &str` returns initialize-verified harness. Старый AhapOpenCode::new остаётся OpenCode/Start. Queue policy маппит только Queue; runner-shaped ZCode receipt {admitted:true,inputId,pending:true} без nativeInputMessageId остаётся OutcomeUnknown, один send, без retry или переименования inputId. Native IDs непрозрачны, непустые, <=4096 bytes, без control chars; harness/instance mismatch отказ до send. Evidence: `cargo test --manifest-path crates/herder/Cargo.toml --lib ahap -- --nocapture` — 11 passed; `rustfmt +stable --edition 2024 --check ...` и `git diff --check origin/main..HEAD` прошли. Cargo/lib/schema/owner_launch/scoped_profile не менялись; native sends не выполнялись. Terra integration и OpenCode TS fix остаются отдельными."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "result": "Опубликован source commit 5fb51d959d1bae8d3c7f5db407f866d889530ab4 на origin/main; remote readback HEAD == origin/main. Включены только crates/herder/src/adapters/ahap.rs и crates/herder/src/adapters/ahap_opencode.rs. Точный policy signature hunk: ahap_opencode.rs:33-36 `AhapPortPolicy { harness: String, initial_delivery_mode: SendMode }`; ahap_opencode.rs:56-62 `AhapOpenCode::new_with_policy(client, instance, cwd, name, policy) -> Result<Self, RegistryUnavailable>`; ahap.rs:270-273 `AhapClient::harness() -> &str` returns initialize-verified harness. Старый AhapOpenCode::new остаётся OpenCode/Start. Queue policy маппит только Queue; runner-shaped ZCode receipt {admitted:true,inputId,pending:true} без nativeInputMessageId остаётся OutcomeUnknown, один send, без retry или переименования inputId. Native IDs непрозрачны, непустые, <=4096 bytes, без control chars; harness/instance mismatch отказ до send. Evidence: `cargo test --manifest-path crates/herder/Cargo.toml --lib ahap -- --nocapture` — 11 passed; `rustfmt +stable --edition 2024 --check ...` и `git diff --check origin/main..HEAD` прошли. Cargo/lib/schema/owner_launch/scoped_profile не менялись; native sends не выполнялись. Terra integration и OpenCode TS fix остаются отдельными."
+}

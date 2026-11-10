@@ -1,0 +1,5 @@
+ISOLATED_RETAINED_ROOT /tmp/herder-retain-inode-green
+INSIDE_INODE 66307 24396383
+ISOLATED_FAILURE_RETAINED /tmp/herder-retain-inode-green
+HOST_INODE 66307 24396383 unknown-no-replay
+PASS retained host file has the same device and inode as sandbox file

@@ -1,0 +1,11 @@
+
+ RUN  v4.1.10 /tmp/herder-fast-threeway-fMudhW
+
+(node:1008645) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  20:00:14
+   Duration  1.92s (transform 288ms, setup 85ms, import 251ms, tests 1.32s, environment 0ms)
+

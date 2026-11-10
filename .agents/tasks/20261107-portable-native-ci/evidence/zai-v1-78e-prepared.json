@@ -1,0 +1,11 @@
+{
+  "manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-78e747befinal/manifest.json",
+  "manifest_sha256": "bf570d1074d35a2a75322dab404b8c04a5a1bd27cf9a8f9a53eb638b6e813f5c",
+  "consumer_helpers": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py",
+  "harness": "zai",
+  "stage": "candidate",
+  "instance": "ci-zai-v1-78-independent",
+  "run_id": "ci-zai-v1-78-independent-01",
+  "run_root": "/home/roomhacker/herder-artifacts/ci-runs/ci-zai-v1-78-independent-01",
+  "handoff": "PENDING target, claim and account scope; do not run"
+}

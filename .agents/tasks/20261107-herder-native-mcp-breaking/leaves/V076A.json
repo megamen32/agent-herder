@@ -1,31 +1,29 @@
 {
   "id": "V076A",
   "label": "ZCode: Привязать interrupt к точному native turn",
-  "description": "ZCode: Привязать interrupt к точному native turn. Частный результат исходного V076: Только доказанные stop/model/permission methods; unsupported явно, не успех. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V071, V025, V034, V032.",
-  "acceptance": "Получен проверяемый результат: ZCode: Привязать interrupt к точному native turn. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "description": "ZCode source/fake exact native-turn interrupt port на основании старого рабочего adapter/native evidence. Если native protocol не позволяет атомарную exact turn корреляцию — явный unsupported до эффекта. Реальный stop и общий HumanStop gate отдельно в V076.",
+  "acceptance": "Source regression exact/stale turn и unavailable/unsupported, без native/model/stop calls. Нет blind session-wide cancel при неизвестной корреляции. Reuse existing port/DTO/receipts; owned new ZCode file и минимальный registration handoff.",
   "depends_on": [
-    "V071",
-    "V025",
-    "V034",
-    "V032"
+    "V071"
   ],
   "affected_files": [
-    "crates/herder/src/adapters/zcode/control.rs"
+    "crates/herder/src/adapters/zcode/control.rs",
+    "acceptance/native/zcode/interrupt-capability.json"
   ],
   "parent": "S05",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V076 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V076 обязателен в конце цепочки.",
+  "note": "Готовая независимая работа после принятого f5f27200. V072D UNKNOWN строго без replay, реальный stop не выполняется. Не ждать permission/quota финальных consumers для source interrupt boundary.",
   "created_at": "2026-11-07T03:52:26+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:26+03:00",
+  "updated_at": "2026-11-07T14:19:42+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:26+03:00",
@@ -57,6 +55,46 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:11:38+03:00",
+      "note": "Убраны несвязанные final-runtime dependencies из source exact-turn среза, итоговый gate сохранён отдельно.",
+      "changes": {
+        "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "depends_on": [
+          "V071"
+        ],
+        "description": "ZCode source/fake exact native-turn interrupt port на основании старого рабочего adapter/native evidence. Если native protocol не позволяет атомарную exact turn корреляцию — явный unsupported до эффекта. Реальный stop и общий HumanStop gate отдельно в V076.",
+        "acceptance": "Source regression exact/stale turn и unavailable/unsupported, без native/model/stop calls. Нет blind session-wide cancel при неизвестной корреляции. Reuse existing port/DTO/receipts; owned new ZCode file и минимальный registration handoff.",
+        "note": "Готовая независимая работа после принятого f5f27200. V072D UNKNOWN строго без replay, реальный stop не выполняется. Не ждать permission/quota финальных consumers для source interrupt boundary."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:15:46+03:00",
+      "note": "Source-only exact-turn interrupt boundary. Reuse existing ZCode stopGeneration evidence; no native read/stop/create/send/model. Do not touch shared lib.rs/Cargo registration.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:19:42+03:00",
+      "note": "V076A source/fake boundary complete; unsupported is deliberate because stopGeneration is session-scoped. Shared registration remains Terra-owned; final HumanStop/consumer V076 gate remains separate.",
+      "changes": {
+        "status": "done",
+        "result": "Commit f51058ef adds adapters::zcode::control::interrupt_exact and synthetic source contract fixture. The existing native API is stopGeneration(taskId); legacy adapter obtains activeTurnId only through preflight, not an atomic turn guard. Matching observation returns Unsupported without a native-call interface; stale, unknown, foreign-instance, empty/oversized inputs return DefinitelyNotSent. Source harness compiled actual zcode connection.rs and ran 2 named V076A tests PASS. Evidence: review-evidence/V076A/source-tests.txt. No native stop/read/create/send/model action; no lib.rs/Cargo registration or consumer proof.",
+        "affected_files": [
+          "crates/herder/src/adapters/zcode/control.rs",
+          "acceptance/native/zcode/interrupt-capability.json"
+        ]
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Commit f51058ef adds adapters::zcode::control::interrupt_exact and synthetic source contract fixture. The existing native API is stopGeneration(taskId); legacy adapter obtains activeTurnId only through preflight, not an atomic turn guard. Matching observation returns Unsupported without a native-call interface; stale, unknown, foreign-instance, empty/oversized inputs return DefinitelyNotSent. Source harness compiled actual zcode connection.rs and ran 2 named V076A tests PASS. Evidence: review-evidence/V076A/source-tests.txt. No native stop/read/create/send/model action; no lib.rs/Cargo registration or consumer proof."
 }

@@ -1,0 +1,40 @@
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.266s
+
+OK
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: installed PID consumer CI receipt verifier not implemented
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: installed PID consumer CI receipt verifier not implemented
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved

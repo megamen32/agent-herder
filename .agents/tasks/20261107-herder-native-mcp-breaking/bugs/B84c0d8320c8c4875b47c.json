@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T17:01:36+00:00",
+  "details": "The preflight called require_runner_route_compat(api_family) with an implicit v2 default and treated any HTTP 200 /api/config, including JSON null or malformed JSON, as v2. The exact retained OpenCode config was HTTP 200 JSON array while the previous runner selected v22 and used POST /session, which returned 405 and the prior create operation became UNKNOWN. QOCPREFLIGHT now compares the server read-only family with nativeProtocol from the exact runner initialize response and fails closed on unknown/malformed selection. Offline regression evidence is stored in QOCPREFLIGHT-red.txt and QOCPREFLIGHT-green.txt; no native create/send was run.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "at": "2026-11-07T17:01:36+00:00",
+      "changes": {
+        "details": "The preflight called require_runner_route_compat(api_family) with an implicit v2 default and treated any HTTP 200 /api/config, including JSON null or malformed JSON, as v2. The exact retained OpenCode config was HTTP 200 JSON array while the previous runner selected v22 and used POST /session, which returned 405 and the prior create operation became UNKNOWN. QOCPREFLIGHT now compares the server read-only family with nativeProtocol from the exact runner initialize response and fails closed on unknown/malformed selection. Offline regression evidence is stored in QOCPREFLIGHT-red.txt and QOCPREFLIGHT-green.txt; no native create/send was run.",
+        "source": "evidence/QOCPREFLIGHT-red.txt",
+        "status": "open",
+        "title": "AHAP preflight assumed v2 instead of reading runner protocol"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "at": "2026-11-07T17:03:56+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/QOCPREFLIGHT-green.txt",
+            "red_proof_path": "evidence/QOCPREFLIGHT-red.txt",
+            "red_result": "FAILED (failures=1, errors=5)",
+            "red_sha256": "d75b5b220b33f88bee9a0b7749a5c5227d8013d3f66b73d187f7a1cc6caf4062",
+            "result": "RESULT: 16 tests passed (unittest reported OK).",
+            "sha256": "a4ebe82c85519c54438014d40b45e8e077e9c0580e3a7fd188c64b4348037496",
+            "test_command": "python3 -m unittest discover -s tests/native -p test_ahap_opencode_stand.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B84c0d8320c8c4875b47c",
+  "owner": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "reporter": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/QOCPREFLIGHT-green.txt",
+      "red_proof_path": "evidence/QOCPREFLIGHT-red.txt",
+      "red_result": "FAILED (failures=1, errors=5)",
+      "red_sha256": "d75b5b220b33f88bee9a0b7749a5c5227d8013d3f66b73d187f7a1cc6caf4062",
+      "result": "RESULT: 16 tests passed (unittest reported OK).",
+      "sha256": "a4ebe82c85519c54438014d40b45e8e077e9c0580e3a7fd188c64b4348037496",
+      "test_command": "python3 -m unittest discover -s tests/native -p test_ahap_opencode_stand.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/QOCPREFLIGHT-red.txt",
+  "status": "fixed",
+  "title": "AHAP preflight assumed v2 instead of reading runner protocol",
+  "updated_at": "2026-11-07T17:03:56+00:00"
+}

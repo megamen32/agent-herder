@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T13:47:06+00:00",
+  "details": "Изолированные реальные приложения на server-44 после создания сессий и ответа получают 422 unsupported native JSONL harness при постраничном запросе через Herder, несмотря на найденный адаптером native export; интеграция и повтор выполняются.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T13:47:06+00:00",
+      "changes": {
+        "details": "Изолированные реальные приложения на server-44 после создания сессий и ответа получают 422 unsupported native JSONL harness при постраничном запросе через Herder, несмотря на найденный адаптером native export; интеграция и повтор выполняются.",
+        "source": "scripts/native-hermes-transcript-receipt.json; scripts/native-fast-agent-candidate-server44-receipt.json",
+        "status": "open",
+        "title": "HTTP transcript отклоняет поддерживаемые native экспорты Hermes и Fast Agent"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L04",
+      "at": "2026-11-06T14:24:27+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/native-transcript-regression-proof.json",
+            "result": "PASS",
+            "sha256": "ef962de58fd1c342a9660d55d1b9ad866c509f833c213e313501f4fb67c4f180",
+            "test_command": "npx vitest run --root . --config vitest.config.ts tests/hermes-native-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/fast-agent-integrator-transcript.test.ts tests/fast-agent-file-adapter.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbd29cc3debc64bfc8177",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/native-transcript-regression-proof.json",
+      "result": "PASS",
+      "sha256": "ef962de58fd1c342a9660d55d1b9ad866c509f833c213e313501f4fb67c4f180",
+      "test_command": "npx vitest run --root . --config vitest.config.ts tests/hermes-native-transcript.test.ts tests/hermes-integrator-transcript.test.ts tests/fast-agent-integrator-transcript.test.ts tests/fast-agent-file-adapter.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "scripts/native-hermes-transcript-receipt.json; scripts/native-fast-agent-candidate-server44-receipt.json",
+  "status": "fixed",
+  "title": "HTTP transcript отклоняет поддерживаемые native экспорты Hermes и Fast Agent",
+  "updated_at": "2026-11-06T14:24:27+00:00"
+}

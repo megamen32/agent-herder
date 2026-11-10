@@ -1,0 +1,1084 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+FFFFFFFFFFFFFFFF                                                         [100%]
+=================================== FAILURES ===================================
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-value0] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea0', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea0/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0ed5bd0>
+value = ['/original/path'], target = 'result'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-value1] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea1', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea1/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0ff2b90>
+value = {'nested': [None, False, 42, 'Юникод\n']}, target = 'result'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-] __
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea2', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea2/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0faed10>, value = ''
+target = 'result'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-None] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea3', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea3/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f1971270>, value = None
+target = 'result'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-value0] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea4', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea4/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0fa1450>
+value = ['/original/path'], target = 'note'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-value1] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea5', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea5/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0f838e0>
+value = {'nested': [None, False, 42, 'Юникод\n']}, target = 'note'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+__ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-] ___
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea6', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea6/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0fe2d10>, value = ''
+target = 'note'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-None] _
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['repair-move-field', '/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea7', 'L01', '--source', 'evidence', '--target', ...]
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+
+/usr/lib/python3.10/argparse.py:1878: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.10/argparse.py:2073: in _parse_known_args
+    positionals_end_index = consume_positionals(start_index)
+/usr/lib/python3.10/argparse.py:2050: in consume_positionals
+    take_action(action, args)
+/usr/lib/python3.10/argparse.py:1939: in take_action
+    argument_values = self._get_values(action, argument_strings)
+/usr/lib/python3.10/argparse.py:2484: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'buil...ss=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=True, help=None, metavar=None)
+value = 'repair-move-field'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+
+/usr/lib/python3.10/argparse.py:2531: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cli_repairs_malformed_lea7/leaves/L01.json')
+capsys = <_pytest.capture.CaptureFixture object at 0x7897f0ee1ed0>, value = None
+target = 'note'
+
+    @pytest.mark.parametrize("value", [["/original/path"], {"nested": [None, False, 42, "Юникод\n"]}, "", None])
+    @pytest.mark.parametrize("target", ["result", "note"])
+    def test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes(broken, capsys, value, target):
+        raw = json.loads(broken.read_bytes())
+        raw["evidence"] = value
+        broken.write_text(json.dumps(raw, ensure_ascii=False) + "\n")
+        before = broken.read_bytes()
+        digest = hashlib.sha256(before).hexdigest()
+        with pytest.raises(plan.LeafError):
+            plan.update_leaf(broken.parent.parent, "L01", {"status": "waiting"})
+>       assert plan.main(["repair-move-field", str(broken.parent.parent), "L01",
+                          "--source", "evidence", "--target", target,
+                          "--expected-hash", digest]) == 0
+
+tests/test_plan_repair_field.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/common/tools/lhc_plan_json.py:2339: in main
+    args = parser.parse_args(argv)
+/usr/lib/python3.10/argparse.py:1845: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+/usr/lib/python3.10/argparse.py:1881: in parse_known_args
+    self.error(str(err))
+/usr/lib/python3.10/argparse.py:2606: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='lhc_plan_json.py', usage=None, description='Collect the leaf files of a plan into one plan.graph.json.', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'c...ate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/lib/python3.10/argparse.py:2593: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: lhc_plan_json.py [-h]
+                        {build-plan,build,check,activate,create-leaf,update-leaf,progress,show,update-plan,worker-register,worker-finish,report}
+                        ...
+lhc_plan_json.py: error: argument command: invalid choice: 'repair-move-field' (choose from 'build-plan', 'build', 'check', 'activate', 'create-leaf', 'update-leaf', 'progress', 'show', 'update-plan', 'worker-register', 'worker-finish', 'report')
+_ test_rejects_unsafe_requests_without_writes[evidence-note-0000000000000000000000000000000000000000000000000000000000000000-\u043a\u043e\u043d\u0444\u043b\u0438\u043a\u0442] _
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_rejects_unsafe_requests_w0/leaves/L01.json')
+source = 'evidence', target = 'note'
+digest = '0000000000000000000000000000000000000000000000000000000000000000'
+message = 'конфликт'
+
+    @pytest.mark.parametrize("source,target,digest,message", [
+        ("evidence", "note", "0" * 64, "конфликт"),
+        ("status", "note", None, "known"),
+        ("evidence", "status", None, "target"),
+        ("missing", "note", None, "missing"),
+        ("evidence", "note", "", "hash"),
+    ])
+    def test_rejects_unsafe_requests_without_writes(broken, source, target, digest, message):
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError, match=message):
+>           plan.repair_move_field(broken.parent.parent, "L01", source=source, target=target,
+                                   expected_hash=digest if digest is not None else hashlib.sha256(before).hexdigest())
+E           AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:74: AttributeError
+_____ test_rejects_unsafe_requests_without_writes[status-note-None-known] ______
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_rejects_unsafe_requests_w1/leaves/L01.json')
+source = 'status', target = 'note', digest = None, message = 'known'
+
+    @pytest.mark.parametrize("source,target,digest,message", [
+        ("evidence", "note", "0" * 64, "конфликт"),
+        ("status", "note", None, "known"),
+        ("evidence", "status", None, "target"),
+        ("missing", "note", None, "missing"),
+        ("evidence", "note", "", "hash"),
+    ])
+    def test_rejects_unsafe_requests_without_writes(broken, source, target, digest, message):
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError, match=message):
+>           plan.repair_move_field(broken.parent.parent, "L01", source=source, target=target,
+                                   expected_hash=digest if digest is not None else hashlib.sha256(before).hexdigest())
+E           AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:74: AttributeError
+___ test_rejects_unsafe_requests_without_writes[evidence-status-None-target] ___
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_rejects_unsafe_requests_w2/leaves/L01.json')
+source = 'evidence', target = 'status', digest = None, message = 'target'
+
+    @pytest.mark.parametrize("source,target,digest,message", [
+        ("evidence", "note", "0" * 64, "конфликт"),
+        ("status", "note", None, "known"),
+        ("evidence", "status", None, "target"),
+        ("missing", "note", None, "missing"),
+        ("evidence", "note", "", "hash"),
+    ])
+    def test_rejects_unsafe_requests_without_writes(broken, source, target, digest, message):
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError, match=message):
+>           plan.repair_move_field(broken.parent.parent, "L01", source=source, target=target,
+                                   expected_hash=digest if digest is not None else hashlib.sha256(before).hexdigest())
+E           AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:74: AttributeError
+____ test_rejects_unsafe_requests_without_writes[missing-note-None-missing] ____
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_rejects_unsafe_requests_w3/leaves/L01.json')
+source = 'missing', target = 'note', digest = None, message = 'missing'
+
+    @pytest.mark.parametrize("source,target,digest,message", [
+        ("evidence", "note", "0" * 64, "конфликт"),
+        ("status", "note", None, "known"),
+        ("evidence", "status", None, "target"),
+        ("missing", "note", None, "missing"),
+        ("evidence", "note", "", "hash"),
+    ])
+    def test_rejects_unsafe_requests_without_writes(broken, source, target, digest, message):
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError, match=message):
+>           plan.repair_move_field(broken.parent.parent, "L01", source=source, target=target,
+                                   expected_hash=digest if digest is not None else hashlib.sha256(before).hexdigest())
+E           AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:74: AttributeError
+_______ test_rejects_unsafe_requests_without_writes[evidence-note--hash] _______
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_rejects_unsafe_requests_w4/leaves/L01.json')
+source = 'evidence', target = 'note', digest = '', message = 'hash'
+
+    @pytest.mark.parametrize("source,target,digest,message", [
+        ("evidence", "note", "0" * 64, "конфликт"),
+        ("status", "note", None, "known"),
+        ("evidence", "status", None, "target"),
+        ("missing", "note", None, "missing"),
+        ("evidence", "note", "", "hash"),
+    ])
+    def test_rejects_unsafe_requests_without_writes(broken, source, target, digest, message):
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError, match=message):
+>           plan.repair_move_field(broken.parent.parent, "L01", source=source, target=target,
+                                   expected_hash=digest if digest is not None else hashlib.sha256(before).hexdigest())
+E           AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:74: AttributeError
+___________________ test_cas_reads_inside_existing_plan_lock ___________________
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cas_reads_inside_existing0/leaves/L01.json')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7897f0fe0e50>
+
+    def test_cas_reads_inside_existing_plan_lock(broken, monkeypatch):
+        before = broken.read_bytes()
+        changed = before + b"\n"
+        @contextlib.contextmanager
+        def competing_writer(lock):
+            assert lock == broken.parent.parent / ".lhc-leaves.lock"
+            broken.write_bytes(changed)
+            yield
+        monkeypatch.setattr(plan, "file_lock", competing_writer)
+        with pytest.raises(plan.LeafError, match="конфликт"):
+>           repair(broken)
+
+tests/test_plan_repair_field.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_cas_reads_inside_existing0/leaves/L01.json')
+kwargs = {}
+
+    def repair(path, **kwargs):
+>       return plan.repair_move_field(path.parent.parent, path.stem,
+                                     source="evidence", target="note",
+                                     expected_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+                                     **kwargs)
+E       AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:29: AttributeError
+________________ test_backup_failure_leaves_original_untouched _________________
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_backup_failure_leaves_ori0/leaves/L01.json')
+
+    def test_backup_failure_leaves_original_untouched(broken):
+        before = broken.read_bytes()
+        (broken.parent.parent / ".lhc-repair-backups").write_text("not a directory")
+        with pytest.raises(OSError):
+>           repair(broken)
+
+tests/test_plan_repair_field.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_backup_failure_leaves_ori0/leaves/L01.json')
+kwargs = {}
+
+    def repair(path, **kwargs):
+>       return plan.repair_move_field(path.parent.parent, path.stem,
+                                     source="evidence", target="note",
+                                     expected_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+                                     **kwargs)
+E       AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:29: AttributeError
+_______________ test_other_unknown_field_is_not_silently_dropped _______________
+
+broken = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_other_unknown_field_is_no0/leaves/L01.json')
+
+    def test_other_unknown_field_is_not_silently_dropped(broken):
+        raw = json.loads(broken.read_bytes())
+        raw["another_unknown"] = 7
+        broken.write_text(json.dumps(raw))
+        before = broken.read_bytes()
+        with pytest.raises(plan.LeafError):
+>           repair(broken)
+
+tests/test_plan_repair_field.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/.tmp/pytest-3572508-f622462fad7b7101/test_other_unknown_field_is_no0/leaves/L01.json')
+kwargs = {}
+
+    def repair(path, **kwargs):
+>       return plan.repair_move_field(path.parent.parent, path.stem,
+                                     source="evidence", target="note",
+                                     expected_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+                                     **kwargs)
+E       AttributeError: module 'lhc_plan_json' has no attribute 'repair_move_field'
+
+tests/test_plan_repair_field.py:29: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-value0]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-value1]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[result-None]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-value0]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-value1]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-]
+FAILED tests/test_plan_repair_field.py::test_cli_repairs_malformed_leaf_preserving_value_history_and_bytes[note-None]
+FAILED tests/test_plan_repair_field.py::test_rejects_unsafe_requests_without_writes[evidence-note-0000000000000000000000000000000000000000000000000000000000000000-\u043a\u043e\u043d\u0444\u043b\u0438\u043a\u0442]
+FAILED tests/test_plan_repair_field.py::test_rejects_unsafe_requests_without_writes[status-note-None-known]
+FAILED tests/test_plan_repair_field.py::test_rejects_unsafe_requests_without_writes[evidence-status-None-target]
+FAILED tests/test_plan_repair_field.py::test_rejects_unsafe_requests_without_writes[missing-note-None-missing]
+FAILED tests/test_plan_repair_field.py::test_rejects_unsafe_requests_without_writes[evidence-note--hash]
+FAILED tests/test_plan_repair_field.py::test_cas_reads_inside_existing_plan_lock
+FAILED tests/test_plan_repair_field.py::test_backup_failure_leaves_original_untouched
+FAILED tests/test_plan_repair_field.py::test_other_unknown_field_is_not_silently_dropped
+16 failed in 3.48s

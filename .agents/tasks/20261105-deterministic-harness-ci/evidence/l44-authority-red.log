@@ -1,0 +1,33 @@
+EE
+======================================================================
+ERROR: test_authority_delivers_context_without_capabilities_and_fences_every_read (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-HrlIkW/tests/test_l44_authority_context.py", line 16, in test_authority_delivers_context_without_capabilities_and_fences_every_read
+    a,c,g,_=self.setup_authority();reply=a.handle(request(c,2,'ci-draft'))
+  File "/tmp/herder-l44-authority-HrlIkW/tests/test_l44_authority_context.py", line 9, in setup_authority
+    c=contract(Path('/tmp/test-fleet'));c['descriptor']=validate_node({**c['descriptor'],'harnesses':['codex','fast-agent']});c['descriptorDigest']=descriptor_digest(c['descriptor'])
+  File "/tmp/herder-l44-authority-HrlIkW/deploy/fleet/deployment_config.py", line 50, in validate_node
+    fail()
+  File "/tmp/herder-l44-authority-HrlIkW/deploy/fleet/deployment_config.py", line 28, in fail
+    raise RuntimeError("release_deployment_config_refused")
+RuntimeError: release_deployment_config_refused
+
+======================================================================
+ERROR: test_missing_spoofed_policy_or_target_cannot_create_context (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-HrlIkW/tests/test_l44_authority_context.py", line 22, in test_missing_spoofed_policy_or_target_cannot_create_context
+    a,c,g,d=self.setup_authority()
+  File "/tmp/herder-l44-authority-HrlIkW/tests/test_l44_authority_context.py", line 9, in setup_authority
+    c=contract(Path('/tmp/test-fleet'));c['descriptor']=validate_node({**c['descriptor'],'harnesses':['codex','fast-agent']});c['descriptorDigest']=descriptor_digest(c['descriptor'])
+  File "/tmp/herder-l44-authority-HrlIkW/deploy/fleet/deployment_config.py", line 50, in validate_node
+    fail()
+  File "/tmp/herder-l44-authority-HrlIkW/deploy/fleet/deployment_config.py", line 28, in fail
+    raise RuntimeError("release_deployment_config_refused")
+RuntimeError: release_deployment_config_refused
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+FAILED (errors=2)

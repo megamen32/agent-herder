@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/packages/agent-resume
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  22:17:44
+   Duration  462ms (transform 153ms, setup 0ms, import 191ms, tests 35ms, environment 0ms)
+

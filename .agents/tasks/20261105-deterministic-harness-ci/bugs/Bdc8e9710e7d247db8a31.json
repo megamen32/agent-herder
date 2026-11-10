@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T00:51:44+00:00",
+  "details": "Изолированный настоящий dist/index.js создал и завершил Codex-сессию, но запрос её транскрипта вернул HTTP 422: app-server использовал CODEX_HOME, а reader — стандартный ~/.codex. RED воспроизведён тестом; исправление сохраняет приоритет явного CODEX_DATA_DIR.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T00:51:44+00:00",
+      "changes": {
+        "details": "Изолированный настоящий dist/index.js создал и завершил Codex-сессию, но запрос её транскрипта вернул HTTP 422: app-server использовал CODEX_HOME, а reader — стандартный ~/.codex. RED воспроизведён тестом; исправление сохраняет приоритет явного CODEX_DATA_DIR.",
+        "source": "server-44 entrypoint-first.err; tests/codex-app-server-home-transcript.test.ts",
+        "status": "open",
+        "title": "Codex app-server ищет транскрипт не в CODEX_HOME"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-06T01:05:10+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-entrypoint-final.json",
+            "result": "PASS",
+            "sha256": "a20f6c5a2d0b91393a68a7f87067c05a061c048f0dc426463f096088c58b9677",
+            "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bdc8e9710e7d247db8a31",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-entrypoint-final.json",
+      "result": "PASS",
+      "sha256": "a20f6c5a2d0b91393a68a7f87067c05a061c048f0dc426463f096088c58b9677",
+      "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 entrypoint-first.err; tests/codex-app-server-home-transcript.test.ts",
+  "status": "fixed",
+  "title": "Codex app-server ищет транскрипт не в CODEX_HOME",
+  "updated_at": "2026-11-06T01:05:10+00:00"
+}

@@ -1,0 +1,76 @@
+{
+  "id": "V025CREATEINPUT",
+  "parent": "S01",
+  "kind": "task",
+  "label": "Объяснить причину неправильного create input и исправление",
+  "description": "Узкая diagnostic delta mcp_create.rs: distinct unsupported project_ref, empty prompt, malformed request_key и instance mismatch. Без раскрытия чужих данных.",
+  "acceptance": "Ответ содержит проблемное поле, expected form и конкретное исправление; ноль create/send при invalid input. Generic unauthorized не раскрывает чужие ресурсы.",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 10
+  },
+  "depends_on": [
+    "V025CREATETASK"
+  ],
+  "note": "Local 18270c63 adds fake MCP wire proof that unauthorized principal receives generic unauthorized before input diagnostics, with no marker/resource leak or create/submit/intent. Offline suite scoped_stop_gate 34 passed 1 ignored, launcher 10, schema 2, pinned 2, target_port 1 passed. Source review still pending; no native consumer claim.",
+  "created_at": "2026-11-07T14:12:30+03:00",
+  "updated_at": "2026-11-07T14:33:38+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T14:12:30+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025CREATEINPUT",
+        "parent": "S01",
+        "kind": "task",
+        "label": "Объяснить причину неправильного create input и исправление",
+        "description": "Узкая diagnostic delta mcp_create.rs: distinct unsupported project_ref, empty prompt, malformed request_key и instance mismatch. Без раскрытия чужих данных.",
+        "acceptance": "Ответ содержит проблемное поле, expected form и конкретное исправление; ноль create/send при invalid input. Generic unauthorized не раскрывает чужие ресурсы.",
+        "status": "queued",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 10
+        },
+        "depends_on": [
+          "V025CREATETASK"
+        ],
+        "note": "Defect уже передан Tesla; после текущего критического Task reconciliation, не задерживать готовый handoff Terra. Исправление интерфейса соответствует прямой философии владельца."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:20:51+03:00",
+      "note": "Готов точечный source delta и проверки; независимый review ещё не выполнен.",
+      "changes": {
+        "status": "running",
+        "note": "Локальный delta 3fe988fa поверх dfe5f79a: instance_mismatch, project_unsupported, prompt_required, request_key_invalid возвращают общий Diagnostic + поле, безопасную причину, ожидаемую форму и конкретное correction без echo prompt/project/key. Fake wire проверяет effect=none, 0 create/submit/intents; unauthorized остаётся общим. B d6f0b668cf7846ffbeeb fixed с RED/GREEN. Общий offline scoped 34 PASS/1 ignored, launcher 10, schema/gate 4, target 1. Нужен независимый source review; public consumer отдельно."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:31:19+03:00",
+      "note": "",
+      "changes": {
+        "note": "Local 18270c63 adds fake MCP wire proof that unauthorized principal receives generic unauthorized before input diagnostics, with no marker/resource leak or create/submit/intent. Offline suite scoped_stop_gate 34 passed 1 ignored, launcher 10, schema 2, pinned 2, target_port 1 passed. Source review still pending; no native consumer claim."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:33:38+03:00",
+      "note": "Независимая проверка диагностик завершена; не считать native consumer выполненным.",
+      "changes": {
+        "status": "done",
+        "result": "Astra independent source review 3fe988fa + 18270c63 SUPPORTED. Clean immutable worker HEAD18270c63: targeted fake wire test passed 1/1. Four actionable field diagnostics with correction/effect=none, authorization precedes diagnostics; no prompt/key/project echo, zero create/submit/intents. Source proof only; V025PUBLIC remains separate."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Astra independent source review 3fe988fa + 18270c63 SUPPORTED. Clean immutable worker HEAD18270c63: targeted fake wire test passed 1/1. Four actionable field diagnostics with correction/effect=none, authorization precedes diagnostics; no prompt/key/project echo, zero create/submit/intents. Source proof only; V025PUBLIC remains separate."
+}

@@ -1,0 +1,8 @@
+(node:3) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: none
+[agent-herder] native CI disabled: isolated configuration or peer verification failed
+[agent-herder] Web UI listening on http://127.0.0.1:54671
+(node:3) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -1,0 +1,149 @@
+{
+  "id": "V025GUARD1",
+  "label": "Проверить HumanStop в атомарном admission",
+  "description": "Единый scoped HumanStop authority для fresh isolated create, immutable mapping/generation в SQLite, межпроцессный общий gate stop и native handoff; existing/imported без handoff denied.",
+  "acceptance": "Barrier-тесты stop до claim, между claim/handoff, handoff до stop c interrupt/UNKNOWN/no replay и fresh create→deliver→read→stop→denied; без sleeps и live migration.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/application/reconcile.rs"
+  ],
+  "created_at": "2026-11-07T07:30:39+03:00",
+  "updated_at": "2026-11-07T11:24:30+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T07:30:39+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025GUARD1",
+        "label": "Проверить HumanStop в атомарном admission",
+        "description": "Воспроизвести stop после snapshot, закрыть небезопасный dispatch только в reconcile, не меняя файлы миграции Dirac.",
+        "acceptance": "Активный или непроверенный hold не вызывает native submit; транзакционная гарантия и пределы authority подтверждены на isolated SQLite.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/application/reconcile.rs"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:31:01+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:37:31+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Нет проверенного cutover legacy HumanStop JSON → authoritative SQLite holds и общей сериализации stop/claim; schema/store принадлежат Dirac.",
+        "result": "RED: active SQLite hold before claim still produces Admitted; exact test and output in .tmp/humanstop-guard. SQLite lock-order experiment and source evidence committed ae133428; no production fix or native consumer proof."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:40:44+03:00",
+      "note": "",
+      "changes": {
+        "blocker": "Не завершён cutover legacy HumanStop JSON → authoritative SQLite holds и общая сериализация stop/claim; schema/store принадлежат Dirac.",
+        "result": "e7b599e1: active hold предотвращает claim внутри IMMEDIATE; отсутствующая authoritative state fail-closed, intent остаётся prepared. RED/GREEN в .tmp/humanstop-guard. Временный gate блокирует все новые отправки; 3 прежних reconcile success tests FAIL до интеграции authority. Native consumer не проверен."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:03:26+03:00",
+      "note": "Lead продолжает scoped authority и межпроцессный gate после handoff; только isolated scope, неизвестные denied.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "blocker_details": {}
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:05:09+03:00",
+      "note": "Worker 01a1b3c3-f4cc-7780-b360-22eadc8f48ff registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T08:05:09+03:00"
+        },
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:06:42+03:00",
+      "note": "Прямое поручение владельца расширило первоначальный fail-closed guard до единого scoped gate и native acceptance; остановленную сессию и её WIP не используем.",
+      "changes": {
+        "description": "Единый scoped HumanStop authority для fresh isolated create, immutable mapping/generation в SQLite, межпроцессный общий gate stop и native handoff; existing/imported без handoff denied.",
+        "acceptance": "Barrier-тесты stop до claim, между claim/handoff, handoff до stop c interrupt/UNKNOWN/no replay и fresh create→deliver→read→stop→denied; без sleeps и live migration."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:11:44+03:00",
+      "note": "Локальный scoped commit de8a35b6 на 3c56a3f3: RED исходного теста показал submit при активном hold; временный fail-closed запрещает claim при активном hold и при отсутствии authority, GREEN human_stop_admission. Не является scoped gate: не реализованы atomic fresh provisioning/generation, общий interprocess stop+handoff и interrupt; три прежних positive reconcile tests теперь FAIL из-за отсутствия authority, не скрыты. Legacy HumanStop владеет отдельным JSON, v2 SQLite не содержит generation/общих hold scopes, CodexControl пока не реализует NativeSessionReader/NativeCreateControl или interrupt. Нужна завершённая интеграция и barrier/native proof; установка/live migration и push не проводились.",
+      "changes": {},
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:48:04+03:00",
+      "note": "Ожидает review, не считать завершённым.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимая проверка candidate 5c491e4c перед интеграцией",
+        "result": "Локальная серия завершена: 17 barrier tests, 98 library tests и isolated Codex create→deliver→read→interrupt→readback; тестовый bounded handoff не production. Продолжение штатного MCP/authority выделено V025PROD."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:24:30+03:00",
+      "note": "Закрыта только source-часть guard после review и интеграции; не закрывает V025/E001.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "blocker": "",
+        "result": "Scoped guard интегрирован в origin/main 61e51b66 после независимого SUPPORTED review ef7d145b; combined tests 130 passed, 1 live ignored. Ранее isolated Codex proof подтверждал create/deliver/read/interrupt/denied. Production bounded port, launcher и cutover вынесены в V025PROD; формальные RED/GREEN evidence для двух дефектов требуется оформить отдельно."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "blocker": "",
+  "result": "Scoped guard интегрирован в origin/main 61e51b66 после независимого SUPPORTED review ef7d145b; combined tests 130 passed, 1 live ignored. Ранее isolated Codex proof подтверждал create/deliver/read/interrupt/denied. Production bounded port, launcher и cutover вынесены в V025PROD; формальные RED/GREEN evidence для двух дефектов требуется оформить отдельно.",
+  "blocker_details": {},
+  "worker": {
+    "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+    "registered_at": "2026-11-07T08:05:09+03:00"
+  },
+  "wait_reason": ""
+}

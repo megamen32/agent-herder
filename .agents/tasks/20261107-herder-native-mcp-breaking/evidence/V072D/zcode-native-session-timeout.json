@@ -1,0 +1,24 @@
+{
+  "scope": "isolated ZCode native test session creation; bounded attempt only",
+  "isolation": "bubblewrap private network namespace, loopback-only; temporary HOME/XDG/server-root; local deterministic fake-model server; no personal credentials",
+  "attempt_1": {
+    "action": "zcode-agent.createSession once, before native project registration",
+    "outcome": "explicit native RPC rejection: project.remote-project-required",
+    "retry": "corrected test harness with exact legacy CI project.saveProject/readTree flow"
+  },
+  "attempt_2": {
+    "action": "project registration, then native createSession/sendPrompt/poll sequence for two unique test sessions",
+    "outcome": "writer subprocess timed out at 25 seconds; no per-step receipt or native session IDs were emitted; accepted native action state is UNKNOWN",
+    "fake_model_request_count": "UNKNOWN because the isolated server was terminated and stats were not captured before cleanup"
+  },
+  "state_inspection": {
+    "remaining_profile_files_before_cleanup": [
+      "home/.zcode/v2/runtime/provider/linux-x86_64/3.17.2/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin.json"
+    ],
+    "sqlite_session_database_found": false,
+    "native_status_or_session_receipt_found": false,
+    "matching_test_process_after_timeout": false
+  },
+  "cleanup": "temporary test processes exited; inspected leftover provider config removed; no global/current ZCode process or profile touched",
+  "replay": "NOT REPEATED because the second native create/send outcome is unknown"
+}

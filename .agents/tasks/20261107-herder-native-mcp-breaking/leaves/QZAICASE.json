@@ -1,0 +1,59 @@
+{
+  "kind": "task",
+  "status": "waiting",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QZAICASE",
+  "label": "Z.ai: проверить общий core с готовым site driver",
+  "parent": "S07",
+  "owner": "Browser worker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "depends_on": [
+    "QBROWSERJOIN"
+  ],
+  "description": "Переиспользовать общий CDP и существующий Z.ai driver/CI receipt. Один isolated fresh case в разрешённом target, приоритет после ChatGPT без лишнего dependency на чужой browser account.",
+  "acceptance": "Один native result с exact identity/account scope/transcript; UNKNOWN не повторён, не смешан с source tests.",
+  "created_at": "2026-11-07T18:15:41+03:00",
+  "updated_at": "2026-11-07T18:55:08+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:41+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QZAICASE",
+        "label": "Z.ai: проверить общий core с готовым site driver",
+        "parent": "S07",
+        "owner": "Browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "depends_on": [
+          "QBROWSERJOIN"
+        ],
+        "description": "Переиспользовать общий CDP и существующий Z.ai driver/CI receipt. Один isolated fresh case в разрешённом target, приоритет после ChatGPT без лишнего dependency на чужой browser account.",
+        "acceptance": "Один native result с exact identity/account scope/transcript; UNKNOWN не повторён, не смешан с source tests."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T18:55:08+03:00",
+      "note": "Владелец требует exact target lease для browser native case.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Требуются точные делегированные browser target/account scope и lease; текущая передача CISHARE не доказывает выделенный отдельный target.",
+        "note": "Не угадывать account/target и не запускать native до подтверждения конкретного lease."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "unknown"
+    }
+  ],
+  "wait_reason": "Требуются точные делегированные browser target/account scope и lease; текущая передача CISHARE не доказывает выделенный отдельный target.",
+  "note": "Не угадывать account/target и не запускать native до подтверждения конкретного lease."
+}

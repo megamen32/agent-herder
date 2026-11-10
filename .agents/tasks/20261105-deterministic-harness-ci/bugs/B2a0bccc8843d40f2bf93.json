@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T22:57:32+00:00",
+  "details": "Изолированный Claude Code 2.1.202 получает 404 на /v1/messages?beta=true; до исправления регрессионный тест воспроизводил 404.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-05T22:57:32+00:00",
+      "changes": {
+        "details": "Изолированный Claude Code 2.1.202 получает 404 на /v1/messages?beta=true; до исправления регрессионный тест воспроизводил 404.",
+        "source": "tests/test_native_model_server.py; receipt-claude-provider-diag.json",
+        "status": "open",
+        "title": "Лжемодель отклоняет стандартный запрос Claude Code с beta query"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-05T23:02:04+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-claude-provider-beta.json",
+            "result": "PASS",
+            "sha256": "68a90cb53f26bee5d73b3c6723d86f0315fbbad9add837f76087e03a2e9c5154",
+            "test_command": "python3 tests/test_native_model_server.py; native Claude provider probe on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B2a0bccc8843d40f2bf93",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-claude-provider-beta.json",
+      "result": "PASS",
+      "sha256": "68a90cb53f26bee5d73b3c6723d86f0315fbbad9add837f76087e03a2e9c5154",
+      "test_command": "python3 tests/test_native_model_server.py; native Claude provider probe on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/test_native_model_server.py; receipt-claude-provider-diag.json",
+  "status": "fixed",
+  "title": "Лжемодель отклоняет стандартный запрос Claude Code с beta query",
+  "updated_at": "2026-11-05T23:02:04+00:00"
+}

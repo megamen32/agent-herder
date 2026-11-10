@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-11-05T20:08:03+00:00",
+  "details": "Isolated real MiniMax Code 0.6.12 executed an explicit managed Flash turn; an exact-session CLI continuation through MinimaxCodeControl without a model override returned managed Flash-Preview. An explicit Flash continuation returned Flash but omitted providerKind. Full Herder adapter preflight and send were not exercised; preserve its model and receipt guards while investigating.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:08:03+00:00",
+      "changes": {
+        "details": "Isolated real MiniMax Code 0.6.12 started an explicitly selected managed Flash session; the Herder CLI continuation without a model override returned managed Flash-Preview. Herder's exact model receipt guard correctly rejects the mismatch after admission; investigate preserving the verified existing model before send.",
+        "source": "server-44 managed-control.out",
+        "status": "open",
+        "title": "MiniMax native continuation silently switches managed model"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:13:45+00:00",
+      "changes": {
+        "details": "Isolated real MiniMax Code 0.6.12 executed an explicit managed Flash turn; an exact-session CLI continuation through MinimaxCodeControl without a model override returned managed Flash-Preview. An explicit Flash continuation returned Flash but omitted providerKind. Full Herder adapter preflight and send were not exercised; preserve its model and receipt guards while investigating."
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:22:38+00:00",
+      "changes": {
+        "resolution": {
+          "kind": "false_positive",
+          "reason": "Native llm-call.json immediately after the initial explicit Flash turn already identifies Flash-Preview as the persisted session model. CLI help says --model is a per-run override. The following no-override continuation preserved that persisted model; it did not prove a session model switch. Separate evidence is needed for Herder's restricted model support."
+        },
+        "status": "false_positive"
+      }
+    }
+  ],
+  "id": "B48dd8e90445b43d9a3ff",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "kind": "false_positive",
+    "reason": "Native llm-call.json immediately after the initial explicit Flash turn already identifies Flash-Preview as the persisted session model. CLI help says --model is a per-run override. The following no-override continuation preserved that persisted model; it did not prove a session model switch. Separate evidence is needed for Herder's restricted model support."
+  },
+  "source": "server-44 managed-control.out",
+  "status": "false_positive",
+  "title": "MiniMax native continuation silently switches managed model",
+  "updated_at": "2026-11-05T20:22:38+00:00"
+}

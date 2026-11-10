@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T02:01:12+00:00",
+  "details": "Изолированный настоящий OpenCode с детерминированной моделью, Herder server-44 d2df618: создание и доставка завершились, GET transcript limit=1 вернул unsupported native JSONL harness. Не доказывает другие операции.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T02:01:12+00:00",
+      "changes": {
+        "details": "Изолированный настоящий OpenCode с детерминированной моделью, Herder server-44 d2df618: создание и доставка завершились, GET transcript limit=1 вернул unsupported native JSONL harness. Не доказывает другие операции.",
+        "source": "server-44 /tmp/herder-minci-01a1ac52/opencode-independent/err2.log",
+        "status": "open",
+        "title": "OpenCode: полный транскрипт отклоняется HTTP 422"
+      }
+    }
+  ],
+  "id": "Bd6546599746f4e59868f",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "server-44 /tmp/herder-minci-01a1ac52/opencode-independent/err2.log",
+  "status": "open",
+  "title": "OpenCode: полный транскрипт отклоняется HTTP 422",
+  "updated_at": "2026-11-07T02:01:12+00:00"
+}

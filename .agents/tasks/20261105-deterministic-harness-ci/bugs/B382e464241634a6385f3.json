@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:32:54+00:00",
+  "details": "В общем прогоне candidate Fast Agent не подтвердил held-active запрос к fixture; требуется установить первичную причину и повторить сценарий.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:32:54+00:00",
+      "changes": {
+        "details": "В общем прогоне candidate Fast Agent не подтвердил held-active запрос к fixture; требуется установить первичную причину и повторить сценарий.",
+        "source": "L33 integrated candidate run",
+        "status": "open",
+        "title": "Fast Agent: не достигнут удержанный запрос в общем CI"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "worker-fast-agent",
+      "at": "2026-11-06T17:17:30+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/fast-agent-b382-green.log",
+            "red_proof_path": "evidence/fast-agent-b382-red.log",
+            "red_result": "Tests  1 failed | 20 skipped (21)",
+            "red_sha256": "4833ccce094720e4f418ac0390e64c1bbfcb9769e41a16ec18fcc7ad0e3456a2",
+            "result": "Tests  1 passed | 20 skipped (21)",
+            "sha256": "d4f24adf454b5268f7f2fa315c4a01ccce4bdd4a227aaf9eccc96bd720087125",
+            "test_command": "vitest run tests/fast-agent-file-adapter.test.ts -t 'resumes a completed managed session with its exact provider-qualified model'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B382e464241634a6385f3",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/fast-agent-b382-green.log",
+      "red_proof_path": "evidence/fast-agent-b382-red.log",
+      "red_result": "Tests  1 failed | 20 skipped (21)",
+      "red_sha256": "4833ccce094720e4f418ac0390e64c1bbfcb9769e41a16ec18fcc7ad0e3456a2",
+      "result": "Tests  1 passed | 20 skipped (21)",
+      "sha256": "d4f24adf454b5268f7f2fa315c4a01ccce4bdd4a227aaf9eccc96bd720087125",
+      "test_command": "vitest run tests/fast-agent-file-adapter.test.ts -t 'resumes a completed managed session with its exact provider-qualified model'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 integrated candidate run",
+  "status": "fixed",
+  "title": "Fast Agent: не достигнут удержанный запрос в общем CI",
+  "updated_at": "2026-11-06T17:17:30+00:00"
+}

@@ -1,0 +1,1 @@
+{"error":"exact AHAP runner initialize returned invalid JSON; refusing create/send","fixture_model":"http://127.0.0.1:37221","model_requests_at_failure":0,"no_replay":true,"opencode_url":"http://127.0.0.1:39911","phase":"isolated-preflight","profile":"/herder-owner-home/authority/profile.json","result":"FAILED_PREMUTATION"}

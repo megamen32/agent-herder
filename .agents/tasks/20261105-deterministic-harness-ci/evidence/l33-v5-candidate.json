@@ -1,0 +1,12 @@
+{
+  "status": "candidate-built",
+  "source_base_head": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "snapshot": "/tmp/herder-l33-candidate-v5",
+  "server44": "/tmp/herder-l33-v5-d94b/candidate",
+  "payload_v2_sha256": "d94b09a86b88264406b2cc65d9b4026bfdf2f64b636b93fddeab952451d73156",
+  "source_inventory_sha256": "e8dfa5c8665ea5d9780edc28a3d6af3e28703809a5931a047d9475fc5b3bede6",
+  "source_file_count": 1153,
+  "lock_sha256": "934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727",
+  "scope": "v2 JS dist and package metadata; dependencies not covered, no installed PID evidence",
+  "browser_fixture": "FAIL HTTP 422 unsupported native JSONL harness"
+}

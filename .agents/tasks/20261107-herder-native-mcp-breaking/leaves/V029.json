@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 1,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V029 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V029 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V029",
   "created_at": "2026-11-07T01:52:23+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:57+03:00",
+  "updated_at": "2026-11-07T09:16:03+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:23+03:00",
@@ -73,9 +73,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:12:06+03:00",
+      "note": "Приступил к завершающему leaf после done V029A/B; владелец этой сессии, scope transcript.rs. Проверю последний page, terminal cursor, truncation и чужие principal/snapshot, затем прочту только парные Codex proof/payload.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:16:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен TranscriptPage: отсутствие next_cursor завершает страницу; truncation сохраняется независимо. native_cursor_for отклоняет principal/snapshot mismatch, а пустой native cursor отвергается при bind. 7 transcript tests passed. Codex cross-check использует только paired fixture /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/{proof.json,native-transcript.jsonl}; native IDs/text/turn совпали, reply link не выводился. Scoped commit a36520d7."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Добавлен TranscriptPage: отсутствие next_cursor завершает страницу; truncation сохраняется независимо. native_cursor_for отклоняет principal/snapshot mismatch, а пустой native cursor отвергается при bind. 7 transcript tests passed. Codex cross-check использует только paired fixture /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/{proof.json,native-transcript.jsonl}; native IDs/text/turn совпали, reply link не выводился. Scoped commit a36520d7."
 }

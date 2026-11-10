@@ -1,0 +1,87 @@
+{
+  "id": "V090SCOPE",
+  "parent": "S07",
+  "kind": "task",
+  "label": "Z.ai: проверять account scope при чтении списка чатов",
+  "description": "Исправить подтверждённый source defect V090: origin не доказывает неизменность аккаунта после attach. Проверять связанный account scope на результате native чтения; неизвестная identity не успешный пустой список.",
+  "acceptance": "Fake direct-CDP scenario attach A→response B отвергается AccountMismatch; identity unavailable не возвращает успешный список; A сохраняет IDs. Live account switching не нужно. Scoped commit и RED/GREEN, без общих schema/Cargo edits.",
+  "depends_on": [
+    "V090"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/zai/mod.rs",
+    "acceptance/native/z-ai/",
+    "acceptance/contracts/z-ai.md"
+  ],
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "status": "done",
+  "estimate_minutes": 15,
+  "created_at": "2026-11-07T11:44:29+03:00",
+  "updated_at": "2026-11-07T12:36:33+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:44:29+03:00",
+      "note": "",
+      "changes": {
+        "id": "V090SCOPE",
+        "parent": "S07",
+        "kind": "task",
+        "label": "Z.ai: проверять account scope при чтении списка чатов",
+        "description": "Исправить подтверждённый source defect V090: origin не доказывает неизменность аккаунта после attach. Проверять связанный account scope на результате native чтения; неизвестная identity не успешный пустой список.",
+        "acceptance": "Fake direct-CDP scenario attach A→response B отвергается AccountMismatch; identity unavailable не возвращает успешный список; A сохраняет IDs. Live account switching не нужно. Scoped commit и RED/GREEN, без общих schema/Cargo edits.",
+        "depends_on": [
+          "V090"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/zai/mod.rs",
+          "acceptance/native/z-ai/",
+          "acceptance/contracts/z-ai.md"
+        ],
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "status": "queued",
+        "estimate_minutes": 15
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:56:16+03:00",
+      "note": "Closed with fake-CDP RED/GREEN and bug registry evidence.",
+      "changes": {
+        "status": "done",
+        "result": "crates/herder/src/adapters/zai/mod.rs rechecks the expected account scope before list_chats. Fake-CDP proof: A→B returns AccountMismatch; A→A returns the A chat ID; unavailable identity returns AccountMismatch. RED/GREEN transcripts are in evidence/V090SCOPE-red.txt and evidence/V090SCOPE-green.txt; bug B561a6dad868b443caa3a is fixed."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:06:53+03:00",
+      "note": "Delta review: attach/preflight scope checks are insufficient if account changes before list fetch. Revalidate scope from the same list response via one returned chat readback; empty/unverifiable list fails closed. Original Bcc3... remains canonical bug; B561... will be linked duplicate after correction.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:24:14+03:00",
+      "note": "The same-page scope check and its direct expression regression are complete.",
+      "changes": {
+        "status": "done",
+        "result": "list_chats now validates the account scope proven by readback of the first chat from the same list evaluation and rejects empty/unverifiable results. Fake-CDP covers attach A + preflight A + list result B, A→A, and unavailable identity; Node VM runs the exact embedded JS expression through 7 fetch/hash scenarios. RED/GREEN: evidence/V090SCOPE-delta-red.txt and evidence/V090-V093-delta-green.txt. Canonical bug Bcc3deeef34fc45249cf8 fixed; B561a6dad868b443caa3a linked duplicate."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:36:33+03:00",
+      "note": "",
+      "changes": {
+        "result": "list_chats verifies the first returned chat belongs to the expected Z.ai account and rejects mismatched, empty, or unverifiable results. Implementation + source tests: commit 35b1337692bc0dcc7cd6c16f8d2b84d94a61fd5b. Exact embedded Rust expression executed in Node VM with stubbed fetch/hash: 7 scenarios, TAP 8 passed, 0 failed; saved output evidence/V090SCOPE-expression-green.txt (SHA-256 23e1bc2e2ab423a8a10894d6b8617d69e74f73c2c708a25e233979fa09220289). Fake-CDP regressions and Rust account-bound snapshot checks are recorded in evidence/V090SCOPE-green.txt and evidence/V090-V093-delta-green.txt. No live provider list read claimed."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "list_chats verifies the first returned chat belongs to the expected Z.ai account and rejects mismatched, empty, or unverifiable results. Implementation + source tests: commit 35b1337692bc0dcc7cd6c16f8d2b84d94a61fd5b. Exact embedded Rust expression executed in Node VM with stubbed fetch/hash: 7 scenarios, TAP 8 passed, 0 failed; saved output evidence/V090SCOPE-expression-green.txt (SHA-256 23e1bc2e2ab423a8a10894d6b8617d69e74f73c2c708a25e233979fa09220289). Fake-CDP regressions and Rust account-bound snapshot checks are recorded in evidence/V090SCOPE-green.txt and evidence/V090-V093-delta-green.txt. No live provider list read claimed."
+}

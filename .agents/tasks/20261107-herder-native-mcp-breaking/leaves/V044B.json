@@ -1,10 +1,11 @@
 {
   "id": "V044B",
   "label": "Добавить peers, worktrees и занятые ресурсы с coverage",
-  "description": "Добавить peers, worktrees и занятые ресурсы с coverage. Частный результат исходного V044: Один bounded snapshot с адресами, scopes, coverage и курсорами. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V044A.",
+  "description": "Добавить к той же context projection уже готовые inventory peers/worktrees/resource claims; explicit observed_at/partial/offline. Не создавать отдельный roster store. Проверка двух peers, один недоступен: отсутствие данных не означает 'я один'.",
   "acceptance": "Получен проверяемый результат: Добавить peers, worktrees и занятые ресурсы с coverage. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V044A"
+    "V044A",
+    "V031C"
   ],
   "affected_files": [
     "crates/herder/src/application/context.rs"
@@ -12,17 +13,17 @@
   "parent": "S02",
   "kind": "task",
   "status": "queued",
-  "owner": "unassigned",
+  "owner": "Resources worker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V044 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V044 обязателен в конце цепочки.",
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
   "created_at": "2026-11-07T03:52:58+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:58+03:00",
+  "updated_at": "2026-11-07T16:12:44+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:58+03:00",
@@ -50,6 +51,30 @@
         "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V044 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V044 обязателен в конце цепочки."
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:39+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V044A",
+          "V031C"
+        ],
+        "owner": "Resources worker",
+        "description": "Добавить к той же context projection уже готовые inventory peers/worktrees/resource claims; explicit observed_at/partial/offline. Не создавать отдельный roster store. Проверка двух peers, один недоступен: отсутствие данных не означает 'я один'.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:12:44+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
       "harness": "codex"
     }
   ]

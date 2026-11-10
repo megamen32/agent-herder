@@ -11,8 +11,8 @@
   ],
   "parent": "S07",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V088 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V088 обязателен в конце цепочки.",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
   "created_at": "2026-11-07T03:53:30+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:30+03:00",
+  "updated_at": "2026-11-07T05:59:50+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:30+03:00",
@@ -53,6 +53,89 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:40:16+03:00",
+      "note": "Один ограниченный Vibe route check выполнен; альтернативный browser/profile не использовался.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Не доступен Vibe browser, test profile scope не найден",
+        "blocker_details": {
+          "route": "Обязательный Vibe MCP list_pages завершился `Protocol error (Network.enable): Target crashed`.",
+          "scope": "В историческом /home/roomhacker/agents-projects/agent-herder/.agents/TEST_ACCESS.md не найден разрешённый Z.ai test profile; найденные QA scope относятся к OpenCode.",
+          "next": "Повторить только после восстановления Vibe и появления явно разрешённого Z.ai test profile."
+        },
+        "result": "Live gate не выполнен: не подтверждены авторизация, версия/profile, операции, receipt/history/context. Личный аккаунт не использовался."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:54:18+03:00",
+      "note": "Историческое отсутствие scope из TEST_ACCESS снято как аргумент: CI fragment подтверждает Mac mini Vibe browser. Текущий blocker — точная ошибка Vibe и опасная привязка старого Z.ai draft.",
+      "changes": {
+        "blocker": "Текущий Vibe route к Mac mini Chrome завершается ошибкой target; безопасная Z.ai test-chat reference не подтверждена",
+        "blocker_details": {
+          "prior": "Ограниченный фрагмент CI-сессии подтверждает, что в Vibe на Mac mini была авторизованная страница Z.ai и создавался отдельный test draft.",
+          "current": "Текущий Vibe list_pages ответил `Protocol error (Network.enable): Target crashed`; результат не различает сбой relay и Chrome target.",
+          "scope": "Последнее CI evidence: Z.ai draft связался с существующей рабочей беседой; отправка туда не повторялась. Этот ref запрещён для тестового send.",
+          "next": "Восстановить только существующий Vibe→Mac mini Chrome route; получить/создать новый однозначно task-owned Z.ai test chat через безопасный product flow, затем проверить exact target."
+        },
+        "result": "Native live gate не пройден. Историческая авторизация страницы подтверждена CI сообщением, но текущий Vibe target недоступен; route/operations/receipt/history/context не проверены. Рабочую беседу не использовать."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:07:33+03:00",
+      "note": "Переведено с Vibe на прямой CDP. Live acceptance не закрыта.",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "blocker_details": {
+          "previous": "Vibe target error and missing task-owned reference",
+          "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+          "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+        },
+        "result": "Прямой CDP к Mac mini подтверждён read-only через DevToolsActivePort → WebSocket HTTP 101, Browser.getVersion и Target.getTargets. Chrome не перезапускался, профиль не копировался. Live input correlation ещё не проверена."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:41:40+03:00",
+      "note": "Независимая Z.ai ветка direct CDP в том же Chrome: exact identity подтверждена; проверяю новый task-owned target и input/send readiness.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:53:42+03:00",
+      "note": "Direct CDP native browser acceptance: в exact same-instance/context новом target кликнут New Chat, уникальный маркер отправлен ровно один раз через enabled form submit, receipt повторно прочитан на том же newest task target. Assistant ответ содержит уникальный marker_OK; новый provider conversation route появился. User/assistant message IDs отсутствуют в DOM. Browser tab закрыт после подтверждения. Это live provider/browser proof, не операция Rust Herder adapter.",
+      "changes": {},
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:59:50+03:00",
+      "note": "Evidence retained in task history; no resend.",
+      "changes": {
+        "status": "done",
+        "result": "Live browser/provider proof completed through direct CDP in explicit Chrome instance/context: isolated new Z.ai target, New Chat, one unique marker sent once, same target returned marker_OK and provider conversation route. DOM exposed no message IDs. This does not prove Rust Herder adapter."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
-  ]
+  ],
+  "blocker": "",
+  "blocker_details": {
+    "previous": "Vibe target error and missing task-owned reference",
+    "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+    "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+  },
+  "result": "Live browser/provider proof completed through direct CDP in explicit Chrome instance/context: isolated new Z.ai target, New Chat, one unique marker sent once, same target returned marker_OK and provider conversation route. DOM exposed no message IDs. This does not prove Rust Herder adapter."
 }

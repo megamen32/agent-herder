@@ -1,0 +1,13 @@
+COMMAND: python3 -m unittest discover -s tests/native -p test_ahap_opencode_stand.py
+SOURCE: 25541eb56490231928bccaca7de0c801fbbdfee4
+EXIT: 0
+STDOUT:
+
+STDERR:
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.087s
+
+OK
+
+RESULT: 16 tests passed (unittest reported OK).

@@ -1,0 +1,31 @@
+TAP version 13
+# Subtest: requires both exact IDs and a complete current non-partial source
+ok 1 - requires both exact IDs and a complete current non-partial source
+  ---
+  duration_ms: 1.364693
+  type: 'test'
+  ...
+# Subtest: retries a completed partial scan and records only a later complete proof
+not ok 2 - retries a completed partial scan and records only a later complete proof
+  ---
+  duration_ms: 0.491063
+  type: 'test'
+  location: '/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/native-herder-search-proof.test.mjs:9:1'
+  failureType: 'testCodeFailure'
+  error: 'waitForCoverage is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/native-herder-search-proof.test.mjs:12:18)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 85.444875

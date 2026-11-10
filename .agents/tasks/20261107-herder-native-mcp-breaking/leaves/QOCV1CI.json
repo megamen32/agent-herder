@@ -1,0 +1,60 @@
+{
+  "id": "QOCV1CI",
+  "kind": "task",
+  "parent": "S04",
+  "label": "OpenCode stand: принять native export и V1 CI-сценарии",
+  "description": "Расширить только tests/native/ahap_opencode_stand.py и его regression tests под V1 owner contract: export format=native с lossless bytes_base64, complete/source; common явно unsupported; discover(action=projects,instance_ref); второй отдельный deliver в ту же сессию, оба input/reply, search marker coverage, restart без resend. Live case только на опубликованном новом candidate с новым disposable scope; исторические receipts не переигрывать. Зафиксировать обязательные поля отчёта для CI REPORT.",
+  "acceptance": "Source regression покрывает native lossless export, explicit common unsupported, projects discovery, два same-session deliver и search/reopen/no-resend checks. Новый manifest preflight проверяет hashes, launcher/mounts и exact runner/server protocol. Live receipt на новом candidate содержит по каждому сценарию status PASS/FAIL/UNSUPPORTED/UNKNOWN, stage=candidate|installed, source_commit, manifest_sha256, core/runner/opencode/node/bootstrap hashes+versions, run_id, instance_ref, session_ref, оба Task/request/native user+assistant IDs, search marker+coverage, export format/complete/source/decoded SHA256+length, restart/replay proof, model request delta и evidence/cleanup paths. QOCV1CI не PASS до candidate consumer receipt; старые операции не replay.",
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py",
+    "acceptance/early/opencode/"
+  ],
+  "status": "running",
+  "owner": "roomhacker",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "depends_on": [
+    "QOCEXPORT"
+  ],
+  "estimate_minutes": 15,
+  "note": "CONFIRMED API contract received directly in delegated assignment. CONFIG313d8c64 is only a historical launcher/config for artifact 1d89d04d; do not execute old send scenario. Await new V1 candidate manifest; no public send until immutable candidate and fresh scope exist.",
+  "created_at": "2026-11-07T22:51:31+03:00",
+  "updated_at": "2026-11-07T22:51:31+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T22:51:31+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCV1CI",
+        "kind": "task",
+        "parent": "S04",
+        "label": "OpenCode stand: принять native export и V1 CI-сценарии",
+        "description": "Расширить только tests/native/ahap_opencode_stand.py и его regression tests под V1 owner contract: export format=native с lossless bytes_base64, complete/source; common явно unsupported; discover(action=projects,instance_ref); второй отдельный deliver в ту же сессию, оба input/reply, search marker coverage, restart без resend. Live case только на опубликованном новом candidate с новым disposable scope; исторические receipts не переигрывать. Зафиксировать обязательные поля отчёта для CI REPORT.",
+        "acceptance": "Source regression покрывает native lossless export, explicit common unsupported, projects discovery, два same-session deliver и search/reopen/no-resend checks. Новый manifest preflight проверяет hashes, launcher/mounts и exact runner/server protocol. Live receipt на новом candidate содержит по каждому сценарию status PASS/FAIL/UNSUPPORTED/UNKNOWN, stage=candidate|installed, source_commit, manifest_sha256, core/runner/opencode/node/bootstrap hashes+versions, run_id, instance_ref, session_ref, оба Task/request/native user+assistant IDs, search marker+coverage, export format/complete/source/decoded SHA256+length, restart/replay proof, model request delta и evidence/cleanup paths. QOCV1CI не PASS до candidate consumer receipt; старые операции не replay.",
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py",
+          "acceptance/early/opencode/"
+        ],
+        "status": "running",
+        "owner": "roomhacker",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "depends_on": [
+          "QOCEXPORT"
+        ],
+        "estimate_minutes": 15,
+        "note": "CONFIRMED API contract received directly in delegated assignment. CONFIG313d8c64 is only a historical launcher/config for artifact 1d89d04d; do not execute old send scenario. Await new V1 candidate manifest; no public send until immutable candidate and fresh scope exist."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-06T19:49:56+00:00",
+  "details": "Qoder synthetic active fixture исправлен: exact второй ID используется в active row и job owner, есть host/status/held proof. RED evidence/l43-qoder-synthetic-red.log, GREEN evidence/l43-qoder-synthetic-green-verified.log; строгий validator и негативные случаи сохранены, tests/native-qoder-report.test.py GREEN. Rollout части остаются за Rawls, общий bug открыт до полного suite GREEN.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T19:49:56+00:00",
+      "changes": {
+        "details": "На текущем integration WIP 15 тестов, 1 FAIL и 3 ERROR: synthetic Qoder active связывает первый ID вместо требуемого второго; rollout-candidate не экспортирует verify_native_ci_candidate и изменил аргументы node_side; rollout-node требует manifest до старой проверки. Полный лог evidence/l41-search-gate-suite.log. Rollout принадлежит другому владельцу и в этом задании не изменяется.",
+        "source": "python3 tests/test_native_release_gate.py",
+        "status": "open",
+        "title": "Общий тест release gate расходится с текущими контрактами rollout и Qoder"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L43",
+      "at": "2026-11-06T20:17:13+00:00",
+      "changes": {
+        "details": "Qoder synthetic active fixture исправлен: exact второй ID используется в active row и job owner, есть host/status/held proof. RED evidence/l43-qoder-synthetic-red.log, GREEN evidence/l43-qoder-synthetic-green-verified.log; строгий validator и негативные случаи сохранены, tests/native-qoder-report.test.py GREEN. Rollout части остаются за Rawls, общий bug открыт до полного suite GREEN."
+      },
+      "reason": ""
+    }
+  ],
+  "id": "Bb9295ec92f224fafbcb2",
+  "owner": "L43",
+  "reporter": "L43",
+  "source": "python3 tests/test_native_release_gate.py",
+  "status": "open",
+  "title": "Общий тест release gate расходится с текущими контрактами rollout и Qoder",
+  "updated_at": "2026-11-06T20:17:13+00:00"
+}

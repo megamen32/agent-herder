@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b3ac-d7a0-7183-ad2f-6e852aa0fc43",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V012 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V012 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:46+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:46+03:00",
+  "updated_at": "2026-11-07T04:53:08+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:46+03:00",
@@ -51,6 +51,47 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:44:38+03:00",
+      "note": "Исполнитель 01a1b3ac-d7a0-7183-ad2f-6e852aa0fc43.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:44:43+03:00",
+      "note": "Worker 01a1b3ac-d7a0-7183-ad2f-6e852aa0fc43 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3ac-d7a0-7183-ad2f-6e852aa0fc43",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T04:44:43+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v012b",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b3ac-d7a0-7183-ad2f-6e852aa0fc43"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:53:08+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "worker": null,
+        "result": "CAS prepared→dispatching опубликован 3ed4381a; из 8 конкурентных подключений ровно одно получает право, повтор и unknown не допускаются. Три targeted tests прошли; реальная отправка ещё не подключена."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": null,
+  "result": "CAS prepared→dispatching опубликован 3ed4381a; из 8 конкурентных подключений ровно одно получает право, повтор и unknown не допускаются. Три targeted tests прошли; реальная отправка ещё не подключена."
 }

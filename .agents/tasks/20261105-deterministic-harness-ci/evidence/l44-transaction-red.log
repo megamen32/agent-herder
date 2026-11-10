@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_codex_unix_transaction.py", line 5, in <module>
+    s=importlib.util.spec_from_file_location('ci_transaction',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+  File "<frozen importlib._bootstrap_external>", line 879, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1016, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/scripts/codex-unix-transaction.py'

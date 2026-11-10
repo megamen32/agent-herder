@@ -1,0 +1,65 @@
+..{"capturedPids": [], "event": "darwin_previous_restore_enter", "expectedConfigSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": null, "expectedWrapperPid": "", "fleetDir": "/fleet", "observedConfigSha256": "unavailable", "observedLiveSha": "", "observedPlistSha256": "unavailable", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "run": null, "timeNs": 1793981643712339805, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+{"capturedPids": [], "event": "darwin_previous_restore_start", "expectedConfigSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": null, "expectedWrapperPid": "", "fleetDir": "/fleet", "observedConfigSha256": "unavailable", "observedPlistSha256": "unavailable", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "run": null, "timeNs": 1793981643713418319, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+{"capturedPids": [], "event": "darwin_previous_restore_result", "expectedConfigSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": null, "expectedWrapperPid": "", "fleetDir": "/fleet", "observedConfigSha256": "unavailable", "observedPlistSha256": "unavailable", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "probeError": "unavailable", "restartReturnCode": 0, "run": null, "timeNs": 1793981643713682264, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+{"capturedPids": [], "event": "darwin_previous_restore_readiness", "expectedConfigSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": null, "expectedWrapperPid": "", "fleetDir": "/fleet", "observedConfigSha256": "unavailable", "observedPlistSha256": "unavailable", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "readinessReason": "ready", "run": null, "timeNs": 1793981643713870500, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+{"capturedPids": [], "event": "darwin_previous_restore_enter", "expectedConfigSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": null, "expectedWrapperPid": "", "fleetDir": "/fleet", "observedConfigSha256": "unavailable", "observedLiveSha": "", "observedPlistSha256": "unavailable", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "run": null, "timeNs": 1793981643714273513, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+....runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written
+switched: current -> releases/6549b34255adb669782f8f07f5b7b852045fd708
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: 6549b34255adb669782f8f07f5b7b852045fd708
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+accepted: node on 6549b34255adb669782f8f07f5b7b852045fd708
+{"capturedPids": ["123", "124"], "event": "darwin_previous_owner_check_start", "expectedConfigSha256": "f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": "same", "expectedWrapperPid": "123", "fleetDir": "/tmp/tmpl38xhia4", "observedConfigSha256": "same", "observedPlistSha256": "same", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "run": null, "timeNs": 1793981643783267959, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+{"capturedPids": ["123", "124"], "event": "darwin_previous_owner_mismatch", "expectedConfigSha256": "f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d", "expectedGenerationSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "expectedPlistSha256": "same", "expectedWrapperPid": "123", "fleetDir": "/tmp/tmpl38xhia4", "observedConfigSha256": "same", "observedDomain": "gui/1000", "observedPlistSha256": "same", "observedState": "running", "observedWrapperPid": "999", "previousSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "run": null, "timeNs": 1793981643784079970, "unit": "owned", "utc": "2026-11-06T16:14:03Z"}
+.............
+----------------------------------------------------------------------
+Ran 19 tests in 0.468s
+
+OK
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+the fleet unit does not start the node through bootstrap.py; nothing was switched: /usr/local/bin/node /home/operator/releases/x/dist/index.js
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: the release is selected by the current symlink; no release drop-in is written
+switched: current -> releases/6549b34255adb669782f8f07f5b7b852045fd708
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: 6549b34255adb669782f8f07f5b7b852045fd708
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+accepted: node on 6549b34255adb669782f8f07f5b7b852045fd708
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+switched: current -> releases/6549b34255adb669782f8f07f5b7b852045fd708
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: 6549b34255adb669782f8f07f5b7b852045fd708
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+accepted: node on 6549b34255adb669782f8f07f5b7b852045fd708

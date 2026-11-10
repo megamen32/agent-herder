@@ -1,0 +1,14 @@
+{
+  "schema": "ci-detail-identity-source-final.v1",
+  "observedAt": "2026-11-09T00:31:58.387184+00:00",
+  "returncode": 0,
+  "passed": 19,
+  "failed": 0,
+  "files": {
+    "src/web-ui/main.tsx": "6188364dd42c980811f64816ec45bbcf8785a882a87e104ce548c4e698a8a246",
+    "src/web-ui/fleet/RemoteSessionView.tsx": "c9c19e081d1104ffde7f67fd438cd5618fd0b17db48910bc84b3ffc71a0f834d",
+    "src/web-ui/session-detail-identity.ts": "eaf4421cecb203c997feb28fdf934a21f62778dd3068ded4b010ec7fed653a58",
+    "tests/session-detail-identity.test.ts": "2105d8826aff77e380534f9df4d8270daf3e50a602bd1d965d52c9b67694b7f5"
+  },
+  "log": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-detail-identity-20261109/final-scope.log"
+}

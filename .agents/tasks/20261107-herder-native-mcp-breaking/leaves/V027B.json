@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:52:52+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:52+03:00",
+  "updated_at": "2026-11-07T13:15:08+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:52+03:00",
@@ -51,6 +51,29 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:13:14+03:00",
+      "note": "V027A commit f756793b supplies durable correspondence; implementing server-resolved reply target authorization against the recipient in that stored record.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:15:08+03:00",
+      "note": "V027B recipient-only reply resolution and foreign-reply denial proven locally; no external sends.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T10:15:06.804Z",
+        "result": "Commit 00775275 adds Writer::resolve_reply_target in store/correspondence.rs. Resolver accepts only message_ref and VerifiedSelfBinding, verifies stored incoming message/session_ref, exact recipient_ref and associated intent target, then returns the persisted sender_ref as server-selected destination. Real SQLite file is closed/reopened before checks: verified recipient session-b resolves message-c-b to session-c; creator session-a and unrelated session-x receive Denied; missing ref returns NotFound. Combined correspondence test suite: 3 passed. No outbound/native delivery occurred; no schema/lib/Cargo changes. This is source and local SQLite proof, not integrated MCP consumer proof."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T10:15:06.804Z",
+  "result": "Commit 00775275 adds Writer::resolve_reply_target in store/correspondence.rs. Resolver accepts only message_ref and VerifiedSelfBinding, verifies stored incoming message/session_ref, exact recipient_ref and associated intent target, then returns the persisted sender_ref as server-selected destination. Real SQLite file is closed/reopened before checks: verified recipient session-b resolves message-c-b to session-c; creator session-a and unrelated session-x receive Denied; missing ref returns NotFound. Combined correspondence test suite: 3 passed. No outbound/native delivery occurred; no schema/lib/Cargo changes. This is source and local SQLite proof, not integrated MCP consumer proof."
 }

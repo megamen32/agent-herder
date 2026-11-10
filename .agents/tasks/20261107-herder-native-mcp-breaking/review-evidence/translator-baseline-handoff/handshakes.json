@@ -1,0 +1,7 @@
+{
+  "downstream_protocol": "2025-06-18",
+  "fixture_only": true,
+  "native_endpoint_downgraded": false,
+  "probe": "rmcp-3.9.0 in-memory wire handshake",
+  "upstream_protocol": "2026-07-28"
+}

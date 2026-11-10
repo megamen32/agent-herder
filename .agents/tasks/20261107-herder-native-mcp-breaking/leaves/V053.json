@@ -14,16 +14,16 @@
   },
   "estimate_unknown_reason": "Объём подключения неизвестен до подтверждения native route входным gate. Этот шаг до 15 минут покрывает проверку готового versioned transport; отсутствующий API требует конкретного нового разбиения и пересчёта.",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 5,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V053 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V053 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V053",
   "created_at": "2026-11-07T01:52:27+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:00:30+03:00",
+  "updated_at": "2026-11-07T05:09:59+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:27+03:00",
@@ -84,9 +84,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:06:27+03:00",
+      "note": "Closing the root acceptance with an explicit invalid-profile fail-closed check: selected CODEX_HOME missing while a separate neighboring profile exists; no child may spawn or fall back.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:09:59+03:00",
+      "note": "Root acceptance verified against the actual CodexConnection implementation; invalid explicit profile fails before spawn despite a neighboring profile directory.",
+      "changes": {
+        "status": "done",
+        "result": "Root V053 acceptance passes. On the connection code from V053A/B, the isolated Cargo harness passed five tests including a bad explicit CODEX_HOME while a separate neighboring profile directory exists: returns OpenError::DirectoryUnavailable for the selected profile and does not execute a marker executable, proving no spawn/fallback. It also reruns request-ID, notification, timeout/late response, disconnect and malformed-response scenarios. Evidence: /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/v053-isolation-smoke-green.log. V053 transport code and separate commits 695f1063/ace1a5d6 are present atop latest origin/main; end-to-end Herder MCP/install remains unproven."
+      },
+      "session": "01a1b399-bfa6-7900-8fec-ffabf1ab44e6",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Root V053 acceptance passes. On the connection code from V053A/B, the isolated Cargo harness passed five tests including a bad explicit CODEX_HOME while a separate neighboring profile directory exists: returns OpenError::DirectoryUnavailable for the selected profile and does not execute a marker executable, proving no spawn/fallback. It also reruns request-ID, notification, timeout/late response, disconnect and malformed-response scenarios. Evidence: /home/roomhacker/.codex/worktrees/herder-codex-native/agent-herder/.tmp/v052b-codex-profile-20261107/v053-isolation-smoke-green.log. V053 transport code and separate commits 695f1063/ace1a5d6 are present atop latest origin/main; end-to-end Herder MCP/install remains unproven."
 }

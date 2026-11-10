@@ -1,0 +1,149 @@
+{
+  "id": "V025PUBLIC",
+  "label": "Проверить публичный MCP путь с HumanStop",
+  "description": "Связать public MCP consumer с authority и проверить полный цикл на изолированной свежей сессии.",
+  "acceptance": "Fresh create→deliver→native readback→stop→next denied; receipt и UNKNOWN no replay, отдельный результат от fixture.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "deferred",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025COMPOSE",
+    "V025TASKRECON",
+    "V025CREATETASK"
+  ],
+  "created_at": "2026-11-07T11:24:47+03:00",
+  "updated_at": "2026-11-07T15:54:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:24:47+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025PUBLIC",
+        "label": "Проверить публичный MCP путь с HumanStop",
+        "description": "Связать public MCP consumer с authority и проверить полный цикл на изолированной свежей сессии.",
+        "acceptance": "Fresh create→deliver→native readback→stop→next denied; receipt и UNKNOWN no replay, отдельный результат от fixture.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025LAUNCH"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:27:48+03:00",
+      "note": "Публичный consumer требует обоих готовых компонентов: bounded port и trusted launcher.",
+      "changes": {
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:41:30+03:00",
+      "note": "Дополнительные prereqs review: durable no-send для create и ограниченный interrupt.",
+      "changes": {
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT",
+          "V055CREATE",
+          "V055STOP"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:15:31+03:00",
+      "note": "Публичный consumer зависит от проверенной authenticated composition.",
+      "changes": {
+        "depends_on": [
+          "V025COMPOSE"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:45:54+03:00",
+      "note": "Реальный terminal proof зависит от подключённого reconciliation, а не только Task projection.",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "depends_on": [
+          "V025COMPOSE",
+          "V025TASKRECON",
+          "V025CREATETASK"
+        ],
+        "note": "Стандартный MCP SDK → обычный native stdio, явный trusted owner launch, реальные bounded Codex ports с isolated loopback model. Новый task-owned target; create→deliver→read→terminal Tasks→reopen, без ручного UPDATE/поддельного native adapter. Не заменяет отказ T011 и не обходит его."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:27:37+03:00",
+      "note": "Сохранён фактический failed/UNKNOWN consumer результат, не зачтён PASS; source accepted gates не отменяются.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Real isolated SDK496483e5 создал session, prompt UNKNOWN/no replay. Fixture удалил profile, исходный runtime readback утрачен; Terra чинит owning-connection snapshot и retention source/fake. Старый attempt не повторять.",
+        "note": "Receipt task=create-operation:efe91c25ee89063a168ece5517cce3e4, session=session:abb1994536b31f3025658d23b7032c79; review-evidence/V025PUBLIC/owner-sdk-496483e5-{run.log,attempt.txt}. Независимый official0.167 source: foreign process fresh thread/read может notloaded, Legacy includeTurns до первого user также unavailable; конкретный RPCerror/historyMode не сохранён. Нельзя утверждать no-send. После proofsourcefix новый изолированный regression candidate отдельно, исходный UNKNOWN остаётся."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:31:54+03:00",
+      "note": "Сохранён UNKNOWN и подготовлено доказательное исправление fixture/source.",
+      "changes": {
+        "status": "running",
+        "note": "Один изолированный SDK/Codex candidate 496483e5: create confirmed, prompt UNKNOWN; task create-operation:efe91c25ee89063a168ece5517cce3e4, исходные данные удалены fixture, не повторять. Лог review-evidence/V025PUBLIC/owner-sdk-496483e5-run.log, bug B2be7fa818f9d45f58b00 открыт. Source/fake 5bd4e8ac: snapshot owning connection + explicit idle, fixture retain host inode; RED/GREEN и 26 Python tests. Требуется independent review до нового отдельного regression target; прежний UNKNOWN не переоценивается."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:39:49+03:00",
+      "note": "Честный SDK/Codex consumer proof получен; HumanStop path остаётся.",
+      "changes": {
+        "note": "SDK→owner stdio→реальный isolated Codex candidate 9dfe147d: один loopback model request; exact create/prompt confirmed, input+assistant readback, Task terminal после reopening; log review-evidence/V025PUBLIC/owner-sdk-9dfe147d-run.log SHA 808e6ad3378e35cb089055653d819a748207d665f4986bc03eab49a73e606823, independent Astra accepted. Это не Codex MCP client/T011, не live model/fleet. Приёмка stop→next denied ещё отсутствует; успешный fixture удалён. Старый 496483e5 prompt UNKNOWN остаётся no-replay и не переклассифицирован. Изменения legacy CI tests/native/launch.py требуют reconcile retention до следующих runs."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T14:47:08+03:00",
+      "note": "Уже подтверждён9dfe147d ownerSDK create/deliver/read/reopen model1, но полный HumanStop public acceptance не done. Старый496UNKNOWN/no-replay неизменен.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Новый прямой приоритет владельца: OpenCode → ChatGPT → Z.ai, Codex последний. Codex-specific stop consumer case отложен; общий HumanStop source WIP сохранить и использовать для OpenCode при необходимости."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:54:16+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
+  "wait_reason": "Новый прямой приоритет владельца: OpenCode → ChatGPT → Z.ai, Codex последний. Codex-specific stop consumer case отложен; общий HumanStop source WIP сохранить и использовать для OpenCode при необходимости."
+}

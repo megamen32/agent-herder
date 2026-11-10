@@ -1,0 +1,42 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-resources-recovery/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.92s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-a89db5f71f0b176b)
+
+running 10 tests
+test ownership::manifest::tests::markers_are_distinct_and_scope_does_not_encode_authority ... ok
+test ownership::claim::tests::claim_requires_a_valid_nonce_and_never_claims_unauthorized_resources ... ok
+test ownership::manifest::tests::fixture_roundtrip_keeps_scopes_and_resource_identity_across_locations ... ok
+test ownership::claim::tests::claim_does_not_treat_an_unregistered_marker_as_a_free_resource ... ok
+test ownership::manifest::tests::local_resource_lookup_checks_storage_resource_project_and_route_markers ... ok
+test ownership::claim::tests::claim_writes_one_owner_and_replay_reads_it_without_replacing_guard ... ok
+test ownership::claim::tests::concurrent_claims_have_exactly_one_winner ... ok
+test ownership::resource::tests::duplicate_identity_and_stale_revision_are_rejected_without_mutation ... ok
+test ownership::resource::tests::register_update_get_list_and_authorization_use_one_marker_store ... ok
+test ownership::claim::tests::renew_and_release_compare_claim_id_and_preserve_guard ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.19s
+
+     Running unittests src/main.rs (crates/herder/target/debug/deps/herder_wire_probe-b7cb2e2b5cf2b3ac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/herder_native_stdio.rs (crates/herder/target/debug/deps/herder_native_stdio-17dd53a36373e4cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/v002_probe.rs (crates/herder/target/debug/deps/v002_probe-cd2f97954222ca27)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/v011b_writers.rs (crates/herder/target/debug/deps/v011b_writers-80abc90f45f8bebc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

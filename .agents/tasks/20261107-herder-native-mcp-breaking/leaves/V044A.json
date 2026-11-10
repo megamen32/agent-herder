@@ -1,30 +1,29 @@
 {
   "id": "V044A",
   "label": "Собрать self, creator и последних отправителей из durable данных",
-  "description": "Собрать self, creator и последних отправителей из durable данных. Частный результат исходного V044: Один bounded snapshot с адресами, scopes, coverage и курсорами. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V027, V040, V028.",
+  "description": "Прочитать self/creator/последних sender из существующих durable lineage/correspondence. Выход — одна ограниченная context projection с IDs/freshness и ACL, без текста чужих диалогов. Проверка reopen существующей SQLite fixture; source-only не выдавать за model injection.",
   "acceptance": "Получен проверяемый результат: Собрать self, creator и последних отправителей из durable данных. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V027",
-    "V040",
-    "V028"
+    "V027A",
+    "V027B"
   ],
   "affected_files": [
     "crates/herder/src/application/context.rs"
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "Resources worker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V044 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V044 обязателен в конце цепочки.",
+  "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток.",
   "created_at": "2026-11-07T03:52:06+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:06+03:00",
+  "updated_at": "2026-11-07T16:22:21+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:06+03:00",
@@ -55,6 +54,41 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:06:38+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V027A",
+          "V027B"
+        ],
+        "owner": "Resources worker",
+        "description": "Прочитать self/creator/последних sender из существующих durable lineage/correspondence. Выход — одна ограниченная context projection с IDs/freshness и ACL, без текста чужих диалогов. Проверка reopen существующей SQLite fixture; source-only не выдавать за model injection.",
+        "note": "FAST-PATH revision: один конкретный reusable integration result; ≤15мин. Source/unit, native proof и installed proof отмечать раздельно. Перед новым этапом раскрыть только непроверенный остаток."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:12:43+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:22:21+03:00",
+      "note": "V044A source projection and SQLite source tests complete; export-only integration hunk handed to Terra, consumer/model injection remains separate.",
+      "changes": {
+        "status": "done",
+        "result": "Committed 5a8bcd65c7bc758be34d97be2a5e7b2d42b398f6 adding only crates/herder/src/application/context.rs. project_self_context reuses existing Writer lineage/messages/intents, requires verified self plus exact session Read ACL, returns IDs and original source timestamps only (no correspondence text), bounds recent senders at 8, and distinguishes creator missing and sender missing/complete/partial. Existing SQLite create/close/reopen fixture, recipient ACL denial, private-text exclusion and partial cap tests: 3 passed. Evidence: evidence/v044a-context-source-green.txt. Tests used temporary module export, removed before commit. Export hunk sent to Terra; no shared lib/Cargo/schema diff. Model-visible injection and runtime acceptance are not proven."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Committed 5a8bcd65c7bc758be34d97be2a5e7b2d42b398f6 adding only crates/herder/src/application/context.rs. project_self_context reuses existing Writer lineage/messages/intents, requires verified self plus exact session Read ACL, returns IDs and original source timestamps only (no correspondence text), bounds recent senders at 8, and distinguishes creator missing and sender missing/complete/partial. Existing SQLite create/close/reopen fixture, recipient ACL denial, private-text exclusion and partial cap tests: 3 passed. Evidence: evidence/v044a-context-source-green.txt. Tests used temporary module export, removed before commit. Export hunk sent to Terra; no shared lib/Cargo/schema diff. Model-visible injection and runtime acceptance are not proven."
 }

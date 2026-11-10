@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /tmp/herder-budget-proof
+
+ ❯ tests/chatgpt-background-budget.test.ts (4 tests | 1 failed | 3 skipped) 15ms
+   × does not multiply backoff when two tabs repeatedly report the same two 429s 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/chatgpt-background-budget.test.ts > does not multiply backoff when two tabs repeatedly report the same two 429s
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/chatgpt-background-budget.test.ts:48:28
+     46|   }
+     47|   f.advance(600_000);
+     48|   expect(budget.reserve()).toBe(true);
+       |                            ^
+     49| });
+     50|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  11:18:43
+   Duration  313ms (transform 60ms, setup 0ms, import 88ms, tests 15ms, environment 0ms)
+

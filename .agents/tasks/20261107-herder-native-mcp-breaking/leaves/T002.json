@@ -11,9 +11,9 @@
     "maximum": 15
   },
   "parent": "S01",
-  "owner": "unassigned",
+  "owner": "roomhacker",
   "model": "gpt-6-astra",
-  "status": "queued",
+  "status": "done",
   "affected_files": [
     "crates/herder-compat/",
     "acceptance/compat/"
@@ -22,9 +22,9 @@
   "estimate_unknown_reason": "Совместимость SDK/клиента подтверждается данным gate; неизвестное исправление не оценено фиктивными 15 минутами.",
   "id": "T002",
   "created_at": "2026-11-07T04:20:35+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
   "harness": "codex",
-  "updated_at": "2026-11-07T04:20:35+03:00",
+  "updated_at": "2026-11-07T05:07:27+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T04:20:35+03:00",
@@ -54,6 +54,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:07:08+03:00",
+      "note": "T001 готов. Проверяю SDK обеих сторон против реального herder_native_stdio (source 514b46e6): native discover 2026-07-28, legacy initialize 2025-06-18, forwarding текущего каталога14; consumer/business acceptance отдельно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:07:27+03:00",
+      "note": "T002 wire gate пройден на реальном native stdio probe; product/consumer proof не заявляется.",
+      "changes": {
+        "status": "done",
+        "result": "Закреплён rmcp=3.9.0; upstream использует ClientLifecycleMode::Discover и строго получает 2026-07-28, downstream stdio negotiate initialize на 2025-06-18. Интеграционный wire test подключил LegacyEdge к скомпилированному crates/herder/src/bin/herder_native_stdio, проксировал ровно список 14 native tools из upstream discovery и подтвердил отсутствие downgrade. Evidence: review-evidence/run-01a1b398/native-endpoint.json; test output green-B8.txt. Это только protocol/catalog proof: native handlers пока unsupported/effect=none, capabilities Tasks/Skills/Resources отсутствуют; Codex consumer и бизнес-путь не проверены."
+      },
+      "session": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Закреплён rmcp=3.9.0; upstream использует ClientLifecycleMode::Discover и строго получает 2026-07-28, downstream stdio negotiate initialize на 2025-06-18. Интеграционный wire test подключил LegacyEdge к скомпилированному crates/herder/src/bin/herder_native_stdio, проксировал ровно список 14 native tools из upstream discovery и подтвердил отсутствие downgrade. Evidence: review-evidence/run-01a1b398/native-endpoint.json; test output green-B8.txt. Это только protocol/catalog proof: native handlers пока unsupported/effect=none, capabilities Tasks/Skills/Resources отсутствуют; Codex consumer и бизнес-путь не проверены."
 }

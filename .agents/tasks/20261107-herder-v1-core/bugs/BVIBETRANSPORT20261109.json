@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-08T23:20:54+00:00",
+  "details": "ChatGPT and Z.ai owner runner only accepts direct-cdp or legacy mac-mini transport. Legacy MacMini gateway port50260 has no listener. Installed Vibe supports explicit durable extension session pin with --session; current shared HTTP child omits it and chooses firstConnected. Add explicit SDK transport with canonical binding, session pin, checked mappings and no request replay. Native model prompts remain zero.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T23:20:54+00:00",
+      "changes": {
+        "details": "ChatGPT and Z.ai owner runner only accepts direct-cdp or legacy mac-mini transport. Legacy MacMini gateway port50260 has no listener. Installed Vibe supports explicit durable extension session pin with --session; current shared HTTP child omits it and chooses firstConnected. Add explicit SDK transport with canonical binding, session pin, checked mappings and no request replay. Native model prompts remain zero.",
+        "source": "observed",
+        "status": "open",
+        "title": "Browser AHAP has no explicit Vibe session transport"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T23:33:48+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/ci-visible-20261109/vibe-transport/result.json",
+            "red_proof_path": "evidence/ci-visible-20261109/vibe-transport/vibe-selection-red.log",
+            "red_result": "2 failed",
+            "red_sha256": "078bf29188384b0df93d33d14926e396a5eccf5db1df3d4065ed16ea94dcef93",
+            "result": "GREEN: 84 passed",
+            "sha256": "1c13130ff78bfbdef13ec0d5d87729b06220ba93495f8822e0d6f030616bec81",
+            "test_command": "node node_modules/vitest/vitest.mjs run --config vitest.config.ts tests/vibe-chrome-transport.test.ts tests/ahap-browser-vibe-selection.test.ts tests/ahap-browser-runner.test.ts; tsc --noEmit; own loopback fixture smoke"
+          },
+          "kind": "fixed",
+          "reason": "Explicit Vibe extension-session transport, SDK receipts and independent-invocation ownership are verified. No model prompts or installed profile changes."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "BVIBETRANSPORT20261109",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "reporter": "chatgpt-all-harness-ci-20261109",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/ci-visible-20261109/vibe-transport/result.json",
+      "red_proof_path": "evidence/ci-visible-20261109/vibe-transport/vibe-selection-red.log",
+      "red_result": "2 failed",
+      "red_sha256": "078bf29188384b0df93d33d14926e396a5eccf5db1df3d4065ed16ea94dcef93",
+      "result": "GREEN: 84 passed",
+      "sha256": "1c13130ff78bfbdef13ec0d5d87729b06220ba93495f8822e0d6f030616bec81",
+      "test_command": "node node_modules/vitest/vitest.mjs run --config vitest.config.ts tests/vibe-chrome-transport.test.ts tests/ahap-browser-vibe-selection.test.ts tests/ahap-browser-runner.test.ts; tsc --noEmit; own loopback fixture smoke"
+    },
+    "kind": "fixed",
+    "reason": "Explicit Vibe extension-session transport, SDK receipts and independent-invocation ownership are verified. No model prompts or installed profile changes."
+  },
+  "source": "observed",
+  "status": "fixed",
+  "title": "Browser AHAP has no explicit Vibe session transport",
+  "updated_at": "2026-11-08T23:33:48+00:00"
+}

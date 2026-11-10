@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-11-06T15:20:14.116848+00:00",
+  "method": "isolated process, synthetic chunks and disposable sqlite, monitorEventLoopDelay",
+  "measurements": [
+    {
+      "component": "SessionSearchIndex.ingest",
+      "fixtureChunks": 60000,
+      "elapsedMs": 2622,
+      "eventLoopMaxMs": 2531,
+      "scope": "synthetic, local disposable database only"
+    },
+    {
+      "component": "SessionSearchIndex.ingest",
+      "fixtureChunks": 300000,
+      "elapsedMs": 12310,
+      "eventLoopMaxMs": 11937,
+      "scope": "synthetic, local disposable database only"
+    }
+  ],
+  "source": "src/session-search.ts:104 ingest, synchronous transaction loops starting at line 134",
+  "source_sha256": "a5b779591259fe8ab06f38efe1f95eff7c37fde47b7f326a83c63d5bf4e8020b",
+  "installed_dist_sha256": "63f7b9524d3ab31b5a85900fda8072cdaa17d020a8a548024a45548e8debd5c5",
+  "installed_dist_observation": "same synchronous loops observed by source inspection; runtime invocation during timeout not proven",
+  "installed_index_aggregate": {
+    "sessions": 25437,
+    "chunks": 582043,
+    "search_run_status": "complete",
+    "search_run_updated_at": "2026-11-06T15:17:59.976Z",
+    "max_chunks_per_session": "unknown; query cancelled by 1-second sqlite progress budget"
+  },
+  "production_causation": "unknown; synthetic 300k chunks can stall >10s, no evidence this load occurred during production timeout",
+  "command": "npx vitest run --root . --config .tmp/l22-vitest.config.ts",
+  "repro_test": ".tmp/l22-synthetic-search.test.ts"
+}

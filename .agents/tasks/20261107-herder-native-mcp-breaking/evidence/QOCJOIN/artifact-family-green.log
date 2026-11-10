@@ -1,0 +1,2 @@
+v2 PASS [["POST", "/api/session", {"title": "worker", "location": {"directory": "/tmp/work"}}], ["POST", "/api/session/ses_test/prompt", {"text": "hello", "delivery": "queue", "metadata": {"agentHerderInputId": "key"}}]]
+v22 PASS [["POST", "/session", {"title": "worker"}], ["POST", "/session/ses_test/message", {"parts": [{"type": "text", "text": "hello"}]}]]

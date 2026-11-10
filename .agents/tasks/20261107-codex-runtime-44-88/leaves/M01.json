@@ -1,0 +1,22 @@
+{
+  "id": "M01",
+  "label": "Восстановить Codex на двух серверах",
+  "kind": "milestone",
+  "status": "queued",
+  "created_at": "2026-11-07T03:30:42+03:00",
+  "updated_at": "2026-11-07T03:30:42+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:30:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "M01",
+        "label": "Восстановить Codex на двух серверах",
+        "kind": "milestone",
+        "status": "queued"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

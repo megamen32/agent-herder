@@ -1,0 +1,49 @@
+(node:339) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:339) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-dno0hfsy/codex-home", "rollouts": ["/tmp/herder-native-model-dno0hfsy/codex-home/sessions/2026/11/06/rollout-2026-11-06T20-04-21-01a1b276-52c7-7883-9fc4-fa2c88e43d04.jsonl", "/tmp/herder-native-model-dno0hfsy/codex-home/sessions/2026/11/06/rollout-2026-11-06T20-04-21-01a1b276-518a-7443-832e-f686865383a9.jsonl", "/tmp/herder-native-model-dno0hfsy/codex-home/sessions/2026/11/06/rollout-2026-11-06T20-03-49-01a1b275-d507-7760-bc08-ed0e8d26b97e.jsonl", "/tmp/herder-native-model-dno0hfsy/codex-home/sessions/2026/11/06/rollout-2026-11-06T20-03-49-01a1b275-d4d3-7573-83ce-8933b76c23ae.jsonl", "/tmp/herder-native-model-dno0hfsy/codex-home/sessions/2026/11/06/rollout-2026-11-06T20-03-40-01a1b275-b4f4-7d31-af64-4142585586ed.jsonl"]}
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-dno0hfsy/home/.codex", "rollouts": []}
+(node:581) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: opencode, codex
+[agent-herder] Autopilot native turn bridge active for opencode
+[agent-herder] Web UI listening on http://127.0.0.1:47387
+[agent-herder] permission Notice snapshot incomplete: session_inventory_partial (opencode)
+(node:581) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Traceback (most recent call last):
+  File "/mnt/native-entrypoint-probe.py", line 193, in <module>
+    if __name__=='__main__': main()
+  File "/mnt/native-entrypoint-probe.py", line 173, in main
+    raise RuntimeError(f'actual MCP search failed: {search.stderr[-2000:]}')
+RuntimeError: actual MCP search failed: node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: codex search omitted exact session 0: {"content":[{"type":"text","text":"{\"results\":[],\"hosts\":[{\"hostId\":\"server-44\",\"state\":\"unavailable\",\"partial\":true,\"results\":[],\"reason\":\"direct_native_listener_unavailable\"}],\"partial\":true,\"elapsedMs\":82.56}"}],"structuredContent":{"results":[],"hosts":[{"hostId":"server-44","state":"unavailable","partial":true,"results":[],"reason":"direct_native_listener_unavailable"}],"partial":true,"elapsedMs":82.56}}
+    at file:///mnt/native-entrypoint-search.mjs:21:14 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v22.23.1
+
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 190, in main
+    subprocess.run([sys.executable, str(HERE / "native-entrypoint-probe.py"), args.herder_dist, str(root / "work"), f"http://127.0.0.1:{open_code_port}", f"http://127.0.0.1:{port}"], env=env, cwd=root / "work", check=True, timeout=120)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/native-entrypoint-probe.py', '/mnt/candidate/dist', '/tmp/herder-native-model-dno0hfsy/work', 'http://127.0.0.1:36013', 'http://127.0.0.1:33503']' returned non-zero exit status 1.
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

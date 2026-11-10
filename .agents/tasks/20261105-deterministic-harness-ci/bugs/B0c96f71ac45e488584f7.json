@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:59:14+00:00",
+  "details": "При широком профильном прогоне Fast Agent прочитал локальный store вместо тестового каталога. По сообщению исполнителя записей не было. FAST_AGENT_HOME изменён на отдельную директорию; требуется RED/GREEN защита и подтверждение повтором, без раскрытия содержимого.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:59:14+00:00",
+      "changes": {
+        "details": "При широком профильном прогоне Fast Agent прочитал локальный store вместо тестового каталога. По сообщению исполнителя записей не было. FAST_AGENT_HOME изменён на отдельную директорию; требуется RED/GREEN защита и подтверждение повтором, без раскрытия содержимого.",
+        "source": "L37 изолированный тест интеграционного snapshot",
+        "status": "open",
+        "title": "Fast Agent fixture читала локальное рабочее хранилище сессий"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "worker-fast-agent",
+      "at": "2026-11-06T17:01:42+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/fast-agent-b0c96-isolation-green-focused.log",
+            "red_proof_path": "evidence/fast-agent-b0c96-isolation-red.log",
+            "red_result": "Tests  1 failed | 7 skipped (8)",
+            "red_sha256": "6a975d0922f01ab1d70bed908244f77be72c928432582d61ad1dfe9e53b9a454",
+            "result": "Tests  1 passed | 7 skipped (8)",
+            "sha256": "a61613debe4b011dca74a4fe826b6de8272ea2887a4a1ba34126620f68215aed",
+            "test_command": "./node_modules/.bin/vitest run tests/session-search-sources.test.ts -t 'isolates Fast Agent fixture'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B0c96f71ac45e488584f7",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/fast-agent-b0c96-isolation-green-focused.log",
+      "red_proof_path": "evidence/fast-agent-b0c96-isolation-red.log",
+      "red_result": "Tests  1 failed | 7 skipped (8)",
+      "red_sha256": "6a975d0922f01ab1d70bed908244f77be72c928432582d61ad1dfe9e53b9a454",
+      "result": "Tests  1 passed | 7 skipped (8)",
+      "sha256": "a61613debe4b011dca74a4fe826b6de8272ea2887a4a1ba34126620f68215aed",
+      "test_command": "./node_modules/.bin/vitest run tests/session-search-sources.test.ts -t 'isolates Fast Agent fixture'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L37 изолированный тест интеграционного snapshot",
+  "status": "fixed",
+  "title": "Fast Agent fixture читала локальное рабочее хранилище сессий",
+  "updated_at": "2026-11-06T17:01:42+00:00"
+}

@@ -1,0 +1,121 @@
+{
+  "id": "V025LAUNCH",
+  "label": "Fresh authority в штатном launcher",
+  "description": "Проверить защищённый локальный launch profile и открытие pinned scoped authority.",
+  "acceptance": "Exact v3 schema, protected file chain, inode/generation, FIFO fail closed и отрицательная stdio identity-проверка; authenticated MCP composition отдельно.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025GUARD1"
+  ],
+  "created_at": "2026-11-07T11:24:46+03:00",
+  "updated_at": "2026-11-07T12:15:17+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:24:46+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025LAUNCH",
+        "label": "Fresh authority в штатном launcher",
+        "description": "Привязать доверенную fresh authority и точную mapping к штатному запуску; импорт без доказанного handoff закрыт.",
+        "acceptance": "Тесты подтверждают один canonical store, trusted fresh provenance и fail-closed для existing/imported.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025PORT"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:27:40+03:00",
+      "note": "Развязана независимая работа launcher от bounded transport; один владелец Tesla.",
+      "changes": {
+        "depends_on": [
+          "V025GUARD1"
+        ],
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "note": "Независимо от реализации bounded port: trusted authority/launcher, deny existing/imported; public proof ждёт V025PORT и V025LAUNCH."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:54:19+03:00",
+      "note": "Изолированный launcher slice проверен; сохраняется необходимость authenticated application composition.",
+      "changes": {
+        "status": "running",
+        "note": "Локальный кандидат b100554b на 9eafde2d: защищённый профиль stdio проверяет v3 store и pinned gate/generation без миграции; 3 isolated tests, receipt после reopen, imported denied. ScopedAuthority пока удерживается launcher, но не подключена к MCP ApplicationPort: Caller::Unknown, требуется доверенный identity/grants и финальная композиция после V055CREATE. Публичный consumer не доказан; не считать leaf завершённым."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T11:59:19+03:00",
+      "note": "Сведён опубликованный bounded create contract, прежнее ограничение authenticated MCP composition сохраняется.",
+      "changes": {
+        "note": "На свежем main ce46aa12 (включает V055CREATE 309fd821) локальные commits 362e0606 + 75d22b49: защищённый launch profile, сверка единого v3 store/pinned gate/generation и адаптация test fixture к SubmitError. Совместные launcher/scoped/schema/gate/target тесты прошли; stdio без identity отказывает spoofed principal. ScopedAuthority пока не подключена к MCP ApplicationPort; verified identity и exact grants для stdio отсутствуют, public task status и native consumer не доказаны."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:02:05+03:00",
+      "note": "Ожидается review пути и inode/generation; текущая identity Unknown.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Независимый security review candidate 362e0606+75d22b49",
+        "result": "Tesla candidate защищённого профиля открывает pinned authority, не авторизует caller и не подключает ApplicationPort; интеграционный кандидат 895982a8 поверх ce46aa12, launcher3/scoped19+1ignored/target1 passed. Публичный путь не доказан."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:06:59+03:00",
+      "note": "Не принимать до проверенного исправления; security review нашёл конкретные дефекты.",
+      "changes": {
+        "wait_reason": "REVISE: Tesla исправляет v3 schema, единое DB подключение/ancestor boundary и NONBLOCK для FIFO",
+        "result": "Candidate 362e0606+75d22b49: launcher3/scoped19+1ignored/target1 PASS, независимое security review REVISE; не интегрирован. Identity Unknown корректна, public MCP не подключён."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:10:28+03:00",
+      "note": "Исправлены source findings независимого reviewer; кандидат требует повторного review.",
+      "changes": {
+        "note": "После REVISE локальный 4de1ff03: exact v3 и schema/authority в одной read transaction, pin fd и проверка device/inode и защищённых предков, FIFO O_NONBLOCK; реальный scoped stdio отклоняет spoofed identity с effect=none. Тесты launcher 8/8, scoped 19/19 (+1 ignored), schema/gate 4/4, target 1/1, lib 106/106. Граница доверия: root/current UID, неперезаписываемые чужими пользователями предки; malicious same UID не покрыт. ScopedAuthority всё ещё не подключена к authenticated MCP application; public consumer/Task.status не доказаны."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:15:17+03:00",
+      "note": "Подтверждённая часть завершена; оставшаяся authenticated composition перенесена в V025COMPOSE и V025PUBLIC.",
+      "changes": {
+        "status": "done",
+        "wait_reason": "",
+        "description": "Проверить защищённый локальный launch profile и открытие pinned scoped authority.",
+        "acceptance": "Exact v3 schema, protected file chain, inode/generation, FIFO fail closed и отрицательная stdio identity-проверка; authenticated MCP composition отдельно.",
+        "result": "origin/main ce10245a: protected scoped profile и exact v3; launcher8, scoped19+1ignored, schema2, pinned2, target1 passed; independent security review SUPPORTED для trust boundary root/current UID. Caller Unknown, ApplicationPort не подключён."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "note": "После REVISE локальный 4de1ff03: exact v3 и schema/authority в одной read transaction, pin fd и проверка device/inode и защищённых предков, FIFO O_NONBLOCK; реальный scoped stdio отклоняет spoofed identity с effect=none. Тесты launcher 8/8, scoped 19/19 (+1 ignored), schema/gate 4/4, target 1/1, lib 106/106. Граница доверия: root/current UID, неперезаписываемые чужими пользователями предки; malicious same UID не покрыт. ScopedAuthority всё ещё не подключена к authenticated MCP application; public consumer/Task.status не доказаны.",
+  "wait_reason": "",
+  "result": "origin/main ce10245a: protected scoped profile и exact v3; launcher8, scoped19+1ignored, schema2, pinned2, target1 passed; independent security review SUPPORTED для trust boundary root/current UID. Caller Unknown, ApplicationPort не подключён."
+}

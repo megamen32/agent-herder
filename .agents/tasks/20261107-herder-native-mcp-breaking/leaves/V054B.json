@@ -11,18 +11,18 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V054 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V054 обязателен в конце цепочки.",
+  "note": "Использован thread/items/list вместо deprecated thread/read(includeTurns=true); live read выполнен без новых model inputs.",
   "created_at": "2026-11-07T03:53:15+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:15+03:00",
+  "updated_at": "2026-11-07T05:47:33+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:15+03:00",
@@ -51,6 +51,30 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:37:27+03:00",
+      "note": "Нормализовать только сообщения user/assistant и native turn refs в read.rs; реализация изолирована от центрального wiring lib.rs, который ведёт Тера.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:47:33+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "В crates/herder/src/adapters/codex/read.rs добавлены NativeMessageRole, NativeMessage/NativeMessagePage и CodexReader::list_messages на native `thread/items/list` с пагинацией и точным turnId. Изолированный live Codex app-server harness: 1/1; сохранённая fixture-сессия вернула точные user ID 01a1b3a1-b343-7640-9ace-e878747ae1da и assistant ID msg_test_1, оба связаны с turn ID 01a1b3a1-b2aa-7512-a959-b40be3fabdce; текст input и HERDER_TEST_MODEL_OK совпали. Evidence: .tmp/v052b-codex-profile-20261107/v054b-native-items.log. Коммит 4d40a4c6 опубликован в origin/main, удалённый HEAD подтверждён. Не доказаны Herder MCP или installed consumer; это остаётся E001.",
+        "actual_minutes": 15,
+        "note": "Использован thread/items/list вместо deprecated thread/read(includeTurns=true); live read выполнен без новых model inputs."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "В crates/herder/src/adapters/codex/read.rs добавлены NativeMessageRole, NativeMessage/NativeMessagePage и CodexReader::list_messages на native `thread/items/list` с пагинацией и точным turnId. Изолированный live Codex app-server harness: 1/1; сохранённая fixture-сессия вернула точные user ID 01a1b3a1-b343-7640-9ace-e878747ae1da и assistant ID msg_test_1, оба связаны с turn ID 01a1b3a1-b2aa-7512-a959-b40be3fabdce; текст input и HERDER_TEST_MODEL_OK совпали. Evidence: .tmp/v052b-codex-profile-20261107/v054b-native-items.log. Коммит 4d40a4c6 опубликован в origin/main, удалённый HEAD подтверждён. Не доказаны Herder MCP или installed consumer; это остаётся E001.",
+  "actual_minutes": 15
 }

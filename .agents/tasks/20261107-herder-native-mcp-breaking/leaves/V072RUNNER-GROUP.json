@@ -1,0 +1,91 @@
+{
+  "id": "V072RUNNER-GROUP",
+  "parent": "S05",
+  "label": "ZCode runner: reap remaining process group after timeout",
+  "description": "Reproduce and fix timeout cleanup where process leader exits after SIGTERM but a grandchild ignores it; validate profile symlink before resolving in run and explicit cleanup.",
+  "acceptance": "Local fake parent/grandchild RED then GREEN proves no live descendant remains after runner timeout; cleanup only test PIDs; run and cleanup reject a symlink profile path before resolve. Commit only runner.py and test_runner.py.",
+  "affected_files": [
+    "acceptance/native/zcode/runner.py",
+    "acceptance/native/zcode/test_runner.py"
+  ],
+  "status": "done",
+  "kind": "task",
+  "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "estimate_minutes": 15,
+  "estimate": "15 minutes",
+  "depends_on": [],
+  "note": "User-authorized continuation of runner cleanup defect; fake subprocess only; V072D remains UNKNOWN.",
+  "created_at": "2026-11-07T12:25:54+03:00",
+  "updated_at": "2026-11-07T12:29:05+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:25:54+03:00",
+      "note": "",
+      "changes": {
+        "id": "V072RUNNER-GROUP",
+        "parent": "S05",
+        "label": "ZCode runner: reap remaining process group after timeout",
+        "description": "Reproduce and fix timeout cleanup where process leader exits after SIGTERM but a grandchild ignores it; validate profile symlink before resolving in run and explicit cleanup.",
+        "acceptance": "Local fake parent/grandchild RED then GREEN proves no live descendant remains after runner timeout; cleanup only test PIDs; run and cleanup reject a symlink profile path before resolve. Commit only runner.py and test_runner.py.",
+        "affected_files": [
+          "acceptance/native/zcode/runner.py",
+          "acceptance/native/zcode/test_runner.py"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "owner": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "estimate_minutes": 15,
+        "estimate": "15 minutes",
+        "depends_on": [],
+        "note": "User-authorized continuation of runner cleanup defect; fake subprocess only; V072D remains UNKNOWN."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:28:17+03:00",
+      "note": "RED reproduced a continuing grandchild heartbeat after runner exit; applying process-group cleanup and pre-resolve symlink checks.",
+      "changes": {
+        "status": "running",
+        "started_at": "2026-11-07T14:20:00+03:00"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:28:31+03:00",
+      "note": "Start time corrected from live UTC clock.",
+      "changes": {
+        "started_at": "2026-11-07T12:28:24+03:00"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:28:49+03:00",
+      "note": "Committed group cleanup and pre-resolve symlink validation; full offline suite passed 3/3.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T12:28:24+03:00",
+        "actual_minutes": 4,
+        "result": "Scoped commit c167805d changes only acceptance/native/zcode/runner.py and test_runner.py. RED before fix: fake grandchild ignoring SIGTERM continued its heartbeat after runner exit (20 to 26 lines). GREEN: `python3 -m unittest acceptance/native/zcode/test_runner.py` passed 3/3; timeout sends SIGKILL to the original process group after leader exit or grace expiry; run and explicit cleanup reject the source profile symlink before resolve. Tests kill only their own fake PID/group in finally. No native calls. Existing unrelated Cargo/lib/contract/README WIP remains untouched."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:29:05+03:00",
+      "note": "Finish time updated from live UTC clock.",
+      "changes": {
+        "finished_at": "2026-11-07T12:28:56+03:00",
+        "actual_minutes": 5
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "started_at": "2026-11-07T12:28:24+03:00",
+  "finished_at": "2026-11-07T12:28:56+03:00",
+  "actual_minutes": 5,
+  "result": "Scoped commit c167805d changes only acceptance/native/zcode/runner.py and test_runner.py. RED before fix: fake grandchild ignoring SIGTERM continued its heartbeat after runner exit (20 to 26 lines). GREEN: `python3 -m unittest acceptance/native/zcode/test_runner.py` passed 3/3; timeout sends SIGKILL to the original process group after leader exit or grace expiry; run and explicit cleanup reject the source profile symlink before resolve. Tests kill only their own fake PID/group in finally. No native calls. Existing unrelated Cargo/lib/contract/README WIP remains untouched."
+}

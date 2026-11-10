@@ -1,0 +1,43 @@
+{
+  "schema": "agent-herder.ci-browser-source-result.v1",
+  "status": "PASS",
+  "acceptance_status": "SOURCE_GREEN_INSTALLED_PENDING",
+  "observed_at": "2026-11-09T00:44:37.605798+00:00",
+  "node_version": "v22.22.2",
+  "test_count": 17,
+  "installed_changes": false,
+  "source_root": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder",
+  "checks": [
+    {
+      "args": [
+        "--check",
+        "deploy/fleet/ci-browser-fixture.mjs"
+      ],
+      "exit_code": 0,
+      "log": "node-check-v2.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "--test",
+        "tests/native/ci-browser-fixture.test.mjs"
+      ],
+      "exit_code": 0,
+      "log": "node-test-v2.log",
+      "log_sha256": "b7ee227ed29b9a7face1e4f5460551520653a479075d08df1d4514ead64cb397"
+    }
+  ],
+  "red": {
+    "kind": "local_missing_module",
+    "exit_code": 1,
+    "message": "ERR_MODULE_NOT_FOUND before implementation"
+  },
+  "files": {
+    "deploy/fleet/ci-browser-fixture.mjs": "46a621e1b0c6772b27269bab4ff426cd38df923b457aa4e1cdc0db18d189f000",
+    "deploy/fleet/ci-browser-fixture.service": "ee00e368008fe25f85466104827b9e5346c2a23c6eda607623fb07048dbc06fa",
+    "deploy/fleet/ci-browser-fixture.relay.service": "1836265fe43c7eb65f060b425b92d1ffb1d7f64c06f0de3b0f920fb563900e43",
+    "deploy/fleet/ci-browser-fixture.config.example.json": "51cbbc7b3223f48af23d6bf9b6fc1348b27a14cd1cf857d949466d905fa37ff2",
+    "deploy/fleet/ci-browser-fixture.md": "852d73cbb179e4a62cde1bbf0ff5ff6b062a40c7e32f10c17b25087be1f2a1d8",
+    "tests/native/ci-browser-fixture.test.mjs": "3ebd085dcbc646c70ca4f3212f8cb24c92e8fb80875f576d4fdfc06ed0a73603"
+  }
+}

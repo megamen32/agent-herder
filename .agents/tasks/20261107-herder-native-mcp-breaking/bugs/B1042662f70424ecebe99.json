@@ -1,0 +1,88 @@
+{
+  "created_at": "2026-11-07T11:03:12+00:00",
+  "details": "Focused ChatGPT test build failed with E0621 because selected_branch returned references with the mapping lifetime while current_node had an unrelated lifetime. Fixed by binding current_node to the same function lifetime. RED and GREEN receipts stored in evidence/V081AB-chatgpt-red.txt and evidence/V081AB-chatgpt-green.txt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex",
+      "at": "2026-11-07T11:03:12+00:00",
+      "changes": {
+        "details": "Focused ChatGPT test build failed with E0621 because selected_branch returned references with the mapping lifetime while current_node had an unrelated lifetime. Fixed by binding current_node to the same function lifetime. RED and GREEN receipts stored in evidence/V081AB-chatgpt-red.txt and evidence/V081AB-chatgpt-green.txt.",
+        "source": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture",
+        "status": "open",
+        "title": "V081 recent branch helper omitted current_node lifetime"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex",
+      "at": "2026-11-07T11:03:38+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V081AB-chatgpt-green.txt",
+            "red_proof_path": "evidence/V081AB-chatgpt-red.txt",
+            "red_result": "error[E0621]: explicit lifetime required in the type of `current_node`",
+            "red_sha256": "d1f5c570b331fe46bf549ef0e668a3b028b71b38e7179f64baa633751a585d79",
+            "result": "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 121 filtered out",
+            "sha256": "27e28a264aa99954e7fad70eb258c1ecbfcd34ec948ddecbe565e1b54a4b3b0b",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Codex",
+      "at": "2026-11-07T11:08:15+00:00",
+      "changes": {
+        "status": "open"
+      },
+      "reason": "The focused green receipt was replaced by the final post-scope-recheck suite; refresh the immutable closure against the final canonical receipt."
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex",
+      "at": "2026-11-07T11:08:26+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V081AB-chatgpt-green.txt",
+            "red_proof_path": "evidence/V081AB-chatgpt-red.txt",
+            "red_result": "error[E0621]: explicit lifetime required in the type of `current_node`",
+            "red_sha256": "d1f5c570b331fe46bf549ef0e668a3b028b71b38e7179f64baa633751a585d79",
+            "result": "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 121 filtered out",
+            "sha256": "55aa441dc592e494246eb34816f8c5c723e828a721714bb1e879a3ce7f1af94d",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B1042662f70424ecebe99",
+  "owner": "Codex",
+  "reporter": "Codex",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V081AB-chatgpt-green.txt",
+      "red_proof_path": "evidence/V081AB-chatgpt-red.txt",
+      "red_result": "error[E0621]: explicit lifetime required in the type of `current_node`",
+      "red_sha256": "d1f5c570b331fe46bf549ef0e668a3b028b71b38e7179f64baa633751a585d79",
+      "result": "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 121 filtered out",
+      "sha256": "55aa441dc592e494246eb34816f8c5c723e828a721714bb1e879a3ce7f1af94d",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo test --manifest-path crates/herder/Cargo.toml adapters::chatgpt -- --nocapture",
+  "status": "fixed",
+  "title": "V081 recent branch helper omitted current_node lifetime",
+  "updated_at": "2026-11-07T11:08:26+00:00"
+}

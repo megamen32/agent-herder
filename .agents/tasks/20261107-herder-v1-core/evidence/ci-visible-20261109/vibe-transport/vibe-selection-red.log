@@ -1,0 +1,44 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder[39m
+
+ [31m❯[39m tests/ahap-browser-vibe-selection.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 20[2mms[22m[39m
+[31m     [31m×[31m selects only the configured Vibe browser session[39m[32m 8[2mms[22m[39m
+[31m     [31m×[31m refuses unpinned browser sessions before constructing a transport[39m[32m 10[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m   Start at [22m 02:22:20
+[2m   Duration [22m 700ms[2m (transform 374ms, setup 35ms, import 451ms, tests 20ms, environment 0ms)[22m
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/ahap-browser-vibe-selection.test.ts[2m > [22mexplicit Vibe owner selection[2m > [22mselects only the configured Vibe browser session
+[31m[1mError[22m: AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini[39m
+[36m [2m❯[22m makeConfiguredAdapter src/ahap-browser-runner.ts:[2m279:11[22m[39m
+    [90m277|[39m   const transport = (env.AHAP_BROWSER_TRANSPORT ?? env.AHAP_CHATGPT_TR…
+    [90m278|[39m   [35mif[39m (transport [33m!==[39m [32m"direct-cdp"[39m [33m&&[39m transport [33m!==[39m [32m"mac-mini"[39m) {
+    [90m279|[39m     throw new Error("AHAP_BROWSER_TRANSPORT must explicitly select dir…
+    [90m   |[39m           [31m^[39m
+    [90m280|[39m   }
+    [90m281|[39m   // The page number is only a first-use hint. The driver owns exactly…
+[90m [2m❯[22m tests/ahap-browser-vibe-selection.test.ts:[2m7:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/ahap-browser-vibe-selection.test.ts[2m > [22mexplicit Vibe owner selection[2m > [22mrefuses unpinned browser sessions before constructing a transport
+[31m[1mAssertionError[22m: expected [Function] to throw error including 'Exact Vibe target and browser session…' but got 'AHAP_BROWSER_TRANSPORT must explicitl…'[39m
+
+Expected: [32m"Exact Vibe target and browser session are required"[39m
+Received: [31m"AHAP_BROWSER_TRANSPORT must explicitly select direct-cdp or mac-mini"[39m
+
+[36m [2m❯[22m tests/ahap-browser-vibe-selection.test.ts:[2m33:9[22m[39m
+    [90m 31|[39m       [33mAHAP_BROWSER_ACCOUNT_SCOPE[39m[33m:[39m [32m"a"[39m[33m.[39m[34mrepeat[39m([34m64[39m)[33m,[39m
+    [90m 32|[39m       AHAP_BROWSER_VIBE_TARGET: "mcp:shell:roomhacker-server-100:VibeS…
+    [90m 33|[39m     }))[33m.[39m[34mtoThrow[39m([32m"Exact Vibe target and browser session are required"[39m)[33m;[39m
+    [90m   |[39m         [31m^[39m
+    [90m 34|[39m   })[33m;[39m
+    [90m 35|[39m })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+

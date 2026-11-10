@@ -1,0 +1,59 @@
+TAP version 13
+# Subtest: list result is bound to its first chat's account identity
+    # Subtest: account A list and matching first-chat proof succeeds
+    ok 1 - account A list and matching first-chat proof succeeds
+      ---
+      duration_ms: 5.58981
+      type: 'test'
+      ...
+    # Subtest: account B list and B proof is rejected for expected account A
+    ok 2 - account B list and B proof is rejected for expected account A
+      ---
+      duration_ms: 1.864105
+      type: 'test'
+      ...
+    # Subtest: proof with another chat identity fails closed
+    ok 3 - proof with another chat identity fails closed
+      ---
+      duration_ms: 1.611558
+      type: 'test'
+      ...
+    # Subtest: list HTTP 403 preserves provider status
+    ok 4 - list HTTP 403 preserves provider status
+      ---
+      duration_ms: 1.666831
+      type: 'test'
+      ...
+    # Subtest: first-chat HTTP 403 fails closed
+    ok 5 - first-chat HTTP 403 fails closed
+      ---
+      duration_ms: 3.385221
+      type: 'test'
+      ...
+    # Subtest: missing first-chat user_id fails closed
+    ok 6 - missing first-chat user_id fails closed
+      ---
+      duration_ms: 1.720886
+      type: 'test'
+      ...
+    # Subtest: empty list has no identity proof and fails closed
+    ok 7 - empty list has no identity proof and fails closed
+      ---
+      duration_ms: 1.540452
+      type: 'test'
+      ...
+    1..7
+ok 1 - list result is bound to its first chat's account identity
+  ---
+  duration_ms: 21.048622
+  type: 'test'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 159.779657

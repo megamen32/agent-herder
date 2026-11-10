@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T12:30:38+00:00",
+  "details": "GET transcript route passes native ChatGPT JSON to JSONL-only reader. Focused HTTP regression reproduces 422; local reader implementation and frozen pagination tests pass, release and installed readback remain outstanding.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-07T12:30:38+00:00",
+      "changes": {
+        "details": "GET transcript route passes native ChatGPT JSON to JSONL-only reader. Focused HTTP regression reproduces 422; local reader implementation and frozen pagination tests pass, release and installed readback remain outstanding.",
+        "source": "tests/chatgpt-transcript-route.test.ts",
+        "status": "open",
+        "title": "ChatGPT transcript endpoint rejects native JSON with HTTP 422"
+      }
+    }
+  ],
+  "id": "Bcb288b24a26d4913a29c",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "tests/chatgpt-transcript-route.test.ts",
+  "status": "open",
+  "title": "ChatGPT transcript endpoint rejects native JSON with HTTP 422",
+  "updated_at": "2026-11-07T12:30:38+00:00"
+}

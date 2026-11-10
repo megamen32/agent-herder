@@ -1,0 +1,67 @@
+{
+  "id": "V063C",
+  "label": "OpenCode: Сверить native history с Rust reader",
+  "description": "Исправить доступ test runtime через защищённую конфигурацию и сравнить native HTTP history двух изолированных сессий с Rust recent_messages. Секреты не выводить.",
+  "acceptance": "OpenCode native GET history и Rust reader дают одинаковые message IDs, роли и текст обеих тестовых сессий; unknown refs остаются unknown. Evidence JSON сохранён в .tmp/v063-runtime.",
+  "affected_files": [
+    ".tmp/v063-runtime/evidence.json"
+  ],
+  "status": "done",
+  "kind": "task",
+  "parent": null,
+  "owner": "Lead",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "estimate_minutes": 15,
+  "estimate": "15m",
+  "estimate_min": 15,
+  "estimate_max": 15,
+  "created_at": "2026-11-07T06:51:34+03:00",
+  "updated_at": "2026-11-07T07:04:11+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T06:51:34+03:00",
+      "note": "",
+      "changes": {
+        "id": "V063C",
+        "label": "OpenCode: Сверить native history с Rust reader",
+        "description": "Исправить доступ test runtime через защищённую конфигурацию и сравнить native HTTP history двух изолированных сессий с Rust recent_messages. Секреты не выводить.",
+        "acceptance": "OpenCode native GET history и Rust reader дают одинаковые message IDs, роли и текст обеих тестовых сессий; unknown refs остаются unknown. Evidence JSON сохранён в .tmp/v063-runtime.",
+        "affected_files": [
+          ".tmp/v063-runtime/evidence.json"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "parent": "V063",
+        "owner": "Lead",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "estimate_minutes": 15,
+        "estimate": "15m",
+        "estimate_min": 15,
+        "estimate_max": 15
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:51:57+03:00",
+      "note": "",
+      "changes": {
+        "parent": null,
+        "status": "running"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:04:11+03:00",
+      "note": "Использован подтверждённый auth recipe ff4a6ca2: binary напрямую, env -i/XDG, OPENCODE_SERVER_PASSWORD и Basic username opencode.",
+      "changes": {
+        "status": "done",
+        "result": "Authenticated isolated OpenCode 2.2.4 HTTP comparison passed for two task-owned sessions. Evidence: .tmp/v063-runtime/evidence.json. Native and Rust IDs/text match; partial=false; missing turn/reply correlation remains null. Sessions returned HTTP 204 on cleanup and both isolated processes stopped."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Authenticated isolated OpenCode 2.2.4 HTTP comparison passed for two task-owned sessions. Evidence: .tmp/v063-runtime/evidence.json. Native and Rust IDs/text match; partial=false; missing turn/reply correlation remains null. Sessions returned HTTP 204 on cleanup and both isolated processes stopped."
+}

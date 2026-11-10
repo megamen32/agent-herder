@@ -1,0 +1,16 @@
+{
+  "command": [
+    "npx",
+    "vitest",
+    "run",
+    "--root",
+    ".",
+    "--config",
+    "vitest.config.ts",
+    "tests/session-sidebar.test.tsx"
+  ],
+  "exit_code": 1,
+  "source_sha256": "b2fdf9dc576ec759a2a3ccb78955ca274565be4cffc67a25729f19819871ae47",
+  "test_sha256": "b44bfe03809350df467a80ece6a827d05c61da56496d878a9fae4664427c117c",
+  "observed_at": "2026-11-08T23:04:33.397194+00:00"
+}

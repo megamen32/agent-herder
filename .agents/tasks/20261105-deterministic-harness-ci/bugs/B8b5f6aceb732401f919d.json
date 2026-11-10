@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T01:39:38+00:00",
+  "details": "После create_session для новой тестовой draft-сессии deliver вернул failed/busy; последующий session_info показывает pendingRemoteCreation=false и sourceRoute существующего рабочего чата, текст не относится к тестовому запросу. Нельзя считать отправку ни успешной, ни надёжно отсутствующей; повтор не выполнять, требуется точная проверка и TDD без взаимодействия с чужим чатом.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T01:39:38+00:00",
+      "changes": {
+        "details": "После create_session для новой тестовой draft-сессии deliver вернул failed/busy; последующий session_info показывает pendingRemoteCreation=false и sourceRoute существующего рабочего чата, текст не относится к тестовому запросу. Нельзя считать отправку ни успешной, ни надёжно отсутствующей; повтор не выполнять, требуется точная проверка и TDD без взаимодействия с чужим чатом.",
+        "source": "live Herder Z.ai Mac Mini test",
+        "status": "open",
+        "title": "Z.ai: новая draft-сессия сопоставилась с существующей беседой"
+      }
+    }
+  ],
+  "id": "B8b5f6aceb732401f919d",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "live Herder Z.ai Mac Mini test",
+  "status": "open",
+  "title": "Z.ai: новая draft-сессия сопоставилась с существующей беседой",
+  "updated_at": "2026-11-07T01:39:38+00:00"
+}

@@ -1,29 +1,29 @@
 {
   "id": "V111A",
-  "label": "LHC: заменить вызов на общий typed API",
-  "description": "LHC: заменить вызов на общий typed API. Частный результат исходного V111: Заменить old API на typed contract с exact session/task/message refs в подтверждённых target.json путях. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V110.",
-  "acceptance": "Получен проверяемый результат: LHC: заменить вызов на общий typed API. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "label": "LHC: проверить, нужен ли переход с UI deep-link на typed API",
+  "description": "Фактический маршрут LHC — UI deep-link/iframe, а не вызов старого Agent Herder API. Проверить существующую ссылку относительно точного контракта `integrations/consumers/lhc/target.json`. Не добавлять bridge или новый вызов. Если текущий URL сохраняет точную native session identity, зафиксировать доказательство отсутствия нужного изменения и завершить без изменения LHC source; менять код только при воспроизводимом несовпадении контракта.",
+  "acceptance": "Сопоставлены LHC URL `?from=lhc#/session/<encodeURIComponent(harness:nativeSessionId)>`, Herder hash parser/fleet-aware resolver и результаты точечных тестов. Зафиксирован factual delta: API migration не требуется, если ссылка сохраняет exact session; host ambiguity и missing/ambiguous identity явно описаны. Никакой искусственный bridge не создаётся. Live/browser proof нельзя выводить из unit/source evidence.",
   "depends_on": [
     "V110"
   ],
   "affected_files": [
-    "consumer:lhc:paths-from-target.json"
+    "integrations/consumers/lhc/target.json"
   ],
   "parent": "S09",
   "kind": "task",
-  "status": "queued",
+  "status": "done",
   "owner": "unassigned",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V111 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V111 обязателен в конце цепочки.",
+  "note": "Scope заменён исходя из V110: URL-native UI integration, не API consumer. Подтверждённый стартовый результат: LHC herder_panel — 6 passed; Herder source принимает тот же harness:session reference и включает fleet resolution через from=lhc. В этом worktree vitest отсутствует; не называть его тесты запущенными.",
   "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
   "created_at": "2026-11-07T03:52:35+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:35+03:00",
+  "updated_at": "2026-11-07T12:21:54+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:35+03:00",
@@ -53,6 +53,34 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:41:28+03:00",
+      "note": "Передан factual delta V110: текущий caller — UI deep-link; target описывает точную identity/addressing и host limitation. V111A проверяет необходимость, не делает искусственную API migration.",
+      "changes": {
+        "label": "LHC: проверить, нужен ли переход с UI deep-link на typed API",
+        "description": "Фактический маршрут LHC — UI deep-link/iframe, а не вызов старого Agent Herder API. Проверить существующую ссылку относительно точного контракта `integrations/consumers/lhc/target.json`. Не добавлять bridge или новый вызов. Если текущий URL сохраняет точную native session identity, зафиксировать доказательство отсутствия нужного изменения и завершить без изменения LHC source; менять код только при воспроизводимом несовпадении контракта.",
+        "acceptance": "Сопоставлены LHC URL `?from=lhc#/session/<encodeURIComponent(harness:nativeSessionId)>`, Herder hash parser/fleet-aware resolver и результаты точечных тестов. Зафиксирован factual delta: API migration не требуется, если ссылка сохраняет exact session; host ambiguity и missing/ambiguous identity явно описаны. Никакой искусственный bridge не создаётся. Live/browser proof нельзя выводить из unit/source evidence.",
+        "affected_files": [
+          "integrations/consumers/lhc/target.json"
+        ],
+        "note": "Scope заменён исходя из V110: URL-native UI integration, не API consumer. Подтверждённый стартовый результат: LHC herder_panel — 6 passed; Herder source принимает тот же harness:session reference и включает fleet resolution через from=lhc. В этом worktree vitest отсутствует; не называть его тесты запущенными."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:21:54+03:00",
+      "note": "Канонический V111A закрыл compatibility/no-op verdict; ссылка на опубликованный bafb71f5 сохранена. V111B/V111 отдельно не закрывались.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:21:53.604Z",
+        "result": "Фактический результат опубликован commit bafb71f5e272a08e72e4987f31e468fbbfe88c19 в integrations/consumers/lhc/target.json. Target различает текущую LHC UI ссылку harness+nativeSessionId (не API/resource call) и реализованный Herder UI host identity mesh:[hostId,harness,nativeSessionId] (не task/message ref). Вывод: caller/API migration не требуется для существующего контракта; hostId-aware delta отдельный зависимый gate только если требуется адресация по host либо доказан collision. Runtime/tests не менялись в этом leaf."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T09:21:53.604Z",
+  "result": "Фактический результат опубликован commit bafb71f5e272a08e72e4987f31e468fbbfe88c19 в integrations/consumers/lhc/target.json. Target различает текущую LHC UI ссылку harness+nativeSessionId (не API/resource call) и реализованный Herder UI host identity mesh:[hostId,harness,nativeSessionId] (не task/message ref). Вывод: caller/API migration не требуется для существующего контракта; hostId-aware delta отдельный зависимый gate только если требуется адресация по host либо доказан collision. Runtime/tests не менялись в этом leaf."
 }

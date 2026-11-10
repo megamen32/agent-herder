@@ -1,0 +1,11 @@
+{
+  "scope": "canonical-existing-candidate-readonly",
+  "sourceSha": "0dcb64d40f3e222476fa4f9cb34b7e8c2c96a0a4",
+  "manifestBundleFingerprint": "8b9a9b244e0f7f21dd47321d8897f330fc7ec4be17aa6483b0fe91f2c5dab385",
+  "observedBundleFingerprint": "8b9a9b244e0f7f21dd47321d8897f330fc7ec4be17aa6483b0fe91f2c5dab385",
+  "bundleFingerprintMatches": true,
+  "nativeCiRuntimeExists": false,
+  "fullInventory": "FAIL: unresolvable node_modules/.bin/agent-resume",
+  "signatureVerified": false,
+  "installedCanaryAttempted": false
+}

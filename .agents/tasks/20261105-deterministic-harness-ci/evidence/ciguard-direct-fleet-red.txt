@@ -1,0 +1,24 @@
+test_controller_does_not_stage_remote_after_failed_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_direct_fleet_rollout_cannot_mutate_before_candidate_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... FAIL
+test_expired_lease_prevents_starting_any_candidate_runner (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_failed_candidate_runner_never_accepts_receipt (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+
+======================================================================
+FAIL: test_direct_fleet_rollout_cannot_mutate_before_candidate_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/tests/test_native_rollout_preflight.py", line 41, in test_direct_fleet_rollout_cannot_mutate_before_candidate_preflight
+    with self.assertRaisesRegex(RuntimeError, 'candidate preflight'):
+AssertionError: RuntimeError not raised
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.021s
+
+FAILED (failures=1)
+== rollout plan ==
+node          : server-44 (fleet, example)
+release       : /tmp/tmpp61bzp82/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle        : bundle files=0
+package size  : 0.0 MiB
+live before   : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+restart       : restart

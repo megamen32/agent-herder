@@ -1,0 +1,171 @@
+{
+  "id": "V065AHAPCIRUN",
+  "label": "Проверить новый мост на реальном OpenCode с лжемоделью",
+  "description": "Готовый standmainca4c3907+QOCJOIN artifact. Один fresh isolated native create/deliver/read/reopen; exact IDs/request count/receipt, no replay UNKNOWN. Не писать второй CI launcher или model server.",
+  "acceptance": "Exact artifact digests, session/input/receipt, model-request counter, native readback/reopen и сохранённые failure evidence. Accepted/UNKNOWN не повторять; старые V064LIVE/V065LIVE не переисполнять. Результат в canonical evidence.",
+  "status": "blocked",
+  "kind": "task",
+  "parent": "S04",
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "tier": "frontier",
+  "complexity": "M",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QOCJOIN",
+    "V065AHAPCIDRIVER"
+  ],
+  "affected_files": [
+    ".agents/tasks/20261107-herder-native-mcp-breaking/review-evidence/V065AHAPCIRUN"
+  ],
+  "note": "Begin only after reviewed bridge+runner immutable handoff; не ждать завершения CI+ChatGPT чужой сессии. Использовать isolated task-owned profile с локальной лжемоделью.",
+  "created_at": "2026-11-07T15:04:51+03:00",
+  "updated_at": "2026-11-07T18:58:59+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T15:04:51+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065AHAPCIRUN",
+        "label": "Проверить новый мост на реальном OpenCode с лжемоделью",
+        "description": "После immutable artifact handoff от Terra выполнить отдельный one-shot consumer create→send→read/reopen. Существующая CI01a1ac52 не переназначается. Luna — единственный владелец данного нового case; source/RPC mocks не native proof.",
+        "acceptance": "Exact artifact digests, session/input/receipt, model-request counter, native readback/reopen и сохранённые failure evidence. Accepted/UNKNOWN не повторять; старые V064LIVE/V065LIVE не переисполнять. Результат в canonical evidence.",
+        "status": "queued",
+        "kind": "task",
+        "parent": "S04",
+        "owner": "Astra assigns Luna",
+        "model": "gpt-6-luna",
+        "tier": "frontier",
+        "complexity": "M",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V065AHAPCISETUP",
+          "V065AHAP"
+        ],
+        "affected_files": [
+          ".agents/tasks/20261107-herder-native-mcp-breaking/review-evidence/V065AHAPCIRUN"
+        ],
+        "note": "Begin only after reviewed bridge+runner immutable handoff; не ждать завершения CI+ChatGPT чужой сессии. Использовать isolated task-owned profile с локальной лжемоделью."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T15:05:37+03:00",
+      "note": "Отдельная Luna-сессия создана по прямому поручению пользователя; existing CI+ChatGPT scope не переназначается.",
+      "changes": {
+        "owner": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:24:51+03:00",
+      "note": "",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Тера закрывает 3 воспроизведённых review дефекта и передаёт compiled core+runner manifest/digests. Setup уже опубликован5d662966; native запуск ещё не выполнен."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:28:59+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V065AHAPCISETUP",
+          "V065AHAPCIDRIVER",
+          "V065AHAP"
+        ]
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:08:45+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V065AHAPCISETUP",
+          "V065AHAPCIDRIVER",
+          "FASTOC22"
+        ],
+        "status": "queued",
+        "wait_reason": "Нужен исправленный protocol-v22 artifact с правильным fresh-only Start/receipt contract;94e7 native mutation запрещён из-за подтверждённой несовместимости."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:10:14+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "V065AHAPCISETUP",
+          "V065AHAPCIDRIVER",
+          "FASTCORE22"
+        ]
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:15:46+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "QOCJOIN",
+          "V065AHAPCIDRIVER"
+        ],
+        "description": "Готовый standmainca4c3907+QOCJOIN artifact. Один fresh isolated native create/deliver/read/reopen; exact IDs/request count/receipt, no replay UNKNOWN. Не писать второй CI launcher или model server."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:51:37+03:00",
+      "note": "Owner directly authorized one isolated OpenCode→fake-model create/read/reopen case after mandatory preflight. Old 93d50242 remains held; use only immutable 076bacd8 after receipt and digest reconciliation. No accepted/UNKNOWN case found.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:58:59+03:00",
+      "note": "Остановлено после одного разрешённого case с UNKNOWN. Process sandbox завершён; retained failure workspace сохранён для receipt/readback. Bug зарегистрирован в плане; не повторять create.",
+      "changes": {
+        "status": "blocked",
+        "result": "Preflight PASS на manifest SHA256 6e00a60d8f4c62d156351606b8131a781a90ba105945a033d993b79ad395818f: API v2/config 200, MCP tools/list ok, mutations=0, model_requests=0. Единственный разрешённый case запустил create; Task create-operation:1d15d2739e1196ebb5b03484cb05a321 вернул outcome_unknown/retry=forbidden без native receipt. Native OpenCode log: POST /session HTTP 405. Read-only retained DB: ноль session_v2/inbox/messages и ноль Herder bindings/messages; model_requests_at_failure=0. Evidence: evidence/V065AHAPCIRUN-20261107.json; retained workspace: /home/roomhacker/herder-artifacts/retained/ahap-opencode-run-076bacd8-20261107. Повтор запрещён; реальный create/read/reopen не подтверждён.",
+        "blocker": "Native create outcome UNKNOWN; replay forbidden",
+        "blocker_details": {
+          "reason": "Task returned structured outcome_unknown/retry=forbidden. Exact create request may not be replayed.",
+          "evidence": "OpenCode POST /session returned 405; read-only database has zero sessions/messages and fake model request count is zero.",
+          "next_action": "Diagnose the pinned adapter's create route without mutation, publish a reviewed corrected artifact, then request/obtain a separately authorized fresh case."
+        }
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "wait_reason": "Нужен исправленный protocol-v22 artifact с правильным fresh-only Start/receipt contract;94e7 native mutation запрещён из-за подтверждённой несовместимости.",
+  "result": "Preflight PASS на manifest SHA256 6e00a60d8f4c62d156351606b8131a781a90ba105945a033d993b79ad395818f: API v2/config 200, MCP tools/list ok, mutations=0, model_requests=0. Единственный разрешённый case запустил create; Task create-operation:1d15d2739e1196ebb5b03484cb05a321 вернул outcome_unknown/retry=forbidden без native receipt. Native OpenCode log: POST /session HTTP 405. Read-only retained DB: ноль session_v2/inbox/messages и ноль Herder bindings/messages; model_requests_at_failure=0. Evidence: evidence/V065AHAPCIRUN-20261107.json; retained workspace: /home/roomhacker/herder-artifacts/retained/ahap-opencode-run-076bacd8-20261107. Повтор запрещён; реальный create/read/reopen не подтверждён.",
+  "blocker": "Native create outcome UNKNOWN; replay forbidden",
+  "blocker_details": {
+    "reason": "Task returned structured outcome_unknown/retry=forbidden. Exact create request may not be replayed.",
+    "evidence": "OpenCode POST /session returned 405; read-only database has zero sessions/messages and fake model request count is zero.",
+    "next_action": "Diagnose the pinned adapter's create route without mutation, publish a reviewed corrected artifact, then request/obtain a separately authorized fresh case."
+  }
+}

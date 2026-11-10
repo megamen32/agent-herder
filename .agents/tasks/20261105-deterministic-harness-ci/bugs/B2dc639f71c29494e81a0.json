@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T13:47:06+00:00",
+  "details": "RED-тест воспроизвёл выбор history_previous по времени вместо history_file snapshot точного session_id; исправление проверено unit tests, исходный HTTP сценарий ждёт поддержки transcript.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T13:47:06+00:00",
+      "changes": {
+        "details": "RED-тест воспроизвёл выбор history_previous по времени вместо history_file snapshot точного session_id; исправление проверено unit tests, исходный HTTP сценарий ждёт поддержки transcript.",
+        "source": "tests/fast-agent-file-adapter.test.ts; L14",
+        "status": "open",
+        "title": "Fast Agent выбирает предыдущий checkpoint вместо текущей истории"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L04",
+      "at": "2026-11-06T14:13:17+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/fast-agent-history-regression-proof.json",
+            "result": "PASS",
+            "sha256": "55be812e6022a6c9768d4ef19f5fc94101b811ffd6c99fc9c5558a5cd26926ff",
+            "test_command": "npx vitest run --root . --config vitest.config.ts tests/fast-agent-file-adapter.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B2dc639f71c29494e81a0",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/fast-agent-history-regression-proof.json",
+      "result": "PASS",
+      "sha256": "55be812e6022a6c9768d4ef19f5fc94101b811ffd6c99fc9c5558a5cd26926ff",
+      "test_command": "npx vitest run --root . --config vitest.config.ts tests/fast-agent-file-adapter.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/fast-agent-file-adapter.test.ts; L14",
+  "status": "fixed",
+  "title": "Fast Agent выбирает предыдущий checkpoint вместо текущей истории",
+  "updated_at": "2026-11-06T14:13:17+00:00"
+}

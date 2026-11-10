@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: requires both exact IDs and a complete current non-partial source
+ok 1 - requires both exact IDs and a complete current non-partial source
+  ---
+  duration_ms: 1.432394
+  type: 'test'
+  ...
+# Subtest: retries a completed partial scan and records only a later complete proof
+ok 2 - retries a completed partial scan and records only a later complete proof
+  ---
+  duration_ms: 0.611806
+  type: 'test'
+  ...
+# Subtest: requires exact ID and a completed matching scan with non-partial coverage
+ok 3 - requires exact ID and a completed matching scan with non-partial coverage
+  ---
+  duration_ms: 2.169937
+  type: 'test'
+  ...
+# Subtest: waits past an exact partial result for complete coverage and retries scan
+ok 4 - waits past an exact partial result for complete coverage and retries scan
+  ---
+  duration_ms: 1.070047
+  type: 'test'
+  ...
+# Subtest: never upgrades partial results after timeout
+ok 5 - never upgrades partial results after timeout
+  ---
+  duration_ms: 2.032617
+  type: 'test'
+  ...
+# Subtest: queries the local persisted index through its native MCP tool
+ok 6 - queries the local persisted index through its native MCP tool
+  ---
+  duration_ms: 1.716249
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 128.661885

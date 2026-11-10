@@ -1,0 +1,131 @@
+{
+  "label": "Hermes: первый изолированный запуск",
+  "description": "Выяснить реальный бинарник и конфигурацию провайдера; получить или явно опровергнуть первый нативный canary.",
+  "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+  "estimate_minutes": null,
+  "model": "gpt-6-luna",
+  "origin": "L04",
+  "id": "L13",
+  "created_at": "2026-11-06T15:51:30+03:00",
+  "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+  "harness": "codex",
+  "updated_at": "2026-11-06T19:09:52+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T15:51:30+03:00",
+      "note": "",
+      "changes": {
+        "label": "Hermes: первый изолированный запуск",
+        "description": "Выяснить реальный бинарник и конфигурацию провайдера; получить или явно опровергнуть первый нативный canary.",
+        "acceptance": "Точный сценарий и его доказательства либо явное ограничение, без платной модели и без чужих сессий.",
+        "estimate_minutes": 15,
+        "model": "gpt-6-luna",
+        "origin": "L04"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:53:16+03:00",
+      "note": "Исполнитель запущен параллельно; первая задача — проверяемый изолированный canary, время полного покрытия пока неизвестно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b0ea-bde9-75b2-b7b1-9c71633937f3",
+        "owner": "Huygens"
+      },
+      "session": "01a1b0ea-bde9-75b2-b7b1-9c71633937f3",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T15:58:15+03:00",
+      "note": "Исполнитель продолжает следующий подтверждаемый шаг; остальные среды работают параллельно.",
+      "changes": {
+        "session": "01a1b0ee-d8de-7a43-a263-1e215164e1bd",
+        "owner": "Confucius"
+      },
+      "session": "01a1b0ee-d8de-7a43-a263-1e215164e1bd",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:12:06+03:00",
+      "note": "Прежние 15 минут не отражали реальное оставшееся время; оценка уточняется по фактическим результатам, срок полного этапа пока неизвестен.",
+      "changes": {
+        "estimate_minutes": null
+      },
+      "session": "01a1b0ee-d8de-7a43-a263-1e215164e1bd",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:12:08+03:00",
+      "note": "На 44 подтверждён ответ локальной модели через CLI-адаптер; расширяем до двух сессий и обычного API.",
+      "changes": {
+        "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+        "owner": "Tesla"
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:16:55+03:00",
+      "note": "Hermes v0.21.7 на server-44 ответил через локальную модель и Herder CLI-адаптер; расширяем до двух сессий через API.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:28:49+03:00",
+      "note": "Через HTTP созданы две Hermes-сессии, получены ответы, найдены тексты поиском и проект; transcript 422 и active не найден, оба исправления в работе.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:32:25+03:00",
+      "note": "Hermes: две сессии, отправка, поиск и active подтверждены на server-44; полный transcript пока возвращает 422, индекс partial. Нужен подтверждённый полный native export и повтор сценария.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:39:06+03:00",
+      "note": "Hermes: адаптер экспортирует все строки точной закрытой native-сессии из state.db; RED/GREEN и две реальные сессии server-44 подтверждены scripts/native-hermes-transcript-receipt.json. HTTP transcript остаётся 422: общий integrator-transcript не поддерживает Hermes и находится вне разрешённого scope; L13 не завершён.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:47:48+03:00",
+      "note": "Совместный изолированный canary server-44: Hermes v0.21.7, две CLI-сессии через Herder HTTP, полный native SQLite transcript по две страницы с проверкой job/native ID, последовательности и числа строк; активная сессия и HTTP MCP поиск подтверждены. Квитанция scripts/native-hermes-transcript-receipt.json; поиск сообщает partial при изменении источника. Экспорт ограничен закрытой сессией без parent и одним запуском job; общий reader чужой WIP, без commit/push/deploy.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:50:57+03:00",
+      "note": "Lead повторно сверил квитанцию server-44: HTTP создал 2 Hermes job, ответы, active, проект и полные транскрипты по 2 страницы; оба native ID найдены MCP, но coverage partial. Совместный локальный прогон 53 тестов Hermes/Fast Agent/transcript GREEN; доказательство установленного PID и интеграция общего gate остаются.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T16:59:14+03:00",
+      "note": "Текущий исходный кандидат: исходный изолированный HTTP-сценарий Hermes на server-44 прошёл две сессии и по две страницы transcript из точной закрытой native state.db; поиск вернул обе сессии с partial coverage.",
+      "changes": {},
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:09:52+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "На отдельном кандидате server-44 две Hermes сессии через HTTP MCP, transcripts и поиск; последующий L29 подтвердил полное покрытие поиска и partial=false, evidence/l29-hermes-0237c3.json. Общий кандидат и installed PID остаются открыты."
+      },
+      "session": "01a1b0fa-45c7-7ee0-a905-df1caa9c2784",
+      "harness": "codex"
+    }
+  ],
+  "status": "done",
+  "owner": "Tesla",
+  "result": "На отдельном кандидате server-44 две Hermes сессии через HTTP MCP, transcripts и поиск; последующий L29 подтвердил полное покрытие поиска и partial=false, evidence/l29-hermes-0237c3.json. Общий кандидат и installed PID остаются открыты."
+}

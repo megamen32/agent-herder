@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-06T13:35:23+00:00",
+  "details": "В исходном rollout-node.py добавлен безусловный fail-closed после switch с fenced rollback; Linux/Darwin regression RED→GREEN, без установки. Сборщик доказательств установленного PID и consumer-сценария отсутствует; выпуск закрыт, фактический установленный runtime не проверен. Исходный дефект: candidate receipt и readiness позволяли accepted без installed-PID CI.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T13:35:23+00:00",
+      "changes": {
+        "details": "rollout-node.py проверяет только candidate receipt до switch; после readiness не требуется проверка установленного PID и бизнес-сценариев, поэтому потенциально заявляет accepted без обязательного postdeploy CI.",
+        "source": "deploy/fleet/rollout-node.py:1520-1574; deploy/fleet/native_ci_preflight.py",
+        "status": "open",
+        "title": "Fleet rollout принимает узел без проверки установленного процесса"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L05",
+      "at": "2026-11-06T13:42:52+00:00",
+      "changes": {
+        "details": "В исходном rollout-node.py добавлен безусловный fail-closed после switch с fenced rollback; Linux/Darwin regression RED→GREEN, без установки. Сборщик доказательств установленного PID и consumer-сценария отсутствует; выпуск закрыт, фактический установленный runtime не проверен. Исходный дефект: candidate receipt и readiness позволяли accepted без installed-PID CI."
+      },
+      "reason": "Source guard verified; installed consumer collection and delivery remain open."
+    }
+  ],
+  "id": "Beb7f890be068461ca5df",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "deploy/fleet/rollout-node.py:1520-1574; deploy/fleet/native_ci_preflight.py",
+  "status": "open",
+  "title": "Fleet rollout принимает узел без проверки установленного процесса",
+  "updated_at": "2026-11-06T13:42:52+00:00"
+}

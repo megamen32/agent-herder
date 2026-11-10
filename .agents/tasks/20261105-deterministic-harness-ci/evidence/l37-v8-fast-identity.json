@@ -1,0 +1,14 @@
+{
+  "scope": "isolated-candidate-only",
+  "candidateDigestVersion": 2,
+  "candidateDigestBefore": "97d98ad4ff3f334364fc5fd231ea1d3974588732a1336800e8cc9c21220c786d",
+  "candidateDigestAfter": "97d98ad4ff3f334364fc5fd231ea1d3974588732a1336800e8cc9c21220c786d",
+  "candidateSource": "L41 v8 server-44 copied snapshot",
+  "validatorErrors": [],
+  "receiptSha256": "9e10954b090c26f4ca11bfdf9dd196531eb2edac06fe42d1d6448acccfe90be4",
+  "limitations": [
+    "v2 digest does not include all node_modules",
+    "isolated candidate process, not installed production",
+    "only Fast Agent scenario"
+  ]
+}

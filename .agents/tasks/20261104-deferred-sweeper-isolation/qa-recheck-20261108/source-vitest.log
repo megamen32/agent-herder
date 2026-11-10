@@ -1,0 +1,20 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/roomhacker/agents-projects/agent-herder[39m
+
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22misolates untagged records when legacy-first[32m 19[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22misolates untagged records when legacy-last[32m 7[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mroutes identical session IDs independently for each harness[32m 7[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mignores untagged and unsupported records sharing an eligible target before spending budget[32m 6[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mdelivers a parked message to an idle session and clears it from the store[32m 6[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mkeeps a refused delivery parked for a later cycle[32m 6[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mnever touches a busy, permission-blocked or freshly active target[32m 16[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mnever sweeps a legacy park that predates the harness tag[32m 3[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mnever sweeps a harness the sweeper does not serve[32m 3[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mspends the cycle budget only on eligible parks[32m 5[2mms[22m[39m
+ [32m✓[39m tests/deferred-delivery-sweeper.test.ts[2m > [22mdeferred delivery sweeper[2m > [22mnever sends the same parked message twice[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 14:12:37
+[2m   Duration [22m 702ms[2m (transform 323ms, setup 77ms, import 315ms, tests 85ms, environment 0ms)[22m
+

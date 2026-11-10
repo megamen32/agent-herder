@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T20:47:21+00:00",
+  "details": "MinimaxCodeAdapter.listActiveSessions read the default database instead of its configured runtimeDb, omitting active sessions in a non-default isolated native profile.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:47:21+00:00",
+      "changes": {
+        "details": "MinimaxCodeAdapter.listActiveSessions read the default database instead of its configured runtimeDb, omitting active sessions in a non-default isolated native profile.",
+        "source": "tests/minimax-code-adapter.test.ts configured active database",
+        "status": "open",
+        "title": "MiniMax active discovery ignored its configured runtime database"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T20:47:58+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/minimax-active.json",
+            "result": "PASS",
+            "sha256": "2b3216fd506d95079d2bfa139fa0cd4256bd331b3a9af1dd8bcbb086978a7bcf",
+            "test_command": "scripts/run-isolated-native-ci.py --managed-only --mcode on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B44d3475221984ed1a273",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/minimax-active.json",
+      "result": "PASS",
+      "sha256": "2b3216fd506d95079d2bfa139fa0cd4256bd331b3a9af1dd8bcbb086978a7bcf",
+      "test_command": "scripts/run-isolated-native-ci.py --managed-only --mcode on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/minimax-code-adapter.test.ts configured active database",
+  "status": "fixed",
+  "title": "MiniMax active discovery ignored its configured runtime database",
+  "updated_at": "2026-11-05T20:47:58+00:00"
+}

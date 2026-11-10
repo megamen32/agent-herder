@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T01:58:59+00:00",
+  "details": "After switching helper visibility to upstream capability discovery, `cargo test --test handshakes real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade` failed to compile: assigning `enable_resources()` back to the typestate builder changed its type parameter from false to true. Fixed by constructing and building each capability branch independently. No runtime protocol action occurred.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T01:58:59+00:00",
+      "changes": {
+        "details": "After switching helper visibility to upstream capability discovery, `cargo test --test handshakes real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade` failed to compile: assigning `enable_resources()` back to the typestate builder changed its type parameter from false to true. Fixed by constructing and building each capability branch independently. No runtime protocol action occurred.",
+        "source": "T002 compile after generic capability mapping",
+        "status": "open",
+        "title": "Dynamic compatibility capability builder has incompatible typestate branches"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T02:03:33+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/run-01a1b398/green-B8.txt",
+            "red_proof_path": "review-evidence/run-01a1b398/red-B8.txt",
+            "red_result": "Observed: error[E0308]: mismatched types: expected ServerCapabilitiesBuilder<... resources=false>, found ServerCapabilitiesBuilder<... resources=true>",
+            "red_sha256": "e70daf9f98dd19b08d5954f75590d62e5e895ef98f7c3a5233a5adac8c68e7f3",
+            "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.03s",
+            "sha256": "a801b679b0ff967eb0560266a4855f4ccd1c2bef3a6798a9f4c5931c2e4d360d",
+            "test_command": "HERDER_NATIVE_BINARY=crates/herder/target/debug/herder_native_stdio HERDER_COMPAT_EVIDENCE_DIR=.tmp/compat cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B8afa0dfd469142a19204",
+  "owner": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "reporter": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/run-01a1b398/green-B8.txt",
+      "red_proof_path": "review-evidence/run-01a1b398/red-B8.txt",
+      "red_result": "Observed: error[E0308]: mismatched types: expected ServerCapabilitiesBuilder<... resources=false>, found ServerCapabilitiesBuilder<... resources=true>",
+      "red_sha256": "e70daf9f98dd19b08d5954f75590d62e5e895ef98f7c3a5233a5adac8c68e7f3",
+      "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.03s",
+      "sha256": "a801b679b0ff967eb0560266a4855f4ccd1c2bef3a6798a9f4c5931c2e4d360d",
+      "test_command": "HERDER_NATIVE_BINARY=crates/herder/target/debug/herder_native_stdio HERDER_COMPAT_EVIDENCE_DIR=.tmp/compat cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "T002 compile after generic capability mapping",
+  "status": "fixed",
+  "title": "Dynamic compatibility capability builder has incompatible typestate branches",
+  "updated_at": "2026-11-07T02:03:33+00:00"
+}

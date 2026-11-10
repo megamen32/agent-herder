@@ -1,0 +1,195 @@
+TAP version 13
+# Subtest: config requires dedicated exact profile, relay, and reviewed URL
+ok 1 - config requires dedicated exact profile, relay, and reviewed URL
+  ---
+  duration_ms: 2.573705
+  type: 'test'
+  ...
+# Subtest: every CLI call pins all launch settings and clears external auto-attach selectors
+ok 2 - every CLI call pins all launch settings and clears external auto-attach selectors
+  ---
+  duration_ms: 1.001026
+  type: 'test'
+  ...
+# Subtest: proc stat handles names with spaces and parentheses
+ok 3 - proc stat handles names with spaces and parentheses
+  ---
+  duration_ms: 0.374586
+  type: 'test'
+  ...
+# Subtest: relay readiness waits for the strict process proof without launching a browser
+ok 4 - relay readiness waits for the strict process proof without launching a browser
+  ---
+  duration_ms: 6.598926
+  type: 'test'
+  ...
+# Subtest: relay readiness fails within its bound and never returns an unverified process
+ok 5 - relay readiness fails within its bound and never returns an unverified process
+  ---
+  duration_ms: 0.888522
+  type: 'test'
+  ...
+# Subtest: process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+ok 6 - process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+  ---
+  duration_ms: 1.474118
+  type: 'test'
+  ...
+# Subtest: generation binds boot, exact source config and all three process start times
+ok 7 - generation binds boot, exact source config and all three process start times
+  ---
+  duration_ms: 1.310507
+  type: 'test'
+  ...
+# Subtest: anchor matching scans only own CLI tab handles and restores original selection
+ok 8 - anchor matching scans only own CLI tab handles and restores original selection
+  ---
+  duration_ms: 0.698087
+  type: 'test'
+  ...
+# Subtest: ambiguous and missing anchors fail after restoring tab selection
+ok 9 - ambiguous and missing anchors fail after restoring tab selection
+  ---
+  duration_ms: 0.682054
+  type: 'test'
+  ...
+# Subtest: failed read and failed restore cannot produce PASS
+ok 10 - failed read and failed restore cannot produce PASS
+  ---
+  duration_ms: 1.02239
+  type: 'test'
+  ...
+# Subtest: known JSON headers return without waiting for a body cancellation that never settles
+not ok 11 - known JSON headers return without waiting for a body cancellation that never settles
+  ---
+  duration_ms: 250.960998
+  type: 'test'
+  location: '/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:144:1'
+  failureType: 'testCodeFailure'
+  error: 'body cancellation blocked known headers'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    Timeout.<anonymous> (file:///home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:149:107)
+    listOnTimeout (node:internal/timers:585:17)
+    process.processTimers (node:internal/timers:521:7)
+  ...
+# Subtest: HTML responses and network timeouts cannot satisfy the UI API proof
+not ok 12 - HTML responses and network timeouts cannot satisfy the UI API proof
+  ---
+  duration_ms: 3.087078
+  type: 'test'
+  location: '/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:155:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:157:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: UNKNOWN close is reconciled once, with no replay and only exact owned session
+ok 13 - UNKNOWN close is reconciled once, with no replay and only exact owned session
+  ---
+  duration_ms: 1.419498
+  type: 'test'
+  ...
+# Subtest: unconfirmed cleanup retains durable state and never retries close
+ok 14 - unconfirmed cleanup retains durable state and never retries close
+  ---
+  duration_ms: 0.672187
+  type: 'test'
+  ...
+# Subtest: orphan browser cannot trigger a new daemon or an unbound close
+ok 15 - orphan browser cannot trigger a new daemon or an unbound close
+  ---
+  duration_ms: 0.567732
+  type: 'test'
+  ...
+# Subtest: fixed inspection bounds auth GET and never includes caller JavaScript or session body
+not ok 16 - fixed inspection bounds auth GET and never includes caller JavaScript or session body
+  ---
+  duration_ms: 1.076761
+  type: 'test'
+  location: '/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:201:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /AbortSignal.timeout\(20000\)/. Input:
+    
+    '(async()=>{const marker="marker",expected=new URL("https://agent.bezrabotnyi.com/");\n' +
+      '    if(window.name!==marker||location.origin!==expected.origin||location.pathname!==expected.pathname||location.search!==expected.search)return {match:false};\n' +
+      "    const herder=Boolean(document.querySelector('#herder-chat-list'));\n" +
+      '    if(!herder)return {match:true,origin:location.origin,authenticated:false,api_status:0};\n' +
+      "    try{const response=await fetch(new URL('/api/sessions',expected.origin),{credentials:'same-origin',redirect:'error',signal:AbortSignal.timeout(2500)});\n" +
+      '      const status=response.status;await response.body?.cancel();\n' +
+      '      return {match:true,origin:location.origin,authenticated:status===200,api_status:status};\n' +
+      '    }catch{return {match:true,origin:location.origin,authenticated:false,api_status:0};}})()'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    (async()=>{const marker="marker",expected=new URL("https://agent.bezrabotnyi.com/");
+        if(window.name!==marker||location.origin!==expected.origin||location.pathname!==expected.pathname||location.search!==expected.search)return {match:false};
+        const herder=Boolean(document.querySelector('#herder-chat-list'));
+        if(!herder)return {match:true,origin:location.origin,authenticated:false,api_status:0};
+        try{const response=await fetch(new URL('/api/sessions',expected.origin),{credentials:'same-origin',redirect:'error',signal:AbortSignal.timeout(2500)});
+          const status=response.status;await response.body?.cancel();
+          return {match:true,origin:location.origin,authenticated:status===200,api_status:status};
+        }catch{return {match:true,origin:location.origin,authenticated:false,api_status:0};}})()
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/ci-browser-install-20261109/headers-red.test.mjs:203:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: restore acknowledgement alone cannot hide a changed selected tab
+ok 17 - restore acknowledgement alone cannot hide a changed selected tab
+  ---
+  duration_ms: 0.454456
+  type: 'test'
+  ...
+# Subtest: a modified stored process tuple is rejected even with an unchanged generation label
+ok 18 - a modified stored process tuple is rejected even with an unchanged generation label
+  ---
+  duration_ms: 0.499001
+  type: 'test'
+  ...
+# Subtest: crash and reboot recovery require proven disappearance plus a valid dedicated relay
+ok 19 - crash and reboot recovery require proven disappearance plus a valid dedicated relay
+  ---
+  duration_ms: 0.94002
+  type: 'test'
+  ...
+# Subtest: a healthy existing generation resumes without open or close effects
+ok 20 - a healthy existing generation resumes without open or close effects
+  ---
+  duration_ms: 1.027858
+  type: 'test'
+  ...
+# Subtest: failed recovery cannot reach a browser launch or erase the prior state
+ok 21 - failed recovery cannot reach a browser launch or erase the prior state
+  ---
+  duration_ms: 0.657693
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 18
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 379.23779

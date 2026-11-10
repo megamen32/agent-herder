@@ -1,0 +1,24 @@
+{
+  "business_operations_connected": false,
+  "downstream_protocol": "2025-06-18",
+  "fixture_only": false,
+  "forwarded_tools": [
+    "discover",
+    "sessions",
+    "session",
+    "create",
+    "deliver",
+    "resume",
+    "stop",
+    "search",
+    "export",
+    "automation",
+    "resource",
+    "configure",
+    "permission",
+    "human_request"
+  ],
+  "native_endpoint_downgraded": false,
+  "probe": "official rmcp client through LegacyEdge to compiled herder_native_stdio",
+  "upstream_protocol": "2026-07-28"
+}

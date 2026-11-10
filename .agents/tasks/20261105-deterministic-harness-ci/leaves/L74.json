@@ -1,0 +1,68 @@
+{
+  "id": "L74",
+  "label": "Codex: две нативные сессии в изоляции",
+  "description": "Расширить direct receipt: два отдельных thread ID и независимый native readback для каждого через установленный Codex и лжемодель.",
+  "acceptance": "Два разных точных thread ID и ответа, минимум два вызова модели, отдельное readback, без повторного использования UNKNOWN.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "depends_on": [],
+  "affected_files": [
+    "tests/native/codex_receipt.py",
+    "tests/native/test_codex_receipt.py",
+    "tests/native/README.md"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T09:45:26+03:00",
+  "updated_at": "2026-11-07T09:50:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T09:45:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "L74",
+        "label": "Codex: две нативные сессии в изоляции",
+        "description": "Расширить direct receipt: два отдельных thread ID и независимый native readback для каждого через установленный Codex и лжемодель.",
+        "acceptance": "Два разных точных thread ID и ответа, минимум два вызова модели, отдельное readback, без повторного использования UNKNOWN.",
+        "status": "pending",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "depends_on": [],
+        "affected_files": [
+          "tests/native/codex_receipt.py",
+          "tests/native/test_codex_receipt.py",
+          "tests/native/README.md"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T09:45:57+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:50:41+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "RED/GREEN проверяет 2 точных session IDs и readback. На server-44 установленный Codex 0.167.0 в изолированном контуре создал 2 разных thread, завершил 2 turns, fixture requests=2, каждый input/answer подтверждён через thread/read. Опубликовано main 2be83a69; Herder и release gate остаются отдельными."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "RED/GREEN проверяет 2 точных session IDs и readback. На server-44 установленный Codex 0.167.0 в изолированном контуре создал 2 разных thread, завершил 2 turns, fixture requests=2, каждый input/answer подтверждён через thread/read. Опубликовано main 2be83a69; Herder и release gate остаются отдельными."
+}

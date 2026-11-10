@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T17:48:43+00:00",
+  "details": "17:47UTC resume_after astra-join-export-mac-claim-20261107T1747-v1 returned wait_a47164c8f3381121395a27302cb960f5 delivery_failed: native turn completion unavailable; idle alone is not completion. It captured exact Resources turn01a1b71e-4a25-7cd1-b5e2-887509a57aec; independent app wait_threads immediately reports same turn active/inProgress. Prior wait_71deae46 failed similarly. Hourlywait_dc37187a waiting; dependencywake not working. No retries or fakecompletion.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T17:48:43+00:00",
+      "changes": {
+        "details": "17:47UTC resume_after astra-join-export-mac-claim-20261107T1747-v1 returned wait_a47164c8f3381121395a27302cb960f5 delivery_failed: native turn completion unavailable; idle alone is not completion. It captured exact Resources turn01a1b71e-4a25-7cd1-b5e2-887509a57aec; independent app wait_threads immediately reports same turn active/inProgress. Prior wait_71deae46 failed similarly. Hourlywait_dc37187a waiting; dependencywake not working. No retries or fakecompletion.",
+        "source": "resume_after dependency registration vs codex_app wait_threads",
+        "status": "open",
+        "title": "Dependency wake fails for active Codex execution instead of tracking its exact turn"
+      }
+    }
+  ],
+  "id": "B11916c3524154ad4bef8",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "resume_after dependency registration vs codex_app wait_threads",
+  "status": "open",
+  "title": "Dependency wake fails for active Codex execution instead of tracking its exact turn",
+  "updated_at": "2026-11-07T17:48:43+00:00"
+}

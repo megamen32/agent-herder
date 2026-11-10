@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<string>", line 12, in <module>
+AssertionError: launcher can reach host loopback
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/tests/native/smoke.py", line 55, in <module>
+    main()
+  File "/home/roomhacker/.codex/worktrees/herder-session-info/agent-herder/tests/native/smoke.py", line 49, in main
+    assert result.returncode == 0, result.returncode
+AssertionError: 1

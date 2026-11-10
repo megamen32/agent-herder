@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-07T08:27:44+00:00",
+  "details": "Подтверждено source origin/main61e51b66: adapters/codex/connection.rs request делает ChildStdin.write_all/flush до Instant deadline. Не читающий app-server может блокировать native handoff и общий stop gate неограниченно; простой sync wrapper этого не исправляет. Assigned Codex owner через V055PIPE→V055BOUND, единственные owned connection/control/create files. Нужен RED backpressure, общий deadline на write/read и bounded control lock; partial write/uncertain send остаётся UNKNOWN без replay; после partial frame не использовать повреждённый stream. Нельзя фоновый writer, продолжающий писать после возврата timeout.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra/Terra",
+      "at": "2026-11-07T08:27:44+00:00",
+      "changes": {
+        "details": "Подтверждено source origin/main61e51b66: adapters/codex/connection.rs request делает ChildStdin.write_all/flush до Instant deadline. Не читающий app-server может блокировать native handoff и общий stop gate неограниченно; простой sync wrapper этого не исправляет. Assigned Codex owner через V055PIPE→V055BOUND, единственные owned connection/control/create files. Нужен RED backpressure, общий deadline на write/read и bounded control lock; partial write/uncertain send остаётся UNKNOWN без replay; после partial frame не использовать повреждённый stream. Нельзя фоновый writer, продолжающий писать после возврата timeout.",
+        "source": "Terra review + Astra source read connection.rs:288–296",
+        "status": "open",
+        "title": "Codex request: блокирующий stdin write выполняется вне timeout и может удержать HumanStop gate"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Astra",
+      "at": "2026-11-07T08:45:18+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "Bb94a24525c5945c68853",
+          "kind": "duplicate",
+          "reason": "Один и тот же blocking ChildStdin write до deadline. Второй зарегистрированный record содержит фактический RED/GREEN, fixed f18149d3, независимый review astra-codex-pipe-f18149d3.md. Остаток control mutex отдельно B750c8ba390f24a68950b/V055BOUND, interrupt Ba909b61b03a745309aaa; они не закрываются этим duplicate."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "Be873202665ba4b1c8e26",
+  "owner": "Astra/Terra",
+  "reporter": "Astra/Terra",
+  "resolution": {
+    "duplicate_of": "Bb94a24525c5945c68853",
+    "kind": "duplicate",
+    "reason": "Один и тот же blocking ChildStdin write до deadline. Второй зарегистрированный record содержит фактический RED/GREEN, fixed f18149d3, независимый review astra-codex-pipe-f18149d3.md. Остаток control mutex отдельно B750c8ba390f24a68950b/V055BOUND, interrupt Ba909b61b03a745309aaa; они не закрываются этим duplicate."
+  },
+  "source": "Terra review + Astra source read connection.rs:288–296",
+  "status": "duplicate",
+  "title": "Codex request: блокирующий stdin write выполняется вне timeout и может удержать HumanStop gate",
+  "updated_at": "2026-11-07T08:45:18+00:00"
+}

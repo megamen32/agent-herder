@@ -1,0 +1,148 @@
+TAP version 13
+# Subtest: config requires dedicated exact profile, relay, and reviewed URL
+ok 1 - config requires dedicated exact profile, relay, and reviewed URL
+  ---
+  duration_ms: 2.752806
+  type: 'test'
+  ...
+# Subtest: every CLI call pins all launch settings and clears external auto-attach selectors
+ok 2 - every CLI call pins all launch settings and clears external auto-attach selectors
+  ---
+  duration_ms: 2.16647
+  type: 'test'
+  ...
+# Subtest: proc stat handles names with spaces and parentheses
+ok 3 - proc stat handles names with spaces and parentheses
+  ---
+  duration_ms: 0.339974
+  type: 'test'
+  ...
+# Subtest: relay readiness waits for the strict process proof without launching a browser
+ok 4 - relay readiness waits for the strict process proof without launching a browser
+  ---
+  duration_ms: 6.193856
+  type: 'test'
+  ...
+# Subtest: relay readiness fails within its bound and never returns an unverified process
+ok 5 - relay readiness fails within its bound and never returns an unverified process
+  ---
+  duration_ms: 0.800298
+  type: 'test'
+  ...
+# Subtest: process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+ok 6 - process proof rejects wrong profile, parent, uid, binary, idle timeout, relay environment and ports
+  ---
+  duration_ms: 1.114171
+  type: 'test'
+  ...
+# Subtest: generation binds boot, exact source config and all three process start times
+ok 7 - generation binds boot, exact source config and all three process start times
+  ---
+  duration_ms: 1.094423
+  type: 'test'
+  ...
+# Subtest: anchor matching scans only own CLI tab handles and restores original selection
+ok 8 - anchor matching scans only own CLI tab handles and restores original selection
+  ---
+  duration_ms: 0.747104
+  type: 'test'
+  ...
+# Subtest: ambiguous and missing anchors fail after restoring tab selection
+ok 9 - ambiguous and missing anchors fail after restoring tab selection
+  ---
+  duration_ms: 1.048505
+  type: 'test'
+  ...
+# Subtest: failed read and failed restore cannot produce PASS
+ok 10 - failed read and failed restore cannot produce PASS
+  ---
+  duration_ms: 0.75153
+  type: 'test'
+  ...
+# Subtest: known JSON headers return without waiting for a body cancellation that never settles
+ok 11 - known JSON headers return without waiting for a body cancellation that never settles
+  ---
+  duration_ms: 1.658576
+  type: 'test'
+  ...
+# Subtest: HTML responses and network timeouts cannot satisfy the UI API proof
+ok 12 - HTML responses and network timeouts cannot satisfy the UI API proof
+  ---
+  duration_ms: 0.66461
+  type: 'test'
+  ...
+# Subtest: a health tick defers a contended probe and validates the next available generation
+ok 13 - a health tick defers a contended probe and validates the next available generation
+  ---
+  duration_ms: 0.672266
+  type: 'test'
+  ...
+# Subtest: health deferral does not swallow compromised locks or a real generation failure
+ok 14 - health deferral does not swallow compromised locks or a real generation failure
+  ---
+  duration_ms: 0.538497
+  type: 'test'
+  ...
+# Subtest: UNKNOWN close is reconciled once, with no replay and only exact owned session
+ok 15 - UNKNOWN close is reconciled once, with no replay and only exact owned session
+  ---
+  duration_ms: 0.658025
+  type: 'test'
+  ...
+# Subtest: unconfirmed cleanup retains durable state and never retries close
+ok 16 - unconfirmed cleanup retains durable state and never retries close
+  ---
+  duration_ms: 0.455242
+  type: 'test'
+  ...
+# Subtest: orphan browser cannot trigger a new daemon or an unbound close
+ok 17 - orphan browser cannot trigger a new daemon or an unbound close
+  ---
+  duration_ms: 0.328124
+  type: 'test'
+  ...
+# Subtest: fixed inspection bounds auth GET and never includes caller JavaScript or session body
+ok 18 - fixed inspection bounds auth GET and never includes caller JavaScript or session body
+  ---
+  duration_ms: 0.33493
+  type: 'test'
+  ...
+# Subtest: restore acknowledgement alone cannot hide a changed selected tab
+ok 19 - restore acknowledgement alone cannot hide a changed selected tab
+  ---
+  duration_ms: 0.347082
+  type: 'test'
+  ...
+# Subtest: a modified stored process tuple is rejected even with an unchanged generation label
+ok 20 - a modified stored process tuple is rejected even with an unchanged generation label
+  ---
+  duration_ms: 0.288445
+  type: 'test'
+  ...
+# Subtest: crash and reboot recovery require proven disappearance plus a valid dedicated relay
+ok 21 - crash and reboot recovery require proven disappearance plus a valid dedicated relay
+  ---
+  duration_ms: 0.684233
+  type: 'test'
+  ...
+# Subtest: a healthy existing generation resumes without open or close effects
+ok 22 - a healthy existing generation resumes without open or close effects
+  ---
+  duration_ms: 0.611403
+  type: 'test'
+  ...
+# Subtest: failed recovery cannot reach a browser launch or erase the prior state
+ok 23 - failed recovery cannot reach a browser launch or erase the prior state
+  ---
+  duration_ms: 0.423903
+  type: 'test'
+  ...
+1..23
+# tests 23
+# suites 0
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 118.460654

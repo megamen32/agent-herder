@@ -1,0 +1,6 @@
+PASS: python3 tests/native-qoder-report.test.py
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.036s
+
+OK

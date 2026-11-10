@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:00:37+00:00",
+  "details": "The transcript projection recorded nested row.info.content as source_field=content, making its source indistinguishable from row.content.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T11:00:37+00:00",
+      "changes": {
+        "details": "The transcript projection recorded nested row.info.content as source_field=content, making its source indistinguishable from row.content.",
+        "source": "V075FEED RED: review-evidence/V075FEED/source-field-red.txt",
+        "status": "open",
+        "title": "ZCode info.content was mislabeled as content"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T11:01:30+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/V075FEED/source-field-green.txt",
+            "red_proof_path": "review-evidence/V075FEED/source-field-red.txt",
+            "red_result": "assertion failed: second.blocks.iter().any(|block|",
+            "red_sha256": "fbba11d43c0d70941100f421e5ea5a809426b0980c3a412431a824ea3b206083",
+            "result": "test result: ok. 1 passed; 0 failed",
+            "sha256": "77f51491033b592206fe0a575698816986004ce0bea7d191f84c6e2c068588bf",
+            "test_command": "cargo test adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B9725facf7d1c453989ac",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/V075FEED/source-field-green.txt",
+      "red_proof_path": "review-evidence/V075FEED/source-field-red.txt",
+      "red_result": "assertion failed: second.blocks.iter().any(|block|",
+      "red_sha256": "fbba11d43c0d70941100f421e5ea5a809426b0980c3a412431a824ea3b206083",
+      "result": "test result: ok. 1 passed; 0 failed",
+      "sha256": "77f51491033b592206fe0a575698816986004ce0bea7d191f84c6e2c068588bf",
+      "test_command": "cargo test adapters::zcode::transcript::tests::projects_typed_blocks_preserves_plain_user_text_and_pages_bound_to_snapshot -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "V075FEED RED: review-evidence/V075FEED/source-field-red.txt",
+  "status": "fixed",
+  "title": "ZCode info.content was mislabeled as content",
+  "updated_at": "2026-11-07T11:01:30+00:00"
+}

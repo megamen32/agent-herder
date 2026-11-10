@@ -1,0 +1,17 @@
+{
+  "scope": "shared-pid-real-codex-peer-probe",
+  "peer": {
+    "pid": 16,
+    "start": "76276031"
+  },
+  "interfaces": [
+    "lo"
+  ],
+  "productionLanConnectErrno": 101,
+  "productionHomeVisible": false,
+  "modelRequests": 0,
+  "status": "PASS",
+  "limitations": [
+    "native Codex peer only; no Herder unit, delivery, model call or full artifact proof"
+  ]
+}

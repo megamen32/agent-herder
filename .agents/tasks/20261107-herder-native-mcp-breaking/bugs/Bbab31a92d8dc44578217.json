@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T11:43:18+00:00",
+  "details": "Independent Tesla review of source commit 0bbfbb2812586de9531eca8222582599d8e5302b reproduced RED: recent_messages requires current_node presence but selected_branch silently returns an empty branch when that id is absent from mapping; normalize_recent then returns Ok(empty). Must return an explicit normalization/source error or truthful partial.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T11:43:18+00:00",
+      "changes": {
+        "details": "Independent Tesla review of source commit 0bbfbb2812586de9531eca8222582599d8e5302b reproduced RED: recent_messages requires current_node presence but selected_branch silently returns an empty branch when that id is absent from mapping; normalize_recent then returns Ok(empty). Must return an explicit normalization/source error or truthful partial.",
+        "source": "review-evidence/browser-v081-0bbfbb28-independent.md; exact RED harness /tmp/herder-v081-review-0bbfbb28",
+        "status": "open",
+        "title": "V081 recent accepts missing or unmapped current_node as empty result"
+      }
+    }
+  ],
+  "id": "Bbab31a92d8dc44578217",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "source": "review-evidence/browser-v081-0bbfbb28-independent.md; exact RED harness /tmp/herder-v081-review-0bbfbb28",
+  "status": "open",
+  "title": "V081 recent accepts missing or unmapped current_node as empty result",
+  "updated_at": "2026-11-07T11:43:18+00:00"
+}

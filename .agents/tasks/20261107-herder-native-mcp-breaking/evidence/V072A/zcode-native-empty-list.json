@@ -1,0 +1,34 @@
+{
+  "scope": "V072A isolated native list only",
+  "launcher": "reused the V070B official supervisor launch recipe and ZCode Server 3.17.2-linux-x64-88a41b337faa",
+  "profile": {
+    "server_root": "/tmp/herder-v072a-read-uevp04kg/home/.zcode/server",
+    "workspace": "/tmp/herder-v072a-read-uevp04kg/workspace",
+    "host": "127.0.0.1",
+    "port": 29803,
+    "generation": 1,
+    "state": "ready"
+  },
+  "rust_reader": {
+    "source": "crates/herder/src/adapters/zcode/read.rs",
+    "method": "zcode-agent.listSessions",
+    "request_scope": {
+      "workspacePath": "/tmp/herder-v072a-read-uevp04kg/workspace",
+      "workspaceIdentity": "/tmp/herder-v072a-read-uevp04kg/workspace",
+      "workspaceKey": "/tmp/herder-v072a-read-uevp04kg/workspace",
+      "includeArchived": false,
+      "limit": 200
+    },
+    "read_count": 2,
+    "both_native_responses_succeeded": true,
+    "session_count_each_read": 0,
+    "native_session_ids": [],
+    "repeat_read_equal": true,
+    "initialize_available": false,
+    "session_creation": false,
+    "input_delivery": false,
+    "inference_requests": 0
+  },
+  "boundary": "temporary HOME/XDG/server_root; loopback-only listener; network namespace unavailable on host; no personal credentials or profile data inherited",
+  "result": "PASS for honest empty native list; nonempty SessionAddress mapping is not proven"
+}

@@ -1,10 +1,9 @@
 {
   "id": "V017A",
   "label": "Адресовать session, Task и transcript стандартными MCP resource URI",
-  "description": "Адресовать session, Task и transcript стандартными MCP resource URI. Частный результат исходного V017: Session/task/transcript resources с remote-readable refs и pagination. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V010, V008.",
+  "description": "Source стандартных MCP Resource URI и типизированного чтения session/Task/transcript/registered Resource в отдельном mcp/resources.rs поверх текущего rmcp и существующего storage. Подключение к NativeServer/ingress отдельно.",
   "acceptance": "Получен проверяемый результат: Адресовать session, Task и transcript стандартными MCP resource URI. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
   "depends_on": [
-    "V010",
     "V008"
   ],
   "affected_files": [
@@ -12,18 +11,18 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V017 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V017 обязателен в конце цепочки.",
+  "note": "Готовый source slice без runtime effects, assigned existing Resources после принятия pure reply32bc8099. Переиспользовать текущий rmcp и R003A, не новые daemon/store. Source tests не заменяют конечный V017/R003 consumer, final зависит от V010.",
   "created_at": "2026-11-07T03:51:58+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:51:58+03:00",
+  "updated_at": "2026-11-07T14:16:05+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:51:58+03:00",
@@ -53,6 +52,42 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:05:51+03:00",
+      "note": "Source протокольный модуль не ждёт завершения всего ingress; shared transport/lib остаётся Terra.",
+      "changes": {
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7",
+        "depends_on": [
+          "V008"
+        ],
+        "description": "Source стандартных MCP Resource URI и типизированного чтения session/Task/transcript/registered Resource в отдельном mcp/resources.rs поверх текущего rmcp и существующего storage. Подключение к NativeServer/ingress отдельно.",
+        "note": "Готовый source slice без runtime effects, assigned existing Resources после принятия pure reply32bc8099. Переиспользовать текущий rmcp и R003A, не новые daemon/store. Source tests не заменяют конечный V017/R003 consumer, final зависит от V010."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:08:17+03:00",
+      "note": "Starting only the bounded source protocol slice in new mcp/resources.rs; shared exports/runtime wiring remain with Terra.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T14:16:05+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Commit 526757a8 adds only crates/herder/src/mcp/resources.rs. ResourceUri parses and canonically formats herder://session|task|transcript|resource/{opaque-ref}; invalid encodings, noncanonical encodings, extra path/query/fragment, empty/control refs are rejected. ResourceReadPort and ResourceValue provide typed source boundaries for existing SessionSnapshot, rmcp GetTaskResult, TranscriptPage and canonical ResourceDescriptor; list/read projection returns pinned rmcp Resource/ListResourcesResult/ReadResourceResult. Four focused tests passed with temporary `pub mod resources;` in lib.rs, removed before commit. rustfmt +stable and git diff --check pass. Shared module registration and runtime consumer remain unproven."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Commit 526757a8 adds only crates/herder/src/mcp/resources.rs. ResourceUri parses and canonically formats herder://session|task|transcript|resource/{opaque-ref}; invalid encodings, noncanonical encodings, extra path/query/fragment, empty/control refs are rejected. ResourceReadPort and ResourceValue provide typed source boundaries for existing SessionSnapshot, rmcp GetTaskResult, TranscriptPage and canonical ResourceDescriptor; list/read projection returns pinned rmcp Resource/ListResourcesResult/ReadResourceResult. Four focused tests passed with temporary `pub mod resources;` in lib.rs, removed before commit. rustfmt +stable and git diff --check pass. Shared module registration and runtime consumer remain unproven."
 }

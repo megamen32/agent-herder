@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T19:17:30+00:00",
+  "details": "Native export previously read only one limited page, so a long session transcript could be incomplete. Candidate follows native cursors, rejects inconsistent pages, and exports via the Herder transcript API.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:17:30+00:00",
+      "changes": {
+        "details": "Native export previously read only one limited page, so a long session transcript could be incomplete. Candidate follows native cursors, rejects inconsistent pages, and exports via the Herder transcript API.",
+        "source": "packages/agent-resume/tests/opencode-raw-transcript-pagination.test.ts",
+        "status": "open",
+        "title": "OpenCode transcript omitted history beyond native page"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:18:05+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/opencode-pagination.txt",
+            "result": "passed",
+            "sha256": "d748c73b95d807c1ea868231c69211c810bcc4fa082bc7db9a8c2013904d269b",
+            "test_command": "npx vitest run --root packages/agent-resume --config vitest.config.ts tests/opencode-raw-transcript-pagination.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B184568b1654348448457",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/opencode-pagination.txt",
+      "result": "passed",
+      "sha256": "d748c73b95d807c1ea868231c69211c810bcc4fa082bc7db9a8c2013904d269b",
+      "test_command": "npx vitest run --root packages/agent-resume --config vitest.config.ts tests/opencode-raw-transcript-pagination.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "packages/agent-resume/tests/opencode-raw-transcript-pagination.test.ts",
+  "status": "fixed",
+  "title": "OpenCode transcript omitted history beyond native page",
+  "updated_at": "2026-11-05T19:18:05+00:00"
+}

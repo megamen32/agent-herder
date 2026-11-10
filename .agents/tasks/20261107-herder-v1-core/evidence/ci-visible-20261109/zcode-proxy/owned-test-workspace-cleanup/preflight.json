@@ -1,0 +1,39 @@
+{
+  "schema": "agent-herder.zcode-workspace-dispose-preflight.v1",
+  "observed_at": "2026-11-09T01:08:47.160Z",
+  "operation": "owned-test-workspace-cleanup",
+  "workspace_path": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+  "identity": {
+    "processId": 804411,
+    "workspaceKey": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+    "generation": 1
+  },
+  "process": {
+    "pid": 804411,
+    "ppid": 3014880,
+    "state": "S",
+    "start_ticks": "80452648",
+    "cwd": "/home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder/.tmp/cli-native-readiness-20261109/zcode-owned-workspace",
+    "proxy_origins": []
+  },
+  "running": {
+    "observed_at": "2026-11-09T01:08:47.156Z",
+    "expires_at": "2026-11-09T01:09:02.156Z",
+    "server_pid": 3014880,
+    "server_generation": 2,
+    "target_running_tasks": 0,
+    "other_running_tasks": 0
+  },
+  "native_setting_httpProxy_set": false,
+  "official_server": {
+    "pid": 3014880,
+    "ppid": 430399,
+    "start_ticks": "28828088",
+    "role": [
+      "/home/roomhacker/.zcode/server/releases/3.17.2-linux-x64-88a41b337faa/runtime/server-core.js"
+    ],
+    "cwd": "/home/roomhacker",
+    "proxy_fields": [],
+    "started_at": "2026-11-03T01:01:23.880000+00:00"
+  }
+}

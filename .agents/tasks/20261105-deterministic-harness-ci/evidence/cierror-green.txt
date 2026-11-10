@@ -1,0 +1,18 @@
+test_controller_does_not_stage_remote_after_failed_preflight (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_direct_fleet_rollout_is_refused_without_controller (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_expired_lease_prevents_starting_any_candidate_runner (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_failed_candidate_runner_never_accepts_receipt (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_owner_rejects_archive_other_than_tested_candidate (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+test_owner_rollout_does_not_mutate_after_preflight_failure (test_native_rollout_preflight.NativeRolloutPreflightTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.022s
+
+OK
+== rollout plan ==
+node          : server-44 (fleet, example)
+release       : /tmp/tmpk3twrsjs/releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle        : bundle files=0
+package size  : 0.0 MiB
+live before   : bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+restart       : restart

@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-05T19:31:37+00:00",
+  "details": "The MiniMax adapter had no raw transcript export, so the paged consumer API could not provide complete session history. Added bounded exact idle-session file export and native message normalization.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:31:37+00:00",
+      "changes": {
+        "details": "The MiniMax adapter had no raw transcript export, so the paged consumer API could not provide complete session history. Added bounded exact idle-session file export and native message normalization.",
+        "source": "tests/minimax-code-adapter.test.ts",
+        "status": "open",
+        "title": "MiniMax Code had no complete transcript export"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-05T19:31:56+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/minimax-transcript.json",
+            "result": "PASS",
+            "sha256": "d11ce55cc1645fba16c126cf80e72da032a7f997126d1fb58c88ffcc1b092e32",
+            "test_command": "scripts/run-isolated-native-ci.py --mcode on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B3817428bd3bc489599b0",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/minimax-transcript.json",
+      "result": "PASS",
+      "sha256": "d11ce55cc1645fba16c126cf80e72da032a7f997126d1fb58c88ffcc1b092e32",
+      "test_command": "scripts/run-isolated-native-ci.py --mcode on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "tests/minimax-code-adapter.test.ts",
+  "status": "fixed",
+  "title": "MiniMax Code had no complete transcript export",
+  "updated_at": "2026-11-05T19:31:56+00:00"
+}

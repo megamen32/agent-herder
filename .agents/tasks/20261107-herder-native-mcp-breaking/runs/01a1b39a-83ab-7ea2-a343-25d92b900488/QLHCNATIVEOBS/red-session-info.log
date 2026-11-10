@@ -1,0 +1,100 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/zcode-ahap-publish/agent-herder
+
+(node:3383047) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/session-info-context.test.ts (7 tests | 5 failed) 195ms
+   × fills missing exact native activity through a bounded session read, not a full active sweep 14ms
+   × does not replace a direct stopped session projection 4ms
+   × does not replace a direct approval session projection 2ms
+   × does not replace a direct metadata hold session projection 2ms
+   × respects a durable HumanStop hold even when the direct session metadata omits it 21ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/session-info-context.test.ts > fills missing exact native activity through a bounded session read, not a full active sweep
+AssertionError: expected { id: 'native-active', …(8) } to match object { status: 'running', meta: { …(4) } }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "meta": {
+-     "activeTurnId": "turn-exact",
+      "humanStopHeld": false,
+-     "nativeLastTurn": {
+-       "status": "inProgress",
+-       "turnId": "turn-exact",
+-     },
+      "sourceRoute": "native",
+    },
+-   "status": "running",
++   "status": "idle",
+  }
+
+ ❯ tests/session-info-context.test.ts:46:18
+     44|   const adapter = { type: "codex", name: "fixture", getSession: async …
+     45|   const result = await agentInfoResult(new Map([["codex", adapter as a…
+     46|   expect(result).toMatchObject({ status: "running", meta: {
+       |                  ^
+     47|     activeTurnId: "turn-exact", nativeLastTurn: { turnId: "turn-exact"…
+     48|     sourceRoute: "native", humanStopHeld: false,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/session-info-context.test.ts > does not replace a direct stopped session projection
+AssertionError: expected 'running' to be 'stopped' // Object.is equality
+
+Expected: "stopped"
+Received: "running"
+
+ ❯ tests/session-info-context.test.ts:64:26
+     62|   const adapter = { type: "codex", name: "fixture", getSession: async …
+     63|   const result = await agentInfoResult(new Map([["codex", adapter as a…
+     64|   expect(result?.status).toBe(state.status);
+       |                          ^
+     65|   expect(result?.needsPermission).toBe(state.needsPermission);
+     66|   expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/session-info-context.test.ts > does not replace a direct approval session projection
+ FAIL  tests/session-info-context.test.ts > does not replace a direct metadata hold session projection
+AssertionError: expected 'running' to be 'idle' // Object.is equality
+
+Expected: "idle"
+Received: "running"
+
+ ❯ tests/session-info-context.test.ts:64:26
+     62|   const adapter = { type: "codex", name: "fixture", getSession: async …
+     63|   const result = await agentInfoResult(new Map([["codex", adapter as a…
+     64|   expect(result?.status).toBe(state.status);
+       |                          ^
+     65|   expect(result?.needsPermission).toBe(state.needsPermission);
+     66|   expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/session-info-context.test.ts > respects a durable HumanStop hold even when the direct session metadata omits it
+AssertionError: expected 'running' to be 'idle' // Object.is equality
+
+Expected: "idle"
+Received: "running"
+
+ ❯ tests/session-info-context.test.ts:81:28
+     79|     const adapter = { type: "codex", name: "fixture", getSession: asyn…
+     80|     const result = await agentInfoResult(new Map([["codex", adapter as…
+     81|     expect(result?.status).toBe("idle");
+       |                            ^
+     82|     expect(result?.meta?.humanStopHeld).toBe(true);
+     83|     expect(getActiveSessionForInfo).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 2 passed (7)
+   Start at  21:40:34
+   Duration  2.97s (transform 1.18s, setup 47ms, import 2.47s, tests 195ms, environment 0ms)
+

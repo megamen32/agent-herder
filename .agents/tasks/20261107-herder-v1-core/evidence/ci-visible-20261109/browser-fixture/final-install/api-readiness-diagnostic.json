@@ -1,0 +1,20 @@
+{
+  "schema": "agent-herder.ci-browser-api-diagnostic.v1",
+  "observed_at": "2026-11-09T02:16:27.765Z",
+  "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+  "generation": "37fca17524361d8083d347d0e8c963755bc73c532ea17b88f6e326e844b6ae21",
+  "probe_timeout_ms": 20000,
+  "full_body_read": false,
+  "body_cancel_awaited": false,
+  "facts": {
+    "api_status": 200,
+    "chat_list": true,
+    "content_type": "application/json; charset=utf-8",
+    "elapsed_ms": 21,
+    "error": null,
+    "origin": "https://agent.bezrabotnyi.com",
+    "password_field": false,
+    "path": "/"
+  },
+  "browser_acceptance_receipt": false
+}

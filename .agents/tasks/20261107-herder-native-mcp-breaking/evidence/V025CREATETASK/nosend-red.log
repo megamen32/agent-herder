@@ -1,0 +1,21 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.75s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+
+thread 'scoped_create_application_wire_preserves_session_and_deduplicates_prompt' (917318) panicked at tests/scoped_stop_gate.rs:3868:17:
+assertion `left == right` failed: {"id":81,"jsonrpc":"2.0","result":{"createdAt":"2026-11-07T10:53:10Z","lastUpdatedAt":"2026-11-07T10:53:10Z","result":{"content":[{"text":"{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"issued\"},\"prompt\":{\"code\":\"outcome_unknown\",\"diagnostic_ref\":null,\"effect\":\"unknown\",\"expected\":null,\"field\":null,\"fix\":null,\"receipt_ref\":null,\"received\":null,\"retry\":\"forbidden\"}}","type":"text"}],"isError":true,"resultType":"complete","structuredContent":{"create":{"effect":"confirmed","session_ref":"issued"},"prompt":{"code":"outcome_unknown","diagnostic_ref":null,"effect":"unknown","expected":null,"field":null,"fix":null,"receipt_ref":null,"received":null,"retry":"forbidden"}}},"resultType":"complete","status":"completed","taskId":"create-operation:6e3a94531aec4fbc869636edb84eee4f","ttlMs":null}}
+  left: String("outcome_unknown")
+ right: "adapter_refused"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test scoped_create_application_wire_preserves_session_and_deduplicates_prompt ... FAILED
+
+failures:
+
+failures:
+    scoped_create_application_wire_preserves_session_and_deduplicates_prompt
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 3.90s
+
+error: test failed, to rerun pass `--test scoped_stop_gate`

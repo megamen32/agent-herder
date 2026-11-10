@@ -1,0 +1,200 @@
+{
+  "scope": "hermes-candidate",
+  "status": "pass",
+  "results": [
+    {
+      "harness": "hermes",
+      "sessions": [
+        "hermes-job-21e8f976-024e-497e-a0de-002d6c67d617",
+        "hermes-job-0a0c920b-6dca-40d0-be9c-8532a42caefb"
+      ],
+      "nativeIds": [
+        "20261106_202834_b65332",
+        "20261106_202842_bae71c"
+      ],
+      "nativeExports": [
+        {
+          "jobId": "hermes-job-21e8f976-024e-497e-a0de-002d6c67d617",
+          "nativeId": "20261106_202834_b65332",
+          "complete": true,
+          "source": {
+            "kind": "native-file",
+            "location": "hermes:sqlite:20261106_202834_b65332",
+            "format": "jsonl"
+          },
+          "rows": 2,
+          "rowIds": [
+            1,
+            2
+          ],
+          "roles": [
+            "user",
+            "assistant"
+          ]
+        },
+        {
+          "jobId": "hermes-job-0a0c920b-6dca-40d0-be9c-8532a42caefb",
+          "nativeId": "20261106_202842_bae71c",
+          "complete": true,
+          "source": {
+            "kind": "native-file",
+            "location": "hermes:sqlite:20261106_202842_bae71c",
+            "format": "jsonl"
+          },
+          "rows": 2,
+          "rowIds": [
+            3,
+            4
+          ],
+          "roles": [
+            "user",
+            "assistant"
+          ]
+        }
+      ],
+      "sessionsCreated": true,
+      "answer": true,
+      "sessionsListed": true,
+      "projectListed": true,
+      "transcriptComplete": true,
+      "transcriptPages": [
+        2,
+        2
+      ],
+      "transcriptErrors": [],
+      "activeDiscovered": true,
+      "heldRequestReached": true,
+      "activeSnapshot": [
+        {
+          "id": "hermes-job-21e8f976-024e-497e-a0de-002d6c67d617",
+          "harness": "hermes",
+          "title": "Herder CI hermes 0",
+          "runtimeHostId": "server-44",
+          "status": "running",
+          "activity": {
+            "state": "active",
+            "observedAt": "2026-11-06T20:28:37.420Z",
+            "evidence": "hermes-owned-cli-process",
+            "expiresAt": "2026-11-06T20:28:47.420Z"
+          },
+          "workspaces": []
+        }
+      ],
+      "fixtureRequests": 4,
+      "search": {
+        "transport": "authenticated HTTP MCP /mcp",
+        "tool": "session_search_local",
+        "queries": [
+          {
+            "query": "HERDER_NATIVE_USER_hermes_0",
+            "expectedNativeId": "20261106_202834_b65332",
+            "isError": false,
+            "results": [
+              {
+                "hostId": "server-44",
+                "harness": "hermes",
+                "nativeSessionId": "20261106_202834_b65332",
+                "title": "HERDER_TEST_MODEL_OK",
+                "cwd": "",
+                "revision": "c76fe49d528e93597741ca536b6e4d75ca20956468f370d3d66d5285dcc4a385:HERDER_TEST_MODEL_OK:",
+                "chunkId": "1",
+                "snippet": "HERDER_NATIVE_USER_hermes_0",
+                "rank": -1.2010178844901573,
+                "shortId": "hdde8"
+              }
+            ],
+            "coverage": {
+              "partial": false,
+              "hermesSources": [
+                {
+                  "harness": "hermes",
+                  "source": "/work/.hermes/state.db",
+                  "state": "complete",
+                  "sessions": 2,
+                  "catalogSessions": 2,
+                  "textSessions": 2,
+                  "missingContent": 0,
+                  "chunks": 4,
+                  "scanId": "3d7f7e33-b21f-4690-9ba4-863e48d76224",
+                  "processedTextSessions": 2,
+                  "processedChunks": 4,
+                  "indexedTextSessions": 2,
+                  "indexedChunks": 4,
+                  "observedAt": "2026-11-06T20:28:51.439Z"
+                }
+              ],
+              "indexing": false,
+              "run": {
+                "status": "complete",
+                "updatedAt": "2026-11-06T20:28:51.439Z",
+                "processed": 2,
+                "error": null,
+                "scanId": "3d7f7e33-b21f-4690-9ba4-863e48d76224"
+              },
+              "proofComplete": true
+            }
+          },
+          {
+            "query": "HERDER_NATIVE_USER_hermes_1",
+            "expectedNativeId": "20261106_202842_bae71c",
+            "isError": false,
+            "results": [
+              {
+                "hostId": "server-44",
+                "harness": "hermes",
+                "nativeSessionId": "20261106_202842_bae71c",
+                "title": "HERDER_TEST_MODEL_OK #2",
+                "cwd": "",
+                "revision": "c1c1a8c9d6b0ede0d1b311e43f199a5d473ea8d17a652a73759ee74ad6720c44:HERDER_TEST_MODEL_OK #2:",
+                "chunkId": "3",
+                "snippet": "HERDER_NATIVE_USER_hermes_1",
+                "rank": -1.1433690260346296,
+                "shortId": "h9a95"
+              }
+            ],
+            "coverage": {
+              "partial": false,
+              "hermesSources": [
+                {
+                  "harness": "hermes",
+                  "source": "/work/.hermes/state.db",
+                  "state": "complete",
+                  "sessions": 2,
+                  "catalogSessions": 2,
+                  "textSessions": 2,
+                  "missingContent": 0,
+                  "chunks": 4,
+                  "scanId": "3d7f7e33-b21f-4690-9ba4-863e48d76224",
+                  "processedTextSessions": 2,
+                  "processedChunks": 4,
+                  "indexedTextSessions": 2,
+                  "indexedChunks": 4,
+                  "observedAt": "2026-11-06T20:28:51.439Z"
+                }
+              ],
+              "indexing": false,
+              "run": {
+                "status": "complete",
+                "updatedAt": "2026-11-06T20:28:51.439Z",
+                "processed": 2,
+                "error": null,
+                "scanId": "3d7f7e33-b21f-4690-9ba4-863e48d76224"
+              },
+              "proofComplete": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "version": "Hermes Agent v0.21.7 (2026.9.24) · upstream 71d34bad\nInstall directory: /home/roomhacker/.hermes/hermes-agent\nInstall method: git\nPython: 3.11.15\nOpenAI SDK: 2.24.0",
+  "primaryStderr": "(node:1106794) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:1106794) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+  "fixture": {
+    "requests": 4,
+    "paths": {
+      "/api/show": 4,
+      "/v1/chat/completions": 4
+    }
+  },
+  "canaryExitCode": 0
+}

@@ -1,0 +1,93 @@
+{
+  "id": "R003A",
+  "label": "Связать resource list/get с одним каноническим storage",
+  "description": "Независимая часть R003: тонкий application facade над ownership::resource::list/get. Явная Authorization и StorageAuthority; без новых store/cache и без правки общего MCP transport.",
+  "acceptance": "Application list/get читает существующий resource.json/owner.json; unauthorized доступ отклонён; availability отделена от ownership; отключение/reconnect не освобождают claim. Проверка MCP consumer остаётся в R003.",
+  "depends_on": [
+    "R002",
+    "V008"
+  ],
+  "affected_files": [
+    "crates/herder/src/application/resource.rs"
+  ],
+  "parent": "S02",
+  "kind": "task",
+  "status": "done",
+  "owner": "01a1b399-4210-7471-8286-93750dff10b7",
+  "estimate_minutes": 15,
+  "note": "Выделено Astra из R003 для параллельной работы без ожидания V010/V017; экспорты lib/application/mod интегрирует Terra.",
+  "created_at": "2026-11-07T09:16:26+03:00",
+  "updated_at": "2026-11-07T09:34:13+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T09:16:26+03:00",
+      "note": "",
+      "changes": {
+        "id": "R003A",
+        "label": "Связать resource list/get с одним каноническим storage",
+        "description": "Независимая часть R003: тонкий application facade над ownership::resource::list/get. Явная Authorization и StorageAuthority; без новых store/cache и без правки общего MCP transport.",
+        "acceptance": "Application list/get читает существующий resource.json/owner.json; unauthorized доступ отклонён; availability отделена от ownership; отключение/reconnect не освобождают claim. Проверка MCP consumer остаётся в R003.",
+        "depends_on": [
+          "R002",
+          "V008"
+        ],
+        "affected_files": [
+          "crates/herder/src/application/resource.rs"
+        ],
+        "parent": "S02",
+        "kind": "task",
+        "status": "queued",
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7",
+        "estimate_minutes": 15,
+        "note": "Выделено Astra из R003 для параллельной работы без ожидания V010/V017; экспорты lib/application/mod интегрирует Terra."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T09:17:38+03:00",
+      "note": "Implementing only application/resource.rs; lib.rs export reserved for integration owner.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:23:14+03:00",
+      "note": "R003A закрывает только application facade; верхний R003 ждёт V017 и consumer proof. Оставшееся изменение V043.json и проекции в этой рабочей копии — ранее созданный plan WIP, не включено в commit.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен crates/herder/src/application/resource.rs: get требует точный PrivateResource::Resource + Read grant; list проверяет principal и возвращает только явно разрешённые resource refs. Оба вызывают существующий ownership::resource registry через переданный StorageAuthority; нового store/cache нет. Коммит b13942454927a0b04f31e62aeecaaea9a8635bf7. В изолированной копии crate с временно экспортированным модулем прошёл focused test: unauthorized principal/ref отклонены, разрешённый list/get работают, после повторного ConnectionIdentity тот же owner.json байт-в-байт, claim не меняется; rustfmt +stable --check и diff --check прошли. Исходный lib.rs не менял. Не доказано: интеграция модуля в daemon/MCP transport, live MCP/CLI consumer. Кандидат-коммит основан на локальном предшествующем дереве; для интеграции сверить/rebase/cherry-pick scoped path на свежий main."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:25:40+03:00",
+      "note": "Astra review b1394245: исходный scoped candidate и passed tests сохранены. До принятия нужны device Attachment available/unavailable/reconnect с неизменным claim (новый ConnectionIdentity недостаточен) и denied corrupt marker RED/GREEN для list без чтения неразрешённых refs. Назначено тому же owner, bounded остаток <=15мин. MCP consumer остаётся за R003.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:34:13+03:00",
+      "note": "Resolved bug Be3f2c5430c2b4ffa8f55 with preserved RED/GREEN evidence under evidence/. Previous WIP in local plan projection remains outside source commit.",
+      "changes": {
+        "status": "done",
+        "result": "R003A refinement commit ef9c7f6329661a0da20d827872f4d3c8380c1fd0 (after b1394245), only crates/herder/src/application/resource.rs. list now collects/sorts/deduplicates exact Resource refs from this principal's Read grants and calls registry::get only for those; all errors for granted refs propagate, including missing ref NotFound. RED/GREEN bug Be3f2c5430c2b4ffa8f55: unauthorized corrupt marker made list fail (RED exit 101); fixed same focused tests 3 passed. Added available→unavailable→available CAS updates while changing node; ID and list/get visibility persist; owner.json bytes unchanged each step. Tests ran in isolated crate copy with temporary module export because integration-owned lib.rs stayed untouched. rustfmt +stable check and scoped diff --check pass. MCP/CLI consumer still unproven."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "harness": "codex",
+  "result": "R003A refinement commit ef9c7f6329661a0da20d827872f4d3c8380c1fd0 (after b1394245), only crates/herder/src/application/resource.rs. list now collects/sorts/deduplicates exact Resource refs from this principal's Read grants and calls registry::get only for those; all errors for granted refs propagate, including missing ref NotFound. RED/GREEN bug Be3f2c5430c2b4ffa8f55: unauthorized corrupt marker made list fail (RED exit 101); fixed same focused tests 3 passed. Added available→unavailable→available CAS updates while changing node; ID and list/get visibility persist; owner.json bytes unchanged each step. Tests ran in isolated crate copy with temporary module export because integration-owned lib.rs stayed untouched. rustfmt +stable check and scoped diff --check pass. MCP/CLI consumer still unproven."
+}

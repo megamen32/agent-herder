@@ -1,0 +1,2 @@
+Command: cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade
+Observed: error[E0308]: mismatched types: expected ServerCapabilitiesBuilder<... resources=false>, found ServerCapabilitiesBuilder<... resources=true> at capabilities = capabilities.enable_resources().

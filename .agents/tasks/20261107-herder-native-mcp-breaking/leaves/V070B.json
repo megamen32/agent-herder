@@ -11,19 +11,19 @@
   ],
   "parent": "S05",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V070 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V070 обязателен в конце цепочки.",
+  "note": "V070B открыт заново после обнаружения точного штатного server route: ZCode 3.17.2 host WebSocket через supervisor control.sock и одноразовый host capability; путь отличается от ранее пробовавшегося CLI app-server. Исследую только отдельный isolated server-root и подтверждённую схему negotiation, без касания работающего личного сервиса и без inference.",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
   "created_at": "2026-11-07T03:53:22+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:22+03:00",
+  "updated_at": "2026-11-07T05:12:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:22+03:00",
@@ -53,6 +53,69 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:25:29+03:00",
+      "note": "Начинаю ZCode native contract verification на изолированном worktree от origin/main; V070A факты проверены, требуется подтвердить точный protocol handshake/route and version.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3XX",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3XX",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:27:01+03:00",
+      "note": "V070A подтверждён по plan result. Исследую точный native ZCode transport/profile в изолированном test instance; первый результат — live соединение и корректный список/recent без inference.",
+      "changes": {
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:45:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "В изолированном ZCode 0.16.9 profile app-server стартовал и достиг startup/storageState=ready (seq 27), но после ready не выдал ожидаемый zcode-hello; hello-ack и RPC не отправлялись. Native request/input correlation, list/recent и create/deliver не доказаны. Receipt: /home/roomhacker/.codex/worktrees/herder-zcode-native/agent-herder/.tmp/run-v070b-zcode/receipt.json; capability note: acceptance/contracts/zcode.md. Paid inference: 0.",
+        "blocker": "Нужен version-matched официальный контракт старта/negotiation ZCode 0.16.9 app-server или corresponding official client implementation для наблюдаемых startup/storageState JSON-RPC уведомлений и канала zcode-agent. Текущий старый hello + framed wire не подтверждён.",
+        "blocker_details": {
+          "transport": "Isolated profile reached ready but expected zcode-hello was not emitted; no handshake or native RPC.",
+          "required_input": "Version-matched ZCode 0.16.9 startup/wire contract or official client implementation; do not infer from fixtures."
+        },
+        "note": "Bounded native probe завершён с точным wire mismatch и отсутствием внешних inference effects. Required input и безопасный следующий шаг записаны в acceptance/contracts/zcode.md; receipt находится в собственном run_dir."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:00:13+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "blocker": "",
+        "blocker_details": {},
+        "note": "V070B открыт заново после обнаружения точного штатного server route: ZCode 3.17.2 host WebSocket через supervisor control.sock и одноразовый host capability; путь отличается от ранее пробовавшегося CLI app-server. Исследую только отдельный isolated server-root и подтверждённую схему negotiation, без касания работающего личного сервиса и без inference."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:12:53+03:00",
+      "note": "Закрыл проверку доступности изолированного профиля и корреляции native RPC на штатном supervisor WebSocket; input delivery и непустая история остаются UNKNOWN и помечены в контракте.",
+      "changes": {
+        "status": "done",
+        "result": "Подтверждён isolated native route: ZCode CLI 0.16.9 + ZCode Server 3.17.2 (`3.17.2-linux-x64-88a41b337faa`) в новом временном HOME/server-root и изолированном loopback; supervisor достиг ready, control.sock присутствует, host capability получен, authenticated /ws/host подключён. Native initialize requestId=1 ответил responseId=1 (available=false — провайдер не настроен); listSessions requestId=2 ответил responseId=2 и вернул 0 сессий (ожидаемо для нового профиля). Evidence: acceptance/contracts/zcode.md и .tmp/run-v070b-zcode/{official-server-receipt.json,official-websocket-receipt.json} в /home/roomhacker/.codex/worktrees/herder-zcode-native/agent-herder. Отправка model input, корреляция inputId и чтение непустой истории не доказаны; inference requests=0. Старый отдельный stdio app-server 0.16.9 достиг ready без ожидаемого hello и без RPC; он не является штатным выбранным supervisor WebSocket маршрутом.",
+        "finished_at": "2026-11-07T05:10:00+03:00"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Подтверждён isolated native route: ZCode CLI 0.16.9 + ZCode Server 3.17.2 (`3.17.2-linux-x64-88a41b337faa`) в новом временном HOME/server-root и изолированном loopback; supervisor достиг ready, control.sock присутствует, host capability получен, authenticated /ws/host подключён. Native initialize requestId=1 ответил responseId=1 (available=false — провайдер не настроен); listSessions requestId=2 ответил responseId=2 и вернул 0 сессий (ожидаемо для нового профиля). Evidence: acceptance/contracts/zcode.md и .tmp/run-v070b-zcode/{official-server-receipt.json,official-websocket-receipt.json} в /home/roomhacker/.codex/worktrees/herder-zcode-native/agent-herder. Отправка model input, корреляция inputId и чтение непустой истории не доказаны; inference requests=0. Старый отдельный stdio app-server 0.16.9 достиг ready без ожидаемого hello и без RPC; он не является штатным выбранным supervisor WebSocket маршрутом.",
+  "blocker": "",
+  "blocker_details": {},
+  "finished_at": "2026-11-07T05:10:00+03:00"
 }

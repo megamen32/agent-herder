@@ -1,16 +1,10 @@
 # ISOREVIEW: exact RED classification
 
-Current result: the unchanged test file passed **4/4** at
-`f7007b93` after the parent's corrections. Source hashes were stable across the
-run; this is a local source/fixture GREEN, not a live browser acceptance result.
-Historical RED descriptions below refer to the earlier source, before that fix.
-
 This review changes no production source. Parent owns duplicate-scope fixture
 and Z.ai account-drift repair; SolK owns the ChatGPT driver. No browser/network,
 native mutations or installer actions were used. Four local tests: one positive
-control and three expected-behavior regressions. Historical failures were normal
-RED assertions, not xfail or silently accepted behavior; the test hash remains
-`f2c040d46981d31079d14b9d691b9c60630cc19c933b1ebecf3874202f6e120c`.
+control and three expected-behavior regressions. Current unresolved regressions
+are intentionally RED, not xfail or silently accepted behavior.
 
 Command, exit code and exact source SHA-256 before/after are retained in
 `profile-isolation-review-snapshot.json`; output is in
@@ -33,8 +27,7 @@ deliberately not executed. Concrete risk: an operator can accidentally submit
 the same account twice while intending two distinct profiles.
 
 Owner: parent. Fix is input cardinality/uniqueness validation before bootstrap.
-Current source rejects duplicate scopes before reading the manifest/bootstrap;
-the same regression passes. No source change by this reviewer.
+No source change by this reviewer.
 
 ## RED 2: duplicate persistent ChatGPT markers choose the first page
 
@@ -57,8 +50,8 @@ The precondition (two identical window names) is possible after duplicate-tab
 creation/restore but was not observed live by this review. This is a concrete
 negative ownership-contract case, not proof that two accounts were mixed.
 
-Owner: parent/SolK as assigned. Current resolver collects persistent matches and
-rejects duplicates; the same regression passes. Reviewer made no source change.
+Owner: parent/SolK as assigned. Resolver must detect multiple persistent matches
+as well as URL-marker matches. Reviewer made no source change.
 
 ## RED 3: Z.ai create rebinds a verified A instance to B
 
@@ -93,9 +86,6 @@ draft. Do not use the intermediate init failure as product evidence.
 
 Owner: parent for the account guard, Kierkegaard for his assigned browser/Z.ai
 source slice. Reviewer made no source change and sends no duplicate assignment.
-Current driver persists the expected scope and refuses drift; the same test
-passes while the runner's cached create guard is unchanged. Thus the tested
-mutation path is repaired at the driver boundary, not by changing this harness.
 
 ## PASS control and proof limits
 

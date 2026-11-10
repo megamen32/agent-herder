@@ -1,0 +1,93 @@
+{
+  "id": "QZAIFACTORY",
+  "parent": "S07",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "QMACREUSE"
+  ],
+  "label": "Подключить готовый Z.ai site driver к общему browser AHAP runner",
+  "description": "Текущий runner принимает только AHAP_HARNESS=chatgpt. Переиспользовать существующий Z.ai driver с тем же явным transport/page/account contract; одна dispatchфункция, capabilities factual. No newtransport/driver rewrite.",
+  "affected_files": [
+    "src/ahap-browser-runner.ts",
+    "tests/ahap-browser-runner.test.ts",
+    "acceptance/native/browser/launch-contract.md"
+  ],
+  "acceptance": "Configured harness chatgpt/zai реально создаёт соответствующий adapter; capabilities/harness неhardcodeChatGPT, unknownmode/page/account failsbeforemutation; tests both, scopedpublish. НативныйZ.ai отдельный QZAICASE; не обходить missingaccountproof, CI driverfilesне трогать.",
+  "created_at": "2026-11-07T20:51:03+03:00",
+  "updated_at": "2026-11-07T21:05:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:51:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "QZAIFACTORY",
+        "parent": "S07",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Browser worker",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "QMACREUSE"
+        ],
+        "label": "Подключить готовый Z.ai site driver к общему browser AHAP runner",
+        "description": "Текущий runner принимает только AHAP_HARNESS=chatgpt. Переиспользовать существующий Z.ai driver с тем же явным transport/page/account contract; одна dispatchфункция, capabilities factual. No newtransport/driver rewrite.",
+        "affected_files": [
+          "src/ahap-browser-runner.ts",
+          "tests/ahap-browser-runner.test.ts",
+          "acceptance/native/browser/launch-contract.md"
+        ],
+        "acceptance": "Configured harness chatgpt/zai реально создаёт соответствующий adapter; capabilities/harness неhardcodeChatGPT, unknownmode/page/account failsbeforemutation; tests both, scopedpublish. НативныйZ.ai отдельный QZAICASE; не обходить missingaccountproof, CI driverfilesне трогать."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:56:20+03:00",
+      "note": "Работаю в предоставленном изолированном worktree; перед кодом подтверждены runner ChatGPT-only, существующий Z.ai driver/factory и ограничение account proof на пустом списке.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T21:05:46+03:00",
+      "note": "Scoped source result published and remote-proven; empty-account proof limitation documented; native acceptance separate.",
+      "changes": {
+        "status": "done",
+        "result": "Source-only factory published as 4489c69bcf6a24ab7457161ed158eda4a1a6fdc8 on main; remote SHA confirmed. Existing Z.ai driver is selected via the explicit shared Mac Mini transport and exact page; reads perform fresh expected-scope checks. Focused runner tests 15/15 pass. The existing Z.ai proof cannot establish scope for an empty list; that precise limitation is recorded and fails closed. Native Z.ai/browser acceptance is not claimed. Evidence: evidence/QZAIFACTORY-main-publish-20261107.md.",
+        "note": "Evidence: evidence/QZAIFACTORY-main-publish-20261107.md. Known contract limit: current Z.ai scope derives from a listed chat's user_id; empty/unverifiable list fails closed. Native Z.ai acceptance remains separate; no browser mutation/send performed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "result": "Source-only factory published as 4489c69bcf6a24ab7457161ed158eda4a1a6fdc8 on main; remote SHA confirmed. Existing Z.ai driver is selected via the explicit shared Mac Mini transport and exact page; reads perform fresh expected-scope checks. Focused runner tests 15/15 pass. The existing Z.ai proof cannot establish scope for an empty list; that precise limitation is recorded and fails closed. Native Z.ai/browser acceptance is not claimed. Evidence: evidence/QZAIFACTORY-main-publish-20261107.md.",
+  "note": "Evidence: evidence/QZAIFACTORY-main-publish-20261107.md. Known contract limit: current Z.ai scope derives from a listed chat's user_id; empty/unverifiable list fails closed. Native Z.ai acceptance remains separate; no browser mutation/send performed."
+}

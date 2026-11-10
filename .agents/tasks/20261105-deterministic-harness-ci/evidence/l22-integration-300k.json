@@ -1,0 +1,18 @@
+{
+  "fixtureChunks": 300000,
+  "elapsedMs": 17133,
+  "eventLoopMaxMs": 164,
+  "httpRequests": 334,
+  "httpMaxMs": 123,
+  "indexedChunks": 300001,
+  "tailFound": true,
+  "result": "PASS",
+  "recorded_at": "2026-11-06T15:47:29.293623+00:00",
+  "worktree": "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder",
+  "head": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "source_sha256": "d58d45eb6e372fd2e06f38f7296de43bd3e9e3ac00cfd60eafebc8f3eb60bde1",
+  "test_sha256": "dadd72fb45440007f2648a20c7ac058485351717cb606d7a6fd0346b75a35625",
+  "addressed_tests": "23 passed across session-search, deep-link, indexer and worker; 300k test separately passed",
+  "test_runner": "source worktree Vitest and temporary TypeScript link; synthetic test copied temporarily and removed",
+  "scope": "synthetic integration worktree; no installation, restart, or production causation proof"
+}

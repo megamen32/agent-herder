@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-08T23:39:30+00:00",
+  "details": "Fresh owned ChatGPT home auth probe and async constant both returned {}. Installed Vibe wraps synchronous function return without await. Provider browser scripts require one dispatch with bound operation receipts and read-only polling, not replays.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T23:39:30+00:00",
+      "changes": {
+        "details": "Fresh owned ChatGPT home auth probe and async constant both returned {}. Installed Vibe wraps synchronous function return without await. Provider browser scripts require one dispatch with bound operation receipts and read-only polling, not replays.",
+        "source": "observed",
+        "status": "open",
+        "title": "Vibe returns Promise objects before asynchronous browser evaluations complete"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T23:49:44+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/ci-visible-20261109/vibe-async/result.json",
+            "red_proof_path": "evidence/ci-visible-20261109/vibe-async/vibe-async-red.log",
+            "red_result": "3 failed",
+            "red_sha256": "a93a0836b7f96d1a775955e99ac9cc94a1353e7266494695ffa3087ff5e795ae",
+            "result": "GREEN: 91 passed",
+            "sha256": "13fc790f093e3494c4fd5885741b073961a1164706d256d66b5f8c879454b779",
+            "test_command": "focused Vibe/runner tests, tsc --noEmit and authorized own-tab async success/rejection/count probe"
+          },
+          "kind": "fixed",
+          "reason": "One dispatch per browser evaluation, bound read-only reconciliation, explicit JSON states and preserved AHAP operation receipt. Live Promise success/rejection and count=1 verified on owned tab."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "BVIBEASYNC20261109",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "reporter": "chatgpt-all-harness-ci-20261109",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/ci-visible-20261109/vibe-async/result.json",
+      "red_proof_path": "evidence/ci-visible-20261109/vibe-async/vibe-async-red.log",
+      "red_result": "3 failed",
+      "red_sha256": "a93a0836b7f96d1a775955e99ac9cc94a1353e7266494695ffa3087ff5e795ae",
+      "result": "GREEN: 91 passed",
+      "sha256": "13fc790f093e3494c4fd5885741b073961a1164706d256d66b5f8c879454b779",
+      "test_command": "focused Vibe/runner tests, tsc --noEmit and authorized own-tab async success/rejection/count probe"
+    },
+    "kind": "fixed",
+    "reason": "One dispatch per browser evaluation, bound read-only reconciliation, explicit JSON states and preserved AHAP operation receipt. Live Promise success/rejection and count=1 verified on owned tab."
+  },
+  "source": "observed",
+  "status": "fixed",
+  "title": "Vibe returns Promise objects before asynchronous browser evaluations complete",
+  "updated_at": "2026-11-08T23:49:44+00:00"
+}

@@ -1,0 +1,26 @@
+
+ RUN  v4.1.10 /tmp/herder-fast-threeway-fMudhW
+
+ ❯ tests/native-ci-search-completeness.test.ts (1 test | 1 failed) 15ms
+   × searches the complete pinned native transcript beyond message limits and refuses incomplete exports 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/native-ci-search-completeness.test.ts > searches the complete pinned native transcript beyond message limits and refuses incomplete exports
+TypeError: searchNativeCiSessionsComplete is not a function
+ ❯ tests/native-ci-search-completeness.test.ts:10:15
+      8|  const get=vi.fn(async(id:string)=>id==='one'?raw:null);
+      9|  const adapter={type:'codex',listSessions:async()=>rows,getRawTranscri…
+     10|  expect(await searchNativeCiSessionsComplete(adapter,'needle-last',20)…
+       |               ^
+     11|  expect(get.mock.calls.every(([id])=>id==='one')).toBe(true);
+     12|  raw.complete=false;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  22:38:07
+   Duration  434ms (transform 100ms, setup 73ms, import 57ms, tests 15ms, environment 0ms)
+

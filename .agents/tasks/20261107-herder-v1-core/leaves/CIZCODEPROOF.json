@@ -1,0 +1,68 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Exact official-server ZCode canary proof",
+  "description": "Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.",
+  "acceptance": "Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.",
+  "affected_files": [
+    "tests/native/installed-browser-bindings.ts",
+    "tests/native/installed-browser-smoke.ts",
+    "tests/native/candidate_release_gate.py"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/ci_harness_finish",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Bounded source checkpoint. Native provider access and later installed execution are separate; split any additional remainder explicitly.",
+  "id": "CIZCODEPROOF",
+  "created_at": "2026-11-09T04:07:39+03:00",
+  "updated_at": "2026-11-09T05:28:36+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T04:07:39+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Exact official-server ZCode canary proof",
+        "description": "Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.",
+        "acceptance": "Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.",
+        "affected_files": [
+          "tests/native/installed-browser-bindings.ts",
+          "tests/native/installed-browser-smoke.ts",
+          "tests/native/candidate_release_gate.py"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/ci_harness_finish",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Bounded source checkpoint. Native provider access and later installed execution are separate; split any additional remainder explicitly."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T05:28:36+03:00",
+      "note": "Source-only acceptance complete. Evidence evidence/ci-visible-20261109/collector-final-v3/result.json SHA256 d616210f0985371b613b4a8f92812d2c2893baac039cb1baa2d471c3441e365b. Exact cancel ownership/UNKNOWN/no replay and ZCode official-owner canonical-completion tests GREEN. Installed five-lane acceptance remains incomplete; CIINSTALLFINAL owns installation/workflow and live remainder. No global coverage relaxation.",
+      "changes": {
+        "status": "done"
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    }
+  ]
+}

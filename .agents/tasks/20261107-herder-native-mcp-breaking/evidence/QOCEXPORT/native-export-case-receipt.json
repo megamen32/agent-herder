@@ -1,0 +1,132 @@
+{
+  "acceptance": "EXPORT_UNAVAILABLE",
+  "artifact": {
+    "carrier": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocexport-bundle/releases/ahap-qocjoin-1d89d04d",
+    "components": {
+      "adapter": "5b45663eaa81fefe23073860b235b443d2992bc316269ba543d0849e83c9d556",
+      "core": "58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c",
+      "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+    },
+    "launcher": "tests/native/launch.py with exact hash-identical immutable carrier; loopback-only network namespace, fresh user/filesystem namespace and fixture HOME/authority DB/profile",
+    "launcher_sha256": "006ed7aad1c7157b27f53756aa8b5e50c655ede9deba1dbbb19b56faf4dfd2b7",
+    "manifest_sha256": "cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac",
+    "model_fixture_sha256": "e456b650bda6c34973b06fb33c99639aea67a4eb4aba6538cb549a5d07a450ae",
+    "node_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "node_version": "v22.22.2",
+    "source_commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+    "stand_commit": "b440b37cd0a237691057f7ee5f8014e5a58e7a8d"
+  },
+  "cleanup": {
+    "launcher_removed_disposable_fixture": true,
+    "old_076bacd8_touched": false,
+    "old_unknown_replayed": false,
+    "temporary_carrier_removed": true
+  },
+  "comparison": "Not possible: the public export response has no export payload; independent native readback and reopened Task/transcript are present in this receipt.",
+  "gap_source": {
+    "commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+    "contract": "export is discoverable and accepts {action:export, session_ref, format:common}; the ApplicationPort has no connected export implementation, so tools/call returns the structured unsupported/effect:none result.",
+    "files": [
+      "crates/herder/src/mcp/catalog.rs:66",
+      "crates/herder/src/mcp/catalog.rs:173-177",
+      "crates/herder/src/mcp/transport.rs:24",
+      "crates/herder/src/mcp/transport.rs:80",
+      "crates/herder/src/mcp/transport.rs:243-277"
+    ]
+  },
+  "native_case": {
+    "api_family": "v2",
+    "assistant": "HERDER_TEST_MODEL_OK",
+    "delivery_receipt": {
+      "native_receipt_id": "msg_1b7240594001vjhAq9NwGzw4Tc",
+      "outcome": "confirmed"
+    },
+    "harness": "opencode",
+    "input": "AHAP_OPENCODE_FIXTURE_ba9a29d0dbf942aa9bc0bb8270bbc613",
+    "model_requests": 1,
+    "native_completion": {
+      "api_family": "v2",
+      "assistant_completed_at": 1794073953765,
+      "assistant_finish": "stop",
+      "assistant_message_id": "msg_1b72405bc001A2lFcihEBNNP4D",
+      "assistant_parent_id": null,
+      "messages": [
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1b7240594001vjhAq9NwGzw4Tc",
+          "role": "user"
+        },
+        {
+          "completed": 1794073953765,
+          "error": false,
+          "finish": "stop",
+          "id": "msg_1b72405bc001A2lFcihEBNNP4D",
+          "role": "assistant"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1b72405ea001eAOQVd6PczzNsQ",
+          "role": "idle"
+        }
+      ],
+      "session_id": "ses_e48dbfbceffe5pI5AQYo3I67WG",
+      "user_message_id": "msg_1b7240594001vjhAq9NwGzw4Tc"
+    },
+    "native_receipt_id": "msg_1b7240594001vjhAq9NwGzw4Tc",
+    "native_tools": [
+      "discover",
+      "sessions",
+      "session",
+      "create",
+      "deliver",
+      "resume",
+      "stop",
+      "search",
+      "export",
+      "automation",
+      "resource",
+      "configure",
+      "permission",
+      "human_request"
+    ],
+    "opencode_url": "http://127.0.0.1:54065",
+    "profile": "/herder-owner-home/authority/profile.json",
+    "public_export": {
+      "receipt": {
+        "code": "unsupported",
+        "effect": "none",
+        "message": "operation is not connected"
+      },
+      "request": {
+        "action": "export",
+        "format": "common",
+        "session_ref": "session:3c1e78d3a9931a8de382ac6f889b5286"
+      },
+      "status": "unavailable"
+    },
+    "reopened_task_status": "completed",
+    "runner_protocol": "v2",
+    "session_ref": "session:3c1e78d3a9931a8de382ac6f889b5286",
+    "status": "EXPORT_UNAVAILABLE",
+    "task_id": "create-operation:a98645e32f9d514de8a40655f3100b46",
+    "task_status": "completed"
+  },
+  "pass_claim": false,
+  "public_export_wire": {
+    "receipt": {
+      "code": "unsupported",
+      "effect": "none",
+      "message": "operation is not connected"
+    },
+    "request": {
+      "action": "export",
+      "format": "common",
+      "session_ref": "session:3c1e78d3a9931a8de382ac6f889b5286"
+    },
+    "status": "unavailable"
+  }
+}

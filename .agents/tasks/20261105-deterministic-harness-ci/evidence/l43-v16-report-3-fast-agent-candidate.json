@@ -1,0 +1,262 @@
+{
+  "scope": "fast-agent-candidate",
+  "version": "fast-agent-mcp v0.10.43",
+  "project": {
+    "id": "herder-ci-project",
+    "name": "Herder CI",
+    "path": "/work/project"
+  },
+  "results": [
+    {
+      "harness": "fast-agent",
+      "sessions": [
+        "fast-agent:2611062028-82xYrf",
+        "fast-agent:2611062028-J80a2N"
+      ],
+      "messages": [
+        "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_0",
+        "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_1"
+      ],
+      "transcripts": [
+        {
+          "sessionId": "fast-agent:2611062028-82xYrf",
+          "pages": 2,
+          "totalEvents": 2,
+          "complete": true
+        },
+        {
+          "sessionId": "fast-agent:2611062028-J80a2N",
+          "pages": 2,
+          "totalEvents": 2,
+          "complete": true
+        }
+      ],
+      "listedIds": [
+        "fast-agent:2611062028-82xYrf",
+        "fast-agent:2611062028-J80a2N"
+      ],
+      "activeSessionId": "fast-agent:2611062028-J80a2N",
+      "heldModelReached": true,
+      "activeTurnCompleted": true,
+      "fixturePaths": {
+        "/v1/chat/completions": 3
+      },
+      "sessionsCreated": true,
+      "answer": true,
+      "sessionsListed": true,
+      "projectListed": true,
+      "launchPolicyProjectListed": true,
+      "transcriptComplete": true,
+      "transcriptPages": [
+        2,
+        2
+      ],
+      "activeDiscovered": true,
+      "fixtureRequests": 3,
+      "seconds": 12.106,
+      "searchIds": [
+        "fast-agent:2611062028-82xYrf",
+        "fast-agent:2611062028-J80a2N"
+      ],
+      "searchProofs": [
+        {
+          "id": "fast-agent:2611062028-82xYrf",
+          "marker": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_0",
+          "isError": false,
+          "coverage": {
+            "ok": true,
+            "partial": false,
+            "source": {
+              "harness": "fast-agent",
+              "source": "/work/fast-home",
+              "state": "complete",
+              "sessions": 2,
+              "catalogSessions": 2,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 6,
+              "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01",
+              "processedTextSessions": 2,
+              "processedChunks": 6,
+              "indexedTextSessions": 2,
+              "indexedChunks": 6,
+              "observedAt": "2026-11-06T20:28:29.717Z"
+            },
+            "run": {
+              "status": "complete",
+              "updatedAt": "2026-11-06T20:28:29.718Z",
+              "processed": 2,
+              "error": null,
+              "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01"
+            },
+            "exact": true
+          },
+          "results": [
+            {
+              "hostId": "test-host",
+              "harness": "fast-agent",
+              "nativeSessionId": "fast-agent:2611062028-82xYrf",
+              "title": "Herder CI fast-agent 0",
+              "cwd": "/work/project",
+              "revision": "165:65:2317:1793996902484.3428:1793996902484.3428:165:64:828:1793996902481.343:1793996902481.343",
+              "chunkId": "message:0",
+              "snippet": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_0",
+              "rank": -1.5617587116049136,
+              "shortId": "fad74"
+            }
+          ]
+        },
+        {
+          "id": "fast-agent:2611062028-J80a2N",
+          "marker": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_1",
+          "isError": false,
+          "coverage": {
+            "ok": true,
+            "partial": false,
+            "source": {
+              "harness": "fast-agent",
+              "source": "/work/fast-home",
+              "state": "complete",
+              "sessions": 2,
+              "catalogSessions": 2,
+              "textSessions": 2,
+              "missingContent": 0,
+              "chunks": 6,
+              "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01",
+              "processedTextSessions": 2,
+              "processedChunks": 6,
+              "indexedTextSessions": 2,
+              "indexedChunks": 6,
+              "observedAt": "2026-11-06T20:28:29.717Z"
+            },
+            "run": {
+              "status": "complete",
+              "updatedAt": "2026-11-06T20:28:29.718Z",
+              "processed": 2,
+              "error": null,
+              "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01"
+            },
+            "exact": true
+          },
+          "results": [
+            {
+              "hostId": "test-host",
+              "harness": "fast-agent",
+              "nativeSessionId": "fast-agent:2611062028-J80a2N",
+              "title": "Herder CI fast-agent 1",
+              "cwd": "/work/project",
+              "revision": "165:99:2317:1793996909159.215:1793996909159.215:165:98:1637:1793996909156.215:1793996909156.215",
+              "chunkId": "message:0",
+              "snippet": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_1",
+              "rank": -1.5617587116049136,
+              "shortId": "fb01b"
+            }
+          ]
+        }
+      ],
+      "searchWorker": true,
+      "searchCoverage": {
+        "partial": false,
+        "state": "complete",
+        "transport": "in-memory MCP",
+        "proofs": [
+          {
+            "id": "fast-agent:2611062028-82xYrf",
+            "marker": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_0",
+            "isError": false,
+            "coverage": {
+              "ok": true,
+              "partial": false,
+              "source": {
+                "harness": "fast-agent",
+                "source": "/work/fast-home",
+                "state": "complete",
+                "sessions": 2,
+                "catalogSessions": 2,
+                "textSessions": 2,
+                "missingContent": 0,
+                "chunks": 6,
+                "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01",
+                "processedTextSessions": 2,
+                "processedChunks": 6,
+                "indexedTextSessions": 2,
+                "indexedChunks": 6,
+                "observedAt": "2026-11-06T20:28:29.717Z"
+              },
+              "run": {
+                "status": "complete",
+                "updatedAt": "2026-11-06T20:28:29.718Z",
+                "processed": 2,
+                "error": null,
+                "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01"
+              },
+              "exact": true
+            },
+            "results": [
+              {
+                "hostId": "test-host",
+                "harness": "fast-agent",
+                "nativeSessionId": "fast-agent:2611062028-82xYrf",
+                "title": "Herder CI fast-agent 0",
+                "cwd": "/work/project",
+                "revision": "165:65:2317:1793996902484.3428:1793996902484.3428:165:64:828:1793996902481.343:1793996902481.343",
+                "chunkId": "message:0",
+                "snippet": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_0",
+                "rank": -1.5617587116049136,
+                "shortId": "fad74"
+              }
+            ]
+          },
+          {
+            "id": "fast-agent:2611062028-J80a2N",
+            "marker": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_1",
+            "isError": false,
+            "coverage": {
+              "ok": true,
+              "partial": false,
+              "source": {
+                "harness": "fast-agent",
+                "source": "/work/fast-home",
+                "state": "complete",
+                "sessions": 2,
+                "catalogSessions": 2,
+                "textSessions": 2,
+                "missingContent": 0,
+                "chunks": 6,
+                "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01",
+                "processedTextSessions": 2,
+                "processedChunks": 6,
+                "indexedTextSessions": 2,
+                "indexedChunks": 6,
+                "observedAt": "2026-11-06T20:28:29.717Z"
+              },
+              "run": {
+                "status": "complete",
+                "updatedAt": "2026-11-06T20:28:29.718Z",
+                "processed": 2,
+                "error": null,
+                "scanId": "59679a50-bc80-4866-9b29-26b523cf7a01"
+              },
+              "exact": true
+            },
+            "results": [
+              {
+                "hostId": "test-host",
+                "harness": "fast-agent",
+                "nativeSessionId": "fast-agent:2611062028-J80a2N",
+                "title": "Herder CI fast-agent 1",
+                "cwd": "/work/project",
+                "revision": "165:99:2317:1793996909159.215:1793996909159.215:165:98:1637:1793996909156.215:1793996909156.215",
+                "chunkId": "message:0",
+                "snippet": "HERDER_NATIVE_5ad12f3a46114763ab6926bb31cef6a2_1",
+                "rank": -1.5617587116049136,
+                "shortId": "fb01b"
+              }
+            ]
+          }
+        ]
+      },
+      "sessionsSearched": true
+    }
+  ]
+}

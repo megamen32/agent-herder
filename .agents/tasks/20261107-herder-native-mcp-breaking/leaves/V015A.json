@@ -12,8 +12,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V015 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V015 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:51:58+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:51:58+03:00",
+  "updated_at": "2026-11-07T05:21:03+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:51:58+03:00",
@@ -53,6 +53,53 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:10:07+03:00",
+      "note": "Исполнитель 01a1b3c3-f4cc-7780-b360-22eadc8f48ff.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:10:12+03:00",
+      "note": "Worker 01a1b3c3-f4cc-7780-b360-22eadc8f48ff registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T05:10:12+03:00",
+          "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v015a",
+          "run_host": "roomhacker-server-100"
+        },
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:21:03+03:00",
+      "note": "Интегрировано в origin/main.",
+      "changes": {
+        "status": "done",
+        "result": "Опубликованы 3636adda и 67aebe8b: read-only reconciliation по точному адресу и native ID подключён к библиотеке; targeted test прошёл. Restart dispatcher и native reader ещё не подключены."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": {
+    "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+    "registered_at": "2026-11-07T05:10:12+03:00",
+    "run_dir": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/.tmp/v015a",
+    "run_host": "roomhacker-server-100"
+  },
+  "result": "Опубликованы 3636adda и 67aebe8b: read-only reconciliation по точному адресу и native ID подключён к библиотеке; targeted test прошёл. Restart dispatcher и native reader ещё не подключены."
 }

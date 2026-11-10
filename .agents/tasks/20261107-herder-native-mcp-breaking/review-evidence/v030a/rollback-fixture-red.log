@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (/tmp/herder-v030a-harness/target/debug/deps/herder_v030a_harness-a7b755586163746d)
+
+running 1 test
+test index::tests::failed_cursor_write_rolls_back_the_fts_replacement ... FAILED
+
+failures:
+
+---- index::tests::failed_cursor_write_rolls_back_the_fts_replacement stdout ----
+
+thread 'index::tests::failed_cursor_write_rolls_back_the_fts_replacement' (3251755) panicked at /home/roomhacker/.codex/worktrees/herder-v030a-search/crates/herder/src/search/index.rs:200:14:
+called `Result::unwrap()` on an `Err` value: SqlInputError { error: Error { code: Unknown, extended_code: 1 }, msg: "near \"SELECT\": syntax error", sql: "CREATE TRIGGER reject_search_cursor BEFORE UPDATE ON session_search_stateBEGIN SELECT RAISE(ABORT, 'cursor write rejected'); END;", offset: 79 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    index::tests::failed_cursor_write_rolls_back_the_fts_replacement
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

@@ -1,0 +1,93 @@
+{
+  "id": "QOCREGRESSION",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QOCPROBEJSON",
+    "QOCPREFLIGHT"
+  ],
+  "label": "Проверить исправленный OpenCode в новом изолированном экземпляре",
+  "description": "Новый самостоятельный regression исправленного artifact1d89d04d + standb440b37c в полностью отдельном disposable native instance/fresh DB/fake model. Не повтор старого UNKNOWN: retained076bacd8, его instance/DB/intent не открывать для записи, старый request не повторять и не переименовывать. Пройти actual core→AHAP→OpenCode create/initial delivery/read/reopen с квитанцией.",
+  "acceptance": "Exact artifact hashes, fresh isolated instance paths, server/runner nativeProtocol equality, native user+assistant IDs, local modelcounter, core Task/result+transcript readback/reopen, cleanup. Старый UNKNOWN остаётся сохранён; новый UNKNOWN не retry. Никаких production/paid models.",
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py",
+    "acceptance/early/opencode/"
+  ],
+  "created_at": "2026-11-07T20:18:39+03:00",
+  "updated_at": "2026-11-07T20:34:12+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:18:39+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCREGRESSION",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Luna",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "QOCPROBEJSON",
+          "QOCPREFLIGHT"
+        ],
+        "label": "Проверить исправленный OpenCode в новом изолированном экземпляре",
+        "description": "Новый самостоятельный regression исправленного artifact1d89d04d + standb440b37c в полностью отдельном disposable native instance/fresh DB/fake model. Не повтор старого UNKNOWN: retained076bacd8, его instance/DB/intent не открывать для записи, старый request не повторять и не переименовывать. Пройти actual core→AHAP→OpenCode create/initial delivery/read/reopen с квитанцией.",
+        "acceptance": "Exact artifact hashes, fresh isolated instance paths, server/runner nativeProtocol equality, native user+assistant IDs, local modelcounter, core Task/result+transcript readback/reopen, cleanup. Старый UNKNOWN остаётся сохранён; новый UNKNOWN не retry. Никаких production/paid models.",
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py",
+          "acceptance/early/opencode/"
+        ]
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:23:35+03:00",
+      "note": "Начат независимый regression; owner разрешил одну fresh native create/delivery/read/reopen в новой loopback-only disposable среде. Confirmed QOCPROBEJSON и QOCPREFLIGHT done. Exact 1d89d04d manifest SHA совпал.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "declared"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:34:12+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "PASS: fresh standalone core→AHAP→OpenCode case on manifest 1d89d04d SHA256 cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac; AHAP stand b440b37cd0a237691057f7ee5f8014e5a58e7a8d. Exact core/runner/OpenCode hashes matched manifest; manifest-pinned Node v22.22.2 SHA verified and used. Read-only server and exact runner protocol both v2 before mutation. In new loopback-only network namespace, disposable user/filesystem HOME, fresh authority DB/profile: Task create-operation:e1440ce607b38baa23931fb57fe3cdde completed; session_ref session:06e2b65301159526f7e622aaa2bfd3ef bound native ses_e48eee10affexJRqEVmWqcrikv; user receipt/message msg_1b7112059001y6Thh7Uu75wwvI; assistant msg_1b71120870012BuTJBrUNPsLrF; core readback and reopened Task/transcript completed; local fake-model counter exactly 1. Launcher removed disposable instance; temporary hardlink carrier and failed-preflight scratch removed. Evidence: evidence/QOCREGRESSION/native-case-receipt.json and native-case-final.log. Two prior attempts failed before mutation: one wrapper argument-order error; one wrong system Node v12.22.9 (model counter 0); recovered using manifest-pinned Node v22.22.2. No UNKNOWN retry; prior 1d15… and retained 076bacd8 untouched. Source b440b37 remains ancestor of origin/main (which advanced independently); worktree has no edits."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "PASS: fresh standalone core→AHAP→OpenCode case on manifest 1d89d04d SHA256 cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac; AHAP stand b440b37cd0a237691057f7ee5f8014e5a58e7a8d. Exact core/runner/OpenCode hashes matched manifest; manifest-pinned Node v22.22.2 SHA verified and used. Read-only server and exact runner protocol both v2 before mutation. In new loopback-only network namespace, disposable user/filesystem HOME, fresh authority DB/profile: Task create-operation:e1440ce607b38baa23931fb57fe3cdde completed; session_ref session:06e2b65301159526f7e622aaa2bfd3ef bound native ses_e48eee10affexJRqEVmWqcrikv; user receipt/message msg_1b7112059001y6Thh7Uu75wwvI; assistant msg_1b71120870012BuTJBrUNPsLrF; core readback and reopened Task/transcript completed; local fake-model counter exactly 1. Launcher removed disposable instance; temporary hardlink carrier and failed-preflight scratch removed. Evidence: evidence/QOCREGRESSION/native-case-receipt.json and native-case-final.log. Two prior attempts failed before mutation: one wrapper argument-order error; one wrong system Node v12.22.9 (model counter 0); recovered using manifest-pinned Node v22.22.2. No UNKNOWN retry; prior 1d15… and retained 076bacd8 untouched. Source b440b37 remains ancestor of origin/main (which advanced independently); worktree has no edits."
+}

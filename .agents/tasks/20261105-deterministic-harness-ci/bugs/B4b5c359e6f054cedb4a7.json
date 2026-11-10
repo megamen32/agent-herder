@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T12:08:20+00:00",
+  "details": "Installed bafb Herder GET transcript exact Z.ai draft вернул unsupported native JSONL harness; существующий Z.ai getMessages обрезает историю до 180 сообщений и 210000 символов, поэтому не является полным экспортом. Новый отправленный тест виден в браузере, session_info показывает старые сообщения.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "codex",
+      "at": "2026-11-07T12:08:20+00:00",
+      "changes": {
+        "details": "Installed bafb Herder GET transcript exact Z.ai draft вернул unsupported native JSONL harness; существующий Z.ai getMessages обрезает историю до 180 сообщений и 210000 символов, поэтому не является полным экспортом. Новый отправленный тест виден в браузере, session_info показывает старые сообщения.",
+        "source": "installed Herder transcript route, Z.ai browser readback 2026-11-07",
+        "status": "open",
+        "title": "Полный транскрипт Z.ai через Herder возвращает HTTP 422"
+      }
+    }
+  ],
+  "id": "B4b5c359e6f054cedb4a7",
+  "owner": "codex",
+  "reporter": "codex",
+  "source": "installed Herder transcript route, Z.ai browser readback 2026-11-07",
+  "status": "open",
+  "title": "Полный транскрипт Z.ai через Herder возвращает HTTP 422",
+  "updated_at": "2026-11-07T12:08:20+00:00"
+}

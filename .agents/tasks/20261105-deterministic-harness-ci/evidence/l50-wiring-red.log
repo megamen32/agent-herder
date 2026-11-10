@@ -1,0 +1,40 @@
+test_mismatched_transaction_evidence_is_refused (test_l50_authority_producer_route.ProducerRouteTests) ... ERROR
+test_real_authority_channel_delivers_incomplete_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ERROR
+test_transaction_prepares_authority_owned_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ERROR
+
+======================================================================
+ERROR: test_mismatched_transaction_evidence_is_refused (test_l50_authority_producer_route.ProducerRouteTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l50_authority_producer_route.py", line 37, in test_mismatched_transaction_evidence_is_refused
+    with patch.object(rollout,'load_candidate_ci_producer',return_value=producer):
+  File "/usr/lib/python3.10/unittest/mock.py", line 1447, in __enter__
+    original, local = self.get_original()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1420, in get_original
+    raise AttributeError(
+AttributeError: <module 'rollout_candidate' from '/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py'> does not have the attribute 'load_candidate_ci_producer'
+
+======================================================================
+ERROR: test_real_authority_channel_delivers_incomplete_draft (test_l50_authority_producer_route.ProducerRouteTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l50_authority_producer_route.py", line 33, in test_real_authority_channel_delivers_incomplete_draft
+    self.assertEqual(run_authorized_ssh([sys.executable,'-c',source,str(FLEET),json.dumps(c)],Gate(),c,candidate_ci_draft=draft,harness_policy=['codex']),0)
+TypeError: run_authorized_ssh() got an unexpected keyword argument 'candidate_ci_draft'
+
+======================================================================
+ERROR: test_transaction_prepares_authority_owned_draft (test_l50_authority_producer_route.ProducerRouteTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l50_authority_producer_route.py", line 18, in test_transaction_prepares_authority_owned_draft
+    with patch.object(rollout,'load_candidate_ci_producer',return_value=producer):
+  File "/usr/lib/python3.10/unittest/mock.py", line 1447, in __enter__
+    original, local = self.get_original()
+  File "/usr/lib/python3.10/unittest/mock.py", line 1420, in get_original
+    raise AttributeError(
+AttributeError: <module 'rollout_candidate' from '/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/deploy/fleet/rollout-candidate.py'> does not have the attribute 'load_candidate_ci_producer'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.007s
+
+FAILED (errors=3)

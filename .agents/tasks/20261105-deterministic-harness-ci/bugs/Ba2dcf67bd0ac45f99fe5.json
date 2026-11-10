@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T00:35:32+00:00",
+  "details": "При 99% заполнении server-44 staging копировал зависимости без предварительной проверки свободного места. Добавлена оценка включая символические ссылки и резерв 3 GiB; проверка свободного места является снимком, а не резервированием.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T00:35:32+00:00",
+      "changes": {
+        "details": "При 99% заполнении server-44 staging копировал зависимости без предварительной проверки свободного места. Добавлена оценка включая символические ссылки и резерв 3 GiB; проверка свободного места является снимком, а не резервированием.",
+        "source": "scripts/run-isolated-native-ci.py; tests/test_native_ci_capacity.py",
+        "status": "open",
+        "title": "Runner копировал зависимости без проверки запаса диска"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-06T00:42:54+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/capacity-preflight-tests.json",
+            "result": "PASS",
+            "sha256": "f0e51c1af78e0c5d18f016253b7c045ccc1be0e05213e10f87238b62c097c6cd",
+            "test_command": "python3 -m unittest discover -s tests -p test_native_ci_capacity.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Ba2dcf67bd0ac45f99fe5",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/capacity-preflight-tests.json",
+      "result": "PASS",
+      "sha256": "f0e51c1af78e0c5d18f016253b7c045ccc1be0e05213e10f87238b62c097c6cd",
+      "test_command": "python3 -m unittest discover -s tests -p test_native_ci_capacity.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "scripts/run-isolated-native-ci.py; tests/test_native_ci_capacity.py",
+  "status": "fixed",
+  "title": "Runner копировал зависимости без проверки запаса диска",
+  "updated_at": "2026-11-06T00:42:54+00:00"
+}

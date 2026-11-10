@@ -1,0 +1,50 @@
+{
+  "id": "V025OWNER",
+  "parent": "S01",
+  "kind": "task",
+  "label": "Подключить явный trusted owner stdio profile",
+  "description": "Проверенный source результат V025COMPOSE: owner policy на existing ledger, динамические exact grants и real Codex port composition в штатном launcher.",
+  "acceptance": "Protected explicit profile, default Unknown/self=None, exact receipt membership/current generation и source fake stdio create/read/reopen/import deny. Native consumer отдельно.",
+  "status": "done",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025LAUNCH",
+    "V025PORT"
+  ],
+  "result": "a3517774 поверх NativeReader d6cb17b4: independent Nietzsche SUPPORTED,2 policy+2 launcher tests PASS. Exact protected profile/instance/principal/receipt/scopes/generation, DB/gate inode recheck, no nested gate/no second grants store. Real reader DTO source compatible. Fake RPC only; прямой Task current grants/reconciliation ещё у Tesla.",
+  "note": "Выделен уже выполненный source результат затянувшегося COMPOSE; без нового worker/ветки или фиктивного native done.",
+  "created_at": "2026-11-07T14:08:46+03:00",
+  "updated_at": "2026-11-07T14:08:46+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T14:08:46+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025OWNER",
+        "parent": "S01",
+        "kind": "task",
+        "label": "Подключить явный trusted owner stdio profile",
+        "description": "Проверенный source результат V025COMPOSE: owner policy на existing ledger, динамические exact grants и real Codex port composition в штатном launcher.",
+        "acceptance": "Protected explicit profile, default Unknown/self=None, exact receipt membership/current generation и source fake stdio create/read/reopen/import deny. Native consumer отдельно.",
+        "status": "done",
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025LAUNCH",
+          "V025PORT"
+        ],
+        "result": "a3517774 поверх NativeReader d6cb17b4: independent Nietzsche SUPPORTED,2 policy+2 launcher tests PASS. Exact protected profile/instance/principal/receipt/scopes/generation, DB/gate inode recheck, no nested gate/no second grants store. Real reader DTO source compatible. Fake RPC only; прямой Task current grants/reconciliation ещё у Tesla.",
+        "note": "Выделен уже выполненный source результат затянувшегося COMPOSE; без нового worker/ветки или фиктивного native done."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ]
+}

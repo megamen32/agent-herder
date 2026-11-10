@@ -12,8 +12,8 @@
   ],
   "parent": "S04",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V063 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V063 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:22+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:22+03:00",
+  "updated_at": "2026-11-07T05:18:44+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:22+03:00",
@@ -53,6 +53,28 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:11:16+03:00",
+      "note": "V062 and V028 inputs are done. Implement OpenCode native session-list reader and stable address mapping in owned read.rs.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:18:44+03:00",
+      "note": "Native session-list readback confirms stable session ID and instance scoping; task-owned empty fixture cleaned.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлен crates/herder/src/adapters/opencode/read.rs, commit a8dd75f6 поверх свежего origin/main. `OpenCodeSessionReader::list_sessions` читает native GET /api/session, мапит стабильный ses… ID в SessionAddress с точным InstanceRef, сохраняет parent/project/outcome/time/location и opaque cursors. На isolated OpenCode 2.2.4 создана одна пустая сессия, независимый список вернул тот же ID и instance; сессия удалена HTTP 204. Evidence: .tmp/v063a-runtime/evidence.json и v063a_probe.rs. Scratch compile с reqwest 0.12 прошёл; общий `lib.rs` export Terra ещё должен добавить `pub mod read`."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен crates/herder/src/adapters/opencode/read.rs, commit a8dd75f6 поверх свежего origin/main. `OpenCodeSessionReader::list_sessions` читает native GET /api/session, мапит стабильный ses… ID в SessionAddress с точным InstanceRef, сохраняет parent/project/outcome/time/location и opaque cursors. На isolated OpenCode 2.2.4 создана одна пустая сессия, независимый список вернул тот же ID и instance; сессия удалена HTTP 204. Evidence: .tmp/v063a-runtime/evidence.json и v063a_probe.rs. Scratch compile с reqwest 0.12 прошёл; общий `lib.rs` export Terra ещё должен добавить `pub mod read`."
 }

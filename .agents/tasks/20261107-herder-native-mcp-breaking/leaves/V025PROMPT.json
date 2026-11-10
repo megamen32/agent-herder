@@ -1,0 +1,67 @@
+{
+  "id": "V025PROMPT",
+  "label": "Fresh create и отдельная доставка prompt",
+  "description": "Восстановить точный результат scoped create из единого store и связать его с отдельно дедуплицированной доставкой prompt без повторения native create или UNKNOWN send.",
+  "acceptance": "Изолированные тесты показывают exact recovery, конфликт payload, однократные create/send, UNKNOWN/no replay и успешную доставку; публичный consumer и terminal MCP Task проверяются отдельно.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V025GUARD1"
+  ],
+  "note": "На базе 9d670bd5 локальные 13e1df8b/f0d374e5/3beaad62/8fab1a69: scoped create+prompt и delivery через NativeServer Task bridge; fake wire tools/call→tasks/get→messages для no grant, UNKNOWN create/delivery, no-send и fixture-confirmed; session ref сохраняется при prompt effect none; trusted exact Write/Read policy, один create/send при replay. Тест повторён на изолированных v3 и v4 store, миграций live нет. Нужен независимый review и реальная production policy/ingress, bounded native snapshot и public consumer; подтверждение native в fixture синтетическое.",
+  "created_at": "2026-11-07T12:52:36+03:00",
+  "updated_at": "2026-11-07T13:33:26+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:52:36+03:00",
+      "note": "",
+      "changes": {
+        "id": "V025PROMPT",
+        "label": "Fresh create и отдельная доставка prompt",
+        "description": "Восстановить точный результат scoped create из единого store и связать его с отдельно дедуплицированной доставкой prompt без повторения native create или UNKNOWN send.",
+        "acceptance": "Изолированные тесты показывают exact recovery, конфликт payload, однократные create/send, UNKNOWN/no replay и успешную доставку; публичный consumer и terminal MCP Task проверяются отдельно.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "running",
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V025GUARD1"
+        ],
+        "note": "Локальный кандидат 42e547c1 поверх stop race dde52b0b: fake bounded create+delivery, точная квитанция и UNKNOWN/no replay проверены; требуется независимое review и public composition. Без native вызовов и push."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:32:28+03:00",
+      "note": "Astra закрывает только уже принятый и опубликованный source результат; public composition отдельно.",
+      "changes": {
+        "status": "done",
+        "result": "Source slice принят: 42e547c1+3d99b1c1 опубликованы в main как 8a811999+ae95e063. Exact create receipt recovery и trusted policy grant для фактически нового session ref; create UNKNOWN не отправляет prompt, delivery UNKNOWN не повторяется, повтор с новыми grants не создаёт второй native session. Независимый reviewer выполнил offline locked create_prompt_ — 3/3. Production policy/ingress/consumer не входят в это source acceptance и остаются в V025COMPOSE.",
+        "note": "Независимый REVISE по заранее выданному grant закрыт; исходный no-replay scope сохранён."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T13:33:26+03:00",
+      "note": "Создан отдельный aggregate MCP Task в том же SQLite и доказан fake wire; live/native completion не заявлен.",
+      "changes": {
+        "note": "На базе 9d670bd5 локальные 13e1df8b/f0d374e5/3beaad62/8fab1a69: scoped create+prompt и delivery через NativeServer Task bridge; fake wire tools/call→tasks/get→messages для no grant, UNKNOWN create/delivery, no-send и fixture-confirmed; session ref сохраняется при prompt effect none; trusted exact Write/Read policy, один create/send при replay. Тест повторён на изолированных v3 и v4 store, миграций live нет. Нужен независимый review и реальная production policy/ingress, bounded native snapshot и public consumer; подтверждение native в fixture синтетическое."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Source slice принят: 42e547c1+3d99b1c1 опубликованы в main как 8a811999+ae95e063. Exact create receipt recovery и trusted policy grant для фактически нового session ref; create UNKNOWN не отправляет prompt, delivery UNKNOWN не повторяется, повтор с новыми grants не создаёт второй native session. Независимый reviewer выполнил offline locked create_prompt_ — 3/3. Production policy/ingress/consumer не входят в это source acceptance и остаются в V025COMPOSE."
+}

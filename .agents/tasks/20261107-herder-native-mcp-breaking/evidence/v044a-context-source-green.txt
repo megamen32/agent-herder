@@ -1,0 +1,11 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.92s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 3 tests
+test application::context::tests::denies_foreign_recipient_and_marks_absent_context_explicitly ... ok
+test application::context::tests::projects_self_creator_and_latest_sender_after_sqlite_reopen_without_text ... ok
+test application::context::tests::caps_sender_history_and_marks_partial_coverage ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.46s
+

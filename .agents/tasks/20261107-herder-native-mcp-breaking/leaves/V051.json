@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "deferred",
+  "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
   "wave": 5,
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V051 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V051 обязателен в конце цепочки.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "estimate_over_limit_reason": "",
   "id": "V051",
   "created_at": "2026-11-07T01:52:26+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:07+03:00",
+  "updated_at": "2026-11-07T15:55:40+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:26+03:00",
@@ -75,9 +75,60 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:59:58+03:00",
+      "note": "Worker 01a1b3c3-f4cc-7780-b360-22eadc8f48ff registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+          "registered_at": "2026-11-07T05:59:58+03:00"
+        },
+        "owner": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+        "status": "running"
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:04:42+03:00",
+      "note": "Локальный commit 681c0d39 от origin/main 9fa6ed76: tests/native/codex_receipt.py запускает реальный codex-cli 0.167.0 app-server в disposable HOME с loopback test-model; два разных input, два native turn ID, thread/read подтверждает оба input и ответ модели, fixture_requests=2. Прямой native Codex путь, не Herder MCP и не E001/E002. Для полного пути необходимы подключённый к публичному Rust MCP native adapter с create/deliver и выдачей точной native квитанции, затем её хранение/readback; текущий default NativeServer возвращает unsupported, кодирование native_receipt store не определено. Без push.",
+      "changes": {},
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:27:31+03:00",
+      "note": "Принят direct native proof; E001/E002 остаются открыты.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Rust MCP create/deliver и native receipt provenance ещё не подключены",
+        "result": "27a22ff0: изолированный Codex 0.167.0 выполнил 2 input/turn с отдельными native IDs и fixture answer, подтверждено thread/read; через Herder MCP ещё не проходит."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:55:40+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
   ],
   "parent": "S01",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "Rust MCP create/deliver и native receipt provenance ещё не подключены",
+  "worker": {
+    "id": "01a1b3c3-f4cc-7780-b360-22eadc8f48ff",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder",
+    "registered_at": "2026-11-07T05:59:58+03:00"
+  },
+  "result": "27a22ff0: изолированный Codex 0.167.0 выполнил 2 input/turn с отдельными native IDs и fixture answer, подтверждено thread/read; через Herder MCP ещё не проходит."
 }

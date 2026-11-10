@@ -13,16 +13,16 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "wave": 2,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V039 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V039 обязателен в конце цепочки.",
   "estimate_over_limit_reason": "",
   "id": "V039",
   "created_at": "2026-11-07T01:52:24+03:00",
-  "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:01+03:00",
+  "updated_at": "2026-11-07T07:15:36+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:24+03:00",
@@ -73,9 +73,31 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:11:41+03:00",
+      "note": "V039B выполнен и передан Терe. Следую по цепочке: read lost claim outcome by nonce без повторного claim.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:15:36+03:00",
+      "note": "V039 chain завершена (A/B/read-by-nonce); следующий готовый независимый leaf V038B.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлена read_by_claim_id в общей ownership-библиотеке и offline `ownership resolve`. Команда читает только актуальную owner.json: возвращает current+claim по совпавшему nonce; после release возвращает not_current/null без повторного claim. Изолированный CLI сценарий claim → resolve current (с исходным acquired_at) → release → resolve not_current → status free пройден. Commit fe8048d6 после rebase на origin/main 6edc8296; cargo check --bin herder и diff-check прошли. SHA передан Терe; центральная интеграция и R004/MCP consumer proof остаются отдельными."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
   ],
   "parent": "S02",
   "model": "gpt-6.1-terra",
-  "wait_reason": ""
+  "wait_reason": "",
+  "result": "Добавлена read_by_claim_id в общей ownership-библиотеке и offline `ownership resolve`. Команда читает только актуальную owner.json: возвращает current+claim по совпавшему nonce; после release возвращает not_current/null без повторного claim. Изолированный CLI сценарий claim → resolve current (с исходным acquired_at) → release → resolve not_current → status free пройден. Commit fe8048d6 после rebase на origin/main 6edc8296; cargo check --bin herder и diff-check прошли. SHA передан Терe; центральная интеграция и R004/MCP consumer proof остаются отдельными."
 }

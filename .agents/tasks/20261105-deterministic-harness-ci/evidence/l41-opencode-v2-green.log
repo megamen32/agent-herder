@@ -1,0 +1,17 @@
+
+ RUN  v4.1.10 /tmp/herder-l33-fast-red
+
+(node:1491816) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1491792) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1491801) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1491800) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  4 passed (4)
+      Tests  14 passed (14)
+   Start at  20:21:37
+   Duration  1.46s (transform 342ms, setup 112ms, import 496ms, tests 2.51s, environment 1ms)
+

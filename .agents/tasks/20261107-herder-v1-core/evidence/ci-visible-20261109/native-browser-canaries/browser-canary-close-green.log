@@ -1,0 +1,12 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ✓ tests/zai-durable-draft-read.test.ts (3 tests) 32ms
+ ✓ tests/browser-canary-view.test.ts (5 tests) 28ms
+ ✓ tests/ahap-browser-runner.test.ts (65 tests) 92ms
+
+ Test Files  3 passed (3)
+      Tests  73 passed (73)
+   Start at  04:48:18
+   Duration  1.49s (transform 1.94s, setup 174ms, import 2.69s, tests 152ms, environment 0ms)
+

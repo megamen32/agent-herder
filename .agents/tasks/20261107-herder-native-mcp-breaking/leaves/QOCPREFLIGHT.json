@@ -1,0 +1,77 @@
+{
+  "id": "QOCPREFLIGHT",
+  "kind": "task",
+  "parent": "S04",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 5,
+    "maximum": 15
+  },
+  "depends_on": [
+    "V065AHAPCIDRIVER"
+  ],
+  "label": "Устранить ложное совпадение API в preflight OpenCode",
+  "description": "stand require_runner_route_compat(api_family,pinned_protocol='v2') вызывается без runner input; этим preflight объявил совпадение, хотя artifact runner фактически выбирал v22. Также detect API200 null сейчас ошибочно считает v2. Использовать точный подтверждённый runner startup contract и одинаковую семантику existing receipt probe; не угадывать по default/версии.",
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py"
+  ],
+  "acceptance": "RED actual v2-v22 mismatch rejected before create and config200 null distinguished; GREEN valid families accepted only with verified artifact/runner choice, unknown choice fails descriptive. Source+offline tests+publication; старый UNKNOWN не повторять, native create/send здесь не запускать.",
+  "created_at": "2026-11-07T19:37:58+03:00",
+  "updated_at": "2026-11-07T20:01:06+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:37:58+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCPREFLIGHT",
+        "kind": "task",
+        "parent": "S04",
+        "status": "queued",
+        "owner": "Luna",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 5,
+          "maximum": 15
+        },
+        "depends_on": [
+          "V065AHAPCIDRIVER"
+        ],
+        "label": "Устранить ложное совпадение API в preflight OpenCode",
+        "description": "stand require_runner_route_compat(api_family,pinned_protocol='v2') вызывается без runner input; этим preflight объявил совпадение, хотя artifact runner фактически выбирал v22. Также detect API200 null сейчас ошибочно считает v2. Использовать точный подтверждённый runner startup contract и одинаковую семантику existing receipt probe; не угадывать по default/версии.",
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py"
+        ],
+        "acceptance": "RED actual v2-v22 mismatch rejected before create and config200 null distinguished; GREEN valid families accepted only with verified artifact/runner choice, unknown choice fails descriptive. Source+offline tests+publication; старый UNKNOWN не повторять, native create/send здесь не запускать."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:00:26+03:00",
+      "note": "Completed owned stand/offline regression fix. RED/GREEN evidence saved under canonical plan evidence; source commit pushed to origin/main. No native create/send.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:01:06+03:00",
+      "note": "Source опубликован на main только по двум owned-файлам. Offline regression подтверждает retained protocol mismatch, JSON null vs malformed, API404 health gate и exact runner initialize protocol. Никаких native create/send в этой задаче.",
+      "changes": {
+        "status": "done",
+        "result": "Исправлены только tests/native/ahap_opencode_stand.py и tests/native/test_ahap_opencode_stand.py; commit b440b37cd0a237691057f7ee5f8014e5a58e7a8d опубликован origin/main, после push HEAD == origin/main. Серверная family detector различает v2 (HTTP 200 valid JSON object/array) и v22 (HTTP 200 JSON null; HTTP 404 только с HTTP 200 JSON object /api/health); malformed/unknown fail closed. Guard без default запускает exact runner artifact и сравнивает capabilities.nativeProtocol из его read-only initialize. Retained v2 config-array + runner v22 mismatch отвергается до mutation. RED: evidence/QOCPREFLIGHT-red.txt; GREEN: evidence/QOCPREFLIGHT-green.txt; 16 focused offline tests pass; py_compile и git diff --check pass. Native create/send не запускались; прежний UNKNOWN create-operation:1d15d2739e1196ebb5b03484cb05a321 не повторялся."
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    }
+  ],
+  "result": "Исправлены только tests/native/ahap_opencode_stand.py и tests/native/test_ahap_opencode_stand.py; commit b440b37cd0a237691057f7ee5f8014e5a58e7a8d опубликован origin/main, после push HEAD == origin/main. Серверная family detector различает v2 (HTTP 200 valid JSON object/array) и v22 (HTTP 200 JSON null; HTTP 404 только с HTTP 200 JSON object /api/health); malformed/unknown fail closed. Guard без default запускает exact runner artifact и сравнивает capabilities.nativeProtocol из его read-only initialize. Retained v2 config-array + runner v22 mismatch отвергается до mutation. RED: evidence/QOCPREFLIGHT-red.txt; GREEN: evidence/QOCPREFLIGHT-green.txt; 16 focused offline tests pass; py_compile и git diff --check pass. Native create/send не запускались; прежний UNKNOWN create-operation:1d15d2739e1196ebb5b03484cb05a321 не повторялся."
+}

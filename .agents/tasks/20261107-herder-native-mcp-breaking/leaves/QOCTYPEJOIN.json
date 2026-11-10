@@ -1,0 +1,94 @@
+{
+  "id": "QOCTYPEJOIN",
+  "parent": "S05",
+  "kind": "task",
+  "status": "done",
+  "owner": "OpenCode worker",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "QOCPROBEJSON"
+  ],
+  "label": "Исправить интеграцию типов OpenCode v22 в опубликованном main",
+  "description": "QBROWSERSCOPE fresh-main tsc выявил несогласованность protocol v22/isV22/start в src/adapters/opencode.ts. Воспроизвести и перенести минимальную пропущенную дельту из готовогоFASTOC22 без переписывания.",
+  "affected_files": [
+    "src/adapters/opencode.ts",
+    "tests/opencode-adapter.test.ts"
+  ],
+  "acceptance": "Зафиксированный RED tsc на freshmain, минимальная source дельта, GREEN tsc и focused adaptertests, owned publication. Native regression Luna не трогать.",
+  "created_at": "2026-11-07T20:33:59+03:00",
+  "updated_at": "2026-11-07T20:39:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:33:59+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCTYPEJOIN",
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "owner": "OpenCode worker",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "QOCPROBEJSON"
+        ],
+        "label": "Исправить интеграцию типов OpenCode v22 в опубликованном main",
+        "description": "QBROWSERSCOPE fresh-main tsc выявил несогласованность protocol v22/isV22/start в src/adapters/opencode.ts. Воспроизвести и перенести минимальную пропущенную дельту из готовогоFASTOC22 без переписывания.",
+        "affected_files": [
+          "src/adapters/opencode.ts",
+          "tests/opencode-adapter.test.ts"
+        ],
+        "acceptance": "Зафиксированный RED tsc на freshmain, минимальная source дельта, GREEN tsc и focused adaptertests, owned publication. Native regression Luna не трогать."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:34:54+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Native quota guard quota_unknown: delivery not_attempted, request not submitted.",
+        "note": "inputId astra-opencode-typejoin-20261107T1737-v1 не принят. Не обходить guard другим каналом; продолжать независимые accepted workers."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:39:44+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "result": "Астра проверила актуальный main dc9d8821 с текущими shared dependencies: tsc --noEmit exit0, evidence/QQUOTARECEIPT/typecheck.txt. Старый browser report на303cba8d не воспроизводится; новый codefix не требуется. Worker assignment not_attempted, повторов не было.",
+        "note": "Не запускать исправление без воспроизводимого дефекта. Текущий QZRECEIPT также имеет независимый tscPASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "",
+  "note": "Не запускать исправление без воспроизводимого дефекта. Текущий QZRECEIPT также имеет независимый tscPASS.",
+  "result": "Астра проверила актуальный main dc9d8821 с текущими shared dependencies: tsc --noEmit exit0, evidence/QQUOTARECEIPT/typecheck.txt. Старый browser report на303cba8d не воспроизводится; новый codefix не требуется. Worker assignment not_attempted, повторов не было."
+}

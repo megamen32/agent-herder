@@ -1,0 +1,21 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.69s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+
+thread 'create_prompt_requires_trusted_grant_for_new_exact_session' (3914317) panicked at tests/scoped_stop_gate.rs:2854:5:
+assertion `left != right` failed: a proven ACL refusal before send must not be UNKNOWN
+  left: DeliveryUnknownOrBlocked { session: SessionRef("fresh-dynamic-ref") }
+ right: DeliveryUnknownOrBlocked { session: SessionRef("fresh-dynamic-ref") }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test create_prompt_requires_trusted_grant_for_new_exact_session ... FAILED
+
+failures:
+
+failures:
+    create_prompt_requires_trusted_grant_for_new_exact_session
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.37s
+
+error: test failed, to rerun pass `--test scoped_stop_gate`

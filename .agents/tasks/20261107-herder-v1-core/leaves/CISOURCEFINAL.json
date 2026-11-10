@@ -1,0 +1,100 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Publish remaining native and CI corrections",
+  "description": "Completed source publication slice. Exact immutable build is tracked separately in CIBUILDFINAL.",
+  "acceptance": "Reviewed native Vibe, CI collector, model pin, browser manager and portable tests committed and published without unrelated WIP.",
+  "affected_files": [
+    "deploy/fleet",
+    "tests/native"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Implementation checkpoint only; external provider and live release handoff waits are explicit dependencies.",
+  "id": "CISOURCEFINAL",
+  "created_at": "2026-11-09T04:54:51+03:00",
+  "updated_at": "2026-11-09T06:07:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T04:54:51+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Publish remaining native and CI corrections",
+        "description": "Commit reviewed native Vibe durability fixes, model pin, final collector/workflow, and portable hosted test; build the exact committed source.",
+        "acceptance": "Commit reviewed native Vibe durability fixes, model pin, final collector/workflow, and portable hosted test; build the exact committed source.",
+        "affected_files": [
+          "deploy/fleet",
+          "tests/native"
+        ],
+        "status": "pending",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Implementation checkpoint only; external provider and live release handoff waits are explicit dependencies."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T05:26:52+03:00",
+      "note": "Source review complete apart from final bounded browser probe/identity contract verification; isolated runner installation is prepared and shared runtime remains separately blocked by peer lease.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T05:42:41+03:00",
+      "note": "",
+      "changes": {
+        "description": "Completed source publication slice. Exact immutable build is tracked separately in CIBUILDFINAL.",
+        "acceptance": "Reviewed native Vibe, CI collector, model pin, browser manager and portable tests committed and published without unrelated WIP.",
+        "status": "done",
+        "result": "Published native8adf, CIa06f and portability53cfe57f43090152d8f399749e1ce598656097ae. All scoped hashes matched, index empty, origin/main exact53cfe57f. Hosted a06 LinuxPASS; macOS temporary realpath issue reproduced3RED then8GREEN and fixed in53. Remaining exact artifact is explicit CIBUILDFINAL; installed all-five acceptance not claimed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:07:03+03:00",
+      "note": "",
+      "changes": {
+        "result": "Published native8adf, CIa06f, portable fixtures53/39, reviewed installerf8f5d4141be48f0ff5aefe0fcd8bd028755ac64a. All scoped hashes matched, index empty, origin/main exactf8f5. Hosted39 Linux+macOS PASS; renewed finalf8 workflow queued. Exact artifact CIBUILDFINAL done. Runner continuation separatelyCIRUNNERFIXFINAL; overall five-harness installed acceptance CIINSTALLFINAL remains blocked."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Published native8adf, CIa06f, portable fixtures53/39, reviewed installerf8f5d4141be48f0ff5aefe0fcd8bd028755ac64a. All scoped hashes matched, index empty, origin/main exactf8f5. Hosted39 Linux+macOS PASS; renewed finalf8 workflow queued. Exact artifact CIBUILDFINAL done. Runner continuation separatelyCIRUNNERFIXFINAL; overall five-harness installed acceptance CIINSTALLFINAL remains blocked."
+}

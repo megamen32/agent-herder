@@ -1,0 +1,30 @@
+{"officialModelViewKeys":["revision","providers","preferredSelection"],"officialProviderIds":["fixture"]}
+(node:30) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:30) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+file:///mnt/zcode-official-probe.mjs:42
+  async function api(path,body){const response=await fetch(base+path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:undefined);const value=await response.json();if(!response.ok)throw Error(`${path} HTTP ${response.status}: ${JSON.stringify(value)}`);return value;}
+                                                                                                                                                                                                                                   ^
+
+Error: /api/sessions/zcode/projects HTTP 501: {"error":"этот агент не имеет проектов"}
+    at api (file:///mnt/zcode-official-probe.mjs:42:228)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///mnt/zcode-official-probe.mjs:44:18
+
+Node.js v22.23.1
+official test files: [".zcode/cli/db/db.sqlite-shm", ".zcode/cli/db/db.sqlite-wal", ".zcode/cli/db/db.sqlite", ".zcode/cli/log/zcode-2026-11-06.jsonl", ".zcode/backup/tasks_index-1793997555101-c9a121fe-09b7-48ea-8136-d27e9a3e69fa/backup.json", ".zcode/backup/tasks_index-1793997555101-c9a121fe-09b7-48ea-8136-d27e9a3e69fa/tables.sqlite", ".zcode/v2/setting.json", ".zcode/v2/provider_config.json", ".zcode/v2/bot-state.v3.json", ".zcode/v2/bot-config.v3.json", ".zcode/v2/tasks-index.sqlite-shm", ".zcode/v2/tasks-index.sqlite-wal", ".zcode/v2/tasks-index.sqlite", ".zcode/v2/telemetry-state.json", ".zcode/v2/runtime/provider/linux-x86_64/3.17.2/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin-refresh.json", ".zcode/v2/runtime/provider/linux-x86_64/3.17.2/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin.json", ".zcode/v2/certs/zcode-network-ca.key", ".zcode/v2/certs/zcode-network-ca.pem", ".zcode/server/install.json", ".zcode/server/run/status.json", ".zcode/server/run/ingress-token", ".zcode/server/run/server.lock"]
+Traceback (most recent call last):
+  File "/mnt/zcode-official-probe.py", line 61, in <module>
+    subprocess.run(['node','/mnt/zcode-official-probe.mjs',sys.argv[2],str(project),sys.argv[1].removesuffix('/v1')],env=env,cwd=project,check=True,timeout=55)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['node', '/mnt/zcode-official-probe.mjs', '/mnt/candidate/dist', '/tmp/herder-native-model-8lra4mr4/zcode-official-project', 'http://127.0.0.1:44171']' returned non-zero exit status 1.
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 109, in main
+    subprocess.run([sys.executable,str(HERE / 'zcode-official-probe.py'),base,args.herder_dist],env=env,cwd=root / 'work',check=True,timeout=75)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/zcode-official-probe.py', 'http://127.0.0.1:44171/v1', '/mnt/candidate/dist']' returned non-zero exit status 1.

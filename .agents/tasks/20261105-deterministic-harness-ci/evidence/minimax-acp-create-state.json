@@ -1,0 +1,443 @@
+{
+  "scope": "isolated-candidate-only",
+  "status": "PASS",
+  "artifact_sha256": "4ce3097f83ef30be8ee103486bfe862e40f396e592e0ecb943c704fd3dfa90ee",
+  "finished_at": "2026-11-05T22:20:36.949119+00:00",
+  "seconds": 34.725,
+  "reports": [
+    {
+      "scope": "minimax-acp-create-research",
+      "created": true,
+      "persistedManifest": true,
+      "sessionId": "mvs_104ab90c5ad64f73b6d0d3efb1c907b4",
+      "continuationExit": 0,
+      "filesBeforeContinuation": [
+        "history-catalog.json",
+        "manifest.json",
+        "messages.jsonl",
+        "user-message-locators.jsonl"
+      ],
+      "runtimeBeforeContinuation": [
+        "mvs_104ab90c5ad64f73b6d0d3efb1c907b4",
+        "pi-agent",
+        "idle",
+        "/tmp/herder-native-model-58f5isld/work",
+        0
+      ],
+      "continuationSessionMatches": true,
+      "continuationAnswer": true,
+      "continuationError": ""
+    },
+    {
+      "scope": "minimax-managed-control-experiment",
+      "result": {
+        "ok": true,
+        "status": 200,
+        "body": {
+          "started": true,
+          "sessionId": "mvs_21e8e248e1e44d278c182c814f016ffc",
+          "turnId": "turn_mw43zvki_04l80b",
+          "status": "succeeded",
+          "model": {
+            "providerId": "minimax",
+            "modelId": "MiniMax-M3.1-Flash-Preview",
+            "providerKind": "minimax-managed"
+          },
+          "usageSource": "completed_responses"
+        }
+      }
+    },
+    {
+      "scope": "minimax-managed-herder-send",
+      "sessionsCreated": false,
+      "sessionsListed": true,
+      "sessionsSearched": true,
+      "projectListed": true,
+      "results": [
+        {
+          "sessionId": "mvs_21e8e248e1e44d278c182c814f016ffc",
+          "jobId": "job_d61ce176a9a92957eb67c85f8b351882f634c15ddd13383b82e47fa5593db2da",
+          "completed": true,
+          "answerRead": true,
+          "transcriptComplete": true,
+          "transcriptPages": 8,
+          "fixtureRequests": 1
+        },
+        {
+          "sessionId": "mvs_b63bbf3937f9474389a904b1ec667b4f",
+          "jobId": "job_f9e6ca745ccb7e565a4404f16d020ae69a36289233a6d00f36b1720508cf5304",
+          "completed": true,
+          "answerRead": true,
+          "transcriptComplete": true,
+          "transcriptPages": 4,
+          "fixtureRequests": 1,
+          "activeDiscovered": true
+        }
+      ],
+      "model": "minimax/MiniMax-M3.1-Flash-Preview"
+    },
+    {
+      "scope": "minimax-managed-default-experiment",
+      "exit": 0,
+      "stdout": "{\"schemaVersion\":1,\"type\":\"exec.result\",\"runId\":\"exec_turn_mw43zojs_acsyke\",\"sessionId\":\"mvs_b63bbf3937f9474389a904b1ec667b4f\",\"turnId\":\"turn_mw43zojs_acsyke\",\"status\":\"succeeded\",\"output\":\"HERDER_TEST_MODEL_OK\",\"model\":{\"providerId\":\"minimax\",\"modelId\":\"MiniMax-M3.1-Flash-Preview\",\"variant\":\"thinking\",\"providerSource\":\"provider\",\"providerKind\":\"minimax-managed\"},\"usage\":{\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2},\"usageSource\":\"completed_responses\",\"usageIncomplete\":false,\"durationMs\":652}\n",
+      "stderr": ""
+    },
+    {
+      "scope": "minimax-managed-config-metadata",
+      "defaultModel": "minimax/MiniMax-M3.1-Flash"
+    },
+    {
+      "scope": "minimax-managed-initial-metadata",
+      "models": [
+        {
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        },
+        {
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        },
+        {
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        }
+      ]
+    },
+    {
+      "scope": "minimax-managed-pinned-experiment",
+      "exit": 0,
+      "stdout": "{\"schemaVersion\":1,\"type\":\"exec.result\",\"runId\":\"exec_turn_mw43zt8i_uguned\",\"sessionId\":\"mvs_21e8e248e1e44d278c182c814f016ffc\",\"turnId\":\"turn_mw43zt8i_uguned\",\"status\":\"succeeded\",\"output\":\"HERDER_TEST_MODEL_OK\",\"model\":{\"providerId\":\"minimax\",\"modelId\":\"MiniMax-M3.1-Flash\"},\"usage\":{\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2},\"usageSource\":\"completed_responses\",\"usageIncomplete\":false,\"durationMs\":598}\n",
+      "stderr": ""
+    },
+    {
+      "scope": "minimax-managed-native-model-metadata",
+      "data": {
+        "local_runtime_token_usage": {
+          "columns": [
+            "model"
+          ],
+          "rows": [
+            [
+              null
+            ],
+            [
+              null
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "scope": "minimax-managed-experiment",
+      "exit": 0,
+      "answer": true,
+      "fixture": {
+        "requests": 7,
+        "paths": {
+          "/mavis/api/v2/content?require_auth=true": 21,
+          "/mavis/api/v1/llm/v1/messages/count_tokens": 14,
+          "/mavis/api/v1/llm/v1/messages": 7,
+          "/mavis/api/v1/content": 1,
+          "/matrix/api/v1/metrics/batch": 1
+        }
+      },
+      "nativeModels": [
+        {
+          "keys": [
+            "api",
+            "maxSerializedInputBytes",
+            "maxTokens",
+            "model",
+            "outputRevisionInstruction",
+            "provider",
+            "schemaVersion",
+            "systemPrompt",
+            "thinkingLevel",
+            "tools"
+          ],
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        },
+        {
+          "keys": [
+            "api",
+            "maxSerializedInputBytes",
+            "maxTokens",
+            "model",
+            "outputRevisionInstruction",
+            "provider",
+            "schemaVersion",
+            "systemPrompt",
+            "thinkingLevel",
+            "tools"
+          ],
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        },
+        {
+          "keys": [
+            "api",
+            "maxSerializedInputBytes",
+            "maxTokens",
+            "model",
+            "outputRevisionInstruction",
+            "provider",
+            "schemaVersion",
+            "systemPrompt",
+            "thinkingLevel",
+            "tools"
+          ],
+          "model": "MiniMax-M3.1-Flash-Preview",
+          "provider": "minimax"
+        }
+      ],
+      "stdout": "{\"schemaVersion\":1,\"type\":\"exec.result\",\"runId\":\"exec_turn_mw43zqy3_jj57fp\",\"sessionId\":\"mvs_21e8e248e1e44d278c182c814f016ffc\",\"turnId\":\"turn_mw43zqy3_jj57fp\",\"status\":\"succeeded\",\"output\":\"HERDER_TEST_MODEL_OK\",\"model\":{\"providerId\":\"minimax\",\"modelId\":\"MiniMax-M3.1-Flash\"},\"usage\":{\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2},\"usageSource\":\"completed_responses\",\"usageIncomplete\":false,\"durationMs\":575}\n",
+      "stderr": ""
+    }
+  ],
+  "limitations": [
+    "installed Herder process not exercised",
+    "MiniMax Herder adapter not exercised",
+    "other harnesses not exercised",
+    "managed research only; full native scenarios not exercised",
+    "ZCode not exercised"
+  ],
+  "candidate_gate": {
+    "status": "FAIL",
+    "failures": [
+      "codex: two distinct sessions not proven",
+      "codex: answer not proven",
+      "codex: sessionsCreated not proven",
+      "codex: sessionsListed not proven",
+      "codex: sessionsSearched not proven",
+      "codex: projectListed not proven",
+      "codex: transcriptComplete not proven",
+      "codex: activeDiscovered not proven",
+      "codex: fixture requests not proven",
+      "codex: native client version or provider compatibility not proven",
+      "codex: paged transcripts not proven",
+      "opencode: two distinct sessions not proven",
+      "opencode: answer not proven",
+      "opencode: sessionsCreated not proven",
+      "opencode: sessionsListed not proven",
+      "opencode: sessionsSearched not proven",
+      "opencode: projectListed not proven",
+      "opencode: transcriptComplete not proven",
+      "opencode: activeDiscovered not proven",
+      "opencode: fixture requests not proven",
+      "opencode: native client version or provider compatibility not proven",
+      "opencode: paged transcripts not proven",
+      "zcode: two distinct sessions not proven",
+      "zcode: answer not proven",
+      "zcode: sessionsCreated not proven",
+      "zcode: sessionsListed not proven",
+      "zcode: sessionsSearched not proven",
+      "zcode: projectListed not proven",
+      "zcode: transcriptComplete not proven",
+      "zcode: activeDiscovered not proven",
+      "zcode: fixture requests not proven",
+      "zcode: native client version or provider compatibility not proven",
+      "zcode: paged transcripts not proven",
+      "minimax-code: sessionsCreated not proven",
+      "minimax-code: native client version or provider compatibility not proven",
+      "claude: two distinct sessions not proven",
+      "claude: answer not proven",
+      "claude: sessionsCreated not proven",
+      "claude: sessionsListed not proven",
+      "claude: sessionsSearched not proven",
+      "claude: projectListed not proven",
+      "claude: transcriptComplete not proven",
+      "claude: activeDiscovered not proven",
+      "claude: fixture requests not proven",
+      "claude: native client version or provider compatibility not proven",
+      "claude: paged transcripts not proven",
+      "qoder: two distinct sessions not proven",
+      "qoder: answer not proven",
+      "qoder: sessionsCreated not proven",
+      "qoder: sessionsListed not proven",
+      "qoder: sessionsSearched not proven",
+      "qoder: projectListed not proven",
+      "qoder: transcriptComplete not proven",
+      "qoder: activeDiscovered not proven",
+      "qoder: fixture requests not proven",
+      "qoder: native client version or provider compatibility not proven",
+      "qoder: paged transcripts not proven",
+      "hermes: two distinct sessions not proven",
+      "hermes: answer not proven",
+      "hermes: sessionsCreated not proven",
+      "hermes: sessionsListed not proven",
+      "hermes: sessionsSearched not proven",
+      "hermes: projectListed not proven",
+      "hermes: transcriptComplete not proven",
+      "hermes: activeDiscovered not proven",
+      "hermes: fixture requests not proven",
+      "hermes: native client version or provider compatibility not proven",
+      "hermes: paged transcripts not proven",
+      "fast-agent: two distinct sessions not proven",
+      "fast-agent: answer not proven",
+      "fast-agent: sessionsCreated not proven",
+      "fast-agent: sessionsListed not proven",
+      "fast-agent: sessionsSearched not proven",
+      "fast-agent: projectListed not proven",
+      "fast-agent: transcriptComplete not proven",
+      "fast-agent: activeDiscovered not proven",
+      "fast-agent: fixture requests not proven",
+      "fast-agent: native client version or provider compatibility not proven",
+      "fast-agent: paged transcripts not proven",
+      "chatgpt: two distinct sessions not proven",
+      "chatgpt: answer not proven",
+      "chatgpt: sessionsCreated not proven",
+      "chatgpt: sessionsListed not proven",
+      "chatgpt: sessionsSearched not proven",
+      "chatgpt: projectListed not proven",
+      "chatgpt: transcriptComplete not proven",
+      "chatgpt: activeDiscovered not proven",
+      "chatgpt: fixture requests not proven",
+      "chatgpt: native client version or provider compatibility not proven",
+      "chatgpt: paged transcripts not proven",
+      "zai: two distinct sessions not proven",
+      "zai: answer not proven",
+      "zai: sessionsCreated not proven",
+      "zai: sessionsListed not proven",
+      "zai: sessionsSearched not proven",
+      "zai: projectListed not proven",
+      "zai: transcriptComplete not proven",
+      "zai: activeDiscovered not proven",
+      "zai: fixture requests not proven",
+      "zai: native client version or provider compatibility not proven",
+      "zai: paged transcripts not proven",
+      "browser-chat: two distinct sessions not proven",
+      "browser-chat: answer not proven",
+      "browser-chat: sessionsCreated not proven",
+      "browser-chat: sessionsListed not proven",
+      "browser-chat: sessionsSearched not proven",
+      "browser-chat: projectListed not proven",
+      "browser-chat: transcriptComplete not proven",
+      "browser-chat: activeDiscovered not proven",
+      "browser-chat: fixture requests not proven",
+      "browser-chat: native client version or provider compatibility not proven",
+      "browser-chat: paged transcripts not proven"
+    ]
+  },
+  "release_gate": {
+    "status": "FAIL",
+    "failures": [
+      "codex: two distinct sessions not proven",
+      "codex: answer not proven",
+      "codex: sessionsCreated not proven",
+      "codex: sessionsListed not proven",
+      "codex: sessionsSearched not proven",
+      "codex: projectListed not proven",
+      "codex: transcriptComplete not proven",
+      "codex: activeDiscovered not proven",
+      "codex: fixture requests not proven",
+      "codex: native client version or provider compatibility not proven",
+      "codex: paged transcripts not proven",
+      "opencode: two distinct sessions not proven",
+      "opencode: answer not proven",
+      "opencode: sessionsCreated not proven",
+      "opencode: sessionsListed not proven",
+      "opencode: sessionsSearched not proven",
+      "opencode: projectListed not proven",
+      "opencode: transcriptComplete not proven",
+      "opencode: activeDiscovered not proven",
+      "opencode: fixture requests not proven",
+      "opencode: native client version or provider compatibility not proven",
+      "opencode: paged transcripts not proven",
+      "zcode: two distinct sessions not proven",
+      "zcode: answer not proven",
+      "zcode: sessionsCreated not proven",
+      "zcode: sessionsListed not proven",
+      "zcode: sessionsSearched not proven",
+      "zcode: projectListed not proven",
+      "zcode: transcriptComplete not proven",
+      "zcode: activeDiscovered not proven",
+      "zcode: fixture requests not proven",
+      "zcode: native client version or provider compatibility not proven",
+      "zcode: paged transcripts not proven",
+      "minimax-code: sessionsCreated not proven",
+      "minimax-code: native client version or provider compatibility not proven",
+      "claude: two distinct sessions not proven",
+      "claude: answer not proven",
+      "claude: sessionsCreated not proven",
+      "claude: sessionsListed not proven",
+      "claude: sessionsSearched not proven",
+      "claude: projectListed not proven",
+      "claude: transcriptComplete not proven",
+      "claude: activeDiscovered not proven",
+      "claude: fixture requests not proven",
+      "claude: native client version or provider compatibility not proven",
+      "claude: paged transcripts not proven",
+      "qoder: two distinct sessions not proven",
+      "qoder: answer not proven",
+      "qoder: sessionsCreated not proven",
+      "qoder: sessionsListed not proven",
+      "qoder: sessionsSearched not proven",
+      "qoder: projectListed not proven",
+      "qoder: transcriptComplete not proven",
+      "qoder: activeDiscovered not proven",
+      "qoder: fixture requests not proven",
+      "qoder: native client version or provider compatibility not proven",
+      "qoder: paged transcripts not proven",
+      "hermes: two distinct sessions not proven",
+      "hermes: answer not proven",
+      "hermes: sessionsCreated not proven",
+      "hermes: sessionsListed not proven",
+      "hermes: sessionsSearched not proven",
+      "hermes: projectListed not proven",
+      "hermes: transcriptComplete not proven",
+      "hermes: activeDiscovered not proven",
+      "hermes: fixture requests not proven",
+      "hermes: native client version or provider compatibility not proven",
+      "hermes: paged transcripts not proven",
+      "fast-agent: two distinct sessions not proven",
+      "fast-agent: answer not proven",
+      "fast-agent: sessionsCreated not proven",
+      "fast-agent: sessionsListed not proven",
+      "fast-agent: sessionsSearched not proven",
+      "fast-agent: projectListed not proven",
+      "fast-agent: transcriptComplete not proven",
+      "fast-agent: activeDiscovered not proven",
+      "fast-agent: fixture requests not proven",
+      "fast-agent: native client version or provider compatibility not proven",
+      "fast-agent: paged transcripts not proven",
+      "chatgpt: two distinct sessions not proven",
+      "chatgpt: answer not proven",
+      "chatgpt: sessionsCreated not proven",
+      "chatgpt: sessionsListed not proven",
+      "chatgpt: sessionsSearched not proven",
+      "chatgpt: projectListed not proven",
+      "chatgpt: transcriptComplete not proven",
+      "chatgpt: activeDiscovered not proven",
+      "chatgpt: fixture requests not proven",
+      "chatgpt: native client version or provider compatibility not proven",
+      "chatgpt: paged transcripts not proven",
+      "zai: two distinct sessions not proven",
+      "zai: answer not proven",
+      "zai: sessionsCreated not proven",
+      "zai: sessionsListed not proven",
+      "zai: sessionsSearched not proven",
+      "zai: projectListed not proven",
+      "zai: transcriptComplete not proven",
+      "zai: activeDiscovered not proven",
+      "zai: fixture requests not proven",
+      "zai: native client version or provider compatibility not proven",
+      "zai: paged transcripts not proven",
+      "browser-chat: two distinct sessions not proven",
+      "browser-chat: answer not proven",
+      "browser-chat: sessionsCreated not proven",
+      "browser-chat: sessionsListed not proven",
+      "browser-chat: sessionsSearched not proven",
+      "browser-chat: projectListed not proven",
+      "browser-chat: transcriptComplete not proven",
+      "browser-chat: activeDiscovered not proven",
+      "browser-chat: fixture requests not proven",
+      "browser-chat: native client version or provider compatibility not proven",
+      "browser-chat: paged transcripts not proven",
+      "installed Herder process not proven",
+      "installed Herder artifact identity not proven",
+      "installed Herder consumer scenarios not proven",
+      "installed Herder proof collection is not implemented"
+    ]
+  }
+}

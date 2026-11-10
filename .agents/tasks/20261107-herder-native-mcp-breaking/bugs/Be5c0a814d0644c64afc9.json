@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T15:58:20+00:00",
+  "details": "Preflight passed with API config 200, native mutations 0, model requests 0. The one authorized create returned a completed Task with create/prompt effect unknown and retry=forbidden; no delivery receipt. Retained OpenCode log shows POST /session HTTP 405. Read-only SQLite evidence shows zero native sessions/inbox/messages and zero Herder session bindings/messages; fake model request count remained 0. Do not replay the operation. The adapter/runtime create route compatibility needs diagnosis before any new authorized case.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "at": "2026-11-07T15:58:20+00:00",
+      "changes": {
+        "details": "Preflight passed with API config 200, native mutations 0, model requests 0. The one authorized create returned a completed Task with create/prompt effect unknown and retry=forbidden; no delivery receipt. Retained OpenCode log shows POST /session HTTP 405. Read-only SQLite evidence shows zero native sessions/inbox/messages and zero Herder session bindings/messages; fake model request count remained 0. Do not replay the operation. The adapter/runtime create route compatibility needs diagnosis before any new authorized case.",
+        "source": "V065AHAPCIRUN isolated artifact run; evidence/V065AHAPCIRUN-20261107.json",
+        "status": "open",
+        "title": "OpenCode AHAP create receipt UNKNOWN after POST /session 405"
+      }
+    }
+  ],
+  "id": "Be5c0a814d0644c64afc9",
+  "owner": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "reporter": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "source": "V065AHAPCIRUN isolated artifact run; evidence/V065AHAPCIRUN-20261107.json",
+  "status": "open",
+  "title": "OpenCode AHAP create receipt UNKNOWN after POST /session 405",
+  "updated_at": "2026-11-07T15:58:20+00:00"
+}

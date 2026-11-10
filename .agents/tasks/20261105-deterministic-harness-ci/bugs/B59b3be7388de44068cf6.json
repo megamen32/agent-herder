@@ -1,0 +1,88 @@
+{
+  "created_at": "2026-11-06T15:22:36+00:00",
+  "details": "Изолированный SessionSearchIndex.ingest синхронно записал 300000 фиктивных фрагментов и заблокировал event loop на 11.937 секунды; связь с реальными таймаутами пока не доказана.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T15:22:36+00:00",
+      "changes": {
+        "details": "Изолированный SessionSearchIndex.ingest синхронно записал 300000 фиктивных фрагментов и заблокировал event loop на 11.937 секунды; связь с реальными таймаутами пока не доказана.",
+        "source": "evidence/l22-synthetic-search-stall.json",
+        "status": "open",
+        "title": "Индексация большого transcript блокирует event loop Herder"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L22",
+      "at": "2026-11-06T15:36:48+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l22-atomic-green.txt",
+            "red_proof_path": "evidence/l22-atomic-red.txt",
+            "red_result": "AssertionError: expected { old: +0, next: 1 } to deeply equal { old: 1, next: +0 }",
+            "red_sha256": "d5629981a5a4c6ddb5ff0ff682d5a61904d6e3a1feac819ba32930a3b3824652",
+            "result": "PASS",
+            "sha256": "e38e8ed9cb7978bde00457d0d2ae892637209a81760c00a6035e8b54287ab848",
+            "test_command": "npx vitest run --root . --config vitest.config.ts tests/session-search.test.ts -t keeps-old-generation-searchable"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "L22",
+      "at": "2026-11-06T15:37:32+00:00",
+      "changes": {
+        "status": "open"
+      },
+      "reason": "Correct the recorded test command to the exact command that ran"
+    },
+    {
+      "action": "resolve",
+      "actor": "L22",
+      "at": "2026-11-06T15:37:32+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l22-atomic-green.txt",
+            "red_proof_path": "evidence/l22-atomic-red.txt",
+            "red_result": "AssertionError: expected { old: +0, next: 1 } to deeply equal { old: 1, next: +0 }",
+            "red_sha256": "d5629981a5a4c6ddb5ff0ff682d5a61904d6e3a1feac819ba32930a3b3824652",
+            "result": "PASS",
+            "sha256": "e38e8ed9cb7978bde00457d0d2ae892637209a81760c00a6035e8b54287ab848",
+            "test_command": "npx vitest run --root . --config vitest.config.ts tests/session-search.test.ts -t 'keeps old generation searchable'"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B59b3be7388de44068cf6",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l22-atomic-green.txt",
+      "red_proof_path": "evidence/l22-atomic-red.txt",
+      "red_result": "AssertionError: expected { old: +0, next: 1 } to deeply equal { old: 1, next: +0 }",
+      "red_sha256": "d5629981a5a4c6ddb5ff0ff682d5a61904d6e3a1feac819ba32930a3b3824652",
+      "result": "PASS",
+      "sha256": "e38e8ed9cb7978bde00457d0d2ae892637209a81760c00a6035e8b54287ab848",
+      "test_command": "npx vitest run --root . --config vitest.config.ts tests/session-search.test.ts -t 'keeps old generation searchable'"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "evidence/l22-synthetic-search-stall.json",
+  "status": "fixed",
+  "title": "Индексация большого transcript блокирует event loop Herder",
+  "updated_at": "2026-11-06T15:37:32+00:00"
+}

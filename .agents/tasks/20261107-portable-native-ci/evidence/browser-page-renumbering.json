@@ -1,0 +1,18 @@
+{
+  "observed_msk": "2026-11-07T23:07:07+03:00",
+  "old_test_chatgpt_page": 7,
+  "new_test_chatgpt_page": 3,
+  "test_chatgpt_conversation": "6aee9fd5-7ee0-83ea-a06f-a3ed148605e8",
+  "old_zai_ci_page": 9,
+  "new_zai_restored_page": 7,
+  "zai_restored_conversation": "fad2d4d3-1521-41c2-b67a-db786bba641d",
+  "zai_restored_created_at": 1794013467,
+  "zai_restored_updated_at": 1794053374,
+  "blank_chatgpt_pages": [
+    2,
+    4
+  ],
+  "blank_identity": "ambiguous",
+  "native_sends": 0,
+  "guard": "historical page bindings invalid; no mutation"
+}

@@ -1,0 +1,38 @@
+{
+  "status": "native_input_observed",
+  "native_session_id": "sess_dea8cfb1-3a14-4b4a-8d7c-5396ab2ac8ec",
+  "prompt_intent_key": "create-prompt:2c99f8e234f3f86281fde0b39c0cfc3fc699dbce951d3aefc6d5976456ce5ea8",
+  "authority_state": "unknown",
+  "authority_receipt": null,
+  "source_command_id": "agent-herder:auto:create-prompt:2c99f8e234f3f86281fde0b39c0cfc3fc699dbce951d3aefc6d5976456ce5ea8",
+  "native_input": {
+    "input_id": "queue_agent-herder:auto:create-prompt:2c99f8e234f3f86281fde0b39c0cfc3fc699dbce951d3aefc6d5976456ce5ea8",
+    "status": "promoted",
+    "message_id": "msg_mw6y5hpe_9abe2b3a-fa86-4857-bdb5-c2531c616821"
+  },
+  "native_assistant": {
+    "message_id": "msg_mw6y5hyb_46feed4b-6714-42e7-bb6e-556ab0b68624",
+    "parent_id": "msg_mw6y5hpe_9abe2b3a-fa86-4857-bdb5-c2531c616821",
+    "error": {
+      "name": "AiSdkModelAdapterError",
+      "data": {
+        "message": "Model request was cancelled.",
+        "code": "model_request_cancelled",
+        "attribution": {
+          "source": "runtime",
+          "reason": "cancelled",
+          "errorPhase": "stream",
+          "exceptionKind": "generic",
+          "providerId": "fixture",
+          "modelId": "herder-test",
+          "providerKind": "openai",
+          "transport": "sse",
+          "retryable": false
+        },
+        "turnResult": "cancelled"
+      }
+    },
+    "completed_at": 1794088805681
+  },
+  "no_replay": true
+}

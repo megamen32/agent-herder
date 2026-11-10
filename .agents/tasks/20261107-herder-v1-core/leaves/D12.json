@@ -14,7 +14,7 @@
   "created_at": "2026-11-07T22:06:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T22:49:24+03:00",
+  "updated_at": "2026-11-08T06:36:00+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -74,10 +74,72 @@
       },
       "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T05:53:44+03:00",
+      "note": "Reopened exact owned source follow-up after candidate814759 OpenCode projects count0; RED inline regression then local proof only. No native replay; next immutable candidate remains CI-owned.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T05:58:43+03:00",
+      "note": "Local follow-up complete; confirmed gap belongs to CI observation timing and global-completeness oracle, not core project extraction. Owned source test commit ready for parent integration.",
+      "changes": {
+        "status": "done",
+        "result": "SOURCE+TEST follow-up 7ee42db7: existing inline regression now covers empty preflight -> exact authorized registration -> project attribution, foreign principal/instance/unregistered exclusion, native inventory and cwd fallback, complete=false global limitation. 16/16 owner_reads tests PASS. No production change: CI calls projects only before create and classifier wrongly requires global complete=true; offline RED reproduces nonempty partial rejection. CI owner must fix post-registration readback/classifier, then decide candidate/proof reuse; no native replay, 5/5 or install claim. Module SHA256 90d3fec37ae84cc72e95aefb0c82236e734d78dce6aadc843dad949a815886a2. Evidence evidence/opencode-project-attribution.md."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T06:34:19+03:00",
+      "note": "Owner06:03MSK authorizes exact built-core disposable consumer proof. Build7ee42db7 complete; lib parallel181/182 transient Codex startup timeout, exact test1PASS and serial182/182PASS. Preparing isolated public create-registration then projects readback with pinned814759 TS bundle; no replay.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T06:36:00+03:00",
+      "note": "Owner-authorized disposable public consumer proof complete: project count1 with exact registered attribution and partial inventory; immutable candidate build remains parent-owned.",
+      "changes": {
+        "status": "done",
+        "result": "CONSUMER PROJECTS PROOF: built7ee42db7 (includesd64c76f9), coreSHA 71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569; pinned814759 TS/Node/bootstrap + OpenCode2.2.4 in isolated namespace. Before registration0; after one public create registered exact native session -> projects count1 /herder-owner-home/work source=authorized_native_session scope=authorized_registered_sessions complete=false global limitation. Core reopen count1, model requests remain1, separate deliver0/replay0, cleanup complete. BuildPASS; lib initial181/182 Codex init timeout, individual1PASS, serial182/182PASS. No further core fix needed; CI must observe post-registration and accept explicit partial scope. Evidence evidence/opencode-projects-7ee42db7/REPORT.md. Not wholecandidate5/5 or installed."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+        "source": "native_environment"
+      },
+      "session": "01a1b776-41ae-7f53-bfea-771d67f3255b",
+      "harness": "codex"
     }
   ],
   "affected_files": [
     "crates/herder/src/bin/herder_native_stdio/owner_reads.rs"
   ],
-  "result": "SOURCE+TESTS: discover/projects uses listProjects restricted to observed cwd of authorized registered native sessions from listSessions; fallback is observed authorized native session cwd, never configured projects. Empty authorized corpus makes no native call. Returned scope/provenance/partial completeness explicit; foreign/native-unregistered projects absent. Covered by isolated fake port and public call via real AhapClient subprocess in 15/15 passing tests. Contract documented in owner_reads module header; installed project discovery remains CI gate."
+  "result": "CONSUMER PROJECTS PROOF: built7ee42db7 (includesd64c76f9), coreSHA 71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569; pinned814759 TS/Node/bootstrap + OpenCode2.2.4 in isolated namespace. Before registration0; after one public create registered exact native session -> projects count1 /herder-owner-home/work source=authorized_native_session scope=authorized_registered_sessions complete=false global limitation. Core reopen count1, model requests remain1, separate deliver0/replay0, cleanup complete. BuildPASS; lib initial181/182 Codex init timeout, individual1PASS, serial182/182PASS. No further core fix needed; CI must observe post-registration and accept explicit partial scope. Evidence evidence/opencode-projects-7ee42db7/REPORT.md. Not wholecandidate5/5 or installed."
 }

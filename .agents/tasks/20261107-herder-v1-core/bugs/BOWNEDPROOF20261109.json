@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-08T23:56:22+00:00",
+  "details": "Current browser catalog status may use async_status and recent-generation heuristics and does not prove whole-owner activity. Installed functional CI requires a separate exact-owned-canary proof from verified account, current owned page, canonical messages and current DOM phase, without widening global completeness.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-08T23:56:22+00:00",
+      "changes": {
+        "details": "Current browser catalog status may use async_status and recent-generation heuristics and does not prove whole-owner activity. Installed functional CI requires a separate exact-owned-canary proof from verified account, current owned page, canonical messages and current DOM phase, without widening global completeness.",
+        "source": "observed",
+        "status": "open",
+        "title": "Browser CI lacks an authoritative proof for its owned current conversation"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "chatgpt-all-harness-ci-20261109",
+      "at": "2026-11-09T01:59:35+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/ci-visible-20261109/native-browser-canaries/result.json",
+            "red_proof_path": "evidence/ci-visible-20261109/native-browser-canaries/browser-canary-view-red.log",
+            "red_result": "TypeError: f.adapter.prepareCanaryObservation is not a function",
+            "red_sha256": "942d03dc36e8d34025f6c067df6a76fb2f164dcc3c8d552239b8b6c723183d67",
+            "result": "Zai original-handle resume and archive PASS",
+            "sha256": "c2959ba26f23aac8b61b592d6df1e0d3739d7a068be42c349f8bf76b2c4553e6",
+            "test_command": "npx vitest run tests/zai-durable-draft-read.test.ts tests/zai-cdp-driver.test.ts tests/zai-full-transcript.test.ts tests/browser-chat-create.test.ts tests/browser-canary-view.test.ts; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai resume; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai archive"
+          },
+          "kind": "fixed",
+          "reason": "Candidate source now provides account-verified durable original-handle reads and an owned-current native proof. Real Zai A, fresh-process B, exact replies, terminal DOM and archive all passed. ChatGPT external HTTP429 remains explicitly BLOCKED."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "BOWNEDPROOF20261109",
+  "owner": "chatgpt-all-harness-ci-20261109",
+  "reporter": "chatgpt-all-harness-ci-20261109",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/ci-visible-20261109/native-browser-canaries/result.json",
+      "red_proof_path": "evidence/ci-visible-20261109/native-browser-canaries/browser-canary-view-red.log",
+      "red_result": "TypeError: f.adapter.prepareCanaryObservation is not a function",
+      "red_sha256": "942d03dc36e8d34025f6c067df6a76fb2f164dcc3c8d552239b8b6c723183d67",
+      "result": "Zai original-handle resume and archive PASS",
+      "sha256": "c2959ba26f23aac8b61b592d6df1e0d3739d7a068be42c349f8bf76b2c4553e6",
+      "test_command": "npx vitest run tests/zai-durable-draft-read.test.ts tests/zai-cdp-driver.test.ts tests/zai-full-transcript.test.ts tests/browser-chat-create.test.ts tests/browser-canary-view.test.ts; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai resume; node .tmp/harness-native-audit-20261109/native-vibe-canary.mjs zai archive"
+    },
+    "kind": "fixed",
+    "reason": "Candidate source now provides account-verified durable original-handle reads and an owned-current native proof. Real Zai A, fresh-process B, exact replies, terminal DOM and archive all passed. ChatGPT external HTTP429 remains explicitly BLOCKED."
+  },
+  "source": "observed",
+  "status": "fixed",
+  "title": "Browser CI lacks an authoritative proof for its owned current conversation",
+  "updated_at": "2026-11-09T01:59:35+00:00"
+}

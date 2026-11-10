@@ -1,0 +1,7 @@
+{
+  "stage": "foreign_scope_rejected",
+  "modelPrompts": 0,
+  "error": "vibe_tool_refused",
+  "missing_scope_receipt": true,
+  "green": true
+}

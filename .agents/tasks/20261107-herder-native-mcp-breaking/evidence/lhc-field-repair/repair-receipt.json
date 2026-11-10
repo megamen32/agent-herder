@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "/home/roomhacker/agents-projects/LastHumanCommit/.worktrees/repair-unknown-field-20261107/src/common/tools/lhc_plan_json.py",
+    "repair-move-field",
+    "/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking",
+    "QBROWSERJOIN",
+    "--source",
+    "evidence",
+    "--target",
+    "note",
+    "--expected-hash",
+    "d9892fb627145cda29cd868cc820203fbac57fbdae13f45ba93f105d5e8b8b95"
+  ],
+  "returncode": 0,
+  "stdout": "{\"id\": \"QBROWSERJOIN\", \"operation\": \"repair-move-field\", \"source\": \"evidence\", \"target\": \"note\", \"before_sha256\": \"d9892fb627145cda29cd868cc820203fbac57fbdae13f45ba93f105d5e8b8b95\", \"sha256\": \"9a6fc03a96e5677b52687f8260ed74b23769ee6b61f8d2ad62af6db87d733f73\", \"backup_path\": \"/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/.lhc-repair-backups/QBROWSERJOIN.d9892fb627145cda29cd868cc820203fbac57fbdae13f45ba93f105d5e8b8b95.json\"}\n",
+  "stderr": ""
+}

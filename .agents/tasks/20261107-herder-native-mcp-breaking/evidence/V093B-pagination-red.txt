@@ -1,0 +1,82 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings (2 duplicates)
+warning: `herder` (test "target_gate_fixture") generated 6 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.12s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 1 test
+test application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write ... FAILED
+
+failures:
+
+---- application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write stdout ----
+
+thread 'application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write' (3980783) panicked at src/application/transcript_index.rs:193:9:
+assertion failed: index_transcript_page(&mut db, &session, &pending).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

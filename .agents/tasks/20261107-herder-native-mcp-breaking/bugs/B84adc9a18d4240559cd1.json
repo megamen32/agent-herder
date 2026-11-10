@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T11:43:24+00:00",
+  "details": "Independent review found recent_messages verifies account scope, then fetches the conversation with ambient same-origin credentials and no explicit Bearer token or chatgpt-account-id header. Unlike list_conversations, it does not bind the provider request to the exact session token/account whose scope was verified; account/profile changes can invalidate the scope isolation assumption. Use one captured session's account+accessToken for hashing and the request headers, as in list.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T11:43:24+00:00",
+      "changes": {
+        "details": "Independent review found recent_messages verifies account scope, then fetches the conversation with ambient same-origin credentials and no explicit Bearer token or chatgpt-account-id header. Unlike list_conversations, it does not bind the provider request to the exact session token/account whose scope was verified; account/profile changes can invalidate the scope isolation assumption. Use one captured session's account+accessToken for hashing and the request headers, as in list.",
+        "source": "review-evidence/browser-v081-0bbfbb28-independent.md",
+        "status": "open",
+        "title": "V081 recent provider fetch is not bound to the verified account session credentials"
+      }
+    }
+  ],
+  "id": "B84adc9a18d4240559cd1",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "source": "review-evidence/browser-v081-0bbfbb28-independent.md",
+  "status": "open",
+  "title": "V081 recent provider fetch is not bound to the verified account session credentials",
+  "updated_at": "2026-11-07T11:43:24+00:00"
+}

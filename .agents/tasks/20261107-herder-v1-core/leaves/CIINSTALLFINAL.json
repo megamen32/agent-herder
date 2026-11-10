@@ -1,0 +1,98 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Complete actual installed five-harness CI acceptance",
+  "description": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
+  "acceptance": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
+  "affected_files": [
+    "deploy/fleet",
+    "tests/native"
+  ],
+  "status": "blocked",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Implementation checkpoint only; external provider and live release handoff waits are explicit dependencies.",
+  "id": "CIINSTALLFINAL",
+  "created_at": "2026-11-09T04:54:51+03:00",
+  "updated_at": "2026-11-09T06:19:30+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T04:54:51+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Complete actual installed five-harness CI acceptance",
+        "description": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
+        "acceptance": "Provision the isolated CI runner with concrete protected bindings and execute its real workflow. Shared runtime/profile installation requires current peer release lease handoff; missing profiles, quota and provider throttling stay explicit failures until resolved.",
+        "affected_files": [
+          "deploy/fleet",
+          "tests/native"
+        ],
+        "status": "pending",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Implementation checkpoint only; external provider and live release handoff waits are explicit dependencies."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T05:26:52+03:00",
+      "note": "Source review complete apart from final bounded browser probe/identity contract verification; isolated runner installation is prepared and shared runtime remains separately blocked by peer lease.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T05:43:22+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "All-five installed acceptance remains blocked: public owner runtime exposes only Codex/OpenCode; ChatGPT/Zai/ZCode profiles absent; componentsce1c/fd997/abd9 differ; active peer release lease expires05:18UTC without handoff. Native ChatGPT HTTP429 and Codex reserveguard14% are additional blockers. Isolated runner provisioning and actual workflow now explicit CIRUNNERFINAL; package CIBUILDFINAL. No shared deployment or quota bypass."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:19:30+03:00",
+      "note": "",
+      "changes": {
+        "result": "Actual final CI infrastructure works; installed smoke executed and FAIL native_profiles_missing(chatgpt,zai,zcode), model effects NOT_SUBMITTED, cleanup PASS. All-five lane/runtime identity UNKNOWN and global inventory UNVERIFIED. Shared deployment lease e0864aac active until05:18UTC without handoff; old core manifestce1c/UIprocessfd997/NoticePlaceprocessabd9 remain. Final f8f5 artifact ready. Native ChatGPT fresh03:04 auth200/conversation429, oneA/noB/nativechatunverified; Codex reserve14% refused before submission. No quota/profile bypass or shared deployment."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Actual final CI infrastructure works; installed smoke executed and FAIL native_profiles_missing(chatgpt,zai,zcode), model effects NOT_SUBMITTED, cleanup PASS. All-five lane/runtime identity UNKNOWN and global inventory UNVERIFIED. Shared deployment lease e0864aac active until05:18UTC without handoff; old core manifestce1c/UIprocessfd997/NoticePlaceprocessabd9 remain. Final f8f5 artifact ready. Native ChatGPT fresh03:04 auth200/conversation429, oneA/noB/nativechatunverified; Codex reserve14% refused before submission. No quota/profile bypass or shared deployment."
+}

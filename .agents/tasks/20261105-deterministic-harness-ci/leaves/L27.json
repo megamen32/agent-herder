@@ -1,0 +1,113 @@
+{
+  "label": "Linux: проверить held-active на изолированном stand",
+  "description": "Изолированный stand и held-active проверены; проверка канонического артефакта и полного collector продолжается L34.",
+  "acceptance": "Доказан активный exact ID через API и последующий двухсессионный сценарий, ограничения manifest перечислены.",
+  "model": "gpt-6-luna",
+  "estimate_minutes": null,
+  "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+  "harness": "codex",
+  "depends_on": [
+    "L20"
+  ],
+  "status": "done",
+  "owner": "Rawls",
+  "id": "L27",
+  "created_at": "2026-11-06T18:38:15+03:00",
+  "updated_at": "2026-11-06T19:25:55+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T18:38:15+03:00",
+      "note": "Выделено из L20: строгий sandbox возвращает SO_PEERCRED PID 0 через границу PID namespace.",
+      "changes": {
+        "label": "Linux: полный collector в изолированном stand",
+        "description": "Разрешить несовместимость PID namespace, сохранив проверку peer и сетевую/файловую изоляцию.",
+        "acceptance": "Подтверждён полный artifact evidence и реальный canary установленного unit на server-44 при доказанной изоляции; неполное покрытие сред остаётся явно неполным.",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+        "harness": "codex",
+        "depends_on": [
+          "L20"
+        ],
+        "status": "running",
+        "owner": "Rawls"
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:38:38+03:00",
+      "note": "Срок пока неизвестен.",
+      "changes": {
+        "estimate_minutes": null,
+        "estimate_unknown_reason": "Время устранения несовместимости namespaces не измерено."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:39:15+03:00",
+      "note": "Проверяю общую PID namespace и принудительное отсутствие доступа к production сети и данным; затем canary одного unit с полным artifact evidence. PID 0 не принимается.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:41:45+03:00",
+      "note": "server-44: IPAddressDeny в user unit не работает (LAN connect errno 0); запрет только через отдельный net namespace. Низкоуровневый probe shared PID namespace вернул peer PID 3/start 76258474, разные net/mount namespace, у клиента только lo. Это ещё не Codex/Herder canary; далее встроить peer и collector, проверить полный artifact.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:44:53+03:00",
+      "note": "Реальный Codex app-server в отдельной сети и mount, общая PID namespace: штатный inspectNativeCiPeer PASS, PID 16/start 76276031; sandbox имеет только lo, LAN connect errno 101, production HOME не виден. Квитанция evidence/receipt-l27-shared-pid-peer.json; запросов модели 0. Установленный unit и полный artifact ещё не проверены.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:48:48+03:00",
+      "note": "Изолированный systemd user unit server-44: настоящие Herder и Codex, CI API отвечает, LAN errno 101; wrapper 3389606, Node PID 3389770/start 76291825, listener 36417 и partial SHA подтверждены. В подготовленном тестовом release отсутствует package-lock.json, L21 inventory отказал; consumer не запускался и full artifact evidence нет. Unit остановлен. Evidence receipt-l27-isolated-unit-readback.json.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T18:54:37+03:00",
+      "note": "Изолированный systemd unit server-44 прошёл реальный Codex collector: PID 3415051/start 76315923, port 41535, unit MainPID 3414855, до/после те же, две сессии, поиск/проект, transcript 3+3, 2 локальных fixture запроса. Peer PID 3414935/start 76315907, LAN errno 101 и production HOME скрыт. Полный test inventory candidate/installed SHA d3c92601cdde1ab120cf7152630cf19d1947cb4d95255362dfa320ba14043d38 до/после; receipt evidence/receipt-l27-isolated-codex-collector.json. Manifest синтетический, provenance и runtime resolution не аттестованы: status INCOMPLETE/allRequiredScenarios=false; production proof и другие среды не выполнены. Unit остановлен, fleet PID 2420098 активен.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:05:58+03:00",
+      "note": "Канонический 0dcb64d: manifest fingerprint совпадает, но отсутствует native-ci-runtime, inventory отклоняет сломанный node_modules/.bin/agent-resume; точный будущий release не найден. Подготовлены fail-closed preflight и held-active handshake; локальные регрессии GREEN, живой held-active ещё не заявлен.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:11:29+03:00",
+      "note": "Повтор held-active: isolated test unit PID 3534898/start 76416453, port 33151 неизменны; exact Codex ID 01a1b19f-0a30-7ff0-83c3-5cdf0700b1bb observed running while fixture held, request count 1, release; 2 deliveries, transcript 3+3 и 2 fixture requests. receipts evidence/receipt-l27-held-active-synthetic-collector.json и receipt-l27-held-active-fixture.json. Полный inventory SHA 8c3615d77445a2b0079f0e0b048868062c21fb9a0e8f7d3efe1845f; manifest синтетический, trusted provenance нет, status INCOMPLETE. Canonical 0dcb64d manifest совпадает, но CI runtime отсутствует, full inventory отказывает на .bin/agent-resume. Добавлены scripts/codex-unix-stand-contract.py/.md; canonical canary остаётся открытым.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:25:55+03:00",
+      "note": "",
+      "changes": {
+        "label": "Linux: проверить held-active на изолированном stand",
+        "description": "Изолированный stand и held-active проверены; проверка канонического артефакта и полного collector продолжается L34.",
+        "acceptance": "Доказан активный exact ID через API и последующий двухсессионный сценарий, ограничения manifest перечислены.",
+        "status": "done",
+        "result": "Изолированный test unit: exact Codex ID running во время удержанного запроса, после освобождения две доставки, поиск, проекты, transcript 3+3 страницы и два вызова fixture; evidence/receipt-l27-held-active-synthetic-collector.json. Manifest синтетический, collector INCOMPLETE; достоверный канонический bundle и остальные среды L34."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    }
+  ],
+  "estimate_unknown_reason": "Время устранения несовместимости namespaces не измерено.",
+  "result": "Изолированный test unit: exact Codex ID running во время удержанного запроса, после освобождения две доставки, поиск, проекты, transcript 3+3 страницы и два вызова fixture; evidence/receipt-l27-held-active-synthetic-collector.json. Manifest синтетический, collector INCOMPLETE; достоверный канонический bundle и остальные среды L34."
+}

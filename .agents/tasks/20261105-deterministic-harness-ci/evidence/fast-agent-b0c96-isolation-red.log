@@ -1,0 +1,37 @@
+
+ RUN  v4.1.10 /tmp/herder-fast-threeway-fMudhW
+
+(node:1000418) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/session-search-sources.test.ts (8 tests | 1 failed | 7 skipped) 54ms
+     × isolates Fast Agent fixture from a foreign home store 51ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/session-search-sources.test.ts > persisted session search sources > isolates Fast Agent fixture from a foreign home store
+AssertionError: expected [ 'fast-agent:foreign-sentinel' ] to deeply equal [ 'fast-agent:own-fixture' ]
+
+- Expected
++ Received
+
+  [
+-   "fast-agent:own-fixture",
++   "fast-agent:foreign-sentinel",
+  ]
+
+ ❯ tests/session-search-sources.test.ts:19:69
+     17|   await writeFile(join(own,'session.json'),JSON.stringify({session_id:…
+     18|   const ids:string[]=[];for await(const s of scanSessionSearchSources(…
+     19|   const after=await digest();expect(after).toBe(before);expect(ids).to…
+       |                                                                     ^
+     20|  });
+     21|  it('indexes native Fast Agent sessions and detects history edits',asy…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+   Start at  20:00:00
+   Duration  589ms (transform 176ms, setup 64ms, import 163ms, tests 54ms, environment 0ms)
+

@@ -1,0 +1,71 @@
+{
+  "id": "QDEPENDENCYWAKE",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "ZCode worker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "label": "Исправить наблюдение активного native turn для пробуждения родителя",
+  "description": "Существующий dependencywait ошибочно delivery_failed приactive exactnative Codexturn; использовать существующее active/terminal observation безновогоscheduler. Сначала source/runtime parity и RED test, guard/HumanStop/UNKNOWN не менять.",
+  "affected_files": [
+    "src/resume-after.ts",
+    "src/resume-after-runtime.ts",
+    "tests/resume-after.test.ts",
+    "tests/resume-after-production-wiring.test.ts"
+  ],
+  "acceptance": "Активный exactturn остаётсяwaiting; нужный terminal одинразвозобновляетparent, другойturn/idle безevidence неdone; недоступность неfakecomplete. RED/GREEN+scoped source main. Еслиsourcealreadyfixed определить exactmissing installedrevision, бездублякода/самостоятельногоdeploy.",
+  "created_at": "2026-11-07T20:48:44+03:00",
+  "updated_at": "2026-11-07T20:53:35+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:48:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "QDEPENDENCYWAKE",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "ZCode worker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "label": "Исправить наблюдение активного native turn для пробуждения родителя",
+        "description": "Существующий dependencywait ошибочно delivery_failed приactive exactnative Codexturn; использовать существующее active/terminal observation безновогоscheduler. Сначала source/runtime parity и RED test, guard/HumanStop/UNKNOWN не менять.",
+        "affected_files": [
+          "src/resume-after.ts",
+          "src/resume-after-runtime.ts",
+          "tests/resume-after.test.ts",
+          "tests/resume-after-production-wiring.test.ts"
+        ],
+        "acceptance": "Активный exactturn остаётсяwaiting; нужный terminal одинразвозобновляетparent, другойturn/idle безevidence неdone; недоступность неfakecomplete. RED/GREEN+scoped source main. Еслиsourcealreadyfixed определить exactmissing installedrevision, бездублякода/самостоятельногоdeploy."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:53:35+03:00",
+      "note": "Source RED/GREEN published; installed runtime unchanged.",
+      "changes": {
+        "status": "done",
+        "result": "Проверено на source, без изменений установленного runtime: актуальный source до фикса ошибочно не считал nativeLastTurn.status=inProgress активностью при session.status=idle, из-за чего exact turnId приводил к delivery_failed с idle-not-completion. RED: npx vitest run --root . --config vitest.config.ts tests/resume-after.test.ts -t 'exact native inProgress dependency' упал: expected waiting, received delivery_failed. Минимальный фикс в createResumeAfterRuntime учитывает nativeLastTurn inProgress/running как busy и сохраняет точный turnId; тест доказывает waiting до соответствующего turn.completed, затем ровно одну доставку даже при duplicate terminal event. Уже существующие проверки сохраняют idle-without-completion и mismatched/newer turn guards. GREEN: tests/resume-after.test.ts tests/resume-after-mcp.test.ts tests/resume-after-production-wiring.test.ts — 67/67 passed; npx tsc --noEmit и git diff --check passed. Scoped source commit dc9d8821..73e7aac6, final commit 73e7aac61431d97f3d172175a69385d7e96538bd (rebased over current origin/main), only src/resume-after-runtime.ts and tests/resume-after.test.ts; remote main readback matches. No real resume, no HumanStop/quota bypass, no runtime install/change."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Проверено на source, без изменений установленного runtime: актуальный source до фикса ошибочно не считал nativeLastTurn.status=inProgress активностью при session.status=idle, из-за чего exact turnId приводил к delivery_failed с idle-not-completion. RED: npx vitest run --root . --config vitest.config.ts tests/resume-after.test.ts -t 'exact native inProgress dependency' упал: expected waiting, received delivery_failed. Минимальный фикс в createResumeAfterRuntime учитывает nativeLastTurn inProgress/running как busy и сохраняет точный turnId; тест доказывает waiting до соответствующего turn.completed, затем ровно одну доставку даже при duplicate terminal event. Уже существующие проверки сохраняют idle-without-completion и mismatched/newer turn guards. GREEN: tests/resume-after.test.ts tests/resume-after-mcp.test.ts tests/resume-after-production-wiring.test.ts — 67/67 passed; npx tsc --noEmit и git diff --check passed. Scoped source commit dc9d8821..73e7aac6, final commit 73e7aac61431d97f3d172175a69385d7e96538bd (rebased over current origin/main), only src/resume-after-runtime.ts and tests/resume-after.test.ts; remote main readback matches. No real resume, no HumanStop/quota bypass, no runtime install/change."
+}

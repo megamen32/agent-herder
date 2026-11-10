@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "head": "8adf4dea76ed7236f06da44c80e64a7f09831b25",
+    "source": {
+      "tests/native/installed-browser-bindings.ts": "811d0fd88018488cf5202567bd73719a3f2e386ea07826f28693fb8687d9e9eb",
+      "tests/native/installed-browser-smoke.ts": "7fb9a5d26503a8bcfa8677643ccfbc7ec34a6976c469500480363d8703db315b",
+      "tests/native/installed-browser-entry.ts": "b3cbf7b7c91242f0b11a30c6762e50cdfba35980ec47f75775136eac0a60a8c3",
+      "src/ahap-zcode-runner.ts": "a3c81a873baac8d2c2f33398cf1ac7a86bfdb085ca1710bf7767ec51a0887ed8",
+      "src/adapters/zcode.ts": "780ac4ee93196327ce275c16642d469487c2bfa091360fc26d22e401903285e8",
+      "src/ahap-browser-runner.ts": "c17e2c8a3c1c643d26ccd183e15ef8438d6ae588f4e6c396754c9abe2b2f4b83",
+      "src/adapters/vibe-chrome-transport.ts": "a47ff1c5da2c38dda673d00c04fa76555b4dfc4b2cfe46bb8353848f747757c0",
+      "deploy/fleet/build-installed-smoke.mjs": "896d484b24e9f1b00c0dbc49559e94ddd4e5fc76f206fcc26ac336252534a4ec",
+      "deploy/fleet/installed-smoke-helper.py": "f37d0553e52f32675921b1870b34ce43831b40cc01d3d7fbcb9e6dd8bb25ff20",
+      "deploy/fleet/provision-installed-smoke-runner.py": "a1a05497884c30e9016fb8abbaa70fac10e05189d22c24651a53bb89d8954479"
+    }
+  },
+  "checks": [
+    {
+      "name": "typescript",
+      "code": 0
+    },
+    {
+      "name": "bindings-worker",
+      "code": 0
+    },
+    {
+      "name": "gate-helper",
+      "code": 0
+    },
+    {
+      "name": "build",
+      "code": 0
+    },
+    {
+      "name": "whitespace",
+      "code": 0
+    },
+    {
+      "name": "bootstrap-negative",
+      "code": 0,
+      "collector_exit": 2
+    }
+  ],
+  "source_stable": true
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T10:54:04+00:00",
+  "details": "d1f38cff: rejected delivery с сохранённой no-send диагностикой при повторе отображается UNKNOWN; необходимо проверять raw и projected diagnostic, сохраняя запрет повторного send.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V025CREATETASK",
+      "at": "2026-11-07T10:54:04+00:00",
+      "changes": {
+        "details": "d1f38cff: rejected delivery с сохранённой no-send диагностикой при повторе отображается UNKNOWN; необходимо проверять raw и projected diagnostic, сохраняя запрет повторного send.",
+        "source": "Независимый review Nietzsche",
+        "status": "open",
+        "title": "Повтор create Task теряет доказанный no-send prompt"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025CREATETASK",
+      "at": "2026-11-07T10:58:22+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025CREATETASK/nosend-green.log",
+            "red_proof_path": "evidence/V025CREATETASK/nosend-red.log",
+            "red_result": "assertion `left == right` failed",
+            "red_sha256": "ac8062e6bc2ec408ee35f0e6f6696cd50c6936218ce16416352e0d64e591a9f7",
+            "result": "test result: ok. 1 passed",
+            "sha256": "12a387c43f72d4f47bbae7741ec35ad09e620cb17d329206dde4f7e56f8a0dfb",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_create_application_wire_preserves_session_and_deduplicates_prompt -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B030e5d70ef424f96aadf",
+  "owner": "V025CREATETASK",
+  "reporter": "V025CREATETASK",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025CREATETASK/nosend-green.log",
+      "red_proof_path": "evidence/V025CREATETASK/nosend-red.log",
+      "red_result": "assertion `left == right` failed",
+      "red_sha256": "ac8062e6bc2ec408ee35f0e6f6696cd50c6936218ce16416352e0d64e591a9f7",
+      "result": "test result: ok. 1 passed",
+      "sha256": "12a387c43f72d4f47bbae7741ec35ad09e620cb17d329206dde4f7e56f8a0dfb",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_create_application_wire_preserves_session_and_deduplicates_prompt -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Независимый review Nietzsche",
+  "status": "fixed",
+  "title": "Повтор create Task теряет доказанный no-send prompt",
+  "updated_at": "2026-11-07T10:58:22+00:00"
+}

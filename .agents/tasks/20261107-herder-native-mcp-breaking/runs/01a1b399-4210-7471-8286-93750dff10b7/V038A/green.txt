@@ -1,0 +1,51 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-a89db5f71f0b176b)
+
+running 2 tests
+test ownership::claim::crash_tests::failure_before_rename_leaves_no_owner_or_temp_and_same_nonce_can_retry ... ok
+test ownership::claim::crash_tests::failure_after_rename_or_directory_sync_leaves_one_complete_replayable_owner ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.06s
+
+     Running unittests src/main.rs (crates/herder/target/debug/deps/herder_wire_probe-b7cb2e2b5cf2b3ac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/herder_native_stdio.rs (crates/herder/target/debug/deps/herder_native_stdio-17dd53a36373e4cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/v002_probe.rs (crates/herder/target/debug/deps/v002_probe-cd2f97954222ca27)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/connection_auth_contract.rs (crates/herder/target/debug/deps/connection_auth_contract-4969460df4f3c46d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/oauth_authority_contract.rs (crates/herder/target/debug/deps/oauth_authority_contract-35d3ff993c0e7ec3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/opencode_recent_application.rs (crates/herder/target/debug/deps/opencode_recent_application-6b58684b63a549fe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/v011b_writers.rs (crates/herder/target/debug/deps/v011b_writers-80abc90f45f8bebc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

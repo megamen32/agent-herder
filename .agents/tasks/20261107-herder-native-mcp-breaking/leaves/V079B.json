@@ -11,19 +11,19 @@
   ],
   "parent": "S06",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "deferred",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V079 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V079 обязателен в конце цепочки.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S06 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "estimate_unknown_reason": "Native маршрут/доступ проверяется этим gate; отсутствие поддержки не имеет известной оценки исправления.",
   "created_at": "2026-11-07T03:53:26+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:26+03:00",
+  "updated_at": "2026-11-07T15:56:36+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:26+03:00",
@@ -53,6 +53,124 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:40:15+03:00",
+      "note": "Один ограниченный Vibe route check выполнен; альтернативный browser/profile не использовался.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Не доступен Vibe browser, test profile scope не найден",
+        "blocker_details": {
+          "route": "Обязательный Vibe MCP list_pages завершился `Protocol error (Network.enable): Target crashed`.",
+          "scope": "В историческом /home/roomhacker/agents-projects/agent-herder/.agents/TEST_ACCESS.md не найден разрешённый ChatGPT test profile; найденные QA scope относятся к OpenCode.",
+          "next": "Повторить только после восстановления Vibe и появления явно разрешённого ChatGPT test profile."
+        },
+        "result": "Live gate не выполнен: не подтверждены авторизация, версия/profile, операции, receipt/history/context. Личный аккаунт не использовался."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:54:15+03:00",
+      "note": "Историческое отсутствие scope из TEST_ACCESS снято как аргумент: CI fragment подтверждает Mac mini Vibe browser. Текущий blocker — точная ошибка Vibe и потерянный test draft.",
+      "changes": {
+        "blocker": "Текущий Vibe route к Mac mini Chrome завершается ошибкой target; безопасная ChatGPT test-chat reference не подтверждена",
+        "blocker_details": {
+          "prior": "Ограниченный фрагмент CI-сессии подтверждает, что в Vibe на Mac mini были авторизованные страницы ChatGPT и создан отдельный test chat.",
+          "current": "Текущий Vibe list_pages ответил `Protocol error (Network.enable): Target crashed`; результат не различает сбой relay и Chrome target.",
+          "scope": "Последнее CI evidence: после раскатки ChatGPT draft не найден через Herder. Неизвестный/потерянный test-chat ref не использовать и не повторять отправку.",
+          "next": "Восстановить только существующий Vibe→Mac mini Chrome route; по Vibe подтвердить exact task-owned ChatGPT test chat прежде чем native read/create/send."
+        },
+        "result": "Native live gate не пройден. Историческая авторизация страницы подтверждена CI сообщением, но текущий Vibe target недоступен; версия/operations/receipt/history/context не проверены."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:07:32+03:00",
+      "note": "Переведено с Vibe на прямой CDP. Live acceptance не закрыта.",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "blocker_details": {
+          "previous": "Vibe target error and missing task-owned reference",
+          "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+          "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+        },
+        "result": "Прямой CDP к Mac mini подтверждён read-only через DevToolsActivePort → WebSocket HTTP 101, Browser.getVersion и Target.getTargets. Chrome не перезапускался, профиль не копировался. Live input correlation ещё не проверена."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:17:57+03:00",
+      "note": "Возобновлено после интеграции modules в origin/main; веду direct CDP acceptance в этом продолжении.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:35:05+03:00",
+      "note": "origin/main обновлён до f0dbfaf2; fd138016 уже включён через 3598cd4c. Свежий Mac mini direct CDP: точный loopback Origin дал HTTP 101; Browser.getVersion = Chrome/156.0.8078.80, protocol 1.3; Target.getTargets обнаружил 1 ChatGPT и 1 Z.ai page, у обоих есть targetId/browserContextId. Создан task-owned ChatGPT target в подтверждённом context; страница chatgpt.com авторизована (composer виден, login control отсутствует). Маркер ввода отобразился в новом composer, но кнопка Отправить оставалась disabled; send не выполнялся. Live input/assistant correlation и native adapter operation остаются недоказанными.",
+      "changes": {},
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:53:41+03:00",
+      "note": "Свежий direct CDP подтвердил Chrome 156.0.8078.80/protocol 1.3 и точные identities. На task-owned ChatGPT target composer принимает видимый маркер, но несколько безопасных preflight вариантов (активация target, focus/click, CDP insertText) оставляют кнопку «Отправить» disabled и не дают input DOM event; отправка не выполнялась. Перехожу к независимому Z.ai leaf; ChatGPT остаётся открытым до отдельного решения по его UI gate.",
+      "changes": {},
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:59:04+03:00",
+      "note": "Подтверждённый ChatGPT preflight безопасно завершён без send: task-owned target не выдаёт enabled submit/input event даже с provider-specific composer; никаких сообщений не отправлялось. Перехожу к Rust adapter integration; причины выяснены, тестовый чат не использовать повторно.",
+      "changes": {},
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:59:53+03:00",
+      "note": "No send attempted; original test target state retained as documented.",
+      "changes": {
+        "status": "done",
+        "result": "Direct CDP confirmed Chrome 156.0.8078.80/protocol 1.3 and exact instance/context identities. Provider-specific composer accepts visible draft but submit remains disabled and input event is absent under safe preflight. No message was sent; this is not a confirmed provider outage and does not prove Rust adapter."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:14:05+03:00",
+      "note": "Exact instance/context target and composer preflight confirmed; input event and message correlation remain unproven, no send occurred.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Full ChatGPT input-correlation proof is still required; do not replay or send to the old CI chat. Resume only on a new task-owned ChatGPT target after direct Rust attach/read is ready."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:56:36+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S06 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
-  ]
+  ],
+  "blocker": "",
+  "blocker_details": {
+    "previous": "Vibe target error and missing task-owned reference",
+    "current": "Direct CDP read-only handshake is proven; product Rust transport and isolated task-owned test target remain.",
+    "next": "Implement shared CDP transport, then continue provider-specific profile and input-correlation acceptance."
+  },
+  "result": "Direct CDP confirmed Chrome 156.0.8078.80/protocol 1.3 and exact instance/context identities. Provider-specific composer accepts visible draft but submit remains disabled and input event is absent under safe preflight. No message was sent; this is not a confirmed provider outage and does not prove Rust adapter.",
+  "wait_reason": "Full ChatGPT input-correlation proof is still required; do not replay or send to the old CI chat. Resume only on a new task-owned ChatGPT target after direct Rust attach/read is ready."
 }

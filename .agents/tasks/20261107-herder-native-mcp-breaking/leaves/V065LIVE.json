@@ -1,0 +1,90 @@
+{
+  "id": "V065LIVE",
+  "label": "OpenCode: один dummy-provider turn с exact native readback",
+  "description": "После scoped submit source commit запустить один isolated official OpenCode 2.2.4 server + loopback test-model-server. Создать одну task-owned test session, выполнить один submit через OpenCodeSessionControl в доказанный queue mode, независимо прочитать тот же native input ID и завершённый marker-ответ, затем удалить только эту сессию. Не вызывать реальный provider и не повторять UNKNOWN.",
+  "acceptance": "Ровно одна новая isolated session и один adapter submit; OpenCodeSessionControl подтверждает exact native session/message receipt; GET history содержит тот же user msg ID/marker и завершённый assistant HERDER_TEST_MODEL_OK; loopback model server зафиксировал запрос; DELETE exact session и post-delete GET подтверждает удаление. Секретов/реальных provider calls нет; fixture process/state очищены.",
+  "depends_on": [
+    "V065PORT"
+  ],
+  "affected_files": [
+    ".tmp/v065live-runtime/"
+  ],
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "estimate_minutes": 15,
+  "note": "Exact existing receipt copied to canonical plan evidence and source worktree; no native send was repeated.",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+  "harness": "codex",
+  "created_at": "2026-11-07T11:54:13+03:00",
+  "updated_at": "2026-11-07T12:28:22+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:54:13+03:00",
+      "note": "",
+      "changes": {
+        "id": "V065LIVE",
+        "label": "OpenCode: один dummy-provider turn с exact native readback",
+        "description": "После scoped submit source commit запустить один isolated official OpenCode 2.2.4 server + loopback test-model-server. Создать одну task-owned test session, выполнить один submit через OpenCodeSessionControl в доказанный queue mode, независимо прочитать тот же native input ID и завершённый marker-ответ, затем удалить только эту сессию. Не вызывать реальный provider и не повторять UNKNOWN.",
+        "acceptance": "Ровно одна новая isolated session и один adapter submit; OpenCodeSessionControl подтверждает exact native session/message receipt; GET history содержит тот же user msg ID/marker и завершённый assistant HERDER_TEST_MODEL_OK; loopback model server зафиксировал запрос; DELETE exact session и post-delete GET подтверждает удаление. Секретов/реальных provider calls нет; fixture process/state очищены.",
+        "depends_on": [
+          "V065PORT"
+        ],
+        "affected_files": [
+          ".tmp/v065live-runtime/"
+        ],
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "owner": "roomhacker",
+        "estimate_minutes": 15,
+        "note": "Reuse verified tests/native/opencode_receipt.py and scripts/test-model-server.py recipe, trimmed to exactly one session/submit; UNKNOWN is terminal and never replayed.",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "harness": "codex"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:54:28+03:00",
+      "note": "One isolated OpenCode 2.2.4 session; one submit via adapter Queue; read exact native message and model marker; delete exact task-created session; stop on UNKNOWN.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:20:05+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Проведена ровно одна live-сессия в изолированном официальном OpenCode 2.2.4 с loopback dummy provider: один submit через OpenCodeSessionControl Queue; native history прочитала тот же user msg ID и маркер и завершённый assistant HERDER_TEST_MODEL_OK; loopback получил ровно один model request, external provider calls=0. Удалена только созданная для задачи сессия, повторный GET вернул not found. Receipt: .tmp/v065live-runtime/live-receipt.json; deleted=true; delivery=queue; submit_count=1; loopback_model_requests=1; external_provider_calls=0; native_message_id=msg_1b543b6f90013beh79vyUTXfUt; session_id=ses_e4abc4925ffenmzC7c0XF6PkOX; request_key_metadata=v065-input-1794042472394619835; title=herder-v065live-1794042472394619835; readback=same native user ID+marker and completed assistant HERDER_TEST_MODEL_OK; post_delete_read=not found.",
+        "note": "LIVE receipt прочитан из существующего .tmp/v065live-runtime/live-receipt.json; действие не повторялось. Isolated consumer proof завершён, credentials отсутствуют."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:27:20+03:00",
+      "note": "",
+      "changes": {
+        "result": "Из существующей live-квитанции сохранён durable evidence-файл evidence/V065LIVE/live-receipt.json (SHA-256 7fa679fdea160f52cad1cdb3f8828a75e479597af0e879726d0a7694af68d1ff). Один изолированный официальный OpenCode 2.2.4 session, ровно один OpenCodeSessionControl Queue submit; native history подтвердила тот же user msg ID/marker и завершённый assistant HERDER_TEST_MODEL_OK; loopback model requests=1, external provider calls=0. Удалена только task-created сессия; post-delete GET=not found. receipt: deleted=true, submit_count=1, native_message_id=msg_1b543b6f90013beh79vyUTXfUt, session_id=ses_e4abc4925ffenmzC7c0XF6PkOX, request_key_metadata=v065-input-1794042472394619835, title=herder-v065live-1794042472394619835. UNKNOWN не повторялся.",
+        "note": "Exact existing receipt copied to canonical plan evidence and source worktree; no native send was repeated."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:28:22+03:00",
+      "note": "",
+      "changes": {
+        "result": "Из существующей live-квитанции сохранён durable evidence-файл evidence/V065LIVE/live-receipt.json (SHA-256 7fa679fdea160f52cad1cdb3f8828a75e479597af0e879726d0a7694af68d1ff); source+evidence commit 2413cbca1a7c2f7ce573d379ae2c8c2b63c6efd0. Один изолированный официальный OpenCode 2.2.4 session, ровно один OpenCodeSessionControl Queue submit; native history подтвердила тот же user msg ID/marker и завершённый assistant HERDER_TEST_MODEL_OK; loopback model requests=1, external provider calls=0. Удалена только task-created сессия; post-delete GET=not found. Receipt: deleted=true, submit_count=1, native_message_id=msg_1b543b6f90013beh79vyUTXfUt, session_id=ses_e4abc4925ffenmzC7c0XF6PkOX, request_key_metadata=v065-input-1794042472394619835, title=herder-v065live-1794042472394619835. UNKNOWN не повторялся."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Из существующей live-квитанции сохранён durable evidence-файл evidence/V065LIVE/live-receipt.json (SHA-256 7fa679fdea160f52cad1cdb3f8828a75e479597af0e879726d0a7694af68d1ff); source+evidence commit 2413cbca1a7c2f7ce573d379ae2c8c2b63c6efd0. Один изолированный официальный OpenCode 2.2.4 session, ровно один OpenCodeSessionControl Queue submit; native history подтвердила тот же user msg ID/marker и завершённый assistant HERDER_TEST_MODEL_OK; loopback model requests=1, external provider calls=0. Удалена только task-created сессия; post-delete GET=not found. Receipt: deleted=true, submit_count=1, native_message_id=msg_1b543b6f90013beh79vyUTXfUt, session_id=ses_e4abc4925ffenmzC7c0XF6PkOX, request_key_metadata=v065-input-1794042472394619835, title=herder-v065live-1794042472394619835. UNKNOWN не повторялся."
+}

@@ -1,0 +1,15 @@
+error[E0425]: cannot find function `project_recent` in this scope
+  --> crates/herder/src/application/recent.rs:89:27
+   |
+89 |         let unavailable = project_recent::<&str>(Err("source unavailable"));
+   |                           ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `project_recent` in this scope
+  --> crates/herder/src/application/recent.rs:91:21
+   |
+91 |         let empty = project_recent::<&str>(Ok((None, None))).unwrap();
+   |                     ^^^^^^^^^^^^^^ not found in this scope
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0425`.

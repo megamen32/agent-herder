@@ -1,0 +1,108 @@
+{
+  "id": "COREWAKE",
+  "label": "Проверить публичный automation и подключить завершение к wake",
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "status": "done",
+  "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+  "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+  "model": "gpt-6-luna",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/application/scoped_stop/automation.rs",
+    "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+    "crates/herder/src/bin/herder_native_stdio/owner_multi.rs"
+  ],
+  "acceptance": "Public automation create/list/reconcile exact native completed turn, samekeydifferentpayload conflict, restart duplicate preserves receipt, HumanStop no send; source compiled and installed after fixturePASS.",
+  "note": "Остаток RESTORECORE, существующийworker продолжает, не новый executor.",
+  "created_at": "2026-11-08T21:42:42+03:00",
+  "updated_at": "2026-11-08T22:39:06+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-08T21:42:42+03:00",
+      "note": "",
+      "changes": {
+        "id": "COREWAKE",
+        "label": "Проверить публичный automation и подключить завершение к wake",
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "status": "running",
+        "owner": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+        "session": "01a1bc2f-248e-7561-bffd-3bfe479ee4c3",
+        "model": "gpt-6-luna",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/application/scoped_stop/automation.rs",
+          "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+          "crates/herder/src/bin/herder_native_stdio/owner_multi.rs"
+        ],
+        "acceptance": "Public automation create/list/reconcile exact native completed turn, samekeydifferentpayload conflict, restart duplicate preserves receipt, HumanStop no send; source compiled and installed after fixturePASS.",
+        "note": "Остаток RESTORECORE, существующийworker продолжает, не новый executor."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T21:54:52+03:00",
+      "note": "Source d2897ad6/c06a7f32 compiled optimized core 2c6f4160. Derived immutable manifest7e91064c prepared; selector unchanged until public two-profile wire test. Fermat owns wire fixture; Pascal native Stop ordering/registration; Terra Dirac prepares own parent-child acceptance runner. Remote full remains PASS; wake still not installed or live-proven.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T22:02:04+03:00",
+      "note": "Установлен manifest7e91064c/core2c6f4160, shared15tools/reconcile/3instancesPASS. Public MCP wire2profilesPASS:1wake/restartduplicate0/HumanStop0; source7ce5927b published. Live nativehook acceptance ещё не доказан; Pascal44registration+order, Terra canary. NoticePlace native judge/autopilot source382f3432 27testsPASS; runtime Lorentz отдельно, найден и передан live task-envelope loss.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T22:21:44+03:00",
+      "note": "Живой canary c82d5bd9 завершил child followup, но parent reply отсутствует. Native hooks/list server44 доказал Stop/SubagentStop enabled=true, trustStatus=untrusted; Codex пропускает hook до native review. Запрошено штатное подтверждение владельца, обхода нет. Original checkpoint сохранён, manual reconcile/send не делались. Независимо NoticePlace session read реализован parent:9tests PASS,tsc PASS; runtime Lorentz продолжает.",
+      "changes": {},
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-08T22:39:06+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Installed d4add781: real Codex44 child completion invoked native trusted hook and produced one parent answer. Native child01a1bca6-6763->parent01a1bca6-79a5; shared consumer readback confirmed, manual sends/reconcile0, own4sessions archived. Exact mapping parent_ref fixed; hook10tests+canary3PASS. Public wire restart/duplicate/HumanStop separately PASS. Evidence finish-20261108/native-wake-final.md and native-wake-confirmed.json."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+        "source": "native_environment"
+      },
+      "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "harness": "codex"
+    }
+  ],
+  "result": "Installed d4add781: real Codex44 child completion invoked native trusted hook and produced one parent answer. Native child01a1bca6-6763->parent01a1bca6-79a5; shared consumer readback confirmed, manual sends/reconcile0, own4sessions archived. Exact mapping parent_ref fixed; hook10tests+canary3PASS. Public wire restart/duplicate/HumanStop separately PASS. Evidence finish-20261108/native-wake-final.md and native-wake-confirmed.json."
+}

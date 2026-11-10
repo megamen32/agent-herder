@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T02:13:19+00:00",
+  "details": "getRawTranscript вызывает readSnapshot без лимита; при ошибке source этот метод повторяет вызов с messageLimit=1, а getRawTranscript возвращает complete:true. Полная история при этом не доказана.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T02:13:19+00:00",
+      "changes": {
+        "details": "getRawTranscript вызывает readSnapshot без лимита; при ошибке source этот метод повторяет вызов с messageLimit=1, а getRawTranscript возвращает complete:true. Полная история при этом не доказана.",
+        "source": "src/adapters/zcode.ts getRawTranscript и readSnapshot",
+        "status": "open",
+        "title": "ZCode: ограниченный snapshot ошибочно отмечается полным транскриптом"
+      }
+    }
+  ],
+  "id": "Bef49854962664c928fa1",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "src/adapters/zcode.ts getRawTranscript и readSnapshot",
+  "status": "open",
+  "title": "ZCode: ограниченный snapshot ошибочно отмечается полным транскриптом",
+  "updated_at": "2026-11-07T02:13:19+00:00"
+}

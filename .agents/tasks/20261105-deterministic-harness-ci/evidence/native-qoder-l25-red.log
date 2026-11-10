@@ -1,0 +1,61 @@
+..
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (listed=[])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 21, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any(error in e for e in report.validate(data)), error)
+AssertionError: False is not true : listed IDs
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (listed=['9070e2b3-6bf3-4fa9-b489-ff1bb995ca66'])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 21, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any(error in e for e in report.validate(data)), error)
+AssertionError: False is not true : listed IDs
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (listed=['9070e2b3-6bf3-4fa9-b489-ff1bb995ca66', '957a121d-fbaf-4f01-b2c8-e09eff8ef088', '9070e2b3-6bf3-4fa9-b489-ff1bb995ca66'])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 21, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any(error in e for e in report.validate(data)), error)
+AssertionError: False is not true : listed IDs
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (listed=['9070e2b3-6bf3-4fa9-b489-ff1bb995ca66', '957a121d-fbaf-4f01-b2c8-e09eff8ef088', 'extra'])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 21, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any(error in e for e in report.validate(data)), error)
+AssertionError: False is not true : listed IDs
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (coverage=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 25, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any('search coverage' in e for e in report.validate(data)), 'search coverage')
+AssertionError: False is not true : search coverage
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (coverage={'partial': True, 'state': 'complete'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 25, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any('search coverage' in e for e in report.validate(data)), 'search coverage')
+AssertionError: False is not true : search coverage
+
+======================================================================
+FAIL: test_rejects_incomplete_list_and_unproven_search_coverage (__main__.ReportTest) (coverage={'partial': False, 'state': 'complete'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder/tests/native-qoder-report.test.py", line 25, in test_rejects_incomplete_list_and_unproven_search_coverage
+    self.assertTrue(any('search coverage' in e for e in report.validate(data)), 'search coverage')
+AssertionError: False is not true : search coverage
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.020s
+
+FAILED (failures=7)

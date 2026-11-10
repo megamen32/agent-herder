@@ -1,0 +1,9 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-v004/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.56s
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 1 test
+test scoped_create_application_wire_preserves_session_and_deduplicates_prompt ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 16.96s
+

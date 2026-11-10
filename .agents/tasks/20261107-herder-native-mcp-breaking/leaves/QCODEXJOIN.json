@@ -1,0 +1,67 @@
+{
+  "kind": "task",
+  "status": "waiting",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "id": "QCODEXJOIN",
+  "label": "Подключить рабочий Codex adapter через AHAP",
+  "parent": "S01",
+  "owner": "roomhacker",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "depends_on": [],
+  "description": "Вход CI L100/L74, старый Codex adapter, не fork клиента. Только bounded composition через AHAP с exact identity/no replay. Codex native приёмка последняя; прежние отказавшие workers не будить.",
+  "acceptance": "Source composition опубликован с focused proof; native кейс отдельноV060, установленный consumer отдельно.",
+  "created_at": "2026-11-07T18:15:44+03:00",
+  "updated_at": "2026-11-07T19:25:50+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T18:15:44+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "id": "QCODEXJOIN",
+        "label": "Подключить рабочий Codex adapter через AHAP",
+        "parent": "S01",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "depends_on": [],
+        "description": "Вход CI L100/L74, старый Codex adapter, не fork клиента. Только bounded composition через AHAP с exact identity/no replay. Codex native приёмка последняя; прежние отказавшие workers не будить.",
+        "acceptance": "Source composition опубликован с focused proof; native кейс отдельноV060, установленный consumer отдельно."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:23:08+03:00",
+      "note": "Принимаю CI CISHARE/CIINSTALLED: существующий пустой native thread сохраняется; source composition отдельно от installed gate.",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T19:25:50+03:00",
+      "note": "Приняты точные CI inputs; исходный Codex thread не создавался повторно. OpenCode remains critical first.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Приоритет OpenCode: V065AHAPCIRUN выявил UNKNOWN/HTTP405 и reopen QOCJOIN; Codex source после исправления OpenCode. Installed CI не имеет доказанного instance/provider selection; не создавать новый thread и не менять рабочий provider.",
+        "note": "CI CISHARE/CIINSTALLED: собственный пустой thread 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b существует; отправок нет. CodexAppServerAdapter src/adapters/codex-app-server.ts умеет socketPath и per-process codexDir, но также содержит внутренние deliveryReceipts и conditional retry; AHAP composition должен сохранить Rust authority/no-replay и не считать source modelProviderMismatch доказательством installed route."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "harness": "codex",
+  "wait_reason": "Приоритет OpenCode: V065AHAPCIRUN выявил UNKNOWN/HTTP405 и reopen QOCJOIN; Codex source после исправления OpenCode. Installed CI не имеет доказанного instance/provider selection; не создавать новый thread и не менять рабочий provider.",
+  "note": "CI CISHARE/CIINSTALLED: собственный пустой thread 01a1b68f-6c3d-78e0-b4d5-966ed9659e1b существует; отправок нет. CodexAppServerAdapter src/adapters/codex-app-server.ts умеет socketPath и per-process codexDir, но также содержит внутренние deliveryReceipts и conditional retry; AHAP composition должен сохранить Rust authority/no-replay и не считать source modelProviderMismatch доказательством installed route."
+}

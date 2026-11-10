@@ -1,0 +1,71 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Publish reviewed UI and browser foundation",
+  "description": "Proven source-publication slice split from original release integration. Remaining native/CI source and actual installed acceptance are explicit CISOURCEFINAL and CIINSTALLFINAL leaves.",
+  "acceptance": "Reviewed foundation committed and published with exact-source build and targeted tests.",
+  "affected_files": [
+    "deploy/fleet"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+  "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
+  "id": "CIRELEASE",
+  "created_at": "2026-11-09T03:29:52+03:00",
+  "updated_at": "2026-11-09T04:55:20+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T03:29:52+03:00",
+      "note": "Resume approved explicit scope split after context recovery.",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Integrate immutable release and actual installed CI acceptance",
+        "description": "Root integration, candidate build, scoped commit/publish, actual installed functional CI and cleanup. Shared runtime mutation waits for live peer lease handoff; external waiting is not concealed as implementation completion.",
+        "acceptance": "Root integration, candidate build, scoped commit/publish, actual installed functional CI and cleanup. Shared runtime mutation waits for live peer lease handoff; external waiting is not concealed as implementation completion.",
+        "affected_files": [
+          "deploy/fleet"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+        "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T04:55:20+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "label": "Publish reviewed UI and browser foundation",
+        "description": "Proven source-publication slice split from original release integration. Remaining native/CI source and actual installed acceptance are explicit CISOURCEFINAL and CIINSTALLFINAL leaves.",
+        "acceptance": "Reviewed foundation committed and published with exact-source build and targeted tests.",
+        "result": "Published main0ebc4eb40d676bf55630f143fd0dfa2372cf15d5. Exact a275 build,92 tests,manager17,mergedRust26 PASS plus1existingignored. Foreign WIP preserved. Remaining work: CISOURCEFINAL andCIINSTALLFINAL. Actual five-lane installed acceptance remains INCOMPLETE and is not claimed by this source slice."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Published main0ebc4eb40d676bf55630f143fd0dfa2372cf15d5. Exact a275 build,92 tests,manager17,mergedRust26 PASS plus1existingignored. Foreign WIP preserved. Remaining work: CISOURCEFINAL andCIINSTALLFINAL. Actual five-lane installed acceptance remains INCOMPLETE and is not claimed by this source slice."
+}

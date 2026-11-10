@@ -1,0 +1,32 @@
+(node:335) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:335) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+file:///mnt/native-herder-probe.mjs:35
+    if (!response.ok) throw Error(`${path} HTTP ${response.status}: ${JSON.stringify(value)}`);
+                            ^
+
+Error: /api/sessions/opencode/ses_e4e3dc7f1ffeQ81L4ryvBi7oQl/transcript?limit=1 HTTP 422: {"error":"Native transcript page rejected: unsupported native JSONL harness"}
+    at api (file:///mnt/native-herder-probe.mjs:35:29)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///mnt/native-herder-probe.mjs:77:23
+
+Node.js v22.23.1
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 223, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 183, in main
+    subprocess.run(["node", str(HERE / "native-herder-probe.mjs"), args.herder_dist, str(root / "work"), f"http://127.0.0.1:{open_code_port}", f"http://127.0.0.1:{port}"], env=env, cwd=root / "work", check=True, timeout=120)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['node', '/mnt/native-herder-probe.mjs', '/mnt/candidate/dist', '/tmp/herder-native-model-5rlja9xl/work', 'http://127.0.0.1:48901', 'http://127.0.0.1:46477']' returned non-zero exit status 1.
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:5) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+AssertionError [ERR_ASSERTION]: new turn did not reach the held model
+    at file:///app/scripts/native-fast-agent-herder.mjs:134:14
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+qoder: report status is not PASS; qoder: required checks missing; qoder: active turn missing; qoder: scenario not PASS
+FAIL: hermes: candidate report missing or partial; hermes: one candidate result required; fast-agent: candidate report missing

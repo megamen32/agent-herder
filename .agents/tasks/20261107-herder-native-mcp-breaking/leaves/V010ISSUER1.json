@@ -1,0 +1,64 @@
+{
+  "id": "V010ISSUER1",
+  "label": "Контракт внешнего OAuth issuer на каждый запрос",
+  "description": "Сохранить проверенный issuer subject как principal и не кэшировать authority; отсутствие ответа, отзыв или истечение должны отказывать; не создавать token store.",
+  "acceptance": "Тесты issuer/audience/scope/expiry/revocation, повторная проверка старого соединения, self отсутствует; честно указать отсутствие HTTP подключения.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/auth/identity.rs",
+    "crates/herder/tests"
+  ],
+  "created_at": "2026-11-07T06:06:37+03:00",
+  "updated_at": "2026-11-07T06:09:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T06:06:37+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010ISSUER1",
+        "label": "Контракт внешнего OAuth issuer на каждый запрос",
+        "description": "Сохранить проверенный issuer subject как principal и не кэшировать authority; отсутствие ответа, отзыв или истечение должны отказывать; не создавать token store.",
+        "acceptance": "Тесты issuer/audience/scope/expiry/revocation, повторная проверка старого соединения, self отсутствует; честно указать отсутствие HTTP подключения.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/auth/identity.rs",
+          "crates/herder/tests"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T06:06:43+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:09:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "c3de4aec: внешний OAuthAuthority вызывается при каждом обращении helper; сохраняет subject, проверяет issuer/audience/scope/expiry, отказ и отзыв fail closed, self=None. Тесты с fake authority GREEN. Rust HTTP ingress и bridge к единственному token store отсутствуют; реальная per-request проверка не доказана."
+      },
+      "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b3c3-eeec-7b93-9823-8419f79718c6",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "c3de4aec: внешний OAuthAuthority вызывается при каждом обращении helper; сохраняет subject, проверяет issuer/audience/scope/expiry, отказ и отзыв fail closed, self=None. Тесты с fake authority GREEN. Rust HTTP ingress и bridge к единственному token store отсутствуют; реальная per-request проверка не доказана."
+}

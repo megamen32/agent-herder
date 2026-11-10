@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (/tmp/herder-f001.tadocaCW/target/debug/deps/herder-c3c26d2f03e2ccd8)
+
+thread 'domain::resource::tests::resource_scope_rejects_extra_fields_and_accepts_valid_json' (3840093) panicked at src/domain/resource.rs:117:13:
+accepted {"type":"global","project_ref":"p"}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--lib`

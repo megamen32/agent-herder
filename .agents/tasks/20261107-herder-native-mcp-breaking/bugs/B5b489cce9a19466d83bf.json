@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-07T08:41:31+00:00",
+  "details": "Source review 6894bbcd: lib.rs:25-26 cfg(target_os=linux) excludes application::scoped_stop on macOS; unconditional impl references in adapters/codex/control.rs:603 and create.rs:81 fail name resolution. No actual macOS build run. Terra owns correction; gate these integrations consistently, keep native APIs portable.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T08:41:31+00:00",
+      "changes": {
+        "details": "Source review 6894bbcd: lib.rs:25-26 cfg(target_os=linux) excludes application::scoped_stop on macOS; unconditional impl references in adapters/codex/control.rs:603 and create.rs:81 fail name resolution. No actual macOS build run. Terra owns correction; gate these integrations consistently, keep native APIs portable.",
+        "source": "Astra delta-review 6894bbcd",
+        "status": "open",
+        "title": "Codex bounded impl ссылается на Linux-only scoped_stop на macOS"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T08:53:03+00:00",
+      "changes": {
+        "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb"
+      },
+      "reason": "Исполнитель уже назначен и работает в существующей сессии; reporter не равен owner исправления."
+    }
+  ],
+  "id": "B5b489cce9a19466d83bf",
+  "owner": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "reporter": "Astra",
+  "source": "Astra delta-review 6894bbcd",
+  "status": "open",
+  "title": "Codex bounded impl ссылается на Linux-only scoped_stop на macOS",
+  "updated_at": "2026-11-07T08:53:03+00:00"
+}

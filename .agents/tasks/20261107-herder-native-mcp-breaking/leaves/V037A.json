@@ -11,8 +11,8 @@
   ],
   "parent": "S02",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -20,9 +20,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V037 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V037 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:04+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b399-4210-7471-8286-93750dff10b7",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:04+03:00",
+  "updated_at": "2026-11-07T05:41:58+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:04+03:00",
@@ -51,6 +51,37 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:53:35+03:00",
+      "note": "До: нет единственной owner.json authority и стабильного guard. После этого leaf: общий storage создаёт owner с caller nonce под неизменяемым guard inode и атомарным rename; renew/release остаются V037B. Код в claim.rs; центральный ownership export согласован отдельно.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b399-4210-7471-8286-93750dff10b7",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:12:37+03:00",
+      "note": "V037A завершён тестами в crate; продолжение — V037B. Worktree остаётся detached и не имеет VERSION, commit/publish требует интеграционного слота по правилам plan/worktree.",
+      "changes": {
+        "status": "done",
+        "result": "Добавлены OwnerRecord/ClaimOutcome и claim(): UUID nonce валидируется, авторитетные resource markers перечитываются под стабильным guard.lock, owner.json создаётся через temp file + fsync + rename + fsync каталога; replay того же claim возвращает AlreadyOwned, другой claim — Busy. Cargo test --manifest-path crates/herder/Cargo.toml ownership::: 5 passed, 0 failed; git diff --check чистый. Изменения: crates/herder/src/ownership/claim.rs и экспорт ownership::claim в crates/herder/src/lib.rs. Не доказаны конкурентная гонка и renew/release (V037B/V037); код пока не опубликован."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:41:58+03:00",
+      "note": "Проверено на актуальном origin/main; V037B продолжает владелец ресурсов.",
+      "changes": {
+        "result": "2b6830eb интегрирован как 0a28eafc, экспорт ownership::claim в 1b6905b1; 5 ownership тестов прошли. MCP/CLI и гонка ещё не доказаны."
+      },
+      "session": "01a1b399-4210-7471-8286-93750dff10b7",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "2b6830eb интегрирован как 0a28eafc, экспорт ownership::claim в 1b6905b1; 5 ownership тестов прошли. MCP/CLI и гонка ещё не доказаны."
 }

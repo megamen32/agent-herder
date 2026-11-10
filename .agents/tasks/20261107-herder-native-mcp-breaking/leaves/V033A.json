@@ -2,7 +2,7 @@
   "id": "V033A",
   "label": "Разобрать typed patch node, instance и session",
   "description": "Разобрать typed patch node, instance и session. Частный результат исходного V033: Node/instance/session settings поддерживаются только при capability, typed patches. Выполнить только названную часть; следующая часть получает её код/данные. Входы: V004, V008, V007.",
-  "acceptance": "Получен проверяемый результат: Разобрать typed patch node, instance и session. Указать изменённый символ/данные и наблюдаемый вывод; будущие шаги не считать выполненными.",
+  "acceptance": "Pure parser декодирует только node.endpoint:string, instance.endpoint:string|null, session.model:string; непустые значения, точный scope и revision сохраняются. Mapping configure.node.endpoint/configure.instance.endpoint/configure.session.model явен. Неверный target/key/type отклоняется до эффекта с точным полем и способом исправления. Capability не объявляется supported самим parser; native apply/CAS остаются V033B/V033.",
   "depends_on": [
     "V004",
     "V008",
@@ -13,8 +13,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -24,7 +24,7 @@
   "created_at": "2026-11-07T03:52:03+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:03+03:00",
+  "updated_at": "2026-11-07T09:47:54+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:03+03:00",
@@ -55,6 +55,76 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:35:44+03:00",
+      "note": "Astra назначила освободившемуся resources owner готовую независимую задачу после R003A; dependencies V004/V008/V007 done. Только application/settings.rs; общие exports/core store остаются Terra. Не применять настройки реальных harness в рамках parsing leaf.",
+      "changes": {
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:36:38+03:00",
+      "note": "Inspect catalog/config/capability contracts; implement only typed patch parser/validator in application/settings.rs.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:40:10+03:00",
+      "note": "Исследование завершено; код намеренно не добавлен, существующий контракт не задаёт допустимый typed patch.",
+      "changes": {
+        "status": "blocked",
+        "blocker": "В контракте нет типизированного списка разрешённых settings patches и их capability mapping.",
+        "blocker_details": {
+          "contract_sources": "Свежий origin/main 740ac97f: catalog.rs Configure::Set имеет SettingTarget, key:String, value:serde_json::Value, revision; config.rs задаёт Node.endpoint/authority и HarnessInstance.kind/profile, но не patch allowlist; Capability.name произволен и не связан со setting key; session patch schema отсутствует. schema.sql settings(scope,setting_key,value_json,revision,updated_at) — generic persistence only.",
+          "gap": "Не определены разрешённые target+key пары, типы value и соответствующий точный capability name для каждого patch. Session target не имеет domain schema.",
+          "minimum_next_action": "Зафиксировать allowlist (target,key,value type), mapping key→capability и явную policy для session target. Затем реализовать parser/validator в application/settings.rs без изменений store/live settings."
+        }
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:42:19+03:00",
+      "note": "Astra закрыла design gap в RUST-DESIGN.md, раздел «Уточнение configure для V033». Это ограниченный запросный контракт, не обещание готового writer. Продолжить тем же owner только settings.rs, без реальных изменений настроек.",
+      "changes": {
+        "status": "queued",
+        "wait_reason": "",
+        "acceptance": "Pure parser декодирует только node.endpoint:string, instance.endpoint:string|null, session.model:string; непустые значения, точный scope и revision сохраняются. Mapping configure.node.endpoint/configure.instance.endpoint/configure.session.model явен. Неверный target/key/type отклоняется до эффекта с точным полем и способом исправления. Capability не объявляется supported самим parser; native apply/CAS остаются V033B/V033."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:44:16+03:00",
+      "note": "Design section read; implementing only pure allowlisted parser and diagnostics in application/settings.rs; no I/O/writes.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:47:54+03:00",
+      "note": "Astra's V033 contract resolved the previous gap; implementation follows the exact three-entry allowlist. No settings were applied.",
+      "changes": {
+        "status": "done",
+        "blocker": "",
+        "blocker_details": {},
+        "result": "Pure configure patch parser implemented in crates/herder/src/application/settings.rs; scoped commit fd258e2fb2122255f37df7cb797a0d8a4a0515ad. Finite variants only: node/endpoint/non-empty string, instance/endpoint/non-empty string|null, session/model/non-empty native model ID string. Parsed output carries exact typed target, typed patch, unchanged revision, and required capability name; no support/applied state, I/O, storage, normalization, or effects. Rejects wrong target/key/value with field/expected/correction and does not echo rejected values. Focused isolated-copy tests: 3 passed; rustfmt +stable --check and diff --check passed. Test crate temporarily exported the module; original lib.rs intentionally untouched. Not proven here: module integration, model membership in the correct native catalog, writer/CAS, capability availability, desired/applied."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "blocker": "",
+  "blocker_details": {},
+  "wait_reason": "",
+  "result": "Pure configure patch parser implemented in crates/herder/src/application/settings.rs; scoped commit fd258e2fb2122255f37df7cb797a0d8a4a0515ad. Finite variants only: node/endpoint/non-empty string, instance/endpoint/non-empty string|null, session/model/non-empty native model ID string. Parsed output carries exact typed target, typed patch, unchanged revision, and required capability name; no support/applied state, I/O, storage, normalization, or effects. Rejects wrong target/key/value with field/expected/correction and does not echo rejected values. Focused isolated-copy tests: 3 passed; rustfmt +stable --check and diff --check passed. Test crate temporarily exported the module; original lib.rs intentionally untouched. Not proven here: module integration, model membership in the correct native catalog, writer/CAS, capability availability, desired/applied."
 }

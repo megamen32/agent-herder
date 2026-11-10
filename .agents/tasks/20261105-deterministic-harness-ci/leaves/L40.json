@@ -1,0 +1,100 @@
+{
+  "id": "L40",
+  "label": "Выпуск: подключить доверенный collector и rollback",
+  "description": "Связать реальный collector и verifier с rollout, получить независимо ожидаемые PID/starttime и digest, проверить полный envelope и fenced rollback при отказе.",
+  "acceptance": "Реальный post-switch collector проходит подтверждённые сценарии и точную identity, любое неполное доказательство вызывает отказ/откат.",
+  "estimate_minutes": 15,
+  "status": "deferred",
+  "owner": "Laplace",
+  "depends_on": [
+    "L51"
+  ],
+  "parallel_with": [
+    "L33",
+    "L36",
+    "L37",
+    "L38"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T19:53:29+03:00",
+  "updated_at": "2026-11-07T21:29:59+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T19:53:29+03:00",
+      "note": "",
+      "changes": {
+        "id": "L40",
+        "label": "Выпуск: подключить доверенный collector и rollback",
+        "description": "Связать реальный collector и verifier с rollout, получить независимо ожидаемые PID/starttime и digest, проверить полный envelope и fenced rollback при отказе.",
+        "acceptance": "Реальный post-switch collector проходит подтверждённые сценарии и точную identity, любое неполное доказательство вызывает отказ/откат.",
+        "estimate_minutes": 15,
+        "status": "pending",
+        "owner": "Laplace",
+        "depends_on": [
+          "L34"
+        ],
+        "parallel_with": [
+          "L33",
+          "L36",
+          "L37",
+          "L38"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T20:18:20+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L42"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T22:43:09+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L44"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T23:34:38+03:00",
+      "note": "",
+      "changes": {
+        "depends_on": [
+          "L51"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T21:29:59+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "source": "native_environment"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "codex"
+    }
+  ],
+  "note": "Прямое решение владельца 07.11: прежний план заменён 20261107-portable-native-ci. Прежние доказательства, blockers и UNKNOWN сохранены; это не успешная приёмка.",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "harness": "codex"
+}

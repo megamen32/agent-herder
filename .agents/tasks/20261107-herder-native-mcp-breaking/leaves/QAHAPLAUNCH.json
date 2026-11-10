@@ -1,0 +1,98 @@
+{
+  "id": "QAHAPLAUNCH",
+  "parent": "S05",
+  "kind": "task",
+  "status": "blocked",
+  "owner": "Terra",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "QAHAPPORT"
+  ],
+  "label": "Подключить общий AHAP port к штатному запуску экземпляров",
+  "description": "Общий port5fb51d95 готов; owner launch/scoped profile всё ещё OpenCode-specific. Включить существующий port в один trusted per-instance launch path для готовых ZCode/browser runners, без нового ядра/transport и без изменения текущих production providers. Реальный OpenCode case идёт независимо на pinned1d89d04d.",
+  "affected_files": [
+    "crates/herder/src/bin/herder_native_stdio.rs",
+    "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+    "crates/herder/src/bin/herder_native_stdio/scoped_profile.rs"
+  ],
+  "acceptance": "Protected profile pins node/instance/harness/runner configuration; verified AHAP harness/capabilities выбирают поддержанный mode без silentfallback; два instance/harness source tests, current OpenCode compatibility, scoped publication+artifact contract. No native sends; QZ receipt gap сохраняется, не подменять inputId.",
+  "created_at": "2026-11-07T20:20:58+03:00",
+  "updated_at": "2026-11-07T20:38:47+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:20:58+03:00",
+      "note": "",
+      "changes": {
+        "id": "QAHAPLAUNCH",
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Terra",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "QAHAPPORT"
+        ],
+        "label": "Подключить общий AHAP port к штатному запуску экземпляров",
+        "description": "Общий port5fb51d95 готов; owner launch/scoped profile всё ещё OpenCode-specific. Включить существующий port в один trusted per-instance launch path для готовых ZCode/browser runners, без нового ядра/transport и без изменения текущих production providers. Реальный OpenCode case идёт независимо на pinned1d89d04d.",
+        "affected_files": [
+          "crates/herder/src/bin/herder_native_stdio.rs",
+          "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+          "crates/herder/src/bin/herder_native_stdio/scoped_profile.rs"
+        ],
+        "acceptance": "Protected profile pins node/instance/harness/runner configuration; verified AHAP harness/capabilities выбирают поддержанный mode без silentfallback; два instance/harness source tests, current OpenCode compatibility, scoped publication+artifact contract. No native sends; QZ receipt gap сохраняется, не подменять inputId."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:24:21+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Возобновление Terra отклонено codex_quota_guard:quota_unknown; tool result admissionUnknown/nonRetryable.",
+        "note": "inputId astra-next-terra-launch-20261107T1710-v1 не повторять. Native snapshot Terra idle, новый turn не виден. Fresh model_quotas17:22UTC reports Codex allowed13%used, но это не подтверждение исхода отправки; quota guard не отключался. Продолжать независимые accepted Luna/browser/ZCode/resources."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T20:38:47+03:00",
+      "note": "",
+      "changes": {
+        "note": "Прочитан durable receipt ~/.local/state/agent-herder/codex-delivery-receipts.json.buckets/de.json по точному SHA256(thread+NUL+inputId): сохранён UNKNOWN с CodexQuotaBlockedError до отправки. QQUOTARECEIPT исправляет классификацию будущих отказов; старый receipt не изменяется/не replay. Terra остаётся idle, guard не обходить."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    }
+  ],
+  "blocker": "Возобновление Terra отклонено codex_quota_guard:quota_unknown; tool result admissionUnknown/nonRetryable.",
+  "note": "Прочитан durable receipt ~/.local/state/agent-herder/codex-delivery-receipts.json.buckets/de.json по точному SHA256(thread+NUL+inputId): сохранён UNKNOWN с CodexQuotaBlockedError до отправки. QQUOTARECEIPT исправляет классификацию будущих отказов; старый receipt не изменяется/не replay. Terra остаётся idle, guard не обходить."
+}

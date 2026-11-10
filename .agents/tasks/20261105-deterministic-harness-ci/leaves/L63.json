@@ -1,0 +1,103 @@
+{
+  "id": "L63",
+  "label": "Раскатка Agent Herder: server-88",
+  "description": "Установить опубликованный d2df6186 или актуальный совместимый main на server-88, сохранить чужие сессии и выполнить consumer readback.",
+  "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "roomhacker",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T01:28:33+03:00",
+  "updated_at": "2026-11-07T04:06:43+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T01:28:33+03:00",
+      "note": "",
+      "changes": {
+        "id": "L63",
+        "label": "Раскатка Agent Herder: server-88",
+        "description": "Установить опубликованный d2df6186 или актуальный совместимый main на server-88, сохранить чужие сессии и выполнить consumer readback.",
+        "acceptance": "Подтверждены host, исходный и установленный SHA, работающий процесс и реальный session_info; точный блокер записан, если узел недоступен.",
+        "kind": "task",
+        "status": "pending",
+        "estimate_minutes": 15,
+        "owner": "Luna",
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:29:48+03:00",
+      "note": "",
+      "changes": {
+        "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+        "note": "Исполнитель создан, результат развёртывания ещё не подтверждён."
+      },
+      "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T01:30:48+03:00",
+      "note": "Проверка release lease/CAS продолжается. Текущий session id подтверждён из CODEX_THREAD_ID; опубликованный SHA совпадает d2df618…",
+      "changes": {
+        "status": "running",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T01:39:40+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "server-88 доступен: hostname roomhacker-server-88, unit agent-herder-fleet.service active/running, PID 2041516, InvocationID fc2dbcd07ffa485ab22363c1a19b158e; listener 0.0.0.0:18791 принадлежит этому PID. Свежий git fetch origin main дал d2df61867871e0d8761f49f632a538fb0f972a67. Установленный node-config.sourceSha, current symlink и живой entrypoint совпадают на 89815744b530974ebaf5606441144bce32d64c2a; это опубликованный предок candidate. Immutable release path: /home/roomhacker/.local/share/agent-herder/fleet/releases/89815744b530974ebaf5606441144bce32d64c2a; прежние релизы сохранены. Deployment config /home/roomhacker/.config/agent-herder/herder-fleet-deployment.json подтверждён mode 0600 и задаёт только server-88 target; session/credential state не изменялся. Выпуск не начинался. Блокер: project_release_lease(status) к каноническому Herder на server-100 повторно завершается EOF после предусмотренного окна недоступности. Git-ref fallback не создаёт proof, принимаемый существующим deploy/fleet/rollout-node.py: ReleaseGate требует token/fence из Agent Herder ledger и target match. Обходить этот gate или синтезировать proof нельзя. Не proven: новый runtime и установленный MCP session_info readback. Следующий шаг: восстановить доступность project_release_lease на server-100; затем acquire target-bound lease, перечитать node-config revision и выполнить штатный rollout с CAS/rollback и session_info readback.",
+        "blocker": "Канонический project_release_lease на server-100 недоступен (EOF); штатный rollout-node.py требует proof из этого ledger, несовместимый с git-ref fallback.",
+        "blocker_details": {
+          "authority": "project_release_lease(status) на mcp:shell:roomhacker-server-100:AgentHerder вернул EOF на пяти попытках; последние receipts effcfceddbdee9f31d34e1d54e058a3a, 89bd1409300db9e199bc08364b2387d6, 2b1a1a629dda65a98c5bc29d9dcf2553, 485af117216c8491f584fd3f2893eed0, b905371412aea3d34ea4824313cfdfdc.",
+          "gate": "deploy/fleet/release_gate.py проверяет owner/token/fence по project-release-leases.json; rollout-node.py требует --release-proof и target-bound lease. git-ref fallback не принимается этим gate.",
+          "host": "server-88 доступен; runtime active; ожидаемая и живая revision перед возможной раскаткой зафиксированы.",
+          "mutation": "Runtime mutation не выполнялась; никакие сессии, credentials или процессы не менялись.",
+          "next": "Восстановить project_release_lease на server-100, затем acquire target-bound lease и повторить штатный CAS rollout + installed MCP session_info readback."
+        },
+        "note": "Read-only preflight завершён; L63 остановлен до mutation из-за недоступного canonical lease backend и отсутствия штатного fallback proof для rollout gate."
+      },
+      "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:44:36+03:00",
+      "note": "",
+      "changes": {
+        "result": "Штатный rollout server-88 d2df618 принят; unit, установленный процесс, sessions/launch-policy/MCP прошли, предыдущий релиз сохранён. Lease fence 34 освобождён. Реальный session_info по удалённой Codex-сессии вернул partial и последний текст assistant, но user отсутствует: полная consumer-приёмка не доказана.",
+        "blocker": "В выбранном удалённом чтении последнего user нет; источник ограничен частичным окном.",
+        "blocker_details": {
+          "next": "Проверить локальный MCP на узле с подтверждённой тестовой сессией и исправить выявленный маршрут в разрешённой области; не повторять rollout без нового источника."
+        }
+      },
+      "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T04:06:43+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "server-88: штатно установлен d2df618, unit и readiness проверены, предыдущий релиз сохранён, lease освобождён. После установки исправления маршрута ce815cdb на server-100 реальный session_info той же server-88/Codex сессии вернул оба последних текстовых сообщения и partial; полный transcript этим не доказан."
+      },
+      "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b2fa-c334-7af2-b8a7-fe1bed2573a8",
+  "note": "Read-only preflight завершён; L63 остановлен до mutation из-за недоступного canonical lease backend и отсутствия штатного fallback proof для rollout gate.",
+  "harness": "codex",
+  "result": "server-88: штатно установлен d2df618, unit и readiness проверены, предыдущий релиз сохранён, lease освобождён. После установки исправления маршрута ce815cdb на server-100 реальный session_info той же server-88/Codex сессии вернул оба последних текстовых сообщения и partial; полный transcript этим не доказан.",
+  "blocker": "В выбранном удалённом чтении последнего user нет; источник ограничен частичным окном.",
+  "blocker_details": {
+    "next": "Проверить локальный MCP на узле с подтверждённой тестовой сессией и исправить выявленный маршрут в разрешённой области; не повторять rollout без нового источника."
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-11-07T08:44:28+00:00",
+  "details": "At a8bbdf7a list_chats executes ZAI_CHAT_LIST_EXPRESSION and validates origin/status/IDs only. It never reads self.account_scope, unlike read_chat which hashes returned user_id and compares expected scope. If login in same browser context changes after attach, list_chats returns new account IDs as previous bound reader. Source-confirmed, no live account switching done. Browser owner; require per-read evidence and mismatch/unverifiable rejection; do not invent account identity for empty list.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T08:44:28+00:00",
+      "changes": {
+        "details": "At a8bbdf7a list_chats executes ZAI_CHAT_LIST_EXPRESSION and validates origin/status/IDs only. It never reads self.account_scope, unlike read_chat which hashes returned user_id and compares expected scope. If login in same browser context changes after attach, list_chats returns new account IDs as previous bound reader. Source-confirmed, no live account switching done. Browser owner; require per-read evidence and mismatch/unverifiable rejection; do not invent account identity for empty list.",
+        "source": "Astra independent review V090 a8bbdf7a",
+        "status": "open",
+        "title": "Z.ai list_chats не проверяет привязанный account scope"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T08:53:06+00:00",
+      "changes": {
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33"
+      },
+      "reason": "Исполнитель уже назначен и работает в существующей сессии; reporter не равен owner исправления."
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:14:51+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V090-V093-delta-green.txt",
+            "red_proof_path": "evidence/V090SCOPE-delta-red.txt",
+            "red_result": "test result: FAILED. 0 passed; 1 failed",
+            "red_sha256": "51b1948137f1cce73dfabab0e2afe4b7f411b47d6c35761ea943ed1c1d62b46d",
+            "result": "test result: ok. 11 passed; 0 failed",
+            "sha256": "e090e9a2abe79322f60d3112116f83370738c17bfc5582f41cb4dea3e3da26e1",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline adapters::zai::tests -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bcc3deeef34fc45249cf8",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "Astra",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V090-V093-delta-green.txt",
+      "red_proof_path": "evidence/V090SCOPE-delta-red.txt",
+      "red_result": "test result: FAILED. 0 passed; 1 failed",
+      "red_sha256": "51b1948137f1cce73dfabab0e2afe4b7f411b47d6c35761ea943ed1c1d62b46d",
+      "result": "test result: ok. 11 passed; 0 failed",
+      "sha256": "e090e9a2abe79322f60d3112116f83370738c17bfc5582f41cb4dea3e3da26e1",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline adapters::zai::tests -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Astra independent review V090 a8bbdf7a",
+  "status": "fixed",
+  "title": "Z.ai list_chats не проверяет привязанный account scope",
+  "updated_at": "2026-11-07T09:14:51+00:00"
+}

@@ -1,0 +1,42 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > explicitly selects MacMiniChromeTransport and verifies the configured page and account 7ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed instead of selecting another page when the configured page is absent 5ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires an explicit transport and does not infer direct CDP from its variables 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed when Mac Mini transport lacks exact page or account scope 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects raw direct CDP only when explicitly configured and verifies its exact page 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > selects the existing Z.ai driver on the explicit Mac Mini transport and proves the pinned page/account 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > fails closed for Z.ai when exact page or current account proof is unavailable 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > advertises only its bounded surface and routes init and exact reads 10ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > reports the selected Z.ai harness, provider name and factual browser features 4ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > requires the configured account scope before any operation 5ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > does not return a read result if the adapter scope changes during the call 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > checks the current provider scope before consulting cached session inventory 2ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > preserves an ambiguous send as UNKNOWN and never retries 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > treats legacy notSubmitted send failures as UNKNOWN unless typed pre-effect proof exists 1ms
+ ✓ tests/ahap-browser-runner.test.ts > ChatGPT AHAP browser runner > rejects malformed frames without preventing later valid requests 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt advertises exactly queue delivery without a steer claim 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai advertises exactly queue delivery without a steer claim 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=true) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > chatgpt verifies an unpopulated fresh-profile scope after passive init (matches=false) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=true) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > zai verifies an unpopulated fresh-profile scope after passive init (matches=false) 1ms
+ ✓ tests/ahap-browser-runner.test.ts > configured Z.ai verifier exposes its verified scope with an empty driver cache and fails closed on mismatch 2ms
+(node:2358607) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ tests/ahap-legacy-read-runner.test.ts > opencode: exposes available legacy reads, forwards filters and preserves raw bytes/provenance 14ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > opencode: null transcript stays null and invalid IDs never reach adapter 3ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > zcode: exposes available legacy reads, forwards filters and preserves raw bytes/provenance 3ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > zcode: null transcript stays null and invalid IDs never reach adapter 1ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > chatgpt: exposes available legacy reads, forwards filters and preserves raw bytes/provenance 3ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > chatgpt: null transcript stays null and invalid IDs never reach adapter 2ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > zai: exposes available legacy reads, forwards filters and preserves raw bytes/provenance 2ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > zai: null transcript stays null and invalid IDs never reach adapter 1ms
+ ✓ tests/ahap-legacy-read-runner.test.ts > oversized native export returns explicit bounded error and continues JSONL reads 57ms
+
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+   Start at  23:45:47
+   Duration  2.62s (transform 2.71s, setup 106ms, import 3.33s, tests 144ms, environment 0ms)
+

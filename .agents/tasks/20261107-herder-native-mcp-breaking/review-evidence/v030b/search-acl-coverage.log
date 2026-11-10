@@ -1,0 +1,24 @@
+   Compiling herder-v030a-harness v0.1.0 (/tmp/herder-v030a-harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running unittests src/lib.rs (/tmp/herder-v030a-harness/target/debug/deps/herder_v030a_harness-0adf0bd7616eb1bb)
+
+running 10 tests
+test domain::address::tests::identity_includes_node_and_instance_even_for_equal_native_ids ... ok
+test domain::address::tests::offline_does_not_remove_support_or_grant_authorization ... ok
+test domain::address::tests::unknown_is_not_conflated_with_unsupported_or_denied ... ok
+test index::tests::rejects_incomplete_identity_or_empty_snapshot_before_writing ... ok
+test index::tests::empty_acl_allowlist_returns_no_hits_or_count ... ok
+test index::tests::equal_snapshot_id_skips_reindex_even_if_caller_content_differs ... ok
+test index::tests::failed_snapshot_write_rolls_back_the_fts_replacement ... ok
+test index::tests::changed_snapshot_replaces_only_its_canonical_session ... ok
+test index::tests::coverage_is_partial_for_incomplete_sources_or_truncated_allowed_transcripts ... ok
+test index::tests::search_applies_acl_before_count_limit_and_offset ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests herder_v030a_harness
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

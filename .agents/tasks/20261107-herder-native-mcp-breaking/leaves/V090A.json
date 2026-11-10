@@ -8,22 +8,24 @@
     "V028"
   ],
   "affected_files": [
-    "crates/herder/src/adapters/z_ai/read.rs"
+    "crates/herder/src/adapters/zai/mod.rs",
+    "acceptance/contracts/z-ai.md",
+    "acceptance/native/z-ai/chat-list.json"
   ],
   "parent": "S07",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V090 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V090 обязателен в конце цепочки.",
+  "note": "Source/fixture acceptance закрыта. Список не был запрошен у живого Z.ai provider; live browser and provider actions отсутствуют.",
   "created_at": "2026-11-07T03:52:31+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:31+03:00",
+  "updated_at": "2026-11-07T11:36:43+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:31+03:00",
@@ -53,6 +55,43 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:35:37+03:00",
+      "note": "Implement read-only Z.ai chat listing on the already observed same-origin route; no prompts.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T09:39:56+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "affected_files": [
+          "crates/herder/src/adapters/zai/mod.rs",
+          "acceptance/contracts/z-ai.md",
+          "acceptance/native/z-ai/chat-list.json"
+        ],
+        "result": "Добавлен read-only ZaiReader::list_chats() поверх уже наблюдавшегося same-origin GET /api/v1/chats/?page=1&type=all&channel=zai-web&project_id=. Возвращает стабильные ZaiChatRef.id, проверяет origin/status/array и отклоняет malformed/duplicate IDs. Метод явно ограничен первой страницей, без заявления о полном перечне. Добавлены synthetic fixture и проверки нормализации. cargo test --manifest-path crates/herder/Cargo.toml --lib adapters::zai --offline: 4 passed. git diff --check passed. Не доказаны live вызов list_chats и последующие страницы. Широкий cargo test остановлен несвязанными compile errors в tests/target_port (приватные Writer/SessionRegistry API); cargo fmt --check невозможен: rustfmt component отсутствует.",
+        "note": "Source/fixture acceptance закрыта. Список не был запрошен у живого Z.ai provider; live browser and provider actions отсутствуют."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:43+03:00",
+      "note": "",
+      "changes": {
+        "result": "Добавлен read-only ZaiReader::list_chats() поверх уже наблюдавшегося same-origin list endpoint. Возвращает стабильные ZaiChatRef.id с первой страницы; malformed/duplicate IDs отклоняются. Первая страница не заявляется как полный список. Synthetic list fixture. Commit 208e81bc atop origin/main f18149d3. Повторная проверка всей Z.ai lane на текущей базе: cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 6 passed; rustfmt +stable --edition 2024 --check и git diff --check прошли. Live вызов list_chats и последующие страницы не проверялись."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен read-only ZaiReader::list_chats() поверх уже наблюдавшегося same-origin list endpoint. Возвращает стабильные ZaiChatRef.id с первой страницы; malformed/duplicate IDs отклоняются. Первая страница не заявляется как полный список. Synthetic list fixture. Commit 208e81bc atop origin/main f18149d3. Повторная проверка всей Z.ai lane на текущей базе: cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 6 passed; rustfmt +stable --edition 2024 --check и git diff --check прошли. Live вызов list_chats и последующие страницы не проверялись."
 }

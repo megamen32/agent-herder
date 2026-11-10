@@ -1,0 +1,54 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-final-acceptance/agent-herder
+
+ ❯ tests/browser-canary-view.test.ts (4 tests | 4 failed) 14ms
+     × opens an authorized chatgpt view of the maintained native conversation and closes only that view 8ms
+     × opens an authorized zai view of the maintained native conversation and closes only that view 1ms
+     × rejects a foreign provider handle before opening any page 1ms
+     × never navigates to an arbitrary URL from metadata 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser-canary-view.test.ts > independent owned canary view > opens an authorized chatgpt view of the maintained native conversation and closes only that view
+ FAIL  tests/browser-canary-view.test.ts > independent owned canary view > opens an authorized zai view of the maintained native conversation and closes only that view
+TypeError: f.adapter.prepareCanaryObservation is not a function
+ ❯ tests/browser-canary-view.test.ts:43:37
+     41|   it.each(["chatgpt", "zai"] as const)("opens an authorized %s view of…
+     42|     const f = fixture(harness);
+     43|     const receipt = await f.adapter.prepareCanaryObservation!(f.contro…
+       |                                     ^
+     44|     expect(receipt).toMatchObject({ native_session_id: f.control, nati…
+     45|       source_route: f.origin + "/c/" + remote, creation_receipt: "Vibe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/browser-canary-view.test.ts > independent owned canary view > rejects a foreign provider handle before opening any page
+TypeError: f.adapter.prepareCanaryObservation is not a function
+ ❯ tests/browser-canary-view.test.ts:59:28
+     57|   it("rejects a foreign provider handle before opening any page", asyn…
+     58|     const f = fixture("chatgpt");
+     59|     await expect(f.adapter.prepareCanaryObservation!("zai::draft%3Afor…
+       |                            ^
+     60|     expect(f.call).not.toHaveBeenCalled();
+     61|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/browser-canary-view.test.ts > independent owned canary view > never navigates to an arbitrary URL from metadata
+TypeError: f.adapter.prepareCanaryObservation is not a function
+ ❯ tests/browser-canary-view.test.ts:68:28
+     66|       lastActivity: "2026-11-09T00:00:00Z", needsPermission: false,
+     67|       meta: { sourceRoute: "https://example.com/c/foreign", pendingRem…
+     68|     await expect(f.adapter.prepareCanaryObservation!(f.control)).rejec…
+       |                            ^
+     69|     expect(f.call.mock.calls.some(([name]) => name === "navigate_page"…
+     70|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  04:08:55
+   Duration  1.75s (transform 1.10s, setup 72ms, import 1.40s, tests 14ms, environment 0ms)
+

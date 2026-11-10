@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T06:44:33+00:00",
+  "details": "Первый изолированный run завершился exit 1 при пустом stderr; stdout и число обращений fixture не выводились, поэтому исход UNKNOWN и не повторён. RED/GREEN tests/native/test_opencode_receipt.py добавляет bounded stdout, stderr и счётчик.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T06:44:33+00:00",
+      "changes": {
+        "details": "Первый изолированный run завершился exit 1 при пустом stderr; stdout и число обращений fixture не выводились, поэтому исход UNKNOWN и не повторён. RED/GREEN tests/native/test_opencode_receipt.py добавляет bounded stdout, stderr и счётчик.",
+        "source": "tests/native/opencode_receipt.py",
+        "status": "open",
+        "title": "Квитанция OpenCode теряет причину отказа при ошибке в stdout"
+      }
+    }
+  ],
+  "id": "B638b2bb643124b6fafaf",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "tests/native/opencode_receipt.py",
+  "status": "open",
+  "title": "Квитанция OpenCode теряет причину отказа при ошибке в stdout",
+  "updated_at": "2026-11-07T06:44:33+00:00"
+}

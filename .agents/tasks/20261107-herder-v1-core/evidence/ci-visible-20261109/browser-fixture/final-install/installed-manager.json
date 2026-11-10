@@ -1,0 +1,58 @@
+{
+  "status": "FINAL_MANAGER_RUNNING_LIVE_PROOF_PENDING",
+  "observed_at": "2026-11-09T02:38:45.394880+00:00",
+  "bundle_sha256": "0695ac5af6d3cfd977b8e40969d550f76ab0a8e3a77f09863ad751454c2166f2",
+  "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+  "generation": "2ce2ede315c9f574b7ebe68d671e67e49e4f9c88d131211af5801251f8598916",
+  "processes": {
+    "daemon": {
+      "pid": 327407,
+      "start_ticks": "81251768"
+    },
+    "browser": {
+      "pid": 327569,
+      "start_ticks": "81251804"
+    },
+    "relay": {
+      "pid": 325870,
+      "start_ticks": "81251403"
+    }
+  },
+  "manager": {
+    "pid": 326548,
+    "start_ticks": "81251568",
+    "uid": 1000,
+    "executable": "/usr/local/bin/node"
+  },
+  "old_generation_gone": true,
+  "native_lifecycle_receipts": [
+    {
+      "status": "STOPPED",
+      "generation": "37fca17524361d8083d347d0e8c963755bc73c532ea17b88f6e326e844b6ae21",
+      "reconciled": false
+    },
+    {
+      "status": "READY",
+      "config_sha256": "df972adc30d13dd963a98fcf7b0272433e1331f27d48d219156d15d7c8c5fce6",
+      "relay_pid": 325870,
+      "relay_start_ticks": "81251403"
+    },
+    {
+      "status": "RUNNING",
+      "generation": "2ce2ede315c9f574b7ebe68d671e67e49e4f9c88d131211af5801251f8598916",
+      "resumed": false
+    }
+  ],
+  "new_recovery_receipts": [],
+  "start_intent_present": false,
+  "steps": [
+    {
+      "step": "restart-owned-browser",
+      "outcome": "RECEIVED",
+      "returncode": 0,
+      "stdout_bytes": 0,
+      "stderr_bytes": 0
+    }
+  ],
+  "fixture_pass": false
+}

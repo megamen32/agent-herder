@@ -1,0 +1,97 @@
+{
+  "id": "QOCEXPORT",
+  "parent": "S04",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+  "harness": "codex",
+  "estimate_minutes": 15,
+  "depends_on": [
+    "E002"
+  ],
+  "label": "Проверить OpenCode export через тот же публичный MCP и native transcript",
+  "description": "Расширить существующий stand отдельным export acceptance case; reuse confirmed artifact/core, отдельный isolated fixture и localfake backend. Не повторять предыдущие операции/UNKNOWN. Public export результат сравнить с exact native user+assistant rows и after-reopen; unsupported capability зафиксировать честно.",
+  "affected_files": [
+    "tests/native/ahap_opencode_stand.py",
+    "tests/native/test_ahap_opencode_stand.py",
+    "acceptance/early/opencode/"
+  ],
+  "acceptance": "Public tools/call export и его task/result/resource возвращают exact native messages и completeness; independent native read сравнение, reopen same result. При unavailable feature конкретный bounded source contract gap, без поддельногоPASS. Scoped publication+receipt, cleanup.",
+  "created_at": "2026-11-07T20:41:23+03:00",
+  "updated_at": "2026-11-07T20:55:34+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T20:41:23+03:00",
+      "note": "",
+      "changes": {
+        "id": "QOCEXPORT",
+        "parent": "S04",
+        "kind": "task",
+        "status": "queued",
+        "owner": "Luna",
+        "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "harness": "codex",
+        "estimate_minutes": 15,
+        "depends_on": [
+          "E002"
+        ],
+        "label": "Проверить OpenCode export через тот же публичный MCP и native transcript",
+        "description": "Расширить существующий stand отдельным export acceptance case; reuse confirmed artifact/core, отдельный isolated fixture и localfake backend. Не повторять предыдущие операции/UNKNOWN. Public export результат сравнить с exact native user+assistant rows и after-reopen; unsupported capability зафиксировать честно.",
+        "affected_files": [
+          "tests/native/ahap_opencode_stand.py",
+          "tests/native/test_ahap_opencode_stand.py",
+          "acceptance/early/opencode/"
+        ],
+        "acceptance": "Public tools/call export и его task/result/resource возвращают exact native messages и completeness; independent native read сравнение, reopen same result. При unavailable feature конкретный bounded source contract gap, без поддельногоPASS. Scoped publication+receipt, cleanup."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:47:47+03:00",
+      "note": "New standalone export fixture on pinned 1d89d04d; verify exact public tools/call export wire vs native transcript/readback/reopen. No old input/UNKNOWN reuse; if unsupported preserve precise wire gap and readiness evidence, no core implementation.",
+      "changes": {
+        "status": "running",
+        "owner": "roomhacker"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+        "source": "declared"
+      },
+      "session": "01a1b5e5-b6de-74c3-8276-45803194a16f",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T20:55:34+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "EXPORT_UNAVAILABLE — public MCP tools/call export вернул {code:unsupported,effect:none,message:operation is not connected}; exact gap подтверждён в pinned core ApplicationPort. Native create→initial deliver→read/reopen завершены; сравнение export payload невозможно, PASS не заявляется. Evidence: evidence/QOCEXPORT/native-export-case-receipt.json, public-export-wire-contract.json, native-export-case.log; readiness RED/GREEN tests.",
+        "actual_minutes": 15,
+        "finished_at": "2026-11-07T21:00:00+03:00",
+        "note": "Stand расширен публичным export call и readiness classification; отдельная disposable fixture через pinned 1d89d04d/Node22.22.2, один fake model request, exact native IDs/readback/reopen подтверждены; export unsupported без эффекта. Source diff ограничен stand+tests; не тронут core/fake server/старые inputs."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "EXPORT_UNAVAILABLE — public MCP tools/call export вернул {code:unsupported,effect:none,message:operation is not connected}; exact gap подтверждён в pinned core ApplicationPort. Native create→initial deliver→read/reopen завершены; сравнение export payload невозможно, PASS не заявляется. Evidence: evidence/QOCEXPORT/native-export-case-receipt.json, public-export-wire-contract.json, native-export-case.log; readiness RED/GREEN tests.",
+  "actual_minutes": 15,
+  "finished_at": "2026-11-07T21:00:00+03:00",
+  "note": "Stand расширен публичным export call и readiness classification; отдельная disposable fixture через pinned 1d89d04d/Node22.22.2, один fake model request, exact native IDs/readback/reopen подтверждены; export unsupported без эффекта. Source diff ограничен stand+tests; не тронут core/fake server/старые inputs."
+}

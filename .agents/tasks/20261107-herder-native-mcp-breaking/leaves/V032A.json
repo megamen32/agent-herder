@@ -12,8 +12,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -21,9 +21,9 @@
   },
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V032 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V032 обязателен в конце цепочки.",
   "created_at": "2026-11-07T03:52:03+03:00",
-  "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+  "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:03+03:00",
+  "updated_at": "2026-11-07T06:54:07+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:03+03:00",
@@ -53,6 +53,53 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:49:35+03:00",
+      "note": "Owner directly authorized continuing subsequent ready leaves after V063B. Taking V032A because V005/V006 are done and models.rs has no active owner; first verify current target/source and keep changes isolated to affected_files.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:01:44+03:00",
+      "note": "V032A source slice committed 6422e43fa028c0d6006ae98e0c3cf100f29005c4 on 54f99b55. Isolated harness direct-imported models.rs; 3 tests pass for exact instance, unknown limits, invalid/duplicate IDs. SHA and limitation sent to Terra. Not yet in origin/main and no concrete provider adapter or public consumer readback is proven; keep this distinct from V032 complete.",
+      "changes": {},
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:34:59+03:00",
+      "note": "Срез опубликован; продолжение native consumer в V032B/V032.",
+      "changes": {
+        "status": "done",
+        "result": "6422e43 интегрирован как bc6dcb26, экспорт a5b03c90; три теста точного instance, отсутствующего лимита и дублированных ID прошли. Native provider read идёт в последующих листьях."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:51:44+03:00",
+      "note": "Проверено git log --contains и show для обоих commits.",
+      "changes": {
+        "result": "Интеграция подтверждена в текущем source: модельный application опубликован коммитом bc6dcb26, экспорт коммитом a5b03c90 на HEAD 24d1f229. Продолжение native consumer остаётся V032B/V032."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:54:07+03:00",
+      "note": "Проверено git log и git show в worktree.",
+      "changes": {
+        "result": "Интеграция подтверждена в source HEAD 24d1f229: application/models.rs в bc6dcb26 и export в a5b03c90; следующие native consumer шаги остаются в V032B/V032."
+      },
+      "session": "01a1b39a-1f8d-7882-b0ba-416fe7c3dac6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Интеграция подтверждена в source HEAD 24d1f229: application/models.rs в bc6dcb26 и export в a5b03c90; следующие native consumer шаги остаются в V032B/V032."
 }

@@ -11,8 +11,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "01a1b399-4210-7471-8286-93750dff10b7",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T03:52:54+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:54+03:00",
+  "updated_at": "2026-11-07T13:05:31+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:54+03:00",
@@ -51,6 +51,46 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:54:19+03:00",
+      "note": "Astra: независимое продолжение существующего settings.rs после V033A; общие schema/lib/Cargo остаются у Terra.",
+      "changes": {
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7",
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:00:49+03:00",
+      "note": "Source slice committed as a356fa44 (crates/herder/src/application/settings.rs only). Added SettingsPort/apply_patch with stale desired-revision rejection, capability gating, desired CAS before native apply, and applied revision advancement only after native success; fake-port tests cover stale, unsupported, failed native apply, and success. Targeted command `cargo test --manifest-path crates/herder/Cargo.toml application::settings::tests --lib`: 6 passed. Source/fake-port proof only; SQLite schema persistence and production consumer integration are outside V033B scope and remain unproven for V033/Terra.",
+      "changes": {},
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:01:03+03:00",
+      "note": "V033B source slice complete; broader V033 remains open pending integration and runtime proof.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T10:01:03.364Z",
+        "result": "Committed source slice a356fa44 in crates/herder/src/application/settings.rs: SettingsPort/apply_patch performs stale desired revision rejection, typed capability gating, desired CAS before native apply, and marks applied only after native success. Fake-port regression tests passed 6/6 with `cargo test --manifest-path crates/herder/Cargo.toml application::settings::tests --lib`. This proves source contract only; no production SQLite persistence or consumer integration was claimed. Shared schema integration remains outside this leaf and is required for broader V033 acceptance."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:05:31+03:00",
+      "note": "Follow-up review finding fixed in f6317184; V033B source slice remains complete and V033 broader integration open.",
+      "changes": {
+        "result": "Source slice commit a356fa44 plus follow-up CAS fix f6317184 in crates/herder/src/application/settings.rs. apply_patch now uses only ParsedSettingPatch.revision for the read/CAS; the separate expected_revision argument was removed. RED reproduced accepting parsed revision 1 against current 0 when the caller supplied expected 0; fixed regression now rejects it before save/apply. SettingsPort docs require implementations to serialize revision-read through applied-mark per target across processes and port instances; &mut self alone is explicitly insufficient. Targeted tests pass 7/7. This remains source/fake-port proof only; no production persistence or consumer integration claimed.",
+        "finished_at": "2026-11-07T10:05:31.349Z"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T10:05:31.349Z",
+  "result": "Source slice commit a356fa44 plus follow-up CAS fix f6317184 in crates/herder/src/application/settings.rs. apply_patch now uses only ParsedSettingPatch.revision for the read/CAS; the separate expected_revision argument was removed. RED reproduced accepting parsed revision 1 against current 0 when the caller supplied expected 0; fixed regression now rejects it before save/apply. SettingsPort docs require implementations to serialize revision-read through applied-mark per target across processes and port instances; &mut self alone is explicitly insufficient. Targeted tests pass 7/7. This remains source/fake-port proof only; no production persistence or consumer integration claimed."
 }

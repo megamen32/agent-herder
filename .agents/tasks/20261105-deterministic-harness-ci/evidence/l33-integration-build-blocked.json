@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "snapshot": "/tmp/herder-l33-source-v4-20261106",
+  "base_head": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "build_command": "npm run build",
+  "diagnostic": "src/web/native-ci-runtime.ts(54,60): error TS2554: Expected 1 arguments, but got 2.",
+  "source_sha256": {
+    "src/web/native-ci-runtime.ts": "1d58e8ac04b38957707b371b5aad26cf0784056893550614ca96a4b54dc8ce67",
+    "src/web/autopilot-goal-api.ts": "34f06031c2fdf0d31550310f38521bee8b737ece8b98fb76e25966935f642b52",
+    "src/named-session.ts": "4c8bca1167227eb3e5db712e31684f820389fbe158be97defde3bf7f7def3176",
+    "src/session-supervisor.ts": "c0124cd7bdaab204b98ef296ce8010bba62a7abb4d178003a69fa96d7e7e0ced",
+    "package-lock.json": "934565c0dca8291d37bd7ef3eba3078f837ab8bd36f67b869193a5971611a727"
+  },
+  "limitation": "incomplete integration snapshot; no shared candidate SHA or Linux/Mac attestation"
+}

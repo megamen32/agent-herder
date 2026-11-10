@@ -1,0 +1,178 @@
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "target_gate_fixture") generated 6 warnings
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings (2 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 3 tests
+test application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write ... ok
+test application::transcript_index::tests::rejects_blocks_from_a_different_full_session_address ... ok
+test application::transcript_index::tests::user_and_assistant_text_is_searchable_without_cross_session_leakage ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.01s
+
+     Running unittests src/bin/herder.rs (crates/herder/target/debug/deps/herder-7a42111d9c459fdf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (crates/herder/target/debug/deps/herder_wire_probe-05afddd943392746)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/herder_native_stdio.rs (crates/herder/target/debug/deps/herder_native_stdio-9ee15047bdbad9c6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/v002_probe.rs (crates/herder/target/debug/deps/v002_probe-a6ed34873b46b469)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/connection_auth_contract.rs (crates/herder/target/debug/deps/connection_auth_contract-a8481101824fc6e3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/create_mapping.rs (crates/herder/target/debug/deps/create_mapping-b483966c60098662)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/humanstop_gate_pinned.rs (crates/herder/target/debug/deps/humanstop_gate_pinned-c38629e6fea925d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/humanstop_schema_v3.rs (crates/herder/target/debug/deps/humanstop_schema_v3-78cd5cbd0c75beff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/list_application.rs (crates/herder/target/debug/deps/list_application-169dcd9fd77c02aa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/list_inventory_composition.rs (crates/herder/target/debug/deps/list_inventory_composition-2be98df8c825d5c1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/oauth_authority_contract.rs (crates/herder/target/debug/deps/oauth_authority_contract-c26cc76a193bade5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/oauth_real_store_gate.rs (crates/herder/target/debug/deps/oauth_real_store_gate-89a83e8b4537780a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/opencode_recent_application.rs (crates/herder/target/debug/deps/opencode_recent_application-0ea66e1d06f6a8b9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/scoped_stop_gate.rs (crates/herder/target/debug/deps/scoped_stop_gate-a67a9285f566b8f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+     Running tests/session_mapping_migration.rs (crates/herder/target/debug/deps/session_mapping_migration-2fcc26f80439e198)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/target_gate_fixture.rs (crates/herder/target/debug/deps/target_gate_fixture-20bb602bf08d68ea)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/target_port.rs (crates/herder/target/debug/deps/target_port-50443861fa931282)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/v011b_writers.rs (crates/herder/target/debug/deps/v011b_writers-e3562796d58c120d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

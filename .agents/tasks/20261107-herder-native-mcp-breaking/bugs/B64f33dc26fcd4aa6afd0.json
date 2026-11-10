@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T01:50:33+00:00",
+  "details": "After moving both server loops to concurrent tasks, the upstream ClientConfig.serve handshake failed with -32022 Unsupported protocol version for requested 2026-07-28 even though server supported that version. RMCP 3.9.0 ServiceExt::serve uses legacy initialize; native 2026 requires ClientServiceExt::serve_with_lifecycle with Discover. No product/native endpoint was involved.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T01:50:33+00:00",
+      "changes": {
+        "details": "After moving both server loops to concurrent tasks, the upstream ClientConfig.serve handshake failed with -32022 Unsupported protocol version for requested 2026-07-28 even though server supported that version. RMCP 3.9.0 ServiceExt::serve uses legacy initialize; native 2026 requires ClientServiceExt::serve_with_lifecycle with Discover. No product/native endpoint was involved.",
+        "source": "T002 compatibility SDK wire probe",
+        "status": "open",
+        "title": "RMCP default client lifecycle sends initialize to native 2026 endpoint"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+      "at": "2026-11-07T02:03:32+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "review-evidence/run-01a1b398/green-B7-B64.txt",
+            "red_proof_path": "review-evidence/run-01a1b398/red-B64.txt",
+            "red_result": "InitializeFailed(ErrorData { code: ErrorCode(-32022), message: \"Unsupported protocol version\"",
+            "red_sha256": "3295b866aa3df5d6f27fde9ce0b72e5acec7ba6e2d13ab3e1f9d847b2b934c69",
+            "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+            "sha256": "a0e96f262723ceb5ba5efa0b1245d4a0086eb2b9eb2633f9bad461f9fc5fa950",
+            "test_command": "cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes native_and_legacy_handshakes_keep_their_explicit_protocol_versions -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B64f33dc26fcd4aa6afd0",
+  "owner": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "reporter": "01a1b398-e44e-72c0-bb56-ba4b572d8af8",
+  "resolution": {
+    "evidence": {
+      "proof_path": "review-evidence/run-01a1b398/green-B7-B64.txt",
+      "red_proof_path": "review-evidence/run-01a1b398/red-B64.txt",
+      "red_result": "InitializeFailed(ErrorData { code: ErrorCode(-32022), message: \"Unsupported protocol version\"",
+      "red_sha256": "3295b866aa3df5d6f27fde9ce0b72e5acec7ba6e2d13ab3e1f9d847b2b934c69",
+      "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s",
+      "sha256": "a0e96f262723ceb5ba5efa0b1245d4a0086eb2b9eb2633f9bad461f9fc5fa950",
+      "test_command": "cargo test --manifest-path crates/herder-compat/Cargo.toml --test handshakes native_and_legacy_handshakes_keep_their_explicit_protocol_versions -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "T002 compatibility SDK wire probe",
+  "status": "fixed",
+  "title": "RMCP default client lifecycle sends initialize to native 2026 endpoint",
+  "updated_at": "2026-11-07T02:03:32+00:00"
+}

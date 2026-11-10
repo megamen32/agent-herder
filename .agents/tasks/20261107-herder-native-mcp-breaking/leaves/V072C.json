@@ -1,0 +1,76 @@
+{
+  "id": "V072C",
+  "label": "ZCode: Поднять изолированный loopback provider fixture",
+  "description": "Настроить установленный ZCode Server в новом HOME/server-root на точный fixture provider из legacy CI и проверить model-selection/initialize доступность.",
+  "acceptance": "ZCode supervisor и native provider view видят только fixture/herder-test; fake-model listener loopback-only; user data/credentials отсутствуют.",
+  "affected_files": [
+    "crates/herder/src/adapters/zcode/read.rs"
+  ],
+  "parent": "S05",
+  "kind": "task",
+  "status": "done",
+  "owner": "roomhacker",
+  "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "harness": "codex",
+  "depends_on": [
+    "V072"
+  ],
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "wave": 12,
+  "created_at": "2026-11-07T11:28:49+03:00",
+  "updated_at": "2026-11-07T11:36:44+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T11:28:49+03:00",
+      "note": "",
+      "changes": {
+        "id": "V072C",
+        "label": "ZCode: Поднять изолированный loopback provider fixture",
+        "description": "Настроить установленный ZCode Server в новом HOME/server-root на точный fixture provider из legacy CI и проверить model-selection/initialize доступность.",
+        "acceptance": "ZCode supervisor и native provider view видят только fixture/herder-test; fake-model listener loopback-only; user data/credentials отсутствуют.",
+        "affected_files": [
+          "crates/herder/src/adapters/zcode/read.rs"
+        ],
+        "parent": "S05",
+        "kind": "task",
+        "status": "queued",
+        "owner": "roomhacker",
+        "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "harness": "codex",
+        "depends_on": [
+          "V072"
+        ],
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "wave": 12
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:30:00+03:00",
+      "note": "Временный provider fixture только на localhost по найденной legacy CI конфигурации; подтвердить provider availability, не создавать сессии на этом листе.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:44+03:00",
+      "note": "Provider fixture принят в изолированном профиле; перехожу к двум отдельным native sessions/turns.",
+      "changes": {
+        "status": "done",
+        "result": "На свежем временном ZCode profile/server-root поднят точный `fixture/herder-test` provider config из legacy CI source. Bubblewrap private network namespace содержал только loopback; authenticated official supervisor и native model-selection видели provider `fixture`; `zcode-agent.initialize.available=true`; fake server requests=0. ZCode CLI 0.16.9 / Server 3.17.2. Профиль, supervisor и fake server очищены. Evidence: `/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V072C/zcode-provider-fixture.json`. Native session/create/input/readback не проверялись в этом leaf."
+      },
+      "session": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+      "harness": "codex"
+    }
+  ],
+  "result": "На свежем временном ZCode profile/server-root поднят точный `fixture/herder-test` provider config из legacy CI source. Bubblewrap private network namespace содержал только loopback; authenticated official supervisor и native model-selection видели provider `fixture`; `zcode-agent.initialize.available=true`; fake server requests=0. ZCode CLI 0.16.9 / Server 3.17.2. Профиль, supervisor и fake server очищены. Evidence: `/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-native-mcp-breaking/evidence/V072C/zcode-provider-fixture.json`. Native session/create/input/readback не проверялись в этом leaf."
+}

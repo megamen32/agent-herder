@@ -1,0 +1,282 @@
+{
+  "isolation": {
+    "namespace": "net:[4026536645]",
+    "hostNamespace": "net:[4026531840]",
+    "interfaces": [
+      "lo"
+    ]
+  },
+  "origin": "https://chatgpt.com",
+  "accountId": "fixture-account",
+  "project": {
+    "id": "herder-ci-project",
+    "name": "Herder CI",
+    "path": "/tmp/herder-chatgpt-canary-2TKRA9"
+  },
+  "drafts": [
+    {
+      "sessionId": "draft:970edd32-d670-4b60-8a62-82351f95eaf5",
+      "title": "L17-993e0565-99e8-4614-b455-e2b4928f7702-0",
+      "initialPending": true,
+      "pendingRemoteCreation": false,
+      "remoteId": "c8911473-4397-4d31-8ac9-5630e49f4f0d"
+    },
+    {
+      "sessionId": "draft:abc06578-5dd1-4600-9ff2-c86a78b8e5ec",
+      "title": "L17-993e0565-99e8-4614-b455-e2b4928f7702-1",
+      "initialPending": true,
+      "pendingRemoteCreation": false,
+      "remoteId": "f3191eb6-9830-44e7-8093-18c8ddd19894"
+    }
+  ],
+  "createdDraft": {
+    "created": true,
+    "pendingRemoteCreation": true,
+    "noSubmission": true
+  },
+  "sessions": [
+    "c8911473-4397-4d31-8ac9-5630e49f4f0d",
+    "f3191eb6-9830-44e7-8093-18c8ddd19894"
+  ],
+  "deliveries": [
+    true,
+    true
+  ],
+  "histories": [
+    [
+      "fixture question 1",
+      "fixture answer 1"
+    ],
+    [
+      "fixture question 2",
+      "fixture answer 2"
+    ]
+  ],
+  "transcripts": [
+    [
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "c8911473-4397-4d31-8ac9-5630e49f4f0d"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u1",
+            "nativeEventId": "u1",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 1"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInNlcnZlci00NFwiLFwiY2hhdGdwdFwiLFwiYzg5MTE0NzMtNDM5Ny00ZDMxLThhYzktNTYzMGU0OWY0ZjBkXCJdIiwibmF0aXZlQ3Vyc29yIjoiNmFkNGRiYmEtZWVkNC00YTY3LWIzNGYtNjQ1NzgxOGY3OTc2IiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "c8911473-4397-4d31-8ac9-5630e49f4f0d"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a1",
+            "nativeEventId": "a1",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 1"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ],
+    [
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "f3191eb6-9830-44e7-8093-18c8ddd19894"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "eventId": "u2",
+            "nativeEventId": "u2",
+            "kind": "message",
+            "author": {
+              "kind": "unknown",
+              "sourceRole": "user"
+            },
+            "text": "fixture question 2"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcInNlcnZlci00NFwiLFwiY2hhdGdwdFwiLFwiZjMxOTFlYjYtOTgzMC00NGU3LTgwOTMtMThjOGRkZDE5ODk0XCJdIiwibmF0aXZlQ3Vyc29yIjoiNjZmOTJiNzUtNzA4Yy00MTg3LWI2YjgtYWE3Y2NkNTg4YmY4IiwibmV4dFNlcXVlbmNlIjoxLCJ0b3RhbEV2ZW50cyI6Mn0",
+        "complete": false,
+        "source": "native-complete-export"
+      },
+      {
+        "scope": {
+          "hostId": "server-44",
+          "harness": "chatgpt",
+          "nativeSessionId": "f3191eb6-9830-44e7-8093-18c8ddd19894"
+        },
+        "events": [
+          {
+            "sequence": 1,
+            "eventId": "a2",
+            "nativeEventId": "a2",
+            "kind": "message",
+            "author": {
+              "kind": "assistant",
+              "sourceRole": "assistant"
+            },
+            "text": "fixture answer 2"
+          }
+        ],
+        "totalEvents": 2,
+        "nextCursor": null,
+        "complete": true,
+        "source": "native-complete-export"
+      }
+    ]
+  ],
+  "crossCursorStatus": 422,
+  "searchIds": [
+    "chatgpt::c8911473-4397-4d31-8ac9-5630e49f4f0d",
+    "chatgpt::f3191eb6-9830-44e7-8093-18c8ddd19894"
+  ],
+  "searchResults": [
+    [
+      "chatgpt::c8911473-4397-4d31-8ac9-5630e49f4f0d"
+    ],
+    [
+      "chatgpt::f3191eb6-9830-44e7-8093-18c8ddd19894"
+    ]
+  ],
+  "titleSearches": [
+    {
+      "query": "L17-993e0565-99e8-4614-b455-e2b4928f7702-0",
+      "isError": false,
+      "results": [
+        {
+          "hostId": "fixture",
+          "harness": "chatgpt",
+          "nativeSessionId": "chatgpt::c8911473-4397-4d31-8ac9-5630e49f4f0d",
+          "title": "L17-993e0565-99e8-4614-b455-e2b4928f7702-0",
+          "cwd": "/tmp/herder-chatgpt-canary-2TKRA9/empty/HOME/.browser-chat/chatgpt",
+          "revision": "{\"id\":\"c8911473-4397-4d31-8ac9-5630e49f4f0d\",\"title\":\"L17-993e0565-99e8-4614-b455-e2b4928f7702-0\",\"seenAt\":1793983562566}",
+          "chunkId": "title",
+          "snippet": "",
+          "rank": -1.1846153846153844e-05,
+          "shortId": "g21da"
+        }
+      ],
+      "partial": true
+    },
+    {
+      "query": "L17-993e0565-99e8-4614-b455-e2b4928f7702-1",
+      "isError": false,
+      "results": [
+        {
+          "hostId": "fixture",
+          "harness": "chatgpt",
+          "nativeSessionId": "chatgpt::f3191eb6-9830-44e7-8093-18c8ddd19894",
+          "title": "L17-993e0565-99e8-4614-b455-e2b4928f7702-1",
+          "cwd": "/tmp/herder-chatgpt-canary-2TKRA9/empty/HOME/.browser-chat/chatgpt",
+          "revision": "{\"id\":\"f3191eb6-9830-44e7-8093-18c8ddd19894\",\"title\":\"L17-993e0565-99e8-4614-b455-e2b4928f7702-1\",\"seenAt\":1793983562566}",
+          "chunkId": "title",
+          "snippet": "",
+          "rank": -1.1846153846153844e-05,
+          "shortId": "g93b9"
+        }
+      ],
+      "partial": true
+    }
+  ],
+  "searchContentUnavailable": true,
+  "contentSearchCoverage": {
+    "partial": true,
+    "isError": false
+  },
+  "submissions": [
+    {
+      "remoteId": "c8911473-4397-4d31-8ac9-5630e49f4f0d",
+      "text": "fixture question 1"
+    },
+    {
+      "remoteId": "f3191eb6-9830-44e7-8093-18c8ddd19894",
+      "text": "fixture question 2"
+    }
+  ],
+  "listed": [
+    "draft:abc06578-5dd1-4600-9ff2-c86a78b8e5ec",
+    "draft:970edd32-d670-4b60-8a62-82351f95eaf5"
+  ],
+  "requests": [
+    "/",
+    "/favicon.ico",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated",
+    "/api/auth/session",
+    "/api/auth/session",
+    "/",
+    "/api/auth/session",
+    "/fixture/submit",
+    "/api/auth/session",
+    "/backend-api/conversations/c8911473-4397-4d31-8ac9-5630e49f4f0d?num_turns=60&include_has_versions=true",
+    "/api/auth/session",
+    "/backend-api/conversation/c8911473-4397-4d31-8ac9-5630e49f4f0d",
+    "/api/auth/session",
+    "/backend-api/conversation/c8911473-4397-4d31-8ac9-5630e49f4f0d",
+    "/api/auth/session",
+    "/",
+    "/api/auth/session",
+    "/fixture/submit",
+    "/api/auth/session",
+    "/backend-api/conversations/f3191eb6-9830-44e7-8093-18c8ddd19894?num_turns=60&include_has_versions=true",
+    "/api/auth/session",
+    "/backend-api/conversation/f3191eb6-9830-44e7-8093-18c8ddd19894",
+    "/api/auth/session",
+    "/backend-api/conversation/f3191eb6-9830-44e7-8093-18c8ddd19894",
+    "/api/auth/session",
+    "/backend-api/conversations?offset=0&limit=100&order=updated"
+  ],
+  "blocked": [
+    "https://outside.invalid/probe"
+  ],
+  "scope": "browser-chat-fixture",
+  "candidate_sha256": "cb27bf364cdf8474998bb7e66723c58b687a7108d706b0fc73f69083b811b1ee",
+  "candidate_sha256_after": "cb27bf364cdf8474998bb7e66723c58b687a7108d706b0fc73f69083b811b1ee",
+  "limitations": [
+    "isolated fixture only",
+    "content search partial",
+    "not installed PID"
+  ],
+  "status": "PASS",
+  "validationErrors": []
+}

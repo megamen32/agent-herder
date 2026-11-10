@@ -1,0 +1,48 @@
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-zs1kq10t/codex-home", "rollouts": ["/tmp/herder-native-model-zs1kq10t/codex-home/sessions/2026/11/07/rollout-2026-11-07T10-08-58-01a1b57b-989b-7e30-8d7e-35fafbf0a50d.jsonl", "/tmp/herder-native-model-zs1kq10t/codex-home/sessions/2026/11/07/rollout-2026-11-07T10-08-49-01a1b57b-7574-7ff3-a37a-7a3f019fe6a8.jsonl"]}
+{"scope": "entrypoint-diagnostic", "root": "/tmp/herder-native-model-zs1kq10t/home/.codex", "rollouts": []}
+(node:340) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] автовыбор семейства адресов выключен: нет глобального IPv6-адреса и маршрута IPv6 по умолчанию, IPv6-соединения заведомо нерабочие
+[agent-herder] Ready with harnesses: opencode, codex
+[agent-herder] Autopilot native turn bridge active for opencode
+[agent-herder] Web UI listening on http://127.0.0.1:42157
+[agent-herder] permission Notice snapshot incomplete: session_inventory_partial (opencode)
+(node:340) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[agent-herder] не удалось закрепить активную сессию codex:01a1b57b-989b-7e30-8d7e-35fafbf0a50d: Codex state database is unavailable
+
+Traceback (most recent call last):
+  File "/mnt/native-entrypoint-probe.py", line 55, in api
+    with urllib.request.urlopen(request, timeout=10) as response:
+  File "/usr/lib/python3.10/urllib/request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+  File "/usr/lib/python3.10/urllib/request.py", line 525, in open
+    response = meth(req, response)
+  File "/usr/lib/python3.10/urllib/request.py", line 634, in http_response
+    response = self.parent.error(
+  File "/usr/lib/python3.10/urllib/request.py", line 563, in error
+    return self._call_chain(*args)
+  File "/usr/lib/python3.10/urllib/request.py", line 496, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.10/urllib/request.py", line 643, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 422: Unprocessable Entity
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/native-entrypoint-probe.py", line 194, in <module>
+    if __name__=='__main__': main()
+  File "/mnt/native-entrypoint-probe.py", line 125, in main
+    transcript=api(root,url).get('transcript',{})
+  File "/mnt/native-entrypoint-probe.py", line 58, in api
+    raise RuntimeError(f'{path}: HTTP {error.code}: {error.read(1000).decode(errors="replace")}') from error
+RuntimeError: /api/sessions/codex/01a1b57b-989b-7e30-8d7e-35fafbf0a50d/transcript?limit=1: HTTP 422: {"error":"Native transcript page rejected: native adapter has no supported complete JSONL export"}
+Traceback (most recent call last):
+  File "/mnt/native-model-smoke.py", line 228, in <module>
+    sys.exit(main())
+  File "/mnt/native-model-smoke.py", line 190, in main
+    subprocess.run([sys.executable, str(HERE / "native-entrypoint-probe.py"), args.herder_dist, str(root / "work"), f"http://127.0.0.1:{open_code_port}", f"http://127.0.0.1:{port}"], env=env, cwd=root / "work", check=True, timeout=120)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/mnt/native-entrypoint-probe.py', '/mnt/candidate/dist', '/tmp/herder-native-model-zs1kq10t/work', 'http://127.0.0.1:34303', 'http://127.0.0.1:35723']' returned non-zero exit status 1.

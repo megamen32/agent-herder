@@ -1,0 +1,47 @@
+{
+  "id": "V010BIND1",
+  "label": "Проверить границу identity и fail-closed обычного launcher",
+  "description": "Исследовать доверенный self binding и проверить изоляцию соединений без доверия metadata; при отсутствии источника доказать отказ и описать минимальный контракт.",
+  "acceptance": "Два процесса не принимают подставленную identity и session; доказательства и граница доверия записаны; собственный результат в локальном коммите.",
+  "parent": "S01",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/tests"
+  ],
+  "created_at": "2026-11-07T05:23:01+03:00",
+  "updated_at": "2026-11-07T05:24:35+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T05:23:01+03:00",
+      "note": "",
+      "changes": {
+        "id": "V010BIND1",
+        "label": "Проверить границу identity и fail-closed обычного launcher",
+        "description": "Исследовать доверенный self binding и проверить изоляцию соединений без доверия metadata; при отсутствии источника доказать отказ и описать минимальный контракт.",
+        "acceptance": "Два процесса не принимают подставленную identity и session; доказательства и граница доверия записаны; собственный результат в локальном коммите.",
+        "parent": "S01",
+        "kind": "task",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/tests"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T05:24:35+03:00",
+      "note": "Обнаружен архитектурный пробел; без изменений harness identity не выдумывается.",
+      "changes": {
+        "status": "done",
+        "result": "Исследован launcher и translator WIP: доверенного per-connection session binding нет. Два реальных unbound stdio процесса отвергают подмену metadata/env и свои/чужие операции без эффекта. Контракт и тест в локальном ad4c5dce; позитивная аутентификация и изоляция авторизованных соединений не доказаны и требуют harness issuer."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Исследован launcher и translator WIP: доверенного per-connection session binding нет. Два реальных unbound stdio процесса отвергают подмену metadata/env и свои/чужие операции без эффекта. Контракт и тест в локальном ad4c5dce; позитивная аутентификация и изоляция авторизованных соединений не доказаны и требуют harness issuer."
+}

@@ -11,18 +11,18 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "deferred",
+  "owner": "01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V015 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V015 обязателен в конце цепочки.",
+  "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation.",
   "created_at": "2026-11-07T03:52:47+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:47+03:00",
+  "updated_at": "2026-11-07T15:53:34+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:47+03:00",
@@ -51,6 +51,71 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:52:44+03:00",
+      "note": "Worker 01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8 registered on HEAD",
+      "changes": {
+        "worker": {
+          "id": "01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8",
+          "branch": "HEAD",
+          "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-recent/agent-herder",
+          "registered_at": "2026-11-07T05:52:44+03:00"
+        },
+        "owner": "01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8",
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T05:58:46+03:00",
+      "note": "Принят проверенный частичный срез.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Нужны формат native_receipt, lookup по request_key и persistent dispatcher",
+        "result": "Опубликован ed6db8f3: после перезапуска отсутствующая квитанция переводит intent в unknown и запрещает повторный claim; 2 targeted tests прошли. Confirmed и настоящий dispatcher не доказаны."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:00:48+03:00",
+      "note": "Продолжение существующего листа: формат точной native_receipt и отказ повреждённой/чужой квитанции; реальный lookup и dispatcher отдельно.",
+      "changes": {
+        "status": "running"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T06:07:41+03:00",
+      "note": "Формат опубликован; дальнейшая интеграция по готовности native и store.",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Нужны authoritative target resolver, persistent dispatcher и native read-only lookup",
+        "result": "554b7182: версионированная receipt привязана к intent/principal/target/request_key/address; неверная или повреждённая даёт UNKNOWN, 3 targeted теста. Реальное происхождение и полный restart dispatcher ещё не доказаны."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T15:53:34+03:00",
+      "note": "",
+      "changes": {
+        "status": "deferred",
+        "note": "Owner-requested plan simplification 2026-11-07: old decomposition retired, NOT done. Mandatory outcome retained in FAST-PATH.md stage S01 and ACCEPTANCE.md; source/results/WIP/stop evidence unchanged. Do not execute this obsolete card. Next stage is decomposed from verified remaining integration, not reimplementation."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "worker": {
+    "id": "01a1b3c3-fcf9-7460-b40b-7bed40aaf0b8",
+    "branch": "HEAD",
+    "worktree": "/home/roomhacker/.codex/worktrees/herder-v1-recent/agent-herder",
+    "registered_at": "2026-11-07T05:52:44+03:00"
+  },
+  "wait_reason": "Нужны authoritative target resolver, persistent dispatcher и native read-only lookup",
+  "result": "554b7182: версионированная receipt привязана к intent/principal/target/request_key/address; неверная или повреждённая даёт UNKNOWN, 3 targeted теста. Реальное происхождение и полный restart dispatcher ещё не доказаны."
 }

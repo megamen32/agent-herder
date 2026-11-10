@@ -1,0 +1,1112 @@
+{
+  "result": "PASS",
+  "red": {
+    "command": "vitest tests/qoder-l12.test.ts against temporary snapshot with Qoder fixes removed",
+    "exit_code": 1,
+    "output": "\n RUN  v4.1.10 /tmp/native-qoder-red-l12\n\n(node:1333613) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n ❯ tests/qoder-l12.test.ts (2 tests | 2 failed) 39ms\n     × creates and reads back a unique native session with the requested cwd and model 12ms\n     × indexes complete Qoder JSONL including exact native id, cwd and user and assistant text 25ms\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  tests/qoder-l12.test.ts > Qoder native creation and persisted search > creates and reads back a unique native session with the requested cwd and model\nTypeError: adapter.createSession is not a function\n ❯ tests/qoder-l12.test.ts:17:27\n\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯\n\n FAIL  tests/qoder-l12.test.ts > Qoder native creation and persisted search > indexes complete Qoder JSONL including exact native id, cwd and user and assistant text\nAssertionError: expected [] to match object [ Array(1) ]\n\n- Expected\n+ Received\n\n- [\n-   {\n-     \"chunks\": [\n-       {\n-         \"id\": \"u1\",\n-         \"text\": \"exact qoder needle\",\n-       },\n-       {\n-         \"id\": \"a1\",\n-         \"text\": \"local answer\",\n-       },\n-     ],\n-     \"item\": {\n-       \"cwd\": \"/project\",\n-       \"nativeSessionId\": \"native-id\",\n-     },\n-   },\n- ]\n+ []\n\n ❯ tests/qoder-l12.test.ts:32:20\n\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯\n\n\n Test Files  1 failed (1)\n      Tests  2 failed (2)\n   Start at  17:08:08\n   Duration  766ms (transform 454ms, setup 55ms, import 450ms, tests 39ms, environment 0ms)\n\nRED_EXIT=1\n"
+  },
+  "green": {
+    "command": "./node_modules/.bin/vitest run --root . --config vitest.config.ts tests/qoder-l12.test.ts",
+    "exit_code": 0,
+    "output": "\n RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-native-ci/agent-herder\n\n(node:1417610) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  17:11:07\n   Duration  1.48s (transform 381ms, setup 63ms, import 375ms, tests 774ms, environment 0ms)\n\n"
+  },
+  "canary": {
+    "checks": {
+      "sessions_created_through_herder": true,
+      "messages_delivered": true,
+      "complete_paged_transcripts": true,
+      "exact_search": true,
+      "project_listed": true,
+      "active_turn": true,
+      "native_bootstrap_transcripts_complete": true
+    },
+    "evidence": {
+      "api_creates": [
+        {
+          "status": 200,
+          "body": {
+            "ok": true,
+            "created": true,
+            "sessionId": "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+            "model": "fixture/fixture",
+            "harness": "qoder",
+            "name": "qoder-l12-api-0",
+            "cwd": "/fixture/project"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "ok": true,
+            "created": true,
+            "sessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+            "model": "fixture/fixture",
+            "harness": "qoder",
+            "name": "qoder-l12-api-1",
+            "cwd": "/fixture/project"
+          }
+        }
+      ],
+      "native_bootstrap_ids": [
+        "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+        "957a121d-fbaf-4f01-b2c8-e09eff8ef088"
+      ],
+      "listed_ids": [
+        "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+        "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66"
+      ],
+      "deliveries": [
+        {
+          "send": {
+            "status": 202,
+            "body": {
+              "ok": true,
+              "inputId": "qoder-l12-0",
+              "pending": true,
+              "delivery": "deferred",
+              "job": {
+                "id": "job_ff169e6a7335ed2fd5edd764d45e5f35566a4e3aad5514e66da53b819e7300ce",
+                "kind": "Доставка сообщения",
+                "state": "waiting",
+                "createdAt": "2026-11-06T14:07:30.182Z",
+                "updatedAt": "2026-11-06T14:07:30.186Z",
+                "ownerSessionId": "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+                "resultRef": "herder://jobs/job_ff169e6a7335ed2fd5edd764d45e5f35566a4e3aad5514e66da53b819e7300ce",
+                "requestFingerprint": "279cbb0467799367d9691f5e29421b6a076b9e426dc15ea8ffa707078d838c84",
+                "durableOnce": true,
+                "onceKey": "user-message\u0000qoder\u00009070e2b3-6bf3-4fa9-b489-ff1bb995ca66\u0000qoder-l12-0",
+                "statusMessage": "Ожидает окончания ответа"
+              }
+            }
+          },
+          "job": {
+            "status": 200,
+            "body": {
+              "job": {
+                "id": "job_ff169e6a7335ed2fd5edd764d45e5f35566a4e3aad5514e66da53b819e7300ce",
+                "kind": "Доставка сообщения",
+                "state": "completed",
+                "createdAt": "2026-11-06T14:07:30.182Z",
+                "updatedAt": "2026-11-06T14:07:39.627Z",
+                "ownerSessionId": "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+                "resultRef": "herder://jobs/job_ff169e6a7335ed2fd5edd764d45e5f35566a4e3aad5514e66da53b819e7300ce",
+                "requestFingerprint": "279cbb0467799367d9691f5e29421b6a076b9e426dc15ea8ffa707078d838c84",
+                "durableOnce": true,
+                "onceKey": "user-message\u0000qoder\u00009070e2b3-6bf3-4fa9-b489-ff1bb995ca66\u0000qoder-l12-0",
+                "progress": 1,
+                "result": {
+                  "ok": true,
+                  "inputId": "qoder-l12-0"
+                }
+              }
+            }
+          },
+          "observed": true,
+          "answer": true
+        },
+        {
+          "send": {
+            "status": 202,
+            "body": {
+              "ok": true,
+              "inputId": "qoder-l12-1",
+              "pending": true,
+              "delivery": "deferred",
+              "job": {
+                "id": "job_7561e5d8cae83114ab48c0851f1790346f720f7ee5632aa4974a99b15db91d7a",
+                "kind": "Доставка сообщения",
+                "state": "waiting",
+                "createdAt": "2026-11-06T14:07:39.889Z",
+                "updatedAt": "2026-11-06T14:07:39.911Z",
+                "ownerSessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+                "resultRef": "herder://jobs/job_7561e5d8cae83114ab48c0851f1790346f720f7ee5632aa4974a99b15db91d7a",
+                "requestFingerprint": "f61cda365e601cb95748b4d2c8248081de476a5104dec2cb59a2f893a4b9e483",
+                "durableOnce": true,
+                "onceKey": "user-message\u0000qoder\u0000957a121d-fbaf-4f01-b2c8-e09eff8ef088\u0000qoder-l12-1",
+                "statusMessage": "Ожидает окончания ответа"
+              }
+            }
+          },
+          "job": {
+            "status": 200,
+            "body": {
+              "job": {
+                "id": "job_7561e5d8cae83114ab48c0851f1790346f720f7ee5632aa4974a99b15db91d7a",
+                "kind": "Доставка сообщения",
+                "state": "completed",
+                "createdAt": "2026-11-06T14:07:39.889Z",
+                "updatedAt": "2026-11-06T14:07:48.543Z",
+                "ownerSessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+                "resultRef": "herder://jobs/job_7561e5d8cae83114ab48c0851f1790346f720f7ee5632aa4974a99b15db91d7a",
+                "requestFingerprint": "f61cda365e601cb95748b4d2c8248081de476a5104dec2cb59a2f893a4b9e483",
+                "durableOnce": true,
+                "onceKey": "user-message\u0000qoder\u0000957a121d-fbaf-4f01-b2c8-e09eff8ef088\u0000qoder-l12-1",
+                "progress": 1,
+                "result": {
+                  "ok": true,
+                  "inputId": "qoder-l12-1"
+                }
+              }
+            }
+          },
+          "observed": true,
+          "answer": true
+        }
+      ],
+      "pages": [
+        {
+          "count": 4,
+          "complete": true,
+          "page_evidence": [
+            {
+              "cursor": null,
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6IjUwOTg3ZDFlLWE5M2ItNDBkYS1iNmQ2LTkzZGZjN2IyYTFhMSIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 0,
+                  "eventId": "5cccb1b4-6337-4e4e-bdf5-9976b56efa86",
+                  "nativeEventId": "5cccb1b4-6337-4e4e-bdf5-9976b56efa86",
+                  "kind": "message",
+                  "author": {
+                    "kind": "unknown",
+                    "sourceRole": "user"
+                  },
+                  "timestamp": "2026-11-06T14:07:20.877Z",
+                  "text": "Session initialized from Agent Herder. Wait for the user's task.",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Session initialized from Agent Herder. Wait for the user's task."
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6IjUwOTg3ZDFlLWE5M2ItNDBkYS1iNmQ2LTkzZGZjN2IyYTFhMSIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6IjhlMTc3OGQ2LWU4OGItNDI1NS1iMDM4LWI5Y2UzYjJkOGYzOSIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 1,
+                  "eventId": "e5318373-359b-4a77-b4b0-a46df51c6426",
+                  "nativeEventId": "e5318373-359b-4a77-b4b0-a46df51c6426",
+                  "kind": "message",
+                  "author": {
+                    "kind": "assistant",
+                    "sourceRole": "assistant"
+                  },
+                  "timestamp": "2026-11-06T14:07:21.113Z",
+                  "text": "FIXTURE_OK",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "FIXTURE_OK",
+                        "citations": null
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6IjhlMTc3OGQ2LWU4OGItNDI1NS1iMDM4LWI5Y2UzYjJkOGYzOSIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6ImZlZjZjMWZkLTFkYjItNDIxZC1iYzQ2LTVlOTAxNWUyNmQwYiIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 2,
+                  "eventId": "0dbeb43e-221e-49e9-a8b7-3e2baa8c1a3c",
+                  "nativeEventId": "0dbeb43e-221e-49e9-a8b7-3e2baa8c1a3c",
+                  "kind": "message",
+                  "author": {
+                    "kind": "unknown",
+                    "sourceRole": "user"
+                  },
+                  "timestamp": "2026-11-06T14:07:39.114Z",
+                  "text": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_0",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_0"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjkwNzBlMmIzLTZiZjMtNGZhOS1iNDg5LWZmMWJiOTk1Y2E2NlwiXSIsIm5hdGl2ZUN1cnNvciI6ImZlZjZjMWZkLTFkYjItNDIxZC1iYzQ2LTVlOTAxNWUyNmQwYiIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+              "nextCursor": null,
+              "complete": true,
+              "events": [
+                {
+                  "sequence": 3,
+                  "eventId": "c874e864-7d68-4ddb-8f80-97fec18cdcaa",
+                  "nativeEventId": "c874e864-7d68-4ddb-8f80-97fec18cdcaa",
+                  "kind": "message",
+                  "author": {
+                    "kind": "assistant",
+                    "sourceRole": "assistant"
+                  },
+                  "timestamp": "2026-11-06T14:07:39.247Z",
+                  "text": "FIXTURE_OK",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "FIXTURE_OK",
+                        "citations": null
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "containsMessage": true,
+          "containsBootstrap": true,
+          "answerAfterMessage": true,
+          "containsAnswer": true
+        },
+        {
+          "count": 4,
+          "complete": true,
+          "page_evidence": [
+            {
+              "cursor": null,
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6IjNiZWY5Y2Q5LTM1NmUtNDQ1NS1hMjE2LWQ5NGM1MDI0YzQyYyIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 0,
+                  "eventId": "9e09a919-b5dd-427b-ab8b-30260b8cae06",
+                  "nativeEventId": "9e09a919-b5dd-427b-ab8b-30260b8cae06",
+                  "kind": "message",
+                  "author": {
+                    "kind": "unknown",
+                    "sourceRole": "user"
+                  },
+                  "timestamp": "2026-11-06T14:07:29.530Z",
+                  "text": "Session initialized from Agent Herder. Wait for the user's task.",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Session initialized from Agent Herder. Wait for the user's task."
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6IjNiZWY5Y2Q5LTM1NmUtNDQ1NS1hMjE2LWQ5NGM1MDI0YzQyYyIsIm5leHRTZXF1ZW5jZSI6MSwidG90YWxFdmVudHMiOjR9",
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6ImRmOTk5YjQzLTk3OTAtNGE0MC1hY2NiLTk3MTdjMzRlODUyOSIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 1,
+                  "eventId": "ce74fff5-80cc-4e51-b20e-539b6b04a458",
+                  "nativeEventId": "ce74fff5-80cc-4e51-b20e-539b6b04a458",
+                  "kind": "message",
+                  "author": {
+                    "kind": "assistant",
+                    "sourceRole": "assistant"
+                  },
+                  "timestamp": "2026-11-06T14:07:29.755Z",
+                  "text": "FIXTURE_OK",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "FIXTURE_OK",
+                        "citations": null
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6ImRmOTk5YjQzLTk3OTAtNGE0MC1hY2NiLTk3MTdjMzRlODUyOSIsIm5leHRTZXF1ZW5jZSI6MiwidG90YWxFdmVudHMiOjR9",
+              "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6ImRjYjY5ZThiLTBmMjEtNGY4Ni05ODdhLWI5NzVjMWRlMGVmNyIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+              "complete": false,
+              "events": [
+                {
+                  "sequence": 2,
+                  "eventId": "13900559-a552-40dc-a27e-fbe602e23ab3",
+                  "nativeEventId": "13900559-a552-40dc-a27e-fbe602e23ab3",
+                  "kind": "message",
+                  "author": {
+                    "kind": "unknown",
+                    "sourceRole": "user"
+                  },
+                  "timestamp": "2026-11-06T14:07:48.057Z",
+                  "text": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_1",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_1"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "cursor": "eyJ2ZXJzaW9uIjoxLCJzY29wZSI6IltcImI4YTNmNjg0ZWVhMFwiLFwicW9kZXJcIixcIjk1N2ExMjFkLWZiYWYtNGYwMS1iMmM4LWUwOWVmZjhlZjA4OFwiXSIsIm5hdGl2ZUN1cnNvciI6ImRjYjY5ZThiLTBmMjEtNGY4Ni05ODdhLWI5NzVjMWRlMGVmNyIsIm5leHRTZXF1ZW5jZSI6MywidG90YWxFdmVudHMiOjR9",
+              "nextCursor": null,
+              "complete": true,
+              "events": [
+                {
+                  "sequence": 3,
+                  "eventId": "c7db5826-5965-45e6-88ce-9fa82d3c38e9",
+                  "nativeEventId": "c7db5826-5965-45e6-88ce-9fa82d3c38e9",
+                  "kind": "message",
+                  "author": {
+                    "kind": "assistant",
+                    "sourceRole": "assistant"
+                  },
+                  "timestamp": "2026-11-06T14:07:48.185Z",
+                  "text": "FIXTURE_OK",
+                  "payload": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "FIXTURE_OK",
+                        "citations": null
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "containsMessage": true,
+          "containsBootstrap": true,
+          "answerAfterMessage": true,
+          "containsAnswer": true
+        }
+      ],
+      "search_source_status": [
+        {
+          "harness": "qoder",
+          "source": "/fixture/home/.qoder/projects",
+          "state": "complete",
+          "sessions": 2,
+          "catalogSessions": 2,
+          "textSessions": 0,
+          "missingContent": 0,
+          "chunks": 0
+        }
+      ],
+      "search_query": [
+        {
+          "query": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_0",
+          "isError": false,
+          "expected": "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+          "matched": [
+            {
+              "hostId": "qoder-l12",
+              "harness": "qoder",
+              "nativeSessionId": "9070e2b3-6bf3-4fa9-b489-ff1bb995ca66",
+              "title": "Session initialized from Agent Herder. Wait for the user's task.",
+              "cwd": "/fixture/project",
+              "revision": "66307:27693422:12616:1793974059348.927:1793974059348.927:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+              "chunkId": "0dbeb43e-221e-49e9-a8b7-3e2baa8c1a3c",
+              "snippet": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_0",
+              "rank": -1.7968224420780214,
+              "shortId": "qd764"
+            }
+          ]
+        },
+        {
+          "query": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_1",
+          "isError": false,
+          "expected": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+          "matched": [
+            {
+              "hostId": "qoder-l12",
+              "harness": "qoder",
+              "nativeSessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+              "title": "Session initialized from Agent Herder. Wait for the user's task.",
+              "cwd": "/fixture/project",
+              "revision": "66307:27698152:12616:1793974068287.186:1793974068287.186:Session initialized from Agent Herder. Wait for the user's task.:/fixture/project",
+              "chunkId": "13900559-a552-40dc-a27e-fbe602e23ab3",
+              "snippet": "QODER_L12_4c9ba2da2df7419893e7853d468376fd_SEND_1",
+              "rank": -1.7968224420780214,
+              "shortId": "qa0c8"
+            }
+          ]
+        }
+      ],
+      "active": {
+        "send": {
+          "status": 202,
+          "body": {
+            "ok": true,
+            "inputId": "qoder-l12-active",
+            "pending": true,
+            "delivery": "deferred",
+            "job": {
+              "id": "job_4ece398987b982f1c5c57e31123c8246e3276348666d826e795dc8cbe543c700",
+              "kind": "Доставка сообщения",
+              "state": "waiting",
+              "createdAt": "2026-11-06T14:07:49.574Z",
+              "updatedAt": "2026-11-06T14:07:49.575Z",
+              "ownerSessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+              "resultRef": "herder://jobs/job_4ece398987b982f1c5c57e31123c8246e3276348666d826e795dc8cbe543c700",
+              "requestFingerprint": "005388dad05fbac9c4e981ccac90324c87baeadcf1a0c36abe981e215b8f6b23",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u0000957a121d-fbaf-4f01-b2c8-e09eff8ef088\u0000qoder-l12-active",
+              "statusMessage": "Ожидает окончания ответа"
+            }
+          }
+        },
+        "model_request_held": true,
+        "matched": [
+          {
+            "id": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+            "harness": "qoder",
+            "title": "Session initialized from Agent Herder. Wait for the user's task.",
+            "runtimeHostId": "b8a3f684eea0",
+            "status": "running",
+            "activity": {
+              "state": "active",
+              "observedAt": "2026-11-06T14:07:55.090Z",
+              "evidence": "native-adapter-status",
+              "expiresAt": "2026-11-06T14:08:25.090Z"
+            },
+            "workspaces": []
+          }
+        ],
+        "job": {
+          "status": 200,
+          "body": {
+            "job": {
+              "id": "job_4ece398987b982f1c5c57e31123c8246e3276348666d826e795dc8cbe543c700",
+              "kind": "Доставка сообщения",
+              "state": "completed",
+              "createdAt": "2026-11-06T14:07:49.574Z",
+              "updatedAt": "2026-11-06T14:07:58.318Z",
+              "ownerSessionId": "957a121d-fbaf-4f01-b2c8-e09eff8ef088",
+              "resultRef": "herder://jobs/job_4ece398987b982f1c5c57e31123c8246e3276348666d826e795dc8cbe543c700",
+              "requestFingerprint": "005388dad05fbac9c4e981ccac90324c87baeadcf1a0c36abe981e215b8f6b23",
+              "durableOnce": true,
+              "onceKey": "user-message\u0000qoder\u0000957a121d-fbaf-4f01-b2c8-e09eff8ef088\u0000qoder-l12-active",
+              "progress": 1,
+              "result": {
+                "ok": true,
+                "inputId": "qoder-l12-active"
+              }
+            }
+          }
+        }
+      },
+      "model_request_count": 5
+    },
+    "qoder_version": "1.1.84",
+    "bundle_sha256": "4269479aa05c991fb8bd365bc0e0238bf39faf501036d60e57e6e7e2260bc163",
+    "candidate_sha256": "d8fbca2293385469d4e77fb3bce4447301b383921039bc70b66e71933c079991",
+    "candidate_sha256_after": "d8fbca2293385469d4e77fb3bce4447301b383921039bc70b66e71933c079991",
+    "network": "docker --network none; fixture hosts mapped to 127.0.0.1",
+    "container_exit": 0,
+    "model_request_count": 5,
+    "requests": [
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v2/config/getDataPolicy"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "POST",
+        "host": "localhost",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "method": "POST",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/service/business/finish"
+      },
+      {
+        "method": "POST",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v1/tracking"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "POST",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/resolve"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "POST",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/resolve"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v2/config/getDataPolicy"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "POST",
+        "host": "localhost",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "method": "POST",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/service/business/finish"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "POST",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v1/tracking"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v2/config/getDataPolicy"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "POST",
+        "host": "localhost",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "method": "POST",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/service/business/finish"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "POST",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v1/tracking"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v2/config/getDataPolicy"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "POST",
+        "host": "localhost",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "method": "POST",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/service/business/finish"
+      },
+      {
+        "method": "POST",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v1/tracking"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_hold"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v3/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/userinfo"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/model/list"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v2/config/getDataPolicy"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v5/service/region/endpoints"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v3/user/status"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "POST",
+        "host": "localhost",
+        "path": "/v1/chat/completions"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_release"
+      },
+      {
+        "method": "GET",
+        "host": "openapi.qoder.sh",
+        "path": "/api/v1/qcs/config/stream"
+      },
+      {
+        "method": "POST",
+        "host": "api2.qoder.sh",
+        "path": "/algo/api/v2/service/business/finish"
+      },
+      {
+        "method": "POST",
+        "host": "center.qoder.sh",
+        "path": "/algo/api/v1/tracking"
+      },
+      {
+        "method": "GET",
+        "host": "localhost",
+        "path": "/_stats"
+      }
+    ],
+    "status": "PASS",
+    "validation_errors": []
+  }
+}

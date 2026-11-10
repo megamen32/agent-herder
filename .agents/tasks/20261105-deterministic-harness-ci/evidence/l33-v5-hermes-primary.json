@@ -1,0 +1,12 @@
+{
+  "version": "Hermes Agent v0.21.7 (2026.9.24) · upstream 71d34bad\nInstall directory: /home/roomhacker/.hermes/hermes-agent\nInstall method: git\nPython: 3.11.15\nOpenAI SDK: 2.24.0",
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "(node:3684881) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nfile:///fixture/candidate/dist/mesh/fleet-direct-transport.js:279\n            throw new Error('direct_peer_limit');\n                  ^\n\nError: direct_peer_limit\n    at new FleetDirectTransport (file:///fixture/candidate/dist/mesh/fleet-direct-transport.js:279:19)\n    at startActiveFleetInventoryOwner (file:///fixture/candidate/dist/active-session-fleet.js:40:113)\n    at createWebServer (file:///fixture/candidate/dist/web/server.js:727:71)\n    at file:///fixture/native-hermes-http.mjs:29:12\n\nNode.js v22.23.1\n",
+  "fixture": {
+    "requests": 0,
+    "paths": {}
+  },
+  "herder_adapter_sha256": "a5ad78081fe400c6ea9f42f5eca5db7fd7d41c9cb63c93b452a48af3d544fd13",
+  "isolation": "private network namespace, restricted filesystem, empty HOME"
+}

@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T11:24:51+00:00",
+  "details": "Focused V017B test build failed at crates/herder/src/mcp/resources.rs:428: rmcp 3.9.0 ListResourcesResult has no with_cursor method. Exact compiler error: E0599 no method named with_cursor found for struct rmcp::model::ListResourcesResult. This is an SDK API mismatch in the new source; use the pinned model's public next_cursor field, then rerun the same focused suite.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T11:24:51+00:00",
+      "changes": {
+        "details": "Focused V017B test build failed at crates/herder/src/mcp/resources.rs:428: rmcp 3.9.0 ListResourcesResult has no with_cursor method. Exact compiler error: E0599 no method named with_cursor found for struct rmcp::model::ListResourcesResult. This is an SDK API mismatch in the new source; use the pinned model's public next_cursor field, then rerun the same focused suite.",
+        "source": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests",
+        "status": "open",
+        "title": "V017B targeted tests do not compile with rmcp ListResourcesResult cursor builder"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex",
+      "at": "2026-11-07T11:36:21+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/v017b-rmcp-cursor-builder-green.txt",
+            "red_proof_path": "evidence/v017b-rmcp-cursor-builder-red.txt",
+            "red_result": "error[E0599]: no method named `with_cursor` found for struct `rmcp::model::ListResourcesResult` in the current scope",
+            "red_sha256": "338669336d04f84c2b8d416c297847f70d1f9feefe836680af134a0d4e379314",
+            "result": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out",
+            "sha256": "44a6b58e56250709a7bd31741426cc9e1b8dfda4e086656eed722a412283b2bb",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B0257fc6615ad4704aa4a",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/v017b-rmcp-cursor-builder-green.txt",
+      "red_proof_path": "evidence/v017b-rmcp-cursor-builder-red.txt",
+      "red_result": "error[E0599]: no method named `with_cursor` found for struct `rmcp::model::ListResourcesResult` in the current scope",
+      "red_sha256": "338669336d04f84c2b8d416c297847f70d1f9feefe836680af134a0d4e379314",
+      "result": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out",
+      "sha256": "44a6b58e56250709a7bd31741426cc9e1b8dfda4e086656eed722a412283b2bb",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "cargo test --offline --manifest-path crates/herder/Cargo.toml --lib mcp::resources::tests",
+  "status": "fixed",
+  "title": "V017B targeted tests do not compile with rmcp ListResourcesResult cursor builder",
+  "updated_at": "2026-11-07T11:36:21+00:00"
+}

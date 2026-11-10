@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T20:08:48+00:00",
+  "details": "В общем candidate v12 self-peer исправил direct_peer_limit, однако настоящий entrypoint MCP поиск вернул direct_native_listener_unavailable и partial=true. Найти первичную причину и повторить исходный сценарий после TDD.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T20:08:48+00:00",
+      "changes": {
+        "details": "В общем candidate v12 self-peer исправил direct_peer_limit, однако настоящий entrypoint MCP поиск вернул direct_native_listener_unavailable и partial=true. Найти первичную причину и повторить исходный сценарий после TDD.",
+        "source": "L43 unified candidate v12",
+        "status": "open",
+        "title": "CI entrypoint: MCP поиск partial из-за direct_native_listener_unavailable"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:16:46+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l43-entrypoint-port-green-verified.log",
+            "red_proof_path": "evidence/l43-entrypoint-port-red.log",
+            "red_result": "FAILED",
+            "red_sha256": "f677ddf69f6c4c67788829aa6613a981bcc68cd08db7fba7be5b3f27df180aef",
+            "result": "PASS",
+            "sha256": "6d91187c55501edc5586aec457750bce79c3991feb57e3f9d4b0593dd5e7a8ac",
+            "test_command": "python3 tests/native-hermes-entrypoint-peers.test.py"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B3ba50326cb13441fad3a",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l43-entrypoint-port-green-verified.log",
+      "red_proof_path": "evidence/l43-entrypoint-port-red.log",
+      "red_result": "FAILED",
+      "red_sha256": "f677ddf69f6c4c67788829aa6613a981bcc68cd08db7fba7be5b3f27df180aef",
+      "result": "PASS",
+      "sha256": "6d91187c55501edc5586aec457750bce79c3991feb57e3f9d4b0593dd5e7a8ac",
+      "test_command": "python3 tests/native-hermes-entrypoint-peers.test.py"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L43 unified candidate v12",
+  "status": "fixed",
+  "title": "CI entrypoint: MCP поиск partial из-за direct_native_listener_unavailable",
+  "updated_at": "2026-11-06T20:16:46+00:00"
+}

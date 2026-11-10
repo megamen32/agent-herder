@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running tests/handshakes.rs (crates/herder-compat/target/debug/deps/handshakes-1680f4368c2743bf)
+
+running 1 test
+test real_native_stdio_endpoint_is_forwarded_without_legacy_downgrade ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.03s
+

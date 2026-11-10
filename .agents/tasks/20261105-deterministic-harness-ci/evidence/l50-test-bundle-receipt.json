@@ -1,0 +1,28 @@
+{
+  "scope": "isolated dirty integration snapshot; test artifact only",
+  "source_snapshot_sha256": "8606f2af7cddb69037bfa34db166e21277d53b7c2b99cd8a8a5526f84f455297",
+  "base_commit": "ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "sourceTreeDirty": true,
+  "source_dirty": true,
+  "bundle_path": "/tmp/herder-l44-snapshot-YI1mw1Td/catalog/releases/ee7cd1f562d534b61f1bac73f8d85d42b5806796",
+  "bundle_fingerprint": "925c58314804db10a10c6d6533a6cd081880244b0024f01dc1cb0bc52727a751",
+  "manifest_sha256": "d2576d1270f2ebbb8a4a488a63fde41f7f78dbd3013998e335cbcb366f83af06",
+  "inventory_sha256": "e39e30a07043ae465c2fe8948d2f17a96d24628db6d59f18cc9c05917905ac72",
+  "inventory_entries": 12117,
+  "resume_resolve": "dist/index.js",
+  "resume_cli_contract_sha256": "eceda1251c15644f31095cf5c9dc488a147054bb6eddc446558cc3eef8ca585f",
+  "resume_cli_exit": 0,
+  "node": "/usr/local/bin/node v22.22.2",
+  "fenced_test_producer": {
+    "result": "INCOMPLETE",
+    "refusal": "candidate manifest mismatch",
+    "ci_callback_executed": false,
+    "real_release_gate_class": true,
+    "test_lease_only": true
+  },
+  "limitations": [
+    "dirty snapshot is not a canonical clean release",
+    "no installed-unit consumer or complete CI proof",
+    "inventory does not attest already loaded modules or external resolution closure"
+  ]
+}

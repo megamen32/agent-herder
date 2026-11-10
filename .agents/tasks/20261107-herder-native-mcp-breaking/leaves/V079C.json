@@ -1,0 +1,78 @@
+{
+  "id": "V079C",
+  "label": "Общий direct CDP WebSocket transport",
+  "description": "Реализовать и изолированно проверить общий прямой CDP WebSocket transport в adapters/cdp.rs: exact target/context binding, request correlation, bounded timeout, unknown outcome без retry. Центральные Cargo.toml/lib.rs добавляет Тера.",
+  "affected_files": [
+    "crates/herder/src/adapters/cdp.rs"
+  ],
+  "depends_on": [],
+  "acceptance": "Isolated Cargo harness компилирует модуль и подтверждает handshake Origin, точные target/context identity, command correlation сквозь events, wrong-context rejection и OutcomeUnknown после timeout/disconnect.",
+  "status": "done",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "estimate": "15m",
+  "created_at": "2026-11-07T06:00:25+03:00",
+  "updated_at": "2026-11-07T07:56:45+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T06:00:25+03:00",
+      "note": "",
+      "changes": {
+        "id": "V079C",
+        "label": "ChatGPT: Добавить Rust CDP transport и provider operations",
+        "description": "Реализовать ChatGPT operations поверх прямого WebSocket CDP и явной node/instance/browserContext/target identity; зависимость workspace WebSocket и модульная регистрация требуют владельца crates/herder/Cargo.toml и lib.rs.",
+        "affected_files": [
+          "crates/herder/src/adapters/chatgpt/"
+        ],
+        "depends_on": [],
+        "acceptance": "Компилируемый provider operation через direct CDP; identity validated; bounded transport errors/no retry; provider-specific read semantics.",
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "estimate": "15m"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T07:03:40+03:00",
+      "note": "Implement shared direct CDP transport and ChatGPT operations in owned adapters paths; central Cargo/lib changes owned by Tera.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:14:08+03:00",
+      "note": "Сужен до общего transport; ChatGPT native attach/read вынесен в V079D.",
+      "changes": {
+        "label": "Общий direct CDP WebSocket transport",
+        "description": "Реализовать и изолированно проверить общий прямой CDP WebSocket transport в adapters/cdp.rs: exact target/context binding, request correlation, bounded timeout, unknown outcome без retry. Центральные Cargo.toml/lib.rs добавляет Тера.",
+        "acceptance": "Isolated Cargo harness компилирует модуль и подтверждает handshake Origin, точные target/context identity, command correlation сквозь events, wrong-context rejection и OutcomeUnknown после timeout/disconnect.",
+        "affected_files": [
+          "crates/herder/src/adapters/cdp.rs"
+        ]
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T07:56:45+03:00",
+      "note": "Harness remote Origin assertions и вызовы adapters синхронизированы с API; isolated harness зелёный: 11/11. Сессия tunnel закрыта.",
+      "changes": {
+        "status": "done",
+        "result": "Общий direct CDP transport готов в crates/herder/src/adapters/cdp.rs: browser-level websocket, origin port override, exact target/context binding, flattened sessions, command correlation/deadline и OutcomeUnknown без replay. Исправлен временный .tmp/cdp-harness для remote Origin; cargo test --manifest-path .tmp/cdp-harness/Cargo.toml: 11 passed (4 DTO, 7 transport); cargo test --manifest-path crates/herder/Cargo.toml adapters::cdp --lib: crate compiled, 0 filtered matches; git diff --check passed. Live provider attach/send/read не проверялись здесь, это V079D. Собственный SSH tunnel закрыт."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "Общий direct CDP transport готов в crates/herder/src/adapters/cdp.rs: browser-level websocket, origin port override, exact target/context binding, flattened sessions, command correlation/deadline и OutcomeUnknown без replay. Исправлен временный .tmp/cdp-harness для remote Origin; cargo test --manifest-path .tmp/cdp-harness/Cargo.toml: 11 passed (4 DTO, 7 transport); cargo test --manifest-path crates/herder/Cargo.toml adapters::cdp --lib: crate compiled, 0 filtered matches; git diff --check passed. Live provider attach/send/read не проверялись здесь, это V079D. Собственный SSH tunnel закрыт."
+}

@@ -1,0 +1,80 @@
+{
+  "id": "V079D",
+  "label": "ChatGPT: Проверить Rust attach/read через direct CDP",
+  "description": "Подключить ChatGptReader к новому task-owned ChatGPT target в явных instance/context/target, подтвердить hashed account scope, прочитать безопасный provider response и нормализовать выбранный conversation. Не отправлять в старый CI chat.",
+  "acceptance": "Реальный Rust consumer выполняет direct CDP attach и ChatGPT read на exact identity; scope/conversation mismatch fail-closed. Для V079B input correlation остаётся отдельным критерием и решается на собственном новом target.",
+  "affected_files": [
+    "crates/herder/src/adapters/chatgpt/"
+  ],
+  "status": "blocked",
+  "kind": "task",
+  "estimate_minutes": 15,
+  "estimate": "15m",
+  "depends_on": [
+    "V079C"
+  ],
+  "created_at": "2026-11-07T07:14:11+03:00",
+  "updated_at": "2026-11-07T08:37:53+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T07:14:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "V079D",
+        "label": "ChatGPT: Проверить Rust attach/read через direct CDP",
+        "description": "Подключить ChatGptReader к новому task-owned ChatGPT target в явных instance/context/target, подтвердить hashed account scope, прочитать безопасный provider response и нормализовать выбранный conversation. Не отправлять в старый CI chat.",
+        "acceptance": "Реальный Rust consumer выполняет direct CDP attach и ChatGPT read на exact identity; scope/conversation mismatch fail-closed. Для V079B input correlation остаётся отдельным критерием и решается на собственном новом target.",
+        "affected_files": [
+          "crates/herder/src/adapters/chatgpt/"
+        ],
+        "status": "queued",
+        "kind": "task",
+        "estimate_minutes": 15,
+        "estimate": "15m",
+        "depends_on": [
+          "V079C"
+        ]
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T08:20:45+03:00",
+      "note": "Scoped source commit 8beedf96 готов. Сначала докажу live Rust direct CDP attach в явный provider target при соблюдении ChatGPT HumanStop; затем продолжу Z.ai provider lane.",
+      "changes": {
+        "status": "running",
+        "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T08:37:53+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Нет делегированного изолированного ChatGPT test profile; доступный Chrome относится к обычному профилю владельца.",
+        "blocker_details": {
+          "previous": "ChatGPT live acceptance не исследовалась.",
+          "current": "Не запускал ChatGPT page, API read или prompt. Infra inventory описывает Mac mini Chrome 9222 как normal user profile; TEST_ACCESS разрешает fixture без provider turn. По указанию пользователя ChatGPT stops не обходить.",
+          "next": "Возобновлять V079D только при наличии разрешённого изолированного ChatGPT profile/target и точной тестовой conversation identity; не использовать личный профиль."
+        },
+        "note": "V079D live ChatGPT attach/read не выполнен ради сохранения ChatGPT stop и пользовательского профиля. Scoped source implementation in commit 8beedf96573cc6f32c3837130b748bdb34c03d0f; общий post-navigation fix in c22780f1315c4e75556d271964cf02007687ed13. V088C завершён на собственном Z.ai target."
+      },
+      "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "blocker": "Нет делегированного изолированного ChatGPT test profile; доступный Chrome относится к обычному профилю владельца.",
+  "blocker_details": {
+    "previous": "ChatGPT live acceptance не исследовалась.",
+    "current": "Не запускал ChatGPT page, API read или prompt. Infra inventory описывает Mac mini Chrome 9222 как normal user profile; TEST_ACCESS разрешает fixture без provider turn. По указанию пользователя ChatGPT stops не обходить.",
+    "next": "Возобновлять V079D только при наличии разрешённого изолированного ChatGPT profile/target и точной тестовой conversation identity; не использовать личный профиль."
+  },
+  "note": "V079D live ChatGPT attach/read не выполнен ради сохранения ChatGPT stop и пользовательского профиля. Scoped source implementation in commit 8beedf96573cc6f32c3837130b748bdb34c03d0f; общий post-navigation fix in c22780f1315c4e75556d271964cf02007687ed13. V088C завершён на собственном Z.ai target."
+}

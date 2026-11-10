@@ -1,0 +1,70 @@
+{
+  "id": "L34",
+  "label": "Linux: перенести runtime и проверить интеграцию",
+  "description": "Runtime и адресный маршрут перенесены и протестированы; trusted collector и точный release продолжаются L42.",
+  "acceptance": "Перенесённый runtime собирается и проходит адресные тесты, границы доказательства описаны.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Rawls",
+  "parallel_with": [
+    "L30",
+    "L32",
+    "L33"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T19:25:44+03:00",
+  "updated_at": "2026-11-06T20:18:19+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T19:25:44+03:00",
+      "note": "",
+      "changes": {
+        "id": "L34",
+        "label": "Linux: повторить collector с точным релизным bundle",
+        "description": "Завершить перенос CI runtime, собрать канонический bundle и повторить consumer-сценарий установленного процесса с достоверными manifest и PID evidence.",
+        "acceptance": "Проверены неизменяемый bundle, точный PID, реальный API, две сессии, поиск, проекты, полный transcript и вызовы fixture; недостаток доказательств явно приводит к отказу.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Rawls",
+        "parallel_with": [
+          "L30",
+          "L32",
+          "L33"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:29:23+03:00",
+      "note": "Перенесены CI runtime/peer и тесты в integration; адресные hunks index/server/supervisor/named-session/codex/goal API. TS2554 RED→GREEN, bug B685fb1ccb3dd4c2e84c1 fixed, npm run build exit 0 на временном snapshot и 12 TS files/25 tests GREEN. L30 расхождения evidence/l34-l30-contract-comparison.md, Laplace deferred; trusted expected PID/CI digest и полный envelope отсутствуют. L33 ещё не зафиксировал candidate SHA, реальный exact-bundle повтор ожидает его.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:31:20+03:00",
+      "note": "Перечень 40 интегрированных файлов и SHA evidence/l34-integration-file-sha256.json: база ee7cd1f562d534b61f1bac73f8d85d42b5806796, snapshot для npm run build exit 0 совпал по всем 40 SHA. Расширенный native CI test set 15 файлов/29 тестов GREEN, Python collector 22 теста и held-active test GREEN. Tesla получил deferred SHA inventory; Laplace deferred контракты L30. Независимый ожидаемый generation и доверенный candidate CI digest не реализованы; точный L33 candidate ещё не зафиксирован.",
+      "changes": {},
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T20:18:19+03:00",
+      "note": "",
+      "changes": {
+        "label": "Linux: перенести runtime и проверить интеграцию",
+        "description": "Runtime и адресный маршрут перенесены и протестированы; trusted collector и точный release продолжаются L42.",
+        "acceptance": "Перенесённый runtime собирается и проходит адресные тесты, границы доказательства описаны.",
+        "status": "done",
+        "result": "Runtime/peer и 40 файлов интегрированы, полный build GREEN и 29 TS + 22 Python теста; evidence/l34-integration-file-sha256.json. Точный release, доверенный PID/digest и полный collector envelope не подтверждены; L42."
+      },
+      "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b0f7-bce6-7663-85e9-6f1dda294d10",
+  "harness": "codex",
+  "result": "Runtime/peer и 40 файлов интегрированы, полный build GREEN и 29 TS + 22 Python теста; evidence/l34-integration-file-sha256.json. Точный release, доверенный PID/digest и полный collector envelope не подтверждены; L42."
+}

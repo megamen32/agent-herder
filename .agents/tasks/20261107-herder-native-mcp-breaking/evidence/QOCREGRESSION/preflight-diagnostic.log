@@ -1,0 +1,20 @@
+ISOLATED_RETAINED_ROOT /home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocregression-debug/retained-run-root
+Traceback (most recent call last):
+  File "<string>", line 17, in diagnostic_probe
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 24, in <module>
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/tests/native/ahap_opencode_stand.py", line 584, in run_case
+    runner_protocol = probe_runner_protocol(args.node, args.runner, env)
+  File "<string>", line 18, in diagnostic_probe
+RuntimeError: diagnostic runner stdout='' stderr="file:///home/roomhacker/herder-artifacts/releases/ahap-qocjoin-1d89d04d/fixture/runner.mjs:49\n\t\tconst state = row?.status ?? row?.type;\n\t\t                  ^\n\nSyntaxError: Unexpected token '.'\n    at Loader.moduleStrategy (internal/modules/esm/translators.js:133:18)\n    at async link (internal/modules/esm/module_job.js:42:21)\n" exit=1
+ISOLATED_FAILURE_RETAINED /home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocregression-debug/retained-run-root

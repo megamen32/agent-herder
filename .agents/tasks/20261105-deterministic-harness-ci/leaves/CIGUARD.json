@@ -1,0 +1,141 @@
+{
+  "id": "CIGUARD",
+  "label": "CI: обязательный candidate preflight rollout",
+  "parent": "CISHIP",
+  "kind": "task",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "CI lead",
+  "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "description": "По прямому уточнению владельца прекратить цикл micro-final→hook. Довести существующий owned WIP rollout-candidate.py + test_native_rollout_preflight.py до одного опубликованного CLI candidate preflight. Существующий runner выполняется под release lease до изменения; проверить controller и owner, штатный authority-stdio и rollback сохраняются. Без нового CI framework, общих миграций и live browser/Codex sends.",
+  "acceptance": "Один опубликованный scoped commit двух файлов и доказательства: фактический runner вызывается; его отказ/неправильный архив/истёкший lease не допускают мутации; штатный положительный controller/owner маршрут и rollback сохраняются; применимые existing tests GREEN. Candidate3-lane stage явно отделён от installed/five-adapter acceptance. После publication отметить только CIGUARD done; внешние blockers сохранить и передать Astra, не fake done полного CI.",
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-07T19:14:19+03:00",
+  "updated_at": "2026-11-07T19:48:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T19:14:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "CIGUARD",
+        "label": "CI: обязательный candidate preflight rollout",
+        "parent": "CISHIP",
+        "kind": "task",
+        "status": "running",
+        "estimate_minutes": 15,
+        "owner": "CI lead",
+        "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+        "description": "Защитить штатный rollout от обхода готового CLI candidate stage, не утверждая полноту установленного/five-adapter gate; сохранить rollback и release lease.",
+        "acceptance": "Отсутствующая, неполная, неправильная или чужая candidate receipt блокирует изменение; exact 3-lane receipt допускает только candidate preflight; installed release остаётся INCOMPLETE.",
+        "model": "gpt-6-luna"
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:16:43+03:00",
+      "note": "",
+      "changes": {
+        "status": "queued",
+        "note": "Текущий builder stage обязателен при штатной сборке, но прямой rollout может его обойти. Нужен candidate preflight под тем же release lease для controller и прямого owner node-side, без обхода rollback; installed/five-adapter остаются INCOMPLETE. Файлов rollout не менял."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:20:35+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Существующий CLI candidate receipt не является авторизованной квитанцией полного release gate; прямой rollout пока может обходить builder. Для полной приёмки необходимы работающий установленный маршрут и provenance под release lease, см. CIINSTALLED и CIGATEINSTALLED.",
+        "note": "Не подключать структурную проверку произвольного JSON как доверенный release gate; после route proof выполнить общую авторизованную проверку без подмены rollback и UNKNOWN."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:31:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Независимый CLI preflight в штатном fleet controller: исполнить уже готовый suite под release lease перед любым удалённым изменением, а не доверять JSON; прямой owner и полный installed/five-adapter gate останутся отдельно неготовыми."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:40:12+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "blocker": "Частичный локальный preflight защищает только fleet controller; owner и прямой node-side обходят его. Нельзя считать общий release gate обязательным до безопасного охвата этих путей под lease и сохранения rollback.",
+        "note": "Проверено 2026-11-07: origin/main 1d20b7f147a6a66e8daf924a32bbf73a8da6d2a8, rollout source совпадает с базой до локального diff; собственные незакоммиченные deploy/fleet/rollout-candidate.py и tests/test_native_rollout_preflight.py сохранены. Текущий fleet-only preflight не публиковать как закрытие gate: owner ветка и прямой node-side не охвачены; тест failed_candidate_runner может завершиться на проверке отсутствующих CLI до запуска runner. Следующий шаг: исправить тест с управляемыми CLI, обеспечить единую проверку всех штатных путей под release lease и отдельный безопасный rollback; доказать RED/GREEN и не принимать произвольный receipt."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:40:23+03:00",
+      "note": "",
+      "changes": {
+        "status": "queued",
+        "blocker": "",
+        "note": "Продолжить локальный WIP: fleet controller покрыт частично, owner и прямой node-side обходят preflight. origin/main 1d20b7f147a6a66e8daf924a32bbf73a8da6d2a8; deploy/fleet/rollout-candidate.py и tests/test_native_rollout_preflight.py сохранены незакоммиченными. Тест failed_candidate_runner может завершиться на проверке CLI до runner: исправить fixture, затем обеспечить все штатные пути под release lease с сохранением rollback, RED/GREEN и проверкой неизменяемой идентичности; произвольный JSON не считать доказательством."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:41:15+03:00",
+      "note": "",
+      "changes": {
+        "status": "running",
+        "note": "Проверка 2026-11-07: исправлен локальный fixture failed_candidate_runner: mock CLI и is_file, явный assert двух subprocess вызовов подтверждают реальный запуск runner; 3/3 tests/test_native_rollout_preflight.py GREEN. Незакоммиченный preflight охватывает только fleet controller; необходимо закрыть owner и direct node-side под lease без поломки rollback. QCODEXJOIN и QCHATCASE остаются waiting, не повторять create/send."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:43:02+03:00",
+      "note": "",
+      "changes": {
+        "note": "TDD RED evidence/ciguard-direct-fleet-red.txt: direct node-side fleet обходил preflight; локальный GREEN evidence/ciguard-direct-fleet-green.txt: прямой fleet отказан с указанием штатного controller, 4 теста. Это изменение пока не опубликовано: требуется оценить совместимость legacy node-side и закрыть owner путь с проверкой идентичности архива, не ломая rollback. Сохранены WIP и чужие файлы."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:46:35+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "0797c520 опубликован в origin/main: fleet controller и owner запускают имеющийся трёхсредовый candidate preflight под release lease до изменения; owner требует точное совпадение архива с проверенным bundle. Прямой fleet node-side без канала controller закрыт с указанием штатного пути; удалённый authority-stdio и rollback сохранены. TDD RED/GREEN evidence/ciguard-direct-fleet-{red,green}.txt и evidence/ciguard-owner-{red,green}.txt; 6 focused, 3 owner, 29 remote, 4 owner-area, 51 mini тестов прошли. Реальный isolated preflight candidate 62e19737 был выполнен до этого; установленный consumer и five-adapter release остаются INCOMPLETE и не доказываются этим коммитом.",
+        "note": "Следующий шаг: после QCODEXJOIN route proof CIGATEINSTALLED на существующей сессии; L101 ждёт точный browser scope/lease, L99 естественное событие. Не повторять create/send и не раскатывать fleet ради этой правки."
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T19:48:28+03:00",
+      "note": "Чёткая граница завершения текущего результата по просьбе владельца; чужой WIP сохраняется.",
+      "changes": {
+        "description": "По прямому уточнению владельца прекратить цикл micro-final→hook. Довести существующий owned WIP rollout-candidate.py + test_native_rollout_preflight.py до одного опубликованного CLI candidate preflight. Существующий runner выполняется под release lease до изменения; проверить controller и owner, штатный authority-stdio и rollback сохраняются. Без нового CI framework, общих миграций и live browser/Codex sends.",
+        "acceptance": "Один опубликованный scoped commit двух файлов и доказательства: фактический runner вызывается; его отказ/неправильный архив/истёкший lease не допускают мутации; штатный положительный controller/owner маршрут и rollback сохраняются; применимые existing tests GREEN. Candidate3-lane stage явно отделён от installed/five-adapter acceptance. После publication отметить только CIGUARD done; внешние blockers сохранить и передать Astra, не fake done полного CI.",
+        "note": "Владелец07.11 попросил Astra дать конкретный конечный результат. Ближайший остаток5–15мин: закончить текущую правку, scoped publication+receipt. Не выдавать final после каждого теста. Astra принимает внешние dependencies; не повторять исследования provider/CDP без новых данных.",
+        "affected_files": [
+          "deploy/fleet/rollout-candidate.py",
+          "tests/test_native_rollout_preflight.py"
+        ]
+      },
+      "session": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "harness": "unknown"
+    }
+  ],
+  "note": "Владелец07.11 попросил Astra дать конкретный конечный результат. Ближайший остаток5–15мин: закончить текущую правку, scoped publication+receipt. Не выдавать final после каждого теста. Astra принимает внешние dependencies; не повторять исследования provider/CDP без новых данных.",
+  "blocker": "",
+  "result": "0797c520 опубликован в origin/main: fleet controller и owner запускают имеющийся трёхсредовый candidate preflight под release lease до изменения; owner требует точное совпадение архива с проверенным bundle. Прямой fleet node-side без канала controller закрыт с указанием штатного пути; удалённый authority-stdio и rollback сохранены. TDD RED/GREEN evidence/ciguard-direct-fleet-{red,green}.txt и evidence/ciguard-owner-{red,green}.txt; 6 focused, 3 owner, 29 remote, 4 owner-area, 51 mini тестов прошли. Реальный isolated preflight candidate 62e19737 был выполнен до этого; установленный consumer и five-adapter release остаются INCOMPLETE и не доказываются этим коммитом.",
+  "affected_files": [
+    "deploy/fleet/rollout-candidate.py",
+    "tests/test_native_rollout_preflight.py"
+  ]
+}

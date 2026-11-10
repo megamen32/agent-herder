@@ -13,8 +13,8 @@
   ],
   "parent": "S01",
   "kind": "task",
-  "status": "queued",
-  "owner": "unassigned",
+  "status": "done",
+  "owner": "roomhacker",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
@@ -24,7 +24,7 @@
   "created_at": "2026-11-07T03:52:01+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:52:01+03:00",
+  "updated_at": "2026-11-07T13:25:05+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:52:01+03:00",
@@ -55,6 +55,47 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:06:17+03:00",
+      "note": "Готовый независимый участок после настроек: существующий writer/messages/intents, sender из verified binding; schema/lib у Terra.",
+      "changes": {
+        "status": "running",
+        "owner": "01a1b399-4210-7471-8286-93750dff10b7"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:07:21+03:00",
+      "note": "Начал V027A в чистом изолированном дереве с сохранёнными V033B commits; проверяю существующий Writer/schema перед созданием только correspondence source и fixtures.",
+      "changes": {
+        "owner": "roomhacker"
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:13:04+03:00",
+      "note": "V027A durable transaction and reopen proof complete; proceeding to V027B reply authorization using the persisted correspondence.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T10:13:03.678Z",
+        "result": "Commit f756793b adds store::correspondence::NewCorrespondence and Writer::record_correspondence (plus required store module registration). A single SQLite IMMEDIATE transaction writes the intent, task, and message; message content_json stores sender_ref only from VerifiedSelfBinding.session, recipient_ref, message_ref, intent_ref, and content. Real SQLite file was closed/reopened through Writer::open_file; assertions recovered sender=session-c, recipient=session-b, message_ref=message-c-b, intent=intent-c-b, while lineage.creator_ref remained session-a. Fake identity-boundary test confirmed request content cannot override sender. `cargo test --manifest-path crates/herder/Cargo.toml store::correspondence::tests --lib`: 2 passed; rustfmt and diff check passed. No schema/lib/Cargo changes."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T13:25:05+03:00",
+      "note": "Review follow-up 4179eb81 fixes regenerated-ID dedup, reuses existing prepare semantics, and returns stored refs; RED/GREEN and both targeted suites pass.",
+      "changes": {
+        "result": "V027A commits f756793b (durable correspondence) and follow-up 4179eb81 (dedup correction). record_correspondence now calls the shared prepare_intent_in_transaction helper, preserving Writer::prepare_intent key/payload semantics inside the same transaction. Same principal/recipient/request_key+payload with regenerated intent/task/message IDs returns Existing plus original refs; changed content or verified sender returns Conflict. RED reproduced the old Conflict for regenerated IDs; GREEN proves original refs returned and exactly one task/intent/message remains. Correspondence tests: 4 passed; existing intents tests: 4 passed; rustfmt and diff check passed. Earlier real SQLite close/reopen proof retained. No schema/lib/Cargo changes; module registration was the single-line hunk already sent to Terra. No external sends."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "finished_at": "2026-11-07T10:13:03.678Z",
+  "result": "V027A commits f756793b (durable correspondence) and follow-up 4179eb81 (dedup correction). record_correspondence now calls the shared prepare_intent_in_transaction helper, preserving Writer::prepare_intent key/payload semantics inside the same transaction. Same principal/recipient/request_key+payload with regenerated intent/task/message IDs returns Existing plus original refs; changed content or verified sender returns Conflict. RED reproduced the old Conflict for regenerated IDs; GREEN proves original refs returned and exactly one task/intent/message remains. Correspondence tests: 4 passed; existing intents tests: 4 passed; rustfmt and diff check passed. Earlier real SQLite close/reopen proof retained. No schema/lib/Cargo changes; module registration was the single-line hunk already sent to Terra. No external sends."
 }

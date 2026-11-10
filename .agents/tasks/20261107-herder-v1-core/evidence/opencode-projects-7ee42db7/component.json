@@ -1,0 +1,31 @@
+{
+  "source_commit": "7ee42db728ed50f731e80e61c2a7bb7ef1a7328c",
+  "includes_commit": "d64c76f984d8da5f6d8a0a5929eb782ac4be4e9f",
+  "build_command": "cargo build --manifest-path crates/herder/Cargo.toml --bin herder_native_stdio",
+  "core_path": "/home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder/.tmp/d12-projects-7ee42db7/herder_native_stdio",
+  "core_sha256": "71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569",
+  "build_profile": "dev (unoptimized + debuginfo)",
+  "components": {
+    "bootstrap": "c6d5f2bc6844948674e02901821c8c56390efb706202771446bc4a68d6fb2fd7",
+    "core": "71b357f8b710e0fe484d36c3f7c0a9124853940052aea4508a736d4c2b828569",
+    "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa",
+    "runner": "af867ab7464b4ff75aee3f57a0fa3ef5da5d7947cdd7e8a6822787a8ffd00d45"
+  },
+  "unchanged_dependency_manifest": "/home/roomhacker/herder-artifacts/releases/herder-v1-814759a9248d/manifest.json",
+  "unchanged_dependency_manifest_sha256": "83f5593155f11f7216dd6f36d81190025daef01fc73574fdda30b0e405977385",
+  "checks": {
+    "cargo_build": "PASS",
+    "lib_parallel": "181 PASS / 1 FAIL: adapters::codex::create::tests::timeout_is_unknown_and_thread_start_is_not_repeated; initialization Rpc(Timeout { request_id: 1 }) at create.rs:157 before thread/start",
+    "failed_test_individual": "1 PASS",
+    "lib_serial": "182 PASS / 0 FAIL",
+    "owner_reads_inline_previous_turn": "16 PASS",
+    "public_projects": "PASS_AUTHORIZED_ATTRIBUTION_PARTIAL_INVENTORY"
+  },
+  "artifacts": {
+    "receipt.json": "759ea9f3b78fb38a4ce47771b3b14d62cc4e405c065599b3c509329b095600fe",
+    "probe.py": "755aac84c76ae967c0601f0d150b404c15a8eb19f0c187cc665273e7df2739db",
+    "probe.log": "4b68a53d0386fb60110f686bdd3ad95ebaa336e31f7dd5165c7b21edbe7ad746",
+    "lib-serial.log": "e9e46cf82a73c71df529dcea0c6658f078e08a70aab207a4f5b109d808266f1b"
+  }
+}

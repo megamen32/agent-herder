@@ -1,0 +1,40 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ❯ tests/codex-quota-guard.test.ts (33 tests | 1 failed | 31 skipped) 43ms
+     × preserves quota failure through send and durable lookup without replay 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/codex-quota-guard.test.ts > Codex send admission receipts > preserves quota failure through send and durable lookup without replay
+AssertionError: expected { ok: false, …(3) } to match object { ok: false, notSubmitted: true, …(3) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "admissionUnknown": false,
+-   "admitted": false,
++   "admissionUnknown": true,
+    "nonRetryable": true,
+-   "notSubmitted": true,
+    "ok": false,
+  }
+
+ ❯ tests/codex-quota-guard.test.ts:151:20
+    149|    const result=await a.sendMessage("thread-send",options);
+    150|    if(failure==="quota"){
+    151|     expect(result).toMatchObject({ok:false,notSubmitted:true,admitted:…
+       |                    ^
+    152|     expect(writes).toEqual([]);
+    153|     expect(await a.getMessageAdmission("thread-send",options.inputId))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 31 skipped (33)
+   Start at  20:37:47
+   Duration  1.47s (transform 1.00s, setup 62ms, import 1.11s, tests 43ms, environment 0ms)
+

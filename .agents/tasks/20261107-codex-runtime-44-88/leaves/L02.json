@@ -1,0 +1,56 @@
+{
+  "id": "L02",
+  "label": "Перезапустить и проверить server-88",
+  "parent": "M01",
+  "status": "waiting",
+  "estimate_minutes": 15,
+  "description": "Штатный runtime и чтение имеющейся сессии",
+  "acceptance": "PID и версия 0.167.0 и доступ к сессии",
+  "created_at": "2026-11-07T03:30:43+03:00",
+  "updated_at": "2026-11-07T03:40:03+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T03:30:43+03:00",
+      "note": "",
+      "changes": {
+        "id": "L02",
+        "label": "Перезапустить и проверить server-88",
+        "parent": "M01",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "description": "Штатный runtime и чтение имеющейся сессии",
+        "acceptance": "PID и версия 0.167.0 и доступ к сессии"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T03:31:28+03:00",
+      "note": "Начал работу в текущей сессии",
+      "changes": {
+        "status": "running",
+        "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+        "harness": "codex",
+        "owner": "roomhacker"
+      },
+      "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T03:40:03+03:00",
+      "note": "",
+      "changes": {
+        "status": "waiting",
+        "result": "server-88: npm runtime 0.167.0 PID 2649340; existing chat 01a1ad76-780f-7f20-9150-01db6e6e5ef0 read, 28 turns; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+        "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне."
+      },
+      "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b368-d146-72c1-9148-2fd7d5d94703",
+  "harness": "codex",
+  "owner": "roomhacker",
+  "result": "server-88: npm runtime 0.167.0 PID 2649340; existing chat 01a1ad76-780f-7f20-9150-01db6e6e5ef0 read, 28 turns; old releases 0.160.0–0.162.0 removed. Managed fallback current remains 0.162.1; manager update refused unmanaged server.",
+  "wait_reason": "Встроенный менеджер ссылается на 0.162.1; штатный update отказал, поскольку активный сервер управляется извне."
+}

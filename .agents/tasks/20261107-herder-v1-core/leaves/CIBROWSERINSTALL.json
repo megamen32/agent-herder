@@ -1,0 +1,69 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Install and prove managed isolated CI browser fixture",
+  "description": "Installed isolated CI browser fixture with final manager 0695ac5a, protected config df972adc and paired units. Final source tests 23/23 PASS. Actual authenticated Vibe session_1 nonce proofs passed before and after one clean owned browser/relay restart, API 200 application/json, exact process generations and no manual session-ID edits. Both owned test pages closed; dedicated managed services remain active for CI. Bootstrap migration used approved exact process-absence evidence, without claiming stale-page attestation. Final DOM rendered four rows, with no family/status/identity attributes. This leaf proves the owned browser fixture only; all-five harness functional acceptance remains outside its scope.",
+  "acceptance": "Exact managed process/profile/relay generation, authenticated Herder page, Vibe correlated nonce and clean same-owner restart/recovery receipts. All-five functional release acceptance remains CIRELEASE.",
+  "affected_files": [
+    "deploy/fleet/ci-browser-fixture.mjs",
+    "/etc/agent-herder-ci-smoke/browser-fixture.json"
+  ],
+  "status": "done",
+  "owner": "chatgpt-all-harness-ci-20261109/root",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Current bounded installation/checkpoint only; external waits or new findings require explicit remainder.",
+  "note": "Source CIBROWSER done with17GREEN; installation awaits root review and exact ownership evidence.",
+  "id": "CIBROWSERINSTALL",
+  "created_at": "2026-11-09T03:57:36+03:00",
+  "updated_at": "2026-11-09T05:58:16+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T03:57:36+03:00",
+      "note": "",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Install and prove managed isolated CI browser fixture",
+        "description": "Reviewed bootstrap PID plus exact nonce attestation, protected config/services migration, live verify and Vibe attest, actual restart/recovery proof. Current installed changes zero; no personal browser/service control.",
+        "acceptance": "Exact managed process/profile/relay generation, authenticated Herder page, Vibe correlated nonce and clean same-owner restart/recovery receipts. All-five functional release acceptance remains CIRELEASE.",
+        "affected_files": [
+          "deploy/fleet/ci-browser-fixture.mjs",
+          "/etc/agent-herder-ci-smoke/browser-fixture.json"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/root",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Current bounded installation/checkpoint only; external waits or new findings require explicit remainder.",
+        "note": "Source CIBROWSER done with17GREEN; installation awaits root review and exact ownership evidence."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T05:58:16+03:00",
+      "note": "Root-authorized CIBROWSERINSTALL completion only. Canonical evidence: /home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261107-herder-v1-core/evidence/ci-visible-20261109/browser-fixture/final-install/result.json SHA256 21c8f77fcf8093141838b142a5ca52a737fd40f9843636cef9b0c16a8010c3f2. Initial live proof SHA256 5c0f4beeb47b1f0e2f715f0fe72f53f70b5cf1806fd5ed02c6c7d0ecd94c435e; restart live proof SHA256 182aa02a8351ffb8c1bcc0428d4ec5f22ed396907731e71276cbd425bb9a6732. No credential entry, account/profile switch, public runtime change or all-five PASS claim. Remaining CI runner installation and all-five acceptance stay in CIINSTALLFINAL/CIRELEASE.",
+      "changes": {
+        "status": "done",
+        "description": "Installed isolated CI browser fixture with final manager 0695ac5a, protected config df972adc and paired units. Final source tests 23/23 PASS. Actual authenticated Vibe session_1 nonce proofs passed before and after one clean owned browser/relay restart, API 200 application/json, exact process generations and no manual session-ID edits. Both owned test pages closed; dedicated managed services remain active for CI. Bootstrap migration used approved exact process-absence evidence, without claiming stale-page attestation. Final DOM rendered four rows, with no family/status/identity attributes. This leaf proves the owned browser fixture only; all-five harness functional acceptance remains outside its scope."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    }
+  ]
+}

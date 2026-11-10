@@ -1,0 +1,13 @@
+.F
+======================================================================
+FAIL: test_positive_full_snapshot_and_negative_changes (__main__.ProducerTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/herder-ci-integration/agent-herder/tests/test_l44_ci_producer.py", line 36, in test_positive_full_snapshot_and_negative_changes
+    with self.assertRaisesRegex(ValueError,'policy'):m.produce(self.gate,self.contract,self.root,['codex'],ci)
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.526s
+
+FAILED (failures=1)

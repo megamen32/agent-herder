@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-06T16:32:12+00:00",
+  "details": "На интеграционном candidate общий CI получил HTTP 422 при чтении транскрипта OpenCode; необходимо локализовать, исправить TDD и повторить исходный сценарий.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T16:32:12+00:00",
+      "changes": {
+        "details": "На интеграционном candidate общий CI получил HTTP 422 при чтении транскрипта OpenCode; необходимо локализовать, исправить TDD и повторить исходный сценарий.",
+        "source": "L33 combined candidate run",
+        "status": "open",
+        "title": "OpenCode: transcript 422 в общем CI интеграционного кандидата"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Goodall",
+      "at": "2026-11-06T16:59:13+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l36-opencode-route-green.log",
+            "red_proof_path": "evidence/l36-opencode-route-red.log",
+            "red_result": "FAIL  tests/opencode-transcript-route-l36.test.ts > paginates exact OpenCode native JSON through the real HTTP transcript handler",
+            "red_sha256": "7d84e108df6a67546ce23516eac351b13d328aeb48cc5cafc5e7c55efa2c4873",
+            "result": "Test Files  1 passed (1)",
+            "sha256": "01d55d1a89eb52bcb33ae076479091d982e8aa55f867237c10cd279dc2a15c03",
+            "test_command": "vitest run --root . --config vitest.config.ts tests/opencode-transcript-route-l36.test.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bd33014b748ec4baf95a3",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l36-opencode-route-green.log",
+      "red_proof_path": "evidence/l36-opencode-route-red.log",
+      "red_result": "FAIL  tests/opencode-transcript-route-l36.test.ts > paginates exact OpenCode native JSON through the real HTTP transcript handler",
+      "red_sha256": "7d84e108df6a67546ce23516eac351b13d328aeb48cc5cafc5e7c55efa2c4873",
+      "result": "Test Files  1 passed (1)",
+      "sha256": "01d55d1a89eb52bcb33ae076479091d982e8aa55f867237c10cd279dc2a15c03",
+      "test_command": "vitest run --root . --config vitest.config.ts tests/opencode-transcript-route-l36.test.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "L33 combined candidate run",
+  "status": "fixed",
+  "title": "OpenCode: transcript 422 в общем CI интеграционного кандидата",
+  "updated_at": "2026-11-06T16:59:13+00:00"
+}

@@ -1,0 +1,13 @@
+E
+======================================================================
+ERROR: test_index_points_to_native_xdg_database (__main__.OpenCodeFixturePath)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/l41-opencode-xdg-red/tests/native-hermes-opencode-fixture-path.test.py", line 10, in test_index_points_to_native_xdg_database
+    env=probe.isolated_search_paths(Path('/tmp/fixture'))
+AttributeError: module 'native_model_smoke' has no attribute 'isolated_search_paths'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

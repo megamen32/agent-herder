@@ -13,7 +13,7 @@
     "maximum": 15
   },
   "kind": "task",
-  "status": "queued",
+  "status": "done",
   "owner": "unassigned",
   "wave": 8,
   "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V107 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V107 обязателен в конце цепочки.",
@@ -22,7 +22,7 @@
   "created_at": "2026-11-07T01:52:37+03:00",
   "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:54:44+03:00",
+  "updated_at": "2026-11-07T12:21:53+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T01:52:37+03:00",
@@ -77,10 +77,23 @@
       },
       "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T12:21:53+03:00",
+      "note": "Канонический leaf приведён к фактическому результату V107 / published target commit ce46aa12.",
+      "changes": {
+        "status": "done",
+        "finished_at": "2026-11-07T09:21:53.604Z",
+        "result": "Каноническая запись восстановлена: integrations/consumers/hub/target.json провалидирован; контент и маршрут были опубликованы commit ce46aa12b4b793c818edb00ef80010dd81e984b6. Описаны endpoint → Hub shell action → scripts/agent_deliver.py → Herder MCP deliver, exact caller paths и mock-only test boundary. Live route summary read-only; event не отправлялся. Полный private command/cwd/runtime auth state не подтверждены."
+      },
+      "session": "01a1b2f9-b32b-7802-b7c4-75bbe1d8475c",
+      "harness": "codex"
     }
   ],
   "parent": "S09",
   "model": "gpt-6.1-terra",
   "estimate_unknown_reason": "Точные writable paths, runner/доступ либо объём найденного разрыва уточняются названным входным gate; условная оценка не гарантирует срок.",
-  "wait_reason": ""
+  "wait_reason": "",
+  "finished_at": "2026-11-07T09:21:53.604Z",
+  "result": "Каноническая запись восстановлена: integrations/consumers/hub/target.json провалидирован; контент и маршрут были опубликованы commit ce46aa12b4b793c818edb00ef80010dd81e984b6. Описаны endpoint → Hub shell action → scripts/agent_deliver.py → Herder MCP deliver, exact caller paths и mock-only test boundary. Live route summary read-only; event не отправлялся. Полный private command/cwd/runtime auth state не подтверждены."
 }

@@ -7,22 +7,23 @@
     "V090A"
   ],
   "affected_files": [
-    "crates/herder/src/adapters/z_ai/read.rs"
+    "crates/herder/src/adapters/zai/mod.rs",
+    "acceptance/contracts/z-ai.md"
   ],
   "parent": "S07",
   "kind": "task",
-  "status": "queued",
+  "status": "done",
   "owner": "unassigned",
   "model": "gpt-6.1-terra",
   "estimate_minutes": {
     "minimum": 10,
     "maximum": 15
   },
-  "note": "Шаг <=15 минут. Оценка предполагает готовые входы; фиксировать конкретный разрыв и переразбить до продолжения. Модель плановая, исполнитель назначается Терой. Один владелец пересекающихся путей. Исходный объём и оценка V090 сохранены в history/15m-revision/before.json и progress_events. Критерий исходного V090 обязателен в конце цепочки.",
+  "note": "Decoder/fixture source завершены без обращения к профилю и без повторной отправки marker. План activation endpoint сейчас не принимает capture из-за чужого invalid parent: V064LIVE ссылается на V064PORT как milestone.",
   "created_at": "2026-11-07T03:53:30+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T03:53:30+03:00",
+  "updated_at": "2026-11-07T11:36:46+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T03:53:30+03:00",
@@ -51,6 +52,31 @@
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:29:08+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "affected_files": [
+          "crates/herder/src/adapters/zai/mod.rs",
+          "acceptance/contracts/z-ai.md"
+        ],
+        "result": "Добавлен ZaiReader::recent_messages(chat_id): после native read_chat выбирает последние user и assistant записи по порядку полученного batch и преобразует их в общий RecentMessages. Сохраняются только наблюдаемые message_id и timestamp. В native messages/batch fixture нет turn_id или явного assistant reply-to ID; turn_id/reply_to_input_id и derived assistant_replies_to_user остаются None, partial/truncated также None (неизвестно). Тесты на текущем origin/main 61e51b66: cargo test --manifest-path crates/herder/Cargo.toml adapters::zai --offline — 5 passed; rustfmt +stable --edition 2024 --check и git diff --check прошли. Commit e2b820b3 (V090B) atop bc5f3ac1 (V090A). Live native list/recent consumer readback отдельно не выполнялся.",
+        "note": "Decoder/fixture source завершены без обращения к профилю и без повторной отправки marker. План activation endpoint сейчас не принимает capture из-за чужого invalid parent: V064LIVE ссылается на V064PORT как milestone."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T11:36:46+03:00",
+      "note": "",
+      "changes": {
+        "result": "Добавлен ZaiReader::recent_messages(chat_id): после native read_chat выбирает последние user и assistant записи по порядку полученного batch и преобразует их в общий RecentMessages. Сохраняются только наблюдаемые message_id и timestamp. Native fixture не содержит turn_id или явного assistant reply-to ID; turn_id/reply_to_input_id, derived assistant_replies_to_user, partial и truncated остаются None. Commit ad28cfc8 atop 208e81bc/origin/main f18149d3. Повторная проверка: 6 Z.ai tests passed; rustfmt и diff checks прошли. Live readback отдельно не выполнялся."
+      },
+      "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
     }
-  ]
+  ],
+  "result": "Добавлен ZaiReader::recent_messages(chat_id): после native read_chat выбирает последние user и assistant записи по порядку полученного batch и преобразует их в общий RecentMessages. Сохраняются только наблюдаемые message_id и timestamp. Native fixture не содержит turn_id или явного assistant reply-to ID; turn_id/reply_to_input_id, derived assistant_replies_to_user, partial и truncated остаются None. Commit ad28cfc8 atop 208e81bc/origin/main f18149d3. Повторная проверка: 6 Z.ai tests passed; rustfmt и diff checks прошли. Live readback отдельно не выполнялся."
 }

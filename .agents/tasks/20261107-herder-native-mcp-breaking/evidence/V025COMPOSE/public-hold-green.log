@@ -1,0 +1,27 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder/crates/herder)
+warning: fields `authority`, `database`, `gate`, and `generation` are never read
+  --> tests/../src/bin/herder_native_stdio/scoped_profile.rs:37:9
+   |
+36 | pub struct OpenedOwner {
+   |            ----------- fields in this struct
+37 |     pub authority: ScopedAuthority,
+   |         ^^^^^^^^^
+38 |     pub owner: OwnerProfile,
+39 |     pub database: PathBuf,
+   |         ^^^^^^^^
+40 |     pub gate: PathBuf,
+   |         ^^^^
+41 |     pub generation: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "launcher_scoped_profile") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.30s
+     Running tests/launcher_scoped_profile.rs (crates/herder/target/debug/deps/launcher_scoped_profile-8023a4de6f7b0e8f)
+
+running 1 test
+test trusted_owner_launcher_wires_create_and_scoped_read_over_stdio ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 1.68s
+

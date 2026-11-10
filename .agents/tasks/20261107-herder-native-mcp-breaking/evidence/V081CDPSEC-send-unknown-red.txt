@@ -1,0 +1,6 @@
+RED: tests/ahap-browser-runner.test.ts
+Command: vitest run --root . --config vitest.config.ts tests/ahap-browser-runner.test.ts
+Observed failures before the fix:
+  ambiguous send assertion failed because error.data was undefined;
+  AssertionError: expected undefined to be defined
+No live browser or send was used; both cases use fake adapters.

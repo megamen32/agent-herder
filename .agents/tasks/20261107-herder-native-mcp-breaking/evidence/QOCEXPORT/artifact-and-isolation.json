@@ -1,0 +1,16 @@
+{
+  "manifest_sha256": "cd78329317fac02fe0ae56c2f08aa9f2693ffd0422de943bf9390c218405efac",
+  "source_commit": "1d89d04dbefec21ed355533da49bd60e11ee7114",
+  "components": {
+    "core": "58e7a9726880072efb2a590c4f28c235831afb4b501b5f45035d8ea78496cc4c",
+    "adapter": "5b45663eaa81fefe23073860b235b443d2992bc316269ba543d0849e83c9d556",
+    "opencode": "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+  },
+  "node_version": "v22.22.2",
+  "node_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+  "stand_commit": "b440b37cd0a237691057f7ee5f8014e5a58e7a8d",
+  "launcher_sha256": "006ed7aad1c7157b27f53756aa8b5e50c655ede9deba1dbbb19b56faf4dfd2b7",
+  "model_fixture_sha256": "e456b650bda6c34973b06fb33c99639aea67a4eb4aba6538cb549a5d07a450ae",
+  "launcher": "tests/native/launch.py with exact hash-identical immutable carrier; loopback-only network namespace, fresh user/filesystem namespace and fixture HOME/authority DB/profile",
+  "carrier": "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/qocexport-bundle/releases/ahap-qocjoin-1d89d04d"
+}

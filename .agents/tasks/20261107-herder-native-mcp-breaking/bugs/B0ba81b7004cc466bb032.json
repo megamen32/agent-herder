@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-07T02:08:06+00:00",
+  "details": "The V053 smoke harness compile failed because the test used Result::unwrap_err() while CodexConnection does not implement Debug. Same harness-only cause as Bdd23d4626f95410f8b4d from the earlier V053A smoke attempt; adapter code was not executed. Replacing unwrap_err with explicit Result matching is the fix.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:08:06+00:00",
+      "changes": {
+        "details": "The V053 smoke harness compile failed because the test used Result::unwrap_err() while CodexConnection does not implement Debug. Same harness-only cause as Bdd23d4626f95410f8b4d from the earlier V053A smoke attempt; adapter code was not executed. Replacing unwrap_err with explicit Result matching is the fix.",
+        "source": "cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke",
+        "status": "open",
+        "title": "V053 missing-profile harness used unwrap_err without Debug bound"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "roomhacker",
+      "at": "2026-11-07T02:08:22+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "Bdd23d4626f95410f8b4d",
+          "kind": "duplicate",
+          "reason": "Same test-harness unwrap_err Debug bound as existing bug Bdd23d4626f95410f8b4d; no product source was exercised. This instance will be corrected by explicit Result matching."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "B0ba81b7004cc466bb032",
+  "owner": "roomhacker",
+  "reporter": "roomhacker",
+  "resolution": {
+    "duplicate_of": "Bdd23d4626f95410f8b4d",
+    "kind": "duplicate",
+    "reason": "Same test-harness unwrap_err Debug bound as existing bug Bdd23d4626f95410f8b4d; no product source was exercised. This instance will be corrected by explicit Result matching."
+  },
+  "source": "cargo test --locked --manifest-path crates/herder/Cargo.toml --bin connection_smoke",
+  "status": "duplicate",
+  "title": "V053 missing-profile harness used unwrap_err without Debug bound",
+  "updated_at": "2026-11-07T02:08:22+00:00"
+}

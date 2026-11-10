@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T01:44:33+00:00",
+  "details": "normalize_recent принимает только Option сообщений и не представляет ошибку чтения источника; преобразование отказа в (None, None) выдаёт пустую историю.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "V028",
+      "at": "2026-11-07T01:44:33+00:00",
+      "changes": {
+        "details": "normalize_recent принимает только Option сообщений и не представляет ошибку чтения источника; преобразование отказа в (None, None) выдаёт пустую историю.",
+        "source": "crates/herder/src/application/recent.rs",
+        "status": "open",
+        "title": "Недоступный источник неотличим от пустой истории"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V028",
+      "at": "2026-11-07T01:47:25+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V028/green.txt",
+            "red_proof_path": "evidence/V028/red.txt",
+            "red_result": "error[E0425]: cannot find function `project_recent` in this scope",
+            "red_sha256": "0cc85b887fff72417680e8313f23f97513e04c5741b89ba6075341aa6e6bc3d1",
+            "result": "1 passed",
+            "sha256": "db0742ff75c6e6ed553c2ec6e5321c7c0b442e8442cf1ec062b21b5c1237e705",
+            "test_command": "rustc --test crates/herder/src/application/recent.rs -o .tmp/v028/recent-tests && .tmp/v028/recent-tests unavailable_source_is_not_an_empty_history"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Ba695d5181b244c35acd1",
+  "owner": "V028",
+  "reporter": "V028",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V028/green.txt",
+      "red_proof_path": "evidence/V028/red.txt",
+      "red_result": "error[E0425]: cannot find function `project_recent` in this scope",
+      "red_sha256": "0cc85b887fff72417680e8313f23f97513e04c5741b89ba6075341aa6e6bc3d1",
+      "result": "1 passed",
+      "sha256": "db0742ff75c6e6ed553c2ec6e5321c7c0b442e8442cf1ec062b21b5c1237e705",
+      "test_command": "rustc --test crates/herder/src/application/recent.rs -o .tmp/v028/recent-tests && .tmp/v028/recent-tests unavailable_source_is_not_an_empty_history"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "crates/herder/src/application/recent.rs",
+  "status": "fixed",
+  "title": "Недоступный источник неотличим от пустой истории",
+  "updated_at": "2026-11-07T01:47:25+00:00"
+}

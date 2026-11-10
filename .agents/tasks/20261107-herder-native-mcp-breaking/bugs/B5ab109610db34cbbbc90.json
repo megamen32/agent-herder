@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T09:19:41+00:00",
+  "details": "Delta review found snapshots with identical chat/message payloads collide across different nodes, instances, callers and Z.ai account scopes. The initial separator-based digest is also ambiguous when a field contains NUL. Fixed in the current worktree by hashing principal, account scope, full node/instance/chat address and payload with 64-bit length-prefixed fields. RED and GREEN are in evidence/V093A-snapshot-red.txt and evidence/V090-V093-delta-green.txt.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:19:41+00:00",
+      "changes": {
+        "details": "Delta review found snapshots with identical chat/message payloads collide across different nodes, instances, callers and Z.ai account scopes. The initial separator-based digest is also ambiguous when a field contains NUL. Fixed in the current worktree by hashing principal, account scope, full node/instance/chat address and payload with 64-bit length-prefixed fields. RED and GREEN are in evidence/V093A-snapshot-red.txt and evidence/V090-V093-delta-green.txt.",
+        "source": "Delta review a3f95ac9; focused snapshot regression tests",
+        "status": "open",
+        "title": "Z.ai transcript snapshot identity omits session and account scope"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+      "at": "2026-11-07T09:19:57+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V090-V093-delta-green.txt",
+            "red_proof_path": "evidence/V093A-snapshot-red.txt",
+            "red_result": "test result: FAILED. 1 passed; 2 failed",
+            "red_sha256": "a96a3ea2aa1bb2f97cf46ab6d88cfebd8e18eb64870f19768959c3de757ee9f4",
+            "result": "test result: ok. 12 passed; 0 failed",
+            "sha256": "9c7b5f3d3866a50b247850f137ed28519cc88d62f96ed982b09bfb25a297f70e",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline adapters::zai::tests -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B5ab109610db34cbbbc90",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V090-V093-delta-green.txt",
+      "red_proof_path": "evidence/V093A-snapshot-red.txt",
+      "red_result": "test result: FAILED. 1 passed; 2 failed",
+      "red_sha256": "a96a3ea2aa1bb2f97cf46ab6d88cfebd8e18eb64870f19768959c3de757ee9f4",
+      "result": "test result: ok. 12 passed; 0 failed",
+      "sha256": "9c7b5f3d3866a50b247850f137ed28519cc88d62f96ed982b09bfb25a297f70e",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml --offline adapters::zai::tests -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Delta review a3f95ac9; focused snapshot regression tests",
+  "status": "fixed",
+  "title": "Z.ai transcript snapshot identity omits session and account scope",
+  "updated_at": "2026-11-07T09:19:57+00:00"
+}

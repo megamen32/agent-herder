@@ -1,0 +1,23 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v033b-settings/agent-herder/crates/herder)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.39s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 1 test
+test mcp::resources::tests::authorized_task_read_rejects_result_for_different_task_id ... FAILED
+
+failures:
+
+---- mcp::resources::tests::authorized_task_read_rejects_result_for_different_task_id stdout ----
+
+thread 'mcp::resources::tests::authorized_task_read_rejects_result_for_different_task_id' (2033009) panicked at src/mcp/resources.rs:751:9:
+assertion failed: matches!(read_authorized(&identity("alice"), &grants, &source, &uri),
+    Err(AccessError::Projection(ProjectionError::TypeMismatch)))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    mcp::resources::tests::authorized_task_read_rejects_result_for_different_task_id
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 161 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

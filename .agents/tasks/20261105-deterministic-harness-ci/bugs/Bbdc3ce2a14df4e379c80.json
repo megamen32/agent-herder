@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T02:10:05+00:00",
+  "details": "После исправления каталога проектов реальный изолированный ZCode создал проект и сессию, сообщение и ответ получены. Запрос transcript вернул unsupported native JSONL harness.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T02:10:05+00:00",
+      "changes": {
+        "details": "После исправления каталога проектов реальный изолированный ZCode создал проект и сессию, сообщение и ответ получены. Запрос transcript вернул unsupported native JSONL harness.",
+        "source": "server-44 /tmp/herder-minci-01a1ac52/zcode-candidate/probe2.err",
+        "status": "open",
+        "title": "ZCode: полный транскрипт отклоняется HTTP 422"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T02:38:30+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/l45-zcode-route-green.log",
+            "red_proof_path": "evidence/l45-zcode-route-red.log",
+            "red_result": "AssertionError: expected 422 to be 200 // Object.is equality",
+            "red_sha256": "5f2da1c10ca027cc7790eac50d2195eff7a5cdb4d2964bbee7f398f156c748d5",
+            "result": "Tests  3 passed (3)",
+            "sha256": "7f4d904808a3c75e210a2eeab2271320a62afc5649fc202d28fe062c73e98391",
+            "test_command": "npx vitest run tests/zcode-transcript-route.test.ts tests/integrator-session-route.test.ts --config vitest.config.ts"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bbdc3ce2a14df4e379c80",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/l45-zcode-route-green.log",
+      "red_proof_path": "evidence/l45-zcode-route-red.log",
+      "red_result": "AssertionError: expected 422 to be 200 // Object.is equality",
+      "red_sha256": "5f2da1c10ca027cc7790eac50d2195eff7a5cdb4d2964bbee7f398f156c748d5",
+      "result": "Tests  3 passed (3)",
+      "sha256": "7f4d904808a3c75e210a2eeab2271320a62afc5649fc202d28fe062c73e98391",
+      "test_command": "npx vitest run tests/zcode-transcript-route.test.ts tests/integrator-session-route.test.ts --config vitest.config.ts"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 /tmp/herder-minci-01a1ac52/zcode-candidate/probe2.err",
+  "status": "fixed",
+  "title": "ZCode: полный транскрипт отклоняется HTTP 422",
+  "updated_at": "2026-11-07T02:38:30+00:00"
+}

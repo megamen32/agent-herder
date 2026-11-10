@@ -1,0 +1,30 @@
+{"stage": "candidate", "status": "PASS"}
+test_cli_pass_preserves_full_release_incomplete (test_candidate_release_gate.CandidateReleaseGateTest) ... ok
+test_failed_runner_missing_lane_or_short_transcript_refuse_candidate (test_candidate_release_gate.CandidateReleaseGateTest) ... ok
+test_stale_success_is_invalidated_before_a_new_attempt (test_candidate_release_gate.CandidateReleaseGateTest) ... ok
+test_zcode_requires_same_payload_and_complete_native_journey (test_candidate_release_gate.CandidateReleaseGateTest) ... ok
+test_zcode_unavailable_invalidates_receipt_and_fails (test_candidate_release_gate.CandidateReleaseGateTest) ... ok
+test_all_lanes_pass_only_for_exact_requested_stage (test_candidate_release_gate.V1ReportTest) ... ok
+test_cli_rejects_malformed_or_duplicate_json (test_candidate_release_gate.V1ReportTest) ... V1 input is unreadable or invalid JSON
+V1 input is unreadable or invalid JSON
+ok
+test_cli_v1_is_read_only_and_reports_bounded_failure (test_candidate_release_gate.V1ReportTest) ... V1 zcode.create is UNKNOWN
+ok
+test_common_negative_checks_are_mandatory_and_must_pass (test_candidate_release_gate.V1ReportTest) ... ok
+test_invalid_identity_is_not_equal_by_accident (test_candidate_release_gate.V1ReportTest) ... ok
+test_missing_lane_check_and_nonpass_states_refuse (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_all_active_native_sessions_must_be_visible (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_evidence_is_bound_to_transport_run_lane_and_receipts (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_evidence_is_required_even_when_all_status_checks_pass (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_exact_native_id_must_be_visible_even_with_a_snapshot (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_idle_session_and_extra_visible_inactive_sessions_are_valid (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_incomplete_native_coverage_never_becomes_green (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_ui_and_native_state_must_match_and_be_known (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_validation_does_not_echo_private_browser_values (test_candidate_release_gate.V1ReportTest) ... ok
+test_vibe_visibility_check_cannot_be_missing_or_nonpass (test_candidate_release_gate.V1ReportTest) ... ok
+test_wrong_identity_stale_run_and_stage_refused_without_echo (test_candidate_release_gate.V1ReportTest) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.024s
+
+OK

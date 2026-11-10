@@ -1,0 +1,35 @@
+{
+  "blocker": "External LHC mirror transport cap8MiB rejects12.08MB snapshot; compact JSON9.67MB still exceeds. Requires LHC source/deployment owner; preserve history. Canonical Herder plan is current and usable.",
+  "created_at": "2026-11-07T09:23:22+00:00",
+  "details": "2026-11-07T09:24Z canonical .lhc-publication/mirror-state.json pending encoded=12078068 bytes > lhc_plan_mirror.MAX_BYTES8388608. Components document2670134 observed2732449 revisions6351921. _post_snapshot throws ValueError(snapshot size limit exceeded); local state masks it as generic sync/source unavailable. Last successful sync06:31UTC, public HTTP200 lacks CTRLWAKE and V025PORT. Canonical leaves intact. Blocker belongs to LHC mirror transport, outside Herder adapter source ownership. Smallest next action: preserve all history, compact JSON serialization or bounded transport protocol fix in LHC source+observer/server verification, not deletion of revisions nor silent bypass. Continue workers on canonical files.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T09:23:22+00:00",
+      "changes": {
+        "details": "2026-11-07T09:24Z canonical .lhc-publication/mirror-state.json pending encoded=12078068 bytes > lhc_plan_mirror.MAX_BYTES8388608. Components document2670134 observed2732449 revisions6351921. _post_snapshot throws ValueError(snapshot size limit exceeded); local state masks it as generic sync/source unavailable. Last successful sync06:31UTC, public HTTP200 lacks CTRLWAKE and V025PORT. Canonical leaves intact. Blocker belongs to LHC mirror transport, outside Herder adapter source ownership. Smallest next action: preserve all history, compact JSON serialization or bounded transport protocol fix in LHC source+observer/server verification, not deletion of revisions nor silent bypass. Continue workers on canonical files.",
+        "source": "lhc_plan_mirror.py:_post_snapshot/MAX_BYTES; canonical mirror-state; public HTTP readback",
+        "status": "open",
+        "title": "Публичный план LHC устарел: снимок 12 MB превышает transport cap8 MB"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T09:30:15+00:00",
+      "changes": {
+        "blocker": "External LHC mirror transport cap8MiB rejects12.08MB snapshot; compact JSON9.67MB still exceeds. Requires LHC source/deployment owner; preserve history. Canonical Herder plan is current and usable.",
+        "status": "blocked"
+      },
+      "reason": "External component outside current Herder source ownership; minimal next action is history-preserving snapshot transport fix with roundtrip and public readback."
+    }
+  ],
+  "id": "Bb8afd679ba3347de92dc",
+  "owner": "Astra",
+  "reporter": "Astra",
+  "source": "lhc_plan_mirror.py:_post_snapshot/MAX_BYTES; canonical mirror-state; public HTTP readback",
+  "status": "blocked",
+  "title": "Публичный план LHC устарел: снимок 12 MB превышает transport cap8 MB",
+  "updated_at": "2026-11-07T09:30:15+00:00"
+}

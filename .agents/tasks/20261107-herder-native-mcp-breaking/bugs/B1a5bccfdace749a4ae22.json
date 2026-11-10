@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T10:44:00+00:00",
+  "details": "Review immutable 6c746784: admitted intent всегда Working в get_delivery_task; tasks/get, repeat deliver и session/messages не вызывают reconcile_stored_receipt и не сохраняют наблюдение. Confirmed fixture делает UPDATE intents SET state='confirmed'. Owner Tesla, V025TASKRECON: read-only exact receipt + fenced persistence без submit; matching/mismatch/reopen/count1 proof.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra/Nietzsche",
+      "at": "2026-11-07T10:44:00+00:00",
+      "changes": {
+        "details": "Review immutable 6c746784: admitted intent всегда Working в get_delivery_task; tasks/get, repeat deliver и session/messages не вызывают reconcile_stored_receipt и не сохраняют наблюдение. Confirmed fixture делает UPDATE intents SET state='confirmed'. Owner Tesla, V025TASKRECON: read-only exact receipt + fenced persistence без submit; matching/mismatch/reopen/count1 proof.",
+        "source": "independent source review 12f0d3a9+6c746784",
+        "status": "open",
+        "title": "Принятый MCP Task не достигает terminal через native reconciliation"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "V025TASKRECON",
+      "at": "2026-11-07T11:14:06+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V025TASKRECON/wire-green.log",
+            "red_proof_path": "evidence/V025TASKRECON/wire-red.log",
+            "red_result": "assertion `left == right` failed",
+            "red_sha256": "2a912eea21344b9b10b99b735aef0758b9df1cb8eb5df896829a10e32e770d06",
+            "result": "test result: ok. 1 passed",
+            "sha256": "a4e86dcdfdd01e26453981d131256ebe785b813ebac510160522551f70516309",
+            "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_delivery_application_wire_dedup_tasks_and_readback -- --nocapture"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "B1a5bccfdace749a4ae22",
+  "owner": "Astra/Nietzsche",
+  "reporter": "Astra/Nietzsche",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V025TASKRECON/wire-green.log",
+      "red_proof_path": "evidence/V025TASKRECON/wire-red.log",
+      "red_result": "assertion `left == right` failed",
+      "red_sha256": "2a912eea21344b9b10b99b735aef0758b9df1cb8eb5df896829a10e32e770d06",
+      "result": "test result: ok. 1 passed",
+      "sha256": "a4e86dcdfdd01e26453981d131256ebe785b813ebac510160522551f70516309",
+      "test_command": "cargo test --offline --manifest-path crates/herder/Cargo.toml --test scoped_stop_gate scoped_delivery_application_wire_dedup_tasks_and_readback -- --nocapture"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "independent source review 12f0d3a9+6c746784",
+  "status": "fixed",
+  "title": "Принятый MCP Task не достигает terminal через native reconciliation",
+  "updated_at": "2026-11-07T11:14:06+00:00"
+}

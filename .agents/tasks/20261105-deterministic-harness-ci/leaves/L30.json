@@ -1,0 +1,104 @@
+{
+  "id": "L30",
+  "label": "Выпуск: подготовить fail-closed verifier",
+  "description": "Подготовить структурный verifier и fail-closed, реальное подключение продолжается в L40.",
+  "acceptance": "Структурный verifier и откат проверены TDD, границы доказательств указаны.",
+  "estimate_minutes": 15,
+  "status": "done",
+  "owner": "Laplace",
+  "depends_on": [
+    "L19"
+  ],
+  "parallel_with": [
+    "L27",
+    "L23",
+    "L24"
+  ],
+  "model": "gpt-6-luna",
+  "created_at": "2026-11-06T19:07:15+03:00",
+  "updated_at": "2026-11-06T19:53:30+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-06T19:07:15+03:00",
+      "note": "",
+      "changes": {
+        "id": "L30",
+        "label": "Выпуск: подключить collector после переключения",
+        "description": "Отдельно подключить проверку установленного процесса к release rollout; согласовать контракт с Linux collector, сохранить отказ до переключения и откат при ошибке.",
+        "acceptance": "RED/GREEN тесты и проверка реального collector через rollout; отсутствующее доказательство блокирует выпуск.",
+        "estimate_minutes": 15,
+        "status": "running",
+        "owner": "Laplace",
+        "depends_on": [
+          "L19"
+        ],
+        "parallel_with": [
+          "L27",
+          "L23",
+          "L24"
+        ],
+        "model": "gpt-6-luna"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-06T19:09:45+03:00",
+      "note": "Независимый worktree herder-collector-rollout от origin/main ee7cd1f5; L19 baseline скопирован только как контекст. RED: возврат INCOMPLETE без исключения давал accepted на Linux/Darwin; GREEN: без доверенного verifier любая квитанция блокируется и проходит fenced rollback, L19 6/6. Patch evidence/l30-fail-closed-receipt.patch, bug B09446b3a5a604f11b3a3 open до интеграции. Настоящий collector Rawls пока INCOMPLETE/allRequiredScenarios=false, доверенного verifier/provenance и полного набора сред нет; запуск/выпуск не разрешён.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:14:49+03:00",
+      "note": "L30 fail-closed receipt patch интегрирован в herder-ci-integration: RED в целевом worktree 2 failures Linux/Darwin, GREEN 1 тест с двумя subtests, L19 preflight 6/6 и исходный rollout-node 19/19; B09446b3a5a604f11b3a3 fixed, evidence/l30-integration-{red.log,green-proof.txt,rollout-tests.log}. Для прежних тестов установки verifier замокирован; настоящий verifier недоступен и preflight продолжает отказывать. Rawls L27 пока INCOMPLETE, provenance не аттестован; полное подключение collector и L30 остаются открыты, deploy запрещён.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:19:25+03:00",
+      "note": "Подготовлен отдельный структурный verifier с синтетическими RED/GREEN: сверка ожидаемого набора harness, независимой generation/PID/цепочки, двух SHA, delivery/search/page/active/model evidence; fail-closed preflight и verifier gate не открыты. Контракт проекта evidence/l30-verifier-proposed-contract.md, Rawls отправлено одно deferred сообщение для согласования. Provenance, доверенный expected и реальный полный collector остаются открыты.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:21:35+03:00",
+      "note": "Подготовлен структурный verifier квитанции: сверяет набор сред, PID/starttime, цепочку процессов, digest и сценарии; TDD RED/GREEN, preflight 6/6, rollout 19/19. К выпуску не подключён: ожидает согласованный collector и доверенный источник ожидаемых значений; fail-closed сохраняется.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:33:54+03:00",
+      "note": "L34 comparison прочитана; добавлена независимая структурная проверка реальной формы partial Codex, возвращает исключительно INCOMPLETE и не используется для gate. RED/GREEN evidence/l30-l34-alignment-{red,green}.log, реальная L27 квитанция совпала по форме (expected взят из неё самой только для compatibility; не trusted), L19 6/6 rollout 19/19. Прямое сообщение Rawls не отправлено: codex_quota_guard below_reserve remaining=2%, согласование не подтверждено; доказательства и точные оставшиеся зависимости evidence/l30-l34-alignment.md. Preflight остаётся fail-closed.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:34:48+03:00",
+      "note": "Verifier совместим с фактической частичной квитанцией Codex и возвращает INCOMPLETE; RED/GREEN evidence/l30-l34-alignment-{red,green}.log. Ожидаемые PID/digest при демонстрации взяты из самой квитанции и не доверены; полный envelope и независимые ожидания отсутствуют, preflight остаётся закрытым.",
+      "changes": {},
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-06T19:53:30+03:00",
+      "note": "",
+      "changes": {
+        "label": "Выпуск: подготовить fail-closed verifier",
+        "description": "Подготовить структурный verifier и fail-closed, реальное подключение продолжается в L40.",
+        "acceptance": "Структурный verifier и откат проверены TDD, границы доказательств указаны.",
+        "status": "done",
+        "result": "В integration tree fail-closed отклоняет неполную квитанцию и вызывает fenced rollback, B09446b3a5a604f11b3a3 fixed. Verifier проверяет форму и возвращает INCOMPLETE для частичной реальной квитанции, RED/GREEN evidence/l30-l34-alignment-{red,green}.log. Независимые PID/digest и полный реальный collector остаются L40; выпуск закрыт."
+      },
+      "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1b0fc-707c-7330-a5f0-b91cea05a2a9",
+  "harness": "codex",
+  "result": "В integration tree fail-closed отклоняет неполную квитанцию и вызывает fenced rollback, B09446b3a5a604f11b3a3 fixed. Verifier проверяет форму и возвращает INCOMPLETE для частичной реальной квитанции, RED/GREEN evidence/l30-l34-alignment-{red,green}.log. Независимые PID/digest и полный реальный collector остаются L40; выпуск закрыт."
+}

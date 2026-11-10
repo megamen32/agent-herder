@@ -1,0 +1,74 @@
+{
+  "recorded_at": "2026-11-06T14:54:09.872554+00:00",
+  "bug": "Bc391b405b78541dba751",
+  "service": {
+    "unit": "agent-herder.service",
+    "pid": 1201064,
+    "state": "active",
+    "start_local": "2026-11-05 21:46:25 MSK",
+    "restarts": 0,
+    "port": "127.0.0.1:18787"
+  },
+  "original_observation": {
+    "bug_registered_at": "2026-11-05T23:54:46Z",
+    "result": "two 10-second timeouts; subsequent reads responded",
+    "older_evidence": "evidence/installed-http-latency-observed.json",
+    "older_evidence_scope": "11 of 20 requests exceeded 2 seconds, recorded 2026-11-05T23:58:11Z"
+  },
+  "current_observations": [
+    {
+      "at": "2026-11-06T14:51:45Z",
+      "path": "/api/settings/background-indexing",
+      "http": 200,
+      "seconds": 0.005
+    },
+    {
+      "at": "2026-11-06T14:51:45Z",
+      "path": "/api/sessions",
+      "http": 200,
+      "seconds": 0.045
+    },
+    {
+      "at": "2026-11-06T14:51:45Z",
+      "path": "/api/settings/background-indexing",
+      "http": 200,
+      "seconds": 0.08
+    },
+    {
+      "at": "2026-11-06T14:51:46Z",
+      "path": "/api/sessions",
+      "outcome": "TimeoutError",
+      "deadline_seconds": 10,
+      "seconds": 10.011
+    },
+    {
+      "at": "2026-11-06T14:51:56Z",
+      "path": "/api/settings/background-indexing",
+      "http": 200,
+      "seconds": 2.844
+    },
+    {
+      "at": "2026-11-06T14:51:58Z",
+      "path": "/api/sessions",
+      "http": 200,
+      "seconds": 0.365
+    }
+  ],
+  "environment_near_probe": {
+    "logical_cpus": 104,
+    "load_1m": 76.18,
+    "available_memory_gib": 37,
+    "swap": "none",
+    "cpu_psi_some_avg10": 0.79,
+    "memory_psi_full_avg10": 0.0,
+    "io_psi_full_avg10": 0.0,
+    "main_thread_cpu_seconds": 1.88,
+    "main_thread_sample_wall_seconds": 2.002,
+    "main_thread_sample": "separate later measurement, not coincident with timeout"
+  },
+  "journal": {
+    "original_window": "no useful entries attributable to PID in 23:53:50-23:55:30 UTC",
+    "reproduction_window": "one progress log at 14:51:37 UTC; no established relation to timeout"
+  },
+  "conclusion": "Symptom reproduced, root cause not established. No fix, restart, model call, or session mutation. Source checkout differs from installed release, so source hints are not runtime proof."
+}

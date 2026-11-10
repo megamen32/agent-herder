@@ -1,0 +1,69 @@
+{
+  "id": "V073PORT",
+  "parent": "S05",
+  "kind": "task",
+  "label": "ZCode: source native create порт с точной квитанцией",
+  "status": "done",
+  "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+  "depends_on": [
+    "V071"
+  ],
+  "estimate_minutes": 15,
+  "affected_files": [
+    "crates/herder/src/adapters/zcode/create.rs",
+    "acceptance/native/zcode/"
+  ],
+  "description": "Выделенная независимая adapter часть V073A. Native createSession через существующий проверенный instance connection, using captured/legacy contract. Общие application/public gates сохраняются.",
+  "acceptance": "Fake transport проверяет одно create, exact native ID, definitely-not-sent validation против UNKNOWN after possible send, no retry. Typed NativeCreateOutcome из published309fd821. Source/tests only; V072D UNKNOWN не повторять, native profile/model не запускать. Shared Cargo/lib/schema не менять.",
+  "created_at": "2026-11-07T12:09:03+03:00",
+  "updated_at": "2026-11-07T12:55:04+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T12:09:03+03:00",
+      "note": "",
+      "changes": {
+        "id": "V073PORT",
+        "parent": "S05",
+        "kind": "task",
+        "label": "ZCode: source native create порт с точной квитанцией",
+        "status": "queued",
+        "owner": "01a1b39a-83ab-7ea2-a343-25d92b900488",
+        "depends_on": [
+          "V071"
+        ],
+        "estimate_minutes": 15,
+        "affected_files": [
+          "crates/herder/src/adapters/zcode/create.rs",
+          "acceptance/native/zcode/"
+        ],
+        "description": "Выделенная независимая adapter часть V073A. Native createSession через существующий проверенный instance connection, using captured/legacy contract. Общие application/public gates сохраняются.",
+        "acceptance": "Fake transport проверяет одно create, exact native ID, definitely-not-sent validation против UNKNOWN after possible send, no retry. Typed NativeCreateOutcome из published309fd821. Source/tests only; V072D UNKNOWN не повторять, native profile/model не запускать. Shared Cargo/lib/schema не менять."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:15:08+03:00",
+      "note": "Committed source-only adapter; compile and fake transport test are unverified. Do not mark accepted until crate integration permits running them.",
+      "changes": {
+        "status": "blocked",
+        "result": "Partial source saved in scoped commit e7f6cf67: crates/herder/src/adapters/zcode/create.rs. Includes selected-instance transport adapter and fake async cases for exact returned ID/no prompt, preflight definitely-not-sent, initialization refusal and UNKNOWN after one possible create write. Not verified: this detached source snapshot does not expose application::target (NativeCreateOutcome) in lib.rs and does not include create.rs in the crate module tree; leaf explicitly forbids editing shared lib.rs/Cargo wiring. rustfmt --check could not run because rustfmt component is missing for pinned toolchain 1.96.1. Required Rust fake tests therefore remain unexecuted. No native create/send/model call. Smallest next action: once V073A integrates the shared target module and opts in create.rs module wiring, run crate-scoped tests/format and fix compile issues.",
+        "blocker": "Current worktree lib.rs does not declare application::target or adapters::zcode::create; leaf forbids changing shared lib.rs/Cargo. Pinned Rust toolchain lacks rustfmt. Fake tests are source-present but unexecuted."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-07T12:55:04+03:00",
+      "note": "Owner reported main publication; verified source test selection locally: 6/6 ZCode tests pass on 99733d7f.",
+      "changes": {
+        "status": "done",
+        "result": "V073PORT source is integrated in published origin/main: create port source commit 25ced4bb and ZCode module exports commit 99733d7f. Verified in the current 99733d7f worktree with `cargo test --manifest-path crates/herder/Cargo.toml zcode:: --offline`: 6 passed, 0 failed (includes all three create fake tests: exact returned ID, DefinitelyNotSent before create, UNKNOWN after one possible write with no retry). No native create/send/model or V072D replay."
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "V073PORT source is integrated in published origin/main: create port source commit 25ced4bb and ZCode module exports commit 99733d7f. Verified in the current 99733d7f worktree with `cargo test --manifest-path crates/herder/Cargo.toml zcode:: --offline`: 6 passed, 0 failed (includes all three create fake tests: exact returned ID, DefinitelyNotSent before create, UNKNOWN after one possible write with no retry). No native create/send/model or V072D replay.",
+  "blocker": "Current worktree lib.rs does not declare application::target or adapters::zcode::create; leaf forbids changing shared lib.rs/Cargo. Pinned Rust toolchain lacks rustfmt. Fake tests are source-present but unexecuted."
+}

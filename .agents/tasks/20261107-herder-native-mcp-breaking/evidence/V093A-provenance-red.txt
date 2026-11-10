@@ -1,0 +1,91 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-native-adapters/agent-herder/crates/herder)
+warning: unused variable: `native_type`
+   --> src/adapters/zai/mod.rs:730:22
+    |
+730 |             let Some(native_type) = native_block.kind.as_deref().filter(|kind| !kind.is_empty())
+    |                      ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_native_type`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (lib) generated 1 warning (run `cargo fix --lib -p herder` to apply 1 suggestion)
+warning: fields `guard` and `path` are never read
+  --> tests/../src/application/target_gate.rs:29:5
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            --------------------- fields in this struct
+29 |     guard: TargetGateGuard,
+   |     ^^^^^
+30 |     path: std::path::PathBuf,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `identity`, `directory`, and `owner` are never used
+  --> tests/../src/application/target_gate.rs:35:19
+   |
+34 | impl PinnedTargetGateGuard {
+   | -------------------------- methods in this implementation
+35 |     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
+   |                   ^^^^^^^^
+...
+41 |     pub(crate) fn directory(&self) -> &std::path::Path {
+   |                   ^^^^^^^^^
+...
+45 |     pub(crate) fn owner(&self) -> io::Result<u32> {
+   |                   ^^^^^
+
+warning: function `acquire_pinned_wait` is never used
+  --> tests/../src/application/target_gate.rs:77:8
+   |
+77 | pub fn acquire_pinned_wait(
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PinnedTargetGateGuard` is never constructed
+  --> tests/../src/application/target_gate.rs:28:12
+   |
+28 | pub struct PinnedTargetGateGuard {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `acquire_pinned` is never used
+  --> tests/../src/application/target_gate.rs:67:8
+   |
+67 | pub fn acquire_pinned(
+   |        ^^^^^^^^^^^^^^
+
+warning: function `acquire_pinned_inner` is never used
+  --> tests/../src/application/target_gate.rs:86:4
+   |
+86 | fn acquire_pinned_inner(
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `geteuid` is never used
+   --> tests/../src/application/target_gate.rs:100:12
+    |
+100 |         fn geteuid() -> u32;
+    |            ^^^^^^^
+
+warning: `herder` (test "humanstop_gate_pinned") generated 3 warnings
+warning: `herder` (test "target_gate_fixture") generated 6 warnings (2 duplicates)
+warning: `herder` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.29s
+     Running unittests src/lib.rs (crates/herder/target/debug/deps/herder-003d324be0149aef)
+
+running 1 test
+
+thread 'adapters::zai::tests::transcript_projection_preserves_native_block_types_indices_and_known_limits' (2997707) panicked at src/adapters/zai/mod.rs:1080:9:
+assertion `left == right` failed
+  left: "output_text"
+ right: "markdown"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test adapters::zai::tests::transcript_projection_preserves_native_block_types_indices_and_known_limits ... FAILED
+
+failures:
+
+failures:
+    adapters::zai::tests::transcript_projection_preserves_native_block_types_indices_and_known_limits
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 111 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

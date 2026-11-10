@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-11-07T09:05:16+00:00",
+  "details": "a3f95ac9 project_transcript_page hashes chat_id, IDs, roles and text only; excludes node/instance/account. Same native IDs/content in distinct instances produce same snapshot_id despite distinct source refs. NUL-delimited hashing also allows ambiguous field framing if native text/IDs contain NUL. Browser owner correcting with canonical length-delimited tuple; no live sends needed.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Astra",
+      "at": "2026-11-07T09:05:16+00:00",
+      "changes": {
+        "details": "a3f95ac9 project_transcript_page hashes chat_id, IDs, roles and text only; excludes node/instance/account. Same native IDs/content in distinct instances produce same snapshot_id despite distinct source refs. NUL-delimited hashing also allows ambiguous field framing if native text/IDs contain NUL. Browser owner correcting with canonical length-delimited tuple; no live sends needed.",
+        "source": "Independent delta-review a3f95ac9",
+        "status": "open",
+        "title": "Z.ai transcript snapshot не привязан к полному source address"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "Astra",
+      "at": "2026-11-07T09:05:19+00:00",
+      "changes": {
+        "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33"
+      },
+      "reason": ""
+    }
+  ],
+  "id": "B26df5a7ad3274eed8668",
+  "owner": "01a1b39a-d499-7320-809e-e3dbbfae0c33",
+  "reporter": "Astra",
+  "source": "Independent delta-review a3f95ac9",
+  "status": "open",
+  "title": "Z.ai transcript snapshot не привязан к полному source address",
+  "updated_at": "2026-11-07T09:05:19+00:00"
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-08T16:22:37+03:00",
+  "new_owner_session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+  "target": "One blank Z.ai tab created by openOwnedBlankChatPage and verified by verifyNewChatAccountScope; returned page 50, account scope 1aa02989cb1349edca3ce1f9edae68a068369e5de570e9a6be3a53916595df0a. Current identity is uncertain; do not assume page 50 still refers to that tab.",
+  "addressing": "MacMiniChromeTransport.call list_pages and evaluate_script with pageId:50, via existing Mac Mini SSH gateway. Whether pageId is respected is unverified; inspect tools/list schema.",
+  "latest_observations": "See zai-v1-78e-target-collision.json: page 50 changed between existing chat routes; selected-page behavior possible, cause unconfirmed.",
+  "last_mutation": "One blank browser tab creation before checkpoint; no Z.ai prompt or model send in this candidate attempt. No QA resource registration or claim made.",
+  "last_receipt": "New candidate run root ci-zai-v1-78-independent-01 and receipt absent. Historical a836 receipt /home/roomhacker/herder-artifacts/ci-runs/ci-zai-native-a836-0010/receipt.json: create session:51ff45f3cbdf769f0a147c520bb5cb5c, prompt UNKNOWN; never replay.",
+  "jobs": "No v1_browser_stand or this candidate run process matched local process check at 16:22:37. Three concurrent Mac gateway SSH processes PID 1486578,1486599,1491082 observed; ownership and effects unknown, left untouched.",
+  "config": "evidence/zai-v1-78e-prepared.json; do not run until exact target and claim validated.",
+  "state": "Ownership handed to designated session; this worker will perform no further browser action, creation or send."
+}

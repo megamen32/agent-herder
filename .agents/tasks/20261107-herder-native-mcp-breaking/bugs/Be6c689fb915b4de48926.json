@@ -1,0 +1,58 @@
+{
+  "created_at": "2026-11-07T09:59:59+00:00",
+  "details": "index_transcript_page passed each TranscriptPage directly to update_session, which replaces the full session snapshot and short-circuits when snapshot_id/content_truncated match. A caller could index page 1, then page 2 with the same snapshot_id would be ignored, leaving incomplete searchable text and possibly incorrect coverage. The feed must require a locally assembled snapshot with next_cursor=None before any write while preserving native truncated as content_truncated.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Codex",
+      "at": "2026-11-07T09:59:59+00:00",
+      "changes": {
+        "details": "index_transcript_page passed each TranscriptPage directly to update_session, which replaces the full session snapshot and short-circuits when snapshot_id/content_truncated match. A caller could index page 1, then page 2 with the same snapshot_id would be ignored, leaving incomplete searchable text and possibly incorrect coverage. The feed must require a locally assembled snapshot with next_cursor=None before any write while preserving native truncated as content_truncated.",
+        "source": "Owner delta review of commit 9ca0408c; regression in crates/herder/src/application/transcript_index.rs",
+        "status": "open",
+        "title": "V093B index feed accepts a page with a continuation cursor"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "Codex",
+      "at": "2026-11-07T10:03:15+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/V093B-pagination-green.txt",
+            "red_proof_path": "evidence/V093B-pagination-red.txt",
+            "red_result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s",
+            "red_sha256": "f25ecc579b40d77c7d2fa1bf7c6fda578307978a41790eff46fd107072a723d6",
+            "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s",
+            "sha256": "c69543c65c5b06792b6eb516829f612b2a735e91705a6b4de3276d0ef0641db7",
+            "test_command": "cargo test --manifest-path crates/herder/Cargo.toml application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Be6c689fb915b4de48926",
+  "owner": "Codex",
+  "reporter": "Codex",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/V093B-pagination-green.txt",
+      "red_proof_path": "evidence/V093B-pagination-red.txt",
+      "red_result": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s",
+      "red_sha256": "f25ecc579b40d77c7d2fa1bf7c6fda578307978a41790eff46fd107072a723d6",
+      "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s",
+      "sha256": "c69543c65c5b06792b6eb516829f612b2a735e91705a6b4de3276d0ef0641db7",
+      "test_command": "cargo test --manifest-path crates/herder/Cargo.toml application::transcript_index::tests::rejects_a_native_page_with_a_continuation_cursor_before_any_write"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "Owner delta review of commit 9ca0408c; regression in crates/herder/src/application/transcript_index.rs",
+  "status": "fixed",
+  "title": "V093B index feed accepts a page with a continuation cursor",
+  "updated_at": "2026-11-07T10:03:15+00:00"
+}

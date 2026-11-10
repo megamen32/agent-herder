@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-11-06T01:28:06+00:00",
+  "details": "Реальный изолированный процесс вернул 502 active_runtime_host_unknown при пустом списке удалённых узлов. RED тест и исправление добавляют локальный runtime как источник даже без удалённых узлов; остальные владельцы и TTL не меняются.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-06T01:28:06+00:00",
+      "changes": {
+        "details": "Реальный изолированный процесс вернул 502 active_runtime_host_unknown при пустом списке удалённых узлов. RED тест и исправление добавляют локальный runtime как источник даже без удалённых узлов; остальные владельцы и TTL не меняются.",
+        "source": "server-44 entrypoint-active.err; tests/active-fleet-materialized.test.ts",
+        "status": "open",
+        "title": "Список активных сессий не содержит локальный узел при пустом fleet"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "lead",
+      "at": "2026-11-06T01:30:18+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/receipt-entrypoint-active2.json",
+            "result": "PASS",
+            "sha256": "210128e770e74c0238384b2e32deee15705782d2b2efe8d7d7f395cf9bec4b55",
+            "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+          },
+          "kind": "fixed",
+          "reason": ""
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "Bed9eb0cd86a2444a80d9",
+  "owner": "lead",
+  "reporter": "lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/receipt-entrypoint-active2.json",
+      "result": "PASS",
+      "sha256": "210128e770e74c0238384b2e32deee15705782d2b2efe8d7d7f395cf9bec4b55",
+      "test_command": "scripts/run-isolated-native-ci.py --entrypoint-only on server-44"
+    },
+    "kind": "fixed",
+    "reason": ""
+  },
+  "source": "server-44 entrypoint-active.err; tests/active-fleet-materialized.test.ts",
+  "status": "fixed",
+  "title": "Список активных сессий не содержит локальный узел при пустом fleet",
+  "updated_at": "2026-11-06T01:30:18+00:00"
+}

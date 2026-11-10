@@ -1,0 +1,30 @@
+{
+  "status": "FAIL",
+  "expected_guard_assertions": "PASS",
+  "processes": [
+    {
+      "unit": "agent-herder.service",
+      "manifest_mode": "664",
+      "source_binding": {
+        "status": "FAIL",
+        "error_code": "protected_source_required"
+      },
+      "runtime_source_consistency": {
+        "status": "FAIL",
+        "error_code": "protected_source_required"
+      }
+    },
+    {
+      "unit": "agent-herder-v1-noticeplace.service",
+      "manifest_mode": "664",
+      "source_binding": {
+        "status": "FAIL",
+        "error_code": "protected_source_required"
+      },
+      "runtime_source_consistency": {
+        "status": "FAIL",
+        "error_code": "protected_source_required"
+      }
+    }
+  ]
+}

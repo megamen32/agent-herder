@@ -1,0 +1,43 @@
+EEEE
+======================================================================
+ERROR: test_authority_delivers_context_without_capabilities_and_fences_every_read (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 18, in test_authority_delivers_context_without_capabilities_and_fences_every_read
+    a,c,g,_=self.setup_authority();reply=a.handle(request(c,2,'ci-draft'))
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 16, in setup_authority
+    a=Authority(gate,c,candidate_ci_draft=draft,harness_policy=['codex','fast-agent']);a.handle(request(c,1,'hello',hello(c)));return a,c,gate,draft
+TypeError: Authority.__init__() got an unexpected keyword argument 'candidate_ci_draft'
+
+======================================================================
+ERROR: test_missing_spoofed_policy_or_target_cannot_create_context (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 44, in test_missing_spoofed_policy_or_target_cannot_create_context
+    a,c,g,d=self.setup_authority()
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 16, in setup_authority
+    a=Authority(gate,c,candidate_ci_draft=draft,harness_policy=['codex','fast-agent']);a.handle(request(c,1,'hello',hello(c)));return a,c,gate,draft
+TypeError: Authority.__init__() got an unexpected keyword argument 'candidate_ci_draft'
+
+======================================================================
+ERROR: test_real_lease_fence_expires_and_rejects_replaced_owner (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 39, in test_real_lease_fence_expires_and_rejects_replaced_owner
+    a=Authority(gate,c,candidate_ci_draft=draft,harness_policy=['codex']);a.handle(request(c,1,'hello',hello(c)))
+TypeError: Authority.__init__() got an unexpected keyword argument 'candidate_ci_draft'
+
+======================================================================
+ERROR: test_remote_receives_fenced_draft_and_refuses_changed_candidate (__main__.AuthorityContextTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 24, in test_remote_receives_fenced_draft_and_refuses_changed_candidate
+    a,c,g,_=self.setup_authority();remote=RemoteReleaseGate(c,LoopFrames(a));remote.sequence=1
+  File "/tmp/herder-l44-authority-baseline/tests/test_l44_authority_context.py", line 16, in setup_authority
+    a=Authority(gate,c,candidate_ci_draft=draft,harness_policy=['codex','fast-agent']);a.handle(request(c,1,'hello',hello(c)));return a,c,gate,draft
+TypeError: Authority.__init__() got an unexpected keyword argument 'candidate_ci_draft'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.005s
+
+FAILED (errors=4)

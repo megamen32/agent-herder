@@ -1,0 +1,26 @@
+{
+  "scope": "V072B native read and pure message normalization",
+  "source": "crates/herder/src/adapters/zcode/read.rs",
+  "native_contract": "zcode-agent.readSession with explicit workspacePath/workspaceIdentity/workspaceKey/sessionId/runtimePolicy=existing-only/messageLimit; response sessionId must match requested native session; no resume or input submission",
+  "normalization": [
+    "user and assistant roles only",
+    "native messageId",
+    "parentMessageId",
+    "explicit info.metadata.turnId only",
+    "native created timestamp preserved",
+    "text parts concatenated"
+  ],
+  "fixture": "synthetic unit fixture encoded from the legacy DTO shape; no captured ZCode native transcript fixture was found in the inspected task evidence or known legacy app-server fixture",
+  "verification": {
+    "isolated_rust_harness": "cargo test --bin v072b_probe",
+    "result": "3 passed; temporary probe removed",
+    "diff_check": "passed"
+  },
+  "live_native_read": {
+    "status": "not_proven",
+    "reason": "fresh isolated profile has no sessions; zcode-agent.initialize reports available=false because no provider is configured; no matching ZCode supervisor fake-model launcher or captured transcript fixture was found. The only discovered fake-model native CI fixture targets Codex app-server, not ZCode.",
+    "inference_requests": 0
+  },
+  "personal_runtime_used": false,
+  "paid_provider_used": false
+}

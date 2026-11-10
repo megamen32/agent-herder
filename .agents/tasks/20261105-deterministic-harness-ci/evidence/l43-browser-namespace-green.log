@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: uses namespace-aware ip output and refuses an extra interface or host namespace
+ok 1 - uses namespace-aware ip output and refuses an extra interface or host namespace
+  ---
+  duration_ms: 2.859749
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 119.112822

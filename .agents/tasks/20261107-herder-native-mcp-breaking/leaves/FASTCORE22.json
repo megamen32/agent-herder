@@ -1,0 +1,86 @@
+{
+  "id": "FASTCORE22",
+  "label": "Собрать core и runner с подтверждённым native API",
+  "description": "Вход: live preflight FASTINIT выбирает подтверждённую API family; source0e49/eeba и FASTOC22 WIP сохранены. Если готоваяv2ветка подходит, не ждать ненужныйv22port. Иначе интегрироватьtypedv22/freshStart послеFASTOC22. Тот же publishedcore безfixturefork; один aggregateofflinepayloadtest, build+hash handoffLuna.",
+  "acceptance": "Scoped source review + affected tests; published main и matched artifact digests. Fresh Start поддержан только заявленным путём, общий direct Start не объявлен. Native consumer — отдельно Luna.",
+  "parent": "S04",
+  "kind": "task",
+  "status": "waiting",
+  "owner": "Тера",
+  "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+  "harness": "codex",
+  "estimate_minutes": {
+    "minimum": 10,
+    "maximum": 15
+  },
+  "depends_on": [
+    "FASTINIT"
+  ],
+  "affected_files": [
+    "crates/herder/src/adapters/ahap_opencode.rs",
+    "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+    "crates/herder/tests/launcher_scoped_profile.rs"
+  ],
+  "note": "Не Done: согласованный artifact и native business case ещё не доказаны.",
+  "created_at": "2026-11-07T16:10:11+03:00",
+  "updated_at": "2026-11-07T18:15:28+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-07T16:10:11+03:00",
+      "note": "",
+      "changes": {
+        "id": "FASTCORE22",
+        "label": "Собрать один реальный core с fresh Start и исправленным OpenCode runner",
+        "description": "Вход: core delta0e49f6ac и FASTOC22. Интегрировать только fresh create initial Start, direct Deliver unsupported, точный receipt; тот же published core, без отдельного fixture fork. После одной delta-проверки собрать immutable bundle и передать Luna hashes/argv. Эксклюзивный managed instance проверяет stand.",
+        "acceptance": "Scoped source review + affected tests; published main и matched artifact digests. Fresh Start поддержан только заявленным путём, общий direct Start не объявлен. Native consumer — отдельно Luna.",
+        "parent": "S04",
+        "kind": "task",
+        "status": "running",
+        "owner": "Тера",
+        "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+        "harness": "codex",
+        "estimate_minutes": {
+          "minimum": 10,
+          "maximum": 15
+        },
+        "depends_on": [
+          "FASTOC22"
+        ],
+        "affected_files": [
+          "crates/herder/src/adapters/ahap_opencode.rs",
+          "crates/herder/src/bin/herder_native_stdio/owner_opencode.rs",
+          "crates/herder/tests/launcher_scoped_profile.rs"
+        ],
+        "note": "0e49f6ac author3mapping+1launcherPASS already available; only review/integration/artifact remains. No duplicate consumer."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T16:20:27+03:00",
+      "note": "",
+      "changes": {
+        "label": "Собрать core и runner с подтверждённым native API",
+        "depends_on": [
+          "FASTINIT"
+        ],
+        "description": "Вход: live preflight FASTINIT выбирает подтверждённую API family; source0e49/eeba и FASTOC22 WIP сохранены. Если готоваяv2ветка подходит, не ждать ненужныйv22port. Иначе интегрироватьtypedv22/freshStart послеFASTOC22. Тот же publishedcore безfixturefork; один aggregateofflinepayloadtest, build+hash handoffLuna.",
+        "note": "Source-only версия2.2.4 не доказывает отсутствие/api. Realv9 api-session contradicts assumption; сначала точныйread-onlyprobe, безповтораmutation. Independent eeba coresemanticsSUPPORTED; aggregate требуетсовпадающегоrunner."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-07T18:15:28+03:00",
+      "note": "",
+      "changes": {
+        "status": "waiting",
+        "wait_reason": "Новый конкретный остаток QOCJOIN: join source eeba0f8b/8e051d01 и опубликованный stand. Старый profile reject устранёнFASTINIT; предыдущая running запись устарела.",
+        "note": "Не Done: согласованный artifact и native business case ещё не доказаны."
+      },
+      "session": "01a1b341-e06b-7583-8fd4-352423ca22cb",
+      "harness": "codex"
+    }
+  ],
+  "wait_reason": "Новый конкретный остаток QOCJOIN: join source eeba0f8b/8e051d01 и опубликованный stand. Старый profile reject устранёнFASTINIT; предыдущая running запись устарела."
+}

@@ -1,0 +1,131 @@
+test_authority_draft_cannot_open_staging (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_failed_runner_never_produces_a_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_fence_change_or_wrong_policy_is_refused (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_mismatched_transaction_evidence_is_refused (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_real_authority_channel_delivers_incomplete_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_transaction_prepares_authority_owned_draft (test_l50_authority_producer_route.ProducerRouteTests) ... ok
+test_forged_manifest_cannot_become_candidate_evidence (test_l44_ci_producer.ProducerTests) ... ok
+test_positive_full_snapshot_and_negative_changes (test_l44_ci_producer.ProducerTests) ... ok
+test_authority_delivers_context_without_capabilities_and_fences_every_read (test_l44_authority_context.AuthorityContextTests) ... ok
+test_missing_spoofed_policy_or_target_cannot_create_context (test_l44_authority_context.AuthorityContextTests) ... ok
+test_real_lease_fence_expires_and_rejects_replaced_owner (test_l44_authority_context.AuthorityContextTests) ... ok
+test_remote_receives_fenced_draft_and_refuses_changed_candidate (test_l44_authority_context.AuthorityContextTests) ... ok
+test_direct_fleet_entrypoint_cannot_bypass_authority (test_l44_candidate_authority_route.CandidateAuthorityRouteTests) ... ok
+test_staged_entrypoint_uses_existing_authority_channel_and_stays_closed (test_l44_candidate_authority_route.CandidateAuthorityRouteTests) ... ok
+test_unverified_or_forged_authority_context_cannot_reach_preparation (test_l44_candidate_authority_route.CandidateAuthorityRouteTests) ... ok
+test_expiry_allows_only_owned_cleanup (test_remote_release_gate.AuthorityTests) ... ok
+test_finish_closes_protocol (test_remote_release_gate.AuthorityTests) ... ok
+test_no_generic_execution_or_extra_arguments (test_remote_release_gate.AuthorityTests) ... ok
+test_no_lease_data_crosses_channel (test_remote_release_gate.AuthorityTests) ... ok
+test_sequence_replay_and_run_substitution_are_fatal (test_remote_release_gate.AuthorityTests) ... ok
+test_target_mismatch_before_any_gate_or_mutation (test_remote_release_gate.AuthorityTests) ... ok
+test_eof (test_remote_release_gate.FrameTests) ... ok
+test_malformed_frame (test_remote_release_gate.FrameTests) ... ok
+test_read_timeout (test_remote_release_gate.FrameTests) ... ok
+test_roundtrip_and_bound (test_remote_release_gate.FrameTests) ... ok
+test_write_timeout_on_unread_pipe (test_remote_release_gate.FrameTests) ... ok
+test_collector_preflight_failure_never_mutates (test_remote_release_gate.MutationBoundaryTests) ... ok
+test_expiry_before_restart_enters_fenced_rollback (test_remote_release_gate.MutationBoundaryTests) ... ok
+test_expiry_or_eof_before_packages_never_prepares (test_remote_release_gate.MutationBoundaryTests) ... ok
+test_lost_channel_or_successor_fence_never_speculates_rollback (test_remote_release_gate.MutationBoundaryTests) ... ok
+test_authority_flag_cannot_be_top_level_bypass (test_remote_release_gate.ProcessTests) ... ok
+test_local_owner_path_still_requires_proof (test_remote_release_gate.ProcessTests) ... ok
+test_lost_channel_after_fixture_switch_is_unknown_without_rollback (test_remote_release_gate.ProcessTests) ... ok
+test_lost_child_is_unknown_no_retry (test_remote_release_gate.ProcessTests) ... ok
+test_real_duplex_process_without_remote_ledger (test_remote_release_gate.ProcessTests) ... child log
+ordinary log
+ok
+test_remote_entry_rejects_other_command_before_gate (test_remote_release_gate.ProcessTests) ... ok
+test_local_identity_mismatch_never_contacts_authority (test_remote_release_gate.RemoteTests) ... ok
+test_revision_and_cleanup_drift_refuse (test_remote_release_gate.RemoteTests) ... ok
+test_revision_check_precedes_trim_and_unpack (test_remote_release_gate.RemoteTests) ... ok
+test_same_sha_preparation_is_noop (test_remote_release_gate.RemoteTests) ... ok
+test_target_unit_lock_excludes_second_controller (test_remote_release_gate.RemoteTests) ... ok
+test_without_target_ledger_or_git (test_remote_release_gate.RemoteTests) ... ok
+test_wrong_config_and_candidate_refuse (test_remote_release_gate.RemoteTests) ... ok
+test_confirmed_success_and_rollback_cleanup_only_private_stage (test_remote_release_gate.StagingTests) ... ok
+test_unknown_retains_staging_and_sends_no_cleanup (test_remote_release_gate.StagingTests) ... ok
+test_darwin_handoff_refuses_before_owner_capture_or_stop_without_collector (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_fleet_preflight_blocks_before_unpack_or_darwin_handoff (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_missing_installed_collector_refuses_before_any_install_mutation (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_owner_collector_becoming_unavailable_does_not_trigger_rollback_restart (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_owner_collector_preflight_prevents_any_mutation_on_both_entrypoints (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_post_switch_without_installed_consumer_evidence_rolls_back_on_linux_and_darwin (test_l19_collector_preflight.L19CollectorPreflightTests) ... ok
+test_cleanup_allows_expiry_but_not_replacement (test_project_release_gate.ReleaseGateTests) ... ok
+test_different_project_cannot_rollout_same_unit_in_parallel (test_project_release_gate.ReleaseGateTests) ... ok
+test_expired_or_foreign_proof_refused (test_project_release_gate.ReleaseGateTests) ... ok
+test_git_ancestry_blocks_stale_candidate (test_project_release_gate.ReleaseGateTests) ... ok
+test_missing_proof_or_ledger_fails_closed (test_project_release_gate.ReleaseGateTests) ... ok
+test_no_capability_in_refusal (test_project_release_gate.ReleaseGateTests) ... ok
+test_parallel_rollout_excluded_and_status_readable (test_project_release_gate.ReleaseGateTests) ... ok
+test_revision_compare_and_swap_before_mutation (test_project_release_gate.ReleaseGateTests) ... ok
+test_rollout_candidate_forwards_proof_and_packages_gate (test_project_release_gate.ReleaseGateTests) ... ok
+test_successor_fence_refuses_stale_deploy_and_rollback (test_project_release_gate.ReleaseGateTests) ... ok
+test_wrong_target_rejected (test_project_release_gate.ReleaseGateTests) ... ok
+
+----------------------------------------------------------------------
+Ran 62 tests in 1.636s
+
+OK
+installed CI collector preflight failed: collector unavailable; nothing was switched
+runtime state dir: /tmp/tmpr91kem1q
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+packages: prepared
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=100
+fleet node: the release is selected by the current symlink; no release drop-in is written
+release configuration switch failed: release_lease_not_owned_or_expired
+runtime state dir: /tmp/tmpb33suc8s
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+package preparation failed: release_lease_not_owned_or_expired
+runtime state dir: /tmp/tmpb33suc8s
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+package preparation failed: release_authority_channel_closed
+runtime state dir: /tmp/tmp0ciyh2s5
+emergency pause unit: noticeplace-ai-pause.service -> unchanged
+packages: prepared
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=100
+fleet node: the release is selected by the current symlink; no release drop-in is written
+release configuration switch failed: release_authority_channel_closed
+rollback configuration restore failed: release_lease_not_owned_or_expired
+already current; no preparation or restart
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was switched
+installed CI collector preflight failed: collector not implemented; nothing was changed
+installed CI collector preflight failed: installed PID consumer CI collector not implemented; nothing was changed
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: post-switch collector failed
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved
+runtime state dir: /state
+emergency pause unit: noticeplace-ai-pause.service -> inactive
+packages: unchanged
+payload: {"source_sha_ok": true}
+release budget: directories=2 bytes=0
+fleet node: verified LaunchAgent selects the release through node-config/current; no release drop-in is written
+switched: current -> releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release readiness: ready
+[OK ] restart command succeeded: 0
+[OK ] readiness belongs to the new generation: ready
+[OK ] running process comes from the new release: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[OK ] sessions answer: 200
+[OK ] launch policy answers: 200
+[OK ] mcp answers: 200
+[OK ] automation lever unchanged: armed -> armed
+release cancelled before acceptance: post-switch collector failed
+rolling back to bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+rollback proof: process=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb sessions=200 policy=200 mcp=200 agent-resume=resolved

@@ -1,0 +1,83 @@
+{
+  "kind": "task",
+  "parent": "RESTORELEGACY",
+  "label": "Namespaced Vibe transport and native capability proof",
+  "description": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
+  "acceptance": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
+  "affected_files": [
+    "src/adapters/vibe-chrome-transport.ts"
+  ],
+  "status": "blocked",
+  "owner": "chatgpt-all-harness-ci-20261109/native_harness_audit",
+  "harness": "chatgpt",
+  "model": "gpt-6-astra",
+  "estimate_minutes": 15,
+  "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+  "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete.",
+  "id": "CINATIVE",
+  "created_at": "2026-11-09T03:29:52+03:00",
+  "updated_at": "2026-11-09T06:19:31+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-09T03:29:52+03:00",
+      "note": "Resume approved explicit scope split after context recovery.",
+      "changes": {
+        "kind": "task",
+        "parent": "RESTORELEGACY",
+        "label": "Namespaced Vibe transport and native capability proof",
+        "description": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
+        "acceptance": "Complete reviewed namespace/driver/Rust source and native proof contract. Execute only explicitly reviewed own native canaries; retain original receipts and clean own effects.",
+        "affected_files": [
+          "src/adapters/vibe-chrome-transport.ts"
+        ],
+        "status": "running",
+        "owner": "chatgpt-all-harness-ci-20261109/native_harness_audit",
+        "harness": "chatgpt",
+        "model": "gpt-6-astra",
+        "estimate_minutes": 15,
+        "estimate_unknown_reason": "Estimate covers the current bounded implementation/checkpoint. External provider or lease waiting and any further scope require an explicit remainder.",
+        "note": "Split from completed CIVISIBLE contract only. User-facing all-five installed acceptance remains incomplete."
+      },
+      "actor": {
+        "host_id": "roomhacker-server-100",
+        "harness": "chatgpt",
+        "session_id": "chatgpt-all-harness-ci-20261109",
+        "source": "declared"
+      },
+      "session": "chatgpt-all-harness-ci-20261109",
+      "harness": "chatgpt"
+    },
+    {
+      "at": "2026-11-09T05:43:22+03:00",
+      "note": "",
+      "changes": {
+        "status": "blocked",
+        "result": "Native source16 published8adf, Rust binding/model guards published53cfe57f. Zai fresh-process continuation same original handle, OpenCode and ZCode A/B exact responses PASS and chats archived. ChatGPT A accepted once but canonical429, noB, native chat UNKNOWN/unarchived; Codex14% below-reserve refused before submission. Own observer pages and adapter processes cleaned, preserved receipts. Full native all-five/ChatGPT cleanup remains blocked, not claimed PASS."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    },
+    {
+      "at": "2026-11-09T06:19:31+03:00",
+      "note": "",
+      "changes": {
+        "result": "Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": null,
+        "session_id": null,
+        "source": "unknown"
+      },
+      "session": "unknown",
+      "harness": "unknown"
+    }
+  ],
+  "result": "Native source published, Zai/OpenCode/ZCode exactA/B continuation PASS and own chats archived. Codex14% reserve guard blocked before create. One final ChatGPT reconciliation03:04:33UTC auth200/conversation429 RetryAfter25s, stopped afterfirst429; originalAacceptedonce unchanged, BNOT_SUBMITTED, nativechatnotarchived. Observer1115967699 closed/absenceconfirmed; exacttask/SSH/MacMini readers0, no kills. Canonical newresult2c643fd41ba00d2fe571dd3aedb2123491250c8698fe715ddc7c52c678e628e4. Full native acceptance remains blocked, observercleanup complete."
+}

@@ -1,0 +1,17 @@
+RED source_parent=55eba8b50833907012582d7f60d4a0259cde5d8c
+F
+======================================================================
+FAIL: test_native_completion_reader_matches_versioned_message_receipt (test_ahap_opencode_stand.AhapOpenCodeStandTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/roomhacker/.codex/worktrees/ahap-opencode-consumer/agent-herder/.tmp/opencode-receipt-red-v9_tyjb5/test_ahap_opencode_stand.py", line 389, in test_native_completion_reader_matches_versioned_message_receipt
+    self.assertEqual(pair["status"], "confirmed")
+AssertionError: 'receipt_mismatch' != 'confirmed'
+- receipt_mismatch
++ confirmed
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

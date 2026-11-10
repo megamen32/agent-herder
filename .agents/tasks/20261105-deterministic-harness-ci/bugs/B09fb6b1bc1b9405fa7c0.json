@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T07:03:29+00:00",
+  "details": "getObservedMessages не передавал 429 в общий persistent navigation budget. RED/GREEN тест проверяет перенос и отсутствие открытия вкладки в cooldown; live не доказан.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+      "at": "2026-11-07T07:03:29+00:00",
+      "changes": {
+        "details": "getObservedMessages не передавал 429 в общий persistent navigation budget. RED/GREEN тест проверяет перенос и отсутствие открытия вкладки в cooldown; live не доказан.",
+        "source": "tests/chatgpt-background-passive.test.ts",
+        "status": "open",
+        "title": "Обнаруженный 429 в открытой вкладке не ограничивает фоновый переход"
+      }
+    }
+  ],
+  "id": "B09fb6b1bc1b9405fa7c0",
+  "owner": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "reporter": "01a1ac52-d25c-7050-a65d-3fca32642c26",
+  "source": "tests/chatgpt-background-passive.test.ts",
+  "status": "open",
+  "title": "Обнаруженный 429 в открытой вкладке не ограничивает фоновый переход",
+  "updated_at": "2026-11-07T07:03:29+00:00"
+}

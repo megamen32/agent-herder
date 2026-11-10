@@ -1,0 +1,9 @@
+................V1 input is unreadable or invalid JSON
+V1 input is unreadable or invalid JSON
+.V1 zcode.create is UNKNOWN
+..........................
+----------------------------------------------------------------------
+Ran 43 tests in 1.842s
+
+OK
+{"stage": "candidate", "status": "PASS"}

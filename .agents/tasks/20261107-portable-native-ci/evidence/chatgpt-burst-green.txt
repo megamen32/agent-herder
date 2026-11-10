@@ -1,0 +1,2 @@
+Command: npx vitest run --root . --config vitest.config.ts tests/chatgpt-passive-backoff-burst.test.ts tests/chatgpt-background-budget.test.ts tests/chatgpt-background-passive.test.ts tests/chatgpt-full-backoff.test.ts tests/chatgpt-background-navigator.test.ts
+After source edit, tool chunke331c1: 43 passed (43), 5 files passed. Duration1.27s. Live saved cooldown preserved; runtime integration not yet proven.

@@ -1,0 +1,3 @@
+RESPONSE {"jsonrpc":"2.0","id":1,"result":{"harness":"opencode","name":"OpenCode bounded adapter","capabilities":{"methods":["init","createSession","sendMessage","getSession","getSessionMessages"],"deliveryModes":["start"],"controlCapabilities":{"cancelTurn":false,"detach":false,"resume":false,"terminate":false,"recover":false,"fork":false,"modelSwitch":false,"subagents":false,"events":false,"steer":false}}}}
+POST /session HTTP 405
+RESPONSE {"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"OpenCode adapter call failed","data":{"outcome":"unknown","retryable":false}}}

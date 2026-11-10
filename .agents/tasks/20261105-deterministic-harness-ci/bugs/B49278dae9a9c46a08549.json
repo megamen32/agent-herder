@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-07T13:24:01+00:00",
+  "details": "Installed Herder advertises only codex; no OpenCode server or credential configured. Current Codex config has no Ollama/Gemma provider; an explicit create_session for OpenCode returned INVALID_ARGUMENT. Candidate isolated journey passes but installed process cannot safely route to local fake/Gemma without verified configuration. User explicitly forbids inventing a separate addressed test route and access changes.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "lead",
+      "at": "2026-11-07T13:24:01+00:00",
+      "changes": {
+        "details": "Installed Herder advertises only codex; no OpenCode server or credential configured. Current Codex config has no Ollama/Gemma provider; an explicit create_session for OpenCode returned INVALID_ARGUMENT. Candidate isolated journey passes but installed process cannot safely route to local fake/Gemma without verified configuration. User explicitly forbids inventing a separate addressed test route and access changes.",
+        "source": "server-44 node-config, service capability, provider config and native create result",
+        "status": "open",
+        "title": "Installed server-44 cannot run the isolated native CI journey"
+      }
+    }
+  ],
+  "id": "B49278dae9a9c46a08549",
+  "owner": "lead",
+  "reporter": "lead",
+  "source": "server-44 node-config, service capability, provider config and native create result",
+  "status": "open",
+  "title": "Installed server-44 cannot run the isolated native CI journey",
+  "updated_at": "2026-11-07T13:24:01+00:00"
+}

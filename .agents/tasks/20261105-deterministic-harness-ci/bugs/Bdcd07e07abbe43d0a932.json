@@ -1,0 +1,42 @@
+{
+  "created_at": "2026-11-06T20:27:48+00:00",
+  "details": "v15 остановился до сценариев с PermissionError на создании agent-resume-mcp symlink в скопированном staging, evidence/l43-v15-staging.err. Временный staging исправлен с восстановлением режима, RED/GREEN evidence/l43-workspace-staging-{red,green}.log; выполняется повтор v16.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "L43",
+      "at": "2026-11-06T20:27:48+00:00",
+      "changes": {
+        "details": "v15 остановился до сценариев с PermissionError на создании agent-resume-mcp symlink в скопированном staging, evidence/l43-v15-staging.err. Временный staging исправлен с восстановлением режима, RED/GREEN evidence/l43-workspace-staging-{red,green}.log; выполняется повтор v16.",
+        "source": "v15 isolated read-only candidate",
+        "status": "open",
+        "title": "CI staging не создаёт workspace link после копирования read-only node_modules"
+      }
+    },
+    {
+      "action": "resolve",
+      "actor": "L43",
+      "at": "2026-11-06T20:28:49+00:00",
+      "changes": {
+        "resolution": {
+          "duplicate_of": "B46b47bfd24184a4a8917",
+          "kind": "duplicate",
+          "reason": "Одна ошибка v15 создания workspace-ссылки до запуска сценариев."
+        },
+        "status": "duplicate"
+      }
+    }
+  ],
+  "id": "Bdcd07e07abbe43d0a932",
+  "owner": "L43",
+  "reporter": "L43",
+  "resolution": {
+    "duplicate_of": "B46b47bfd24184a4a8917",
+    "kind": "duplicate",
+    "reason": "Одна ошибка v15 создания workspace-ссылки до запуска сценариев."
+  },
+  "source": "v15 isolated read-only candidate",
+  "status": "duplicate",
+  "title": "CI staging не создаёт workspace link после копирования read-only node_modules",
+  "updated_at": "2026-11-06T20:28:49+00:00"
+}

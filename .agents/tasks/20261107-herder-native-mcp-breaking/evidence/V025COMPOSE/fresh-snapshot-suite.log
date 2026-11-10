@@ -1,0 +1,51 @@
+   Compiling herder v0.1.0 (/home/roomhacker/.codex/worktrees/herder-v1-fixture/agent-herder/crates/herder)
+warning: fields `authority`, `database`, `gate`, and `generation` are never read
+  --> tests/../src/bin/herder_native_stdio/scoped_profile.rs:37:9
+   |
+36 | pub struct OpenedOwner {
+   |            ----------- fields in this struct
+37 |     pub authority: ScopedAuthority,
+   |         ^^^^^^^^^
+38 |     pub owner: OwnerProfile,
+39 |     pub database: PathBuf,
+   |         ^^^^^^^^
+40 |     pub gate: PathBuf,
+   |         ^^^^
+41 |     pub generation: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `herder` (test "launcher_scoped_profile") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.38s
+     Running unittests src/bin/herder_native_stdio.rs (crates/herder/target/debug/deps/herder_native_stdio-9ee15047bdbad9c6)
+
+running 6 tests
+test native_reader::tests::exact_completed_turn_needs_user_item ... ok
+test native_reader::tests::malformed_and_multiple_active_are_unknown ... ok
+test native_reader::tests::metadata_requires_explicit_idle ... ok
+test owner_policy::tests::exact_receipt_rejects_other_identity_generation_and_binding ... ok
+test owner_policy::tests::imported_unscoped_and_ambiguous_receipts_are_denied ... ok
+test native_reader::tests::reader_checks_profile_target_and_exact_receipt_over_rpc ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/launcher_scoped_profile.rs (crates/herder/target/debug/deps/launcher_scoped_profile-8023a4de6f7b0e8f)
+
+running 13 tests
+test real_sdk_owner_stdio_create_task_and_reopened_messages ... ignored, run exactly once in the isolated tests/native launcher after Task reconciliation review
+test launch_rejects_v3_store_missing_schema_fence ... ok
+test launched_authority_rejects_imported_mapping_without_scope ... ok
+test fifo_profile_is_rejected_without_waiting_for_a_writer ... ok
+test scoped_stdio_rejects_spoofed_identity_and_mutation ... ok
+test owner_profile_requires_explicit_complete_protected_configuration ... ok
+test launch_rejects_downgraded_version_and_missing_v3_fence ... ok
+test launcher_opens_only_pinned_authority_and_refuses_changed_generation ... ok
+test launcher_opens_migrated_v4_without_losing_authority ... ok
+test launch_rejects_writable_ancestor ... ok
+test v4_migration_rejects_gate_from_another_authority ... ok
+test launched_authority_retains_fresh_create_receipt_in_the_same_store ... ok
+test trusted_owner_launcher_wires_create_and_scoped_read_over_stdio ... ok
+
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.93s
+

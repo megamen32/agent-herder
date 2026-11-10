@@ -1,0 +1,17 @@
+
+ RUN  v4.1.10 /home/roomhacker/.codex/worktrees/herder-quota-receipt/agent-herder
+
+ ✓ tests/ahap-codex-runner.test.ts > requires explicit single transport and owner HOME/cwd without inherited socket fallback 6ms
+ ✓ tests/ahap-codex-runner.test.ts > constructs the existing adapter without starting it 2ms
+ ✓ tests/ahap-codex-runner.test.ts > forwards existing-session delivery modes and native turn receipts verbatim 8ms
+ ✓ tests/ahap-codex-runner.test.ts > exposes legacy discovery/raw bytes and does not claim unavailable projects 3ms
+ ✓ tests/ahap-codex-runner.test.ts > sanitizes mutation exception with corrective context and never automatically retries 2ms
+ ✓ tests/ahap-codex-runner.test.ts > AHAP uses the real legacy Unix socket transport and its receipt journal without replay 72ms
+ ✓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=false uses the legacy socket semantics without duplicate effects 65ms
+ ✓ tests/ahap-codex-runner.test.ts > idle Codex queue with activeTurnOnly=true uses the legacy socket semantics without duplicate effects 13ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  22:57:04
+   Duration  1.77s (transform 1.17s, setup 69ms, import 1.28s, tests 174ms, environment 0ms)
+
