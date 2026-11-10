@@ -62,7 +62,8 @@ fn allowed_adapter_env(kind: &str, name: &str) -> bool {
             | "AGENT_HERDER_VIBE_MAC_SSH_TARGET" | "AGENT_HERDER_VIBE_MAC_NODE_PATH"
             | "AGENT_HERDER_VIBE_MAC_CLI_PATH" | "AGENT_HERDER_VIBE_SERVER_CLI_PATH"
             | "AHAP_USERIO_ENDPOINT" | "AHAP_USERIO_AGENT_ID" | "AHAP_USERIO_INSTANCE_ID"
-            | "AHAP_USERIO_ACCOUNT_SCOPE" | "AHAP_USERIO_ACCESS_TOKEN_FILE" | "AHAP_USERIO_TOKEN_FILE"),
+            | "AHAP_USERIO_ACCOUNT_SCOPE" | "AHAP_USERIO_ACCESS_TOKEN_FILE" | "AHAP_USERIO_TOKEN_FILE"
+            | "AHAP_USERIO_CONNECTION_ID" | "AHAP_USERIO_PRINCIPAL_ID"),
         _ => false,
     }
 }
@@ -166,6 +167,11 @@ fn validate_userio_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
     if !valid_browser_instance_id(instance) {
         return Err(invalid_browser_binding());
     }
+    if get("AHAP_USERIO_CONNECTION_ID").is_some_and(|id| !valid_userio_agent_id(id))
+        || get("AHAP_USERIO_PRINCIPAL_ID").is_some_and(|id| id.is_empty() || id.len() > 256)
+    {
+        return Err(invalid_browser_binding());
+    }
     let browser_scope = get("AHAP_BROWSER_ACCOUNT_SCOPE");
     let userio_scope = get("AHAP_USERIO_ACCOUNT_SCOPE");
     if let Some(scope) = browser_scope {
@@ -202,6 +208,7 @@ fn validate_browser_binding(env: &BTreeMap<String, String>) -> io::Result<()> {
     let userio_keys = [
         "AHAP_USERIO_ENDPOINT", "AHAP_USERIO_AGENT_ID", "AHAP_USERIO_INSTANCE_ID",
         "AHAP_USERIO_ACCOUNT_SCOPE", "AHAP_USERIO_ACCESS_TOKEN_FILE", "AHAP_USERIO_TOKEN_FILE",
+        "AHAP_USERIO_CONNECTION_ID", "AHAP_USERIO_PRINCIPAL_ID",
     ];
     if env.get("AHAP_BROWSER_TRANSPORT").map(String::as_str) == Some("userio")
         || userio_keys.iter().any(|key| env.contains_key(*key))
@@ -613,6 +620,14 @@ mod enrollment_tests {
         assert!(validate_userio_binding(&env).is_ok());
         env.insert("AHAP_USERIO_ACCOUNT_SCOPE".into(), "b".repeat(64));
         assert!(validate_userio_binding(&env).is_ok());
+        env.insert("AHAP_USERIO_CONNECTION_ID".into(), "work".into());
+        env.insert("AHAP_USERIO_PRINCIPAL_ID".into(), "principal-work".into());
+        assert!(validate_userio_binding(&env).is_ok());
+        for key in ["AHAP_USERIO_CONNECTION_ID", "AHAP_USERIO_PRINCIPAL_ID"] {
+            assert!(allowed_adapter_env("chatgpt", key));
+            assert!(allowed_adapter_env("zai", key));
+            assert!(!allowed_adapter_env("codex", key));
+        }
         fs::remove_file(path).unwrap();
     }
 
@@ -640,6 +655,8 @@ mod enrollment_tests {
             ("AHAP_USERIO_ENDPOINT", "https://user:pass@userio.example/"),
             ("AHAP_USERIO_INSTANCE_ID", "browser-invalid"),
             ("AHAP_BROWSER_TRANSPORT", "vibe"),
+            ("AHAP_USERIO_CONNECTION_ID", "bad/connection"),
+            ("AHAP_USERIO_PRINCIPAL_ID", ""),
         ] {
             let mut env = base.clone();
             env.insert(name.into(), value.into());

@@ -10,7 +10,7 @@ export type UserIoConfig = {
 };
 export type UserIoAgentResult = {ok:boolean;error?:string;[k:string]:unknown};
 export function userIoAccountScope(provider:string,userId:string,accountId:string):string {
-  if(!provider||!userId||!accountId) throw new Error('userio_identity_incomplete');
+  if(!provider||!userId||typeof accountId!=='string') throw new Error('userio_identity_incomplete');
   return createHash('sha256').update(JSON.stringify({provider,user_id:userId,account_id:accountId})).digest('hex');
 }
 const sleep = (ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));

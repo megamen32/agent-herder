@@ -63,6 +63,8 @@ describe("strict UserIO ChatGPT transport",()=>{
     expect(userIoAccountScope('chatgpt','user-1','account-1')).toBe(
       createHash('sha256').update(JSON.stringify({provider:'chatgpt',user_id:'user-1',account_id:'account-1'})).digest('hex'));
     expect(userIoAccountScope('chatgpt','user-1','account-1')).not.toBe(userIoAccountScope('chatgpt','user-1','account-2'));
+    expect(userIoAccountScope('chatgpt','user-1','')).toBe(
+      createHash('sha256').update(JSON.stringify({provider:'chatgpt',user_id:'user-1',account_id:''})).digest('hex'));
   });
   it("routes every command to one UUID and preserves latest native pair",async()=>{
     const context={connectionId:"work",principalId:"principal-work"};
