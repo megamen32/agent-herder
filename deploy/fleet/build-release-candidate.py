@@ -458,6 +458,16 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
     temporary = manifest_path.with_name(f"{manifest_path.name}.tmp-{os.getpid()}")
     temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
     os.replace(temporary, manifest_path)
+    # Installed native acceptance pins these files and refuses group/other
+    # writable artifacts.  The candidate builder must make the immutable
+    # runtime bytes readable by the owner and everyone else, but never
+    # writable outside the owner, regardless of the checkout umask.
+    for immutable in (
+        release / "build-manifest.json",
+        release / "dist" / "fleet-deployment-manifest.json",
+        release / "dist" / "index.js",
+    ):
+        immutable.chmod(0o644)
     return document
 
 
