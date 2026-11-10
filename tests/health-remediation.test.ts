@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { normalizeHealthExecution, normalizeIncidentExecution, healthModelForHarness, INCIDENT_EXECUTION } from "../src/health-remediation.js";
 
 describe("health remediation execution profile", () => {
-  it("accepts the exact Notice Place direct subscription profile at the repair boundary", () => {
+  it("accepts the current Herder Luna profile and retains direct MiniMax for backward compatibility", () => {
     expect(normalizeHealthExecution(INCIDENT_EXECUTION)).toEqual(INCIDENT_EXECUTION);
     expect(healthModelForHarness("opencode", normalizeHealthExecution(INCIDENT_EXECUTION)))
-      .toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
-    expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "other-model" })).toThrow(/model/);
+      .toBe("omniroute/cx/gpt-6-luna");
+    expect(normalizeHealthExecution({ runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" }).model)
+      .toBe("MiniMax-M3.1-Flash");
+    expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "bad model" })).toThrow(/model/);
   });
   it("accepts the canonical ZCode/OmniRoute/GLM Flash profile", () => {
     expect(normalizeHealthExecution({

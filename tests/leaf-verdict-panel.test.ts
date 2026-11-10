@@ -103,10 +103,10 @@ describe("the panel shows what the server answered about the route", () => {
       workingModel: PROVEN_ROUTE,
       leafVerdict: leaf("denied", "not-allowed"),
     });
-    expect(verdict.kind).toBe("refused");
-    expect(verdict.label).toBe(MODEL_VERDICT_LABELS.refused);
+    expect(verdict.kind).toBe("closed");
+    expect(verdict.label).toBe(MODEL_VERDICT_LABELS.closed);
     expect(verdict.tone).toBe("error");
-    expect(verdict.reason).toContain("список разрешённых");
+    expect(verdict.reason).toContain("закрыт правилом владельца");
     expect(verdict.action).toContain("Поставить рабочую модель");
   });
 

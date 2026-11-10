@@ -338,15 +338,25 @@ export function normalizeModelEntry(entry: string): string {
 /**
  * Does a model id match one policy entry?
  *
- * An entry that ends with `*` is a prefix rule, everything else is an exact
- * comparison. Both ignore the case and the surrounding whitespace.
+ * Stars match any sequence, including provider path separators. Matching is
+ * anchored and case-insensitive; entries without stars remain exact.
  */
 export function modelMatchesEntry(model: string, entry: string): boolean {
   const candidate = model.trim().toLocaleLowerCase("en-US");
   const rule = entry.trim().toLocaleLowerCase("en-US");
   if (rule.length === 0) return false;
-  if (rule.endsWith("*")) return candidate.startsWith(rule.slice(0, -1));
-  return candidate === rule;
+  if (!rule.includes("*")) return candidate === rule;
+  const parts = rule.split("*");
+  let position = 0;
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!;
+    const found = index === parts.length - 1 && !rule.endsWith("*")
+      ? candidate.length - part.length : candidate.indexOf(part, position);
+    if (found < position || candidate.slice(found, found + part.length) !== part) return false;
+    if (found < 0 || (index === 0 && found !== 0)) return false;
+    position = found + part.length;
+  }
+  return rule.endsWith("*") || position === candidate.length;
 }
 
 /**

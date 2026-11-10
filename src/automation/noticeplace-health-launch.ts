@@ -10,6 +10,12 @@ export const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   healthModelForHarness("opencode", INCIDENT_EXECUTION),
 ]);
 
+/** A qualified route; the project policy determines eligibility. */
+export function isIncidentModelRoute(model: unknown): model is string {
+  return typeof model === "string" && model.length <= 256 && model === model.trim()
+    && /^[A-Za-z0-9._:-]+(?:\/[A-Za-z0-9._:$-]+)+$/.test(model);
+}
+
 /**
  * A bare model id of the incident execution is a model of the pinned provider.
  *
@@ -37,8 +43,8 @@ export function hasNoticeplaceHealthBearer(authorization: string | undefined): b
 export function validateNoticeplaceHealthLaunch(input: {
   harness?: unknown; model?: unknown; operationId?: unknown;
 }): string | undefined {
-  if (input.harness !== "opencode" || !INCIDENT_MODELS.has(String(input.model))) {
-    return `Для анализа инцидента разрешён только OpenCode с утверждённой моделью по подписке: ${[...INCIDENT_MODELS].join(", ")}. Другие модели не допускаются.`;
+  if (input.harness !== "opencode" || (input.model !== undefined && !isIncidentModelRoute(input.model))) {
+    return "Для анализа инцидента нужен OpenCode и полный маршрут модели provider/model.";
   }
   if (typeof input.operationId !== "string" || !input.operationId.trim()) {
     return "Для анализа инцидента требуется стабильный operation_id.";

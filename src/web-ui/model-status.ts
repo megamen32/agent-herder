@@ -21,7 +21,7 @@ import { modelMatchesEntry } from "../project-model-gate.js";
 import { DEFAULT_PROFILES } from "../web/settings-catalog.js";
 
 /** The same rule of the guard of the OpenCode integration: codex, claude, anthropic. */
-const RESTRICTED_MODEL_TOKEN = /(^|[^a-z0-9])(codex|claude|anthropic)([^a-z0-9]|$)/i;
+const RESTRICTED_MODEL_TOKEN = /(^|[^a-z0-9])(gpt|codex|claude|anthropic)(?=[^a-z]|$)/i;
 
 /** True when the route leads to a provider the rule of the owner closes. */
 export function hasRestrictedProviderToken(modelId: string): boolean {

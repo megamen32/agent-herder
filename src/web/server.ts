@@ -53,7 +53,7 @@ import { sessionInspectFacts, type SessionInspectFacts } from "../session-visual
   // ORCHESTRATOR-CONFLICT: src/web/server.ts:27 — его три импорта (buildIntegratorProgress/deliverStaleRunningQuestion/loadAskHumanProducer) сохранены; добавлен наш sessionInspectFacts (инспектор сессии).
 import { NoticeplaceHealthObserver } from "../automation/noticeplace-health-observer.js";
 import { appendHealthRefusalAudit, healthRefusalAuditPath, type HealthReasonRefusal } from "../automation/health-reason-codes.js";
-import { NOTICEPLACE_HEALTH_MODELS, resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
+import { resolveLaunchHealthPlan } from "../automation/noticeplace-health-policy.js";
 import { readArmedHealthCandidates, recoverNoticeplaceHealthObservation } from "../automation/noticeplace-health-recovery.js";
 import { createMiniMaxQuotaPreflight } from "../automation/minimax-quota-preflight.js";
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
@@ -107,6 +107,7 @@ import { lifecycleEntryFor, markLifecycleEvent, type SessionLifecycleEvent } fro
 import { getAgentActivityStatistics, withSessionPortfolioStatistics } from "../session-statistics.js";
 import { createMcpHandler, type McpServer } from "@modelcontextprotocol/server";
 import { createHash } from "node:crypto";
+import { assertModelAllowedForDirectory, assertModelAllowedForProjectRoute } from "../project-model-gate.js";
 import { toNodeHandler, type NodeMcpRequestHandler } from "@modelcontextprotocol/node";
 import type { AdapterRegistry } from "../adapter-registry.js";
 import {
@@ -3551,30 +3552,30 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (harness !== execution.runtime) {
       return sendJson(response, 409, { error: `health remediation harness must match execution runtime (${execution.runtime})` });
     }
-    // One model allowlist for the analysis and the repair of an incident: the
-    // approved MiniMax routes only, no other provider and no fallback.
-    const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
-    if (requestedModel && !NOTICEPLACE_HEALTH_MODELS.includes(requestedModel)) {
-      return sendJson(response, 409, { error: "Noticeplace incidents allow only the approved MiniMax models; no provider fallback" });
+    const healthPolicy = await automationLaunchPolicyStore?.load().catch(() => undefined);
+    if (!healthPolicy || healthPolicy.kind !== "valid") {
+      return sendJson(response, 503, { error: "Project launch policy is unavailable or invalid" });
     }
+    const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
     const model = requestedModel || healthModelForHarness(harness, execution);
     if (harness === "opencode") {
-      if (!NOTICEPLACE_HEALTH_MODELS.includes(model)) {
-        return sendJson(response, 409, { error: "Noticeplace incidents require an approved MiniMax model; no provider fallback" });
-      }
-      // A stale catalog is not a refusal: the cache is refreshed and read
-      // again, and only a model that is missing from the fresh catalog is
-      // refused.
-      const catalog = await freshModelCatalog(supervisor, "opencode");
-      if (!catalog.models.includes(model)) {
-        return sendJson(response, 409, { error: `OpenCode model unavailable: ${model}; no provider fallback` });
-      }
-      // An exhausted MiniMax route quota is an explicit reason to
-      // refuse, not a random 429 in the middle of the repair.
-      const quota = await noticeplaceHealthQuotaPreflight()(model);
-      if (quota === "quota_exhausted") {
-        return sendJson(response, 409, { error: `Квота модели ${model} исчерпана; починка не запускается.` });
-      }
+      if (!projectLaunchDispatch) return sendJson(response, 503, { error: "Project launch routing is unavailable" });
+      const operationId = typeof body.operation_id === "string" && body.operation_id.trim()
+        ? body.operation_id.trim() : createHash("sha256").update(JSON.stringify(["legacy-health", incidentId, planId])).digest("hex");
+      const message = "Health remediation incident=" + incidentId + " plan=" + planId + "\n\n" + body.message.trim();
+      const result = await projectLaunchDispatch({ [NOTICEPLACE_HEALTH_AUTHORIZED]: true,
+        project: typeof body.project === "string" && body.project.trim() ? body.project.trim() : body.cwd,
+        cwd: body.cwd, message, harness: "opencode", name: body.name, mode: "queue", operationId,
+        ...(Array.isArray(body.sourceSessions) ? { sourceSessions: body.sourceSessions as Array<{ harness: HarnessType; sessionId: string; hostId: string }> } : {}),
+        ...(requestedModel ? {model: requestedModel} : {}) });
+      if (result.outcome === "accepted" && result.sessionId) await launchHealthPlans?.remember(harness, result.sessionId, planId);
+      return sendJson(response, result.outcome === "accepted" ? 200 : 409, { ...result, incident_id: incidentId, plan_id: planId });
+    }
+    try {
+      assertModelAllowedForDirectory(healthPolicy.policy, body.cwd, model, harness);
+      if (typeof body.project === "string" && body.project.trim()) assertModelAllowedForProjectRoute(healthPolicy.policy, body.project.trim(), model);
+    } catch (error) {
+      return sendJson(response, 409, { error: (error as Error).message });
     }
     const message = [
       `Health remediation incident=${incidentId} plan=${planId}`,

@@ -8,8 +8,8 @@
  * provider-facing model id. The rule says which leaves may be launched, and
  * every consumer of the product asks this module:
  *
- * - the launcher (`src/autopilot/unfinished-session-launcher.ts`) admits only
- *   the leaves of the allowed families;
+ * - the launcher (`src/autopilot/unfinished-session-launcher.ts`) rejects
+ *   forbidden provider/model families;
  * - the guard of the OpenCode integration
  *   (`integrations/opencode/agent-herder-autopilot.js`) answers with the same
  *   rule, so the panel never promises a route the guard revokes;
@@ -43,26 +43,17 @@ export interface LeafLaunchPolicy {
   readonly version: number;
   /** The pattern of the providers the owner closed for good. */
   readonly closedProviderPattern: string;
-  /** The families the owner allows. */
-  readonly allowedFamilies: readonly LeafLaunchFamily[];
 }
 
 /**
  * The rule itself.
  *
- * The closed providers are refused whatever the owner switches: the switch of
- * the prohibitions relaxes the routes that are merely unknown, never the
- * providers the owner closed. The allowed families are the routes the
- * launcher admits.
+ * GPT and Claude family leaves are denied, independent of the switch. A
+ * confirmed non-forbidden leaf is admitted without an allowed-family list.
  */
 export const LEAF_LAUNCH_POLICY: LeafLaunchPolicy = {
-  version: 2,
-  closedProviderPattern: "codex|claude|anthropic",
-  allowedFamilies: [
-    { providers: ["minimax", "minimax-code", "minimax-coding-plan"], modelPattern: "minimax|mmcode" },
-    { providers: ["glm", "zai", "zai-coding-plan", "zhipu"], modelPattern: "(^|[/_-])glm([-_/]|$)" },
-    { providers: ["zcode-start", "zcode-individual"], modelPattern: "^(?:(?:zcode-start|zcode-individual)/)?glm-5\\.3-flash$" },
-  ],
+  version: 3,
+  closedProviderPattern: "(^|[^a-z0-9])(gpt|codex|claude|anthropic)(?=[^a-z]|$)",
 };
 
 /**
@@ -86,11 +77,6 @@ export const LEAF_LAUNCH_REFUSAL_MESSAGES = {
 /** The pattern of the closed providers, compiled once. */
 const CLOSED_PROVIDER_PATTERN = new RegExp(LEAF_LAUNCH_POLICY.closedProviderPattern, "u");
 
-/** The patterns of the allowed families, compiled once. */
-const ALLOWED_FAMILY_PATTERNS: readonly RegExp[] = LEAF_LAUNCH_POLICY.allowedFamilies.map(
-  (family) => new RegExp(family.modelPattern, "u"),
-);
-
 /** The provider id and the model id of a leaf, as the rule reads them. */
 function normalizedLeaf(leaf: ProviderLeaf): { providerId: string; modelId: string } {
   return {
@@ -113,16 +99,13 @@ export function isClosedProviderLeaf(leaf: ProviderLeaf): boolean {
 /**
  * True when the rule of the owner lets the launcher run this leaf.
  *
- * This is the rule of the launcher: the leaf must be of an allowed family, and
- * a closed provider is never of one.
+ * A complete leaf is allowed unless it belongs to a denied family.
  */
 export function isLeafAllowedByOwnerRule(leaf: ProviderLeaf): boolean {
   const { providerId, modelId } = normalizedLeaf(leaf);
   if (!providerId || !modelId) return false;
   if (isClosedProviderLeaf(leaf)) return false;
-  return LEAF_LAUNCH_POLICY.allowedFamilies.some(
-    (family, index) => family.providers.includes(providerId) && ALLOWED_FAMILY_PATTERNS[index]!.test(modelId),
-  );
+  return true;
 }
 
 /** The answer of the rule about one leaf. */
@@ -131,10 +114,8 @@ export type LeafLaunchVerdict = "allowed" | "denied";
 /**
  * The answer of the rule about one leaf, with the switch of the owner.
  *
- * The provider the owner closed is refused always. The leaf of an allowed
- * family is allowed. Every other leaf is refused while the prohibitions are
- * on, and allowed when the owner switches them off — the switch relaxes the
- * routes the rule does not know, never the providers the owner closed.
+ * A forbidden family is always denied. An incomplete leaf remains unresolved;
+ * otherwise a confirmed non-forbidden leaf is allowed.
  */
 export function leafLaunchVerdict(leaf: ProviderLeaf, options: { prohibitionsEnabled: boolean }): LeafLaunchVerdict {
   if (isClosedProviderLeaf(leaf)) return "denied";

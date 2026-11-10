@@ -20,7 +20,8 @@ import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
 import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { MODEL_NOT_PERMITTED_CODE, ModelNotPermittedError } from "../project-model-policy.js";
-import { assertModelAllowedForProjectRoute } from "../project-model-gate.js";
+import { assertModelAllowedForDirectory, assertModelAllowedForProjectRoute } from "../project-model-gate.js";
+import { healthModelForHarness, INCIDENT_EXECUTION } from "../health-remediation.js";
 import { AUTOMATION_DISABLED_CODE } from "./health-reason-codes.js";
 import { automationDisarmDecision, humanWorkKey, projectWorkKey, AutomationDisarmStore } from "../automation-disarm/index.js";
 
@@ -303,8 +304,10 @@ export async function dispatchProjectLaunch(
   const previous = attempts[attempts.length - 1];
   // A health request selects only the allowed OpenCode entry; it never walks
   // the ordinary fallback chain. The original policy remains unchanged.
-  const resolutionPolicy = healthAnalysis && routeKey && healthRoute
-    ? { ...input.policy, projectRoutes: { ...input.policy.projectRoutes, [routeKey]: { ...healthRoute, harnesses: ["opencode" as const] } } }
+  const incidentDefault = healthModelForHarness("opencode", input.policy.incidentExecution ?? INCIDENT_EXECUTION);
+  const resolutionPolicy = healthAnalysis
+    ? { ...input.policy, models: { ...input.policy.models, opencode: incidentDefault },
+        ...(routeKey && healthRoute ? { projectRoutes: { ...input.policy.projectRoutes, [routeKey]: { ...healthRoute, harnesses: ["opencode" as const] } } } : {}) }
     : input.policy;
   const resolution = resolveProjectLaunch(resolutionPolicy, {
     project,
@@ -319,7 +322,7 @@ export async function dispatchProjectLaunch(
   // reads the class, not the wording of the reason.
   let routingReasonCode: string | undefined;
   if (resolution.kind === "unconfigured") {
-    const fallback = defaultTarget(input.policy, input.harness);
+    const fallback = defaultTarget(resolutionPolicy, input.harness);
     if (!fallback) {
       return {
         operationId,
@@ -360,16 +363,16 @@ export async function dispatchProjectLaunch(
     // A configured project is authoritative: the route decides harness, model
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
-    model = healthAnalysis ? input.model : resolution.model;
+    model = healthAnalysis ? input.model ?? resolution.model : resolution.model;
     // The analysis path runs the model of the request, and the lists of the
     // route judge the model of the route only. The model of the request is
     // judged by the same lists here, so a project that permits the model of
     // its route and forbids the model of the request refuses the launch
     // instead of running the forbidden model. The check stands before the
     // session is reserved, so a forbidden model never reaches a harness.
-    if (healthAnalysis && input.model) {
+    if (healthAnalysis && model) {
       try {
-        assertModelAllowedForProjectRoute(input.policy, project, input.model);
+        assertModelAllowedForProjectRoute(input.policy, project, model);
       } catch (error) {
         if (!(error instanceof ModelNotPermittedError)) throw error;
         return {
@@ -421,6 +424,15 @@ export async function dispatchProjectLaunch(
       : routingReasonOf(attempts)}`;
   }
 
+  if (model && cwd) {
+    try {
+      assertModelAllowedForDirectory(input.policy, cwd, model, harness);
+    } catch (error) {
+      if (!(error instanceof ModelNotPermittedError)) throw error;
+      return { operationId, project, attempts, outcome: "no_harness", routingReason: error.message,
+        routingReasonCode: MODEL_NOT_PERMITTED_CODE, ...routeReceipt };
+    }
+  }
   const inputId = attemptInputId(operationId, harness);
   // Reserve the attempt durably before the native call. A concurrent or
   // restarted caller sees the reservation instead of launching a second one.

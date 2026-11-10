@@ -122,20 +122,22 @@ describe("new session launch policy settings", () => {
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", [])).toBeUndefined();
   });
 
-  it("allows the MiniMax subscription route and refuses a provider substitution", () => {
+  it("keeps the direct MiniMax route valid while highlighting the Herder-owned Luna selection", () => {
     expect(modelValueIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(modelValueIssue("omniroute/minimax/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("omniroute/cx/gpt-6-luna")).toBeUndefined();
     expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toContain("закреплён");
-    expect(incidentModelIssue("zai/GLM-4.6")).toBeTruthy();
-    expect(incidentModelIssue("omniroute/minimax-combo-m3.1")).toContain("закреплён");
-    expect(incidentModelIssue("MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("zai/GLM-4.6")).toContain("закреплён");
+    expect(incidentModelIssue("MiniMax-M3.1-Flash")).toContain("закреплён");
   });
 
-  it("validates the canonical local incident route and refuses an arbitrary override", () => {
+  it("validates the Luna default and accepts a well-formed direct MiniMax compatibility route", () => {
     const draft = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" } };
     const saved = validateAutomationLaunchPolicy(JSON.parse(JSON.stringify(draft)));
     expect(saved.incidentExecution?.model).toBe("MiniMax-M3.1-Flash");
-    expect(() => validateAutomationLaunchPolicy({ ...draft, incidentExecution: { ...draft.incidentExecution, model: "omniroute/hand-typed-model" } })).toThrow(/incident execution model/);
+    const luna = validateAutomationLaunchPolicy({ ...draft, incidentExecution: { runtime: "opencode", provider: "omniroute", model: "omniroute/cx/gpt-6-luna", reasoning: "default", topic: "health" } });
+    expect(luna.incidentExecution?.model).toBe("omniroute/cx/gpt-6-luna");
+    expect(() => validateAutomationLaunchPolicy({ ...draft, incidentExecution: { ...draft.incidentExecution, model: "bad model" } })).toThrow(/incident execution model/);
   });
 
   it("edits the incident model by hand instead of choosing a pinned option", () => {

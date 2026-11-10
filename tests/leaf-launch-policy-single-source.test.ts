@@ -78,13 +78,10 @@ describe("the rule of the owner about leaves is written once", () => {
     expect(launcherSource).not.toMatch(/function isAllowedRestrictedProviderLeaf/);
   });
 
-  it("names the closed providers and the allowed families once", () => {
-    expect(LEAF_LAUNCH_POLICY.closedProviderPattern).toBe("codex|claude|anthropic");
-    expect(LEAF_LAUNCH_POLICY.allowedFamilies.map((family) => family.providers)).toEqual([
-      ["minimax", "minimax-code", "minimax-coding-plan"],
-      ["glm", "zai", "zai-coding-plan", "zhipu"],
-      ["zcode-start", "zcode-individual"],
-    ]);
+  it("defines the deny-only GPT, Codex, Claude and Anthropic contract without an allowlist", () => {
+    expect(LEAF_LAUNCH_POLICY.version).toBe(3);
+    expect(LEAF_LAUNCH_POLICY.closedProviderPattern).toBe("(^|[^a-z0-9])(gpt|codex|claude|anthropic)(?=[^a-z]|$)");
+    expect(Object.keys(LEAF_LAUNCH_POLICY)).toEqual(["version", "closedProviderPattern"]);
   });
 });
 
@@ -257,23 +254,23 @@ describe("the guard of the OpenCode integration keeps the behaviour of the rule"
     }
   });
 
-  it("refuses a route outside the allowed families while the prohibitions are on", async () => {
+  it("refuses a GPT route regardless of the prohibitions switch", async () => {
     const guard = await loadGuard();
     stubProhibitions(true);
     const context = guardContext({ providerID: "opencode", id: "gpt-6.1-sol" });
     const cleanup = await guard.setup(context.ctx);
     await expect(context.modelHook({ sessionID: "root", model: { providerID: "opencode", id: "gpt-6.1-sol" } }))
-      .rejects.toThrow("the complete native provider route is forbidden");
+      .rejects.toThrow("the provider of this route is closed by the rule of the owner");
     await cleanup();
   });
 
-  it("lets a route outside the allowed families pass when the owner switches the prohibitions off", async () => {
+  it("keeps the GPT blacklist active when the owner switches prohibitions off", async () => {
     const guard = await loadGuard();
     stubProhibitions(false);
     const context = guardContext({ providerID: "opencode", id: "gpt-6.1-sol" });
     const cleanup = await guard.setup(context.ctx);
-    await expect(context.modelHook({ sessionID: "root", model: { providerID: "opencode", id: "gpt-6.1-sol" } })).resolves
-      .toBeUndefined();
+    await expect(context.modelHook({ sessionID: "root", model: { providerID: "opencode", id: "gpt-6.1-sol" } }))
+      .rejects.toThrow("the provider of this route is closed by the rule of the owner");
     await cleanup();
   });
 
@@ -293,10 +290,9 @@ describe("the guard of the OpenCode integration keeps the behaviour of the rule"
     const context = guardContext({ providerID: "opencode", id: "gpt-6.1-sol" });
     const cleanup = await guard.setup(context.ctx);
     await expect(context.modelHook({ sessionID: "root", model: { providerID: "opencode", id: "gpt-6.1-sol" } })).rejects
-      .toThrow("the complete native provider route is forbidden");
+      .toThrow("the provider of this route is closed by the rule of the owner");
     const asked = fetchMock.mock.calls.map((call) => new URL(String(call[0])).pathname);
-    expect(asked.filter((path) => path === "/api/hooks/prohibitions").length).toBe(1);
-    expect(asked[0]).toBe("/api/hooks/prohibitions");
+    expect(asked.filter((path) => path === "/api/hooks/prohibitions").length).toBe(0);
     await cleanup();
   });
 
@@ -308,7 +304,7 @@ describe("the guard of the OpenCode integration keeps the behaviour of the rule"
     const context = guardContext({ providerID: "opencode", id: "gpt-6.1-sol" });
     const cleanup = await guard.setup(context.ctx);
     await expect(context.modelHook({ sessionID: "root", model: { providerID: "opencode", id: "gpt-6.1-sol" } })).rejects
-      .toThrow("the complete native provider route is forbidden");
+      .toThrow("the provider of this route is closed by the rule of the owner");
     await cleanup();
   });
 });

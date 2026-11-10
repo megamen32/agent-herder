@@ -69,6 +69,7 @@ export function normalizeHealthExecution(value: unknown): HealthExecutionProfile
     throw new Error("health execution profile must be an object");
   }
   const raw = value as Record<string, unknown>;
+  if (raw.runtime === "opencode") return normalizeIncidentExecution(value);
   const profile = {
     runtime: bounded(raw.runtime, "runtime"),
     provider: bounded(raw.provider, "provider"),
@@ -106,14 +107,14 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
   if (harness === "zcode") return `${execution.provider}/${execution.model}$${execution.reasoning}`;
   if (harness !== "opencode") return execution.model;
   // Preserve the fully qualified direct route or qualify the pinned model ID.
-  return execution.model.includes("/") ? execution.model : `${execution.provider}/${execution.model}`;
+  return execution.model.startsWith(execution.provider + "/") ? execution.model : execution.provider + "/" + execution.model;
 }
 
-/** Exact owner-selected direct MiniMax incident model. */
+/** Owner-selected default incident model. */
 export const INCIDENT_EXECUTION: HealthExecutionProfile = {
   runtime: "opencode",
-  provider: "minimax-coding-plan",
-  model: "MiniMax-M3.1-Flash",
+  provider: "omniroute",
+  model: "omniroute/cx/gpt-6-luna",
   reasoning: "default",
   topic: "health",
 };
@@ -122,11 +123,15 @@ export function normalizeIncidentExecution(value: unknown): HealthExecutionProfi
     throw new Error("incident execution profile must be an object");
   }
   const raw = value as Record<string, unknown>;
-  for (const field of ["runtime", "provider", "model", "reasoning", "topic"] as const) {
-    const actual = bounded(raw[field], field, field === "model" ? MAX_HEALTH_MODEL_LENGTH : 64);
-    if (actual !== INCIDENT_EXECUTION[field]) {
-      throw new Error(`incident execution ${field} must be ${INCIDENT_EXECUTION[field]}`);
-    }
-  }
-  return { ...INCIDENT_EXECUTION };
+  const runtime = bounded(raw.runtime, "runtime");
+  const provider = bounded(raw.provider, "provider");
+  const model = bounded(raw.model, "model", MAX_HEALTH_MODEL_LENGTH);
+  const reasoning = bounded(raw.reasoning, "reasoning");
+  const topic = bounded(raw.topic, "topic");
+  if (runtime !== "opencode") throw new Error("incident execution runtime must be opencode");
+  if (!/^[A-Za-z0-9._:-]+$/.test(provider)) throw new Error("incident execution provider is invalid");
+  if (!/^[A-Za-z0-9._:$-]+(?:\/[A-Za-z0-9._:$-]+)*$/.test(model)) throw new Error("incident execution model is invalid");
+  if (reasoning !== "default" && reasoning !== "high") throw new Error("incident execution reasoning is invalid");
+  if (topic !== "health") throw new Error("incident execution topic must be health");
+  return { runtime, provider: provider as HealthExecutionProfile["provider"], model, reasoning, topic };
 }
