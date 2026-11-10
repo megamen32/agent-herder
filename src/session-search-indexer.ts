@@ -30,7 +30,10 @@ export async function startSessionSearchIndexer(scanner:SessionSearchScanner,opt
      const changed=receipts.some(receipt=>receipt.state==='partial'&&receipt.reason==='native_source_changed_during_scan');
      const quick=changed&&!transientRetryUsed;
      if(quick)transientRetryUsed=true;else if(!changed)transientRetryUsed=false;
-     timer=setTimeout(run,quick?1000:options.intervalMs??60000);timer.unref();
+     // A busy fleet keeps nearly every live database stamp moving, so a
+     // one-minute cadence degenerates into a permanent rescan. Five minutes
+     // matches the freshness the fleet cabinet itself promises.
+     timer=setTimeout(run,quick?1000:options.intervalMs??300000);timer.unref();
     }
    });
  };

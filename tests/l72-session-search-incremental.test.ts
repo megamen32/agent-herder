@@ -45,11 +45,16 @@ function countRows(path:string,match:(sql:string,args:string)=>boolean):number{
 }
 /** Rows of the content columns: the messages and the parts the hash used to read. */
 const contentRows=(path:string,session?:string)=>countRows(path,(sql,args)=>{
- const isContent=(sql.includes('FROM message')||sql.includes('FROM part'))&&sql.includes('data');
+ const isContent=(sql.includes('FROM message')||sql.includes('FROM session_message')||sql.includes('FROM part'))&&sql.includes('data');
+ return isContent&&(session===undefined||args.includes(`"${session}"`));
+});
+/** Hermes content rows: the messages table the hash used to read. */
+const hermesContentRows=(path:string,session?:string)=>countRows(path,(sql,args)=>{
+ const isContent=sql.includes('FROM messages')&&sql.includes('content');
  return isContent&&(session===undefined||args.includes(`"${session}"`));
 });
 /** Rows of the catalog: the sessions are still visited on every cycle. */
-const catalogRows=(path:string)=>countRows(path,sql=>sql.includes('FROM session ORDER BY id'));
+const catalogRows=(path:string)=>countRows(path,sql=>sql.includes('FROM session ORDER BY id')||sql.includes('FROM sessions ORDER BY id'));
 /** Rows of the cheap key: the index-only aggregates. */
 const envelopeRows=(path:string)=>countRows(path,sql=>sql.includes('count(*)'));
 
@@ -141,23 +146,139 @@ describe('session search reads a native database incrementally',()=>{
    expect(index.search({query:'alpha-needle-7'}).results.map(result=>result.nativeSessionId)).toContain('ses-alpha');
   }finally{index.close();}
  });
- it('keeps the exact content hash when the source publishes no change key',async()=>{
-  const root=await mkdtemp(join(tmpdir(),'l72-session-search-'));
+
+ it('serves an unchanged hermes database from the index-only envelope and rehashes only on the resync scan',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'l72-hermes-envelope-'));
   roots.push(root);
   for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));
   const path=join(root,'hermes.db');
   const db=new DatabaseSync(path);
+  db.exec('PRAGMA journal_mode=WAL;');
   db.exec('CREATE TABLE sessions(id TEXT PRIMARY KEY,title TEXT NOT NULL,cwd TEXT NOT NULL,message_count INTEGER DEFAULT 0);CREATE TABLE messages(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,content TEXT,timestamp REAL NOT NULL);CREATE INDEX idx_messages_session ON messages(session_id,timestamp)');
-  db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('h','title','/work',1);
-  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(1,'h','firstword',1);
+  db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('h-one','One','/work',2);
+  db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('h-two','Two','/work',1);
+  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(1,'h-one','firstword',1);
+  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(2,'h-one','secondword',2);
+  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(3,'h-two','twoword',1);
   db.close();
   vi.stubEnv('HERMES_STATE_DB',path);
-  const scan=async()=>{let found:any;for await(const session of scanSessionSearchSources()){found=session;for await(const _ of session.chunks){}}return found;};
-  const before=await scan();
-  const edit=new DatabaseSync(path);
+  const indexPath=join(root,'index.sqlite');
+  const index=new SessionSearchIndex(indexPath);
+  const scan=async()=>{const receipts:any[]=[];await index.scan(scanSessionSearchSources({onStatus:status=>receipts.push(status)}),receipts).catch(()=>undefined);return receipts;};
+  try{
+  await scan();
+  expect(hermesContentRows(path)).toBeGreaterThan(0);
+
+  // Second cycle with an untouched database: the exact snapshot shortcut
+  // serves the cached digests, no message content row is read at all.
+  for(const key of Object.keys(reads))delete reads[key];
+  await scan();
+  expect(hermesContentRows(path)).toBe(0);
+
+  // A same-size in-place edit is invisible to the envelope: the stamp moves
+  // (so the exact shortcut no longer applies), the index-only envelope runs,
+  // matches and keeps the previous revision, and the forced resync scan
+  // rehashes and detects the edit. This is the bounded staleness contract.
+  const edit=new DatabaseSync(path);edit.exec('PRAGMA busy_timeout=3000;');
   edit.prepare('UPDATE messages SET content=? WHERE id=1').run('otherword');
   edit.close();
-  const after=await scan();
-  expect(after.revision).not.toBe(before.revision);
+  for(const key of Object.keys(reads))delete reads[key];
+  await scan();
+  expect(hermesContentRows(path)).toBe(0);
+  expect(envelopeRows(path)).toBeGreaterThan(0);
+  vi.stubEnv('AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS','1');
+  const revisionsBefore=readRevisions(indexPath);
+  await scan();
+  expect(hermesContentRows(path)).toBeGreaterThan(0);
+  const revisionsAfter=readRevisions(indexPath);
+  expect(revisionsAfter['h-one']).not.toBe(revisionsBefore['h-one']);
+  expect(revisionsAfter['h-two']).toBe(revisionsBefore['h-two']);
+  }finally{index.close();}
+ });
+
+ it('keeps the hermes digest cache across a changed-source scan of a live database',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'l72-hermes-live-'));
+  roots.push(root);
+  for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','OPENCODE_DB_PATH','ZCODE_DB_PATH','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));
+  const path=join(root,'hermes.db');
+  const db=new DatabaseSync(path);
+  db.exec('PRAGMA journal_mode=WAL;');
+  db.exec('CREATE TABLE sessions(id TEXT PRIMARY KEY,title TEXT NOT NULL,cwd TEXT NOT NULL,message_count INTEGER DEFAULT 0);CREATE TABLE messages(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,content TEXT,timestamp REAL NOT NULL);CREATE INDEX idx_messages_session ON messages(session_id,timestamp)');
+  db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('h-one','One','/work',1);
+  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(1,'h-one','firstword',1);
+  db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('h-two','Two','/work',1);
+  db.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(2,'h-two','twoword',1);
+  db.close();
+  vi.stubEnv('HERMES_STATE_DB',path);
+  const indexPath=join(root,'index.sqlite');
+  const index=new SessionSearchIndex(indexPath);
+  const consume=async(onHermes?:()=>void)=>{const receipts:any[]=[];let hooked=false;
+   const wrapped=async function*(){for await(const session of scanSessionSearchSources({onStatus:status=>receipts.push(status)})){if(!hooked&&session.harness==='hermes'){hooked=true;onHermes?.();}yield session;}};
+   try{await index.scan(wrapped(),receipts);}catch{/* the changed-source throw is expected */}
+   return receipts;};
+  try{
+  await consume();
+  expect(hermesContentRows(path)).toBeGreaterThan(0);
+
+  // The database is written to while the scan is iterating: the source must
+  // report a changed-source partial receipt instead of a complete snapshot.
+  const live=await consume(()=>{const writer=new DatabaseSync(path);writer.exec('PRAGMA busy_timeout=3000;');writer.prepare('INSERT INTO messages VALUES(?,?,?,?)').run(3,'h-one','liveword',9);writer.close();});
+  const hermesReceipt=live.find(receipt=>receipt.harness==='hermes');
+  expect(hermesReceipt).toMatchObject({state:'partial',reason:'native_source_changed_during_scan'});
+
+  // The cache written before the changed-source throw must survive: the next
+  // quiet scan rehashes only the genuinely changed session (h-one) and reads
+  // no message content for the untouched one (h-two).
+  for(const key of Object.keys(reads))delete reads[key];
+  const quiet=await consume();
+  expect(quiet.find(receipt=>receipt.harness==='hermes')).toMatchObject({state:'complete'});
+  expect(hermesContentRows(path,'h-two')).toBe(0);
+  expect(hermesContentRows(path,'h-one')).toBeGreaterThan(0);
+  }finally{index.close();}
+ });
+
+ it('serves an unchanged opencode v2 store from index-only envelopes',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'l72-opencode-v2-'));
+  roots.push(root);
+  for(const key of ['CODEX_HOME','MINIMAX_CODE_SESSION_STORE','ZCODE_DB_PATH','HERMES_STATE_DB','CLAUDE_PROJECTS_DIR','AGENT_HERDER_BROWSER_CHAT_INVENTORY_ROOT'])vi.stubEnv(key,join(root,key));
+  const path=join(root,'opencode.db');
+  const db=new DatabaseSync(path);
+  db.exec('PRAGMA journal_mode=WAL;');
+  db.exec(`CREATE TABLE session_v2(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,directory TEXT NOT NULL,title TEXT);
+ CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,type TEXT NOT NULL,seq INTEGER NOT NULL,time_created INTEGER NOT NULL,time_updated INTEGER NOT NULL,data TEXT NOT NULL);
+ CREATE UNIQUE INDEX session_message_session_seq_idx ON session_message(session_id,seq);
+ CREATE INDEX session_message_session_time_created_id_idx ON session_message(session_id,time_created,id);`);
+  const insertSession=db.prepare('INSERT INTO session_v2 VALUES(?,?,?,?)');
+  const insertMessage=db.prepare('INSERT INTO session_message VALUES(?,?,?,?,?,?,?)');
+  insertSession.run('ses-v2-one','p1','/work','V2 One');
+  for(let n=0;n<20;n++)insertMessage.run(`m-${n}`,'ses-v2-one','message',n,n,n,JSON.stringify({text:`v2-needle-${n}`}));
+  db.close();
+  vi.stubEnv('OPENCODE_DB_PATH',path);
+  const indexPath=join(root,'index.sqlite');
+  const index=new SessionSearchIndex(indexPath);
+  const consume=async()=>{const receipts:any[]=[];await index.scan(scanSessionSearchSources({onStatus:status=>receipts.push(status)}),receipts).catch(()=>undefined);return receipts;};
+  try{
+  await consume();
+  expect(contentRows(path)).toBeGreaterThan(0);
+
+  // Second cycle over the unchanged store: the envelope answers from the
+  // (session_id,seq) and (session_id,time_created,id) indexes and no message
+  // data row is read for the hash.
+  for(const key of Object.keys(reads))delete reads[key];
+  await consume();
+  expect(contentRows(path)).toBe(0);
+  expect(envelopeRows(path)).toBeGreaterThan(0);
+  const revisionsBefore=readRevisions(indexPath);
+
+  // A new message changes the envelope and only then is the session rehashed.
+  const writer=new DatabaseSync(path);writer.exec('PRAGMA busy_timeout=3000;');
+  writer.prepare('INSERT INTO session_message VALUES(?,?,?,?,?,?,?)').run('m-new','ses-v2-one','message',99,99,99,JSON.stringify({text:'v2-needle-new'}));
+  writer.close();
+  for(const key of Object.keys(reads))delete reads[key];
+  await consume();
+  expect(contentRows(path)).toBeGreaterThan(0);
+  const revisionsAfter=readRevisions(indexPath);
+  expect(revisionsAfter['ses-v2-one']).not.toBe(revisionsBefore['ses-v2-one']);
+  }finally{index.close();}
  });
 });
