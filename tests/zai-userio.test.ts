@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UserIoConfig } from "../src/adapters/userio-agent-channel.js";
 import { ZaiUserIoDriver } from "../src/adapters/zai-userio-driver.js";
+import { BrowserChatAdapter } from "../src/adapters/browser-chat.js";
 import { ZaiUserIoJudgeSlot } from "../src/autopilot/zai-userio-judge.js";
 import { makeConfiguredAdapter } from "../src/ahap-browser-runner.js";
 import { validateV1BrowserAutopilotConfig } from "../src/automation/v1-browser-runtime.js";
@@ -15,7 +16,8 @@ const ASST=randomUUID();
 const SCOPE=createHash("sha256").update(randomUUID()).digest("hex");
 const INSTANCE="browser-"+randomUUID();
 const folders:string[]=[];
-afterEach(()=>{for(const d of folders.splice(0))rmSync(d,{force:true,recursive:true});});
+const originalDraftRoot=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;
+afterEach(()=>{process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=originalDraftRoot;for(const d of folders.splice(0))rmSync(d,{force:true,recursive:true});});
 const read={ok:true,chat_ref:REF,ready:true,messages:[
   {id:USER,role:"user",text:"Original request",timestamp:1},
   {id:ASST,role:"assistant",text:"Original answer",timestamp:2,done:true,model:"GLM-5.3"}
@@ -23,6 +25,7 @@ const read={ok:true,chat_ref:REF,ready:true,messages:[
 type Command={action:string;args:Record<string,unknown>;agent_instance_id:string};
 function fixture(outcomes:Record<string,Record<string,unknown>>,instances:string[]=[INSTANCE]){
  const home=mkdtempSync(join(tmpdir(),"userio-zai-tests-"));folders.push(home);
+ process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=join(home,"drafts");
  const tokenFile=join(home,"auth.token");
  writeFileSync(tokenFile,"fixture-token",{mode:0o600});
  const commands:Command[]=[],pending=new Map<string,{action:string;value:Record<string,unknown>}>();
@@ -61,6 +64,29 @@ const attempt=(model:"glm-5.3"|"glm-5.2"|"glm-5.3-flash"="glm-5.3")=>({
  model,prompt:"latest user and assistant",signal:new AbortController().signal
 });
 describe("ZAI under exact UserIO browser profile",()=>{
+ it("admits a first draft through BrowserChatAdapter from the native first-send receipt",async()=>{
+   const {driver,commands}=fixture({...outcomes,zai_first_send:{ok:true,admission:"confirmed",chat_ref:REF,native_user_message_id:USER}});
+   const adapter=new BrowserChatAdapter(driver,{id:"zai",name:"Z.AI",harness:"zai",cwd:"/test"});
+   await driver.verifyPinnedAccountScope();
+   const draft=await adapter.createSession({name:"fixture"});
+   const result=await adapter.sendMessage(draft.id,{message:"first prompt",inputId:"first-input"});
+   expect(result).toMatchObject({ok:true,admitted:true,inputId:"first-input",nativeInputMessageId:USER});
+   expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
+   expect(commands.some(c=>c.action==="zai_read")).toBe(false);
+   expect((await driver.getMessages("route:"+REF)).map(m=>m.id)).toEqual([USER,ASST]);
+   expect(commands.filter(c=>c.action==="zai_read")).toHaveLength(1);
+ },15000);
+ it("does not replay an uncertain first draft send",async()=>{
+   const {driver,commands}=fixture({...outcomes,zai_first_send:{ok:false,error:"zai_first_send_outcome_unknown"}});
+   const adapter=new BrowserChatAdapter(driver,{id:"zai",name:"Z.AI",harness:"zai",cwd:"/test"});
+   await driver.verifyPinnedAccountScope();
+   const draft=await adapter.createSession({name:"fixture"});
+   await expect(adapter.sendMessage(draft.id,{message:"first prompt",inputId:"first-input"}))
+     .resolves.toMatchObject({ok:false,admissionUnknown:true});
+   await expect(adapter.sendMessage(draft.id,{message:"first prompt",inputId:"first-input"}))
+     .resolves.toMatchObject({ok:false,admissionUnknown:true});
+   expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
+ },15000);
  it("lists native ZAI conversations and reads original user+assistant",async()=>{
    const {driver,commands}=fixture(outcomes);
    await driver.verifyPinnedAccountScope();
@@ -109,14 +135,19 @@ describe("ZAI under exact UserIO browser profile",()=>{
    expect(JSON.parse(Buffer.from(raw.bytes).toString())).toEqual({detail,batches:[batch]});
  });
  it("archives only after verified account and reports uncertain failure",async()=>{
-   const {driver,commands}=fixture({...outcomes,zai_archive:{ok:true}});
+   const {driver,commands}=fixture({...outcomes,zai_archive:{ok:true,chat_ref:REF,archived:true}});
    await driver.verifyPinnedAccountScope();
    expect(await driver.archiveChat("route:"+REF)).toEqual({ok:true});
    expect(commands.filter(c=>c.action==="zai_archive")).toHaveLength(1);
    const failed=fixture({...outcomes,zai_archive:{ok:false,error:"archive_outcome_unknown"}});
    await failed.driver.verifyPinnedAccountScope();
    expect(await failed.driver.archiveChat("route:"+REF)).toEqual({ok:false,error:"archive_outcome_unknown"});
- });
+   for(const bad of [{ok:true},{ok:true,chat_ref:randomUUID(),archived:true},{ok:true,chat_ref:REF,archived:false}]){
+     const unconfirmed=fixture({...outcomes,zai_archive:bad});
+     await unconfirmed.driver.verifyPinnedAccountScope();
+     expect(await unconfirmed.driver.archiveChat("route:"+REF)).toEqual({ok:false,error:"archive_outcome_unknown"});
+   }
+ },20000);
  it("persists a scoped draft, admits exact native IDs, and reuses alias after restart",async()=>{
    const dir=mkdtempSync(join(tmpdir(),"zai-drafts-"));folders.push(dir);
    const previous=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;

@@ -9,6 +9,7 @@ const SCOPE=/^[a-f0-9]{64}$/u;
 type NativeZaiMessage={id:string;role:"user"|"assistant";text:string;
   timestamp?:number;model?:string;done?:boolean};
 export class ZaiUserIoDriver implements BrowserChatDriver{
+  readonly supportsFirstSendReceipt=true;
   readonly browserFeatures={nativeConversationIds:true,queueAfterGeneration:false,
     chatCreation:true,accountArchiveViaCdp:false,projects:false};
   readonly passiveInventory=true;
@@ -127,7 +128,8 @@ export class ZaiUserIoDriver implements BrowserChatDriver{
     await this.verifyPinnedAccountScope();
     try {
       const result=await this.channel.call("zai_archive",{chat_ref:id,expected_account_scope:this.config.accountScope});
-      if(result.ok!==true)return {ok:false,error:"archive_outcome_unknown"};
+      if(result.ok!==true||result.chat_ref!==id||result.archived!==true)
+        return {ok:false,error:"archive_outcome_unknown"};
       if(draft)await this.drafts.discard(chatId,true);
       return {ok:true};
     } catch { return {ok:false,error:"archive_outcome_unknown"}; }
@@ -148,7 +150,7 @@ export class ZaiUserIoDriver implements BrowserChatDriver{
             return {nativeInputMessageId:result.native_user_message_id};
           }
         }
-        throw new Error("First-message submission is uncertain; reconcile without automatic retry");
+        throw new Error("ZAI submission outcome unknown: reconcile without automatic retry");
       }
       if(draft.state!=="admitted"){
         await this.verifyPinnedAccountScope();
