@@ -41,6 +41,14 @@ class FakeHistoryDriver implements ChatGptHistoryArchiveDriver {
   }
 }
 
+class ProjectHistoryDriver extends FakeHistoryDriver {
+  projectCalls: string[] = [];
+  override async listProjectChats(projectId: string) {
+    this.projectCalls.push(projectId);
+    return { chats: [{ id: "article", title: "Only project chat", sourceRoute: `/g/${projectId}/c/article`, unread: false, working: false, updatedAt: "2026-08-12T12:00:00.000Z" }], total: 1, pages: 1, complete: true };
+  }
+}
+
 class BlockingScrollHistoryDriver extends FakeHistoryDriver {
   started?: () => void;
   override async scrollBack(signal?: AbortSignal): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }> {
@@ -80,6 +88,31 @@ class RouteHistoryDriver extends FakeHistoryDriver {
 }
 
 describe("ChatGptHistoryArchive", () => {
+  it("exports only an exact project URL and reports a complete inventory after all chats finish", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-project-archive-"));
+    try {
+      const driver = new ProjectHistoryDriver();
+      const archive = new ChatGptHistoryArchive(driver, { archiveRoot: root });
+      const result = await archive.exportProject({ projectUrl: "https://chatgpt.com/g/g-p-6aa7e38c24b481919591381278409dee/project" });
+      expect(driver.projectCalls).toEqual(["g-p-6aa7e38c24b481919591381278409dee"]);
+      expect(result).toMatchObject({ projectId: "g-p-6aa7e38c24b481919591381278409dee", sourceTotal: 1, pages: 1, returnedChats: 1, uniqueChats: 1, complete: true });
+      expect(result.results).toHaveLength(1);
+      expect((await stat(result.results[0]!.archivePath!)).mode & 0o777).toBe(0o700);
+      expect((await stat(result.manifestPath)).mode & 0o777).toBe(0o600);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses non-project URLs and reports inventory truncation as incomplete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-herder-project-archive-"));
+    try {
+      const driver = new ProjectHistoryDriver();
+      const archive = new ChatGptHistoryArchive(driver, { archiveRoot: root });
+      await expect(archive.exportProject({ projectUrl: "https://chatgpt.com/" })).rejects.toMatchObject({ code: "invalid_project_url" });
+      driver.listProjectChats = async (id: string) => ({ chats: [{ id: "article", title: "Only project chat", unread: false, working: false, updatedAt: "2026-08-12T12:00:00.000Z" }], total: 2, pages: 1, complete: false });
+      const result = await archive.exportProject({ projectUrl: "https://chatgpt.com/g/g-p-6aa7e38c24b481919591381278409dee/project" });
+      expect(result.complete).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   it("writes private raw history segments, checkpoints, and resumes without returning chat text", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-history-archive-"));
     try {

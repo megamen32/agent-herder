@@ -377,7 +377,15 @@ func (c *codexStore) threads() ([]codexThread, error) {
 	if _, err := db.Exec("PRAGMA busy_timeout=1000"); err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, title, cwd, rollout_path FROM threads ORDER BY id")
+	// Codex 0.162+ prunes rollout JSONL files for migrated/archived threads, so an
+	// "ORDER BY id" scan returns thousands of dangling rollout_path values whose
+	// files no longer exist. The maxSessions cap then filled up with ghost rows
+	// before the supervisor ever reached the live ones, so listSessions() served
+	// zero codex sessions even though hundreds were active on disk.
+	//
+	// Order by the most recent activity first and skip archived threads, so the
+	// cap stops the scan only after maxSessions real, on-disk rollouts.
+	rows, err := db.Query("SELECT id, title, cwd, rollout_path FROM threads WHERE archived=0 ORDER BY updated_at_ms DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +399,11 @@ func (c *codexStore) threads() ([]codexThread, error) {
 		if !id.Valid || id.String == "" || !rollout.Valid || rollout.String == "" {
 			continue
 		}
-		threads = append(threads, codexThread{id: id.String, title: title.String, cwd: cwd.String, rolloutPath: rollout.String})
+		rolloutPath := rollout.String
+		if _, err := os.Stat(rolloutPath); err != nil {
+			continue // a missing rollout cannot be read back; do not count it toward the cap
+		}
+		threads = append(threads, codexThread{id: id.String, title: title.String, cwd: cwd.String, rolloutPath: rolloutPath})
 		if len(threads) >= maxSessions {
 			break
 		}

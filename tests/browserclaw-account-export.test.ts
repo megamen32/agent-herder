@@ -360,6 +360,23 @@ describe("BrowserClawAccountExportDriver", () => {
     expect(calls).toEqual([{ name: "read", args: { page: 7, format: "links" } }]);
   });
 
+  it("uses the authenticated owned page for the exact project inventory and keeps receipts compact", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const client = {
+      sessionRef: "session-project-inventory",
+      async callToolRaw(name: string, args: Record<string, unknown>) {
+        calls.push({ name, args });
+        return { result: { content: [{ type: "text", text: JSON.stringify({ projectId: "g-p-example", pages: 2, total: 101, complete: true, items: [{ id: "private-id", title: "Private title", sourceRoute: "/g/g-p-example/c/private-id" }] }) }] } };
+      },
+    };
+    const inventory = await new BrowserClawMcpA11yClient(client as never).projectInventory(7, "g-p-example");
+    expect(inventory).toMatchObject({ total: 101, pages: 2, complete: true, items: [{ id: "private-id", sourceRoute: "/g/g-p-example/c/private-id" }] });
+    expect(calls[0]?.name).toBe("evaluate_script");
+    expect(calls[0]?.args).toMatchObject({ page: 7 });
+    expect(String(calls[0]?.args.function)).toContain("/backend-api/gizmos/");
+    expect(String(calls[0]?.args.function)).toContain("/api/auth/session");
+  });
+
   it("keeps only compact non-navigation sidebar links as chat candidates", () => {
     const rows = visibleSidebarChats({
       schema: "agent-herder.browserclaw-a11y.v1",

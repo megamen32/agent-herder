@@ -31,6 +31,13 @@ same page, scroll upward, and save each raw accessibility snapshot locally.
   segments plus `manifest.json` under `CHATGPT_HISTORY_ARCHIVE_ROOT` (default:
   `~/archives/chatgpt-history`). The MCP result is a receipt/path/checkpoint,
   never the chat text itself.
+- `export_project({ projectUrl, maxChats?, maxSegmentsPerChat? })` accepts one
+  exact `https://chatgpt.com/g/g-p-…/project` URL. On the same owned page it
+  uses the authenticated ChatGPT session to read only that project's paginated
+  conversation inventory, then exports those conversations through the same
+  bounded history path. The private project manifest records source total,
+  pages, returned and unique counts, per-chat status, and an honest complete
+  flag. It never falls back to the account-wide or visible-chat inventory.
 - `export_visible_chats({ maxChats?, maxSegmentsPerChat? })` is the bounded
   best-effort batch: it skips protected/ambiguous chats, and each completed
   archive also gets `article/article.md` and `article/article.html` rendered
@@ -59,8 +66,9 @@ The concrete CDP route exposes these two read-only operations only.
 edited, or used as a test target. Attachment byte downloads remain the next
 vertical after the first real archive proves the actual accessible controls.
 
-In Agent Herder these tools are `cdp_list_chats`, `cdp_export_chat`, and
-`cdp_export_visible_chats`.
+In Agent Herder these tools are `cdp_list_chats`, `cdp_export_chat`,
+`cdp_export_project`, and `cdp_export_visible_chats` (`cdp_archive` action
+`project` exposes the repeatable path).
 The standalone server uses their short names.
 
 ## Native account archive: fallback

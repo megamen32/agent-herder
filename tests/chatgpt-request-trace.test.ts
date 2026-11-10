@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import vm from "node:vm";
 import { webcrypto } from "node:crypto";
 import { ChatGptRequestTrace } from "../src/adapters/chatgpt-request-trace.js";
-import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript } from "../src/adapters/browser-chat-api-scripts.js";
+import { CHATGPT_LIST_API_SCRIPT, chatgptMessagesApiScript, chatgptProjectInventoryScript } from "../src/adapters/browser-chat-api-scripts.js";
 import { CHATGPT_MAC_SNAPSHOT } from "../src/adapters/chatgpt-mac-cdp-driver.js";
 
 const CHAT_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -35,6 +35,39 @@ function fixture(status = 429, sessionStatus = 200, retryAfter: string | null = 
 }
 
 describe("ChatGPT source attribution without external traffic", () => {
+  it("reads only one project through the authenticated page and proves paginated completeness without returning credentials", async () => {
+    const calls: Array<{ url: string; headers?: Record<string, string> }> = [];
+    const context = vm.createContext({
+      location: { origin: "https://chatgpt.com" }, TextEncoder,
+      fetch: async (url: string, opts: { headers?: Record<string, string> }) => {
+        calls.push({ url, headers: opts?.headers });
+        if (url === "/api/auth/session") return { ok: true, json: async () => ({ accessToken: SECRET, account: { id: "PRIVATE_ACCOUNT_ID" } }) };
+        const offset = Number(new URL(url, "https://chatgpt.com").searchParams.get("offset"));
+        return { ok: true, json: async () => ({ total: 101, items: Array.from({ length: offset === 0 ? 100 : 1 }, (_, i) => ({ id: `chat-${offset + i}`, title: `Project chat ${offset + i}` })) }) };
+      },
+      setTimeout: (callback: () => void) => { callback(); return 0; },
+    });
+    const result = await vm.runInContext("(" + chatgptProjectInventoryScript("g-p-6aa7e38c24b481919591381278409dee") + ")()", context) as Record<string, unknown>;
+    expect(result).toMatchObject({ projectId: "g-p-6aa7e38c24b481919591381278409dee", total: 101, pages: 2, complete: true });
+    expect((result.items as unknown[])).toHaveLength(101);
+    expect(calls.map(x => x.url)).toEqual([
+      "/api/auth/session",
+      "/backend-api/gizmos/g-p-6aa7e38c24b481919591381278409dee/conversations?offset=0&limit=100&order=updated",
+      "/backend-api/gizmos/g-p-6aa7e38c24b481919591381278409dee/conversations?offset=100&limit=100&order=updated",
+    ]);
+    expect(calls[1]!.headers).toMatchObject({ authorization: `Bearer ${SECRET}`, "chatgpt-account-id": "PRIVATE_ACCOUNT_ID" });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_ACCOUNT_ID");
+  });
+
+  it("does not call a project endpoint after auth failure", async () => {
+    const calls: string[] = [];
+    const context = vm.createContext({ location: { origin: "https://chatgpt.com" }, fetch: async (url: string) => { calls.push(url); return { ok: false, status: 401, json: async () => ({}) }; } });
+    const result = await vm.runInContext("(" + chatgptProjectInventoryScript("g-p-6aa7e38c24b481919591381278409dee") + ")()", context) as Record<string, unknown>;
+    expect(result).toMatchObject({ error: "session_unavailable", pages: 0, complete: false });
+    expect(calls).toEqual(["/api/auth/session"]);
+  });
+
   it("records the actual HTTP status and Retry-After, not credentials or URL queries", async () => {
     const f = fixture();
     const result = await f.run(CHATGPT_LIST_API_SCRIPT);

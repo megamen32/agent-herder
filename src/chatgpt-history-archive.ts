@@ -30,8 +30,9 @@ export interface ChatGptHistorySegment {
 /** Read-only browser seam for a single owned ChatGPT page. */
 export interface ChatGptHistoryArchiveDriver {
   listChats(signal?: AbortSignal): Promise<readonly ChatGptHistoryChat[]>;
-  openChat(input: { chatId: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment>;
+  openChat(input: { chatId: string; sourceRoute?: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment>;
   scrollBack(signal?: AbortSignal): Promise<{ segment: ChatGptHistorySegment; atStart: boolean }>;
+  listProjectChats?(projectId: string, signal?: AbortSignal): Promise<{ chats: readonly ChatGptHistoryChat[]; total?: number; pages: number; complete: boolean }>;
 }
 
 export interface ChatGptHistoryArchiveOptions {
@@ -65,6 +66,13 @@ export interface ExportChatHistoryInput {
   chatRef: string;
   /** Number of newly observed snapshots to persist in this one MCP call. */
   maxSegments?: number;
+}
+
+export interface ExportProjectHistoryInput { projectUrl: string; maxSegmentsPerChat?: number; maxChats?: number; }
+export interface ExportProjectHistoryResult {
+  projectUrl: string; projectId: string; requestedChats: number; exportedChats: number;
+  complete: boolean; pages: number; sourceTotal?: number; returnedChats: number; uniqueChats: number; manifestPath: string;
+  results: Array<{ chatRef: string; title: string; status: "checkpoint" | "complete" | "skipped"; archivePath?: string; error?: string }>;
 }
 
 export interface ExportChatHistoryResult {
@@ -152,10 +160,18 @@ function conversationRoute(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value, CHATGPT_ORIGIN);
-    return url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname) ? url.pathname : undefined;
+    return url.origin === CHATGPT_ORIGIN && /^(?:\/c\/[^/]+|\/g\/g-p-[a-f0-9-]+\/c\/[^/]+)/iu.test(url.pathname) ? url.pathname : undefined;
   } catch {
     return undefined;
   }
+}
+
+function projectIdFromUrl(value: string): { url: string; id: string } {
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { throw new ChatGptHistoryArchiveError("invalid_project_url", "projectUrl must be an exact ChatGPT project URL"); }
+  const match = parsed.origin === CHATGPT_ORIGIN && !parsed.username && !parsed.password && parsed.pathname.match(/^\/g\/(g-p-[a-f0-9-]+)\/project\/?$/i);
+  if (!match || parsed.search || parsed.hash) throw new ChatGptHistoryArchiveError("invalid_project_url", "projectUrl must be https://chatgpt.com/g/g-p-…/project");
+  return { url: `${parsed.origin}${parsed.pathname.replace(/\/$/u, "")}`, id: match[1]!.toLowerCase() };
 }
 
 function routeFromSegment(segment: ChatGptHistorySegment): string | undefined {
@@ -408,6 +424,41 @@ export class ChatGptHistoryArchive {
     return { requestedChats: listed.chats.length, results };
   }
 
+  async exportProject(input: ExportProjectHistoryInput, signal?: AbortSignal): Promise<ExportProjectHistoryResult> {
+    throwIfAborted(signal);
+    const project = projectIdFromUrl(input.projectUrl);
+    if (!this.driver?.listProjectChats) throw new ChatGptHistoryArchiveError("project_archive_unavailable", "the owned ChatGPT page does not expose project inventory");
+    const inventory = await this.driver.listProjectChats(project.id, signal);
+    const maxChats = boundedLimit(input.maxChats, 100, 1000);
+    const maxSegments = boundedLimit(input.maxSegmentsPerChat, 24, 100);
+    const chats = [...inventory.chats].slice(0, maxChats);
+    const results: ExportProjectHistoryResult["results"] = [];
+    for (const chat of chats) {
+      throwIfAborted(signal);
+      const chatRef = opaqueRef(chat.id);
+      this.bindings.set(chatRef, { id: chat.id, title: chat.title, ...(chat.sourceRoute ? { sourceRoute: chat.sourceRoute } : {}) });
+      try {
+        const exported = await this.exportChat({ chatRef, maxSegments }, signal);
+        results.push({ chatRef, title: chat.title, status: exported.status, archivePath: exported.archivePath });
+      } catch (error) {
+        results.push({ chatRef, title: chat.title, status: "skipped", error: error instanceof Error ? error.message.slice(0, 240) : "export_failed" });
+      }
+    }
+    const complete = inventory.complete && chats.length === inventory.chats.length && results.every(x => x.status === "complete") && new Set(inventory.chats.map(x => x.id)).size === inventory.chats.length && (inventory.total === undefined || inventory.total === inventory.chats.length);
+    const root = await ensureRoot(this.root);
+    const projectRoot = join(root, "projects", sha256(project.id).slice(0, 24));
+    if (!inside(root, projectRoot)) throw new ChatGptHistoryArchiveError("unsafe_archive_path", "project archive path escaped its root");
+    await mkdir(projectRoot, { recursive: true, mode: 0o700 });
+    await chmod(projectRoot, 0o700);
+    const manifestPath = join(projectRoot, "manifest.json");
+    await writePrivate(manifestPath, JSON.stringify({ format: "agent-herder-chatgpt-project-history.v1", projectId: project.id, projectUrl: project.url,
+      createdAt: this.now().toISOString(), complete, pages: inventory.pages, sourceTotal: inventory.total, returnedChats: inventory.chats.length,
+      uniqueChats: new Set(inventory.chats.map(x => x.id)).size, requestedChats: chats.length, results }, null, 2) + "\n");
+    return { projectUrl: project.url, projectId: project.id, requestedChats: chats.length, exportedChats: results.filter(x => x.status !== "skipped").length,
+      complete, pages: inventory.pages, sourceTotal: inventory.total, returnedChats: inventory.chats.length,
+      uniqueChats: new Set(inventory.chats.map(x => x.id)).size, manifestPath, results };
+  }
+
   /**
    * Materialize the current route-stable archive from snapshots already saved
    * locally. This intentionally does not open, scroll, or alter a ChatGPT page.
@@ -524,7 +575,7 @@ export class ChatGptHistoryArchive {
     const cursor = this.cursor;
     let segment: ChatGptHistorySegment | undefined;
     if (!cursor || cursor.chatRef !== chatRef || cursor.chatId !== binding.id || cursor.archiveId !== id) {
-      segment = await this.driver!.openChat({ chatId: binding.id }, signal);
+      segment = await this.driver!.openChat({ chatId: binding.id, ...(binding.sourceRoute ? { sourceRoute: binding.sourceRoute } : {}) }, signal);
       throwIfAborted(signal);
       manifest.resume = "reopen_from_bottom";
     } else {

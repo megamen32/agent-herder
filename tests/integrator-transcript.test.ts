@@ -36,6 +36,21 @@ function page(cursor: string | null, events: NativeTranscriptEvent[], startSeque
 }
 
 describe("readIntegratorTranscriptPage", () => {
+  it("pages a complete native OpenCode export without dropping user or assistant messages", async () => {
+    const openCodeScope = { ...scope, harness: "opencode", nativeSessionId: "ses-test" };
+    const rows = [
+      { id: "message-1", type: "user", text: "first input", time: { created: 1700000000000 } },
+      { id: "message-2", type: "assistant", content: [{ type: "text", text: "last answer" }], time: { created: 1700000001000 } },
+    ];
+    const reader = createRawTranscriptPageReader({ scope: openCodeScope, getRawTranscript: async () => ({
+      bytes: Buffer.from(rows.map(row => JSON.stringify(row)).join("\n") + "\n"), complete: true,
+      source: { kind: "native-api", location: "fixture", format: "jsonl" }, timestampCoverage: "native",
+    }) });
+    const first = await readIntegratorTranscriptPage({ scope: openCodeScope, reader, limit: 1 });
+    expect(first).toMatchObject({ complete: false, totalEvents: 2, events: [{ text: "first input" }] });
+    const second = await readIntegratorTranscriptPage({ scope: openCodeScope, reader, limit: 1, cursor: first.nextCursor! });
+    expect(second).toMatchObject({ complete: true, totalEvents: 2, events: [{ text: "last answer" }] });
+  });
   it("continues with the exact injected cursor and proves contiguous event positions", async () => {
     const reader = vi.fn<NativeTranscriptPageReader>()
       .mockResolvedValueOnce(page(null, [human, toolCall], 0, "native-cursor-2"))

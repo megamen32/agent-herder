@@ -158,6 +158,34 @@ export const CHATGPT_FULL_SCAN_SCRIPT = `async () => {
   return {scope, trace, pages, total: total || all.length, chats: all, source:'full_scan'};
 }`;
 
+/** Project inventory only. The request runs inside the already-owned ChatGPT
+ * page, so its normal session and permissions decide the result. */
+export function chatgptProjectInventoryScript(projectId: string): string {
+  const encoded = JSON.stringify(projectId);
+  return `async () => {
+    const id=${encoded};
+    if (location.origin !== 'https://chatgpt.com') return {error:'wrong_origin'};
+    const auth=await fetch('/api/auth/session',{credentials:'same-origin'});
+    if(!auth.ok)return {error:'session_unavailable',pages:0,complete:false};
+    const session=await auth.json();
+    if(!session?.accessToken||!session?.account?.id)return {error:'account_unavailable',pages:0,complete:false};
+    const headers={authorization:'Bearer '+session.accessToken,'chatgpt-account-id':session.account.id};
+    const all=[]; const seen=new Set(); let offset=0; let pages=0; let total; let complete=true;
+    while (pages < 1000) {
+      const path='/backend-api/gizmos/'+encodeURIComponent(id)+'/conversations?offset='+offset+'&limit=100&order=updated';
+      const response=await fetch(path,{headers,credentials:'same-origin'}); pages++;
+      if(!response.ok){complete=false;return {error:'project_list_http_'+response.status,pages,total,items:all};}
+      const data=await response.json(); if(typeof data.total==='number') total=data.total;
+      const items=Array.isArray(data.items)?data.items:[];
+      for(const x of items){if(typeof x?.id!=='string'||!x.id||seen.has(x.id))continue;seen.add(x.id);all.push({id:x.id,title:String(x.title||x.name||x.id),updatedAt:x.update_time,createdAt:x.create_time,asyncStatus:x.async_status,sourceRoute:'/g/'+id+'/c/'+x.id});}
+      if(!items.length || (typeof total==='number'&&all.length>=total) || items.length<100){ if(typeof total==='number'&&all.length!==total)complete=false; break; }
+      if(items.length===0){complete=false;break;} offset+=100; await new Promise(r=>setTimeout(r,1000));
+    }
+    if(pages>=1000)complete=false;
+    return {projectId:id,items:all,total,pages,complete};
+  }`;
+}
+
 export function chatgptMessagesApiScript(chatId: string): string {
   return `async () => {
   const trace = [];
@@ -215,33 +243,18 @@ export function chatgptMessagesApiScript(chatId: string): string {
         && (role==='user'||!m.recipient||m.recipient==='all');
     }).map(m=>{
       const text=(Array.isArray(m.content?.parts)?m.content.parts.map(readPart).join('\\n'):
-        typeof m.content?.text==='string'?m.content.text:'').trim();
+        typeof m.content?.text==='string'?m.content.text:'').trim().slice(0,14000);
       return {id:String(m.id||''),role:m.author.role,text,
-        phase:typeof m.channel==='string'?m.channel:undefined,
-        completionStatus:typeof m.status==='string'?m.status:undefined,
-        endTurn:typeof m.end_turn==='boolean'?m.end_turn:undefined,
         timestamp:typeof m.create_time==='number'&&m.create_time>0
           ?new Date(m.create_time*1000).toISOString():undefined,
         model:typeof m.metadata?.model_slug==='string'?m.metadata.model_slug:undefined};
     }).filter(m=>m.id&&m.text).slice(-180);
-    // Reserve the latest user/assistant messages before trimming older context.
-    // The former per-message 14k slice silently destroyed long task requirements.
-    const budget=512*1024,encoder=new TextEncoder();
-    const bytes=value=>encoder.encode(JSON.stringify(value)).length;
-    const required=new Set();
-    for(const role of ['user','assistant']){
-      for(let i=messages.length-1;i>=0;i--)if(messages[i].role===role){required.add(i);break;}
-    }
-    const chosen=[...required].sort((a,b)=>a-b);
-    let used=bytes(chosen.map(i=>messages[i]));
-    if(used>budget)return {error:'mandatory_message_context_too_large',trace};
+    const tail=[];let used=0;
     for(let i=messages.length-1;i>=0;i--){
-      if(required.has(i))continue;
-      const extra=bytes(messages[i])+1;
-      if(used+extra>budget)break;
-      used+=extra;chosen.push(i);
+      const size=messages[i].text.length+160;
+      if(used+size>210000)break;
+      used+=size;tail.unshift(messages[i]);
     }
-    const tail=chosen.sort((a,b)=>a-b).map(i=>messages[i]);
     return {messages:tail,trace};
   }`;
 }

@@ -80,7 +80,7 @@ const MAX_CURSOR_LENGTH = 4096;
 const MAX_EVENT_ID_LENGTH = 1024;
 const MAX_AUTHOR_ID_LENGTH = 512;
 export const MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES = 16 * 1024 * 1024;
-const SUPPORTED_NATIVE_JSONL_HARNESSES = new Set(["codex", "claude", "qoder"]);
+const SUPPORTED_NATIVE_JSONL_HARNESSES = new Set(["codex", "claude", "qoder", "opencode"]);
 const SNAPSHOT_CURSOR_TTL_MS = 30 * 60 * 1000;
 const MAX_ISSUED_SNAPSHOT_CURSORS = 2048;
 
@@ -377,7 +377,7 @@ function hasIncompleteUtf8Suffix(bytes: Uint8Array): boolean {
   catch { return true; }
 }
 
-function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>, expectedSessionId: string): NativeTranscriptEvent[] {
+function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>, expectedSessionId: string, harness: string): NativeTranscriptEvent[] {
   const events: NativeTranscriptEvent[] = [];
   const calls = new Map<string, string>();
   for (const { line, recordIndex } of records) {
@@ -395,7 +395,13 @@ function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>
     const sessionIdentity = row.sessionId ?? row.session_id ?? payload?.session_id
       ?? (row.type === "session_meta" ? payload?.id : undefined);
     if (typeof sessionIdentity === "string" && sessionIdentity !== expectedSessionId) return fail("native export session metadata does not match the requested session");
-    const parsed = row.type === "response_item"
+    const parsed: NativeTranscriptEvent[] = harness === "opencode" ? [{
+      sequence: events.length, ...sourceEventId(line, recordIndex, row.id), kind: "message",
+      author: { kind: row.type === "assistant" ? "assistant" : "unknown", sourceRole: typeof row.type === "string" ? row.type : "unknown" },
+      ...(timestampString((row.time as { created?: unknown } | undefined)?.created) ? { timestamp: timestampString((row.time as { created?: unknown }).created) } : {}),
+      ...(typeof row.text === "string" ? { text: row.text } : textContent(row.content, ["text"]) !== undefined ? { text: textContent(row.content, ["text"]) } : {}),
+      payload: row,
+    }] : row.type === "response_item"
       ? normalizeCodexRecord(row, line, recordIndex, events.length)
       : normalizeClaudeRecord(row, line, recordIndex, events.length);
     for (const event of parsed) {
@@ -410,7 +416,7 @@ function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>
 }
 
 /** Parse only whole newline-terminated records plus a valid final EOF record. */
-function parseCompleteJsonlPrefix(bytes: Uint8Array, allowIncompleteTail: boolean, expectedSessionId: string): ParsedTranscriptPrefix {
+function parseCompleteJsonlPrefix(bytes: Uint8Array, allowIncompleteTail: boolean, expectedSessionId: string, harness: string): ParsedTranscriptPrefix {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const records: Array<{ line: string; recordIndex: number }> = [];
   const decodeLine = (slice: Buffer, index: number): string => {
@@ -442,17 +448,17 @@ function parseCompleteJsonlPrefix(bytes: Uint8Array, allowIncompleteTail: boolea
       if (!allowIncompleteTail) return fail("cursor prefix ends inside a malformed or incomplete JSONL record");
       if (error instanceof TypeError) {
         if (!hasIncompleteUtf8Suffix(tail)) return fail("native JSONL tail has invalid UTF-8");
-        return { events: parseJsonlRecords(records, expectedSessionId), byteLength };
+        return { events: parseJsonlRecords(records, expectedSessionId, harness), byteLength };
       }
       if (error instanceof SyntaxError) {
-        return { events: parseJsonlRecords(records, expectedSessionId), byteLength };
+        return { events: parseJsonlRecords(records, expectedSessionId, harness), byteLength };
       }
       throw error;
     }
     records.push({ line: line!, recordIndex });
     byteLength = buffer.length;
   }
-  return { events: parseJsonlRecords(records, expectedSessionId), byteLength };
+  return { events: parseJsonlRecords(records, expectedSessionId, harness), byteLength };
 }
 
 /** Build real product paging over a complete supported native JSONL export. */
@@ -518,7 +524,7 @@ export function createRawTranscriptPageReader(input: {
       return fail("native transcript was truncated or its source metadata changed");
     }
     const candidateBytes = raw.bytes.subarray(0, state?.snapshotBytes ?? raw.bytes.byteLength);
-    const snapshot = parseCompleteJsonlPrefix(candidateBytes, !state, scope.nativeSessionId);
+    const snapshot = parseCompleteJsonlPrefix(candidateBytes, !state, scope.nativeSessionId, scope.harness);
     if (state && snapshot.byteLength !== state.snapshotBytes) return fail("cursor does not end on a complete native event boundary");
     const snapshotBytes = state?.snapshotBytes ?? snapshot.byteLength;
     const snapshotHash = createHash("sha256").update(raw.bytes.subarray(0, snapshotBytes)).digest("hex");

@@ -18,6 +18,7 @@ import {
 import type { ChatGptAccountExportDriver } from "./chatgpt-account-archive.js";
 import type { ChatGptHistoryArchiveDriver, ChatGptHistoryChat, ChatGptHistorySegment } from "./chatgpt-history-archive.js";
 import type { ChatRecord, CdpChatCapabilities, CdpChatDriver, CdpChatPage, DownloadedMedia, MessageRecord, PageIdentity } from "./cdp-chat.js";
+import { chatgptProjectInventoryScript } from "./adapters/browser-chat-api-scripts.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9010/mcp";
 const CHATGPT_ORIGIN = "https://chatgpt.com";
@@ -340,6 +341,14 @@ export class BrowserClawMcpA11yClient implements BrowserClawA11yClient {
     return conversationRoutesFromLinks(textContent(response));
   }
 
+  async projectInventory(page: number, projectId: string): Promise<{ items: Array<{ id: string; title: string; updatedAt?: string; sourceRoute?: string }>; total?: number; pages: number; complete: boolean }> {
+    const response = await this.client.callToolRaw("evaluate_script", { page, function: chatgptProjectInventoryScript(projectId) }, deadline());
+    const raw = JSON.parse(textContent(response)) as { error?: string; items?: unknown[]; total?: number; pages?: number; complete?: boolean };
+    if (raw.error) throw new Error(raw.error);
+    const items = Array.isArray(raw.items) ? raw.items.filter((x): x is { id: string; title: string; updatedAt?: string; sourceRoute?: string } => Boolean(x && typeof x === "object" && typeof (x as any).id === "string" && typeof (x as any).title === "string")) : [];
+    return { items, ...(typeof raw.total === "number" ? { total: raw.total } : {}), pages: raw.pages ?? 0, complete: raw.complete === true };
+  }
+
   async actPage(page: number, action: BrowserClawSemanticAction, signal?: AbortSignal): Promise<BrowserClawA11ySnapshot> {
     const args: Record<string, unknown> = { page, kind: action.kind };
     if (action.kind === "press") args.key = action.key;
@@ -497,7 +506,7 @@ export async function createCdpChatDriver(options: BrowserClawCdpChatDriverOptio
     async capture(input) {
       await a11yClient.captureHistoryArchiveDiagnostic(input);
     },
-  }, a11yClient.conversationSidebarRoutes.bind(a11yClient));
+  }, a11yClient.conversationSidebarRoutes.bind(a11yClient), (projectId) => a11yClient.projectInventory(ownedPage!, projectId));
   const accountExportDriver = BrowserClawAccountExportDriver.fromOwnedPage(ownedA11yPage, {
     async capture(input) {
       await a11yClient.captureAccountExportDiagnostic(input);
@@ -524,6 +533,7 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     sessionRef: string,
     private readonly diagnostics?: BrowserClawHistoryArchiveDiagnosticReporter,
     private readonly conversationRoutes?: (page: number) => Promise<ReadonlyMap<string, readonly string[]>>,
+    private readonly projectInventory?: (projectId: string) => Promise<{ items: Array<{ id: string; title: string; updatedAt?: string; sourceRoute?: string }>; total?: number; pages: number; complete: boolean }>,
   ) {
     this.idPrefix = createHash("sha256").update(sessionRef).digest("hex").slice(0, 24);
   }
@@ -548,14 +558,21 @@ class BrowserClawHistoryArchiveDriver implements ChatGptHistoryArchiveDriver {
     }
   }
 
-  async openChat(input: { chatId: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment> {
+  async listProjectChats(projectId: string, signal?: AbortSignal): Promise<{ chats: readonly ChatGptHistoryChat[]; total?: number; pages: number; complete: boolean }> {
+    if (!this.projectInventory) throw new Error("project inventory is unavailable");
+    const result = await this.projectInventory(projectId);
+    return { chats: result.items.map(x => ({ id: x.id, title: x.title, unread: false, working: false, updatedAt: x.updatedAt ?? new Date(0).toISOString(), ...(x.sourceRoute ? { sourceRoute: x.sourceRoute } : {}) })), total: result.total, pages: result.pages, complete: result.complete };
+  }
+
+
+  async openChat(input: { chatId: string; sourceRoute?: string }, signal?: AbortSignal): Promise<ChatGptHistorySegment> {
     let snapshot: BrowserClawA11ySnapshot | undefined;
     try {
       throwIfAborted(signal);
       snapshot = await this.page.snapshot(deadline(), signal);
       throwIfAborted(signal);
       const routes = this.conversationRoutes ? await this.conversationRoutes(snapshot.page) : undefined;
-      const chat = visibleSidebarChats(snapshot, this.idPrefix, routes).find((entry) => entry.id === input.chatId);
+      const chat = visibleSidebarChats(snapshot, this.idPrefix, routes).find((entry) => entry.id === input.chatId || (input.sourceRoute && entry.sourceRoute === input.sourceRoute));
       if (!chat) throw new Error("ChatGPT chat is not visible in the owned sidebar; call cdp_list_chats again");
       const node = findNode(snapshot.root, (entry) => entry.ref === chat.nodeRef);
       if (!node || node.disabled) throw new Error("ChatGPT sidebar chat control was not found on the owned page");
@@ -659,7 +676,7 @@ function conversationRoutesFromLinks(value: string): ReadonlyMap<string, readonl
     const href = match[2]!;
     try {
       const url = new URL(href, CHATGPT_ORIGIN);
-      if (url.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(url.pathname)) {
+      if (url.origin === CHATGPT_ORIGIN && /^(?:\/c\/[^/]+|\/g\/g-p-[a-f0-9-]+\/c\/[^/]+)/iu.test(url.pathname)) {
         const title = normalizedHistoryTitle(match[1]!);
         const route = url.pathname;
         const entries = routes.get(title) ?? [];
@@ -699,7 +716,7 @@ function isHistorySidebarTitle(title: string): boolean {
 export function isChatHistoryConversationUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
-    return parsed.origin === CHATGPT_ORIGIN && /^\/c\/[^/]+/u.test(parsed.pathname);
+    return parsed.origin === CHATGPT_ORIGIN && /^(?:\/c\/[^/]+|\/g\/g-p-[a-f0-9-]+\/c\/[^/]+)/iu.test(parsed.pathname);
   } catch {
     return false;
   }
