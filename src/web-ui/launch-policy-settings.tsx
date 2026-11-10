@@ -793,7 +793,7 @@ export const INCIDENT_MODEL_LIST_ID = "launch-model-incident";
  * The fully qualified route of the incident model of the policy.
  *
  * The stored model is the route the owner typed. A bare model id is carried
- * by the approved OmniRoute provider, so the route of both forms is the same.
+ * by the configured provider, so the route of both forms is the same.
  */
 export function incidentModelRoute(policy: LaunchPolicy): string {
   const execution = policy.incidentExecution;
@@ -816,11 +816,7 @@ export function modelValueIssue(value: string): string | undefined {
 export function incidentModelIssue(value: string): string | undefined {
   const issue = modelValueIssue(value);
   if (issue) return issue;
-  // The local incident profile is pinned by the server, independently of
-  // its dedicated two-route Notice Place HTTP admission gate.
-  if (value !== INCIDENT_EXECUTION.model) {
-    return "Локальный маршрут Herder закреплён за " + INCIDENT_EXECUTION.model + ". Измените модель инцидента в Notice Place.";
-  }
+  if (!/^[A-Za-z0-9._:$-]+(?:\/[A-Za-z0-9._:$-]+)*$/.test(value.trim())) return "Укажите корректный идентификатор модели.";
   return undefined;
 }
 
@@ -871,12 +867,10 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       const model = route.models?.[harness] ?? policy.models[harness];
       return Boolean(model?.trim()) && model.length <= 256;
     }));
-  // The local policy stores only the canonical incident execution profile;
-  // the separate HTTP admission gate may authorize its exact fallback combo.
-  const incidentModelOptions = [INCIDENT_EXECUTION.model];
+  const incidentModelOptions = modelOptions[policy.incidentExecution?.runtime ?? "opencode"] ?? [];
   const incidentIssue = policy.incidentExecution ? incidentModelIssue(policy.incidentExecution.model) : undefined;
   const incidentWarning = policy.incidentExecution
-    ? modelCatalogIssue("opencode", incidentModelRoute(policy), modelOptions.opencode)
+    ? modelCatalogIssue(policy.incidentExecution.runtime, incidentModelRoute(policy), incidentModelOptions)
     : undefined;
   const valid = routesValid
     && (policy.allowedHarnesses.length === 0 || policy.allowedHarnesses.includes(policy.preferredHarness))
@@ -895,11 +889,11 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       <details className="settings-advanced"><summary>Дополнительно: локальный маршрут инцидентов Herder</summary>
       <fieldset className="settings-group" disabled={saving || Boolean(loadError)}>
         <legend>Локальный маршрут инцидентов Herder</legend>
-        <p>Модель для анализа инцидентов Notice Place выбирается в <a href="https://notify.bezrabotnyi.com/admin/#health-model">админке Notice Place</a>. Herder проверяет допустимость запуска и запускает сессию. Поля ниже задают локальный маршрут Herder и не меняют выбор модели в Notice Place.</p>
+        <p>Модель инцидентов задаётся в политике Herder. Notice Place отображает и меняет эти настройки через необязательное подключение к Herder.</p>
         <label className="launch-policy-field"><span>Среда локального маршрута Herder</span>
           <select aria-label="Среда локального маршрута Herder" value={policy.incidentExecution?.runtime ?? ""} onChange={() => {
             draft.edit({ ...policy, incidentExecution: { ...INCIDENT_EXECUTION } }, "incidentExecution");
-          }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode · MiniMax через OmniRoute</option></select>
+          }}><option value="" disabled>Выберите среду</option><option value="opencode">OpenCode</option></select>
         </label>
         <label className="launch-policy-field"><span>Модель локального маршрута Herder</span>
           <input type="text" maxLength={256} list={INCIDENT_MODEL_LIST_ID} value={policy.incidentExecution?.model ?? ""}
@@ -911,7 +905,7 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
         </label>
         {incidentIssue && <small className="autopilot-error" role="alert">{incidentIssue}</small>}
         {incidentWarning && <small className="settings-help" role="status">{incidentWarning}</small>}
-        <small>Провайдер: omniroute. При отказе запуск сохраняет причину и не меняет провайдера.</small>
+        <small>Провайдер: {policy.incidentExecution?.provider ?? "не задан"}.</small>
         {policy.incidentExecution && <small className="settings-help">Маршрут запуска: {incidentModelRoute(policy)}</small>}
         {!policy.incidentExecution && <p role="status">Маршрут инцидентов ещё не сохранён.</p>}
       </fieldset>

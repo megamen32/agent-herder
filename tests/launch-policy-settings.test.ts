@@ -19,14 +19,13 @@ const component = readFileSync(new URL("../src/web-ui/launch-policy-settings.tsx
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 
 describe("new session launch policy settings", () => {
-  it("points Notice Place incident model choice to its admin and explains Herder's launch role", () => {
-    expect(component).toContain('href="https://notify.bezrabotnyi.com/admin/#health-model"');
-    expect(component).toContain("Модель для анализа инцидентов Notice Place выбирается в");
-    expect(component).toContain("Herder проверяет допустимость запуска и запускает сессию.");
-    expect(component).toContain("Поля ниже задают локальный маршрут Herder и не меняют выбор модели в Notice Place.");
-    expect(component).toContain("<legend>Локальный маршрут инцидентов Herder</legend>");
-    expect(component).not.toContain("Диагностика и исправление инцидентов Noticeplace");
-    expect(component).not.toContain("Этот выбор сохраняется отдельно для новых расследований и исправлений.");
+  it("explains Herder ownership and the optional Notice Place proxy", () => {
+    expect(component).toContain("Модель инцидентов задаётся в политике Herder");
+    expect(component).toContain("Notice Place отображает и меняет эти настройки через необязательное подключение к Herder");
+    expect(component).not.toContain("Модель для анализа инцидентов Notice Place выбирается в");
+    expect(component).not.toContain("OpenCode · MiniMax через OmniRoute");
+    expect(component).toContain("policy.incidentExecution?.provider");
+    expect(component).toContain("modelOptions[policy.incidentExecution?.runtime");
   });
   it.each(["", "   "])("clears route override %j and saves the inherited global model through production validation", (empty) => {
     const project = "/project";
@@ -110,25 +109,26 @@ describe("new session launch policy settings", () => {
     expect(component).toContain("mergePolicyChanges");
   });
 
-  it("refuses an unrelated local incident override while still explaining generic catalog warnings", () => {
+  it("accepts a valid incident override while explaining catalog warnings", () => {
     const incident = { runtime: "opencode", provider: "omniroute", model: "omniroute/hand-typed-model", reasoning: "default", topic: "health" } as const;
     const policy: LaunchPolicy = { ...DEFAULT_LAUNCH_POLICY, incidentExecution: incident };
     expect(incidentModelRoute(policy)).toBe("omniroute/hand-typed-model");
     // The owner is the authority: a model outside the catalog is saved as it is.
-    expect(incidentModelIssue("omniroute/hand-typed-model")).toContain("закреплён");
+    expect(incidentModelIssue("omniroute/hand-typed-model")).toBeUndefined();
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/minimax-combo-m3.1"])).toContain("не найдена в каталоге harness");
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", ["omniroute/hand-typed-model"])).toBeUndefined();
     // An empty catalog carries no verdict about the model.
     expect(modelCatalogIssue("opencode", "omniroute/hand-typed-model", [])).toBeUndefined();
   });
 
-  it("keeps the direct MiniMax route valid while highlighting the Herder-owned Luna selection", () => {
+  it("accepts valid incident models and rejects malformed input", () => {
     expect(modelValueIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(modelValueIssue("omniroute/minimax/MiniMax-M3.1-Flash")).toBeUndefined();
     expect(incidentModelIssue("omniroute/cx/gpt-6-luna")).toBeUndefined();
-    expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toContain("закреплён");
-    expect(incidentModelIssue("zai/GLM-4.6")).toContain("закреплён");
-    expect(incidentModelIssue("MiniMax-M3.1-Flash")).toContain("закреплён");
+    expect(incidentModelIssue("minimax-coding-plan/MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("zai/GLM-4.6")).toBeUndefined();
+    expect(incidentModelIssue("MiniMax-M3.1-Flash")).toBeUndefined();
+    expect(incidentModelIssue("bad model")).toBeTruthy();
   });
 
   it("validates the Luna default and accepts a well-formed direct MiniMax compatibility route", () => {
