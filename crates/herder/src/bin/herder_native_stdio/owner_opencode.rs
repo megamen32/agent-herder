@@ -209,7 +209,7 @@ pub(super) fn open_adapter(owner: &OwnerProfile, instance: &InstanceRef)
                 .map_err(|_| "invalid password encoding")?,
         ));
     }
-    let client = AhapClient::open(AhapConfig {
+    let config = AhapConfig {
         instance_id: instance.instance_id.clone(),
         harness: harness.clone(),
         executable: owner.executable.clone(),
@@ -225,7 +225,12 @@ pub(super) fn open_adapter(owner: &OwnerProfile, instance: &InstanceRef)
         } else {
             20
         }),
-    })
+    };
+    let client = if matches!(harness.as_str(), "chatgpt" | "zai") {
+        AhapClient::open_lazy_init(config)
+    } else {
+        AhapClient::open(config)
+    }
     .map_err(|error| format!("AHAP {harness} startup failed: {error:?}. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."))?;
     let delivery_mode = if harness == "opencode"
         && client.capabilities().get("nativeProtocol").and_then(serde_json::Value::as_str) != Some("v2") {

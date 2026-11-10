@@ -978,6 +978,51 @@ for line in sys.stdin:
 }
 
 #[test]
+fn browser_unavailable_does_not_block_mcp_initialize_or_discovery() {
+    let f = Fixture::new();
+    f.migrate_v4();
+    let adapter = f.root.join("lazy-adapter.py");
+    fs::write(&adapter, r#"import json,os,sys,time
+for line in sys.stdin:
+ r=json.loads(line);m=r['method']
+ with open(os.path.join(os.environ['HOME'],'trace'),'a') as out:out.write(m+'\n')
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage'],'deliveryModes':['queue']}}
+ else:time.sleep(30);v=None
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "kind":"chatgpt","principal":"owner","node":"node","instance":"browser-fixture",
+        "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":adapter,"code_home":f.root,"cwd":f.root}}).to_string()).unwrap();
+    let driver = f.root.join("probe.py");
+    fs::write(&driver, r#"import json,os,select,subprocess,sys
+compat=os.environ.get('HERDER_V1_COMPAT_BINARY')
+env=os.environ.copy();env['HERDER_NATIVE_COMMAND']=sys.argv[1]
+p=subprocess.Popen([compat or sys.argv[1],'--trusted-owner-profile',sys.argv[2]],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+def call(i,method,params):
+ p.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params})+'\n');p.stdin.flush()
+ assert select.select([p.stdout],[],[],5)[0], 'timeout '+method
+ reply=json.loads(p.stdout.readline());assert 'result' in reply,reply
+ return reply['result']
+try:
+ meta={'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{},'io.modelcontextprotocol/clientInfo':{'name':'lazy-fixture','version':'1'}}
+ if compat:
+  call(1,'initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'lazy-fixture','version':'1'}})
+  p.stdin.write(json.dumps({'jsonrpc':'2.0','method':'notifications/initialized'})+'\n');p.stdin.flush()
+  result=call(2,'tools/call',{'name':'discover','arguments':{'action':'instances'}})
+ else:
+  call(1,'server/discover',{'_meta':meta})
+  result=call(2,'tools/call',{'_meta':meta,'name':'discover','arguments':{'action':'instances'}})
+ assert len(result['structuredContent']['instances'])==1,result
+finally:
+ p.stdin.close();p.wait(timeout=5)
+"#).unwrap();
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_herder_native_stdio").into());
+    let result = Command::new("/usr/bin/python3").arg(driver).arg(binary).arg(&f.profile).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert_eq!(fs::read_to_string(f.root.join("trace")).unwrap(), "initialize\n");
+}
+
+#[test]
 fn one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart() {
     use std::io::{BufRead, BufReader, Write};
     let a = Fixture::new(); let b = Fixture::new();
@@ -1015,6 +1060,7 @@ for line in sys.stdin:
     let meta=serde_json::json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},"io.modelcontextprotocol/clientInfo":{"name":"two-profiles","version":"1"}});
     let mut sessions=Vec::new(); let mut tasks=Vec::new();
     for restart in [false,true] {
+        for f in [&a, &b] { let _ = fs::remove_file(f.root.join("parent-pid")); }
         let mut child=Command::new(&binary).arg("--trusted-owner-profile").arg(&a.profile)
             .arg("--trusted-owner-profile").arg(&b.profile)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap();
@@ -1030,7 +1076,7 @@ for line in sys.stdin:
         assert_eq!(discover["result"]["structuredContent"]["instances"].as_array().unwrap().len(),2,"{discover}");
         let implicit=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context"}}));
         assert_eq!(implicit["result"]["structuredContent"]["code"],"self_binding_required","{implicit}");
-        for f in [&a, &b] { assert_eq!(fs::read_to_string(f.root.join("parent-pid")).unwrap(), child.id().to_string()); }
+        for f in [&a, &b] { assert!(!f.root.join("parent-pid").exists()); }
         for i in 0..2 {
             if !restart {
                 let create=call("tools/call",serde_json::json!({"name":"create","arguments":{"action":"create","instance_ref":format!("chatgpt-{i}"),"prompt":format!("account-{i}"),"request_key":"same-key"}}));
@@ -1045,6 +1091,7 @@ for line in sys.stdin:
                 assert_eq!(receipt["result"]["status"],"completed","{receipt}");
             }
             let read=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"messages","session_ref":sessions[i]}}));
+            assert_eq!(fs::read_to_string([&a, &b][i].root.join("parent-pid")).unwrap(), child.id().to_string());
             let rows=read["result"]["structuredContent"]["page"]["messages"].as_array().expect("messages");
             assert_eq!(rows.len(),2,"{read}");assert_eq!(rows[0]["text"],format!("account-{i}"));assert_eq!(rows[1]["text"],format!("follow-{i}"));
             let context=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"context","session_ref":sessions[i]}}));

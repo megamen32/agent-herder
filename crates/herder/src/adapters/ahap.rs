@@ -49,6 +49,7 @@ struct State {
     rx: Receiver<Result<Value, ()>>,
     next_id: u64,
     usable: bool,
+    init_pending: bool,
 }
 pub struct AhapClient {
     instance_id: String,
@@ -251,6 +252,14 @@ fn rpc(
 }
 impl AhapClient {
     pub fn open(config: AhapConfig) -> Result<Self, AhapError> {
+        Self::open_inner(config, false)
+    }
+    /// Verify AHAP metadata immediately, but defer account initialization to
+    /// the first supported operation. Intended for browser owner composition.
+    pub fn open_lazy_init(config: AhapConfig) -> Result<Self, AhapError> {
+        Self::open_inner(config, true)
+    }
+    fn open_inner(config: AhapConfig, lazy_init: bool) -> Result<Self, AhapError> {
         if config.instance_id.is_empty()
             || config.harness.is_empty()
             || !config.executable.is_absolute()
@@ -286,6 +295,7 @@ impl AhapClient {
             rx,
             next_id: 1,
             usable: true,
+            init_pending: false,
         };
         let init = rpc(
             &mut state,
@@ -315,7 +325,7 @@ impl AhapClient {
                 return Err(AhapError::Protocol);
             }
         }
-        if methods.contains("init") {
+        if methods.contains("init") && !lazy_init {
             rpc(
                 &mut state,
                 "init",
@@ -328,6 +338,7 @@ impl AhapClient {
                 cause: Box::new(cause),
             })?;
         }
+        state.init_pending = lazy_init && methods.contains("init");
         Ok(Self {
             instance_id: config.instance_id,
             harness: config.harness,
@@ -356,6 +367,20 @@ impl AhapClient {
             return Err(AhapError::Unsupported);
         }
         let mut s = self.state.lock().map_err(|_| AhapError::Unavailable)?;
+        if !s.usable {
+            return Err(AhapError::Unavailable);
+        }
+        if s.init_pending {
+            let result = rpc(&mut s, "init", json!({}), self.timeout, &self.harness);
+            if let Err(cause) = result {
+                s.poison();
+                return Err(AhapError::Initialization { phase: "init", cause: Box::new(cause) });
+            }
+            s.init_pending = false;
+            if method == "init" {
+                return result;
+            }
+        }
         rpc(&mut s, method, params, self.timeout, &self.harness)
     }
 }
@@ -375,6 +400,9 @@ mod tests {
         }
     }
     fn fixture(body: &str, timeout: Duration) -> (Fixture, AhapClient) {
+        fixture_mode(body, timeout, false)
+    }
+    fn fixture_mode(body: &str, timeout: Duration, lazy: bool) -> (Fixture, AhapClient) {
         let dir = std::env::temp_dir().join(format!(
             "herder-ahap-{}-{}",
             std::process::id(),
@@ -387,7 +415,7 @@ mod tests {
         let executable = dir.join("adapter");
         fs::write(&executable, body).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        let c = AhapClient::open(AhapConfig {
+        let config = AhapConfig {
             instance_id: "node-a/profile-a".into(),
             harness: "opencode".into(),
             executable: fs::canonicalize("/usr/bin/python3").unwrap(),
@@ -398,8 +426,8 @@ mod tests {
                 dir.join("trace").to_string_lossy().into_owned(),
             )],
             timeout,
-        })
-        .unwrap();
+        };
+        let c = if lazy { AhapClient::open_lazy_init(config) } else { AhapClient::open(config) }.unwrap();
         (Fixture(dir), c)
     }
     const SCRIPT: &str = r##"#!/usr/bin/python3
@@ -438,6 +466,41 @@ for line in sys.stdin:
                 .collect::<Vec<_>>(),
             ["initialize", "init", "createSession"]
         );
+    }
+    const LAZY_SCRIPT: &str = r##"import json,os,sys,time
+for line in sys.stdin:
+ r=json.loads(line); m=r['method']
+ with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
+ if m=='initialize': v={'harness':'opencode','capabilities':{'methods':['init','getSessionMessages','sendMessage']}}
+ elif m=='init':
+  mode=open('mode').read() if os.path.exists('mode') else 'ok'
+  if mode=='timeout': time.sleep(2)
+  if mode=='denied':
+   print(json.dumps({'jsonrpc':'2.0','id':r['id'],'error':{'code':-32000,'message':'wrong scope'}}),flush=True);continue
+  v=None
+ else: v={'data':'fixture'}
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"##;
+    #[test]
+    fn lazy_init_is_deferred_and_serialized() {
+        let (f, c) = fixture_mode(LAZY_SCRIPT, Duration::from_secs(2), true);
+        assert_eq!(fs::read_to_string(f.0.join("trace")).unwrap(), "initialize\n");
+        assert!(c.supports("getSessionMessages"));
+        let c = std::sync::Arc::new(c);
+        let workers: Vec<_> = (0..4).map(|_| { let c = c.clone(); std::thread::spawn(move || c.call("getSessionMessages", json!({})).unwrap()) }).collect();
+        for worker in workers { assert_eq!(worker.join().unwrap()["data"], "fixture"); }
+        let trace = fs::read_to_string(f.0.join("trace")).unwrap();
+        assert_eq!(trace.lines().collect::<Vec<_>>(), ["initialize","init","getSessionMessages","getSessionMessages","getSessionMessages","getSessionMessages"]);
+    }
+    #[test]
+    fn lazy_init_wrong_scope_and_timeout_fail_closed_without_replay() {
+        for mode in ["denied", "timeout"] {
+            let (f, c) = fixture_mode(LAZY_SCRIPT, Duration::from_millis(300), true);
+            fs::write(f.0.join("mode"), mode).unwrap();
+            assert!(matches!(c.call("sendMessage", json!({})), Err(AhapError::Initialization { phase: "init", .. })));
+            assert!(matches!(c.call("getSessionMessages", json!({})), Err(AhapError::Unavailable)));
+            assert_eq!(fs::read_to_string(f.0.join("trace")).unwrap(), "initialize\ninit\n");
+        }
     }
     #[test]
     fn initialize_harness_must_match_the_trusted_configuration() {
