@@ -21,6 +21,7 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
   const events:{action:string;args:Record<string,unknown>;agent_instance_id:string}[]=[];
   const pending=new Map<string,{action:string;result:Record<string,unknown>}>();
   let seq=0;
+  const faults={failFirstReceipt:false};
   const fetcher=async (raw:RequestInfo|URL,opts:RequestInit={})=>{
     const url=new URL(String(raw));
     if(url.pathname==="/v1/agent/status"){
@@ -38,6 +39,7 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
       return new Response(JSON.stringify({queued:true,id}),{status:202});
     }
     if(url.pathname==="/v1/agent/results"&&opts.method==="GET"){
+      if(faults.failFirstReceipt && [...pending.values()].some(v=>v.action==='gpt_first_send')) { faults.failFirstReceipt=false; throw new Error('fixture disconnect'); }
       return new Response(JSON.stringify({results:[...pending].map(([id,v])=>({
         id,action:v.action,agent_id:"agent-default",agent_instance_id:receiptInstance,
         ...(context.connectionId?{connection_id:context.connectionId}:{}),
@@ -48,7 +50,7 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
   };
   const config:UserIoConfig={endpoint:"http://127.0.0.1:9999",agentId:"agent-default",
     instanceId:INSTANCE,accountScope:SCOPE,tokenFile,...context,fetcher:fetcher as typeof fetch};
-  return {driver:new UserIoChatGptDriver(config),config,events};
+  return {driver:new UserIoChatGptDriver(config),config,events,faults};
 }
 const read={
   ok:true,chat_ref:CHAT,ready:true,phase:"idle",
@@ -59,6 +61,21 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it('recovers the original accepted receipt after restart without another first send',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'herder-draft-test-')); homes.push(root);
+    const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
+    try {
+      const f=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},gpt_scope:{ok:true,account_scope:SCOPE},
+        gpt_first_send:{ok:true,admission:'confirmed',chat_ref:CHAT,native_user_message_id:USR}});
+      await f.driver.verifyPinnedAccountScope();const draft=await f.driver.createChat({title:'new'});
+      f.faults.failFirstReceipt=true;
+      await expect(f.driver.sendMessage({chatId:draft.id,text:'first'})).rejects.toThrow('outcome unknown');
+      const restarted=new UserIoChatGptDriver(f.config);await restarted.verifyPinnedAccountScope();
+      await expect(restarted.sendMessage({chatId:draft.id,text:'different'})).rejects.toThrow('uncertain');
+      expect(await restarted.sendMessage({chatId:draft.id,text:'first'})).toEqual({nativeInputMessageId:USR});
+      expect(f.events.filter(e=>e.action==='gpt_first_send')).toHaveLength(1);
+    } finally { if(prior===undefined) delete process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; else process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=prior; }
+  });
   it("creates an account-scoped local draft, admits an exact first message and restores its alias",async()=>{
     const root=mkdtempSync(join(tmpdir(),"herder-draft-test-")); homes.push(root);
     const prior=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT; process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;

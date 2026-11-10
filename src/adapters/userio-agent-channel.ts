@@ -79,7 +79,24 @@ export class UserIoAgentChannel {
     if(!online.includes(this.config.instanceId))
       throw new Error("userio_profile_principal_mismatch");
   }
-  async call(action:string,args:Record<string,unknown>={},timeoutMs=135000):Promise<UserIoAgentResult>{
+  async result(id:string,action:string):Promise<UserIoAgentResult | undefined>{
+    if (!id.startsWith(this.config.agentId+":") || !/^[A-Za-z0-9_.:-]{1,256}$/.test(id)) throw new Error("userio_command_invalid");
+    const results=await this.request("GET","/v1/agent/results?agent_id="+encodeURIComponent(this.config.agentId)+"&limit=200");
+    const matching=Array.isArray(results.results)?results.results.filter(
+      (v):v is Record<string,unknown>=>!!v&&typeof v==="object"&&v.id===id):[];
+    if(matching.length>1)throw new Error("userio_duplicate_command_result");
+    if(!matching.length)return undefined;
+    const record=matching[0]!;
+    if(record.action!==action||record.agent_id!==this.config.agentId
+      ||record.agent_instance_id!==this.config.instanceId
+      ||this.config.connectionId!==undefined&&record.connection_id!==this.config.connectionId
+      ||this.config.principalId!==undefined&&record.principal_id!==this.config.principalId
+      ||!record.result||typeof record.result!=="object") throw new Error("userio_command_result_mismatch");
+    const result=record.result as UserIoAgentResult;
+    if(result.ok!==true)throw new Error(typeof result.error==="string"&&/^[a-z0-9_]{1,100}$/u.test(result.error)?result.error:"userio_command_failure");
+    return result;
+  }
+  async call(action:string,args:Record<string,unknown>={},timeoutMs=135000,onAccepted?:(id:string)=>Promise<void>):Promise<UserIoAgentResult>{
     if(!/^[a-z][a-z0-9_]{0,63}$/u.test(action)
       ||!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>360000)
       throw new Error("userio_command_invalid");
@@ -91,29 +108,12 @@ export class UserIoAgentChannel {
     const id=ack.id;
     if(ack.queued!==true||typeof id!=="string"||!id.startsWith(this.config.agentId+":"))
       throw new Error("userio_command_rejected");
+    if(onAccepted)await onAccepted(id);
     const deadline=Date.now()+timeoutMs;
     while(Date.now()<deadline){
       await sleep(450);
-      const results=await this.request("GET","/v1/agent/results?agent_id="+
-        encodeURIComponent(this.config.agentId)+"&limit=200");
-      const matching=Array.isArray(results.results)?results.results.filter(
-        (v):v is Record<string,unknown>=>!!v&&typeof v==="object"&&v.id===id):[];
-      if(matching.length>1)throw new Error("userio_duplicate_command_result");
-      if(matching.length){
-        const record=matching[0]!;
-        if(record.action!==action||record.agent_id!==this.config.agentId
-          ||(record.agent_instance_id!==undefined&&record.agent_instance_id!==this.config.instanceId)
-          ||record.agent_instance_id===undefined
-          ||this.config.connectionId!==undefined&&record.connection_id!==this.config.connectionId
-          ||this.config.principalId!==undefined&&record.principal_id!==this.config.principalId
-          ||!record.result||typeof record.result!=="object")
-          throw new Error("userio_command_result_mismatch");
-        const result=record.result as UserIoAgentResult;
-        if(result.ok!==true)throw new Error(
-          typeof result.error==="string"&&/^[a-z0-9_]{1,100}$/u.test(result.error)
-            ?result.error:"userio_command_failure");
-        return result;
-      }
+      const result=await this.result(id,action);
+      if(result)return result;
     }
     throw new Error("userio_command_outcome_unknown");
   }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { RawTranscriptExport, SessionMessageView } from "../types/index.js";
 import { UserIoAgentChannel, userIoAccountScope, type UserIoConfig, type UserIoAgentResult } from "./userio-agent-channel.js";
@@ -59,14 +59,16 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
   }
   async archiveChat(id:string):Promise<{ok:boolean;error?:string}> {
     this.assertAccount();
-    const draft=this.drafts.get(id);
-    if(draft) return {ok:false,error:"local_draft_archive_unsupported"};
-    const native=id;
-    if(!UUID.test(native))return {ok:false,error:"invalid_chat_ref"};
     await this.verifyPinnedAccountScope();
+    const draft=this.drafts.get(id);
+    if(draft?.state==="pending") { await this.drafts.discard(id); return {ok:true}; }
+    if(draft && draft.state!=="admitted") return {ok:false,error:"first_send_outcome_unknown"};
+    const native=draft?.remoteId ?? id;
+    if(!UUID.test(native))return {ok:false,error:"invalid_chat_ref"};
     try {
       const result=await this.call("gpt_archive",{chat_ref:native,expected_account_scope:this.config.accountScope});
       if(result.archived!==true||result.chat_ref!==native)throw new Error("archive_unconfirmed");
+      if(draft)await this.drafts.discard(id,true);
       this.known=this.known.filter(chat=>chat.id!==native);
       return {ok:true};
     }catch{return {ok:false,error:"archive_outcome_unknown"};}
@@ -74,6 +76,16 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
   private assertAccount(){
     if(this.verifiedAccountScope!==this.config.accountScope)
       throw new Error("pinned browser account scope mismatch");
+  }
+  async reconcileFirstSend(id:string):Promise<{nativeInputMessageId:string}|undefined> {
+    await this.verifyPinnedAccountScope();
+    const draft=this.drafts.get(id);
+    if(!draft || !["sending","uncertain"].includes(draft.state) || !draft.commandId)return undefined;
+    const result=await this.channel.result(draft.commandId,"gpt_first_send");
+    if(!result)return undefined;
+    if(result.admission!=="confirmed"||typeof result.chat_ref!=="string"||!UUID.test(result.chat_ref)||typeof result.native_user_message_id!=="string"||!UUID.test(result.native_user_message_id))throw new Error("invalid_receipt");
+    await this.drafts.admit(id,result.chat_ref,result.native_user_message_id);
+    return {nativeInputMessageId:result.native_user_message_id};
   }
   async listObservedChats():Promise<readonly BrowserChat[]> {
     this.assertAccount();
@@ -147,13 +159,21 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
       if(typeof input.text!=="string"||!input.text.trim()||input.text.length>16000)throw new Error("ChatGPT submission rejected before click: send_not_ready");
       const draft=this.drafts.get(input.chatId);
       if(!draft)throw new Error("draft_changed");
+      const inputDigest=createHash("sha256").update(input.text).digest("hex");
+      if(draft.state==="sending"||draft.state==="uncertain") {
+        if(!draft.inputDigest||draft.inputDigest!==inputDigest)throw new Error("First-message submission is uncertain; reconcile without automatic retry");
+        const recovered=await this.reconcileFirstSend(input.chatId).catch(()=>undefined);
+        if(recovered)return recovered;
+        throw new Error("First-message submission is uncertain; reconcile without automatic retry");
+      }
       if(draft.state!=="admitted") {
         await this.verifyPinnedAccountScope();
-        await this.drafts.startSend(input.chatId);
+        await this.drafts.startSend(input.chatId,inputDigest);
         try {
-          const result=await this.call("gpt_first_send",{text:input.text,expected_account_scope:this.config.accountScope},155000);
+          const result=await this.channel.call("gpt_first_send",{text:input.text,expected_account_scope:this.config.accountScope},155000,
+            commandId=>this.drafts.recordCommand(input.chatId,commandId));
           if(result.admission!=="confirmed"||typeof result.chat_ref!=="string"||!UUID.test(result.chat_ref)||typeof result.native_user_message_id!=="string"||!UUID.test(result.native_user_message_id))throw new Error("invalid_receipt");
-          await this.drafts.admit(input.chatId,result.chat_ref);
+          await this.drafts.admit(input.chatId,result.chat_ref,result.native_user_message_id);
           return {nativeInputMessageId:result.native_user_message_id};
         } catch {
           await this.drafts.markUncertain(input.chatId);
@@ -177,7 +197,9 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
             throw new Error("chat_url_mismatch");
         }catch{throw new Error("chat_url_mismatch");}
       }
-      return {assistantText:typeof result.reply==="string"?result.reply:undefined};
+      if(result.native_user_message_id!==undefined && (result.admission!=="confirmed" || result.chat_ref!==input.chatId || typeof result.native_user_message_id!=="string" || !UUID.test(result.native_user_message_id)))throw new Error("invalid_receipt");
+      return {assistantText:typeof result.reply==="string"?result.reply:undefined,
+        ...(typeof result.native_user_message_id==="string"?{nativeInputMessageId:result.native_user_message_id}:{})};
     }catch{
       // The post may have been consumed before the HTTP/readback failed.
       // Never describe this as a safe non-submission or automatically replay it.

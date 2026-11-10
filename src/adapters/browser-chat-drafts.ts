@@ -12,6 +12,9 @@ export interface BrowserChatDraft {
   state: DraftState;
   /** Native ID assigned only after first message, never guessed. */
   remoteId?: string;
+  commandId?: string;
+  nativeInputMessageId?: string;
+  inputDigest?: string;
 }
 const UUID = "[a-f0-9]{8}-[a-f0-9-]{27,48}";
 const DRAFT_ID = new RegExp("^draft:("+UUID+")$","i");
@@ -65,6 +68,9 @@ export class BrowserChatDraftStore {
           !["pending","sending","uncertain","admitted"].includes(data.state) ||
           typeof data.title!=="string" || data.title.length>180 ||
           typeof data.createdAt!=="string" ||
+          (data.commandId!==undefined && (typeof data.commandId!=="string" || !/^[A-Za-z0-9_.:-]{1,256}$/.test(data.commandId))) ||
+          (data.inputDigest!==undefined && (typeof data.inputDigest!=="string" || !ACCOUNT_SCOPE.test(data.inputDigest))) ||
+          (data.nativeInputMessageId!==undefined && (typeof data.nativeInputMessageId!=="string" || !/^[a-f0-9-]{36}$/i.test(data.nativeInputMessageId))) ||
           (data.remoteId!==undefined && (typeof data.remoteId!=="string"||data.remoteId.length>120))) continue;
         drafts.push(data);
       } catch { /* an invalid cache file cannot create a conversation */ }
@@ -122,14 +128,15 @@ export class BrowserChatDraftStore {
     return [...[...this.items.values()].map(d=>this.asChat(d,chats.find(c=>c.id===d.remoteId))),...chats.filter(x=>!admitted.has(x.id))];
   }
 
-  async startSend(id: string): Promise<BrowserChatDraft> {
+  async startSend(id: string,inputDigest?:string): Promise<BrowserChatDraft> {
     const data=this.get(id);
     if (!data) throw new Error("Draft does not belong to the authenticated browser account");
     if (data.state==="sending" || data.state==="uncertain") {
       throw new Error("First-message submission is uncertain; reconcile without automatic retry");
     }
     if (data.state==="admitted") return data;
-    const next={...data,state:"sending" as const};
+    if(inputDigest!==undefined&&!ACCOUNT_SCOPE.test(inputDigest))throw new Error("Invalid input digest");
+    const next={...data,...(inputDigest?{inputDigest}:{}),state:"sending" as const};
     await this.save(next);
     return next;
   }
@@ -141,13 +148,26 @@ export class BrowserChatDraftStore {
     const data=this.get(id);
     if (data?.state==="sending") await this.save({...data,state:"uncertain"});
   }
-  async admit(id: string,remoteId:string): Promise<void> {
+  async recordCommand(id:string,commandId:string):Promise<void> {
+    const data=this.get(id);
+    if (!data || data.state!=="sending" || !/^[A-Za-z0-9_.:-]{1,256}$/.test(commandId)) throw new Error("Invalid draft command");
+    await this.save({...data,commandId});
+  }
+  async discard(id:string, archived=false):Promise<void> {
+    const data=this.get(id);
+    if (!data || (data.state!=="pending" && !(archived && data.state==="admitted"))) throw new Error("Draft cannot be discarded");
+    const target=this.path(id), epoch=this.scopeEpoch;
+    await unlink(target);
+    if(epoch!==this.scopeEpoch) throw new Error("Browser account changed while discarding draft");
+    this.items.delete(id);
+  }
+  async admit(id: string,remoteId:string,nativeInputMessageId?:string): Promise<void> {
     const valid=this.provider==="chatgpt"
       ? /^[a-f0-9-]{28,80}$/i.test(remoteId) : /^route:[a-f0-9-]{12,80}$/i.test(remoteId);
     if (!valid) throw new Error("New browser chat has no verified native ID");
     const data=this.get(id);
     if (!data || !["sending","uncertain"].includes(data.state))
       throw new Error("First-message admission state changed");
-    await this.save({...data,remoteId,state:"admitted"});
+    await this.save({...data,remoteId,...(nativeInputMessageId?{nativeInputMessageId}:{}),state:"admitted"});
   }
 }

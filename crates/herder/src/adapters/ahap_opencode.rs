@@ -161,7 +161,6 @@ impl AhapOpenCode {
     fn mutation_ready(&self) -> bool {
         [
             "init",
-            "createSession",
             "sendMessage",
             "getSession",
             "getSessionMessages",
@@ -365,7 +364,7 @@ impl BoundedFreshRootCreate for AhapOpenCode {
         self.policy.initial_delivery_mode
     }
     fn create_root_bounded(&self, key: &str, _prompt: &str) -> Result<SessionAddress, SubmitError> {
-        if !self.mutation_ready() || !valid_native_id(key) {
+        if !self.mutation_ready() || !self.client.supports("createSession") || !valid_native_id(key) {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "invalid request key".into(),
             });
@@ -662,7 +661,7 @@ harness=os.environ['AHAP_HARNESS'];session=os.environ['SESSION_ID'];native_id=os
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
  with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
- if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','createSession','sendMessage','getSession','getSessionMessages'],'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
+ if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','sendMessage','getSession','getSessionMessages']+([] if os.environ['MODE']=='no_create' else ['createSession']),'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
  elif m=='init':v=None
  elif m=='createSession':v={'id':session,'harness':harness}
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
@@ -721,6 +720,19 @@ for line in sys.stdin:
             },
         );
         b.map(|port| (Temp(dir), port))
+    }
+    #[tokio::test]
+    async fn existing_session_send_does_not_require_create_capability() {
+        let (f, b) = setup("no_create");
+        let a = SessionAddress { instance:b.instance.clone(), native_session_id:"sesABC".into() };
+        assert!(b.create_root_bounded("create", "prompt").is_err());
+        let snapshot=b.snapshot(&a).await.unwrap();
+        let plan=crate::domain::adapter::decide_send(&snapshot, &crate::domain::adapter::SendCommand {mode:SendMode::Start}).unwrap();
+        let receipt=b.submit_bounded(plan,"hi",&RequestKey("key".into())).unwrap();
+        assert!(matches!(b.reconcile(&receipt.receipt).await.unwrap(),Observation::Confirmed{..}));
+        drop(b);
+        let trace=fs::read_to_string(f.0.join("trace")).unwrap();
+        assert!(!trace.lines().any(|m|m=="createSession"));
     }
     #[tokio::test]
     async fn exact_start_receipt_and_native_readback() {
