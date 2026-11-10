@@ -17,6 +17,27 @@ const route = { harnesses: ["opencode" as const], models: { opencode: "zai/GLM-n
 const policy: AutomationLaunchPolicy = { version: 1, allowedHarnesses: ["opencode"], preferredHarness: "opencode", models: { opencode: "omniroute/cx/gpt-6-luna" }, projectRoutes: { "/workspace/TelegramAuto": route } };
 
 describe("family blacklist without allowedModels", () => {
+  it("uses OpenCode for nested health projects while preserving project and cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "r23-nested-"));
+    try {
+      const p = {...policy, allowedHarnesses:["zcode" as const, "opencode" as const], projectRoutes:{"/workspace/TelegramAuto": {...route, harnesses:["zcode" as const, "opencode" as const]}}};
+      const run = vi.fn(async (request) => ({ok:true, created:true, harness:request.harness, name:"test", cwd:request.cwd, sessionId:"local-fixture", inputId:request.inputId, delivery:"accepted" as const, model:request.model}));
+      const result = await dispatchProjectLaunch({[NOTICEPLACE_HEALTH_AUTHORIZED]:true, policy:p, project:"/workspace/TelegramAuto/src", cwd:"/workspace/TelegramAuto/src", message:"fixture", operationId:"nested", harness:"opencode"}, new ProjectLaunchAttemptLog(join(dir,"attempts.json")), run);
+      expect(result.outcome).toBe("accepted");
+      expect(result.project).toBe("/workspace/TelegramAuto/src");
+      expect(run.mock.calls[0]?.[0]).toMatchObject({harness:"opencode", cwd:"/workspace/TelegramAuto/src", model:"zai/GLM-new"});
+    } finally { await rm(dir, {recursive:true, force:true}); }
+  });
+  it("evaluates an explicit permitted health model before the denied route default", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "r23-explicit-"));
+    try {
+      const p = {...policy, projectRoutes:{"/workspace/TelegramAuto": {...route, models:{opencode:"omniroute/cx/gpt-6-luna"}}}};
+      const run = vi.fn(async (request) => ({ok:true, created:true, harness:request.harness, name:"test", cwd:request.cwd, sessionId:"local-fixture", inputId:request.inputId, delivery:"accepted" as const, model:request.model}));
+      const result = await dispatchProjectLaunch({[NOTICEPLACE_HEALTH_AUTHORIZED]:true, policy:p, project:"/workspace/TelegramAuto/src", cwd:"/workspace/TelegramAuto/src", message:"fixture", operationId:"explicit", harness:"opencode", model:"minimax-coding-plan/MiniMax-old"}, new ProjectLaunchAttemptLog(join(dir,"attempts.json")), run);
+      expect(result.outcome).toBe("accepted");
+      expect(run.mock.calls[0]?.[0]).toMatchObject({harness:"opencode", model:"minimax-coding-plan/MiniMax-old"});
+    } finally { await rm(dir, {recursive:true, force:true}); }
+  });
   it.each([['omniroute','cx/gpt-6-luna'], ['openai-codex','gpt-6-luna'], ['vendor','claude-opus'], ['anthropic','unknown']])('denies forbidden leaf %s/%s', (providerId, modelId) => {
     expect(leafLaunchVerdict({providerId, modelId}, {prohibitionsEnabled: true})).toBe('denied');
   });

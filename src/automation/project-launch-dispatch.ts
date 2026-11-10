@@ -9,6 +9,7 @@ import lockfile from "proper-lockfile";
 import {
   canonicalProjectKey,
   findProjectRouteKey,
+  findGoverningProjectRouteMatch,
   resolveProjectLaunch,
   type AutomationLaunchPolicy,
   type LaunchOutcome,
@@ -214,8 +215,8 @@ export async function dispatchProjectLaunch(
   const mode: NamedSessionMode = input.mode ?? "sync";
   let cwd = input.cwd ?? "";
   const healthAnalysis = input[NOTICEPLACE_HEALTH_AUTHORIZED] === true;
-  const routeKey = routeKeyOf(input.policy, input.project);
-  const healthRoute = routeKey ? input.policy.projectRoutes?.[routeKey] : undefined;
+  const healthRouteMatch = healthAnalysis ? findGoverningProjectRouteMatch(input.policy, input.project) : undefined;
+  const healthRoute = healthRouteMatch?.route;
   // The receipt names the route the project IS and states whether the root of
   // that route replaced the requested working folder, so the fact is readable
   // from the receipt and not only from the routing text.
@@ -306,8 +307,8 @@ export async function dispatchProjectLaunch(
   // the ordinary fallback chain. The original policy remains unchanged.
   const incidentDefault = healthModelForHarness("opencode", input.policy.incidentExecution ?? INCIDENT_EXECUTION);
   const resolutionPolicy = healthAnalysis
-    ? { ...input.policy, models: { ...input.policy.models, opencode: incidentDefault },
-        ...(routeKey && healthRoute ? { projectRoutes: { ...input.policy.projectRoutes, [routeKey]: { ...healthRoute, harnesses: ["opencode" as const] } } } : {}) }
+    ? { ...input.policy, models: { ...input.policy.models, opencode: input.model ?? incidentDefault },
+        ...(healthRouteMatch && healthRoute ? { projectRoutes: { ...input.policy.projectRoutes, [healthRouteMatch.routeKey]: { ...healthRoute, harnesses: ["opencode" as const], ...(input.model ? { models: { ...healthRoute.models, opencode: input.model } } : {}) } } } : {}) }
     : input.policy;
   const resolution = resolveProjectLaunch(resolutionPolicy, {
     project,
@@ -364,12 +365,7 @@ export async function dispatchProjectLaunch(
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
     model = healthAnalysis ? input.model ?? resolution.model : resolution.model;
-    // The analysis path runs the model of the request, and the lists of the
-    // route judge the model of the route only. The model of the request is
-    // judged by the same lists here, so a project that permits the model of
-    // its route and forbids the model of the request refuses the launch
-    // instead of running the forbidden model. The check stands before the
-    // session is reserved, so a forbidden model never reaches a harness.
+    // Check the selected model against the original policy before reservation.
     if (healthAnalysis && model) {
       try {
         assertModelAllowedForProjectRoute(input.policy, project, model);
