@@ -6,7 +6,7 @@
     "goal_status": "unknown",
     "frontier": "admission_unknown",
     "next_decision": "none",
-    "fingerprint": "94a1ccc192788907af2ea961d97dcb163bf99cd04e1921d42e4ae929efa453e0",
+    "fingerprint": "e4877a3190ccb0f2e2d0584b356c2531e9ad52c4a6117e12643450cc0bb2da09",
     "decision_fresh": false,
     "candidates": [
       "ZAITOKEN15",
@@ -29,9 +29,9 @@
     "Исправленный builder больше не переключает live current при сборке :: commit 23df966f",
     "CI принял reuse adapters и сохранил exact entrypoints/fixtures :: .agents/tasks/20261107-portable-native-ci/LEGACY-ADAPTERS.md"
   ],
-  "summary": "Осталось четыре результата V1:\n1. Подтвердить загрузку UserIO 0.9.36 в точных профилях и первую нативную квитанцию ChatGPT.\n2. Устранить сбой до отправки Z.ai и пройти полный цикл в личном подключении.\n3. Проверить одно расширение на рабочих и личных получателях, VK и общей истории UserIO и Herder.\n4. Свести приёмку установленного Herder: полный нативный экспорт, проекты, GPTAdmin, перезапуск, защита от повтора, HumanStop и уборка своих тестов.\n\nRust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.\n\nВ истории остаются прежние результаты. Отдельные Rust-адаптеры вне V1; CDP и Vibe экспериментальные. Chrome Extension MCP ведёт отдельная сессия; автоматические ответы между сессиями отложены.",
+  "summary": "Осталось четыре результата V1:\n1. Подтвердить загрузку UserIO 0.9.36 в точных профилях и первую нативную квитанцию ChatGPT.\n2. Устранить сбой до отправки Z.ai и пройти полный цикл в личном подключении.\n3. Проверить одно расширение на рабочих и личных получателях, VK и общей истории UserIO и Herder.\n4. Свести приёмку установленного Herder: полный нативный экспорт, проекты, GPTAdmin, перезапуск, защита от повтора, HumanStop и уборка своих тестов.\n\nДиагностика Herder a7fbc548 установлена на обоих входах; обычный MCP и GPTAdmin увидели шесть экземпляров. Локальный тест подтвердил безопасную причину сбоя после перезапуска и запрет повтора. Исправление Z.ai 6f938d4 записано в файлы UserIO на Mac; последние адресные ответы Chrome всё ещё 0.9.35. Новых отправок провайдерам не было. До полной приёмки остаются четыре пункта.\n\nВ истории остаются прежние результаты. Отдельные Rust-адаптеры вне V1; CDP и Vibe экспериментальные. Chrome Extension MCP ведёт отдельная сессия; автоматические ответы между сессиями отложены.",
   "critique": "Убраны дубли приёмки и историческая диагностика. История, назначения и исходные квитанции сохранены. Установка файлов не доказывает загрузку расширения; source/tests не заменяют потребительскую проверку.",
-  "current_progress": "Rust core и прежние TS/AHAP адаптеры установлены: 6 экземпляров, 5 сред. GPTAdmin прочитал два завершённых ответа ChatGPT. Сервер UserIO работает на 0.9.36; оба последних пинга Chrome ответили 0.9.35. ChatGPT 15b доставлен с квитанцией UNKNOWN. У Z.ai подключение готово, первый запрос остановился до отправки.",
+  "current_progress": "Диагностика Herder a7fbc548 установлена на обоих входах; обычный MCP и GPTAdmin увидели шесть экземпляров. Локальный тест подтвердил безопасную причину сбоя после перезапуска и запрет повтора. Исправление Z.ai 6f938d4 записано в файлы UserIO на Mac; последние адресные ответы Chrome всё ещё 0.9.35. Новых отправок провайдерам не было. До полной приёмки остаются четыре пункта.",
   "deliverable": "implementation",
   "decomposition": "progressive",
   "revisions": [
@@ -173,7 +173,7 @@
   ],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-11T01:54:49+03:00",
+  "updated_at": "2026-11-11T03:45:56+03:00",
   "tasks": [
     {
       "id": "BACKENDCONTRACT11",
@@ -3565,7 +3565,7 @@
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex",
       "model": "gpt-6.1-terra",
-      "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.",
+      "blocker": "Файлы UserIO 0.9.36 на Mac обновлены. Последние пинги Carevio и Default вернули 0.9.35; адресное чтение Default подтвердило 0.9.35. Семантическое нажатие не поддерживается; координатная проверка не подтвердила цель Chrome, нажатия не было.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -3600,6 +3600,21 @@
             "description": "UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.",
             "blocker": "Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.",
             "acceptance": "Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T03:45:56+03:00",
+          "note": "Сбой 15b был на подтверждении уже доставленного сообщения. Herder a7fbc548 теперь сохраняет безопасный этап ошибки; подключение на обоих входах проверено.",
+          "changes": {
+            "blocker": "Файлы UserIO 0.9.36 на Mac обновлены. Последние пинги Carevio и Default вернули 0.9.35; адресное чтение Default подтвердило 0.9.35. Семантическое нажатие не поддерживается; координатная проверка не подтвердила цель Chrome, нажатия не было."
           },
           "actor": {
             "host_id": null,
@@ -7360,6 +7375,19 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T03:45:56+03:00",
+          "note": "В UserIO main 6f938d4 исправлено ожидание вкладки и добавлена точная стадия отказа. Регрессия воспроизведена в тесте; точный этап исходного live-сбоя не восстановлен. Файл обновлён на Mac, загрузка расширением не доказана. Herder диагностику уже принимает; новых отправок не было.",
+          "changes": {},
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -8787,73 +8815,6 @@
       "finished_at": "2026-11-08T21:48:16+03:00"
     },
     {
-      "id": "RESTOREPROOF",
-      "label": "Установить и проверить три сценария обычным клиентом",
-      "status": "done",
-      "parent": "RESTORELEGACY",
-      "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
-      "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.",
-      "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
-      "model": "gpt-6.1-sol",
-      "origin": "",
-      "supersedes": [],
-      "progress_events": [
-        {
-          "at": "2026-11-08T20:23:20+03:00",
-          "note": "",
-          "changes": {
-            "id": "RESTOREPROOF",
-            "kind": "task",
-            "parent": "RESTORELEGACY",
-            "label": "Установить и проверить три сценария обычным клиентом",
-            "status": "queued",
-            "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
-            "estimate_minutes": 15,
-            "depends_on": [
-              "RESTORECORE",
-              "RESTORECONTRACTS"
-            ],
-            "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
-            "model": "gpt-6.1-sol"
-          },
-          "actor": {
-            "host_id": null,
-            "harness": "codex",
-            "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
-            "source": "mcp_metadata"
-          },
-          "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
-          "harness": "codex"
-        },
-        {
-          "at": "2026-11-10T20:24:11+03:00",
-          "note": "",
-          "changes": {
-            "status": "done",
-            "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle."
-          },
-          "actor": {
-            "host_id": null,
-            "harness": "codex",
-            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-            "source": "mcp_metadata"
-          },
-          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
-          "harness": "codex"
-        }
-      ],
-      "depends_on": [
-        "RESTORECORE",
-        "RESTORECONTRACTS"
-      ],
-      "estimate_minutes": {
-        "minimum": 15.0,
-        "maximum": 15.0
-      },
-      "created_at": "2026-11-08T20:23:20+03:00",
-      "finished_at": "2026-11-10T20:24:11+03:00"
-    },
-    {
       "id": "A11",
       "label": "Rust client: modes/capabilities/receipts обычной отправки",
       "status": "done",
@@ -10033,6 +9994,95 @@
       "created_at": "2026-11-07T22:06:08+03:00"
     },
     {
+      "id": "RESTOREPROOF",
+      "label": "Установить и проверить три сценария обычным клиентом",
+      "status": "done",
+      "parent": "RESTORELEGACY",
+      "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
+      "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.",
+      "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-08T20:23:20+03:00",
+          "note": "",
+          "changes": {
+            "id": "RESTOREPROOF",
+            "kind": "task",
+            "parent": "RESTORELEGACY",
+            "label": "Установить и проверить три сценария обычным клиентом",
+            "status": "queued",
+            "owner": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+            "estimate_minutes": 15,
+            "depends_on": [
+              "RESTORECORE",
+              "RESTORECONTRACTS"
+            ],
+            "acceptance": "Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.",
+            "model": "gpt-6.1-sol"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1bb0c-4fd3-75e2-ae2a-2c18a99462de",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-10T20:24:11+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T03:33:39+03:00",
+          "note": "Сводка опирается на эти три принятых доказательства. У отложенных RESTORECORE/RESTORECONTRACTS нет связанного dispatch; их статусы сохранены.",
+          "changes": {
+            "depends_on": [
+              "COREWAKE",
+              "REMOTEFULL",
+              "NPLIVEFINAL"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "COREWAKE",
+        "REMOTEFULL",
+        "NPLIVEFINAL"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-08T20:23:20+03:00",
+      "finished_at": "2026-11-10T20:24:11+03:00"
+    },
+    {
       "id": "B12",
       "label": "Thin TS runner: обычная отправка и понятные ошибки",
       "status": "done",
@@ -10934,15 +10984,33 @@
           },
           "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T03:33:39+03:00",
+          "note": "C13/C14: исходники уже вошли в точный кандидат d66c9c07; отложенные попытки назначения больше не являются текущими зависимостями сборки. Доказательства в исходном результате сохранены.",
+          "changes": {
+            "depends_on": [
+              "C12",
+              "A11",
+              "B12",
+              "D12"
+            ]
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [
         "C12",
         "A11",
         "B12",
-        "D12",
-        "C13",
-        "C14"
+        "D12"
       ],
       "estimate_minutes": {
         "minimum": 15.0,

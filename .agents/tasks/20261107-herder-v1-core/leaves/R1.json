@@ -5,9 +5,7 @@
     "C12",
     "A11",
     "B12",
-    "D12",
-    "C13",
-    "C14"
+    "D12"
   ],
   "estimate_minutes": 15,
   "kind": "task",
@@ -19,7 +17,7 @@
   "created_at": "2026-11-07T22:06:05+03:00",
   "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
   "harness": "codex",
-  "updated_at": "2026-11-07T23:16:10+03:00",
+  "updated_at": "2026-11-11T03:33:39+03:00",
   "progress_events": [
     {
       "at": "2026-11-07T22:06:05+03:00",
@@ -124,6 +122,26 @@
         "source": "mcp_metadata"
       },
       "session": "01a1b2b2-5685-7b52-a2bb-05eb931cafa4",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T03:33:39+03:00",
+      "note": "C13/C14: исходники уже вошли в точный кандидат d66c9c07; отложенные попытки назначения больше не являются текущими зависимостями сборки. Доказательства в исходном результате сохранены.",
+      "changes": {
+        "depends_on": [
+          "C12",
+          "A11",
+          "B12",
+          "D12"
+        ]
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
     }
   ],
