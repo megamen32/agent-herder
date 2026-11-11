@@ -20,7 +20,7 @@ export type V1BrowserAutopilotConfig = {
   statePath: string;
   gptadminProfileFile: string;
   pollIntervalMs?: number;
-  profiles: Array<{ instanceRef: string; nodeRef: string; label: string; cwd: string; sessionRefs: string[] }>;
+  profiles: Array<{ instanceRef: string; nodeRef: string; label: string; cwd: string; sessionRefs: string[]; harness?: "chatgpt" | "zai" }>;
   zai: (
     { transport: "browser"; accountScope: string; sshTarget?: string; browserMcpUrl?: string; browserMcpProfileFile?: string } |
     { transport: "userio"; profiles: Array<Omit<UserIoConfig, "fetcher">> } |
@@ -60,7 +60,8 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
   const profiles=config.profiles.map(raw=>{
     const row=object(raw);
     const instanceRef=string(row.instanceRef),nodeRef=string(row.nodeRef),label=string(row.label),cwd=string(row.cwd);
-    if (!isAbsolute(cwd) || instances.has(instanceRef) || !Array.isArray(row.sessionRefs)) throw new Error("browser_autopilot_invalid_profile");
+    if (!isAbsolute(cwd) || instances.has(instanceRef) || !Array.isArray(row.sessionRefs)
+      || row.harness!==undefined && row.harness!=="chatgpt" && row.harness!=="zai") throw new Error("browser_autopilot_invalid_profile");
     instances.add(instanceRef);
     const sessionRefs=row.sessionRefs.map(item=>{
       const ref=string(item);
@@ -68,7 +69,7 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
       if (targets.has(scoped) || ref.includes("*")) throw new Error("browser_autopilot_duplicate_or_wildcard_target");
       targets.add(scoped);return ref;
     });
-    return {instanceRef,nodeRef,label,cwd,sessionRefs};
+    return {instanceRef,nodeRef,label,cwd,sessionRefs,...(row.harness?{harness:row.harness as "chatgpt"|"zai"}:{})};
   });
   if (config.enabled && !targets.size) throw new Error("browser_autopilot_requires_enrolled_sessions");
   const route=object(config.zai);
@@ -91,6 +92,8 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
       const endpoint=string(p.endpoint),agentId=string(p.agentId),
         instanceId=string(p.instanceId),accountScope=string(p.accountScope),
         tokenFile=string(p.tokenFile);
+      const connectionId=p.connectionId===undefined?undefined:string(p.connectionId);
+      const principalId=p.principalId===undefined?undefined:string(p.principalId);
       let url:URL;
       try{url=new URL(endpoint);}catch{throw new Error("browser_autopilot_zai_userio_endpoint_invalid");}
       const local=["localhost","127.0.0.1","[::1]"].includes(url.hostname);
@@ -99,10 +102,12 @@ export function validateV1BrowserAutopilotConfig(input: unknown): V1BrowserAutop
         ||!/^[A-Za-z0-9_.:-]{1,128}$/u.test(agentId)
         ||!/^browser-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.test(instanceId)
         ||!/^[a-f0-9]{64}$/u.test(accountScope)||!isAbsolute(tokenFile)
+        ||connectionId!==undefined&&!/^[A-Za-z0-9_.:-]{1,128}$/u.test(connectionId)
+        ||principalId!==undefined&&principalId.length>256
         ||seen.has(instanceId))
         throw new Error("browser_autopilot_zai_userio_profile_invalid");
       seen.add(instanceId);
-      return {endpoint:url.origin,agentId,instanceId,accountScope,tokenFile};
+      return {endpoint:url.origin,agentId,instanceId,accountScope,tokenFile,...(connectionId?{connectionId}:{}),...(principalId?{principalId}:{})};
     });
     zai={transport:"userio",profiles:instances,...common};
   } else if(route.transport==="browser"){
@@ -221,7 +226,7 @@ export function createV1BrowserNativePorts(config: V1BrowserAutopilotConfig, por
       const row=matches[0]!,address=object(row.address),instance=object(address.instance),native=object(row.native),hold=object(row.human_stop);
       const nativeSessionId=string(address.native_session_id);
       if(instance.instance_id!==bound.instanceRef || instance.node!==bound.nodeRef || native.id!==nativeSessionId
-        || native.harness!=="chatgpt" || native.cwd!==bound.cwd || typeof hold.held!=="boolean" || typeof native.needsPermission!=="boolean"
+        || native.harness!==(bound.harness??"chatgpt") || native.cwd!==bound.cwd || typeof hold.held!=="boolean" || typeof native.needsPermission!=="boolean"
         || !["idle","running","needs_input","stopped","error"].includes(String(native.status)))
         throw new Error("browser_autopilot_native_binding_mismatch");
       const response=value(await port.call("session",{action:"messages",session_ref:target.sessionRef}));
@@ -230,7 +235,7 @@ export function createV1BrowserNativePorts(config: V1BrowserAutopilotConfig, por
       if(!Array.isArray(page.messages))throw new Error("browser_autopilot_native_messages_unavailable");
       const messages=page.messages.map(nativeMessage);
       const status=native.needsPermission?"needs_input":native.status;
-      return {...target,nativeSessionId,cwd:bound.cwd,status,humanStopHeld:hold.held,
+      return {...target,harness:bound.harness??"chatgpt",nativeSessionId,cwd:bound.cwd,status,humanStopHeld:hold.held,
         revision:digest({address,status,humanStopHeld:hold.held,messages,model:native.model??null}),messages,
         ...(typeof native.model==="string"?{model:native.model}:{})} as Snapshot;
     })();
@@ -330,7 +335,7 @@ export async function createV1BrowserAutopilotRuntime(input:unknown,options:{por
     statePath:resolve(config.statePath),holdUnfinishedJudgingOnRestart:zai.transport!=="api",...native,
     isGeneratedPrompt:async(target,message)=>{
       const snapshot=await native.read(target);
-      return getHumanStopStore().isGeneratedPrompt("chatgpt",snapshot.nativeSessionId,
+      return getHumanStopStore().isGeneratedPrompt(snapshot.harness,snapshot.nativeSessionId,
         {text:message.text,...(message.inputId?{turnId:message.inputId}:{})});
     },
     createJudge:({signal,shouldContinue})=>createOpenAICompatibleJudge({

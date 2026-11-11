@@ -9,7 +9,7 @@ export type V1BrowserAutopilotMessage = {
   completionStatus?: string; endTurn?: boolean;
 };
 export type V1BrowserAutopilotSnapshot = V1BrowserAutopilotTarget & {
-  nativeSessionId: string; cwd: string;
+  harness: "chatgpt" | "zai"; nativeSessionId: string; cwd: string;
   status: "idle" | "running" | "needs_input" | "stopped" | "error";
   humanStopHeld: boolean;
   /** Fresh authority/content revision, excluding observation timestamps. */
@@ -77,7 +77,7 @@ function targetValid(value: V1BrowserAutopilotTarget): boolean {
   return !!value && identifier(value.instanceRef) && identifier(value.sessionRef);
 }
 function fingerprint(snapshot: V1BrowserAutopilotSnapshot): string {
-  return hash([snapshot.nativeSessionId, snapshot.cwd,
+  return hash([snapshot.harness, snapshot.nativeSessionId, snapshot.cwd,
     snapshot.messages.map(m => [m.id, m.role, m.text, m.turnId, m.phase, m.origin, m.inputId, m.completionStatus, m.endTurn])]);
 }
 function turnIdentity(target: V1BrowserAutopilotTarget, nativeId: string, assistantId: string, turnId: string): string {
@@ -164,7 +164,7 @@ export class V1BrowserAutopilot {
   private async fresh(target: V1BrowserAutopilotTarget, signal: AbortSignal): Promise<V1BrowserAutopilotSnapshot | null> {
     const value = await cancelable(() => this.options.read(target, signal), signal);
     if (!value || !sameTarget(value, target) || !identifier(value.nativeSessionId) || !identifier(value.revision)
-      || !isAbsolute(value.cwd) || typeof value.humanStopHeld !== "boolean"
+      || !["chatgpt", "zai"].includes(value.harness) || !isAbsolute(value.cwd) || typeof value.humanStopHeld !== "boolean"
       || !["idle", "running", "needs_input", "stopped", "error"].includes(value.status)
       || !Array.isArray(value.messages) || !value.messages.every(m => identifier(m.id) && identifier(m.role) && typeof m.text === "string"
         && (m.completionStatus === undefined || typeof m.completionStatus === "string")
@@ -297,7 +297,7 @@ export class V1BrowserAutopilot {
         judgeStarted = true;
         return judge.decide({
         hook: {
-          hook_event_name: "Stop", harness: "chatgpt", session_id: before.nativeSessionId,
+          hook_event_name: "Stop", harness: before.harness, session_id: before.nativeSessionId,
           cwd: before.cwd, turn_id: turnId, transcript_path: null, stop_hook_active: false,
           last_user_message: pair.human.text, last_assistant_message: pair.assistant.text,
           messages: before.messages.map(({ id, role, text }) => ({ id, role, text })),

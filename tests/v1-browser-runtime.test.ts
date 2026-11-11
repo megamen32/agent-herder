@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { acquireV1BrowserAutopilotLease, createV1BrowserNativePorts, readProtectedBrowserAutopilotJson, validateV1BrowserAutopilotConfig, type V1BrowserAutopilotConfig } from "../src/automation/v1-browser-runtime.js";
+import { V1BrowserAutopilot } from "../src/automation/v1-browser-autopilot.js";
 
 const directories:string[]=[];
 afterEach(async()=>{for(const path of directories.splice(0))await rm(path,{recursive:true,force:true});});
@@ -44,6 +45,8 @@ describe("browser autopilot owner configuration",()=>{
   expect(validateV1BrowserAutopilotConfig({...config,zai:{...browser,sshTarget:"owner@host"}}).zai).toMatchObject({sshTarget:"owner@host"});
  });
  it("requires an exact nonempty enrolled target set when enabled",()=>{
+  expect(validateV1BrowserAutopilotConfig(config).profiles[0].harness).toBeUndefined();
+  expect(()=>validateV1BrowserAutopilotConfig({...config,profiles:[{...config.profiles[0],harness:"other"}]})).toThrow("invalid_profile");
   expect(()=>validateV1BrowserAutopilotConfig({...config,profiles:[]})).toThrow("requires_enrolled");
   expect(()=>validateV1BrowserAutopilotConfig({...config,profiles:[{...config.profiles[0],sessionRefs:["*"]}]})).toThrow("wildcard");
   expect(()=>validateV1BrowserAutopilotConfig({...config,profiles:[config.profiles[0],config.profiles[0]]})).toThrow("invalid_profile");
@@ -70,6 +73,36 @@ describe("browser autopilot owner configuration",()=>{
 });
 
 describe("browser autopilot native boundary",()=>{
+ it("automatically queues one continuation for an exact ZAI target and reconciles UNKNOWN without replay",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"zai-autopilot-"));directories.push(dir);
+  const f=fixture(); f.row.native.harness="zai";
+  f.messages[1].endTurn=true; f.messages[1].completionStatus="finished_successfully";
+  f.setDelivery({isError:true});
+  const bound=validateV1BrowserAutopilotConfig({...config,profiles:[{...config.profiles[0],harness:"zai"}]});
+  const ports=createV1BrowserNativePorts(bound,{call:f.call});
+  const decide=vi.fn(async()=>({kind:"continue" as const,nextGoal:"Продолжи проверку."}));
+  const service=new V1BrowserAutopilot({...ports,statePath:join(dir,"state.json"),createJudge:()=>({decide})});
+  await service.setEnabled(target,true); await service.tick(); await service.settle();
+  expect(decide.mock.calls[0]![0].hook.harness).toBe("zai");
+  expect(f.call.mock.calls.filter(c=>c[0]==="deliver")).toHaveLength(1);
+  expect(f.call).toHaveBeenCalledWith("deliver",expect.objectContaining({action:"session",session_ref:target.sessionRef,mode:"queue",message:"Продолжи проверку."}));
+  expect((await service.inspect()).turns[0]!.state).toBe("unknown");
+  await service.tick(); await service.settle();
+  expect(f.call.mock.calls.filter(c=>c[0]==="deliver")).toHaveLength(1);
+  service.stop();
+ });
+ it("rejects a ZAI target bound to the wrong native harness or held by HumanStop",async()=>{
+  const f=fixture();
+  const bound=validateV1BrowserAutopilotConfig({...config,profiles:[{...config.profiles[0],harness:"zai"}]});
+  const wrong=createV1BrowserNativePorts(bound,{call:f.call});
+  await expect(wrong.read(target)).rejects.toThrow("binding_mismatch");
+  f.row.native.harness="zai"; f.row.human_stop.held=true;
+  const held=createV1BrowserNativePorts(bound,{call:f.call});
+  const snapshot=await held.read(target);
+  expect(snapshot.harness).toBe("zai");
+  expect(await held.deliver(delivery(snapshot.revision))).toMatchObject({status:"rejected"});
+  expect(f.call.mock.calls.some(c=>c[0]==="deliver")).toBe(false);
+ });
  it("reads exact account-scoped native identity and caches passive polling",async()=>{
   const f=fixture();const first=await f.ports.read(target);const second=await f.ports.read(target);
   expect(first).toEqual(second);

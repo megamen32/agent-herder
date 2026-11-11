@@ -14,7 +14,7 @@ const dirs: string[] = [];
 const services: V1BrowserAutopilot[] = [];
 const key = (target: V1BrowserAutopilotTarget) => JSON.stringify([target.instanceRef, target.sessionRef]);
 function snapshot(target = A): V1BrowserAutopilotSnapshot {
-  return { ...target, nativeSessionId: "native-one", cwd: "/workspace/project", status: "idle",
+  return { ...target, harness: "chatgpt", nativeSessionId: "native-one", cwd: "/workspace/project", status: "idle",
     humanStopHeld: false, revision: "revision-one", messages: [
       { id: "human-one", role: "user", text: "Finish the implementation and verify the result." },
       { id: "assistant-one", role: "assistant", text: "The implementation needs one final check.", phase: "final", completionStatus: "finished_successfully", endTurn: true },

@@ -247,14 +247,17 @@ describe("runtime config supports several distinct UserIO profiles",()=>{
      statePath:"/tmp/autopilot.json",gptadminProfileFile:"/tmp/profile.json",profiles:[],
      zai:{transport:"userio",profiles:[
        {endpoint:"https://example.invalid",agentId:"fixture-agent",
-         instanceId:INSTANCE,accountScope:SCOPE,tokenFile:"/tmp/carevio.token"},
+         instanceId:INSTANCE,accountScope:SCOPE,tokenFile:"/tmp/carevio.token",connectionId:"connection:one",principalId:"principal:one"},
        {endpoint:"https://example.invalid",agentId:"fixture-agent",
          instanceId:"browser-"+randomUUID(),
          accountScope:"a".repeat(64),tokenFile:"/tmp/default.token"}
      ]}};
    const verified=validateV1BrowserAutopilotConfig(cfg);
    expect(verified.zai.transport).toBe("userio");
-   if(verified.zai.transport==="userio")expect(verified.zai.profiles).toHaveLength(2);
+   if(verified.zai.transport==="userio"){
+     expect(verified.zai.profiles).toHaveLength(2);
+     expect(verified.zai.profiles[0]).toMatchObject({connectionId:"connection:one",principalId:"principal:one"});
+   }
  });
  it("rejects duplicate instance UUIDs and Vibe URLs",()=>{
    const p={endpoint:"https://example.invalid",agentId:"fixture-agent",
@@ -263,6 +266,8 @@ describe("runtime config supports several distinct UserIO profiles",()=>{
      statePath:"/tmp/autopilot.json",gptadminProfileFile:"/tmp/profile.json",profiles:[]};
    expect(()=>validateV1BrowserAutopilotConfig({...base,zai:{transport:"userio",profiles:[p,p]}}))
      .toThrow("profile_invalid");
+   for(const bad of [{connectionId:"bad value"},{principalId:"x".repeat(257)},{principalId:"bad\nvalue"}])
+     expect(()=>validateV1BrowserAutopilotConfig({...base,zai:{transport:"userio",profiles:[{...p,...bad}]}})).toThrow();
    expect(()=>validateV1BrowserAutopilotConfig({...base,
      zai:{transport:"browser",accountScope:SCOPE,browserMcpUrl:"https://example.invalid/server/fixture/mcp"}}))
      .toThrow("vibe_transport_disabled");
