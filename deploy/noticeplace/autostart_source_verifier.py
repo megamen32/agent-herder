@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import sqlite3
 import time
+import urllib.parse
 
 PROJECT='agent-herder'
 SOURCE='agent-herder-autostart'
@@ -191,12 +192,83 @@ def measure(group,paths,*,host_id,clock=time.time):
         return result('unknown','source-unavailable-or-invalid')
 
 
+def write_state(path,value):
+    """Write the state of the verifier atomically, in the mode of the SDK."""
+    temporary=path.with_suffix('.new')
+    fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+    try:
+        with os.fdopen(fd,'w') as stream:
+            json.dump(value,stream,sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary,path)
+    except BaseException:
+        try:os.unlink(temporary)
+        except OSError:pass
+        raise
+
+
+def retire_superseded_intent(verifier,state_dir):
+    """Retire a pending submission that the server has already moved past.
+
+    The official SDK reconciles a pending intent only against an exact
+    receipt. When the submission never reached the server - a restart of the
+    notification center in the middle of it is enough - that receipt can
+    never arrive, and every later tick raises VerificationPending: the
+    source falls silent for good and the server expires its checks, which
+    delivers the incident to an executor again with the health of the source
+    still unknown.
+
+    The server moves on by itself: an accepted answer rotates the request
+    id of the row, and an expired request is re-armed with a new
+    generation. Once the identity of the row differs from the identity of
+    the intent, the receipt can never match and a late POST of the intent
+    is refused by the server as stale. The intent is superseded, so it is
+    retired here instead of silencing the source.
+
+    Returns 'superseded', 'confirmed', 'ambiguous' or None.
+    """
+    path=Path(state_dir)/'verification.json'
+    try:saved=json.loads(path.read_text())
+    except (OSError,ValueError):return None
+    if saved.get('status')!='submitting':return None
+    body=saved.get('body') or {}
+    incident=saved.get('incident_id')
+    if not isinstance(incident,str) or not incident:return None
+    try:
+        current=verifier.transport('GET','/v1/incidents/'+urllib.parse.quote(incident,safe=''))
+    except Exception:return None
+    lifecycle=(current or {}).get('lifecycle') or {}
+    receipt=lifecycle.get('last_check_receipt') or {}
+    result=receipt.get('result') or {}
+    if (receipt.get('idempotency_key')==saved.get('idempotency_key')
+        and receipt.get('request_id')==body.get('request_id')
+        and result.get('generation')==body.get('generation')
+        and result.get('observed_state')==body.get('observed_state')):
+        # The submission did land: the SDK confirms it on its own.
+        return 'confirmed'
+    if (lifecycle.get('request_id'),lifecycle.get('generation'))==(body.get('request_id'),body.get('generation')):
+        # The server still holds this exact request: the outcome of the
+        # submission is ambiguous and the SDK keeps its fail-closed fence.
+        return 'ambiguous'
+    server_request=lifecycle.get('request_id')
+    if not isinstance(server_request,str) or not server_request or server_request==body.get('request_id'):
+        # The server did not name a different request: there is no proof that
+        # the submission is superseded, so the fence of the SDK stays.
+        return 'ambiguous'
+    saved['status']='superseded'
+    write_state(path,saved)
+    return 'superseded'
+
+
 def run_tick(paths,*,host_id,base_url,token,state_dir,transport=None):
     # Lifecycle, pagination and accepted/UNKNOWN reconciliation have one owner.
     import sys
     sys.path.insert(0,'/opt/noticeplace')
     from notification_center.consumer_lifecycle import SourceVerifier
     verifier=SourceVerifier(base_url,token,PROJECT,SOURCE,host_id,state_dir,transport=transport)
+    # A submission the server has moved past must not silence the source.
+    retire_superseded_intent(verifier,state_dir)
     return verifier.tick(lambda group:measure(group,paths,host_id=host_id),
                          max_checks=MAX_CHECKS_PER_TICK,
                          deadline_seconds=TICK_DEADLINE_SECONDS,

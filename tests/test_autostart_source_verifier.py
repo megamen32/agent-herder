@@ -100,7 +100,11 @@ class SourceTests(unittest.TestCase):
   with patch.object(adapter,'measure',side_effect=probe):
    with self.assertRaises(TimeoutError):tick()
    with self.assertRaises(RuntimeError):tick()
-  self.assertEqual(order,['GET','READ_NATIVE','POST','GET']);self.assertEqual(len(posts),1);self.assertEqual(posts[0]['observed_state'],'healthy')
+  self.assertEqual(order,['GET','READ_NATIVE','POST','GET','GET']);self.assertEqual(len(posts),1);self.assertEqual(posts[0]['observed_state'],'healthy')
+  # The second tick reads the incident twice: once for the retirement of the
+  # pending submission and once for the reconciliation of the SDK. Both are
+  # reads: the submission is never replayed.
+  self.assertEqual([item for item in order if item=='POST'],['POST'])
  def test_one_tick_answers_the_whole_queue_inside_its_budget(self):
   """A queue of due checks must not outlive the deadline of the server.
 
@@ -149,4 +153,74 @@ class SourceTests(unittest.TestCase):
   executor again with the health of the source still unknown.
   """
   self.assertGreaterEqual(adapter.MAX_CHECKS_PER_TICK,SERVER_PAGE_SIZE)
+ def test_a_submission_the_server_moved_past_does_not_silence_the_source(self):
+  """One lost submission must not silence the source for good.
+
+  The notification center restarts while the source submits a check: the
+  submission never reaches the server and the intent of the verifier stays
+  pending. The SDK reconciles a pending intent only against an exact
+  receipt, so every later tick raises VerificationPending and the source
+  stays silent until a human looks at it - the server then expires its
+  checks and delivers the incident to an executor again with the health of
+  the source still unknown.
+
+  The server moves on by itself: an accepted answer rotates the request id
+  of the row and an expired request is re-armed with a new generation.
+  Once the identity of the row differs from the identity of the intent, the
+  receipt can never match and a late POST of the intent is refused as
+  stale. The intent is superseded and must be retired, so the source
+  answers again.
+  """
+  state=self.root/'verifier';state.mkdir()
+  intent={'binding':{'project':'agent-herder','source_id':'agent-herder-autostart','host_id':HOST},
+          'status':'submitting','incident_id':'inc_pending','idempotency_key':'source-check:pending',
+          'body':{'request_id':'check_pending','generation':7,'observed_state':'unknown',
+                  'evidence_refs':['herder-autostart:native-not-completed']}}
+  self.write(state/'verification.json',intent)
+  posts=[];seen=[]
+  def http(method,path,body=None,key=None):
+   seen.append((method,path))
+   if method=='POST':
+    posts.append(body)
+    return {'generation':body.get('generation'),'incident_id':body.get('incident_id'),
+            'observed_state':body.get('observed_state'),'request_id':body.get('request_id')}
+   if path.startswith('/v1/incidents/'):
+    # The server moved on: the request id of the row rotated and the row
+    # was re-armed, so the receipt of the pending intent can never arrive.
+    return {'lifecycle':{'request_id':'check_rotated','generation':9,
+                         'last_check_receipt':{'idempotency_key':'source-check:other','request_id':'check_other',
+                                               'result':{'generation':9,'observed_state':'unknown'}}}}
+   if 'verification-requests' in path:
+    return {'requests':[{'group':GROUP,'request_id':'request-live','generation':1,'incident_id':'inc_live'}]}
+   return {'lifecycle':{}}
+  def probe(group,paths,**kwargs):return {'observed_state':'unknown','observed_at':NOW,'evidence_refs':['herder-autostart:native-not-completed']}
+  with patch.object(adapter,'measure',side_effect=probe):
+   receipts=adapter.run_tick(self.paths(),host_id=HOST,base_url='https://fixture.invalid',token='fixture',state_dir=state,transport=http)
+  self.assertEqual(len(receipts),1)
+  self.assertEqual(len(posts),1)
+  self.assertNotEqual(json.loads((state/'verification.json').read_text()).get('idempotency_key'),'source-check:pending')
+ def test_a_submission_the_server_still_holds_is_not_retired(self):
+  """The fail-closed fence of the SDK stays where the outcome is ambiguous.
+
+  The server still holds the exact request of the pending intent: the
+  submission may still be in flight, so the intent must not be retired and
+  the SDK keeps refusing to answer until the receipt reconciles it.
+  """
+  state=self.root/'verifier';state.mkdir()
+  intent={'binding':{'project':'agent-herder','source_id':'agent-herder-autostart','host_id':HOST},
+          'status':'submitting','incident_id':'inc_pending','idempotency_key':'source-check:pending',
+          'body':{'request_id':'check_pending','generation':7,'observed_state':'unknown',
+                  'evidence_refs':['herder-autostart:native-not-completed']}}
+  self.write(state/'verification.json',intent)
+  def http(method,path,body=None,key=None):
+   if method=='POST':return {'generation':1,'incident_id':'inc_live','observed_state':'unknown','request_id':'request-live'}
+   if path.startswith('/v1/incidents/'):
+    return {'lifecycle':{'request_id':'check_pending','generation':7}}
+   if 'verification-requests' in path:
+    return {'requests':[{'group':GROUP,'request_id':'request-live','generation':1,'incident_id':'inc_live'}]}
+   return {'lifecycle':{}}
+  def probe(group,paths,**kwargs):return {'observed_state':'unknown','observed_at':NOW,'evidence_refs':['herder-autostart:native-not-completed']}
+  with patch.object(adapter,'measure',side_effect=probe):
+   with self.assertRaises(Exception):adapter.run_tick(self.paths(),host_id=HOST,base_url='https://fixture.invalid',token='fixture',state_dir=state,transport=http)
+  self.assertEqual(json.loads((state/'verification.json').read_text()).get('status'),'submitting')
 if __name__=='__main__':unittest.main()
