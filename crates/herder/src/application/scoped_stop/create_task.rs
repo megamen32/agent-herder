@@ -101,6 +101,18 @@ impl ScopedAuthority {
                     )?),
                 )
             }
+            CreatePromptOutcome::DeliveryBrowserOutcomeUnknown { session, diagnostic } => {
+                let s = session.0;
+                (
+                    "completed",
+                    Some(s.clone()),
+                    None,
+                    Some(result(
+                        json!({"create":{"effect":"confirmed","session_ref":s},"prompt":Diagnostic::browser_send_unknown(Some(diagnostic))}),
+                        true,
+                    )?),
+                )
+            }
             CreatePromptOutcome::DeliveryNotSent {
                 session,
                 diagnostic,

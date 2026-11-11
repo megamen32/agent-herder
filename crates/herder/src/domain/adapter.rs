@@ -144,6 +144,43 @@ pub struct Admission {
     pub receipt: NativeReceipt,
 }
 
+/// Reviewed browser failure context. It describes where observation stopped,
+/// never whether a native submission may be repeated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct BrowserSendDiagnostic {
+    stage: &'static str,
+    reason: &'static str,
+}
+
+impl BrowserSendDiagnostic {
+    pub(crate) fn from_pair(stage: &str, reason: &str) -> Option<Self> {
+        let (stage, reasons): (&'static str, &[&'static str]) = match stage {
+            "userio_preclick" => ("userio_preclick", &[
+                "storage_preflight", "scope_list", "tab_create", "route",
+                "route_mismatch", "route_timeout", "admission_record",
+            ]),
+            "before_click" => ("before_click", &["script_outcome_unknown"]),
+            "wait_route" => ("wait_route", &[
+                "route_not_ready", "transient_route", "invalid_url", "wrong_origin",
+                "wrong_native", "exception",
+            ]),
+            "read_snapshot" => ("read_snapshot", &[
+                "multiple_matches", "message_not_found", "snapshot_unverified",
+                "message_not_fresh", "exception",
+            ]),
+            "recheck_route" => ("recheck_route", &["invalid_url", "wrong_native", "exception"]),
+            _ => return None,
+        };
+        let reason = *reasons.iter().find(|&&known| known == reason)?;
+        Some(Self { stage, reason })
+    }
+
+    pub(crate) fn belongs_to(self, harness: &str) -> bool {
+        matches!((harness, self.stage), ("zai", "userio_preclick"))
+            || harness == "chatgpt" && self.stage != "userio_preclick"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubmitError {
     /// The connection can prove that no native submission occurred.
@@ -153,6 +190,8 @@ pub enum SubmitError {
         receipt: Option<NativeReceipt>,
         reason: String,
     },
+    /// A trusted browser runner supplied a reviewed diagnostic, not an admission receipt.
+    BrowserOutcomeUnknown(BrowserSendDiagnostic),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

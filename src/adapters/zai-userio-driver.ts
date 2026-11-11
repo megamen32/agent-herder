@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { RawTranscriptExport, SessionMessageView } from "../types/index.js";
-import { UserIoAgentChannel, type UserIoConfig } from "./userio-agent-channel.js";
+import { UserIoAgentChannel, userIoUnknownMessage, type UserIoConfig } from "./userio-agent-channel.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 
 const REF=/^[a-f0-9-]{12,80}$/iu;
@@ -144,7 +144,11 @@ export class ZaiUserIoDriver implements BrowserChatDriver{
       if(draft.state==="sending"||draft.state==="uncertain"){
         const pending=draft;
         if(pending.inputDigest===createHash("sha256").update(input.text).digest("hex")&&pending.commandId){
-          const result=await this.channel.result(pending.commandId,"zai_first_send").catch(()=>undefined);
+          const result=await this.channel.result(pending.commandId,"zai_first_send").catch(cause=>{
+            const message=userIoUnknownMessage("ZAI",cause);
+            if(message==="ZAI submission outcome unknown: do not retry automatically")return undefined;
+            throw new Error(message);
+          });
           if(result?.admission==="confirmed"&&typeof result.chat_ref==="string"&&REF.test(result.chat_ref)&&typeof result.native_user_message_id==="string"&&REF.test(result.native_user_message_id)){
             await this.drafts.admit(input.chatId,"route:"+result.chat_ref,result.native_user_message_id);
             return {nativeInputMessageId:result.native_user_message_id};
@@ -160,9 +164,9 @@ export class ZaiUserIoDriver implements BrowserChatDriver{
           if(result.admission!=="confirmed"||typeof result.chat_ref!=="string"||!REF.test(result.chat_ref)||typeof result.native_user_message_id!=="string"||!REF.test(result.native_user_message_id))throw new Error("invalid_receipt");
           await this.drafts.admit(input.chatId,"route:"+result.chat_ref,result.native_user_message_id);
           return {nativeInputMessageId:result.native_user_message_id};
-        }catch{
+        }catch(cause){
           await this.drafts.markUncertain(input.chatId);
-          throw new Error("ZAI submission outcome unknown: do not retry automatically");
+          throw new Error(userIoUnknownMessage("ZAI",cause));
         }
       }
       input={...input,chatId:draft.remoteId!};
@@ -184,10 +188,10 @@ export class ZaiUserIoDriver implements BrowserChatDriver{
         ||result.chat_ref!==chat_ref)
         throw new Error("zai_send_receipt_invalid");
       return {nativeInputMessageId:result.native_user_message_id};
-    }catch{
+    }catch(cause){
       // The browser may have clicked before the command's acknowledgement
       // was lost. We cannot safely prove a pre-click refusal here.
-      throw new Error("ZAI submission outcome unknown: do not retry automatically");
+      throw new Error(userIoUnknownMessage("ZAI",cause));
     }
   }
 }

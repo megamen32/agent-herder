@@ -85,7 +85,7 @@ impl NativeCreateControl for CodexCreateControl {
             Err(SubmitError::DefinitelyNotSent { reason }) => {
                 NativeCreateOutcome::DefinitelyNotSent { reason }
             }
-            Err(SubmitError::OutcomeUnknown { .. }) => NativeCreateOutcome::Unknown,
+            Err(SubmitError::OutcomeUnknown { .. } | SubmitError::BrowserOutcomeUnknown(_)) => NativeCreateOutcome::Unknown,
         }
     }
 }

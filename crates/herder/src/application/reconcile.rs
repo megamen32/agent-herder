@@ -39,6 +39,7 @@ pub enum DurableDispatch {
     /// The native control proved no submission occurred; the key remains consumed.
     DefinitelyNotSent,
     Unknown,
+    BrowserOutcomeUnknown(crate::domain::adapter::BrowserSendDiagnostic),
     NotClaimed,
 }
 

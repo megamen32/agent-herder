@@ -5,6 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { BrowserChatAdapter, browserChatNativeId } from "./adapters/browser-chat.js";
 import { UserIoChatGptDriver } from "./adapters/chatgpt-userio-driver.js";
 import { ZaiUserIoDriver } from "./adapters/zai-userio-driver.js";
+import { userIoMessageDiagnostic } from "./adapters/userio-agent-channel.js";
 import { VibeChromePageTools, type VibeChromePageToolsOptions } from "./adapters/vibe-chrome-transport.js";
 import { readProtectedBrowserMcpToken, validateBrowserMcpUrl } from "./adapters/browser-mcp-profile.js";
 import { ChatGptMacCdpDriver, CHATGPT_MAC_SNAPSHOT, parseChatGptPages } from "./adapters/chatgpt-mac-cdp-driver.js";
@@ -98,7 +99,8 @@ for (const prefix of ["ChatGPT history unavailable: ", "Z.ai history unavailable
 }
 function sendFailureContext(cause: unknown) {
   const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : undefined;
-  const diagnostic = typeof message === "string" && message.length <= 1024 ? SEND_REASONS.get(message) : undefined;
+  const diagnostic = typeof message === "string" && message.length <= 1024
+    ? SEND_REASONS.get(message) ?? userIoMessageDiagnostic(message) : undefined;
   return { ...adapterFailureContext("sendMessage", true), ...(diagnostic ?? { stage: "send", reason: "unknown" }), ...transportReceiptContext(cause) };
 }
 

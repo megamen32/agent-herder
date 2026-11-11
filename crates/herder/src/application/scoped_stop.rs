@@ -560,6 +560,19 @@ impl ScopedAuthority {
             tx.commit().map_err(|_| GateError::Store)?;
             return Ok(DurableDispatch::DefinitelyNotSent);
         }
+        if let Err(SubmitError::BrowserOutcomeUnknown(diagnostic)) = &outcome {
+            let raw = serde_json::json!({"browser_diagnostic": diagnostic}).to_string();
+            let tx = writer.connection_mut().transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|_| GateError::Store)?;
+            let intent = tx.execute("UPDATE intents SET state='unknown',updated_at=?2 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NULL", params![b.intent_id,now]).map_err(|_| GateError::Store)?;
+            let phase = tx.execute("UPDATE humanstop_dispatches SET phase='finished',updated_at=?2 WHERE intent_id=?1 AND phase='handing_off'",params![b.intent_id,now]).map_err(|_| GateError::Store)?;
+            let task = tx.execute("UPDATE tasks SET result_json=?2,updated_at=?3 WHERE task_id=(SELECT task_id FROM intents WHERE intent_id=?1) AND status<>'completed'",params![b.intent_id,raw,now]).map_err(|_| GateError::Store)?;
+            if (intent, phase, task) != (1, 1, 1) {
+                return Err(GateError::Store);
+            }
+            tx.commit().map_err(|_| GateError::Store)?;
+            return Ok(DurableDispatch::BrowserOutcomeUnknown(*diagnostic));
+        }
         let receipt = match outcome {
             Ok(admission)
                 if admission.receipt.target == *b.address

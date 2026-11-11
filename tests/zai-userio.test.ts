@@ -87,6 +87,19 @@ describe("ZAI under exact UserIO browser profile",()=>{
      .resolves.toMatchObject({ok:false,admissionUnknown:true});
    expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
  },15000);
+ it("preserves only allowlisted UserIO preflight diagnostics and never replays",async()=>{
+   const {driver,commands}=fixture({...outcomes,zai_first_send:{ok:false,error:"zai_first_preflight_failed",admission:"not_submitted",diagnostic:"route_mismatch"}});
+   await driver.verifyPinnedAccountScope();const draft=await driver.createChat({title:"fixture"});
+   await expect(driver.sendMessage({chatId:draft.id,text:"first"})).rejects.toThrow("ZAI submission outcome unknown: userio_preclick/route_mismatch");
+   await expect(driver.sendMessage({chatId:draft.id,text:"first"})).rejects.toThrow("outcome unknown");
+   expect(commands.filter(c=>c.action==="zai_first_send")).toHaveLength(1);
+ },15000);
+ it("never propagates untrusted receipt diagnostics or secrets",async()=>{
+   const {driver}=fixture({...outcomes,zai_first_send:{ok:false,error:"secret-https://example.invalid",admission:"not_submitted",diagnostic:"https://secret.invalid/private"}});
+   await driver.verifyPinnedAccountScope();const draft=await driver.createChat({title:"fixture"});
+   let message="";try{await driver.sendMessage({chatId:draft.id,text:"first"});}catch(e){message=(e as Error).message;}
+   expect(message).toContain("outcome unknown");expect(message).not.toMatch(/secret|https|private/);
+ },15000);
  it("lists native ZAI conversations and reads original user+assistant",async()=>{
    const {driver,commands}=fixture(outcomes);
    await driver.verifyPinnedAccountScope();

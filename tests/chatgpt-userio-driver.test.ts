@@ -62,6 +62,33 @@ const read={
 };
 
 describe("strict UserIO ChatGPT transport",()=>{
+  it.each([
+    ['ChatGPT submission outcome unknown: wait_route/wrong_native','wait_route','wrong_native'],
+    ['ZAI submission outcome unknown: userio_preclick/route_mismatch','userio_preclick','route_mismatch'],
+    ['ChatGPT submission outcome unknown: wait_route/wrong_native https://secret.invalid','send','unknown'],
+    ['ChatGPT submission outcome unknown: do not retry automatically','native_admission','native_admission_unknown'],
+  ])('sanitizes UserIO diagnostic through AHAP: %s',async(message,stage,reason)=>{
+    const fake={type:'chatgpt',name:'fixture',init:async()=>{},getAccountScope:()=>SCOPE,
+      sendMessage:async()=>({ok:false,admissionUnknown:true,nonRetryable:true,error:message})};
+    const input=new PassThrough(),output=new PassThrough();let data='';output.setEncoding('utf8');output.on('data',chunk=>{data+=chunk;});
+    const serving=serveBrowserChatAhap(fake as unknown as Parameters<typeof serveBrowserChatAhap>[0],input,output,SCOPE);
+    const requests=[{method:'initialize',params:{harness:'chatgpt',ahapVersion:'0.1'}},{method:'init',params:{}},
+      {method:'sendMessage',params:{id:'fixture',options:{message:'test'}}}];
+    const nl=String.fromCharCode(10);input.end(requests.map((r,i)=>JSON.stringify({jsonrpc:'2.0',id:i+1,...r})).join(nl)+nl);await serving;
+    const replies=data.trim().split(nl).map(x=>JSON.parse(x));
+    expect(replies[2].error.data).toMatchObject({stage,reason});
+    expect(data).not.toContain('secret.invalid');
+  });
+  it('preserves allowlisted post-click diagnostic without replay',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'gpt-diagnostic-'));homes.push(root);const old=process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT;process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=root;
+    const f=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},gpt_scope:{ok:true,account_scope:SCOPE},
+      gpt_first_send:{ok:false,error:'first_send_outcome_unknown',admission:'unknown',diagnostic:{stage:'wait_route',reason:'wrong_native',url:'https://secret.invalid'}}});
+    try{await f.driver.verifyPinnedAccountScope();const draft=await f.driver.createChat({title:'fixture'});
+      await expect(f.driver.sendMessage({chatId:draft.id,text:'first'})).rejects.toThrow('ChatGPT submission outcome unknown: wait_route/wrong_native');
+      await expect(f.driver.sendMessage({chatId:draft.id,text:'first'})).rejects.toThrow('wait_route/wrong_native');
+      expect(f.events.filter(x=>x.action==='gpt_first_send')).toHaveLength(1);
+    }finally{process.env.AGENT_HERDER_BROWSER_DRAFT_ROOT=old;}
+  },15000);
   it.each([undefined, 'b'.repeat(64)])('rejects latest-pair reads without the exact scope: %s',async(account_scope)=>{
     const {driver}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)},
       gpt_scope:{ok:true,account_scope:SCOPE},gpt_read:{...read,account_scope}});

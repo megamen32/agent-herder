@@ -5,7 +5,7 @@ use crate::{
     application::reconcile::{ReceiptBinding, StoredReceipt, load_native_receipt},
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
-    error::{Diagnostic, Effect, Retry},
+    error::{Diagnostic, Effect, Retry, stored_browser_send_diagnostic},
 };
 use rmcp::model::{CallToolResult, DetailedTask, GetTaskResult, Task, TaskPayload, TaskStatus};
 use rusqlite::{OptionalExtension, params};
@@ -78,8 +78,7 @@ impl ScopedAuthority {
         } else {
             let terminal = match state.as_str() {
                 "unknown" => Some(CallToolResult::structured_error(
-                    serde_json::to_value(Diagnostic::outcome_unknown(None))
-                        .map_err(|_| GateError::Store)?,
+                    Diagnostic::browser_send_unknown(stored_browser_send_diagnostic(stored.as_deref(), false)),
                 )),
                 "rejected" => {
                     let diagnostic: Value = stored

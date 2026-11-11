@@ -820,6 +820,12 @@ for line in sys.stdin:
  elif m=='listSessions':v=[{'id':'sesABC','harness':harness,'status':'idle','cwd':home}]
  elif m=='sendMessage':
   assert p['id']=='sesABC' and p['options']['queue'] is (harness!='opencode') and p['options']['activeTurnOnly'] is False and p['options']['inputId']
+  if p['options']['message']=='unknownmarker' and harness in ('chatgpt','zai'):
+   with open(os.path.join(home,'sent'),'a') as out:out.write('1')
+   stage,reason=('wait_route','wrong_native') if harness=='chatgpt' else ('userio_preclick','route_timeout')
+   data={'method':'sendMessage','outcome':'unknown','retryable':False,'stage':stage,'reason':reason}
+   print(json.dumps({'jsonrpc':'2.0','id':r['id'],'error':{'code':-32000,'message':'fixture-do-not-forward','data':data}}),flush=True)
+   continue
   rows=messages(); mid='msg_ABC'+str(len(rows)); rows.append({'id':mid,'role':'user','text':p['options']['message']})
   with open(events,'w') as out:json.dump(rows,out)
   with open(os.path.join(home,'sent'),'a') as out:out.write('1')
@@ -965,6 +971,13 @@ for line in sys.stdin:
     let unresolved=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":103,"method":"tasks/get","params":{"_meta":meta,"taskId":unknown_task}}));
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["code"],"outcome_unknown","{unresolved}");
     assert_eq!(unresolved["result"]["result"]["structuredContent"]["retry"],"forbidden","{unresolved}");
+    let diagnostic = &unresolved["result"]["result"]["structuredContent"]["browser_diagnostic"];
+    match kind {
+        "chatgpt" => assert_eq!(diagnostic, &serde_json::json!({"stage":"wait_route","reason":"wrong_native"})),
+        "zai" => assert_eq!(diagnostic, &serde_json::json!({"stage":"userio_preclick","reason":"route_timeout"})),
+        _ => assert!(diagnostic.is_null()),
+    }
+    assert!(!unresolved.to_string().contains("fixture-do-not-forward"));
     let replay=call(&mut input,&mut output,serde_json::json!({"jsonrpc":"2.0","id":104,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":unknown_args}}));
     assert_eq!(replay["result"]["taskId"],unknown_task,"{replay}");
     assert_eq!(fs::read_to_string(f.root.join("sent")).unwrap(),"111");

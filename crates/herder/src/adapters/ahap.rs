@@ -1,6 +1,7 @@
 //! Instance-bound AHAP v0.1 JSON-RPC over stdio.
 //! Mutations are never retried: a write, timeout or disconnect can leave an
 //! unknown outcome. Transport errors are not evidence of native non-admission.
+use crate::{domain::adapter::BrowserSendDiagnostic, error::browser_send_diagnostic};
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
@@ -24,6 +25,7 @@ pub enum AhapError {
     BeforeSend,
     OutcomeUnknown,
     Remote,
+    BrowserSendUnconfirmed(BrowserSendDiagnostic),
     /// Exact Codex createSession quota guard receipt before native thread/start.
     /// Carries no remote diagnostic text and grants no replay authority.
     CodexCreateQuotaNotSubmitted,
@@ -147,6 +149,17 @@ fn codex_create_quota_not_submitted(harness: &str, method: &str, error: &Value) 
         )
 }
 
+fn browser_send_unconfirmed(harness: &str, method: &str, error: &Value) -> Option<BrowserSendDiagnostic> {
+    if method != "sendMessage" || error["code"].as_i64() != Some(-32000) {
+        return None;
+    }
+    let data = error.get("data")?;
+    if data["method"] != "sendMessage" || data["outcome"] != "unknown" || data["retryable"] != false {
+        return None;
+    }
+    browser_send_diagnostic(data).filter(|d| d.belongs_to(harness))
+}
+
 fn rpc(
     s: &mut State,
     method: &str,
@@ -242,6 +255,8 @@ fn rpc(
                     && codex_create_quota_not_submitted(harness, method, &object["error"])
                 {
                     AhapError::CodexCreateQuotaNotSubmitted
+                } else if let Some(diagnostic) = browser_send_unconfirmed(harness, method, &object["error"]) {
+                    AhapError::BrowserSendUnconfirmed(diagnostic)
                 } else {
                     AhapError::Remote
                 },

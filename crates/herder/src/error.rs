@@ -1,6 +1,7 @@
 //! Safe, structured diagnostics. Constructors never retain arbitrary request values.
-use crate::domain::adapter::SendMode;
+use crate::domain::adapter::{BrowserSendDiagnostic, SendMode};
 use serde::Serialize;
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,6 +116,24 @@ impl Diagnostic {
             diagnostic_ref: None,
         }
     }
+
+    pub(crate) fn browser_send_unknown(diagnostic: Option<BrowserSendDiagnostic>) -> Value {
+        let mut value = serde_json::json!(Self::outcome_unknown(None));
+        if let Some(diagnostic) = diagnostic {
+            value["browser_diagnostic"] = serde_json::json!(diagnostic);
+        }
+        value
+    }
+}
+
+pub(crate) fn browser_send_diagnostic(value: &Value) -> Option<BrowserSendDiagnostic> {
+    BrowserSendDiagnostic::from_pair(value.get("stage")?.as_str()?, value.get("reason")?.as_str()?)
+}
+
+pub(crate) fn stored_browser_send_diagnostic(raw: Option<&str>, projected: bool) -> Option<BrowserSendDiagnostic> {
+    let data: Value = serde_json::from_str(raw?).ok()?;
+    let body = if projected { data.get("structuredContent")? } else { &data };
+    browser_send_diagnostic(body.get("browser_diagnostic")?)
 }
 
 /// Validate resolved identities before any intent or native submission. Resolution

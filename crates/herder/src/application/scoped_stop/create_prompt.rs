@@ -10,10 +10,10 @@ use crate::{
     },
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource},
     domain::{
-        adapter::{NativeReceipt, NativeSessionReader, SendCommand, SendMode},
+        adapter::{BrowserSendDiagnostic, NativeReceipt, NativeSessionReader, SendCommand, SendMode},
         address::{InstanceRef, SessionRef},
     },
-    error::{Diagnostic, Effect, Retry},
+    error::{Diagnostic, Effect, Retry, stored_browser_send_diagnostic},
 };
 use sha2::{Digest, Sha256};
 /// A separately trusted policy may issue only an exact session write grant.
@@ -72,6 +72,10 @@ pub enum CreatePromptOutcome {
     /// Create succeeded; delivery may have happened or may be blocked.
     DeliveryUnknownOrBlocked {
         session: SessionRef,
+    },
+    DeliveryBrowserOutcomeUnknown {
+        session: SessionRef,
+        diagnostic: BrowserSendDiagnostic,
     },
     DeliveryDefinitelyNotSent {
         session: SessionRef,
@@ -310,6 +314,14 @@ where
                 }));
             }
         }
+        if state == "unknown" && raw_receipt.is_none() {
+            if let Some(diagnostic) = stored_browser_send_diagnostic(raw_diagnostic.as_deref(), task_status == "completed") {
+                return Ok(Some(CreatePromptOutcome::DeliveryBrowserOutcomeUnknown {
+                    session: session.clone(),
+                    diagnostic,
+                }));
+            }
+        }
         Ok(Some(CreatePromptOutcome::DeliveryUnknownOrBlocked {
             session: session.clone(),
         }))
@@ -355,6 +367,9 @@ where
         }
         Ok(DurableDispatch::StoppedBeforeHandoff) => {
             CreatePromptOutcome::StoppedBeforeHandoff { session }
+        }
+        Ok(DurableDispatch::BrowserOutcomeUnknown(diagnostic)) => {
+            CreatePromptOutcome::DeliveryBrowserOutcomeUnknown { session, diagnostic }
         }
         Ok(DurableDispatch::Unknown | DurableDispatch::NotClaimed) | Err(_) => {
             CreatePromptOutcome::DeliveryUnknownOrBlocked { session }

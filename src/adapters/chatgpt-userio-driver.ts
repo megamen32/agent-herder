@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { BrowserChat, BrowserChatDriver } from "./browser-chat.js";
 import type { RawTranscriptExport, SessionMessageView } from "../types/index.js";
-import { UserIoAgentChannel, userIoAccountScope, type UserIoConfig, type UserIoAgentResult } from "./userio-agent-channel.js";
+import { UserIoAgentChannel, userIoAccountScope, userIoUnknownMessage, type UserIoConfig, type UserIoAgentResult } from "./userio-agent-channel.js";
 import { BrowserChatDraftStore } from "./browser-chat-drafts.js";
 export type { UserIoConfig } from "./userio-agent-channel.js";
 
@@ -162,7 +162,11 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
       const inputDigest=createHash("sha256").update(input.text).digest("hex");
       if(draft.state==="sending"||draft.state==="uncertain") {
         if(!draft.inputDigest||draft.inputDigest!==inputDigest)throw new Error("First-message submission is uncertain; reconcile without automatic retry");
-        const recovered=await this.reconcileFirstSend(input.chatId).catch(()=>undefined);
+        const recovered=await this.reconcileFirstSend(input.chatId).catch(cause=>{
+          const message=userIoUnknownMessage("ChatGPT",cause);
+          if(message==="ChatGPT submission outcome unknown: do not retry automatically")return undefined;
+          throw new Error(message);
+        });
         if(recovered)return recovered;
         throw new Error("First-message submission is uncertain; reconcile without automatic retry");
       }
@@ -175,9 +179,9 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
           if(result.admission!=="confirmed"||typeof result.chat_ref!=="string"||!UUID.test(result.chat_ref)||typeof result.native_user_message_id!=="string"||!UUID.test(result.native_user_message_id))throw new Error("invalid_receipt");
           await this.drafts.admit(input.chatId,result.chat_ref,result.native_user_message_id);
           return {nativeInputMessageId:result.native_user_message_id};
-        } catch {
+        } catch (cause) {
           await this.drafts.markUncertain(input.chatId);
-          throw new Error("ChatGPT submission outcome unknown: do not retry automatically");
+          throw new Error(userIoUnknownMessage("ChatGPT",cause));
         }
       }
       input={...input,chatId:draft.remoteId!};
@@ -200,10 +204,10 @@ export class UserIoChatGptDriver implements BrowserChatDriver {
       if(result.native_user_message_id!==undefined && (result.admission!=="confirmed" || result.chat_ref!==input.chatId || typeof result.native_user_message_id!=="string" || !UUID.test(result.native_user_message_id)))throw new Error("invalid_receipt");
       return {assistantText:typeof result.reply==="string"?result.reply:undefined,
         ...(typeof result.native_user_message_id==="string"?{nativeInputMessageId:result.native_user_message_id}:{})};
-    }catch{
+    }catch(cause){
       // The post may have been consumed before the HTTP/readback failed.
       // Never describe this as a safe non-submission or automatically replay it.
-      throw new Error("ChatGPT submission outcome unknown: do not retry automatically");
+      throw new Error(userIoUnknownMessage("ChatGPT",cause));
     }
   }
 }
