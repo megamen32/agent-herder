@@ -60,6 +60,24 @@ it('separates hosts and starts a new generation only after the bound incident is
   expect(incidentSourceKey(JSON.stringify({id: 'inc_missing', title: 'same'}))).toBeUndefined();
 });
 
+it('retires an archived or moved source binding and creates a replacement', async () => {
+  const f = await fixture();
+  const first = await f.router().run(request('one'), f.launch('one'));
+  const archived = f.sessions.get(first.sessionId!)!;
+  archived.meta = {...archived.meta, archived: true};
+  const replacement = await f.router().run(request('archived-replaced'), f.launch('archived-replaced'));
+  expect(replacement).toMatchObject({ok: true, created: true});
+  expect(replacement.sessionId).not.toBe(first.sessionId);
+  expect(f.count()).toBe(2);
+
+  const moved = f.sessions.get(replacement.sessionId!)!;
+  moved.cwd = '/another-workspace';
+  const movedReplacement = await f.router().run(request('moved-replaced'), f.launch('moved-replaced'));
+  expect(movedReplacement).toMatchObject({ok: true, created: true});
+  expect(movedReplacement.sessionId).not.toBe(replacement.sessionId);
+  expect(f.count()).toBe(3);
+});
+
 it('separates consumer and problem type while preserving the documented fallbacks', () => {
   const facts = {id: 'inc_one', project: 'fleet-health', source_id: 'fleet-load', consumer_id: 'node-pressure', host_id: 'vusa', signal_type: 'degraded', problem_type: 'cpu'};
   const key = (value: typeof facts) => incidentSourceKey(JSON.stringify(value));

@@ -143,12 +143,13 @@ export class IncidentSessionRouter {
       // A human hold stays attached to the source group. Let the existing
       // admission gate reject it; never escape the hold through a fresh ID.
       if (prior?.sessionId && existing) {
-        if (existing.cwd !== request.cwd || existing.meta?.archived === true) return {
-          ok: false, created: false, name: 'incident-session-unavailable', cwd: request.cwd, harness: request.harness,
-          inputId: request.inputId, delivery: 'not_attempted', nonRetryable: true, sessionId: existing.id,
-          error: 'Исходная сессия ремонта архивирована или сменила рабочую директорию; новая сессия не создана.',
-        };
-        if (!await this.ports.held?.(existing)) {
+        // A persisted binding to an archived session or to an old workspace
+        // is a stale owner, not an unknown admission. The old executor cannot
+        // receive this request, so retire the binding and let the same stable
+        // source group create one fresh native session below. The pending
+        // admission check above keeps an ambiguous in-flight operation fenced.
+        if (existing.cwd !== request.cwd || existing.meta?.archived === true) existing = undefined;
+        if (existing && !await this.ports.held?.(existing)) {
           const open = !this.ports.boundIncidentOpen || await this.ports.boundIncidentOpen(existing, request);
           const unfinished = await this.ports.unfinished(existing);
           if (!unfinished) {
