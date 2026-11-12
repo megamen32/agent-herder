@@ -156,7 +156,7 @@ export function FallbackModelsControls({
   };
 
   return <fieldset className="settings-group" disabled={disabled}>
-    <legend>Запасные модели при исчерпании квоты</legend>
+    <legend>Запасные модели при сбое провайдера или исчерпании квоты</legend>
     <p className="settings-help">Укажите полные ID в порядке попытки: рабочий OmniRoute или нативный провайдер/модель для выбранной среды. Список применяется только после подтверждённого отказа по квоте. Текущая модель и повторы будут пропущены.</p>
     {FALLBACK_MODEL_HARNESSES.map((harness) => {
       const models = fallbackModels[harness] ?? [];

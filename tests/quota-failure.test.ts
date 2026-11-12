@@ -19,7 +19,7 @@ describe("terminal quota evidence", () => {
     expect(terminalQuotaFailure({...circuit,statusCode:undefined})).toMatchObject({classification:"provider_unavailable"});
     for(const invalid of [
       {terminal:false},{status:"running"},{nativeTurnId:undefined},{inputId:undefined},{providerId:undefined},{modelId:undefined},
-      {statusCode:401},{statusCode:403},{statusCode:502},{statusCode:500},
+      {statusCode:401},{statusCode:403},{statusCode:500},
       {errorCode:"HTTP_401"},{errorType:"authentication_error"},{errorType:"network_error"},{errorCode:"UNKNOWN_ERROR"},
       {errorMessage:"network failed; Provider zcode circuit breaker is open"},
       {errorMessage:"Provider zcode circuit breaker is open; unknown admission"},
@@ -43,7 +43,13 @@ describe("terminal quota evidence", () => {
     expect(terminalQuotaFailure({ ...exact, modelId: undefined })).toBeUndefined();
   });
 
-  it.each([401, 403, 502])("does not classify HTTP %s as quota exhaustion", (statusCode) => {
+  it.each([408, 429, 500, 502, 503, 504])("classifies terminal HTTP %s as a provider fallback", (statusCode) => {
+    expect(terminalQuotaFailure({ ...exact, statusCode, errorCode: undefined, modelErrorType: undefined, errorMessage: "temporary upstream failure" })).toMatchObject({
+      classification: "provider_unavailable",
+      status: "error",
+    });
+  });
+  it.each([401, 403])("does not recover authentication HTTP %s", (statusCode) => {
     expect(terminalQuotaFailure({ ...exact, statusCode })).toBeUndefined();
   });
   it("accepts HTTP 429 only with explicit quota evidence", () => {
@@ -55,7 +61,10 @@ describe("terminal quota evidence", () => {
       classification: "quota_exhausted",
       status: "error",
     });
-    expect(terminalQuotaFailure({ ...exact, statusCode: 429, errorCode: undefined, modelErrorType: undefined, errorMessage: "Too many requests" })).toBeUndefined();
+    expect(terminalQuotaFailure({ ...exact, statusCode: 429, errorCode: undefined, modelErrorType: undefined, errorMessage: "Too many requests" })).toMatchObject({ classification: "provider_unavailable" });
+  });
+  it("reads an OpenCode v2 embedded gateway status", () => {
+    expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: undefined, modelErrorType: undefined, errorMessage: "[502]: Model request was cancelled." })).toMatchObject({ classification: "provider_unavailable" });
   });
   it("distinguishes an exhausted native Codex retry budget from generic 429 and full quota", () => {
     const native = {
@@ -68,14 +77,14 @@ describe("terminal quota evidence", () => {
     expect(terminalQuotaFailure(native)).toMatchObject({ classification: "retry_limited",
       nativeTurnId: exact.nativeTurnId, inputId: exact.inputId, modelId: "gpt-6.1-terra" });
     for (const change of [
-      {providerId: "omniroute"}, {statusCode: 502}, {nativeTurnId: undefined},
-      {inputId: undefined}, {errorCode: "UNKNOWN_ERROR"}, {errorMessage: "Too many requests"},
+      {nativeTurnId: undefined},
+      {inputId: undefined}, {errorCode: "UNKNOWN_ERROR"},
       {errorMessage: "network failed; exceeded retry limit, last status: 429 Too Many Requests"},
     ]) expect(terminalQuotaFailure({...native, ...change})).toBeUndefined();
   });
 
   it("does not mistake an HTTP status encoded in the provider code for quota evidence", () => {
-    expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: "HTTP_429", errorMessage: "Too many requests" })).toBeUndefined();
+    expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: "HTTP_429", errorMessage: "Too many requests" })).toMatchObject({ classification: "provider_unavailable" });
     expect(terminalQuotaFailure({ ...exact, statusCode: undefined, errorCode: "HTTP_429" })).toMatchObject({ classification: "quota_exhausted" });
   });
 
@@ -106,7 +115,7 @@ describe("terminal quota evidence", () => {
 it("accepts the exact native GLM1310 quota payload inside a generic UNKNOWN_ERROR envelope",()=>{
  const native={terminal:true,status:"error",nativeTurnId:"exact-native-turn",inputId:"exact-input",providerId:"account:zai-individual-coding-plan",modelId:"GLM-5.3",errorType:"unknown_error",errorCode:"UNKNOWN_ERROR",modelErrorType:"rate_limited",errorMessage:"[1310][Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-10-24 02:06:22]"};
  expect(terminalQuotaFailure(native)).toMatchObject({classification:"quota_exhausted",nativeTurnId:"exact-native-turn"});
- expect(terminalQuotaFailure({...native,statusCode:502})).toBeUndefined();
+ expect(terminalQuotaFailure({...native,statusCode:502})).toMatchObject({classification:"provider_unavailable"});
  expect(terminalQuotaFailure({...native,errorMessage:"network failed; [1310] Weekly/Monthly Limit Exhausted"})).toBeUndefined();
  expect(terminalQuotaFailure({...native,providerId:"foreign",modelId:"other"})).toBeUndefined();
 });

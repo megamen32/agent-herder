@@ -27,9 +27,18 @@ const explicitQuotaCode = /^(?:insufficient[_-]quota|quota[_-](?:exhausted|excee
 const explicitProviderCircuitOpen = /^Provider [A-Za-z0-9][A-Za-z0-9._:-]* circuit breaker is open$/;
 const explicitQuotaMessage = /(?:\b(?:quota|usage)\s+(?:limit\s+)?(?:has\s+been\s+)?(?:exhausted|exceeded)\b|\b(?:daily|weekly|monthly)(?:\s*\/\s*(?:daily|weekly|monthly))*\s+limit\s+(?:has\s+been\s+)?(?:exhausted|exceeded)\b|\binsufficient[_ -]quota\b|\bquota[_ -](?:exhausted|exceeded)\b)/i;
 const unsafeFailure = /(?:unauthori[sz]ed|forbidden|authentication|bad[ _-]?gateway|network|timed?\s*out|connection\s+(?:reset|refused|failed)|admission[ _-]+(?:unknown|uncertain)|unknown[ _-]+(?:error|failure))/i;
+const unsafeProviderFailure = /(?:unauthori[sz]ed|forbidden|authentication|network|timed?\s*out|connection\s+(?:reset|refused|failed)|admission[ _-]+(?:unknown|uncertain)|unknown[ _-]+admission|unknown[ _-]+(?:error|failure)|circuit breaker (?:might|may|could) be open)/i;
+const transientProviderStatusCodes = new Set([408, 429, 500, 502, 503, 504]);
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function embeddedStatusCode(value: unknown): number | undefined {
+  const text = nonEmpty(value);
+  if (!text) return undefined;
+  const match = text.match(/(?:^|[^\d])(?:HTTP\s*)?\[?(408|429|500|502|503|504)\]?\b/i);
+  return match ? Number(match[1]) : undefined;
 }
 
 export function normalizeQuotaResetAt(value: unknown): string | undefined {
@@ -42,9 +51,9 @@ export function normalizeQuotaResetAt(value: unknown): string | undefined {
 }
 
 /**
- * Classify explicit quota exhaustion or an exact open provider circuit after
- * terminal-native correlation. Generic rate limits, auth failures, transport errors and
- * incomplete identities intentionally produce no recovery candidate.
+ * Classify explicit quota exhaustion or a bounded transient provider failure
+ * after terminal-native correlation. Authentication, transport-only failures
+ * and incomplete identities intentionally produce no recovery candidate.
  */
 export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): TerminalQuotaFailure | undefined {
   if (evidence.terminal !== true || (evidence.status !== "error" && evidence.status !== "failed")) return undefined;
@@ -54,8 +63,11 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
   const modelId = nonEmpty(evidence.modelId);
   if (!nativeTurnId || !inputId || !providerId || !modelId) return undefined;
 
-  const statusCode = evidence.statusCode;
   const message = nonEmpty(evidence.errorMessage);
+  // OpenCode v2 commonly exposes upstream statuses as [502] in the provider
+  // message instead of filling error.status. Recover only the bounded
+  // transient set; provider error numbers such as 1310 do not match.
+  const statusCode = evidence.statusCode ?? embeddedStatusCode(evidence.errorCode) ?? embeddedStatusCode(message);
   // The named failing provider can be a component behind the selected route.
   // Preserve the native route identity, never replace it with the message ID.
   if (message && explicitProviderCircuitOpen.test(message)) {
@@ -76,13 +88,21 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
     return { classification: "retry_limited", status: evidence.status,
       nativeTurnId, inputId, providerId, modelId };
   }
-  if (statusCode === 401 || statusCode === 403 || statusCode === 502) return undefined;
-  if (/^(?:HTTP[_ -]?)?(?:401|403|502)$/i.test(nonEmpty(evidence.errorCode) ?? "")) return undefined;
-  if (statusCode !== undefined && (!Number.isInteger(statusCode) || statusCode < 200 || statusCode >= 500)) return undefined;
+  if (statusCode === 401 || statusCode === 403) return undefined;
+  if (/^(?:HTTP[_ -]?)?(?:401|403)$/i.test(nonEmpty(evidence.errorCode) ?? "")) return undefined;
+  if (statusCode !== undefined && (!Number.isInteger(statusCode) || statusCode < 200 || statusCode >= 500)
+    && !transientProviderStatusCodes.has(statusCode)) return undefined;
 
   const errorCode = nonEmpty(evidence.errorCode);
   const errorType = nonEmpty(evidence.errorType);
   const modelErrorType = nonEmpty(evidence.modelErrorType);
+  const providerFailureText = [errorCode, errorType, modelErrorType, message].filter(Boolean).join(" ");
+  const gatewayFailureText = providerFailureText.replace(/unknown[ _-]+(?:error|failure)/gi, "");
+  // A gateway status is stronger evidence than quota wording carried through
+  // that gateway. Let the configured next model take over immediately.
+  if (statusCode === 502 && !unsafeProviderFailure.test(gatewayFailureText)) {
+    return {classification:"provider_unavailable",status:evidence.status,nativeTurnId,inputId,providerId,modelId};
+  }
   // Native ZCode wraps this exact ZAI provider payload in UNKNOWN_ERROR.
   // The wrapper is not the provider classification; retain all auth/transport
   // exclusions and require both native model lineage and the provider code.
@@ -95,6 +115,10 @@ export function terminalQuotaFailure(evidence: TerminalQuotaFailureEvidence): Te
 
   const explicitCode = [errorCode, modelErrorType].some((value) => value && explicitQuotaCode.test(value));
   const explicitMessage = Boolean(message && explicitQuotaMessage.test(message));
+  if (!explicitCode && !explicitMessage && statusCode !== undefined
+    && transientProviderStatusCodes.has(statusCode) && !unsafeProviderFailure.test(providerFailureText)) {
+    return {classification:"provider_unavailable",status:evidence.status,nativeTurnId,inputId,providerId,modelId};
+  }
   if (!explicitCode && !explicitMessage) return undefined;
   // HTTP 429 alone is ambiguous (usually generic rate limiting). Accept it
   // only when the provider also supplies a specific quota code or message.

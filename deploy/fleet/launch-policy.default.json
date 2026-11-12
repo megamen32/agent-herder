@@ -8,6 +8,7 @@
   },
   "fallbackModels": {
     "opencode": [
+      "omniroute/glm-5.3-flash-minimax-m3.1",
       "omniroute/minimax-combo-m3.1",
       "minimax-coding-plan/MiniMax-M3.1-Flash"
     ]

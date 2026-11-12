@@ -176,9 +176,11 @@ deletable by the author, auto-pruned on expiry.
 `ZAI_API_KEY` / `GLM_API_KEY`), MiniMax Token Plan usage from
 `MINIMAX_API_KEY`, and Codex usage from the local Codex login. Missing or
 unavailable sources return `unknown`; values are never guessed. `new_or_resume`
-accepts an ordered `fallbackModels` list and switches only after a provider's
-specific quota rejection before message admission. Generic HTTP 429s, unknown or
-accepted admissions, and manual stops never start a second attempt.
+accepts an ordered `fallbackModels` list and switches after an exact terminal
+provider failure (including transient 408/429/5xx statuses) or a provider's
+specific quota rejection. Unknown or accepted admissions, authentication
+failures, transport-only failures, and manual stops never start a second
+attempt.
 
 ### Session identity
 

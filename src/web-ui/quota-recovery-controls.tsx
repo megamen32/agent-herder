@@ -41,7 +41,7 @@ function ModelSwitchToggle({ setting, label, disabled, onChange }: {
   onChange: (enabled: boolean) => void;
 }) {
   return <label className="runtime-toggle-setting">
-    <span><strong>Автопереключение моделей</strong><small>При исчерпании квоты — следующая разрешённая модель по приоритету проекта. Сессия и история сохраняются.</small></span>
+    <span><strong>Автопереключение моделей</strong><small>При подтверждённом сбое провайдера или исчерпании квоты — следующая разрешённая модель по приоритету проекта. Сессия и история сохраняются.</small></span>
     <input type="checkbox" role="switch" aria-label={label} checked={setting.fallbackForQuota === true}
       disabled={disabled} onChange={event => onChange(event.target.checked)} />
   </label>;
