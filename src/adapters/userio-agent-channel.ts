@@ -6,7 +6,7 @@ const INSTANCE = /^browser-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
 export type UserIoConfig = {
   endpoint:string; agentId:string; instanceId:string; accountScope:string;
-  tokenFile:string; connectionId?:string; principalId?:string; fetcher?:typeof fetch;
+  tokenFile:string; connectionId?:string; principalId?:string; principalReceiptId?:string; fetcher?:typeof fetch;
 };
 export type UserIoAgentResult = {ok:boolean;error?:string;[k:string]:unknown};
 type SafeDiagnostic = {stage:string;reason:string};
@@ -87,7 +87,8 @@ export class UserIoAgentChannel {
       ||!INSTANCE.test(config.instanceId)||!SHA.test(config.accountScope)
       ||!isAbsolute(config.tokenFile)
       ||config.connectionId!==undefined&&!/^[A-Za-z0-9_.:-]{1,128}$/u.test(config.connectionId)
-      ||config.principalId!==undefined&&(!config.principalId||config.principalId.length>256))throw new Error("userio_profile_invalid");
+      ||config.principalId!==undefined&&(!config.principalId||config.principalId.length>256)
+      ||config.principalReceiptId!==undefined&&(!config.principalReceiptId||config.principalReceiptId.length>256))throw new Error("userio_profile_invalid");
     this.config=config;
     this.fetcher=config.fetcher??fetch;
   }
@@ -127,7 +128,9 @@ export class UserIoAgentChannel {
     if(record.action!==action||record.agent_id!==this.config.agentId
       ||record.agent_instance_id!==this.config.instanceId
       ||this.config.connectionId!==undefined&&record.connection_id!==this.config.connectionId
-      ||this.config.principalId!==undefined&&record.principal_id!==this.config.principalId
+      ||this.config.principalId!==undefined
+        &&record.principal_id!==this.config.principalId
+        &&record.principal_id!==this.config.principalReceiptId
       ||!record.result||typeof record.result!=="object") throw new Error("userio_command_result_mismatch");
     const result=record.result as UserIoAgentResult;
     if(result.ok!==true)throw new UserIoCommandFailure(typeof result.error==="string"&&/^[a-z0-9_]{1,100}$/u.test(result.error)?result.error:"userio_command_failure",safeDiagnostic(action,result));

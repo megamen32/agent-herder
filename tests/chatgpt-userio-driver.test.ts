@@ -16,7 +16,7 @@ const IDENTITY = "account-uuid-userio-canary";
 const SCOPE = userIoAccountScope('chatgpt','user-1','account-1');
 const homes:string[]=[];
 afterEach(()=>{for(const dir of homes.splice(0))rmSync(dir,{force:true,recursive:true});});
-function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:string[]=[INSTANCE], receiptInstance:string|undefined=INSTANCE, context:{connectionId?:string;principalId?:string}={}){
+function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:string[]=[INSTANCE], receiptInstance:string|undefined=INSTANCE, context:{connectionId?:string;principalId?:string;resultPrincipalId?:string}={}){
   const home=mkdtempSync(join(tmpdir(),"herder-userio-test-"));homes.push(home);
   const tokenFile=join(home,"token");writeFileSync(tokenFile,"test-valid-token-12345",{mode:0o600});
   const events:{action:string;args:Record<string,unknown>;agent_instance_id:string}[]=[];
@@ -44,13 +44,13 @@ function fixture(results:Record<string,Record<string,unknown>>, onlineInstances:
       return new Response(JSON.stringify({results:[...pending].map(([id,v])=>({
         id,action:v.action,agent_id:"agent-default",agent_instance_id:receiptInstance,
         ...(context.connectionId?{connection_id:context.connectionId}:{}),
-        ...(context.principalId?{principal_id:context.principalId}:{}),result:v.result
+        ...(context.resultPrincipalId?{principal_id:context.resultPrincipalId}:context.principalId?{principal_id:context.principalId}:{}),result:v.result
       }))}),{status:200});
     }
     return new Response("not found",{status:404});
   };
   const config:UserIoConfig={endpoint:"http://127.0.0.1:9999",agentId:"agent-default",
-    instanceId:INSTANCE,accountScope:SCOPE,tokenFile,...context,fetcher:fetcher as typeof fetch};
+    instanceId:INSTANCE,accountScope:SCOPE,tokenFile,principalReceiptId:context.resultPrincipalId,...context,fetcher:fetcher as typeof fetch};
   return {driver:new UserIoChatGptDriver(config),config,events,faults};
 }
 const read={
@@ -241,6 +241,16 @@ describe("strict UserIO ChatGPT transport",()=>{
       "userio_profile_principal_mismatch");
     expect(events).toHaveLength(0);
   });
+  it("accepts UserIO canonical principal receipts while keeping the request alias bound",async()=>{
+    const context={connectionId:"work",principalId:"airlock@bezrabotnyi.com",resultPrincipalId:"user_785be2f2b49c41698dd89ad00de36905"};
+    const {driver,events}=fixture({
+      gpt_session_proof:{ok:true,present:true,proof:"a".repeat(64)},
+      gpt_scope:{ok:true,account_scope:SCOPE,provider:"chatgpt",user_id:"user-1",account_id:"account-1"},
+    },[INSTANCE],INSTANCE,context);
+    await driver.verifyPinnedAccountScope();
+    expect(events[0]?.action).toBe("gpt_session_proof");
+  });
+
   it("rejects a result from a different or missing native agent instance",async()=>{
     for(const instance of ['browser-99999999-9999-4999-8999-999999999999', '']) {
       const {driver}=fixture({gpt_session_proof:{ok:true,present:true,proof:'a'.repeat(64)}},[INSTANCE],instance);
