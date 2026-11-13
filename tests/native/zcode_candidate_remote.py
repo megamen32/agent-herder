@@ -32,7 +32,9 @@ with tempfile.TemporaryDirectory(prefix='zcode-release-ci-',dir=ci) as tmp:
  shutil.copytree(current/'node_modules',release/'node_modules',symlinks=True)
  receipt=root/'receipt.json'
  cmd=[sys.executable,str(runner),'--herder-dist',str(release/'dist'),'--codex',str(codex),'--opencode',str(opencode),'--zcode-official-root',str(official),'--zcode-official-only','--receipt',str(receipt)]
- result=subprocess.run(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,timeout=180,check=False)
+ staging_tmp=Path('/dev/shm') if Path('/dev/shm').is_dir() and os.access('/dev/shm',os.W_OK) else Path(tempfile.gettempdir())
+ env=dict(os.environ,TMPDIR=str(staging_tmp))
+ result=subprocess.run(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,timeout=180,check=False,env=env)
  if result.returncode or not receipt.is_file(): raise RuntimeError('ZCode isolated runner failed: '+result.stderr[-1200:])
  print(receipt.read_text())
 '''
