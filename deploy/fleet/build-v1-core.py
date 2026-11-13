@@ -9,6 +9,10 @@ The caller builds Rust and compiles TS before this command. A source commit is
 provenance supplied by the caller, not proof of how prebuilt inputs were built.
 Every shipped component is independently pinned by SHA256. On failure, preserve
 the partial output for inspection; a manifest exists only for a completed build.
+The completed artifact also contains core-release.json: the single shared
+Rust-core binding consumed by the UserIO extension packager. It carries one
+patch id and one Rust binary digest plus separate UserIO and Agent Herder
+product descriptors.
 """
 import argparse
 import hashlib
@@ -21,6 +25,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNERS = ("opencode", "zcode", "browser", "codex")
+CORE_RELEASE_SCHEMA = "agent-family.core-release.v1"
+CORE_ID = "agent-platform-rust-core"
+CORE_VERSION = "1"
 BUNDLE = r'''
 import { rolldown } from 'rolldown';
 const [compiled, output] = process.argv.slice(1);
@@ -55,6 +62,45 @@ def executable(path):
     if not path.is_file() or not os.access(path, os.X_OK):
         raise ValueError(f"Not an executable regular file: {path}")
     return path
+
+
+def write_json(path, value, mode=0o400):
+    with path.open("x") as stream:
+        json.dump(value, stream, indent=2)
+        stream.write("\n")
+    path.chmod(mode)
+
+
+def product_descriptors():
+    # These are product adapters around the same immutable Rust core. Keeping
+    # their entrypoints and display names here prevents a shared artifact from
+    # silently turning the UserIO extension into an Agent Herder extension.
+    return {
+        "userio": {
+            "product_id": "userio",
+            "brand": "UserIO",
+            "display_name": "Universal UserIO Agent",
+            "surface": "browser_extension",
+            "entrypoint": {
+                "kind": "chrome_mv3",
+                "manifest": "manifest.json",
+                "background": "background.js",
+                "popup": "popup.html",
+                "options": "options.html",
+            },
+        },
+        "agent-herder": {
+            "product_id": "agent-herder",
+            "brand": "Agent Herder",
+            "display_name": "Agent Herder",
+            "surface": "mcp_agent",
+            "entrypoint": {
+                "kind": "rust_mcp_stdio",
+                "binary": "fixture/herder_native_stdio",
+                "args": ["--trusted-owner-profile", "{protected_owner_profile}"],
+            },
+        },
+    }
 
 
 def build(args):
@@ -107,12 +153,66 @@ def build(args):
         subprocess.run([str(shipped["node"]), "--check", str(path)],
                        check=True, env={"PATH": os.defpath}, timeout=30)
         path.chmod(0o400)
+
+    products = product_descriptors()
+    core_release = {
+        "schema": CORE_RELEASE_SCHEMA,
+        "core_id": CORE_ID,
+        "core_version": CORE_VERSION,
+        # The patch id is the exact Rust source revision used as provenance for
+        # this immutable binary. A UserIO package may only bind to this value.
+        "patch_id": sha,
+        "core_sha256": hashes["core"],
+        "core_artifact": {
+            "path": "fixture/herder_native_stdio",
+            "sha256": hashes["core"],
+        },
+        "products": products,
+    }
+    core_release_path = output / "core-release.json"
+    write_json(core_release_path, core_release)
+    core_release_sha = digest(core_release_path)
+
+    product_root = output / "products"
+    product_root.mkdir(mode=0o700)
+    product_paths = {}
+    product_hashes = {}
+    for product_id, descriptor in products.items():
+        product = {
+            "schema": "agent-family.product.v1",
+            **descriptor,
+            "core": {
+                "schema": CORE_RELEASE_SCHEMA,
+                "core_id": CORE_ID,
+                "core_version": CORE_VERSION,
+                "patch_id": sha,
+                "core_sha256": hashes["core"],
+                "release_manifest": "../core-release.json",
+                "release_manifest_sha256": core_release_sha,
+            },
+        }
+        path = product_root / f"{product_id}.json"
+        write_json(path, product)
+        product_paths[product_id] = str(path)
+        product_hashes[product_id] = digest(path)
+
     manifest = {
         "artifact_root": str(output), "source_commit": sha, "source_sha": sha,
         **{name: str(path) for name, path in shipped.items()},
         "adapter": str(adapters["opencode"]),
         "adapters": {name: str(path) for name, path in adapters.items()},
         "sha256": hashes,
+        "core_release": {
+            "schema": CORE_RELEASE_SCHEMA,
+            "path": str(core_release_path),
+            "sha256": core_release_sha,
+            "core_id": CORE_ID,
+            "core_version": CORE_VERSION,
+            "patch_id": sha,
+            "core_sha256": hashes["core"],
+        },
+        "products": product_paths,
+        "product_sha256": product_hashes,
         "build_inputs": {"compiled_entrypoint_sha256": entry_hashes,
                          "binary_sha256": input_hashes,
                          "source_commit_role": "caller-supplied provenance for prebuilt inputs"},
@@ -125,10 +225,7 @@ def build(args):
             "argv": [str(shipped["compat"]), "--trusted-owner-profile", "{protected_owner_profile}"],
             "env": {"HERDER_NATIVE_COMMAND": str(shipped["core"])},
         }
-    with (output / "manifest.json").open("x") as stream:
-        json.dump(manifest, stream, indent=2)
-        stream.write("\n")
-    (output / "manifest.json").chmod(0o400)
+    write_json(output / "manifest.json", manifest)
     fixture.chmod(0o500)
     output.chmod(0o500)
     return {"manifest": str(output / "manifest.json"),
