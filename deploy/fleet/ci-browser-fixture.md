@@ -58,3 +58,19 @@ An uncertain start leaves a private `start-intent.json` and refuses blind replay
 After a crash or reboot, recovery requires the unchanged trusted config, a valid stored generation including its original boot ID, proof that both old process identities are gone, no active namespace daemon, no exact-profile browser roots, and a verified current dedicated relay. Any surviving process or ambiguous identity blocks recovery. The manager writes a private recovery receipt and archives the old state before creating one fresh start intent. A leftover intent matching a fully verified running generation is reconciled without launching again; a different or unreadable intent blocks replay.
 
 Run the focused contract tests with `node --test tests/native/ci-browser-fixture.test.mjs`. Unit tests establish the guards; deployment acceptance still requires real `verify` and `attest` receipts followed by the five-harness smoke.
+
+
+## 2026-11-13 bezbrowser compatibility acceptance
+
+The dedicated server-100 fixture was refreshed from source `72c069dbb4ff73dc7d76745015ae922627960588`. Its installed manager SHA256 is `130ccda333632b4a3d123c91c03f8b355695631e5546842918fc39de56cef504`. The reviewed configuration keeps the existing Vibe extension, adds the physical bezbrowser extension copy and enables the optional new-surface capture path. Chrome's actual single feature switch retained `NetworkService,NetworkServiceInProcess` and added `CDPScreenshotNewSurface`. The installed collector, bindings and general Herder runtime were preserved.
+
+Acceptance on the real persistent Chromium 154 profile passed after a managed restart:
+
+- All 28 focused fixture contract tests passed.
+- bezbrowser retained browser identity `e6cc9d1e-326e-4bc3-b9d0-87c7c3e43d4e` and passed two independent principals, isolated input/clicks, lease rejection, a real MCP Task, two background screenshots and cleanup. Run `f7647f24-0ea5-4542-9246-4b66535c96e3` captured the screenshots in 586 ms and 1028 ms.
+- The fixed manager's `verify` passed for generation `5facf343bfda8522e63e9055844909eebdbb4f7c46b453822fee052a12dc4222`, with the configured UI API returning 200 and JSON.
+- The installed Vibe bindings opened a fresh owned page, passed the fixed manager's `attest` with `vibe_page_correlated: true`, then closed that page and all temporary transports. No model messages were submitted by this compatibility check.
+
+The full installed five-harness smoke remains incomplete. Run `bezbrowser-ci-20261113-7e2fc1abe358` stopped before model submission and before creating its browser page, with identity UNKNOWN and `transport_or_provider_failure`; owned process cleanup passed. The existing fixture still pins runtime source `bba8b81e433853d1d8dc843646000c6f4cfa4b64`, whose runtime manifest is absent. This condition existed before the browser refresh. The earlier UI 502 was no longer present during the final verify and attest. Complete the five-harness gate after the independently owned Herder runtime binding is reconciled; this browser change does not replace that binding or weaken the gate.
+
+Private receipts on server-100 are under `/home/roomhacker/.local/share/bezbrowser-deploy/fleet-20261113/linux-100/`: `ci-surface-activation.json`, `accept-cft-agent-herder-new-surface.json`, `ci-vibe-attestation.json` and `five-harness-surface.json`. The root-owned rollback copy is `/var/lib/agent-herder-ci-smoke/maintenance/bezbrowser-surface-72c069db-20261113`. The same dedicated browser, relay and CI runner services are active.
