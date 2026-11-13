@@ -102,6 +102,7 @@ import { createNativeUserInputNoticeObserver } from "./human-request/native-user
 import { createAsyncUserInputNoticeObserver } from "./human-request/async-user-input-notice.js";
 import { registerCdpTools } from "./mcp/cdp-tools.js";
 import { registerChatGptWakeTools } from "./mcp/chatgpt-wake-tools.js";
+import { createUserIoDotBinding, registerUserIoDotTools, type UserIoDotBinding } from "./mcp/userio-dot-tools.js";
 import { WakeBindingStore } from "./chatgpt-wake-binding.js";
 import { registerSessionTools } from "./mcp/session-tools.js";
 import {withCatalogProjection} from "./mcp/catalog-projection.js";
@@ -730,6 +731,7 @@ function registerTools(
   humanRequestsRegistry?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">,
   chatgptWakeBindings?: WakeBindingStore,
   chatgptWakeAdapters?: Map<string, HarnessAdapter>,
+  userioDot?: UserIoDotBinding,
 ) {
   // Archive/debug helpers remain available for existing callers. All normal
   // chat control uses the shared HarnessAdapter tools; this optional legacy
@@ -737,6 +739,7 @@ function registerTools(
   if (process.env.AGENT_HERDER_CHATGPT_LEGACY_TOOLS !== "false") {
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
+  registerUserIoDotTools(server, userioDot);
   registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
@@ -859,6 +862,8 @@ export interface AgentHerderMcpServerOptions {
   chatgptWakeBindings?: WakeBindingStore;
   /** Adapter registry used to validate wake-binding owners. */
   chatgptWakeAdapters?: Map<string, HarnessAdapter>;
+  /** Optional bound UserIO MV3 Dot room. No tool is registered when absent. */
+  userioDot?: UserIoDotBinding;
 }
 
 let qaControlBackend: QaControlBackend | undefined;
@@ -982,6 +987,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.humanRequests,
     options.chatgptWakeBindings,
     options.chatgptWakeAdapters,
+    options.userioDot ?? createUserIoDotBinding(),
     );
     }, hiddenByConsolidation);
   }, hiddenByConsolidation);
