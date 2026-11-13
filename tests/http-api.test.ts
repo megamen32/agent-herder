@@ -11,6 +11,7 @@ import { join } from "node:path";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
+import { createLaunchPolicyStore } from "./helpers/launch-policy.js";
 
 const servers: Server[] = [];
 
@@ -179,6 +180,7 @@ describe("agent-herder web API", () => {
     const server = createWebServer({
       adapters: new Map([["zcode", fakeNamedAdapter("zcode")]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -211,6 +213,7 @@ describe("agent-herder web API", () => {
     const server = createWebServer({
       adapters: new Map([["zcode", fakeNamedAdapter("zcode")]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));

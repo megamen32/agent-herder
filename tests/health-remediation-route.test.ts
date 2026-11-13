@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Server } from "node:http";
 import { createWebServer } from "../src/web/server.js";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
+import { createLaunchPolicyStore } from "./helpers/launch-policy.js";
 
 const servers: Server[] = [];
 
@@ -86,6 +87,7 @@ describe("health remediation route harness guard", () => {
         ["hermes", hermes.adapter],
       ]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -116,6 +118,7 @@ describe("health remediation route harness guard", () => {
     const server = createWebServer({
       adapters: new Map([["zcode", zcode.adapter]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -145,6 +148,7 @@ describe("health remediation route harness guard", () => {
     const server = createWebServer({
       adapters: new Map([["fast-agent", tracked.adapter]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -168,6 +172,7 @@ describe("health remediation route harness guard", () => {
     const server = createWebServer({
       adapters: new Map([["hermes", hermes.adapter]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -196,6 +201,7 @@ describe("health remediation route harness guard", () => {
     const server = createWebServer({
       adapters: new Map([["zcode", zcode.adapter]]),
       converter: { async convert() { return { success: true, targetSessionId: "x", targetPath: "/tmp/x", messageCount: 0 }; } },
+      automationLaunchPolicyStore: await createLaunchPolicyStore(),
     });
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));

@@ -29,6 +29,11 @@ it("normalizes the exact Codex 429 retry-exhaustion envelope only for a failed n
   });
   expect(codexTerminalQuotaEvidence({...turn, items: []}, "gpt-6.1-terra")).toBeUndefined();
   expect(codexTerminalQuotaEvidence({...turn, status: "inProgress"}, "gpt-6.1-terra")).toBeUndefined();
+  // The native envelope names a gateway status, not the retry exhaustion of
+  // the message. The turn is still a terminal transient failure of the
+  // provider, so it may fall back to the next model, and it is never an
+  // exhausted quota.
   expect(codexTerminalQuotaEvidence({...turn, error: {...turn.error,
-    codexErrorInfo: { response_too_many_failed_attempts: {http_status_code: 502}}}}, "gpt-6.1-terra")).toBeUndefined();
+    codexErrorInfo: { response_too_many_failed_attempts: {http_status_code: 502}}}}, "gpt-6.1-terra"))
+    .toMatchObject({classification: "provider_unavailable", nativeTurnId: "turn-429"});
 });
