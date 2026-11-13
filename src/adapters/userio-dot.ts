@@ -19,7 +19,7 @@ export type DotSnapshot = UserIoAgentResult & {
   messages: DotMessage[];
   cursor: string;
 };
-export type DotBinding = { url: string; room: string };
+export type DotBinding = { url: string; room: string; accountScope?: string };
 export type DotSendInput = DotBinding & {
   text: string;
   replyTo?: string | null;
@@ -39,6 +39,10 @@ function validateBinding({ url, room }: DotBinding): void {
   if (typeof url !== "string" || !DOT_URL.test(url)) throw new Error("invalid_dot_url");
   if (typeof room !== "string" || !room.trim() || room.length > 160 || /\s/u.test(room)) {
     throw new Error("invalid_dot_room");
+  }
+  if (arguments[0] && "accountScope" in arguments[0]
+    && (typeof arguments[0].accountScope !== "string" || !/^[a-f0-9]{64}$/u.test(arguments[0].accountScope))) {
+    throw new Error("invalid_dot_account_scope");
   }
 }
 
@@ -85,9 +89,12 @@ export class UserIoDotClient {
 
   private async command(binding: DotBinding, action: string, args: Record<string, unknown>): Promise<UserIoAgentResult> {
     validateBinding(binding);
-    const probe = await this.channel.call("dot_profile_probe", binding);
+    const { accountScope, ...target } = binding;
+    const probeArgs = { ...target, ...(accountScope ? { expected_account_scope: accountScope } : {}) };
+    const commandArgs = { ...probeArgs, ...args };
+    const probe = await this.channel.call("dot_profile_probe", probeArgs);
     if (probe.ok !== true || probe.matches !== true) throw new Error("userio_dot_profile_mismatch");
-    return this.channel.call(action, { ...binding, ...args });
+    return this.channel.call(action, commandArgs);
   }
 
   async snapshot(binding: DotBinding & { after?: string | null }): Promise<DotSnapshot> {

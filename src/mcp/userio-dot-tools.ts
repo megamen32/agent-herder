@@ -14,6 +14,7 @@ const required = [
   "AGENT_HERDER_DOT_AGENT_ID",
   "AGENT_HERDER_DOT_INSTANCE_ID",
   "AGENT_HERDER_DOT_ACCOUNT_SCOPE",
+  "AGENT_HERDER_DOT_CONNECTION_ID",
   "AGENT_HERDER_DOT_ACCESS_TOKEN_FILE",
   "AGENT_HERDER_DOT_PRINCIPAL_ID",
   "AGENT_HERDER_DOT_URL",
@@ -24,9 +25,9 @@ export function createUserIoDotBinding(env: NodeJS.ProcessEnv = process.env): Us
   const values = required.map(key => env[key]?.trim() ?? "");
   if (values.every(value => !value)) return undefined;
   if (values.some(value => !value)) throw new Error("userio_dot_configuration_incomplete");
-  const [endpoint, agentId, instanceId, accountScope, tokenFile, principalId, url, room] = values;
-  const config: UserIoConfig = { endpoint, agentId, instanceId, accountScope, tokenFile, principalId };
-  return { client: new UserIoDotClient(new UserIoAgentChannel(config)), binding: { url, room } };
+  const [endpoint, agentId, instanceId, accountScope, connectionId, tokenFile, principalId, url, room] = values;
+  const config: UserIoConfig = { endpoint, agentId, instanceId, accountScope, connectionId, tokenFile, principalId };
+  return { client: new UserIoDotClient(new UserIoAgentChannel(config)), binding: { url, room, accountScope } };
 }
 
 export function registerUserIoDotTools(server: McpServer, binding?: UserIoDotBinding): void {
