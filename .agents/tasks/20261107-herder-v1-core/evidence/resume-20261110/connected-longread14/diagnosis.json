@@ -1,0 +1,26 @@
+{
+  "scope": "read-only source diagnosis; no credential changes or runtime mutation",
+  "source_checkout": "/home/roomhacker/gptadmin",
+  "source_head": "7d2c7151855d54b0e3097b4e59efb5807c4a1e7d",
+  "live_binary_revision": "not established; source may differ from installed",
+  "observed": {
+    "job_id": "cdc33191d42ab8899fcbe7e7efebfa3a",
+    "explicit_owner_error": "task receipt is not available to this MCP client",
+    "task_start_id": "9a648c13fc3de10f7ff388c0f10d74a3",
+    "task_start_error": "task_receipt_unavailable"
+  },
+  "confirmed_source_mechanism": {
+    "child_dispatch": "go-hub/internal/hub/server.go:5303-5320 routes child to parent mcp_call using request r",
+    "persist_caller": "go-hub/internal/hub/server.go:6301 stores taskCallerFromRequest(r) and ReceiptTarget=parent",
+    "owner_hint": "go-hub/internal/hub/node_peers.go:190-191 returns observed 403 if profileAllowsTarget(receiptTarget) fails OR authorizeTaskReceipt fails",
+    "caller_equality": "go-hub/internal/hub/access_task_receipts.go:21-52 requires exact client_id, jti, subject, profile ID/version and browser binding",
+    "task_start": "go-hub/internal/hub/code_mode_tasks.go:12-20 maps ANY mcpTaskGetForRequest failure to task_receipt_unavailable",
+    "task_get": "go-hub/internal/hub/server.go:10442 checks caller, hides authorization failure as unknown taskId; missing record or owner mismatch can yield same high-level failure",
+    "transport": "go-shellmcp executes queued mcp_call; source inspection found ownership recorded/authorized in Hub, not shell-side comparison"
+  },
+  "root_cause_status": "confirmed failure boundary is Hub receipt ownership/target authorization; exact failed predicate for these IDs is not established by sanitized receipts. Source inspected propagates request context to job, so dropped caller cannot be asserted without proof. Parent-only ReceiptTarget for a child-granted profile is a concrete candidate for owner-hint 403; token jti/profile mismatch is another. Task-start could be lookup/persistence or caller mismatch; must discriminate.",
+  "minimal_red": "in existing go-hub/internal/hub/code_mode_tasks_test.go / execution_origin_child_test.go create authenticated client with profile granting only exact child mcp target, fake controlled child mcp_call job, start via mcp.tasks.start and read same job using same request through tasks/get and explicit-owner job. Assert same owner can read, foreign jti denied, profile-version change denied, one enqueue; inspect persisted Caller and ReceiptTarget in test. Include both direct local and peer dispatch if selected by actual topology. Run under isolated Hub fixture; no provider actions.",
+  "next_discriminator": "authorized same-client diagnostic compare only booleans for stored caller equality, profile grant to parent vs child, local owner and record presence; no credential values and no bypass. Verify installed binary revision before attributing source behavior.",
+  "permissions": "do not use alternate credentials or bypass 403",
+  "acceptance_summary": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14d/acceptance-review.md"
+}

@@ -1,0 +1,856 @@
+TAP version 13
+# Subtest: fresh profiles create distinct persistent automatic agent identities
+ok 1 - fresh profiles create distinct persistent automatic agent identities
+  ---
+  duration_ms: 5.597976
+  type: 'test'
+  ...
+# Subtest: existing explicit binding remains stable
+ok 2 - existing explicit binding remains stable
+  ---
+  duration_ms: 1.350354
+  type: 'test'
+  ...
+# Subtest: an existing legacy installation keeps its bound agent identity on upgrade
+ok 3 - an existing legacy installation keeps its bound agent identity on upgrade
+  ---
+  duration_ms: 1.246381
+  type: 'test'
+  ...
+# Subtest: two legacy profiles have distinct persistent instance identities
+ok 4 - two legacy profiles have distinct persistent instance identities
+  ---
+  duration_ms: 2.536925
+  type: 'test'
+  ...
+# Subtest: real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+ok 5 - real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+  ---
+  duration_ms: 10.460495
+  type: 'test'
+  ...
+# Subtest: existing chat UI send returns the new native user receipt only
+ok 6 - existing chat UI send returns the new native user receipt only
+  ---
+  duration_ms: 10.029137
+  type: 'test'
+  ...
+# Subtest: scoped first send is fenced and never replayed
+ok 7 - scoped first send is fenced and never replayed
+  ---
+  duration_ms: 1.420033
+  type: 'test'
+  ...
+# Subtest: command with mismatched connection or principal never executes or posts
+ok 8 - command with mismatched connection or principal never executes or posts
+  ---
+  duration_ms: 1.508663
+  type: 'test'
+  ...
+# Subtest: Z.ai lifecycle commands require a bound destination and dispatch to exact handlers
+ok 9 - Z.ai lifecycle commands require a bound destination and dispatch to exact handlers
+  ---
+  duration_ms: 2.96736
+  type: 'test'
+  ...
+# Subtest: background RPC uses real connection registry and passes selected connection to OAuth
+ok 10 - background RPC uses real connection registry and passes selected connection to OAuth
+  ---
+  duration_ms: 7.971339
+  type: 'test'
+  ...
+# Subtest: plural and singular exact history paths capture requested id and strip secrets
+ok 11 - plural and singular exact history paths capture requested id and strip secrets
+  ---
+  duration_ms: 39.797373
+  type: 'test'
+  ...
+# Subtest: rejects mismatched identity and non-history paths
+ok 12 - rejects mismatched identity and non-history paths
+  ---
+  duration_ms: 10.847225
+  type: 'test'
+  ...
+# Subtest: startup removes legacy sweep and makes no ChatGPT request
+ok 13 - startup removes legacy sweep and makes no ChatGPT request
+  ---
+  duration_ms: 27.331055
+  type: 'test'
+  ...
+# Subtest: passive identity alone observes an unbound account for explicit user selection
+ok 14 - passive identity alone observes an unbound account for explicit user selection
+  ---
+  duration_ms: 14.299378
+  type: 'test'
+  ...
+# Subtest: natural plural fetch passes hook and passive reducer as partial without granting access
+ok 15 - natural plural fetch passes hook and passive reducer as partial without granting access
+  ---
+  duration_ms: 12.319721
+  type: 'test'
+  ...
+# Subtest: 429 persists cooldown and later extension requests do not reach ChatGPT
+ok 16 - 429 persists cooldown and later extension requests do not reach ChatGPT
+  ---
+  duration_ms: 2.326861
+  type: 'test'
+  ...
+# Subtest: observations from other origins cannot publish messages or change cooldown
+ok 17 - observations from other origins cannot publish messages or change cooldown
+  ---
+  duration_ms: 1.15283
+  type: 'test'
+  ...
+# Subtest: cooldown survives worker reload and covers URL inputs
+ok 18 - cooldown survives worker reload and covers URL inputs
+  ---
+  duration_ms: 1.414562
+  type: 'test'
+  ...
+# Subtest: native fetch is not repeated; auth projection excludes all credentials
+ok 19 - native fetch is not repeated; auth projection excludes all credentials
+  ---
+  duration_ms: 7.099287
+  type: 'test'
+  ...
+# Subtest: observed 429 takes effect even when UserIO history forwarding is blocked
+ok 20 - observed 429 takes effect even when UserIO history forwarding is blocked
+  ---
+  duration_ms: 2.14201
+  type: 'test'
+  ...
+# Subtest: passive projection and addressed consumer share native snapshot
+ok 21 - passive projection and addressed consumer share native snapshot
+  ---
+  duration_ms: 2.711182
+  type: 'test'
+  ...
+# Subtest: passive snapshot and scoped identity match Herder account digest
+ok 22 - passive snapshot and scoped identity match Herder account digest
+  ---
+  duration_ms: 7.034495
+  type: 'test'
+  ...
+# Subtest: refresh observes identity before listing accounts and renders an unbound row
+ok 23 - refresh observes identity before listing accounts and renders an unbound row
+  ---
+  duration_ms: 9.52159
+  type: 'test'
+  ...
+# Subtest: connection UI renders named endpoint cards and independent account destinations
+ok 24 - connection UI renders named endpoint cards and independent account destinations
+  ---
+  duration_ms: 3.934609
+  type: 'test'
+  ...
+# Subtest: bindings save by stable accountKey with selected connection ids
+ok 25 - bindings save by stable accountKey with selected connection ids
+  ---
+  duration_ms: 2.649098
+  type: 'test'
+  ...
+# Subtest: adding work and personal connections emits separate save commands
+ok 26 - adding work and personal connections emits separate save commands
+  ---
+  duration_ms: 2.416263
+  type: 'test'
+  ...
+# Subtest: per-connection OAuth and ChatGPT registration carry distinct connection ids
+ok 27 - per-connection OAuth and ChatGPT registration carry distinct connection ids
+  ---
+  duration_ms: 3.636335
+  type: 'test'
+  ...
+# Subtest: destination matrix renders saved A-both and B-personal bindings after reload
+ok 28 - destination matrix renders saved A-both and B-personal bindings after reload
+  ---
+  duration_ms: 1.943494
+  type: 'test'
+  ...
+# Subtest: options UI does not expose route ids or tokens
+ok 29 - options UI does not expose route ids or tokens
+  ---
+  duration_ms: 0.417915
+  type: 'test'
+  ...
+# Subtest: named destinations do not show a misleading global login and long scopes stay out of account labels
+ok 30 - named destinations do not show a misleading global login and long scopes stay out of account labels
+  ---
+  duration_ms: 2.386612
+  type: 'test'
+  ...
+# Subtest: legacy destination is explicit and all connection statuses are scoped
+ok 31 - legacy destination is explicit and all connection statuses are scoped
+  ---
+  duration_ms: 1.984623
+  type: 'test'
+  ...
+# Subtest: ChatGPT account management opens for the chosen destination
+ok 32 - ChatGPT account management opens for the chosen destination
+  ---
+  duration_ms: 3.578968
+  type: 'test'
+  ...
+# Subtest: explicit account bindings and idempotent legacy migration
+ok 33 - explicit account bindings and idempotent legacy migration
+  ---
+  duration_ms: 11.561899
+  type: 'test'
+  ...
+# Subtest: logout one connection preserves the other persisted binding
+ok 34 - logout one connection preserves the other persisted binding
+  ---
+  duration_ms: 2.218705
+  type: 'test'
+  ...
+# Subtest: pure transition preserves input and describes the storage effect
+ok 35 - pure transition preserves input and describes the storage effect
+  ---
+  duration_ms: 1.043472
+  type: 'test'
+  ...
+# Subtest: receipt requires exact connection and browser identity
+ok 36 - receipt requires exact connection and browser identity
+  ---
+  duration_ms: 0.99493
+  type: 'test'
+  ...
+# Subtest: profile probe confirms the exact Dot room without exposing its messages
+ok 37 - profile probe confirms the exact Dot room without exposing its messages
+  ---
+  duration_ms: 10.571616
+  type: 'test'
+  ...
+# Subtest: draft backup stores sensitive content locally and returns only verification metadata
+ok 38 - draft backup stores sensitive content locally and returns only verification metadata
+  ---
+  duration_ms: 1.858391
+  type: 'test'
+  ...
+# Subtest: composer diagnostics only addresses the exact Dot tab
+ok 39 - composer diagnostics only addresses the exact Dot tab
+  ---
+  duration_ms: 1.283709
+  type: 'test'
+  ...
+# Subtest: composer diagnostics refuses a different room and never returns draft content
+ok 40 - composer diagnostics refuses a different room and never returns draft content
+  ---
+  duration_ms: 2.103203
+  type: 'test'
+  ...
+# Subtest: draft recovery requires an explicit action and retains unknown outcomes
+ok 41 - draft recovery requires an explicit action and retains unknown outcomes
+  ---
+  duration_ms: 2.028221
+  type: 'test'
+  ...
+# Subtest: an unresolved automatic backup blocks later sends without exposing its text
+ok 42 - an unresolved automatic backup blocks later sends without exposing its text
+  ---
+  duration_ms: 1.497577
+  type: 'test'
+  ...
+# Subtest: draft inspection command only addresses one exact Dot tab with a valid hash
+ok 43 - draft inspection command only addresses one exact Dot tab with a valid hash
+  ---
+  duration_ms: 2.940441
+  type: 'test'
+  ...
+# Subtest: draft inspection matches only the exact room and does not return draft text
+ok 44 - draft inspection matches only the exact room and does not return draft text
+  ---
+  duration_ms: 10.837832
+  type: 'test'
+  ...
+# Subtest: draft capture checks exact room and captures text and markup without mutation
+ok 45 - draft capture checks exact room and captures text and markup without mutation
+  ---
+  duration_ms: 2.584787
+  type: 'test'
+  ...
+# Subtest: draft recovery refuses changes and restores only into an empty composer
+ok 46 - draft recovery refuses changes and restores only into an empty composer
+  ---
+  duration_ms: 1.946775
+  type: 'test'
+  ...
+# Subtest: draft inspection refuses ambiguous editor and existing reply panel
+ok 47 - draft inspection refuses ambiguous editor and existing reply panel
+  ---
+  duration_ms: 1.243187
+  type: 'test'
+  ...
+# Subtest: dot actions require one exact tab and never navigate another tab
+ok 48 - dot actions require one exact tab and never navigate another tab
+  ---
+  duration_ms: 4.228797
+  type: 'test'
+  ...
+# Subtest: dot send validates payload before injection
+ok 49 - dot send validates payload before injection
+  ---
+  duration_ms: 1.281376
+  type: 'test'
+  ...
+# Subtest: dot action forwards formatting to the selected tab
+ok 50 - dot action forwards formatting to the selected tab
+  ---
+  duration_ms: 1.082143
+  type: 'test'
+  ...
+# Subtest: media commands require the exact Dot tab and use the fixed media function
+ok 51 - media commands require the exact Dot tab and use the fixed media function
+  ---
+  duration_ms: 1.142924
+  type: 'test'
+  ...
+# Subtest: media read commands use the same exact tab and fixed reader
+ok 52 - media read commands use the same exact tab and fixed reader
+  ---
+  duration_ms: 1.070031
+  type: 'test'
+  ...
+# Subtest: backgrounded Dot tab retains message text for durable echo matching
+ok 53 - backgrounded Dot tab retains message text for durable echo matching
+  ---
+  duration_ms: 1.89702
+  type: 'test'
+  ...
+# Subtest: Dot snapshot retains the target of a labelled link
+ok 54 - Dot snapshot retains the target of a labelled link
+  ---
+  duration_ms: 1.262391
+  type: 'test'
+  ...
+# Subtest: Dot snapshot preserves a blockquote range
+ok 55 - Dot snapshot preserves a blockquote range
+  ---
+  duration_ms: 1.181909
+  type: 'test'
+  ...
+# Subtest: Dot snapshot preserves a link after a rendered paragraph break
+ok 56 - Dot snapshot preserves a link after a rendered paragraph break
+  ---
+  duration_ms: 1.369443
+  type: 'test'
+  ...
+# Subtest: Dot composer receives a formatted hyperlink without interpreting input as raw HTML
+ok 57 - Dot composer receives a formatted hyperlink without interpreting input as raw HTML
+  ---
+  duration_ms: 2.354308
+  type: 'test'
+  ...
+# Subtest: plain multiline text preserves hard breaks instead of adding a paragraph gap
+ok 58 - plain multiline text preserves hard breaks instead of adding a paragraph gap
+  ---
+  duration_ms: 1.248275
+  type: 'test'
+  ...
+# Subtest: Dot extension stages media chunks only for the exact room and expected offset
+ok 59 - Dot extension stages media chunks only for the exact room and expected offset
+  ---
+  duration_ms: 1.894844
+  type: 'test'
+  ...
+# Subtest: staged image is verified and delivered to the current Dot file input
+ok 60 - staged image is verified and delivered to the current Dot file input
+  ---
+  duration_ms: 6.339301
+  type: 'test'
+  ...
+# Subtest: media send only clicks when the exact upload is ready and never clicks twice
+ok 61 - media send only clicks when the exact upload is ready and never clicks twice
+  ---
+  duration_ms: 2.3436
+  type: 'test'
+  ...
+# Subtest: media reply uploads and submits in the verified reply panel
+ok 62 - media reply uploads and submits in the verified reply panel
+  ---
+  duration_ms: 3.298344
+  type: 'test'
+  ...
+# Subtest: media caption keeps its clickable link in the Dot composer
+ok 63 - media caption keeps its clickable link in the Dot composer
+  ---
+  duration_ms: 2.312283
+  type: 'test'
+  ...
+# Subtest: document caption keeps a single newline when the editor renders paragraphs differently
+ok 64 - document caption keeps a single newline when the editor renders paragraphs differently
+  ---
+  duration_ms: 2.018265
+  type: 'test'
+  ...
+# Subtest: document upload readiness uses its file name rather than an image preview
+ok 65 - document upload readiness uses its file name rather than an image preview
+  ---
+  duration_ms: 1.943771
+  type: 'test'
+  ...
+# Subtest: a backgrounded Dot composer verifies exact text via textContent before sending
+ok 66 - a backgrounded Dot composer verifies exact text via textContent before sending
+  ---
+  duration_ms: 1.229489
+  type: 'test'
+  ...
+# Subtest: a backgrounded existing draft is never overwritten
+ok 67 - a backgrounded existing draft is never overwritten
+  ---
+  duration_ms: 1.134903
+  type: 'test'
+  ...
+# Subtest: snapshot reports a document resource card as an attachment of its message
+ok 68 - snapshot reports a document resource card as an attachment of its message
+  ---
+  duration_ms: 2.245681
+  type: 'test'
+  ...
+# Subtest: an image inside a resource card is counted only once
+ok 69 - an image inside a resource card is counted only once
+  ---
+  duration_ms: 1.508673
+  type: 'test'
+  ...
+# Subtest: an unreadable resource card does not make the whole room unreadable
+ok 70 - an unreadable resource card does not make the whole room unreadable
+  ---
+  duration_ms: 1.513159
+  type: 'test'
+  ...
+# Subtest: verified scope discovers an unbound account and never overwrites selected bindings
+ok 71 - verified scope discovers an unbound account and never overwrites selected bindings
+  ---
+  duration_ms: 16.534526
+  type: 'test'
+  ...
+# Subtest: describe observes verified identity without exposing private data
+ok 72 - describe observes verified identity without exposing private data
+  ---
+  duration_ms: 4.268049
+  type: 'test'
+  ...
+# Subtest: scope agrees with Herder identity and is shared by list and read
+ok 73 - scope agrees with Herder identity and is shared by list and read
+  ---
+  duration_ms: 6.265725
+  type: 'test'
+  ...
+# Subtest: bounded session proof runs through real agent and ChatGPT modules
+ok 74 - bounded session proof runs through real agent and ChatGPT modules
+  ---
+  duration_ms: 5.780614
+  type: 'test'
+  ...
+# Subtest: real account binding authorizes only its exact observed scope without creating accounts
+ok 75 - real account binding authorizes only its exact observed scope without creating accounts
+  ---
+  duration_ms: 3.929757
+  type: 'test'
+  ...
+# Subtest: bounded snapshots do not claim a complete history
+ok 76 - bounded snapshots do not claim a complete history
+  ---
+  duration_ms: 2.537534
+  type: 'test'
+  ...
+# Subtest: persisted snapshots require the new completeness evidence
+ok 77 - persisted snapshots require the new completeness evidence
+  ---
+  duration_ms: 2.83724
+  type: 'test'
+  ...
+# Subtest: API send rechecks the active account before any provider operation
+ok 78 - API send rechecks the active account before any provider operation
+  ---
+  duration_ms: 3.94196
+  type: 'test'
+  ...
+# Subtest: lookup rejects ambiguous persisted bindings and preserves storage
+ok 79 - lookup rejects ambiguous persisted bindings and preserves storage
+  ---
+  duration_ms: 2.827066
+  type: 'test'
+  ...
+# Subtest: empty workspace is kept as an explicit canonical identity
+ok 80 - empty workspace is kept as an explicit canonical identity
+  ---
+  duration_ms: 2.674472
+  type: 'test'
+  ...
+# Subtest: colliding legacy binding keys cannot acquire another identity
+ok 81 - colliding legacy binding keys cannot acquire another identity
+  ---
+  duration_ms: 2.222998
+  type: 'test'
+  ...
+# Subtest: UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+ok 82 - UserIO OAuth uses the Chrome callback, PKCE, account confirmation and REST readback
+  ---
+  duration_ms: 34.263145
+  type: 'test'
+  ...
+# Subtest: ChatGPT cookies are never posted by the remote action without an explicit local choice
+ok 83 - ChatGPT cookies are never posted by the remote action without an explicit local choice
+  ---
+  duration_ms: 3.822644
+  type: 'test'
+  ...
+# Subtest: profile matching compares existing ChatGPT sessions without exporting credentials
+ok 84 - profile matching compares existing ChatGPT sessions without exporting credentials
+  ---
+  duration_ms: 3.793403
+  type: 'test'
+  ...
+# Subtest: unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+ok 85 - unknown connection cannot reach global endpoint and logout fences an in-flight refresh
+  ---
+  duration_ms: 2.655612
+  type: 'test'
+  ...
+# Subtest: settings do not ask for a route identifier and preserve an existing route
+ok 86 - settings do not ask for a route identifier and preserve an existing route
+  ---
+  duration_ms: 7.750155
+  type: 'test'
+  ...
+# Subtest: settings show the connected account and disconnect only the selected account
+ok 87 - settings show the connected account and disconnect only the selected account
+  ---
+  duration_ms: 2.510425
+  type: 'test'
+  ...
+# Subtest: another connected ChatGPT never hides explicit selection of the local profile
+ok 88 - another connected ChatGPT never hides explicit selection of the local profile
+  ---
+  duration_ms: 3.572096
+  type: 'test'
+  ...
+# Subtest: rejects untrusted references and never navigates on invalid input
+ok 89 - rejects untrusted references and never navigates on invalid input
+  ---
+  duration_ms: 6.28073
+  type: 'test'
+  ...
+# Subtest: first send rejects missing scope or empty text before opening a tab
+ok 90 - first send rejects missing scope or empty text before opening a tab
+  ---
+  duration_ms: 2.57844
+  type: 'test'
+  ...
+# Subtest: archive rejects untrusted target before opening a tab
+ok 91 - archive rejects untrusted target before opening a tab
+  ---
+  duration_ms: 3.364407
+  type: 'test'
+  ...
+# Subtest: first send checks an empty owned tab and returns exact route and user message
+ok 92 - first send checks an empty owned tab and returns exact route and user message
+  ---
+  duration_ms: 416.351638
+  type: 'test'
+  ...
+# Subtest: first send never overwrites a foreign draft or existing conversation
+ok 93 - first send never overwrites a foreign draft or existing conversation
+  ---
+  duration_ms: 3.925829
+  type: 'test'
+  ...
+# Subtest: first send uses unique visible ProseMirror without an id
+ok 94 - first send uses unique visible ProseMirror without an id
+  ---
+  duration_ms: 2.725797
+  type: 'test'
+  ...
+# Subtest: ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+ok 95 - ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+  ---
+  duration_ms: 103.311089
+  type: 'test'
+  ...
+# Subtest: first click stays unknown when native snapshot has wrong scope or duplicate messages
+ok 96 - first click stays unknown when native snapshot has wrong scope or duplicate messages
+  ---
+  duration_ms: 7.07212
+  type: 'test'
+  ...
+# Subtest: first receipt tolerates query-only changes on the same owned native chat and rejects changed chat
+ok 97 - first receipt tolerates query-only changes on the same owned native chat and rejects changed chat
+  ---
+  duration_ms: 4.253018
+  type: 'test'
+  ...
+# Subtest: frame rejection after click observes canonical receipt without another click
+ok 98 - frame rejection after click observes canonical receipt without another click
+  ---
+  duration_ms: 11.137797
+  type: 'test'
+  ...
+# Subtest: click exception returns only a bounded post-click diagnostic
+ok 99 - click exception returns only a bounded post-click diagnostic
+  ---
+  duration_ms: 2.370912
+  type: 'test'
+  ...
+# Subtest: first send refuses an account switch immediately before click
+ok 100 - first send refuses an account switch immediately before click
+  ---
+  duration_ms: 2.436408
+  type: 'test'
+  ...
+# Subtest: archive uses exact scope and confirms the same conversation after PATCH
+ok 101 - archive uses exact scope and confirms the same conversation after PATCH
+  ---
+  duration_ms: 2.445739
+  type: 'test'
+  ...
+# Subtest: matches a full exact ChatGPT route, never a colliding prefix
+ok 102 - matches a full exact ChatGPT route, never a colliding prefix
+  ---
+  duration_ms: 1.254967
+  type: 'test'
+  ...
+# Subtest: latest complete final assistant skips analysis and empty nodes
+ok 103 - latest complete final assistant skips analysis and empty nodes
+  ---
+  duration_ms: 4.127012
+  type: 'test'
+  ...
+# Subtest: in-progress assistant after final fails closed
+ok 104 - in-progress assistant after final fails closed
+  ---
+  duration_ms: 3.454371
+  type: 'test'
+  ...
+# Subtest: provider pagination and absent terminal proof never claim full history
+ok 105 - provider pagination and absent terminal proof never claim full history
+  ---
+  duration_ms: 11.643631
+  type: 'test'
+  ...
+# Subtest: legacy branch must reach an explicit root; missing parents and cycles stay partial
+ok 106 - legacy branch must reach an explicit root; missing parents and cycles stay partial
+  ---
+  duration_ms: 4.491803
+  type: 'test'
+  ...
+# Subtest: falls back to legacy mapping only on 404
+ok 107 - falls back to legacy mapping only on 404
+  ---
+  duration_ms: 1.945587
+  type: 'test'
+  ...
+# Subtest: 429 is surfaced with Retry-After and no fallback
+ok 108 - 429 is surfaced with Retry-After and no fallback
+  ---
+  duration_ms: 1.223546
+  type: 'test'
+  ...
+# Subtest: list with no configured scope passes serializable arguments
+ok 109 - list with no configured scope passes serializable arguments
+  ---
+  duration_ms: 1.66531
+  type: 'test'
+  ...
+# Subtest: pure reducer fences delayed reads and workspace identity
+ok 110 - pure reducer fences delayed reads and workspace identity
+  ---
+  duration_ms: 2.98865
+  type: 'test'
+  ...
+# Subtest: durable state restores epoch and revision after worker reload
+ok 111 - durable state restores epoch and revision after worker reload
+  ---
+  duration_ms: 4.77369
+  type: 'test'
+  ...
+# Subtest: creates one service group per browser window and restores by title
+ok 112 - creates one service group per browser window and restores by title
+  ---
+  duration_ms: 6.629054
+  type: 'test'
+  ...
+# Subtest: reuses a stable slot and refuses capacity instead of spawning unbounded tabs
+ok 113 - reuses a stable slot and refuses capacity instead of spawning unbounded tabs
+  ---
+  duration_ms: 2.734595
+  type: 'test'
+  ...
+# Subtest: compares the actual downloadable ZIP manifest and reports a newer release
+ok 114 - compares the actual downloadable ZIP manifest and reports a newer release
+  ---
+  duration_ms: 58.352709
+  type: 'test'
+  ...
+# Subtest: reports an unavailable version check honestly
+ok 115 - reports an unavailable version check honestly
+  ---
+  duration_ms: 1.973352
+  type: 'test'
+  ...
+# Subtest: actual bridge sends canonical messages to each selected HTTP destination and VK keeps envelope
+ok 116 - actual bridge sends canonical messages to each selected HTTP destination and VK keeps envelope
+  ---
+  duration_ms: 49.111202
+  type: 'test'
+  ...
+# Subtest: raw preserves exact native response bodies and refuses wrong scope
+ok 117 - raw preserves exact native response bodies and refuses wrong scope
+  ---
+  duration_ms: 11.087673
+  type: 'test'
+  ...
+# Subtest: archive checks scope and readback and does not toggle twice
+ok 118 - archive checks scope and readback and does not toggle twice
+  ---
+  duration_ms: 3.988414
+  type: 'test'
+  ...
+# Subtest: archive returns no confirmation for changed identity or unconfirmed readback
+ok 119 - archive returns no confirmation for changed identity or unconfirmed readback
+  ---
+  duration_ms: 9.196169
+  type: 'test'
+  ...
+# Subtest: first send confirms native identities once and refuses replay after uncertain click
+ok 120 - first send confirms native identities once and refuses replay after uncertain click
+  ---
+  duration_ms: 3.074231
+  type: 'test'
+  ...
+# Subtest: first send executes the page function against a fake DOM and verifies native admission
+ok 121 - first send executes the page function against a fake DOM and verifies native admission
+  ---
+  duration_ms: 173.965697
+  type: 'test'
+  ...
+# Subtest: ZAI never observes anonymous identities or accounts on auth page
+ok 122 - ZAI never observes anonymous identities or accounts on auth page
+  ---
+  duration_ms: 14.769208
+  type: 'test'
+  ...
+# Subtest: ZAI uses authenticated native requests without exposing the token
+ok 123 - ZAI uses authenticated native requests without exposing the token
+  ---
+  duration_ms: 12.744457
+  type: 'test'
+  ...
+# Subtest: ZAI list is scoped and returns native IDs without browser secrets
+ok 124 - ZAI list is scoped and returns native IDs without browser secrets
+  ---
+  duration_ms: 2.096759
+  type: 'test'
+  ...
+# Subtest: ZAI observes actual identity without granting a connection and preserves explicit binding
+ok 125 - ZAI observes actual identity without granting a connection and preserves explicit binding
+  ---
+  duration_ms: 4.384854
+  type: 'test'
+  ...
+# Subtest: ZAI read uses exact chat identity and batch, preserving the latest pair
+ok 126 - ZAI read uses exact chat identity and batch, preserving the latest pair
+  ---
+  duration_ms: 2.676658
+  type: 'test'
+  ...
+# Subtest: Wrong scope never gets history text or sends a batch
+ok 127 - Wrong scope never gets history text or sends a batch
+  ---
+  duration_ms: 2.41459
+  type: 'test'
+  ...
+# Subtest: Invalid ref rejects before any site request
+ok 128 - Invalid ref rejects before any site request
+  ---
+  duration_ms: 1.1359
+  type: 'test'
+  ...
+# Subtest: 429 respects Retry-After and does not retry
+ok 129 - 429 respects Retry-After and does not retry
+  ---
+  duration_ms: 2.448168
+  type: 'test'
+  ...
+# Subtest: Two simulated profile contexts maintain independent auth scope
+ok 130 - Two simulated profile contexts maintain independent auth scope
+  ---
+  duration_ms: 5.95426
+  type: 'test'
+  ...
+# Subtest: Judge refuses malformed model and never opens a tab
+ok 131 - Judge refuses malformed model and never opens a tab
+  ---
+  duration_ms: 2.363476
+  type: 'test'
+  ...
+# Subtest: Judge account mismatch is a durable no-click rejection
+ok 132 - Judge account mismatch is a durable no-click rejection
+  ---
+  duration_ms: 2.409311
+  type: 'test'
+  ...
+# Subtest: ZAI judge submits only to a new owned tab, with one native-correlated click
+ok 133 - ZAI judge submits only to a new owned tab, with one native-correlated click
+  ---
+  duration_ms: 3.330291
+  type: 'test'
+  ...
+# Subtest: Unknown ZAI judge click cannot be repeated even with same request id
+ok 134 - Unknown ZAI judge click cannot be repeated even with same request id
+  ---
+  duration_ms: 2.538206
+  type: 'test'
+  ...
+# Subtest: ZAI existing-chat send rejects malformed identity without clicks
+ok 135 - ZAI existing-chat send rejects malformed identity without clicks
+  ---
+  duration_ms: 1.684059
+  type: 'test'
+  ...
+# Subtest: ZAI existing-chat send refuses incomplete last native run
+ok 136 - ZAI existing-chat send refuses incomplete last native run
+  ---
+  duration_ms: 4.243841
+  type: 'test'
+  ...
+# Subtest: A fresh ZAI account with no chats still has a SHA-256 scope
+ok 137 - A fresh ZAI account with no chats still has a SHA-256 scope
+  ---
+  duration_ms: 1.741287
+  type: 'test'
+  ...
+# Subtest: Incorrect ZAI account scope never fetches chat list
+ok 138 - Incorrect ZAI account scope never fetches chat list
+  ---
+  duration_ms: 1.827823
+  type: 'test'
+  ...
+# Subtest: ZAI exact-chat sender clicks once, then confirms only a new native user ID
+ok 139 - ZAI exact-chat sender clicks once, then confirms only a new native user ID
+  ---
+  duration_ms: 2.120943
+  type: 'test'
+  ...
+# Subtest: ZAI exact-chat sender does not retry an uncertain click
+ok 140 - ZAI exact-chat sender does not retry an uncertain click
+  ---
+  duration_ms: 1.558933
+  type: 'test'
+  ...
+# Subtest: ZAI judge admits a tab while Chrome still reports loading but composer is ready
+ok 141 - ZAI judge admits a tab while Chrome still reports loading but composer is ready
+  ---
+  duration_ms: 3.885602
+  type: 'test'
+  ...
+1..141
+# tests 141
+# suites 0
+# pass 141
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 739.530545

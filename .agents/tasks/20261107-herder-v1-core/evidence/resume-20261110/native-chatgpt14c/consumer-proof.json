@@ -1,0 +1,108 @@
+{
+  "original_unknown_preserved": true,
+  "resends": 0,
+  "evidence": {
+    "read": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/read-after-1794345172185.json",
+      "sha256": "5e05596db3a787c8629e6e446575e340237ee97070547d950ecf99a1b792c393"
+    },
+    "raw": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/raw-after-1794345236532.json",
+      "sha256": "6c83c4d77a6f40c1e3e41fe0f114c2b0cc671896fcc97be2f588da30c512b17c"
+    },
+    "search": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/search-after-1794345298883.json",
+      "sha256": "36b3d1b57255eb45a2321e4f6fe012f8a8eb617edeb6ed476166dc24606f3b1a"
+    },
+    "context": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/context-after-1794345339340.json",
+      "sha256": "8a0a9375de9e65519ef1dbcf10c383c1e9873e6104325ee9a9fcdc9ca9fc3c1d"
+    },
+    "second": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/second-existing-result.json",
+      "sha256": "95c75216983a47224ed2b3a593c964224e3e4a733072c3f62a930503d70b3c71"
+    },
+    "archive": {
+      "private_file": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/native-chatgpt14c/archive-existing-result.json",
+      "sha256": "37efc3c6fb7bb583b6c4cdd32816061c3a999c9ffac88a1d33ae5d61b741616e"
+    }
+  },
+  "source_vs_install_vs_consumer": "installed exact0.9.34; source fixtures separate; native14c completed; native14e first receipt unresolved",
+  "read": {
+    "session_ref": "session:a889c197ec95d6108fd38fcb48edc9ce",
+    "complete": false,
+    "messages": [
+      {
+        "id": "21658394-e0e6-4409-9d3f-4c9de10b1b03",
+        "role": "user",
+        "text": "Это техническая проверка Agent Herder. Ответь ровно одной строкой: HERDER_NATIVE14C_FIRST_OK",
+        "endTurn": false,
+        "completionStatus": "finished_successfully"
+      },
+      {
+        "id": "1b54bb83-7e3d-400e-831d-6acd5f293105",
+        "role": "assistant",
+        "text": "HERDER_NATIVE14C_FIRST_OK",
+        "endTurn": true,
+        "completionStatus": "finished_successfully"
+      },
+      {
+        "id": "57e82db3-291e-4486-81e0-8e7877db5749",
+        "role": "user",
+        "text": "Это второе сообщение технической проверки. Ответь ровно одной строкой: HERDER_NATIVE14C_SECOND_OK",
+        "endTurn": false,
+        "completionStatus": "finished_successfully"
+      },
+      {
+        "id": "99634f50-41e6-4c08-b9a3-3c94eabe0bdb",
+        "role": "assistant",
+        "text": "HERDER_NATIVE14C_SECOND_OK",
+        "endTurn": true,
+        "completionStatus": "finished_successfully"
+      }
+    ]
+  },
+  "raw": {
+    "format": "native",
+    "complete": false,
+    "timestampCoverage": "partial",
+    "limitations": [
+      "partial_capture",
+      "Native snapshot completeness is not established."
+    ],
+    "source": {
+      "format": "json",
+      "kind": "native-api",
+      "location": "https://chatgpt.com/c/6af3844e-cd34-83ea-b8f2-b6a70510bec3"
+    }
+  },
+  "search": {
+    "complete": false,
+    "coverage": "partial",
+    "total_hits": 1,
+    "target_hit": true
+  },
+  "context": {
+    "session_ref": "session:a889c197ec95d6108fd38fcb48edc9ce",
+    "instance_ref": "chatgpt-userio-vk-browser",
+    "harness": "chatgpt",
+    "address": {
+      "instance": {
+        "instance_id": "chatgpt-userio-vk-browser",
+        "node": "roomhacker-server-100"
+      },
+      "native_session_id": "6af3844e-cd34-83ea-b8f2-b6a70510bec3"
+    },
+    "principal_ref": "local-owner",
+    "identity_source": "authorized_explicit_session_ref"
+  },
+  "second": {
+    "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"57e82db3-291e-4486-81e0-8e7877db5749\"}",
+    "outcome": "confirmed"
+  },
+  "archive": {
+    "archived": true,
+    "effect": "confirmed",
+    "session_ref": "session:a889c197ec95d6108fd38fcb48edc9ce"
+  }
+}

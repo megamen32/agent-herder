@@ -1,0 +1,32 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"address\":{\"instance\":{\"instance_id\":\"chatgpt-userio-vk-browser\",\"node\":\"roomhacker-server-100\"},\"native_session_id\":\"6af3844e-cd34-83ea-b8f2-b6a70510bec3\"},\"harness\":\"chatgpt\",\"identity_source\":\"authorized_native_registration\",\"is_self\":false,\"message_target\":{\"action\":\"session\",\"session_ref\":\"session:a889c197ec95d6108fd38fcb48edc9ce\",\"tool\":\"deliver\"},\"registered\":true,\"replayed\":false,\"session_ref\":\"session:a889c197ec95d6108fd38fcb48edc9ce\",\"workspace\":null,\"workspace_revision\":0,\"workspace_source\":\"session_declaration\"}"
+    }
+  ],
+  "structuredContent": {
+    "address": {
+      "instance": {
+        "instance_id": "chatgpt-userio-vk-browser",
+        "node": "roomhacker-server-100"
+      },
+      "native_session_id": "6af3844e-cd34-83ea-b8f2-b6a70510bec3"
+    },
+    "harness": "chatgpt",
+    "identity_source": "authorized_native_registration",
+    "is_self": false,
+    "message_target": {
+      "action": "session",
+      "session_ref": "session:a889c197ec95d6108fd38fcb48edc9ce",
+      "tool": "deliver"
+    },
+    "registered": true,
+    "replayed": false,
+    "session_ref": "session:a889c197ec95d6108fd38fcb48edc9ce",
+    "workspace": null,
+    "workspace_revision": 0,
+    "workspace_source": "session_declaration"
+  },
+  "isError": false
+}

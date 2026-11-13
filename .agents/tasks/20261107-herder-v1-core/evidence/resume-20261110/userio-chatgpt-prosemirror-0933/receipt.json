@@ -1,0 +1,14 @@
+{
+  "source_commit": "14c31a5581ed23652508a32c6806a79578501c5c",
+  "version": "0.9.33",
+  "zip_sha256": "f6b3ebf8eda568b2abde5fa3faf266e6aa3983e8c244730325413e4f45931640",
+  "archives": [
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension.zip",
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension-mv3.zip"
+  ],
+  "tests": "137 extension tests PASS before exact Send fallback; focused final selector tests PASS; 4 package checks PASS",
+  "fixture": "ProseMirror without id and exact aria-label Send path; ambiguous editor rejected with bounded structural no-effect metadata",
+  "integration": "prior normal-fixed and UNKNOWN fixture PASS before final button fallback; final fallback verified in focused test",
+  "native": "selector based on owner AX evidence; end-to-end native send not yet verified",
+  "installed": false
+}

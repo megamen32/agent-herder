@@ -1,0 +1,54 @@
+TAP version 13
+# Subtest: ZAI never observes anonymous identities or accounts on auth page
+not ok 1 - ZAI never observes anonymous identities or accounts on auth page
+  ---
+  duration_ms: 10.147904
+  type: 'test'
+  location: '/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai.test.mjs:59:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai.test.mjs:64:44)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: ZAI uses authenticated native requests without exposing the token
+not ok 2 - ZAI uses authenticated native requests without exposing the token
+  ---
+  duration_ms: 1.886951
+  type: 'test'
+  location: '/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai.test.mjs:68:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai.test.mjs:70:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 97.492661

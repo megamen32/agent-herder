@@ -1,0 +1,22 @@
+{
+  "source_commit": "2aabd643b445740f9a32c32a1bf7b5a8affe3d53",
+  "source_tree": "7f24cc488767cbc4680b5b9a271d3dfd17e54b5a",
+  "version": "0.9.31",
+  "zip_sha256": "630c337a4fff62e66c56a66be04429c13ffc7c3ee77fcc30d2d9dc1ced2cee86",
+  "archives": [
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension.zip",
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension-mv3.zip"
+  ],
+  "committed_paths": [
+    "extensions/vk-inbox/lib/zai.js",
+    "extensions/vk-inbox/manifest.json",
+    "extensions/vk-inbox/tests/zai-lifecycle.test.mjs",
+    "src/universal_userio/static/vk-userio-extension-mv3.zip",
+    "src/universal_userio/static/vk-userio-extension.zip"
+  ],
+  "extension_tests": "132 passed",
+  "package_tests": "4 passed",
+  "red": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/userio-zai-archive-0931/red.log",
+  "fixture": "real archive page function executed with fake provider; exact identity, scope, before/after and no-toggle tests",
+  "deployment": "not installed"
+}

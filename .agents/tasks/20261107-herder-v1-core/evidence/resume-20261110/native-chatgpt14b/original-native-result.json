@@ -1,0 +1,15 @@
+[
+  {
+    "id": "vk-browser:b3283394684847058c0aab0ecc460ef8",
+    "action": "gpt_first_send",
+    "agent_id": "vk-browser",
+    "agent_instance_id": "browser-f7d876d5-cdde-4302-a217-89d2f67ca020",
+    "principal_id": "user_785be2f2b49c41698dd89ad00de36905",
+    "connection_id": "legacy-default",
+    "received_at": 1794343158.7078252,
+    "result": {
+      "ok": false,
+      "error": "composer_not_empty_or_ready"
+    }
+  }
+]

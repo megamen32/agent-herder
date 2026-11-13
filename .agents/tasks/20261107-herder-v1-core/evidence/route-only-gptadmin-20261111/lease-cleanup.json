@@ -1,0 +1,12 @@
+{
+  "schema": "project-release-lease.cleanup.v1",
+  "generated_at": "2026-11-11T07:03:14Z",
+  "project": "/home/roomhacker/gptadmin/.git",
+  "prior_fence": 80,
+  "prior_state": "expired",
+  "deployment_in_progress": false,
+  "cleanup_fence": 81,
+  "result": "released",
+  "lease_present_after": false,
+  "temporary_capability_removed": true
+}

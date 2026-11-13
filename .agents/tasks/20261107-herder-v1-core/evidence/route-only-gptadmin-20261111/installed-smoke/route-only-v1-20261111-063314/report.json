@@ -1,0 +1,77 @@
+{
+  "mode": "installed-browser",
+  "stage": "installed",
+  "run_id": "route-only-v1-20261111-063314",
+  "source_sha": "f6a6898b4c47054d93c970752e0cdb6dc32ebe5d",
+  "status": "FAIL",
+  "identity": "UNKNOWN",
+  "model_effects": "NOT_SUBMITTED",
+  "functional_status": "FAIL",
+  "global_inventory_status": "UNVERIFIED",
+  "browser_cleanup": "NOT_CREATED",
+  "lanes": {
+    "chatgpt": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "zai": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "opencode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "codex": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "zcode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    }
+  },
+  "error_code": "installed_process_identity_unproven",
+  "transport_cleanup_ref": "/var/lib/agent-herder-ci-smoke/runs/route-only-v1-20261111-063314/0001-owned-transport-cleanup.json",
+  "transport_cleanup": "PASS"
+}

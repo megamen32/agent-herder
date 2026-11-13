@@ -1,0 +1,14 @@
+{
+  "store": "/etc/gptadmin/tasks_state.sqlite (read-only SQL json_extract of metadata)",
+  "records": {
+    "cdc33191d42ab8899fcbe7e7efebfa3a": {"storedrecordexists": true, "callerPresent": false, "callerFieldsPresent": false, "receiptTargetParent": true, "receiptTargetChild": false, "ownerMatchesHost": true, "toolIsMcpCall": true, "currentCallerEquality": false},
+    "9a648c13fc3de10f7ff388c0f10d74a3": {"storedrecordexists": true, "callerPresent": false, "callerFieldsPresent": false, "receiptTargetParent": true, "receiptTargetChild": false, "ownerMatchesHost": true, "toolIsMcpCall": true, "currentCallerEquality": false}
+  },
+  "currentNativeClient": {"managedRecordPresent": true, "tokenDigestMatches": true, "profileBound": true, "wildcardGrant": true, "parentGrant": true, "childGrant": true},
+  "installed_initial_observation": {"build": "1135", "commit": "3edaa13569c2654bcc669c78a0f19d64924ef57c"},
+  "installed_latest_observation": {"build": "1137", "commit": "0924d789be5ae61ea2c2053c35fd311453de9fbe", "changed_by_this_task": false},
+  "root_cause": "Build 1135 non-filesystem-ACL child path invokes wrapper passing nil request; both recorded callers absent. Main commit 7d2c715 propagates request, included in installed build 1137. Previously created receipts remain without identity; no retroactive recovery can be inferred.",
+  "locality": "stored owner server matches local hostname and record is in local store; no evidence peer dispatch was used",
+  "validation": "go test ./internal/hub -run TestChildOnlyProfile|TestExecutionOriginChildMCPCallPreservesKnownCaller|TestCodeModeTasks -count=1 passed after adding foreign client and stale profile tasks/get negatives; no live task replay",
+  "candidate_status": "unpublished; leaf target fix addresses separately demonstrated child-only profile fixture, not root cause for wildcard-profile incident"
+}

@@ -15,3 +15,4 @@ Corrected candidate:
 - Both 0.9.27 ZIPs: SHA256 e968104369ed507b14bcb708d7ca2a54c055a047e83d1e581cdde147724940cf.
 
 Production was re-read after the build and remains backend container b57726c95aa99039f90a6040435a4d743b5c5a4f0a3a2d503e5628cf5a393c01, running on image 19be11dd.... No deploy/restart was performed. Lead may use the corrected tag only after its normal lease and immediate live-ID/image preflight. This receipt makes no installation or consumer acceptance claim.
+

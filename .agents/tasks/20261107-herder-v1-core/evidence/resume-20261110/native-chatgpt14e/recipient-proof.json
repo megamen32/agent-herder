@@ -1,0 +1,11 @@
+{
+  "result": "confirmed_by_native_recipient_readback",
+  "session_ref": "session:ceb2abee24440d0b84e0669989f98e6b",
+  "native_chat": "6af38bef-b9d8-83ea-9c40-97947037a928",
+  "native_user_id": "0ae5172f-7e6d-41fc-9feb-e33103ecbc0d",
+  "native_assistant_id": "2332d710-3abf-49de-9280-a51972f71906",
+  "assistant_terminal": true,
+  "native_send_count": 1,
+  "original_core_unknown_preserved": true,
+  "resends": 0
+}

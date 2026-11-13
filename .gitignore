@@ -43,6 +43,13 @@ integrations/opencode/*.release-*.js
 .agents/tasks/*/.lhc-publication/
 .agents/tasks/*/.lhc-leaves.lock
 .agents/tasks/*/.lhc-graph-publication-*/
+.agents/tasks/*/.lhc-bugs.lock
+
+# Browser proof inputs kept next to their receipts: the screenshots and the
+# SHA256 manifests are the tracked evidence, the raw profile state and the
+# unpacked extension copies are inputs of that proof, not the proof itself.
+.agents/tasks/*/evidence/**/profile-*/
+.agents/tasks/*/evidence/**/extension-*/
 
 # Generated index allowlist of the fleet indexer (ServersAdministartion).
 .xerjignore

@@ -1,0 +1,76 @@
+{
+  "schema": "route-only-gptadmin.final.v1",
+  "generated_at": "2026-11-11T07:03:14Z",
+  "owner_session": "01a1c8ec-072a-7c80-86cd-ae57e8369397",
+  "workflow": "manual execution; LHC not used per owner instruction",
+  "source_and_tests": {
+    "commit": "f15dcbc5e9f129d902ca8e58b3d113af7280bd63",
+    "changed_files": 5,
+    "hub_test_command": "go test ./internal/hub -count=1",
+    "hub_test_result": "PASS (prior worker handoff)",
+    "artifact_path": "/tmp/gptadmin-child-route-fix/.tmp/route-only-catalog-1140/gptadmin-node-linux-amd64.tar.gz/gptadmin-node-linux-amd64.tar.gz",
+    "artifact_sha256": "0a1722e9bb534db74c4df80db5d9ad7205378eafb2b4e0dba3e864f57019fa5f",
+    "artifact_source_dirty": false
+  },
+  "publication": {
+    "repository": "github.com/megamen32/gptadmin.git",
+    "remote": "origin/main",
+    "remote_commit": "f15dcbc5e9f129d902ca8e58b3d113af7280bd63",
+    "push": "fast_forward",
+    "previous_remote_commit": "e1a25541cbd7369da2cc428f956e378ddfa0d968"
+  },
+  "live_install": {
+    "current": "/opt/gptadmin-node/versions/f15dcbc5e9f129d902ca8e58b3d113af7280bd63-1",
+    "build_version": "1140",
+    "service": "gptadmin-hub.service",
+    "service_state": "active",
+    "version_http": 200,
+    "healthz_http": 200
+  },
+  "public_consumer_readback": {
+    "endpoint": "https://mcp.bezrabotnyi.com/server/vibemacminilocal/mcp",
+    "initialize_http": 200,
+    "tools_list_http": 200,
+    "tools_list_count": 27,
+    "list_pages_http": 200,
+    "list_pages_error": false,
+    "retarget_tool_hidden_from_public_logical_route": true
+  },
+  "installed_smoke": {
+    "stale_source_attempt": {
+      "run_id": "route-only-v1-20261111-063314",
+      "expected_source_sha": "f6a6898b4c47054d93c970752e0cdb6dc32ebe5d",
+      "identity": "UNKNOWN",
+      "error_code": "installed_process_identity_unproven",
+      "model_effects": "NOT_SUBMITTED",
+      "owned_process_cleanup": "PASS"
+    },
+    "current_source_attempt": {
+      "run_id": "route-only-v1-20261111-063642",
+      "expected_source_sha": "bba8b81e433853d1d8dc843646000c6f4cfa4b64",
+      "identity": "PASS",
+      "error_code": "transport_or_provider_failure",
+      "model_effects": "NOT_SUBMITTED",
+      "owned_process_cleanup": "PASS",
+      "lane_checks": "UNKNOWN before lane execution",
+      "blocker": "installed ChatGPT/Z.ai/browser provider preflight; no model request was submitted"
+    },
+    "full_five_lane_acceptance": "INCOMPLETE"
+  },
+  "evidence_paths": {
+    "smoke_runs": "installed-smoke/",
+    "artifact": "/tmp/gptadmin-child-route-fix/.tmp/route-only-catalog-1140/gptadmin-node-linux-amd64.tar.gz/gptadmin-node-linux-amd64.tar.gz",
+    "release_proof": "/home/roomhacker/.local/state/agent-herder/gptadmin-route-only-release-proof.json"
+  },
+  "overall_route_delivery": "PASS",
+  "overall_herder_v1_acceptance": "INCOMPLETE due installed provider preflight blocker",
+  "lease_cleanup": {
+    "project": "/home/roomhacker/gptadmin/.git",
+    "expired_prior_fence": 80,
+    "deployment_in_progress_before_cleanup": false,
+    "cleanup_fence": 81,
+    "cleanup_result": "released",
+    "lease_present_after_cleanup": false,
+    "capability_files_removed": true
+  }
+}

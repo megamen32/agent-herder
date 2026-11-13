@@ -1,0 +1,6 @@
+window_count 4 profile Carevio
+window_filter false false length 0
+window_filter false false length 0
+window_filter false false length 0
+window_filter true true length 61
+profile Carevio versions ["0.9.33", "~/Загрузки/Universal-UserIO-Agent-0.9.11"]

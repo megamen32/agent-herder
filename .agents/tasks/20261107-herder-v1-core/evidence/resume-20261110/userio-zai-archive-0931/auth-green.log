@@ -1,0 +1,160 @@
+TAP version 13
+# Subtest: raw preserves exact native response bodies and refuses wrong scope
+ok 1 - raw preserves exact native response bodies and refuses wrong scope
+  ---
+  duration_ms: 10.341417
+  type: 'test'
+  ...
+# Subtest: archive checks scope and readback and does not toggle twice
+ok 2 - archive checks scope and readback and does not toggle twice
+  ---
+  duration_ms: 3.013851
+  type: 'test'
+  ...
+# Subtest: archive returns no confirmation for changed identity or unconfirmed readback
+ok 3 - archive returns no confirmation for changed identity or unconfirmed readback
+  ---
+  duration_ms: 7.8065
+  type: 'test'
+  ...
+# Subtest: first send confirms native identities once and refuses replay after uncertain click
+ok 4 - first send confirms native identities once and refuses replay after uncertain click
+  ---
+  duration_ms: 2.656802
+  type: 'test'
+  ...
+# Subtest: first send executes the page function against a fake DOM and verifies native admission
+ok 5 - first send executes the page function against a fake DOM and verifies native admission
+  ---
+  duration_ms: 173.301401
+  type: 'test'
+  ...
+# Subtest: ZAI never observes anonymous identities or accounts on auth page
+ok 6 - ZAI never observes anonymous identities or accounts on auth page
+  ---
+  duration_ms: 10.351343
+  type: 'test'
+  ...
+# Subtest: ZAI uses authenticated native requests without exposing the token
+ok 7 - ZAI uses authenticated native requests without exposing the token
+  ---
+  duration_ms: 9.536293
+  type: 'test'
+  ...
+# Subtest: ZAI list is scoped and returns native IDs without browser secrets
+ok 8 - ZAI list is scoped and returns native IDs without browser secrets
+  ---
+  duration_ms: 1.695132
+  type: 'test'
+  ...
+# Subtest: ZAI observes actual identity without granting a connection and preserves explicit binding
+ok 9 - ZAI observes actual identity without granting a connection and preserves explicit binding
+  ---
+  duration_ms: 3.811963
+  type: 'test'
+  ...
+# Subtest: ZAI read uses exact chat identity and batch, preserving the latest pair
+ok 10 - ZAI read uses exact chat identity and batch, preserving the latest pair
+  ---
+  duration_ms: 2.385869
+  type: 'test'
+  ...
+# Subtest: Wrong scope never gets history text or sends a batch
+ok 11 - Wrong scope never gets history text or sends a batch
+  ---
+  duration_ms: 1.77723
+  type: 'test'
+  ...
+# Subtest: Invalid ref rejects before any site request
+ok 12 - Invalid ref rejects before any site request
+  ---
+  duration_ms: 0.906344
+  type: 'test'
+  ...
+# Subtest: 429 respects Retry-After and does not retry
+ok 13 - 429 respects Retry-After and does not retry
+  ---
+  duration_ms: 1.899503
+  type: 'test'
+  ...
+# Subtest: Two simulated profile contexts maintain independent auth scope
+ok 14 - Two simulated profile contexts maintain independent auth scope
+  ---
+  duration_ms: 4.860136
+  type: 'test'
+  ...
+# Subtest: Judge refuses malformed model and never opens a tab
+ok 15 - Judge refuses malformed model and never opens a tab
+  ---
+  duration_ms: 1.90898
+  type: 'test'
+  ...
+# Subtest: Judge account mismatch is a durable no-click rejection
+ok 16 - Judge account mismatch is a durable no-click rejection
+  ---
+  duration_ms: 2.249813
+  type: 'test'
+  ...
+# Subtest: ZAI judge submits only to a new owned tab, with one native-correlated click
+ok 17 - ZAI judge submits only to a new owned tab, with one native-correlated click
+  ---
+  duration_ms: 3.464211
+  type: 'test'
+  ...
+# Subtest: Unknown ZAI judge click cannot be repeated even with same request id
+ok 18 - Unknown ZAI judge click cannot be repeated even with same request id
+  ---
+  duration_ms: 3.802607
+  type: 'test'
+  ...
+# Subtest: ZAI existing-chat send rejects malformed identity without clicks
+ok 19 - ZAI existing-chat send rejects malformed identity without clicks
+  ---
+  duration_ms: 2.690932
+  type: 'test'
+  ...
+# Subtest: ZAI existing-chat send refuses incomplete last native run
+ok 20 - ZAI existing-chat send refuses incomplete last native run
+  ---
+  duration_ms: 4.979149
+  type: 'test'
+  ...
+# Subtest: A fresh ZAI account with no chats still has a SHA-256 scope
+ok 21 - A fresh ZAI account with no chats still has a SHA-256 scope
+  ---
+  duration_ms: 2.573421
+  type: 'test'
+  ...
+# Subtest: Incorrect ZAI account scope never fetches chat list
+ok 22 - Incorrect ZAI account scope never fetches chat list
+  ---
+  duration_ms: 1.801028
+  type: 'test'
+  ...
+# Subtest: ZAI exact-chat sender clicks once, then confirms only a new native user ID
+ok 23 - ZAI exact-chat sender clicks once, then confirms only a new native user ID
+  ---
+  duration_ms: 1.803498
+  type: 'test'
+  ...
+# Subtest: ZAI exact-chat sender does not retry an uncertain click
+ok 24 - ZAI exact-chat sender does not retry an uncertain click
+  ---
+  duration_ms: 1.545416
+  type: 'test'
+  ...
+# Subtest: ZAI judge admits a tab while Chrome still reports loading but composer is ready
+ok 25 - ZAI judge admits a tab while Chrome still reports loading but composer is ready
+  ---
+  duration_ms: 3.309699
+  type: 'test'
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 280.635667

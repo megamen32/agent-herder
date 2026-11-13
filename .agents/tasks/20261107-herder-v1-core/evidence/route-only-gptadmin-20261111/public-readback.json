@@ -1,0 +1,28 @@
+{
+  "schema": "gptadmin.public-route.readback.v1",
+  "generated_at": "2026-11-11T07:03:14Z",
+  "endpoint": "https://mcp.bezrabotnyi.com/server/vibemacminilocal/mcp",
+  "initialize": {
+    "http": 200,
+    "result": true
+  },
+  "tools_list": {
+    "http": 200,
+    "tool_count": 27,
+    "has_list_pages": true
+  },
+  "tools_call_list_pages": {
+    "http": 200,
+    "is_error": false
+  },
+  "version": {
+    "http": 200,
+    "build_version": "1140",
+    "git_commit": "f15dcbc5e9f129d902ca8e58b3d113af7280bd63",
+    "ok": true
+  },
+  "healthz": {
+    "http": 200,
+    "ok": true
+  }
+}

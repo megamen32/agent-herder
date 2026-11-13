@@ -1,0 +1,8 @@
+{
+  "original": "native-chatgpt14b",
+  "native_command": "vk-browser:b3283394684847058c0aab0ecc460ef8",
+  "receipt": "composer_not_empty_or_ready before write",
+  "new_source": "14c31a5581ed23652508a32c6806a79578501c5c",
+  "new_extension": "0.9.33",
+  "no_replay": "new distinct canary after confirmed pre-click refusal; old UNKNOWN retained"
+}
