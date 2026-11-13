@@ -3,14 +3,13 @@
   "preferredHarness": "codex",
   "models": {
     "codex": "gpt-6.1-sol",
-    "opencode": "omniroute/minimax-combo-m3.1",
+    "opencode": "omniroute/cx/gpt-6-luna",
     "zcode": "account:zai-individual-coding-plan/GLM-5.3-Flash$high"
   },
   "fallbackModels": {
     "opencode": [
       "omniroute/glm-5.3-flash-minimax-m3.1",
-      "omniroute/minimax-combo-m3.1",
-      "minimax-coding-plan/MiniMax-M3.1-Flash"
+      "omniroute/minimax-combo-m3.1"
     ]
   }
 }

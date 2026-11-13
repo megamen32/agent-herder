@@ -33,9 +33,9 @@ describe("family blacklist without allowedModels", () => {
     try {
       const p = {...policy, projectRoutes:{"/workspace/TelegramAuto": {...route, models:{opencode:"omniroute/cx/gpt-6-luna"}}}};
       const run = vi.fn(async (request) => ({ok:true, created:true, harness:request.harness, name:"test", cwd:request.cwd, sessionId:"local-fixture", inputId:request.inputId, delivery:"accepted" as const, model:request.model}));
-      const result = await dispatchProjectLaunch({[NOTICEPLACE_HEALTH_AUTHORIZED]:true, policy:p, project:"/workspace/TelegramAuto/src", cwd:"/workspace/TelegramAuto/src", message:"fixture", operationId:"explicit", harness:"opencode", model:"minimax-coding-plan/MiniMax-old"}, new ProjectLaunchAttemptLog(join(dir,"attempts.json")), run);
+      const result = await dispatchProjectLaunch({[NOTICEPLACE_HEALTH_AUTHORIZED]:true, policy:p, project:"/workspace/TelegramAuto/src", cwd:"/workspace/TelegramAuto/src", message:"fixture", operationId:"explicit", harness:"opencode", model:"minimax-coding-plan/MiniMax-M3.1-Flash"}, new ProjectLaunchAttemptLog(join(dir,"attempts.json")), run);
       expect(result.outcome).toBe("accepted");
-      expect(run.mock.calls[0]?.[0]).toMatchObject({harness:"opencode", model:"minimax-coding-plan/MiniMax-old"});
+      expect(run.mock.calls[0]?.[0]).toMatchObject({harness:"opencode", model:"minimax-coding-plan/MiniMax-M3.1-Flash"});
     } finally { await rm(dir, {recursive:true, force:true}); }
   });
   it.each([['omniroute','cx/gpt-6-luna'], ['openai-codex','gpt-6-luna'], ['vendor','claude-opus'], ['anthropic','unknown']])('denies forbidden leaf %s/%s', (providerId, modelId) => {
@@ -44,16 +44,15 @@ describe("family blacklist without allowedModels", () => {
   it.each([['unknown-vendor','new-model'], ['zai','GLM-new'], ['minimax','MiniMax-new']])('allows confirmed non-forbidden leaf %s/%s', (providerId, modelId) => {
     expect(leafLaunchVerdict({providerId, modelId}, {prohibitionsEnabled: true})).toBe('allowed');
   });
-  it("uses the fully qualified owner-selected global incident route and accepts project exceptions", () => {
-    const execution = { runtime: "opencode", provider: "omniroute", model: "omniroute/cx/gpt-6-luna", reasoning: "default", topic: "health" } as const;
+  it("keeps the direct incident route separate while accepting project exceptions", () => {
+    const execution = { runtime: "opencode", provider: "minimax-coding-plan", model: "MiniMax-M3.1-Flash", reasoning: "default", topic: "health" } as const;
     expect(INCIDENT_EXECUTION).toEqual(execution);
     expect(normalizeIncidentExecution(execution)).toEqual(execution);
-    expect(normalizeIncidentExecution({runtime:"opencode", provider:"minimax-coding-plan", model:"MiniMax-M3.1-Flash", reasoning:"default", topic:"health"}).model).toBe("MiniMax-M3.1-Flash");
-    expect(normalizeIncidentExecution({...execution, model:"zai/GLM-new"}).model).toBe("zai/GLM-new");
-    expect(healthModelForHarness("opencode", execution)).toBe("omniroute/cx/gpt-6-luna");
-    expect(healthModelForHarness("opencode", {...execution, model:"cx/gpt-6-luna"})).toBe("omniroute/cx/gpt-6-luna");
-    for (const model of [execution.model, "zai/GLM-new", "minimax-coding-plan/MiniMax-new"]) {
-      expect(validateNoticeplaceHealthLaunch({harness: "opencode", model, operationId: "op"})).toBeUndefined();
+    expect(healthModelForHarness("opencode", execution)).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
+    expect(() => normalizeIncidentExecution({...execution, model:"zai/GLM-new"})).toThrow(/model/);
+    expect(validateNoticeplaceHealthLaunch({harness: "opencode", model: "minimax-coding-plan/MiniMax-M3.1-Flash", operationId: "op"})).toBeUndefined();
+    for (const model of ["zai/GLM-new", "minimax-coding-plan/MiniMax-new"]) {
+      expect(validateNoticeplaceHealthLaunch({harness: "opencode", model, operationId: "op"})).toBeTruthy();
     }
   });
   it.each(["gpt-6-luna", "omniroute/cx/gpt-6-luna", "opencode/gpt-6-luna", "vendor/a/Claude-4-sonnet"])("denies %s", model => {
@@ -73,7 +72,7 @@ describe("family blacklist without allowedModels", () => {
       const run = vi.fn(async (request) => ({ok:true, created:true, harness:"opencode" as const, name:"test", cwd:request.cwd, sessionId:"local-fixture", inputId:request.inputId, delivery:"accepted" as const, model:request.model}));
       const result = await dispatchProjectLaunch({[NOTICEPLACE_HEALTH_AUTHORIZED]:true, policy, project:"/workspace/TelegramAuto", cwd:"/workspace/TelegramAuto", message:"fixture", operationId:"r23-fixture", harness:"opencode", model:"omniroute/cx/gpt-6-luna"}, new ProjectLaunchAttemptLog(join(dir,"attempts.json")), run);
       expect(result.outcome).toBe("no_harness");
-      expect(result.routingReasonCode).toBe("model_not_permitted_for_project");
+      expect(result.routingReasonCode).toBe("incident_scope_not_permitted");
       expect(run).not.toHaveBeenCalled();
     } finally { await rm(dir, {recursive:true, force:true}); }
   });
@@ -118,10 +117,10 @@ describe("family blacklist without allowedModels", () => {
       const log = new ProjectLaunchAttemptLog(join(dir,"attempts.json"));
       const result = await dispatchProjectLaunch(request, log, run);
       expect(result.outcome).toBe("accepted");
-      expect(run.mock.calls[0]?.[0].model).toBe("omniroute/cx/gpt-6-luna");
+      expect(run.mock.calls[0]?.[0].model).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
       const replay = await dispatchProjectLaunch({...request, policy:{...p, incidentExecution:{...INCIDENT_EXECUTION, provider:"minimax-coding-plan", model:"MiniMax-M3.1-Flash"}}}, log, run);
       expect(replay.outcome).toBe("accepted");
-      expect(replay.model).toBe("omniroute/cx/gpt-6-luna");
+      expect(replay.model).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
       expect(run).toHaveBeenCalledOnce();
     } finally { await rm(dir, {recursive:true, force:true}); }
   });

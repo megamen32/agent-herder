@@ -160,6 +160,11 @@ function parseOmniRouteComboCatalog(value: unknown): OmniRouteCombo[] | undefine
       const member = objectRecord(rawMember);
       const providerId = nonEmptyString(member?.providerId);
       const model = nonEmptyString(member?.model);
+      const comboName = nonEmptyString(member?.comboName);
+      if (member?.kind === "combo-ref" && comboName && !providerId && !model) {
+        models.push({ providerId: "combo", model: comboName });
+        continue;
+      }
       if (!providerId || !model) return undefined;
       models.push({ providerId, model });
     }
