@@ -36,8 +36,9 @@ it("retains and continues one exact failed OpenCode turn through ordinary recove
       meta: { nativeLastTurn: { turnId: "native-failed", userMessageId: "native-user", status: "failed", completedAt, retryable: true, pendingInput: false,
         userMessageMatchesLatest: true, assistantSucceeded: false, progressedAfterFailure: false, cancelledByUser: false } } };
     let sends = 0;
+    let sentModel: string | undefined;
     const adapter = { type: "opencode", name: "OpenCode fixture", listSessions: async () => [current], getSession: async () => current,
-      resumeSession: async () => ({ ok: true }), sendMessage: async () => { sends += 1; return { ok: true, admitted: true }; },
+      resumeSession: async () => ({ ok: true }), sendMessage: async (_id: string, options: { model?: string }) => { sends += 1; sentModel = options.model; return { ok: true, admitted: true }; },
       getSessionMessages: async () => [{ id: "native-user", role: "user", text: "Finish marker", parts: [] }],
     } as unknown as HarnessAdapter;
     const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
@@ -46,6 +47,7 @@ it("retains and continues one exact failed OpenCode turn through ordinary recove
     const launcher = new UnfinishedSessionLauncher({ adapters: new Map([["opencode", adapter]]), store, settingsStore: settings, retryDelayMs: 1 });
     await launcher.recoverPending();
     expect(sends).toBe(1);
+    expect(sentModel).toBeUndefined();
     expect((await store.list())[0]?.acceptedAt).toBeTruthy();
     await launcher.recoverPending();
     expect(sends).toBe(1);

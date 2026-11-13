@@ -575,6 +575,9 @@ it("controls v2 turns, lineage, recovery, permissions and models", async () => {
     expect(await adapter.cancelTurn("ses_running")).toEqual({ ok: true });
     expect(state.calls.some((call) => call.path === "/api/session/ses_running/interrupt?resume=false" && call.method === "POST")).toBe(true);
 
+    expect(await adapter.resumeSession("ses_running")).toEqual({ ok: true });
+    expect(state.calls.some((call) => call.path === "/api/experimental/session/ses_running/wait" && call.method === "POST")).toBe(true);
+
     const children = await adapter.listChildren("ses_root");
     expect(children.map((child) => child.id)).toEqual(["ses_running"]);
     expect(state.calls.some((call) => call.path.includes("parentID=ses_root"))).toBe(true);

@@ -381,7 +381,10 @@ export class OpenCodeAdapter implements HarnessAdapter {
       : {
         cancelTurn: true,
         detach: true,
-        resume: false,
+        // Recovery uses the native wait boundary and then sends the durable
+        // continuation through the existing queue path. It keeps the session
+        // and selected model intact; it never forks or selects a replacement.
+        resume: true,
         terminate: false,
         recover: true,
         fork: true,
@@ -827,6 +830,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async stopSession(id: string): Promise<{ ok: boolean; error?: string }> {
     return this.cancelTurn(id);
+  }
+
+  /** Re-arm the same OpenCode session without changing its selected model. */
+  async resumeSession(id: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await this.client.waitForIdle(id);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async cancelTurn(id: string): Promise<ControlResult> {
