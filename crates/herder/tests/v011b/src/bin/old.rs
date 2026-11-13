@@ -1,8 +1,8 @@
 use std::io::{self, BufRead, Write};
 
-// Compile the actual V011A implementation, adding only a file-backed test constructor.
+// Compile the pinned original V011A implementation; current modules have newer dependencies.
 mod store {
-    include!("../../../../src/store/mod.rs");
+    include!("../../frozen-v011a/mod.rs");
 
     impl Writer {
         pub fn test_file(path: &str) -> Result<Self> {

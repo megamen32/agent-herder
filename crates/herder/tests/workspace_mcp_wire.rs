@@ -18,6 +18,7 @@ use rmcp::service::ServiceExt;
 use serde_json::{Value, json};
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -41,6 +42,7 @@ impl Fixture {
                 .as_nanos()
         ));
         fs::create_dir_all(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
         let root = fs::canonicalize(root).unwrap();
         let authority = StorageAuthority {
             storage_id: StorageId("wire-test-storage".into()),
