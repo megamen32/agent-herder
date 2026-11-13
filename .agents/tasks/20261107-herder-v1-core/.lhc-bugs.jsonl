@@ -49,3 +49,4 @@
 {"action": "resolve", "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6", "at": "2026-11-10T21:54:38+00:00", "id": "CHATGPT_FIRST_COMPOSER_20261110", "sha256": "8ce715de7cae97dd15f4c359edd1518284e6dabe576553fca5297e27b13dc8b6", "status": "fixed"}
 {"action": "resolve", "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6", "at": "2026-11-10T21:54:38+00:00", "id": "ZAI_NATIVE_AUTH_ARCHIVE_20261110", "sha256": "9c846d2cd1d29746b9476ab3afbd802effdbc0237f8f446afabf4aba52a3c8b9", "status": "fixed"}
 {"action": "resolve", "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6", "at": "2026-11-10T21:58:29+00:00", "id": "CONNECTED_LONG_READ_20261110", "sha256": "82262bb7e11e89dc2c0736412229fba69ccd702e6d53125bb908f1efb14d8154", "status": "fixed"}
+{"action": "register", "actor": "current", "at": "2026-11-13T23:32:44+00:00", "id": "LOCAL_NODE_MCP_READ_20261114", "sha256": "c6bfa975e6aa0c0ec843d1e7d09e02dabdeadb105148957a561f3abcc524a05e", "status": "open"}
