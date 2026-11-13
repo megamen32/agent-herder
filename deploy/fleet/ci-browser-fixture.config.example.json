@@ -13,6 +13,7 @@
     "profile_path": "/home/roomhacker/.local/state/agent-herder/ci-ui-browser-20261109",
     "extensions_path": "/home/roomhacker/.local/share/vibebrowser/extension-20261031",
     "extra_extension_paths": [],
+    "cdp_screenshot_new_surface": false,
     "session": "herderci1109",
     "namespace": "herderci1109",
     "idle_timeout_ms": 0

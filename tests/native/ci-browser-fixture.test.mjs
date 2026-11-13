@@ -16,10 +16,12 @@ const config = () => ({schema: 'agent-herder.ci-browser-fixture.v1', runtime_uid
 const processes = c => ({
   daemon: {pid: 10, ppid: 1, uid: 1000, start_ticks: '100', executable: '/owned/agent-browser', executable_sha256: sha,
     argv: ['/owned/agent-browser'], env: {AGENT_BROWSER_PROFILE: c.browser.profile_path,
+      ...(c.browser.cdp_screenshot_new_surface === true ? {AGENT_BROWSER_ARGS: '--enable-features=CDPScreenshotNewSurface'} : {}),
       AGENT_BROWSER_EXTENSIONS: browserExtensionPaths(c).join(','), AGENT_BROWSER_SESSION: c.browser.session,
       AGENT_BROWSER_NAMESPACE: c.browser.namespace, AGENT_BROWSER_IDLE_TIMEOUT_MS: '0'}},
   browser: {pid: 11, ppid: 10, uid: 1000, start_ticks: '110', executable: '/owned/chrome', executable_sha256: sha,
-    argv: ['/owned/chrome', '--user-data-dir=' + c.browser.profile_path, '--load-extension=' + browserExtensionPaths(c).join(',')]},
+    argv: ['/owned/chrome', '--user-data-dir=' + c.browser.profile_path, '--load-extension=' + browserExtensionPaths(c).join(','),
+      '--enable-features=NetworkService,NetworkServiceInProcess' + (c.browser.cdp_screenshot_new_surface === true ? ',CDPScreenshotNewSurface' : '')]},
   relay: {pid: 12, ppid: 1, uid: 1000, start_ticks: '90', executable: '/owned/node', executable_sha256: sha,
     argv: ['/owned/node', c.relay.script_path], env: {VIBE_MCP_AGENT_PORT: '19898', VIBE_MCP_EXTENSION_PORT: '19899',
       VIBE_MCP_STATE_DIR: c.relay.state_dir}, listening_ports: [19898, 19899], loopback_only: true},
@@ -89,6 +91,41 @@ test('multi-extension process proof rejects missing, extra and duplicated paths 
   const single = config(), duplicate = processes(single);
   duplicate.browser.argv.push('--load-extension=' + single.browser.extensions_path);
   assert.throws(() => assertProcessBindings(single, duplicate), {code: 'fixture_browser_profile_mismatch'});
+});
+
+test('optional new-surface screenshot mode pins the supported native launch argument', () => {
+  const c = config(); c.browser.cdp_screenshot_new_surface = true;
+  assert.equal(validateConfig(c), c);
+  assert.equal(browserEnvironment(c, {AGENT_BROWSER_ARGS: '--foreign'}).AGENT_BROWSER_ARGS,
+    '--enable-features=CDPScreenshotNewSurface');
+  assert.doesNotThrow(() => assertProcessBindings(c, processes(c)));
+  for (const value of [undefined, false]) {
+    const legacy = config(); legacy.browser.cdp_screenshot_new_surface = value;
+    assert.equal(validateConfig(legacy), legacy);
+    assert.equal(browserEnvironment(legacy, {AGENT_BROWSER_ARGS: '--foreign'}).AGENT_BROWSER_ARGS, undefined);
+    assert.doesNotThrow(() => assertProcessBindings(legacy, processes(legacy)));
+  }
+  for (const value of [null, 'true', 1]) {
+    const bad = config(); bad.browser.cdp_screenshot_new_surface = value;
+    assert.throws(() => validateConfig(bad), {code: 'dedicated_browser_config_required'});
+  }
+});
+
+test('new-surface mode rejects missing, shadowed or disabled native feature arguments', () => {
+  const c = config(); c.browser.cdp_screenshot_new_surface = true;
+  for (const mutate of [
+    p => {p.browser.argv.pop();},
+    p => {p.browser.argv.push('--enable-features=Other');},
+    p => {p.browser.argv.push('--disable-features=Other, CDPScreenshotNewSurface');},
+    p => {p.browser.argv.push('--disable-features=CDPScreenshotNewSurface:parameter/value');},
+  ]) {
+    const p = processes(c); mutate(p);
+    assert.throws(() => assertProcessBindings(c, p), {code: 'fixture_browser_feature_mismatch'});
+  }
+  const wrongEnv = processes(c); delete wrongEnv.daemon.env.AGENT_BROWSER_ARGS;
+  assert.throws(() => assertProcessBindings(c, wrongEnv), {code: 'fixture_daemon_environment_mismatch'});
+  const baseline = processes(c); baseline.browser.argv.push('--disable-features=Other');
+  assert.doesNotThrow(() => assertProcessBindings(c, baseline));
 });
 
 test('proc stat handles names with spaces and parentheses', () => {
