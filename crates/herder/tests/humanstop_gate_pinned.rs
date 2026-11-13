@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "../src/application/target_gate.rs"]
 mod target_gate;
 use std::{
@@ -15,7 +15,7 @@ impl Drop for Dir {
 }
 #[test]
 fn pinned_gate_rejects_replaced_linked_or_public_inode_and_serializes() {
-    let path = std::env::temp_dir().join(format!(
+    let path = std::env::temp_dir().canonicalize().unwrap().join(format!(
         "herder-pinned-{}-{}",
         std::process::id(),
         SystemTime::now()
@@ -58,7 +58,7 @@ fn pinned_gate_rejects_replaced_linked_or_public_inode_and_serializes() {
 
 #[test]
 fn guard_drop_unlocks_even_when_descriptor_was_inherited() {
-    let path = std::env::temp_dir().join(format!(
+    let path = std::env::temp_dir().canonicalize().unwrap().join(format!(
         "herder-gate-dup-{}-{}",
         std::process::id(),
         SystemTime::now()

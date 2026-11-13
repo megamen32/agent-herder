@@ -111,7 +111,7 @@ impl Writer {
     /// transaction as its native create receipt. The gate must already have
     /// been held before the native create and remains held through this commit.
     /// Imported/parented sessions have no proven handoff and are refused.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) fn commit_created_scoped_root(
         &mut self,
         gate: &crate::application::target_gate::PinnedTargetGateGuard,

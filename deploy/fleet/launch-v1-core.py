@@ -42,6 +42,11 @@ def prepare(selector):
     for key in ('core', 'compat', 'node', 'bootstrap'):
         if digest(manifest[key]) != manifest['sha256'][key]:
             raise ValueError('artifact digest mismatch: ' + key)
+    if 'resource_bridge' in manifest:
+        path = Path(manifest['resource_bridge'])
+        if (not path.is_absolute() or path.resolve() != path or not os.access(path, os.X_OK)
+                or digest(path) != manifest['sha256']['resource_bridge']):
+            raise ValueError('resource bridge digest mismatch')
     for kind, path in manifest['adapters'].items():
         if digest(path) != manifest['sha256']['adapters'][kind]:
             raise ValueError('adapter digest mismatch: ' + kind)
@@ -101,14 +106,43 @@ def prepare(selector):
         'source_commit': manifest['source_commit'], 'core_sha256': manifest['sha256']['core'],
         'profiles': profiles, 'argv': argv,
         'process_worker_sha256': manifest.get('sha256', {}).get('process_worker'),
+        'resource_bridge_sha256': manifest.get('sha256', {}).get('resource_bridge'),
         'process_config_sha256': manifest.get('sha256', {}).get('process_config'),
     }
 
 
+
+def process_wait_query(selector, request):
+    selection = private_json(selector)
+    manifest_path = selection['manifest']
+    manifest = private_json(manifest_path)
+    if digest(manifest_path) != selection['manifest_sha256']:
+        raise ValueError('manifest digest mismatch')
+    if 'process_config' not in manifest:
+        print(json.dumps({'blocked': False, 'reason': 'process_wait_unconfigured',
+                          'sessionRefs': [], 'ruleRefs': []}, sort_keys=True))
+        return
+    if 'process_wait_reader' not in manifest:
+        print(json.dumps({'blocked': True, 'reason': 'process_wait_reader_unavailable',
+                          'sessionRefs': [], 'ruleRefs': []}, sort_keys=True))
+        return
+    path = Path(manifest['process_wait_reader'])
+    info = path.lstat()
+    if (not path.is_absolute() or path.resolve() != path or not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1
+            or digest(path) != manifest['sha256']['process_wait_reader']):
+        raise ValueError('process wait reader digest mismatch')
+    os.execve(sys.executable, [sys.executable, str(path), '--selector', selector, '--query', request],
+              dict(os.environ))
+
+
 def main():
-    if sys.argv[1:] not in ([], ['--check']):
-        raise ValueError('usage: agent-herder-v1 [--check]')
     selector = os.environ.get('HERDER_V1_ENTRY', str(Path.home() / '.config/agent-herder/v1-entry.json'))
+    if len(sys.argv) == 3 and sys.argv[1] == '--process-wait-status':
+        process_wait_query(selector, sys.argv[2])
+        return
+    if sys.argv[1:] not in ([], ['--check']):
+        raise ValueError('usage: agent-herder-v1 [--check | --process-wait-status JSON]')
     argv, env, receipt = prepare(selector)
     if sys.argv[1:] == ['--check']:
         print(json.dumps(receipt, sort_keys=True))

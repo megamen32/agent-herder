@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
 use herder::{
     application::process_bindings::{BindingHooks, Delegation, add_delegation, write_delegation},
@@ -21,7 +21,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("herder-binding-test-{}-{}", std::process::id(),
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!("herder-binding-test-{}-{}", std::process::id(),
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
         let resources = root.join("resource-authority");
         fs::create_dir_all(&resources).unwrap();
@@ -107,7 +107,7 @@ impl Fixture {
 
     fn launch(&self, record: &ExecutionRecord) {
         self.store.launch_prepared_with_backend(&record.execution_ref,
-            Path::new(env!("CARGO_BIN_EXE_herder_process_worker")), WorkerBackend::Direct).unwrap();
+            Path::new(env!("CARGO_BIN_EXE_herder_process_worker")), if cfg!(target_os = "macos") { WorkerBackend::LaunchdUser } else { WorkerBackend::Direct }).unwrap();
     }
 
     fn terminal(&self, execution_ref: &str) -> ExecutionRecord {

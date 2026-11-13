@@ -164,6 +164,70 @@ impl ProcessAutomationApplication {
             Ok(_)=>Ok(None),Err(e) if e.kind()==io::ErrorKind::NotFound=>Ok(None),Err(_)=>Err(())
         }
     }
+    /// Query only canonical metadata. Never contact a harness or reconcile a job.
+    fn wait_status(&self,identity:&ConnectionIdentity,native:&str,node:Option<&str>)->Result<Value,&'static str>{
+        let principal=self.principal(identity)?;
+        if native.is_empty() || native.len()>4096 || native.chars().any(char::is_control){return Err("invalid_native_session")}
+        let observed=super::mcp_deliver::utc_now().map_err(|_|"clock_unavailable")?;
+        let response=|blocked:bool,reason:&str,sessions:Vec<String>,rules:Vec<String>|json!({
+            "version":1,"configured":true,"complete":true,"blocked":blocked,"reason":reason,
+            "mapped":!sessions.is_empty(),"sessionRefs":sessions,"ruleRefs":rules,"observedAt":observed});
+        if node.is_some_and(|n|n!=self.instance.node.0){return Ok(response(true,"owner_node_mismatch",vec![],vec![]))}
+        let session={
+            let (_gate,writer)=self.authority.lock().map_err(|_|"scope_unavailable")?;
+            let global_held:bool=writer.connection().query_row(
+                "SELECT EXISTS(SELECT 1 FROM humanstop_holds WHERE scope_ref='global' AND released_at IS NULL) OR EXISTS(SELECT 1 FROM holds WHERE session_ref='global' AND released_at IS NULL)",
+                [],|r|r.get(0)).map_err(|_|"store_unavailable")?;
+            if global_held{return Ok(response(true,"human_stop_active",vec![],vec![]))}
+            let mut stmt=writer.connection().prepare("SELECT session_ref FROM session_bindings WHERE node_ref=?1 AND instance_id=?2 AND native_session_id=?3").map_err(|_|"store_unavailable")?;
+            let rows=stmt.query_map(rusqlite::params![self.instance.node.0,self.instance.instance_id,native],|r|r.get::<_,String>(0))
+                .map_err(|_|"store_unavailable")?.collect::<Result<Vec<_>,_>>().map_err(|_|"store_unavailable")?;
+            match rows.as_slice(){
+                []=>return Ok(response(false,"native_session_not_registered",vec![],vec![])),
+                [session]=>session.clone(),
+                _=>return Ok(response(true,"ambiguous_native_session",rows,vec![])),
+            }
+        };
+        let grants=self.grants(identity,&SessionRef(session.clone()))?;
+        let (_,scope_generation)=self.authority.resolve_session_read(identity,&grants,&SessionRef(session.clone()),&self.instance).map_err(|_|"session_unavailable")?;
+        // Hold the registration gate through the snapshot, including rules
+        // whose durable admission precedes their initial armed state.
+        let (_gate,writer)=self.authority.lock().map_err(|_|"scope_unavailable")?;
+        let still_bound:bool=writer.connection().query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_bindings b JOIN humanstop_sessions s ON s.session_ref=b.session_ref WHERE b.session_ref=?1 AND b.node_ref=?2 AND b.instance_id=?3 AND b.native_session_id=?4 AND s.authority_generation=?5 AND s.scope_generation=?6)",
+            rusqlite::params![session,self.instance.node.0,self.instance.instance_id,native,self.authority.generation,scope_generation],|r|r.get(0)).map_err(|_|"store_unavailable")?;
+        if !still_bound{return Err("session_binding_changed")}
+        let held:bool=writer.connection().query_row(
+            "SELECT EXISTS(SELECT 1 FROM humanstop_holds WHERE released_at IS NULL AND (scope_ref='global' OR scope_ref=('session:'||?1) OR scope_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1))) OR EXISTS(SELECT 1 FROM holds WHERE released_at IS NULL AND (session_ref='global' OR session_ref=?1 OR session_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1)))",
+            [&session],|r|r.get(0)).map_err(|_|"store_unavailable")?;
+        if held{return Ok(response(true,"human_stop_active",vec![session],vec![]))}
+        let scope=Self::scope(principal);
+        let rows={
+            let mut stmt=writer.connection().prepare("SELECT setting_key,value_json FROM settings WHERE scope=?1 AND setting_key LIKE 'rule:%'").map_err(|_|"store_unavailable")?;
+            let rows=stmt.query_map([&scope],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))
+                .map_err(|_|"store_unavailable")?.collect::<Result<Vec<_>,_>>().map_err(|_|"store_unavailable")?;
+            rows
+        };
+        let mut blocked=Vec::new();
+        for (key,raw) in rows{
+            let rule:ProcessRule=serde_json::from_str(&raw).map_err(|_|"store_unavailable")?;
+            if rule.version!=1 || rule.principal!=principal || key!=Self::rule_key(&rule.rule_ref){return Err("invalid_process_rule")}
+            if rule.session_ref!=session{continue}
+            let Some(raw)=writer.get_setting(&scope,&Self::state_key(&rule.rule_ref)).map_err(|_|"store_unavailable")? else{blocked.push(rule.rule_ref);continue};
+            let state:WaitState=serde_json::from_str(&raw).map_err(|_|"store_unavailable")?;
+            if !matches!(state.phase.as_str(),"prepared"|"armed"|"dispatching"|"waiting_receipt"|"delivery_unknown"|"ready"|"confirmed"|"cancelled"|"paused"|"rejected"){return Err("invalid_wait_state")}
+            let complete=self.store.status(&rule.execution_ref).ok().is_some_and(|snapshot|{
+                let record=snapshot.record;
+                record.principal_ref==principal && record.session_ref==session && record.execution_ref==rule.execution_ref
+                    && record.node_ref==self.config.node_ref && !record.finalization_pending
+                    && record.receipt.is_some_and(|receipt|receipt.execution_ref==rule.execution_ref
+                        && receipt.node_ref==self.config.node_ref && receipt.tree_complete && !receipt.process_may_be_running)
+            });
+            if !complete || !matches!(state.phase.as_str(),"ready"|"confirmed"|"cancelled"){blocked.push(rule.rule_ref)}
+        }
+        blocked.sort();
+        Ok(response(!blocked.is_empty(),if blocked.is_empty(){"no_process_wait"}else{"process_wait_active"},vec![session],blocked))
+    }
     fn prepare(&self,rule:&ProcessRule)->Result<(),&'static str>{
         match &rule.execution{
             catalog::ProcessExecution::Start{argv,cwd,deadline_unix_ms,stop_grace_ms}=>{
@@ -232,6 +296,31 @@ impl ProcessAutomationApplication {
             .optional().map_err(|_|"store_unavailable")
     }
     /// Resume only an explicit persisted registration. Read/discovery cannot launch work.
+    /// Serialize process launch admission with HumanStop. The worker owns an
+    /// already admitted execution after this bounded supervisor call returns.
+    fn admit_prepared_launch(&self,identity:&ConnectionIdentity,grants:&[Grant],rule:&ProcessRule,
+        expected_revision:u64,expected_cancel_generation:u64)->Result<bool,&'static str>{
+        let (address,generation)=self.authority.resolve_session(identity,grants,
+            &SessionRef(rule.session_ref.clone()),&self.instance).map_err(|_|"session_stopped_or_unavailable")?;
+        let (_gate,writer)=self.authority.lock().map_err(|_|"scope_unavailable")?;
+        let (revision,raw)=writer.get_setting_versioned(&Self::scope(&rule.principal),&Self::state_key(&rule.rule_ref))
+            .map_err(|_|"store_unavailable")?.ok_or("wait_state_missing")?;
+        let state:WaitState=serde_json::from_str(&raw).map_err(|_|"store_unavailable")?;
+        if revision!=expected_revision || state.cancel_generation!=expected_cancel_generation || state.settled(){
+            return Ok(false);
+        }
+        let key=Self::task_key(rule);
+        let binding=super::ReceiptBinding{intent_id:"process-launch",principal:&rule.principal,
+            target_ref:&rule.session_ref,request_key:&key,address:&address};
+        if !super::scope_allowed(writer.connection(),&binding,&generation,&self.authority.generation)
+            .map_err(|_|"session_stopped_or_unavailable")?{
+            return Ok(false);
+        }
+        // Keep the exact canonical gate through the supervisor's launch
+        // admission, so a stop that wins this gate prevents a new command.
+        self.store.launch_prepared(&rule.execution_ref,&self.config.worker).map_err(|_|"execution_launch_unavailable")?;
+        Ok(true)
+    }
     async fn reconcile_rule(&self,identity:&ConnectionIdentity,rule:&ProcessRule,inline:bool)->Result<Value,&'static str>{
         let grants=self.grants(identity,&SessionRef(rule.session_ref.clone()))?;
         let dir=self.store.execution_directory(&rule.execution_ref).map_err(|_|"execution_unavailable")?;
@@ -242,14 +331,25 @@ impl ProcessAutomationApplication {
         let (mut revision,mut state)=self.read_state(rule)?;
         let initial=self.store.status(&rule.execution_ref).map_err(|_|"execution_unavailable")?;
         if initial.record.state==process::ExecutionState::Prepared{
-            // HumanStop applies before process creation as well as before native wake.
-            self.authority.resolve_session(identity,&grants,&SessionRef(rule.session_ref.clone()),&self.instance)
-                .map_err(|_|"session_stopped_or_unavailable")?;
-            self.prepare(rule)?;
-            self.store.launch_prepared(&rule.execution_ref,&self.config.worker).map_err(|_|"execution_launch_unavailable")?;
-            if !state.settled(){state.phase="armed".into()}
-            if !self.state_cas(rule,revision,&state)?{return self.snapshot_value(rule)}
-            (revision,state)=self.read_state(rule)?;
+            if state.phase=="cancelled" {
+                // A cancelled wait may release only a command that the launch
+                // and worker gates prove was never admitted. Attach and any
+                // uncertain launch retain their process and lease evidence.
+                match self.store.try_cancel_unlaunched(&rule.execution_ref).map_err(|_|"execution_reconcile_unavailable")?{
+                    process::UnlaunchedCancellation::Cancelled(_)
+                    | process::UnlaunchedCancellation::AlreadyTerminal(_)=>{},
+                    process::UnlaunchedCancellation::NotProven(_)=>return self.snapshot_value(rule),
+                }
+            } else {
+                if state.settled(){return self.snapshot_value(rule)}
+                self.prepare(rule)?;
+                if !self.admit_prepared_launch(identity,&grants,rule,revision,state.cancel_generation)?{
+                    return self.snapshot_value(rule);
+                }
+                state.phase="armed".into();
+                if !self.state_cas(rule,revision,&state)?{return self.snapshot_value(rule)}
+                (revision,state)=self.read_state(rule)?;
+            }
         }
         if state.phase=="prepared" && initial.record.state!=process::ExecutionState::Prepared {
             state.phase="armed".into();
@@ -279,22 +379,26 @@ impl ProcessAutomationApplication {
             if !self.state_cas(rule,revision,&state)?{return self.snapshot_value(rule)}
             return self.snapshot_value(rule);
         }
-        if let Some(intent)=self.intent_state(rule)? {
+        if let Some(mut intent)=self.intent_state(rule)? {
             state.delivery_task=Some(Self::task_id(rule));
-            match intent.as_str(){
-                "confirmed"=>state.phase="confirmed".into(),
-                "unknown"=>state.phase="delivery_unknown".into(),
-                "rejected"=>state.phase="rejected".into(),
-                "admitted"=>{
-                    state.phase="waiting_receipt".into();
-                    let reconciler=self.reconciler.clone();
-                    let identity=identity.clone();let grants=grants.clone();let task=Self::task_id(rule);
-                    let policy=self.policy.clone();
-                    let _=tokio::task::spawn_blocking(move||reconciler.reconcile(identity,grants,task,Some(policy))).await;
-                },
-                "prepared"|"dispatching"=>state.phase="delivery_unknown".into(),
-                _=>return Err("delivery_state_invalid"),
+            if matches!(intent.as_str(),"admitted"|"unknown"|"dispatching"){
+                // Recover an exact native admission after a lost ACK. This
+                // seam reads receipts only and cannot submit another wake.
+                let reconciler=self.reconciler.clone();
+                let identity=identity.clone();let grants=grants.clone();let task=Self::task_id(rule);
+                let policy=self.policy.clone();
+                let _=tokio::task::spawn_blocking(move||reconciler.reconcile(identity,grants,task,Some(policy))).await;
+                intent=self.intent_state(rule)?.ok_or("delivery_intent_missing")?;
             }
+            state.phase=match intent.as_str(){
+                "confirmed"=>"confirmed",
+                "rejected"=>"rejected",
+                "admitted"=>"waiting_receipt",
+                "unknown"|"prepared"|"dispatching"=>"delivery_unknown",
+                _=>return Err("delivery_state_invalid"),
+            }.into();
+            // HumanStop or an explicit wait cancellation may have changed
+            // the state while receipt verification ran; CAS preserves it.
             let _=self.state_cas(rule,revision,&state)?;
             return self.snapshot_value(rule);
         }
@@ -427,6 +531,7 @@ impl ApplicationPort for ProcessAutomationApplication{
     fn call<'a>(&'a self,identity:&'a ConnectionIdentity,request:catalog::Request)->ApplicationFuture<'a>{
         Box::pin(async move{
             let result=match request{
+                catalog::Request::Automation(catalog::Automation::WaitStatus{native_session_id,node_ref,..})=>self.wait_status(identity,&native_session_id,node_ref.as_deref()),
                 catalog::Request::Resource(catalog::Resource::Bind{execution_ref,binding})=>self.bind(identity,&execution_ref,binding),
                 catalog::Request::Automation(catalog::Automation::Create{session_ref,rule:catalog::AutomationRule::ProcessCompletion{execution,bindings,wake_message},request_key})=>
                     self.create(identity,session_ref,execution,bindings,wake_message,request_key).await,

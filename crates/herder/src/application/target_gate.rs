@@ -24,13 +24,13 @@ impl Drop for TargetGateGuard {
 
 /// A verified pin; unlike the raw fixture guard it cannot be constructed
 /// without the inode, ownership and permission checks below.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub struct PinnedTargetGateGuard {
     guard: TargetGateGuard,
     path: std::path::PathBuf,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl PinnedTargetGateGuard {
     pub(crate) fn identity(&self) -> io::Result<(u64, u64)> {
         use std::os::unix::fs::MetadataExt;
@@ -61,9 +61,9 @@ pub fn try_acquire(file: File) -> io::Result<TargetGateGuard> {
 
 /// Open only a pre-provisioned, singly linked gate under a private directory.
 /// Expected device/inode must be loaded from the same authoritative SQLite
-/// store, never supplied by an MCP request. Linux only; callers must still
+/// store, never supplied by an MCP request. Supported Unix callers must still
 /// recheck authority and holds under the acquired guard before a native write.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn acquire_pinned(
     path: &std::path::Path,
     device: u64,
@@ -73,7 +73,7 @@ pub fn acquire_pinned(
 }
 
 /// Wait for the same pinned gate, without polling, before recording a stop.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn acquire_pinned_wait(
     path: &std::path::Path,
     device: u64,
@@ -82,7 +82,7 @@ pub fn acquire_pinned_wait(
     acquire_pinned_inner(path, device, inode, true)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn acquire_pinned_inner(
     path: &std::path::Path,
     device: u64,
@@ -114,11 +114,11 @@ fn acquire_pinned_inner(
     {
         return Err(invalid());
     }
-    // Linux O_NOFOLLOW: reject a symlink at the last component.
+    // The platform O_NOFOLLOW rejects a symlink at the last component.
     let file = OpenOptions::new()
         .read(true)
         .write(true)
-        .custom_flags(0x20000)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path)?;
     let check = |metadata: std::fs::Metadata| {
         metadata.is_file()

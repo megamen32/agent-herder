@@ -30,15 +30,17 @@ pub mod application {
     pub mod resource;
     pub mod settings;
     pub mod workspace;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod process_bindings;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub mod project_release_bridge;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod process_evidence;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod process_resources;
     pub mod target;
     pub mod target_gate;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod scoped_stop;
     pub mod reconcile;
 }
@@ -55,7 +57,7 @@ pub mod domain {
     pub mod transcript;
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod process;
 
 pub mod error;

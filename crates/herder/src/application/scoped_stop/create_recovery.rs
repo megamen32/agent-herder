@@ -26,13 +26,13 @@ pub enum RecoveredCreate {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Receipt {
-    version: u8,
-    request_key: String,
-    instance: InstanceRef,
-    native_session_id: String,
-    session_ref: String,
-    parent_ref: Option<String>,
+pub(super) struct Receipt {
+    pub(super) version: u8,
+    pub(super) request_key: String,
+    pub(super) instance: InstanceRef,
+    pub(super) native_session_id: String,
+    pub(super) session_ref: String,
+    pub(super) parent_ref: Option<String>,
 }
 
 impl ScopedAuthority {

@@ -1,3 +1,4 @@
+import { processWaitBlocks, type ProcessWaitSource } from "./process-wait-gate.js";
 import type { RecoveryAdmission, RecoveryAdmissionGate } from "./autopilot/recovery-admission.js";
 import { getHarnessRuntimeCapabilities } from "./types/harness-runtime.js";
 import type { OperatorCohortEnrollmentResult, OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget } from "./autopilot/unfinished-session-launcher.js";
@@ -68,6 +69,7 @@ export interface SpawnRecordInput {
 }
 
 export interface SessionSupervisorOptions {
+  processWaits?: ProcessWaitSource;
   humanStopStore?: HumanStopStore;
   /** How long a snapshot may be served before a background refresh starts. */
   sessionCacheTtlMs?: number;
@@ -180,7 +182,10 @@ export class SessionSupervisor {
     this.permissionNoticeObserver = options.permissionNoticeObserver;
     this.admissionGate = options.admissionGate;
     this.humanStops = options.humanStopStore ?? getHumanStopStore();
+    this.processWaits = options.processWaits;
   }
+
+  private readonly processWaits?: ProcessWaitSource;
 
   async isAutomationHeld(harness: string, id: string): Promise<boolean> {
     if (harness !== "codex" && harness !== "zcode" && harness !== "opencode") return false;
@@ -1430,10 +1435,13 @@ export class SessionSupervisor {
   }
 
   private async automaticNativeAdmission(adapter: HarnessAdapter, sessionId: string, operation: "resume" | "send" | "autopilot-send" | "create"): Promise<RecoveryAdmission> {
+    if (await processWaitBlocks(this.processWaits, adapter.type, sessionId)) return { allowed: false, reason: "process_wait_active" };
     if (!this.admissionGate) return { allowed: true };
     try {
-      return await this.admissionGate({ id: sessionId, harness: adapter.type,
+      const admission = await this.admissionGate({ id: sessionId, harness: adapter.type,
         cwd: "", hostId: localSessionHostId(), title: "", status: "error", lastActivity: new Date().toISOString(), needsPermission: false }, operation);
+      if (admission.allowed && await processWaitBlocks(this.processWaits, adapter.type, sessionId)) return { allowed: false, reason: "process_wait_active" };
+      return admission;
     } catch (error) {
       return { allowed: false, reason: error instanceof Error ? error.message : "Fleet admission check failed before native work" };
     }

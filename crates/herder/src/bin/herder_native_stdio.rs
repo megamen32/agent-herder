@@ -1,39 +1,39 @@
 //! Native MCP stdio entrypoint.
 use std::{env, io, sync::Arc};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_opencode.rs"]
 mod owner_opencode;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_multi.rs"]
 mod owner_multi;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_reads.rs"]
 mod owner_reads;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_registration.rs"]
 mod owner_registration;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_launch.rs"]
 mod owner_launch;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_policy.rs"]
 mod owner_policy;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/native_reader.rs"]
 mod native_reader;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/scoped_profile.rs"]
 mod scoped_profile;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_enroll.rs"]
 mod owner_enroll;
 
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args_os().skip(1);
     match args.next() {
         None => transport::serve_stdio().await,
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         Some(flag) if flag == "--trusted-owner-profile" => {
             let path = args.next().ok_or_else(|| {
                 io::Error::new(
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 owner_multi::serve(profiles).await
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         Some(flag) if flag == "--enroll-existing-owner-profile" => {
             let path = args.next().ok_or("--enroll-existing-owner-profile requires a path")?;
             let selection = args.next().ok_or(
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let path = args.next().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "--config requires a path")
             })?;
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             let scoped = match args.next() {
                 None => None,
                 Some(flag) if flag == "--scoped-profile" => {
@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let application = Arc::new(ConfigApplication::new(config, Vec::new()));
             // Keep the verified authority alive for the eventual authenticated
             // scoped application. This launcher grants no caller identity.
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             let _scoped_authority = scoped;
             let server = NativeServer::with_application(Caller::Unknown, application);
             transport::serve_stdio_server(server).await

@@ -1,50 +1,80 @@
-# Process leases: native runtime rollout
+# Process leases: native runtime and rollout
 
-This runbook updates the existing Agent Herder public MCP on server-100. It packages the native core and its process worker together, keeps the currently pinned AHAP adapters, and installs one trusted process configuration. The worker is a companion executable of Herder, not a service or a second resume scheduler.
+Agent Herder owns supervised execution, generic resource claims, completion receipts and the decision to resume an agent. The process worker and resource bridge are immutable companion executables in the same release. Neither is a separate resume service.
 
-The release helper is **deploy/fleet/process-leases-candidate.py**. Run it as the account that owns the installed selector and profile files, currently roomhacker. It never restarts a child, sends an agent prompt, cancels a process, migrates an authority database, or replays an old wait. Install and rollback update configuration only; verify the running consumer after the explicit child restart.
+This runbook covers the native public MCP, the TypeScript automatic continuation gates, and the release coordinator. The user workflow is documented separately in [supervised-jobs.md](supervised-jobs.md).
 
-## Runtime baseline observed on 2026-11-13
+## Installed surfaces and reviewed baseline
 
-Re-read the actual configuration before rollout. Paths and hashes below identify the reviewed baseline; they are not a substitute for the helper's compare-and-swap checks.
+The following observations were made on server-100 on 2026-11-13. Re-read the selected configuration and process identity before any release.
 
-| Surface | Actual entry or state | Rollout consequence |
+| Surface | Actual entry or state | Consequence |
 | --- | --- | --- |
-| Public native MCP | GPTAdmin child AgentHerder, endpoint https://mcp.bezrabotnyi.com/server/agentherder/mcp | This is the consumer to restart and probe. |
-| Installed launcher | /home/roomhacker/.local/bin/agent-herder-v1 | Python source without a .py extension. |
-| Child selector | /home/roomhacker/.config/agent-herder/gptadmin-entry.json | HERDER_V1_ENTRY in the child configuration selects this file. |
-| Default CLI selector | /home/roomhacker/.config/agent-herder/v1-entry.json | Independent file. Updating the child selector does not update default CLI calls. Use the explicit child selector for checks, and review any default-selector switch separately. |
-| Selected manifest | /home/roomhacker/herder-artifacts/releases/ahap-opencode-resume-bce62de3-v1/manifest.json | Baseline manifest SHA256 4a711887a69126c02ac870b42c896f806db312382f83120f998a45c00a1fe770. |
-| Pinned components | Core and browser adapter from a7fbc548; compat, Node, bootstrap, Codex and ZCode from cebecc13; OpenCode from bce62de3 | Preserve their component provenance. Only core, worker and process configuration change in this rollout. |
-| Existing profiles | Six: local Codex, remote44 Codex, noticeplace OpenCode, ChatGPT browser, ZCode, ZAI | Preserve exact profile paths, their content hashes, remote wrapper pins, and every existing DB path. |
-| Separate TS service | agent-herder.service, deployed source c9bc35a6, port 127.0.0.1:18787 | Restarting it does not replace the public Rust core. |
-| NoticePlace bridge | agent-herder-v1-noticeplace.service, deployed source b33f5b37, port 127.0.0.1:18797 | Existing bridge targets the public native MCP. No bridge replacement is required for the worker. |
+| Public native MCP | GPTAdmin child AgentHerder; https://mcp.bezrabotnyi.com/server/agentherder/mcp | Restart and probe this exact child. |
+| Launcher | /home/roomhacker/.local/bin/agent-herder-v1 | Python source without a .py extension. |
+| Child selector | /home/roomhacker/.config/agent-herder/gptadmin-entry.json | Selected by HERDER_V1_ENTRY in the child configuration. |
+| Default CLI selector | /home/roomhacker/.config/agent-herder/v1-entry.json | A different file; switching the public child does not switch the default CLI. |
+| Baseline manifest | /home/roomhacker/herder-artifacts/releases/ahap-opencode-resume-bce62de3-v1/manifest.json | SHA256 4a711887a69126c02ac870b42c896f806db312382f83120f998a45c00a1fe770. |
+| Composite components | Core and browser adapter a7fbc548; compat, Node, bootstrap, Codex and ZCode cebecc13; OpenCode bce62de3 | Preserve each component's provenance. The top manifest commit is not the running core commit. |
+| Trusted profiles | Six: local Codex, remote44 Codex, noticeplace OpenCode, ChatGPT browser, ZCode and ZAI | Preserve authority and wrapper pins. Only the explicit reviewed adapter transition creates new sibling profile paths. |
+| TypeScript service | agent-herder.service; source c9bc35a6; 127.0.0.1:18787 | Its scheduler code is a separate rollout. Restarting it does not replace the public Rust core. |
+| NoticePlace bridge | agent-herder-v1-noticeplace.service; source b33f5b37; 127.0.0.1:18797 | Its existing target is the native MCP. |
+| Fleet transport child | HerderFleet | Different authority from AgentHerder. Do not use a remapped fleet route for canonical process waits. |
 
-Do not use rollout-mcp-child.py for this native release. It addresses an older TypeScript child and a different deployment ledger.
+After the Hub restart, a read-only check observed compat PID 1954122 and native core PID 1954772, with the core directly parented by that compat. Their exact executable paths, profile arguments, selector environment and core digest matched the baseline. Earlier PIDs 2606612 and 2607240 no longer existed. These numbers are historical observations, not rollout inputs.
 
-The source worktree is based on fetched b371e9a0e57f12f44bf069ef5277e71afb81991f. The older local main change 98593d9c is retained separately until its behavior is assessed. A release must not replace newer installed components with a build from that older local main.
+Use process-leases-rollout.py inspect to verify freshly observed PIDs. It checks UID, Linux boot ID, process start ticks, parent relation, the executable through /proc, exact trusted-profile arguments, selected configuration, and stable identity before and after the read. It does not print arbitrary environment values.
+
+Do not use rollout-mcp-child.py for this release. That helper addresses an older TypeScript child. Preserve the separately retained local main change 98593d9c; an older checkout must not replace newer installed components.
 
 ## Candidate contract
 
-A candidate contains fixture/herder_native_stdio, fixture/herder_process_worker, fixture/launch-v1-core.py, fixture/process-runtime.json, manifest.json, selector.json, a build log and process-leases-build.json.
+deploy/fleet/process-leases-candidate.py builds and checks a clean committed source tree. Its install and rollback functions require an in-process admission from the continuously held rollout coordinator. Calling those commands directly does not bypass release ownership.
 
-The manifest pins both executable hashes and the configuration hash:
+A candidate contains:
 
-- process_worker, sha256.process_worker, environment HERDER_PROCESS_WORKER.
-- process_config, sha256.process_config, environment HERDER_PROCESS_CONFIG.
-- process-runtime.json contains version 1, the real execution node, the immutable worker path, common durable execution and resource roots, a local StorageAuthority, and administrators derived from the selected trusted owner profiles.
-- The current six profiles all use the principal local-owner. The helper records every profile hash and refuses installation if a profile changes after the candidate is built.
-- source_commit describes the new core and worker. Existing adapter provenance and remote AHAP wrapper descriptors are retained, with the base manifest and its digest recorded separately.
+- fixture/herder_native_stdio and fixture/herder_process_worker.
+- fixture/launch-v1-core.py and fixture/process-runtime.json.
+- fixture/process-wait-status.py when the source includes the read-only wait reader.
+- fixture/herder_resource_bridge when the source contains that Cargo bin.
+- manifest.json, selector.json, process-leases-build.json and the build log.
+- For an explicit adapter update: adapter-migration.json, check-selector.json, profile-payloads and the selected immutable AHAP bundles.
 
-Use stable store identities across releases. The example below uses a common local resource authority, not a per-build lease directory. Resource marker storage.json is exactly {"schema":"v1","storage_id":"herder-server-100-v1"}. The execution engine owns its store.json, including the node identity. Project-scoped resources additionally require an existing project marker; the helper never invents one.
+The manifest pins every new executable, reader and configuration digest. The worker is selected by process-runtime.json.worker, and the launcher passes the verified HERDER_PROCESS_CONFIG. HERDER_PROCESS_WORKER is not exported by the new launcher; an inherited override is cleared. An optional resource_bridge and sha256.resource_bridge pin the resource companion; the launcher also verifies that pin. A legacy source commit without the reader or resource bridge remains buildable.
 
-Candidate build and check validate roots without creating them. Install creates missing private roots and the resource marker only after saving a rollback receipt. Existing markers, canonical paths, ownership and private permissions must match. A nonempty unmarked store is rejected. Roots and resources/ use mode 0700, and storage.json uses 0600. Existing databases and profile files are not rewritten.
+The process configuration contains version 1, the real execution node, immutable worker path, durable execution root, local resource StorageAuthority and administrators from the selected trusted profiles. All six currently selected profiles use principal local-owner. Only configured administrators gain the process/resource capability; merely knowing a session identity does not grant it.
+
+Use stable store identities across releases. The resource marker storage.json is exactly:
+
+~~~json
+{"schema":"v1","storage_id":"herder-server-100-v1"}
+~~~
+
+The engine owns execution-root/store.json and its node identity. Project-scoped resources additionally require a pre-existing project marker. The candidate helper never invents project markers.
+
+Build and check validate state roots without provisioning them. Under the held release admission, install saves the rollback evidence before creating missing private roots and the resource marker. Existing canonical paths, UID, private modes and markers must match. Nonempty unmarked roots are refused. Directories use 0700 and storage.json uses 0600. Existing profiles and authority databases are never rewritten.
+
+The source_commit in a new manifest describes replaced components. Retained adapter provenance, remote wrapper descriptors and hashes remain intact. The base manifest and its digest are recorded separately. A production coordinator fetches origin/main and checks ancestry for each replaced component, including the actual prior core commit. It also rejects unreviewed adapter/profile/authority replacement. It does not compare a composite bundle's top-level adapter commit against the new core as if they were one binary.
+
+## Reviewed OpenCode and ZCode adapter transition
+
+The default build retains all adapter pins and profile paths. The paired release explicitly adds `--adapter-update opencode --adapter-update zcode`. Only these two kinds are accepted. The builder recompiles the workspace package and TypeScript runners into a new private directory, then reuses `deploy/fleet/build-v1-core.py`'s Rolldown bundler from the same clean commit. The copied Node executable remains the installed pin. Only the selected bundles enter the candidate; browser, Codex, compat, bootstrap and remote wrapper pins remain unchanged.
+
+`adapter-migration.json` is pinned by the main manifest. Its versioned `herder-ahap-profile-rebind` record contains the exact old/new adapter paths, SHA256 digests and component source commits, fresh compiler/bundler evidence, all old profile hashes, and each new profile/payload hash. Both the candidate checker and the release coordinator validate this typed transition. There is no generic profile-change exception. Main ancestry is checked separately for each replaced adapter, so a valid new core cannot discard newer installed adapter work.
+
+Build writes profile payloads only under the candidate. The planned installed profile is a new private sibling of its old profile, existing database and gate. The payload editor replaces only the JSON string token at `owner.ahap_script`. Every other byte, including database/gate/generation, principal/node/instance, model and environment strings, escaping, whitespace and line endings, remains identical. Duplicate JSON members, incomplete mappings, changed fields, non-sibling destinations and existing destination files are rejected.
+
+`check --staged-profiles` verifies the payload bindings through the pinned launcher without creating those siblings or starting a native adapter. Its receipt explicitly says `staged_payloads_not_installed`. Do not launch `check-selector.json` as a native authority: its payload paths are staging inputs. A real canary uses independently bootstrapped isolated authority/profile copies and the candidate adapter pins.
+
+During the continuously held release guard, install first records every planned profile creation in durable rollback evidence. It creates the siblings exclusively with mode 0400, verifies their exact bytes and actual manifest bindings, and only then performs launcher/selector CAS. Existing profiles and databases are never rewritten. A creation race, expired admission or partial failure preserves the unresolved rollout checkpoint; it does not overwrite a file, silently adopt a leftover sibling, replay a restart or manufacture success. Reviewed rollback selects the unchanged old profiles. It leaves any already created new siblings available for inspection.
+
+The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
+
+Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
 
 ## Build and inspect
 
-Complete the implementation review and meaningful native tests in the isolated worktree, then commit it. The release build requires a clean committed worktree before and after Cargo runs. Keep normal release ownership over the deployment target while installing; the helper's local selector lock does not replace that ownership.
-
-The parent directory of each chosen state root and of the candidate output must already exist. All paths must be absolute and canonical. Example on server-100:
+Commit the reviewed implementation first. The build rejects dirty source before or after Cargo runs. Candidate and state-root parents must already exist; paths must be absolute and canonical.
 
 ~~~sh
 HERDER_WORKTREE=/home/roomhacker/agents-projects/.worktrees/herder-process-leases-20261113
@@ -53,6 +83,10 @@ HERDER_BUNDLE="/home/roomhacker/herder-artifacts/releases/herder-process-leases-
 HERDER_SELECTOR=/home/roomhacker/.config/agent-herder/gptadmin-entry.json
 
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-test.py"
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-adapters-test.py"
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout-test.py"
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-wait-test.py"
+
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" build \
   --repo "$HERDER_WORKTREE" \
   --cargo /home/roomhacker/.cargo/bin/cargo \
@@ -62,106 +96,219 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" build \
   --node-ref roomhacker-server-100 \
   --execution-root /home/roomhacker/.local/state/agent-herder/process-executions \
   --resource-root /home/roomhacker/.local/state/agent-herder/resource-authority \
-  --storage-id herder-server-100-v1
+  --storage-id herder-server-100-v1 \
+  --adapter-update opencode --adapter-update zcode
 
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" check \
   --selector "$HERDER_BUNDLE/selector.json" \
-  --launcher "$HERDER_BUNDLE/fixture/launch-v1-core.py"
+  --launcher "$HERDER_BUNDLE/fixture/launch-v1-core.py" \
+  --staged-profiles
 ~~~
 
-The helper runs cargo build --locked --release for herder_native_stdio and herder_process_worker in the same source tree, with a separate Cargo target directory. It hashes the copied binaries, checks source and selector stability, and calls only the launcher's preparation function. Candidate checks do not initialize a native harness or contact a remote owner.
+Omit the two adapter-update flags for a core-only candidate that retains existing adapters/profiles. Staged checking also accepts that baseline path. Build runs Cargo release with --locked and an isolated target directory. It copies and hashes the binaries, records source/profile/selector stability, and calls the launcher's preparation function. It does not start an MCP child, native harness, worker or remote owner.
 
-Inspect the manifest, config and build receipt. Verify the actual node, stable roots, administrator list, source commit, preserved profile paths and component pins. Record the returned candidate selector hash and the receipt's base_selector_sha256.
+Inspect the resulting node, store identities, administrator list, component ancestry, exact profile transition and retained pins. Retain the base_selector_sha256 literal from the build receipt. A changed selector or profile requires new review and a new candidate.
 
-## Install, restart and observe
-
-Install requires the reviewed baseline selector hash as a literal value. A changed selector or profile requires a new candidate review; do not bypass the check by substituting a new hash.
+A native runtime inspect is read-only:
 
 ~~~sh
-python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" install \
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" inspect \
+  --selector "$HERDER_SELECTOR" \
+  --launcher /home/roomhacker/.local/bin/agent-herder-v1 \
+  --compat-pid "<fresh verified compat PID>" \
+  --core-pid "<fresh verified core PID>"
+~~~
+
+## One held release transaction
+
+The coordinator is a bounded native task. It holds ReleaseGate across installation, the explicit child restart and readiness evidence. It never initiates a restart itself. Start it through the existing durable task facility so its PID, output and completion survive the agent turn.
+
+Before starting, obtain the normal project release proof for the exact deployment target. Store the proof privately through the existing release workflow. Do not put tokens in argv, logs or the checkpoint. Choose a new private job directory and backup directory, then run:
+
+~~~sh
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" run \
   --candidate "$HERDER_BUNDLE/selector.json" \
   --selector "$HERDER_SELECTOR" \
   --launcher /home/roomhacker/.local/bin/agent-herder-v1 \
   --backup "/home/roomhacker/herder-artifacts/releases/process-leases-backup-$HERDER_SOURCE_SHA" \
-  --expected-selector-sha256 "<base_selector_sha256 from process-leases-build.json>"
+  --job-dir "<new absolute coordinator directory>" \
+  --proof "<existing private release proof>" \
+  --release-state "<actual existing release ledger>" \
+  --target "<private JSON with the exact deploymentTarget>" \
+  --expected-selector-sha256 "<literal build receipt base_selector_sha256>" \
+  --compat-pid "<fresh verified compat PID>" \
+  --core-pid "<fresh verified core PID>" \
+  --deadline-seconds 600
 ~~~
 
-The helper saves exact selector and launcher bytes, hashes and modes in a new private backup directory. It first installs the backward-compatible launcher, then atomically replaces the selector. The return status is **configured_pending_restart**, not deployment success. If the second replacement fails, the saved receipt can restore the half-switched configuration.
+The source must be merged into freshly fetched origin/main before this production path admits it. Isolated candidate canaries may run before merge. The coordinator does not honor an inherited emergency unmerged-rollout override.
 
-After the integrated candidate has passed review:
+The durable order is admission, install intent, rollback snapshot, state preparation, launcher switch, selector switch, awaiting_restart, awaiting_consumer, verified and completed. A private occupancy pointer is stored next to the exact selector:
 
-1. Re-read mcp_manage configuration on shell:roomhacker-server-100 and confirm child AgentHerder still uses this launcher and explicit selector.
-2. Restart that child once through mcp_manage with {"action":"restart","ref":"AgentHerder"}. Do not restart unrelated user services.
-3. Read the installed launcher receipt with HERDER_V1_ENTRY="$HERDER_SELECTOR" /home/roomhacker/.local/bin/agent-herder-v1 --check. Match manifest, core, worker and config digests to the candidate.
-4. Hash the actual native child executable through its verified /proc/<pid>/exe and compare it to the candidate core. Obtain the current PID from the child/process inventory, not a saved PID.
-5. Read public MCP discovery and its automation/resource schemas. Confirm process_completion, reconcile_process, cancel_execution and resource.bind are exposed. Discovery must not initialize a harness.
-6. Run a short process completion acceptance case using an isolated owned session and resource. Confirm the worker runs on the configured execution node, the claim stays owned beyond its original TTL, process exit produces a durable receipt, and the selected release or handback action occurs.
-7. Confirm exactly one durable wake intent and a stable idempotency result for the same request key. Repeating reconciliation must not send another prompt. Check completion during a core restart, a failed build, cancellation, deadline expiry and an unavailable target in the targeted native test suite. A real prompt acceptance case must use a session designated for that test, never an unrelated native conversation.
+~~~text
+.gptadmin-entry.json.process-leases-rollout.json
+~~~
 
-Step 3 checks configuration only. Steps 4 through 7 establish running-consumer behavior. Do not describe the release as deployed on all harnesses until the shared endpoint is verified and each supported adapter's existing resume contract remains valid.
+It contains schema 1, job_id, job_dir, selector and phase active or resolved. The job directory contains state.json. A resolved pointer additionally pins final_state_sha256, and that state must be completed, recovered_baseline or recovered_candidate. An active, malformed or unreadable pointer blocks new installation even after an OS lock disappears or a legacy lease expires. Never remove the pointer to bypass an unresolved operation.
 
-## Unified API examples
+Lease renewal is external to ReleaseGate. While the bounded coordinator is demonstrably live, renew the same owner/token/fence through the existing release API, for example at one third of its TTL. A canonical guard holds the real resource execution lock and binding. Do not bind that resource to a second execution. Expiry, EOF or coordinator death cannot turn UNKNOWN into availability.
 
-The public tool name is automation; action values are snake case. Use a canonical, registered session_ref owned by the caller. A process is started on the configured local execution node even if the destination session is routed to a different harness.
+Read progress without creating another task:
+
+~~~sh
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" status \
+  --job-dir "<same coordinator directory>"
+~~~
+
+When it reaches awaiting_restart, the trusted operator performs one typed ShellMCP mcp_manage request with action restart and ref AgentHerder. Read the exact child configuration/status and actual process tree again. Record that operation's durable provider task/operation ID. Do not use the legacy HerderFleet or TS service.
+
+### Separate restart and consumer receipts
+
+Receipts are private JSON files submitted through the record command. They include the job's challenge from status, an observation timestamp and the exact provider operation ID. A success boolean is insufficient.
+
+A restart receipt has this shape:
 
 ~~~json
 {
-  "action": "create",
-  "session_ref": "<registered owner session>",
-  "request_key": "<stable key for this build>",
-  "rule": {
-    "kind": "process_completion",
-    "execution": {
-      "mode": "start",
-      "argv": ["/usr/bin/true"],
-      "cwd": "/home/roomhacker/agents-projects/agent-herder",
-      "deadline_unix_ms": null,
-      "stop_grace_ms": 5000
+  "schema":1,
+  "kind":"restart",
+  "job_id":"<coordinator job id>",
+  "challenge":"<coordinator challenge>",
+  "observed_at_unix_ms":0,
+  "provider_operation_id":"<exact GPTAdmin operation/task id>",
+  "target":"shell:roomhacker-server-100",
+  "ref":"AgentHerder",
+  "method":"mcp_manage",
+  "action":"restart",
+  "compat_pid":0,
+  "core_pid":0
+}
+~~~
+
+Use actual timestamps and PIDs. Submit it with record --job-dir ... --kind restart --receipt .... The coordinator checks the selected files, exact new process identities, pinned executable digests, configuration, profile arguments and parent relation. The prior native pair must no longer be live.
+
+For consumer proof, call typed ShellMCP mcp_tools with ref AgentHerder after the restart, preferably as a durable provider task. Save the actual returned tools array in a separate receipt with kind consumer, method mcp_tools, the same target/ref/job/challenge, the new operation ID and observed_at_unix_ms. Add schema_sha256 as SHA256 of the tools array serialized with sorted keys and compact JSON separators. All strings in this array must be preserved.
+
+Submit with record --kind consumer. The coordinator requires automation and resource input schemas, including process_completion, reconcile_process, cancel_execution and resource.bind. Old tools with the same names do not prove the new core is serving. The process pair is independently re-read around this evidence. Only then does the held canonical channel report finished.
+
+The public HTTP endpoint was probed read-only and returned 401 without its existing OAuth context. Use the supported typed ShellMCP route for this installation. Do not create or search for a new bearer credential merely for rollout. The typed consumer receipt is evidence from the trusted operator; it is explicitly separate from independent OS/configuration verification.
+
+After status reports completed and occupancy is resolved, release the outer project claim through its normal API. The coordinator never deletes the release proof or changes an existing ownership ledger.
+
+## UNKNOWN, reconciliation and rollback evidence
+
+Lost ACK, an expired lease, deadline, partial switch, changed PID/configuration or a rejected consumer schema leaves UNKNOWN. No restart is repeated and no automatic rollback runs.
+
+Status preserves the original identity and phase. Recover requires proof that the original coordinator is dead and verifies the exact already-settled baseline or candidate configuration, running process pair and a fresh typed consumer receipt:
+
+~~~sh
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" recover \
+  --job-dir "<original coordinator directory>" \
+  --proof "<current private proof for the same project and exact target>" \
+  --outcome candidate \
+  --compat-pid "<fresh verified PID>" \
+  --core-pid "<fresh verified PID>" \
+  --consumer-receipt "<fresh private typed tools/list receipt>"
+~~~
+
+For the legacy ledger, recover can settle durable occupancy after those observations under a new held release guard. It changes no selector and performs no restart. A mixed or unrelated configuration is refused.
+
+For a canonical UNKNOWN execution binding, recover records the evidence and remains blocked. The bridge deliberately rejects a fresh guard for an unresolved old binding, even with the same proof. A separate reviewed canonical reconciliation must verify terminal evidence for the original guard and exact claim before clearing that binding. cleanup:true is valid only on the continuously held original guard channel; it is not a recovery entrypoint.
+
+The backup retains exact previous selector/launcher bytes, hashes and modes, including evidence for a half-completed two-file switch. Library rollback validates those hashes and rejects a newer unrelated release; it requires a held mutation admission. Configuration restoration and restart after an uncertain result require a reviewed recovery procedure. Restoring a selector alone cannot migrate active process rules back to an older core. Preserve common stores, workers, claims, wake intents and authority databases; never restore an old DB snapshot to simulate rollback.
+
+## Automatic continuation gates
+
+A registered wait must suppress automatic model work while the process runs. src/process-wait-gate.ts is consulted before the Stop judge, cadence/unfinished judges and planners, continuation admission and native resume. Important send fences read again after asynchronous judging or admission. There is no negative-result cache and no new writable wait registry.
+
+The local mode invokes the trusted launcher with --process-wait-status and an identity-only JSON query. The pinned process-leases-wait-status.py reader opens canonical owner databases read-only, verifies trusted principal/node/kind/native session bindings, HumanStop generation and DB/gate inode identity, then reads the canonical process rule and execution evidence. It does not start an adapter, worker, harness or reconciliation.
+
+| Canonical observation | Automatic continuation |
+| --- | --- |
+| Registered rule before WaitState is persisted | Blocked immediately. |
+| prepared, armed, dispatching, waiting_receipt, delivery_unknown, paused or rejected | Blocked. Rejected delivery needs explicit resolution. |
+| ready, confirmed or cancelled with matching terminal receipt, complete process tree and finished lease finalization | May continue, subject to ordinary HumanStop and admission policy. |
+| Missing evidence, UNKNOWN, ambiguous native binding, corrupt state, unavailable configured authority or incomplete read | Blocked. |
+| Complete verified read with no exact native binding or no outstanding rule | Unblocked. |
+| Active HumanStop | Blocked independently of process completion. Releasing a hold does not reauthorize an old cancelled wake. |
+
+Pausing a wait is temporary; deleting it cancels the wake. Neither implies permission to release a lease while the process may still be alive. The process supervisor continues lease finalization independently.
+
+With no explicit activation, an absent local selector on an older TS node is treated as feature unconfigured. A private verified legacy manifest without process_config is also unconfigured. Once configuration was observed, or an explicit selector/launcher/node mapping was set, a missing or failed local read blocks instead of silently disabling the gate.
+
+### Remote TS schedulers use the canonical central authority
+
+A local empty or missing store on server-44, server-88 or a Mac does not establish absence of a wait stored in the six-profile authority on server-100. Enable the remote route explicitly in the scheduler's trusted configuration:
+
+~~~text
+AGENT_HERDER_PROCESS_WAIT_AUTHORITY=mcp:shell:roomhacker-server-100:AgentHerder
+AGENT_HERDER_FLEET_MESH_CONFIG=<existing approved GPTAdmin client config>
+AGENT_HERDER_FLEET_CREDENTIAL_PIN=<existing approved binding generation>
+AGENT_HERDER_PROCESS_WAIT_NODE_REF=<optional exact trusted owner node>
+~~~
+
+This uses FleetGptAdminTransport and readFleetMeshBinding, including the existing origin and credential-generation pin. It calls only:
+
+~~~json
+{
+  "action":"wait_status",
+  "harness":"codex",
+  "native_session_id":"<native session identity>",
+  "node_ref":"server-44"
+}
+~~~
+
+The tool is automation on the exact AgentHerder target. FleetDirectTransport is intentionally not used because it remaps to HerderFleet and may fall back to an unrelated local TS listener. Remote mode has no local or SSH fallback, no discovery, no token creation and no alternate store.
+
+node_ref is an explicit owner identity. For example, the installed owner profile uses server-44 while the ShellMCP registry uses roomhacker-server-44. Do not normalize one into the other by guessing. Omitting node_ref asks the authority to inspect all applicable trusted profiles; multiple native binding matches block.
+
+WaitStatus returns version 1, configured, complete, blocked, reason, mapped, sessionRefs, ruleRefs and observedAt. Remote TS permits a continuation only after a fresh, complete typed response. Unknown/unconfigured harness authority, missing pin, credential rotation without the approved generation, stale response, error or timeout blocks. An old endpoint with no wait_status action therefore fails closed after explicit activation.
+
+Deploy the TS gate code and this explicit route on every scheduler that can advance a centrally managed session. Native central deployment by itself does not upgrade a separate TS service. Fleet reachability and exact owner mapping must be verified through the existing read-only transport before enabling automatic work on each node. This runbook does not claim that server-44, server-88 or Macs were updated.
+
+## Unified process API
+
+The public tool is automation and action values use snake case. Select a registered session_ref that the caller owns. A process runs on the configured local execution node even when its destination session belongs to a different harness.
+
+~~~json
+{
+  "action":"create",
+  "session_ref":"<registered owner session>",
+  "request_key":"<stable key for this build>",
+  "rule":{
+    "kind":"process_completion",
+    "execution":{
+      "mode":"start",
+      "argv":["/usr/bin/true"],
+      "cwd":"/home/roomhacker/agents-projects/agent-herder",
+      "deadline_unix_ms":null,
+      "stop_grace_ms":5000
     },
-    "bindings": [
-      {
-        "resource_ref": "<registered resource>",
-        "claim_id": "<current claim nonce>",
-        "revision": 1,
-        "ttl_seconds": 60,
-        "on_exit": "release",
-        "handback_seconds": null
-      }
-    ],
-    "wake_message": "The build completed. Read its receipt and verify its artifacts."
+    "bindings":[{
+      "resource_ref":"<registered resource>",
+      "claim_id":"<current claim nonce>",
+      "revision":1,
+      "ttl_seconds":60,
+      "on_exit":"release",
+      "handback_seconds":null
+    }],
+    "wake_message":"The build completed. Read its receipt and verify its artifacts."
   }
 }
 ~~~
 
-The claim must already be owned, with the actual current descriptor revision. Use on_exit: "handback" and a bounded handback_seconds when the resumed agent needs a short ownership interval after the process exits. The command is an argument vector; use an explicit shell argument vector only when shell semantics are intended.
+The claim must already be owned at its current descriptor revision. Use on_exit handback with bounded handback_seconds when the resumed agent needs a short ownership interval after completion. Commands are argument vectors.
 
-An existing process uses execution: {"mode":"attach","pid":1234,"boot_id":"<observed boot id>","start_ticks":123456,"deadline_unix_ms":null}. PID alone is not durable identity and cannot prove an exit code. For a real build that needs a reliable receipt, prefer supervised start. A remote build needs a verified remote job receipt; attaching an unrelated local SSH client does not prove remote build completion.
+Attach uses execution mode attach with pid, observed boot_id, start_ticks and optional deadline_unix_ms. A PID alone is not durable identity and does not establish an exit code. Supervised start provides stronger completion evidence. An unrelated local SSH client's exit does not prove a remote build has completed.
 
-Read with {"action":"get","rule_ref":"<returned rule>"}. Explicitly reconcile with {"action":"reconcile_process","rule_ref":"<returned rule>"}. Cancel through {"action":"cancel_execution","rule_ref":"<returned rule>","request_key":"<stable cancel key>"}. Cancellation is distinct from deleting or pausing a wait: a process must be observed terminal before its lease is treated as releasable.
+Read a rule with action get and rule_ref. Reconcile with reconcile_process. Cancel the execution with cancel_execution, rule_ref and a stable request_key. resource.bind accepts execution_ref plus the same binding fields for a separately admitted execution. These operations use the common Herder authority and claim fence.
 
-A separately started execution can bind a current owned claim through the resource tool using {"action":"bind","execution_ref":"<execution>","binding":{...}}. Reuse the same binding fields. The execution identity and claim fence are checked by the shared Herder authority.
+After installation, a designated isolated native acceptance session must demonstrate renewal past the original TTL, a matching terminal receipt, release or bounded handback, exactly one durable wake intent, idempotent registration, busy-parent retry and no old-wake reauthorization after HumanStop. Running configuration and tools/list are necessary evidence, but they do not substitute for this behavior check.
 
-## Legacy compatibility and outstanding state
+## Legacy compatibility and unresolved evidence
 
-The standalone scheduler entrypoints live in packages/agent-resume/src/mcp/server.ts: run_and_resume, attach_pid_and_resume, attach_query_and_resume, wait_and_resume and wait_job_status. The first four currently create JobRegistry work and await jobs.complete. Their migration must be a facade that registers or reads a Herder rule; it must not create another watcher, timer, lease keeper, durable wake queue or fallback Python process.
+At checkpoint 0d398e19, packages/agent-resume/src/mcp/server.ts no longer creates JobRegistry work for run_and_resume, attach_pid_and_resume, attach_query_and_resume or wait_and_resume. Legacy effects require an explicitly injected HerderLegacyFacade; without it they return the retirement/migration result. They never start a fallback scheduler, Python watcher, lease keeper or alternate wake queue. Compatibility reads and immutable target utilities may remain while callers still use them.
 
-Map run_and_resume to process_completion/start and a native session binding; map PID attachment to process_completion/attach with verified identity. Query attachment must reject ambiguous matches rather than silently select the first process. Duration-only waits belong to the existing native schedule facility and require a documented semantic mapping. Legacy job_id aliases need durable mapping to the new rule and execution references. A status call must read the registered result instead of starting or replaying it.
+src/resume-transport.ts now requires the selected Herder native transport or an explicit trusted owner transport. The standalone process fallback is retired. Old aliases are compatibility surfaces, not an independent Agent Resume deployment.
 
-Do not remove the whole workspace package while its client, target-binding and receipt utilities are used by src/adapters/opencode.ts, src/resume-transport.ts and src/resume/{core-transport,core-binding}.ts. The old Python default also appears in scripts/autopilot-command-launcher.sh. Retirement of these paths requires a caller migration, not just renaming the package.
-
-The bounded server-100 inventory found no active standalone AgentResume entry in the inspected Codex, OpenCode and Hermes MCP configs. That is evidence for those files, not proof about all fleet nodes. Existing TypeScript resume_after state is a separate compatibility queue.
-
-At inventory time, 47 legacy job records said running while their recorded process and watcher PIDs were absent. Preserve them as unresolved legacy evidence until reconciled individually. Do not mass-wake them, relaunch commands, or infer success. Existing profile DBs also contain unknown operations; the install helper does not reset them.
-
-## Rollback
-
-Before rolling back a running process-aware core, identify active executions and pending wake intents. Drain them or keep an explicitly compatible supervisor able to finish them. An older core does not understand new process rules, so merely restoring a selector is not an execution-state migration. Do not stop workers or restore old DB snapshots as a shortcut.
-
-~~~sh
-python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" rollback \
-  --receipt "/home/roomhacker/herder-artifacts/releases/process-leases-backup-$HERDER_SOURCE_SHA/receipt.json"
-~~~
-
-Rollback accepts only the recorded before/after hashes, including a half-completed switch. It refuses to overwrite a newer unrelated release. It restores exact selector and launcher bytes and reports **configuration_rolled_back_pending_restart**. Common state, workers, claims and authority databases remain intact.
-
-Restart the same child explicitly after the rollback configuration is reviewed. Recheck the launcher, actual core executable and public endpoint. Retain the candidate, backup receipt and durable process evidence until the outcome is settled.
+Preserve the 47 legacy records whose metadata said running while both recorded process and watcher PIDs were absent. They need individual reconciliation. Do not mass-wake, relaunch or infer success. Existing profile databases also contain UNKNOWN operations; installation does not reset them. Bounded config inventory found no active standalone AgentResume entry in the inspected server-100 Codex, OpenCode and Hermes configs; it did not establish fleet-wide absence.

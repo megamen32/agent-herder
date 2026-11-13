@@ -73,6 +73,7 @@ it("maps create, one initial Start and exact read results without rewriting rece
   expect(replies[0].result.capabilities.methods).toEqual(["init", "createSession", "sendMessage", "getSession", "getSessionMessages"]);
   expect(replies[0].result.capabilities.controlCapabilities).toMatchObject({ events: false, steer: false });
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["start"]);
+  expect(replies[0].result.capabilities.nativeStartAdmission).toBeUndefined();
   expect(replies[2].result.id).toBe("ses_created_exact");
   expect(replies[3].result).toMatchObject({ inputId: "caller-input-17", nativeInputMessageId: "msg_native17", admitted: true });
   expect(replies[3].result.inputId).not.toBe(replies[3].result.nativeInputMessageId);
@@ -145,6 +146,7 @@ it("v2 forwards a second delivery to an existing session with exact mode and cal
   expect(calls).toEqual([["existing-before-runner",options]]);
   expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
+  expect(replies[0].result.capabilities.nativeStartAdmission).toBe("steer-before-turn-v1");
 });
 
 it("v2 exposes same-session resume and recover without selecting a model", async () => {
@@ -183,4 +185,50 @@ it('pins an instance model on create and send, and rejects conflicting requests 
   ].map(x=>JSON.stringify(x)).join('\n')+'\n');await serving;
   const replies=text.trim().split('\n').map(x=>JSON.parse(x));
   expect(calls).toHaveLength(2);expect(calls[0].options.model).toBe('minimax-coding-plan/MiniMax-M3.1-Flash');expect(calls[1].options.model).toBe('minimax-coding-plan/MiniMax-M3.1-Flash');expect(replies[3].error.code).toBe(-32602);expect(replies[4].error.code).toBe(-32602);
+});
+
+it("v2 fresh Start admits the original input as one native steer and never retries a lost ACK", async () => {
+  const calls: Array<{ id: string; options: any }> = [];
+  const adapter = {
+    async createSession() {
+      return { id: "ses_fresh", harness: "opencode", status: "idle", title: "worker", cwd: "/tmp/work", hostId: "fixture" };
+    },
+    async sendMessage(id: string, options: any) {
+      calls.push({ id, options });
+      throw new Error("reply lost after the one native admission");
+    },
+  };
+  const options = { message: "original user prompt", queue: false, start: true, inputId: "exact-start-key" };
+  const replies = await run(adapter, [
+    initialize,
+    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "not-created-here", options } },
+    { jsonrpc: "2.0", id: 3, method: "createSession", params: { options: { name: "worker", cwd: "/tmp/work" } } },
+    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_fresh", options } },
+    { jsonrpc: "2.0", id: 5, method: "sendMessage", params: { id: "ses_fresh", options } },
+  ], "v2");
+  expect(replies[1].error.code).toBe(-32602);
+  expect(replies[3].error).toMatchObject({ code: -32000, data: { outcome: "unknown", retryable: false } });
+  expect(replies[4].error.code).toBe(-32602);
+  expect(calls).toEqual([{ id: "ses_fresh", options: {
+    message: "original user prompt", queue: false, steer: true, start: false,
+    inputId: "exact-start-key", activeTurnOnly: true,
+  } }]);
+});
+
+it("v2 ordinary Queue and Steer retain their exact native delivery options", async () => {
+  const calls: unknown[] = [];
+  const adapter = { async sendMessage(id: string, options: any) {
+    calls.push([id, options]);
+    return { ok: true, admitted: true, nativeInputMessageId: "msg_native123" };
+  } };
+  const queue = { message: "queued", queue: true, inputId: "queue-key", activeTurnOnly: true };
+  const steer = { message: "steered", queue: false, steer: true, inputId: "steer-key", activeTurnOnly: true };
+  const replies = await run(adapter, [
+    initialize,
+    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "existing", options: queue } },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "existing", options: steer } },
+  ], "v2");
+  expect(calls).toEqual([["existing", queue], ["existing", steer]]);
+  expect(replies[1].result.nativeInputMessageId).toBe("msg_native123");
+  expect(replies[2].result.nativeInputMessageId).toBe("msg_native123");
 });

@@ -341,7 +341,7 @@ pub async fn deliver<R: SessionRegistry, N: NativeSessionReader + NativeSessionC
 
 /// Scoped delivery for fresh isolated sessions. Every native handoff is
 /// serialized with HumanStop through the authority's canonical gate.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub async fn deliver_scoped<
     N: NativeSessionReader,
     C: crate::application::scoped_stop::BoundedNativeHandoff,

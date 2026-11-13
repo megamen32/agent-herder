@@ -1,3 +1,4 @@
+import { processWaitBlocks, type ProcessWaitSource } from "../process-wait-gate.js";
 import { probeRecoveryModelQuota, type RecoveryModelQuota } from "../model-quota.js";
 import { normalizeSendAdmission } from "../adapters/quota-failure.js";
 import { isRecoveryModelReference, quotaEvidenceModelReference } from "../recovery-model-reference.js";
@@ -2622,6 +2623,8 @@ export interface UnfinishedSessionLauncherOptions {
   cacheHandoff?: Pick<CacheHandoffService, "maybeRollover">;
   /** Independent durable fence for sessions explicitly stopped by a human. */
   humanStopStore?: HumanStopStore;
+  /** Read-only native process wait gate. It never changes recovery or HumanStop state. */
+  processWaits?: ProcessWaitSource;
   /** Pending human questions and choices; a session waiting for an answer is never continued. */
   humanRequests?: Pick<HumanRequestRegistry, "list">;
   choiceRegistry?: Pick<ChoiceRegistry, "list">;
@@ -3787,6 +3790,7 @@ export class UnfinishedSessionLauncher {
     const quota = snapshot.quotaRecovery;
     if (!quota || snapshot.harness !== "opencode" && snapshot.harness !== "zcode" && snapshot.harness !== "codex") return;
     const harness = snapshot.harness;
+    if (await this.processWaitBlocks(harness, snapshot.sessionId, snapshot.cwd)) return;
     const operatorIntent = isOperatorRecoveryEvidence(quota.evidence);
     const providerUnavailable = quota.evidence.classification === "provider_unavailable";
     if (providerUnavailable && harness !== "opencode") return;
@@ -4064,6 +4068,7 @@ export class UnfinishedSessionLauncher {
     const expectedInventory = (await this.options.store.listInventory())
       .find(candidate => inventoryRecordKey(candidate) === sessionSourceKey(proof.session));
     let verdict: Omit<SessionInventoryVerdict, "judgedAt">;
+    if (await this.processWaitBlocks(proof.session.harness, proof.session.id, proof.session.cwd)) return;
     try { verdict = normalizeVerdict(await this.options.judge.decide({session: proof.session, transcriptTail: proof.transcriptTail})); }
     catch { return; }
     // No synthetic Stop. Completion of the model turn alone is not task
@@ -5019,6 +5024,7 @@ export class UnfinishedSessionLauncher {
       const key = sessionSourceKey(session);
       const messages = await sessionEvidenceMessages(adapter, session.id, runtimeSettings.evidenceMessageCount);
       const transcriptTail = completionEvidence(messages ?? [], runtimeSettings.evidenceMessageCount);
+      const processHeld = await this.processWaitBlocks(harness, session.id, session.cwd);
       const previous = priorInventory.get(key);
       const unchanged = previous?.lastActivity === session.lastActivity
         && previous.progressFingerprint === sessionInventoryProgressFingerprint(session)
@@ -5032,7 +5038,7 @@ export class UnfinishedSessionLauncher {
       } else if (!verdict && Date.now() - Date.parse(session.lastActivity) < this.discoveryIdleMs && session.status !== "running") {
         // Keep it visible in inventory, but do not classify a session which may
         // still be receiving events from another harness process.
-      } else if (!verdict && transcriptTail && this.options.judge && judgements < this.maxJudgementsPerCycle) {
+      } else if (!processHeld && !verdict && transcriptTail && this.options.judge && judgements < this.maxJudgementsPerCycle) {
         judgements += 1;
         try {
           const judged = await this.options.judge.decide({ session, transcriptTail });
@@ -5040,10 +5046,10 @@ export class UnfinishedSessionLauncher {
         } catch (error) {
           console.error(`[agent-herder] MiniMax не классифицировал ${harness}:${session.id}: ${errorText(error)}`);
         }
-      } else if (!verdict && !transcriptTail) {
+      } else if (!processHeld && !verdict && !transcriptTail) {
         verdict = { verdict: "needs_human", reason: "Нет доступного хвоста диалога для безопасной классификации", confidence: 1, judgedAt: new Date().toISOString() };
       }
-      if (!verdict && messages && (session.status === "running" || Date.now() - Date.parse(session.lastActivity) >= this.discoveryIdleMs)) {
+      if (!processHeld && !verdict && messages && (session.status === "running" || Date.now() - Date.parse(session.lastActivity) >= this.discoveryIdleMs)) {
         verdict = { ...heuristicVerdict(session, messages), judgedAt: new Date().toISOString() };
       }
       const inventory: UnfinishedSessionInventoryRecord = {
@@ -5651,6 +5657,7 @@ export class UnfinishedSessionLauncher {
   }
 
   private async semanticAutopilotAllows(session: AgentSession, effective: EffectivePolicy): Promise<boolean> {
+    if (await this.processWaitBlocks(session.harness, session.id, session.cwd)) return false;
     if (session.harness !== "codex" && session.harness !== "zcode") return false;
     if (!effective.policy.enabled) return false;
     const override = await this.options.autopilotSessionStore?.get(session.harness, session.id);
@@ -5738,6 +5745,13 @@ export class UnfinishedSessionLauncher {
   }
 
   private async planAssessedSessions(assessed: AssessedSession[]): Promise<{ plan: SessionBatchPlan; window: AssessedSession[] }> {
+    const available: AssessedSession[] = [];
+    for (const candidate of assessed) {
+      const session = candidate.session;
+      if (!await this.processWaitBlocks(session.harness, session.id, session.cwd)) available.push(candidate);
+    }
+    assessed = available;
+    if (assessed.length === 0) return { plan: { groups: [] }, window: [] };
     const planner = this.options.judge?.plan;
     if (!planner) throw new Error("MiniMax batch planner is unavailable");
     const contextBudget = Math.min(
@@ -5771,13 +5785,20 @@ export class UnfinishedSessionLauncher {
       Number(process.env.AGENT_HERDER_UNFINISHED_BATCH_CONCURRENCY || DEFAULT_BATCH_PLAN_CONCURRENCY),
       DEFAULT_BATCH_PLAN_CONCURRENCY,
     ));
-    const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => canonicalizePlanSourceKeys(
+    const requestPlan = async (candidates: AssessedSession[]): Promise<SessionBatchPlan> => {
+      for (const { session } of candidates) {
+        if (await this.processWaitBlocks(session.harness, session.id, session.cwd)) {
+          throw new Error("Canonical process wait defers batch assessment");
+        }
+      }
+      return canonicalizePlanSourceKeys(
         await withAbortDeadline(planner({
           sessions: candidates.map(({ session, transcriptTail, humanMessages }) => ({ session, transcriptTail, humanMessages })),
           signal: plannerPhaseController.signal,
         }), plannerPhaseDeadline, plannerPhaseController),
         candidates,
       );
+    };
     let phaseOne: Array<{ plan?: SessionBatchPlan; validationError?: BatchPlanValidationError; unavailableError?: string }>;
     try {
       phaseOne = await mapConcurrentOrdered(
@@ -5907,6 +5928,9 @@ export class UnfinishedSessionLauncher {
           MAX_OMISSION_DECISION_CONCURRENCY,
           async (candidate) => {
             if (plannerPhaseController.signal.aborted) throw new Error("MiniMax omission decision phase was aborted");
+            if (await this.processWaitBlocks(candidate.session.harness, candidate.session.id, candidate.session.cwd)) {
+              throw new Error("Canonical process wait defers omission assessment");
+            }
             const verdict = normalizeVerdict(await decide({
               session: candidate.session,
               transcriptTail: candidate.transcriptTail,
@@ -6251,6 +6275,9 @@ export class UnfinishedSessionLauncher {
     adapter: HarnessAdapter,
     record: UnfinishedSessionRecord,
   ): Promise<{ ok: true } | { ok: false; error: string; notSubmitted?: boolean; nonRetryable?: boolean; quotaBlock?: { reason: string; remainingPercent: number | null; resetsAt: number | null } }> {
+    if (await this.processWaitBlocks(record.harness, record.sessionId, record.cwd)) {
+      return { ok: false, error: "process_wait_active", notSubmitted: true, nonRetryable: true };
+    }
     const resume = async () => (adapter.resumeSession ? await adapter.resumeSession(record.sessionId) : { ok: true });
     const resumed = await resume();
     if (resumed.ok) return { ok: true };
@@ -6275,6 +6302,9 @@ export class UnfinishedSessionLauncher {
     if (!restored.ok) {
       console.error(`[agent-herder] восстановление архива ${record.harness}:${record.sessionId} не выполнено: ${restored.error}`);
       return { ok: false, error: refusal };
+    }
+    if (await this.processWaitBlocks(record.harness, record.sessionId, record.cwd)) {
+      return { ok: false, error: "process_wait_active", notSubmitted: true, nonRetryable: true };
     }
     const retried = await resume();
     if (!retried.ok) {
@@ -6342,6 +6372,7 @@ export class UnfinishedSessionLauncher {
       // clearing accepted work, before creating or controlling any identity.
       for (const session of sessions) {
         if (await this.options.humanStopStore?.isHeld(session.harness, session.id)) return false;
+        if (await this.processWaitBlocks(session.harness, session.id, session.cwd)) return false;
       }
       return true;
     } catch {
@@ -6351,9 +6382,11 @@ export class UnfinishedSessionLauncher {
   }
 
   private async admissionAllowed(session: AgentSession, operation: RecoveryOperation): Promise<boolean> {
+    if (await this.processWaitBlocks(session.harness, session.id, session.cwd)) return false;
     if (!this.options.admissionGate) return true;
     try {
-      return (await this.options.admissionGate(session, operation)).allowed;
+      return (await this.options.admissionGate(session, operation)).allowed
+        && !await this.processWaitBlocks(session.harness, session.id, session.cwd);
     } catch {
       // Gate failure is a deferral, never a native failure or consumed retry.
       return false;
@@ -6399,6 +6432,10 @@ export class UnfinishedSessionLauncher {
     return (await this.options.settingsStore.getEffective(harness, sessionId, cwd)).enabled;
   }
 
+  private async processWaitBlocks(harness: string, sessionId: string, cwd?: string): Promise<boolean> {
+    return processWaitBlocks(this.options.processWaits, harness, sessionId, cwd);
+  }
+
   /** True while this exact session still owes a human an answer. */
   private async pendingQuestionBlocks(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
     if (!this.pendingQuestions) return false;
@@ -6420,6 +6457,7 @@ export class UnfinishedSessionLauncher {
    * longer reports it. It defers: durable accepted and recovery state stays.
    */
   private async mayWorkOnSession(harness: HarnessType, sessionId: string, cwd: string): Promise<boolean> {
+    if (await this.processWaitBlocks(harness, sessionId, cwd)) return false;
     if (!await this.isEnabled(harness, sessionId, cwd)) return false;
     if (await this.noticeAttemptRecoveryPaused(harness, sessionId)) return false;
     return !(await this.pendingQuestionBlocks(harness, sessionId, cwd));

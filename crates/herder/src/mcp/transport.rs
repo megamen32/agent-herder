@@ -191,7 +191,11 @@ fn tools() -> Vec<Tool> {
         .map(|definition| {
             Tool::new(
                 definition.name,
-                format!("Herder {} operation", definition.name),
+                match definition.name {
+                    "automation" => "Herder automation. For long commands use create with rule.kind=process_completion and existing resource claim bindings. After durable armed admission, end the agent turn; Herder renews leases and resumes the same session after completion. Inspect or reconcile the returned rule on an uncertain ACK. Do not poll with model turns, replay the command, or use HumanStop as sleep.".to_owned(),
+                    "resource" => "Herder canonical resource ownership: register/get/list, claim/renew/release, advisory declarations, and bind an owned claim to a supervised execution. Reuse the same resource identity for a shared device, deployment, workspace or build slot. Use the current claim ID and descriptor revision; unresolved process occupancy remains exclusive.".to_owned(),
+                    _ => format!("Herder {} operation", definition.name),
+                },
                 definition
                     .input_schema
                     .as_object()

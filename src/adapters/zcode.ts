@@ -357,7 +357,11 @@ function mapMessagePart(part: Record<string, unknown>): SessionMessagePart[] {
 function mapMessage(message: ZcodeMessage, index: number): SessionMessageView {
   const info = record(message.info);
   const role = info.role === "user" || info.role === "assistant" ? info.role : "assistant";
-  const id = nonEmptyString(info.messageId) || `zcode-message-${index + 1}`;
+  const nativeMessageId = nonEmptyString(info.messageId);
+  const id = nativeMessageId || `zcode-message-${index + 1}`;
+  const sourceCommandId = nonEmptyString(record(info.anchor).sourceCommandId);
+  const inputId = nonEmptyString(record(info.metadata).inputId);
+  const sessionId = nonEmptyString(info.sessionId);
   const parts = (message.parts ?? []).flatMap(mapMessagePart);
   if (Array.isArray(info.attachments)) for (const attachment of info.attachments) {
     const image = record(attachment); parts.push(...imagePart(image.ref, image.fileName));
@@ -365,6 +369,10 @@ function mapMessage(message: ZcodeMessage, index: number): SessionMessageView {
   const text = textFromMessage(message);
   return {
     id,
+    ...(nativeMessageId ? { nativeMessageId } : {}),
+    ...(sourceCommandId ? { sourceCommandId } : {}),
+    ...(inputId ? { inputId } : {}),
+    ...(sessionId ? { sessionId } : {}),
     role,
     timestamp: timestamp(record(info.time).created),
     text: text || undefined,

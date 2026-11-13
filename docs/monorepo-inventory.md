@@ -1,5 +1,13 @@
 # Инвентарь общего ядра: Agent Resume → Agent Herder
 
+> Актуальный владелец процессов, leases и возобновления: Agent Herder. Пакет
+> packages/agent-resume остаётся внутренней зависимостью общей сборки.
+> Его старые самостоятельные effectful MCP и CLI больше не запускают watcher.
+> Штатная процедура описана в [supervised-jobs.md](supervised-jobs.md),
+> а переключение установленных версий в [process-leases-runtime.md](process-leases-runtime.md).
+> Таблица ниже сохраняет историю переноса клиентских протоколов.
+
+
 Монорепозиторий — это репозиторий **Agent Herder**, и он остаётся единственным
 проектом, который нужно поддерживать. Agent Resume перестаёт быть отдельной
 системой: его общие возможности переезжают в пакет `packages/agent-resume`
@@ -14,13 +22,13 @@
 
 | Capability | Сейчас знают оба | Владелец после слияния |
 |---|---|---|
-| Протокол OpenCode (список сессий, адресация, доставка, статус, модель) | Resume: `agent_resume.py:388 opencode_sessions()` (legacy-таблица `session`), `agent_resume.py:695 build_resume_command()`; Herder: `src/adapters/opencode.ts` (1145 строк, нативный `/api`) | **Agent Resume (ядро)** |
-| Протокол Codex (список/поиск, доставка) | Resume: `agent_resume.py:279 codex_sessions()`, `build_resume_command()` → `codex exec resume` (мёртвый путь: `src/resume-transport.ts` отклоняет codex для Resume); Herder: `src/adapters/codex-app-server.ts` | **Agent Resume (ядро)** |
-| Протокол Claude (список/поиск, доставка) | Resume: `agent_resume.py:597 claude_sessions()`, `build_resume_command()` → `claude --print --resume`; Herder: `src/adapters/claude.ts`, `src/adapters/claude-sdk.ts` | **Agent Resume (ядро)** |
-| Поиск сессии по маркеру | Resume: `validate_marker`/`match_score`/`find_sessions`; Herder: своих нет, но перечисление есть | **Agent Resume (ядро)** |
-| Квитанции и идемпотентность | Resume: `_receipt_fingerprint:877`, `_locked_receipt_records:931`, `_validate_idempotency_key:865`, `query_resume_receipt:946`; Herder: `src/herder-jobs.ts`, `freezeRequest` в `src/resume-transport.ts` | **Agent Resume (ядро)** |
-| Отсоединённый запуск и длинные задачи | Resume: `start_watcher:1267`, `watcher_main:1404`, `tool_wait_and_resume:1358`, `tool_wait_job_status:1383`, каталог `jobs/`; Herder: `src/herder-jobs.ts`, `src/workload-launcher.ts` | **Agent Resume (ядро)** |
-| Интеграция с Hermes | Resume: `hermes_gateway.py` (600+ строк) + `scripts/install-hermes-plugin.py`; Herder: `src/adapters/hermes/adapter.ts`, `integrations/hermes/agent-herder-autopilot` | **Agent Resume (ядро)** |
+| Протокол OpenCode (список сессий, адресация, доставка, статус, модель) | Resume: `agent_resume.py:388 opencode_sessions()` (legacy-таблица `session`), `agent_resume.py:695 build_resume_command()`; Herder: `src/adapters/opencode.ts` (1145 строк, нативный `/api`) | **Agent Herder, внутренний клиентский пакет** |
+| Протокол Codex (список/поиск, доставка) | Resume: `agent_resume.py:279 codex_sessions()`, `build_resume_command()` → `codex exec resume` (мёртвый путь: `src/resume-transport.ts` отклоняет codex для Resume); Herder: `src/adapters/codex-app-server.ts` | **Agent Herder, внутренний клиентский пакет** |
+| Протокол Claude (список/поиск, доставка) | Resume: `agent_resume.py:597 claude_sessions()`, `build_resume_command()` → `claude --print --resume`; Herder: `src/adapters/claude.ts`, `src/adapters/claude-sdk.ts` | **Agent Herder, внутренний клиентский пакет** |
+| Поиск сессии по маркеру | Resume: `validate_marker`/`match_score`/`find_sessions`; Herder: своих нет, но перечисление есть | **Agent Herder, внутренний клиентский пакет** |
+| Квитанции и идемпотентность | Resume: `_receipt_fingerprint:877`, `_locked_receipt_records:931`, `_validate_idempotency_key:865`, `query_resume_receipt:946`; Herder: `src/herder-jobs.ts`, `freezeRequest` в `src/resume-transport.ts` | **Agent Herder, внутренний клиентский пакет** |
+| Отсоединённый запуск и длинные задачи | Resume: `start_watcher:1267`, `watcher_main:1404`, `tool_wait_and_resume:1358`, `tool_wait_job_status:1383`, каталог `jobs/`; Herder: `src/herder-jobs.ts`, `src/workload-launcher.ts` | **Agent Herder, внутренний клиентский пакет** |
+| Интеграция с Hermes | Resume: `hermes_gateway.py` (600+ строк) + `scripts/install-hermes-plugin.py`; Herder: `src/adapters/hermes/adapter.ts`, `integrations/hermes/agent-herder-autopilot` | **Agent Herder, внутренний клиентский пакет** |
 | Борд координации, lifecycle, активность путей | Herder: `src/coordination-notes.ts`, `src/session-supervisor.ts`, `POST /api/coordination/*` | **Agent Herder** |
 | Политика и судья автопилота, выбор варианта, вопросы человеку | Herder: `src/autopilot/*`, `src/autopilot/choice-registry.ts`, `src/human-request/*` | **Agent Herder** |
 | Fleet/mesh, веб-интерфейс, MCP-поверхности | Herder: `src/mesh/*`, `src/web/*`, `src/mcp/*` | **Agent Herder** |

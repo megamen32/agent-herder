@@ -31,6 +31,10 @@ export interface HarnessMessagePart {
 
 export interface HarnessMessage {
   id: string;
+  /** Exact native record identity; absent for synthesized display ids. */
+  nativeMessageId?: string;
+  /** Native session identity observed in the record, never inferred from the query. */
+  sessionId?: string;
   role: "user" | "assistant" | "system" | "tool";
   /** Native turn identity when the harness includes it in message history. */
   turnId?: string;

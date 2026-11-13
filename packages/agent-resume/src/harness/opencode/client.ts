@@ -756,10 +756,23 @@ export class OpenCodeClient implements HarnessClient {
         // that ties one native message to the exact resume that delivered it,
         // so it must survive into the message view instead of staying inside
         // the provider payload.
-        const inputId = stringValue(message.inputId, info.inputId,
-          message.metadata?.agentHerderInputId, info.metadata?.agentHerderInputId);
+        // Verified v2 returns native user records at the top level. This
+        // branch reads only this exact session's addressed message endpoint;
+        // its native id is independent of the display fallback below.
+        const v2InputId = this.isV2 && message.info === undefined && message.type === "user"
+          && typeof message.id === "string" && /^msg_[A-Za-z0-9]+$/.test(message.id)
+          ? stringValue(message.metadata?.agentHerderInputId) : undefined;
+        const nativeMessageId = stringValue(info.id) ?? (v2InputId ? message.id : undefined);
+        const sessionId = stringValue(info.sessionID);
+        // The correlation must come from the same native record as its id.
+        // Older display-only rows retain their field without gaining proof.
+        const inputId = v2InputId ?? (nativeMessageId ? stringValue(info.metadata?.agentHerderInputId)
+          : stringValue(message.inputId, info.inputId,
+            message.metadata?.agentHerderInputId, info.metadata?.agentHerderInputId));
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
+          ...(nativeMessageId ? { nativeMessageId } : {}),
+          ...(sessionId ? { sessionId } : {}),
           role,
           ...(turnId ? { turnId } : {}),
           ...(phase ? { phase } : {}),

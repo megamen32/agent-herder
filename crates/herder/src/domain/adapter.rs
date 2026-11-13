@@ -210,6 +210,17 @@ pub struct ReadError(pub String);
 pub trait NativeSessionReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError>;
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError>;
+    /// Recover only a native admission already bound to this exact session and
+    /// original request key. Implementations must perform bounded reads only;
+    /// caller IDs, text similarity and turn IDs are not native message evidence.
+    /// Absence or ambiguity never permits a new submission.
+    async fn recover_admission(
+        &self,
+        _target: &SessionAddress,
+        _key: &RequestKey,
+    ) -> Result<Option<NativeReceipt>, ReadError> {
+        Ok(None)
+    }
 }
 
 #[allow(async_fn_in_trait)]

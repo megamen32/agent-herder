@@ -67,7 +67,7 @@ pub fn observe_process(expected: &ProcessIdentity) -> ProcessObservation {
         Err(_) => ProcessObservation::Unknown,
     }
 }
-pub(crate) fn become_subreaper() -> io::Result<()> {
+pub(crate) fn initialize_supervision(_scope: Option<&super::ProcessTreeScope>) -> io::Result<()> {
     if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
         Err(io::Error::last_os_error())
     } else {
@@ -159,7 +159,7 @@ pub(crate) struct ReapedChildren {
     pub failed: bool,
     pub none_remaining: bool,
 }
-pub(crate) fn reap_adopted() -> io::Result<ReapedChildren> {
+pub(crate) fn reap_adopted(_scope: Option<&super::ProcessTreeScope>) -> io::Result<ReapedChildren> {
     let mut failed = false;
     loop {
         let mut status = 0;
@@ -218,15 +218,20 @@ pub(crate) fn capture_owned_scope(
     if !m.is_dir() {
         return Err(io::Error::other("execution cgroup is not a directory"));
     }
-    Ok(Some(super::ProcessTreeScope {
-        cgroup_path: path,
-        device: m.dev(),
-        inode: m.ino(),
-        boot_id: boot_id()?,
-    }))
+    Ok(Some(super::ProcessTreeScope::LinuxCgroup(
+        super::LinuxCgroupScope {
+            cgroup_path: path,
+            device: m.dev(),
+            inode: m.ino(),
+            boot_id: boot_id()?,
+        },
+    )))
 }
 pub(crate) fn scope_proven_empty(scope: &super::ProcessTreeScope) -> bool {
     use std::os::unix::fs::MetadataExt;
+    let super::ProcessTreeScope::LinuxCgroup(scope) = scope else {
+        return false;
+    };
     if boot_changed(&scope.boot_id) {
         return true;
     }
@@ -246,4 +251,11 @@ pub(crate) fn scope_proven_empty(scope: &super::ProcessTreeScope) -> bool {
         }
         _ => false,
     }
+}
+
+pub(crate) fn completion_evidence() -> &'static str {
+    "herder_worker_waitpid_subreaper"
+}
+pub(crate) fn empty_scope_evidence() -> &'static str {
+    "owned_cgroup_empty"
 }

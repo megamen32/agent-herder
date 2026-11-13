@@ -73,6 +73,8 @@ pub struct ProcessIdentity {
     pub node_ref: String,
     pub boot_id: String,
     pub pid: u32,
+    /// Kernel birth cookie, scoped to node and boot. Linux uses /proc starttime;
+    /// Darwin uses proc_uniqidentifierinfo.p_uniqueid, which survives exec.
     pub start_ticks: u64,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,8 +123,10 @@ pub struct CompletionReceipt {
     /// Exit status of the originally launched command, not a guess from liveness.
     pub exit_code: Option<i32>,
     pub signal: Option<i32>,
+    /// An observed descendant exit failed. Darwin cannot reap orphan exits;
+    /// its receipt records the command's real exit and a separate empty-tree proof.
     pub descendant_failure: bool,
-    /// True only when this worker proved its entire supervised tree was reaped.
+    /// True only when a kernel scope or subreaper proves the entire tree stopped.
     pub tree_complete: bool,
     pub process_may_be_running: bool,
     pub evidence_source: String,
@@ -185,20 +189,44 @@ pub struct ExecutionSnapshot {
     pub worker_lock_held: bool,
 }
 
+/// This operation never stops an admitted worker or an attached external process.
+#[derive(Debug, Clone)]
+pub enum UnlaunchedCancellation {
+    Cancelled(ExecutionSnapshot),
+    AlreadyTerminal(ExecutionSnapshot),
+    NotProven(ExecutionSnapshot),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerBackend {
     Auto,
     Direct,
     SystemdUser,
+    LaunchdUser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ProcessTreeScope {
+    LinuxCgroup(LinuxCgroupScope),
+    DarwinCoalition(DarwinCoalitionScope),
+}
+/// Keep the original Linux representation readable by existing durable stores.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProcessTreeScope {
+pub struct LinuxCgroupScope {
     pub cgroup_path: PathBuf,
     pub device: u64,
     pub inode: u64,
     pub boot_id: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DarwinCoalitionScope {
+    pub coalition_id: u64,
+    pub boot_id: String,
+    pub launchd_domain: String,
+    pub launchd_label: String,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerOutcome {

@@ -55,7 +55,7 @@ export async function executeProjectRelease(input: unknown, store: ProjectReleas
 
 export function registerProjectReleaseTools(server: McpServer, store: ProjectReleaseLeaseStore = projectReleaseLeases) {
   server.registerTool("project_release_lease", {
-    description: "Acquire/renew/release/check an exclusive project release lease on this authority host, or inspect holder session and remaining TTL to contact it through existing SendMessage. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. Acquisition returns a short-lived ownership capability once; do not publish it. Renew before expiry and use token+fence at the final deployment boundary. No command execution, merge, or deployment is authorized by a lease.",
+    description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. Acquisition returns a private capability once; status never reveals it. Use token+fence through the deployment guard at the final effect boundary. A lease grants no command, merge or deployment authorization.",
     inputSchema: schema,
   }, async args => {
     const result = await executeProjectRelease(args, store);

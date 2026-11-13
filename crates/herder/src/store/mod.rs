@@ -88,7 +88,7 @@ impl Writer {
 
     /// Migrate a validated v3 store atomically. The old writer is consumed;
     /// callers must reopen to obtain the v4 writer fence. Never called by open.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn migrate_search_v4(
         mut self,
         gate: &crate::application::target_gate::PinnedTargetGateGuard,
@@ -195,7 +195,7 @@ impl Writer {
 
     /// Provision only an empty, isolated v3 store while holding its protected
     /// gate. This is not a legacy cutover or permission to adopt imported rows.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn initialize_fresh_stop_authority(
         &mut self,
         gate: &crate::application::target_gate::PinnedTargetGateGuard,
@@ -309,7 +309,7 @@ mod tests {
         assert_eq!((version, count), (3, 0));
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn migrated_v4_reopens_and_fences_old_v3_writer() {
         use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};

@@ -64,7 +64,7 @@ catalog! {
     "stop" => Stop(Stop) { read: [], mutate: ["stop"] },
     "search" => Search(Search) { read: ["search"], mutate: [] },
     "export" => Export(Export) { read: ["export"], mutate: [] },
-    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete", "reconcile", "reconcile_process", "cancel_execution"] },
+    "automation" => Automation(Automation) { read: ["list", "get", "wait_status"], mutate: ["create", "update", "pause", "delete", "reconcile", "reconcile_process", "cancel_execution"] },
     "resource" => Resource(Resource) { read: ["list", "get"], mutate: ["register", "update", "claim", "renew", "release", "declare", "bind"] },
     "configure" => Configure(Configure) { read: ["get"], mutate: ["set"] },
     "permission" => Permission(Permission) { read: ["get"], mutate: ["respond"] },
@@ -194,12 +194,14 @@ actions!(Export { Export { session_ref: String, format: ExportFormat } });
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProcessExecution {
+    /// Start once on the configured execution node. A stable request key identifies the same job across retries and core restarts.
     Start {
         argv: Vec<String>,
         cwd: String,
         deadline_unix_ms: Option<u64>,
         stop_grace_ms: Option<u64>,
     },
+    /// Observe an existing local process by birth and boot identity. Attachment cannot invent an exit code or ownership of an untracked process tree.
     Attach {
         pid: u32,
         boot_id: Option<String>,
@@ -237,6 +239,7 @@ pub enum AutomationRule {
         child_ref: String,
         wake_message: String,
     },
+    /// Register a durable process wait and lease delegation. After armed admission end the turn; the ordinary-code supervisor renews claims and resumes this exact session on terminal evidence.
     ProcessCompletion {
         execution: ProcessExecution,
         #[serde(default)]
@@ -246,6 +249,7 @@ pub enum AutomationRule {
 }
 actions!(Automation {
     List { session_ref: Option<String>, cursor: Option<String> },
+    WaitStatus { harness: String, native_session_id: String, node_ref: Option<String> },
     Get { rule_ref: String },
     Create { session_ref: String, rule: AutomationRule, request_key: String },
     Reconcile { rule_ref: String, child_ref: String, event_id: String },
@@ -328,6 +332,7 @@ mod tests {
         // Each declared action gets an input that must deserialize and carry the
         // intended access class; the schema must expose exactly those actions.
         let cases = [
+            ("automation", json!({"action":"wait_status","harness":"codex","native_session_id":"native","node_ref":"node"}), Access::Read),
             ("discover", json!({"action":"nodes"}), Access::Read),
             ("discover", json!({"action":"instances"}), Access::Read),
             ("discover", json!({"action":"projects","instance_ref":"i"}), Access::Read),

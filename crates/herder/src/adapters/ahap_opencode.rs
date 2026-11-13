@@ -300,6 +300,52 @@ fn exact_completed_turn(session: &Value, session_id: &str, harness: &str, event_
 fn valid_native_id(v: &str) -> bool {
     !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control)
 }
+
+/// Positive evidence comes from native message fields, never a synthesized
+/// display ID or prompt text. Prefixes are the exact ZCode automation mapping;
+/// they are compared to observed native anchors, not stripped from caller IDs.
+fn recovered_message_id(messages: &Value, session: &str, key: &str, harness: &str) -> Option<String> {
+    if !valid_native_id(session) || !valid_native_id(key) {
+        return None;
+    }
+    let mut accepted = vec![key.to_owned()];
+    let mut automation_anchors = Vec::new();
+    if harness == "zcode" {
+        // The legacy writer's prefix mapping is not injective for caller keys
+        // already in the native namespace. Such old requests stay UNKNOWN.
+        if key.starts_with("agent-herder:auto:") || key.starts_with("queue_agent-herder:auto:") {
+            return None;
+        }
+        let automation = format!("agent-herder:auto:{key}");
+        automation_anchors.push(format!("queue_{automation}"));
+        automation_anchors.push(automation);
+        accepted.extend(automation_anchors.iter().cloned());
+    }
+    let rows = messages.as_array()?;
+    if rows.len() > 200 { return None }
+    let correlated = |value: &Value| value.as_str()
+        .is_some_and(|id| accepted.iter().any(|expected| expected == id));
+    let candidates: Vec<_> = rows.iter().filter(|row| {
+        ["sourceCommandId", "inputId"].iter()
+            .any(|field| row.get(*field).is_some_and(&correlated))
+    }).collect();
+    if candidates.len() != 1 { return None }
+    let row = candidates[0];
+    if row.get("role").and_then(Value::as_str) != Some("user")
+        || row.get("sessionId").is_some_and(|id| id.as_str() != Some(session))
+        || harness == "zcode" && !row.get("sourceCommandId").and_then(Value::as_str)
+            .is_some_and(|id| automation_anchors.iter().any(|anchor| anchor == id))
+        || ["sourceCommandId", "inputId"].iter()
+            .any(|field| row.get(*field).is_some_and(|value| !correlated(value)))
+    {
+        return None;
+    }
+    let native_id = row.get("nativeMessageId").and_then(Value::as_str)?;
+    if !valid_native_id(native_id) || row.get("id").and_then(Value::as_str) != Some(native_id) {
+        return None;
+    }
+    Some(native_id.to_owned())
+}
 // This is an internal opaque reference, never a native user-message ID.
 // Encode both kinds so a native ID resembling this prefix is still unambiguous.
 const RECEIPT_PREFIX: &str = "ahap-receipt:v1:";
@@ -531,6 +577,27 @@ impl NativeSessionReader for AhapOpenCode {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
         self.read_snapshot(target)
     }
+    async fn recover_admission(
+        &self,
+        target: &SessionAddress,
+        key: &RequestKey,
+    ) -> Result<Option<NativeReceipt>, ReadError> {
+        if !self.matches(target) || !valid_native_id(&key.0) {
+            return Err(ReadError("invalid admission recovery binding".into()));
+        }
+        let session = self.raw_call("getSession", json!({"id": target.native_session_id}))?;
+        if session.get("id").and_then(Value::as_str) != Some(target.native_session_id.as_str())
+            || session.get("harness").and_then(Value::as_str) != Some(self.policy.harness.as_str())
+        {
+            return Err(ReadError("AHAP session identity mismatch".into()));
+        }
+        let messages = self.messages(target, 200)?;
+        Ok(recovered_message_id(&messages, &target.native_session_id, &key.0, &self.policy.harness)
+            .map(|id| NativeReceipt {
+                target: target.clone(),
+                native_id: ReceiptReference::Message(id).encode(),
+            }))
+    }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         if !self.matches(&receipt.target) {
             return Err(ReadError("invalid receipt".into()));
@@ -675,6 +742,7 @@ for line in sys.stdin:
   else:v={'ok':True,'admitted':True,'nativeInputMessageId':native_id}
  elif m=='getSessionMessages':
   v=[{'id':native_id,'role':'user','text':'hi','inputId':'key'}]
+  if os.environ['MODE']=='recovery':v=[{'id':native_id,'nativeMessageId':native_id,'role':'user','sourceCommandId':'queue_agent-herder:auto:key','sessionId':session}]
   if os.environ['MODE']=='duplicate':v.append({'id':native_id,'role':'assistant','text':'ambiguous'})
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
@@ -922,6 +990,84 @@ for line in sys.stdin:
         assert!(!valid_native_id(""));
         assert!(!valid_native_id(&"x".repeat(4097)));
         assert!(!valid_native_id("session\nforged"));
+    }
+
+    #[test]
+    fn recovery_requires_one_native_user_message_with_exact_session_and_key_evidence() {
+        let row = json!({"id":"msg-native","nativeMessageId":"msg-native","role":"user",
+            "sessionId":"session-a","sourceCommandId":"queue_agent-herder:auto:request-k"});
+        let messages = json!([row.clone()]);
+        assert_eq!(recovered_message_id(&messages, "session-a", "request-k", "zcode"), Some("msg-native".into()));
+        assert_eq!(recovered_message_id(&messages, "session-b", "request-k", "zcode"), None);
+        assert_eq!(recovered_message_id(&messages, "session-a", "other-key", "zcode"), None);
+        assert_eq!(recovered_message_id(&messages, "session-a", "request-k", "opencode"), None);
+        let opencode = json!([{"id":"msg-opencode","nativeMessageId":"msg-opencode","role":"user",
+            "sessionId":"session-a","inputId":"request-k"}]);
+        assert_eq!(recovered_message_id(&opencode, "session-a", "request-k", "opencode"), Some("msg-opencode".into()));
+        assert_eq!(recovered_message_id(&opencode, "session-a", "other-key", "opencode"), None);
+        assert_eq!(recovered_message_id(&json!([row.clone(), row.clone()]), "session-a", "request-k", "zcode"), None);
+        for field in ["nativeMessageId", "sourceCommandId"] {
+            let mut incomplete = row.clone();
+            incomplete.as_object_mut().unwrap().remove(field);
+            assert_eq!(recovered_message_id(&json!([incomplete]), "session-a", "request-k", "zcode"), None);
+        }
+        let mut conflicting = row.clone();
+        conflicting["inputId"] = json!("different-key");
+        assert_eq!(recovered_message_id(&json!([conflicting]), "session-a", "request-k", "zcode"), None);
+        let mut synthetic = row.clone();
+        synthetic["id"] = json!("zcode-message-0");
+        assert_eq!(recovered_message_id(&json!([synthetic]), "session-a", "request-k", "zcode"), None);
+        let mut assistant = row;
+        assistant["role"] = json!("assistant");
+        assert_eq!(recovered_message_id(&json!([assistant]), "session-a", "request-k", "zcode"), None);
+    }
+
+    #[test]
+    fn zcode_recovery_requires_automation_anchor_and_rejects_reserved_key_aliases() {
+        let base = json!({"id":"msg-native","nativeMessageId":"msg-native","role":"user"});
+        for fields in [
+            json!({"sourceCommandId":"request-k"}),
+            json!({"inputId":"request-k"}),
+            json!({"inputId":"agent-herder:auto:request-k"}),
+            json!({"sourceCommandId":"request-k","inputId":"request-k"}),
+        ] {
+            let mut row = base.clone();
+            row.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+            assert_eq!(recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"), None);
+        }
+        for anchor in ["agent-herder:auto:request-k", "queue_agent-herder:auto:request-k"] {
+            let mut row = base.clone();
+            row["sourceCommandId"] = json!(anchor);
+            row["inputId"] = json!("request-k");
+            assert_eq!(recovered_message_id(&json!([row.clone()]), "session-a", "request-k", "zcode"), Some("msg-native".into()));
+            row["sessionId"] = json!("other-session");
+            assert_eq!(recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"), None);
+        }
+        for key in ["agent-herder:auto:request-k", "queue_agent-herder:auto:request-k"] {
+            let mut row = base.clone();
+            row["sourceCommandId"] = json!(key);
+            assert_eq!(recovered_message_id(&json!([row]), "session-a", key, "zcode"), None);
+        }
+        let key = "create-prompt:782a4a3d9263b0e2690f1847a710fd7597a48c57a9e0f04e8cf5a24dc85b672d";
+        let row = json!({"id":"msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c",
+            "nativeMessageId":"msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c","role":"user",
+            "sessionId":"sess_bae78beb-46f1-4199-8eaa-d1a145b1833e",
+            "sourceCommandId":format!("agent-herder:auto:{key}")});
+        assert_eq!(recovered_message_id(&json!([row]), "sess_bae78beb-46f1-4199-8eaa-d1a145b1833e", key, "zcode"),
+            Some("msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c".into()));
+    }
+
+    #[tokio::test]
+    async fn zcode_lost_ack_recovery_uses_only_bounded_native_reads() {
+        let (fixture, adapter) = setup_with_policy("recovery", "zcode", SendMode::Queue, "session:opaque").unwrap();
+        let target = SessionAddress { instance: adapter.instance.clone(), native_session_id: "session:opaque".into() };
+        let receipt = adapter.recover_admission(&target, &RequestKey("key".into())).await.unwrap().unwrap();
+        assert!(matches!(ReceiptReference::decode(&receipt.native_id).unwrap(), ReceiptReference::Message(id) if id == "native/message:β"));
+        assert!(matches!(adapter.reconcile(&receipt).await.unwrap(), Observation::Confirmed { .. }));
+        drop(adapter);
+        let trace = fs::read_to_string(fixture.0.join("trace")).unwrap();
+        assert!(trace.lines().all(|method| matches!(method, "initialize" | "init" | "getSession" | "getSessionMessages")));
+        assert_eq!(trace.lines().filter(|method| *method == "getSessionMessages").count(), 2);
     }
 }
 

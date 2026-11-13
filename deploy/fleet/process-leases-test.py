@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 sys.dont_write_bytecode = True
 loader = importlib.machinery.SourceFileLoader(
@@ -114,9 +115,16 @@ class RolloutContracts(unittest.TestCase):
             "candidate_selector_sha256": candidate.digest(self.new_selector),
             "candidate_manifest_sha256": candidate.digest(self.manifest_path)}
         candidate.create(self.new / "process-leases-build.json", candidate.encoded(self.build_receipt))
+        self.guard = Mock(spec=["assert_mutation_allowed"])
         self.install_args = argparse.Namespace(candidate=self.new_selector, selector=self.selector,
             launcher=self.launcher, backup=self.root / "backup",
             expected_selector_sha256=candidate.digest(self.selector))
+
+    def test_installer_has_no_unguarded_cli_path(self):
+        with self.assertRaisesRegex(RuntimeError, "held release guard"):
+            candidate.install(self.install_args)
+        self.assertEqual(self.selector.read_bytes(), self.before_selector)
+        self.assertFalse((self.root / "backup").exists())
 
     def test_check_does_not_provision_or_execute(self):
         result = candidate.check_selector(self.new_selector, self.new_launcher)
@@ -136,6 +144,35 @@ class RolloutContracts(unittest.TestCase):
         self.assertEqual(self.manifest["component_provenance"]["opencode_source_commit"], "preserve-opencode")
         self.assertEqual(self.new_selection["profiles"], self.selection["profiles"])
         self.assertEqual(self.manifest["launch_compat"]["env"]["existing"], "preserve")
+
+    def test_optional_resource_bridge_is_pinned_by_helper_and_installed_launcher(self):
+        self.assertIsNone(candidate.check_selector(self.new_selector, self.new_launcher)["resource_bridge_sha256"])
+        bridge = self.new / "fixture/herder_resource_bridge"
+        candidate.create(bridge, b"immutable bridge fixture", 0o500)
+        self.manifest["resource_bridge"] = str(bridge)
+        self.manifest["sha256"]["resource_bridge"] = candidate.digest(bridge)
+        self.manifest["remote_ahap_wrappers"] = []
+        self.manifest_path.write_bytes(candidate.encoded(self.manifest))
+        self.new_selection["manifest_sha256"] = candidate.digest(self.manifest_path)
+        self.new_selector.write_bytes(candidate.encoded(self.new_selection))
+        self.profile.write_bytes(candidate.encoded({"owner": {"principal": "owner-a", "kind": "codex",
+            "executable": self.manifest["node"], "ahap_script": self.manifest["adapters"]["codex"]}}))
+        checked = candidate.check_selector(self.new_selector, self.new_launcher)
+        self.assertEqual(checked["resource_bridge_sha256"], candidate.digest(bridge))
+        actual = Path(__file__).with_name("launch-v1-core.py")
+        loader = importlib.machinery.SourceFileLoader("fixture_actual_launcher", str(actual))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        launcher = importlib.util.module_from_spec(spec)
+        loader.exec_module(launcher)
+        argv, env, receipt = launcher.prepare(str(self.new_selector))
+        self.assertEqual(receipt["resource_bridge_sha256"], candidate.digest(bridge))
+        self.assertNotIn("HERDER_PROCESS_WORKER", env)
+        bridge.chmod(0o700)
+        bridge.write_bytes(b"changed after review")
+        with self.assertRaisesRegex(ValueError, "artifact mismatch: resource_bridge"):
+            candidate.check_selector(self.new_selector, self.new_launcher)
+        with self.assertRaisesRegex(ValueError, "resource bridge digest mismatch"):
+            launcher.prepare(str(self.new_selector))
 
     def test_worker_corruption_is_rejected(self):
         Path(self.manifest["process_worker"]).chmod(0o700)
@@ -171,7 +208,7 @@ class RolloutContracts(unittest.TestCase):
         candidate.create(marker, candidate.encoded({"schema": "v1", "storage_id": "foreign-store"}))
         before = marker.read_bytes()
         with self.assertRaisesRegex(ValueError, "identity mismatch"):
-            candidate.install(self.install_args)
+            candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(marker.read_bytes(), before)
         self.assertEqual(self.selector.read_bytes(), self.before_selector)
         self.assertFalse((self.root / "backup").exists())
@@ -180,19 +217,19 @@ class RolloutContracts(unittest.TestCase):
         self.selector.write_bytes(self.selector.read_bytes() + b"\n")
         before = self.selector.read_bytes()
         with self.assertRaisesRegex(ValueError, "selector changed"):
-            candidate.install(self.install_args)
+            candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(self.selector.read_bytes(), before)
         self.assertEqual(self.launcher.read_bytes(), self.before_launcher)
 
     def test_profile_changes_invalidate_candidate(self):
         self.profile.write_bytes(candidate.encoded({"owner": {"principal": "owner-b"}}))
         with self.assertRaises(ValueError):
-            candidate.install(self.install_args)
+            candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(self.selector.read_bytes(), self.before_selector)
         self.assertFalse((self.root / "resources").exists())
 
     def test_install_and_rollback_preserve_authority_db(self):
-        result = candidate.install(self.install_args)
+        result = candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(result["status"], "configured_pending_restart")
         self.assertTrue(result["restart_required"])
         self.assertEqual(self.database.read_bytes(), self.before_db)
@@ -202,7 +239,7 @@ class RolloutContracts(unittest.TestCase):
         for path in (resource, resource / "resources", self.root / "executions"):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE((resource / "storage.json").stat().st_mode), 0o600)
-        outcome = candidate.rollback(argparse.Namespace(receipt=Path(result["rollback_receipt"])))
+        outcome = candidate.rollback(argparse.Namespace(receipt=Path(result["rollback_receipt"])), guard=self.guard)
         self.assertEqual(outcome["status"], "configuration_rolled_back_pending_restart")
         self.assertEqual(self.selector.read_bytes(), self.before_selector)
         self.assertEqual(self.launcher.read_bytes(), self.before_launcher)
@@ -218,21 +255,21 @@ class RolloutContracts(unittest.TestCase):
         candidate.replace = interrupted
         try:
             with self.assertRaises(OSError):
-                candidate.install(self.install_args)
+                candidate.install(self.install_args, guard=self.guard)
         finally:
             candidate.replace = original
         self.assertNotEqual(self.launcher.read_bytes(), self.before_launcher)
         self.assertEqual(self.selector.read_bytes(), self.before_selector)
-        candidate.rollback(argparse.Namespace(receipt=self.root / "backup/receipt.json"))
+        candidate.rollback(argparse.Namespace(receipt=self.root / "backup/receipt.json"), guard=self.guard)
         self.assertEqual(self.launcher.read_bytes(), self.before_launcher)
         self.assertEqual(self.database.read_bytes(), self.before_db)
 
     def test_rollback_refuses_newer_release(self):
-        result = candidate.install(self.install_args)
+        result = candidate.install(self.install_args, guard=self.guard)
         self.selector.write_bytes(self.selector.read_bytes() + b"\n")
         changed = self.selector.read_bytes()
         with self.assertRaisesRegex(ValueError, "another release"):
-            candidate.rollback(argparse.Namespace(receipt=Path(result["rollback_receipt"])))
+            candidate.rollback(argparse.Namespace(receipt=Path(result["rollback_receipt"])), guard=self.guard)
         self.assertEqual(self.selector.read_bytes(), changed)
 
 

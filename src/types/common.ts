@@ -52,6 +52,12 @@ export interface SessionMessageView {
   /** Execution model observed on this native message. */
   model?: string;
   id: string;
+  /** Actual native message ID; absent for a synthetic display ID. */
+  nativeMessageId?: string;
+  /** Exact native command anchor, preserved without deriving a request key. */
+  sourceCommandId?: string;
+  /** Exact session identity when present in the native message itself. */
+  sessionId?: string;
   role: "user" | "assistant" | "tool" | "system";
   /** Native turn identity; absent when the transcript does not prove it. */
   turnId?: string;

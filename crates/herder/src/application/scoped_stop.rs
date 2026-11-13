@@ -1,7 +1,7 @@
 //! Scoped HumanStop authority: one pinned gate shared by stop and handoff.
 //! Never infer authority from a native snapshot or create a second registry.
-#[cfg(not(target_os = "linux"))]
-compile_error!("scoped HumanStop gate currently requires Linux inode semantics");
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+compile_error!("scoped HumanStop gate requires supported Unix inode semantics");
 
 pub mod archive;
 pub mod enroll;

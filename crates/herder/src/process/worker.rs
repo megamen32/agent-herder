@@ -1,5 +1,5 @@
 use super::{
-    ExecutionStore, linux,
+    ExecutionStore, platform,
     storage::{lock, open_private},
     types::*,
     unix_millis,
@@ -68,11 +68,12 @@ pub fn run_worker_with_hooks(
         store.save_record(&record)?;
         return Ok(WorkerOutcome::NoReplayUnknown);
     }
-    record.worker = Some(linux::capture_process(
+    record.worker = Some(platform::capture_process(
         std::process::id(),
         store.node_ref(),
     )?);
-    record.tree_scope = linux::capture_owned_scope(execution_ref)?;
+    let scope_result = platform::capture_owned_scope(execution_ref);
+    record.tree_scope = scope_result.as_ref().ok().cloned().flatten();
     record.heartbeat_at_unix_ms = Some(unix_millis()?);
     record.state = ExecutionState::Starting;
     store.save_record(&record)?;
@@ -83,6 +84,19 @@ pub fn run_worker_with_hooks(
             &mut record,
             hooks,
             CompletionReason::LeaseLost,
+            tree_complete,
+            false,
+            Some(bounded_detail(error)),
+        )?;
+        return Ok(WorkerOutcome::Completed);
+    }
+    if let Err(error) = scope_result {
+        let tree_complete = matches!(record.request, ExecutionRequest::Start(_));
+        finish(
+            store,
+            &mut record,
+            hooks,
+            CompletionReason::LaunchFailed,
             tree_complete,
             false,
             Some(bounded_detail(error)),
@@ -133,7 +147,7 @@ fn finish(
         tree_complete,
         process_may_be_running: !tree_complete,
         evidence_source: if matches!(record.request, ExecutionRequest::Start(_)) {
-            "herder_worker_waitpid_subreaper".into()
+            platform::completion_evidence().into()
         } else {
             "herder_exact_process_identity_observer".into()
         },
@@ -178,7 +192,7 @@ fn supervise_command(
         )?;
         return Ok(WorkerOutcome::Completed);
     }
-    if let Err(error) = linux::become_subreaper() {
+    if let Err(error) = platform::initialize_supervision(record.tree_scope.as_ref()) {
         finish(
             store,
             &mut record,
@@ -228,7 +242,7 @@ fn supervise_command(
         }
     };
     record.started_at_unix_ms = Some(unix_millis()?);
-    record.process = linux::capture_process(child.id(), store.node_ref()).ok();
+    record.process = platform::capture_process(child.id(), store.node_ref()).ok();
     record.state = ExecutionState::Running;
     record.heartbeat_at_unix_ms = Some(unix_millis()?);
     store.save_record(&record)?;
@@ -246,17 +260,17 @@ fn supervise_command(
             }
         }
         let no_children_remaining = if record.root_exit.is_some() {
-            let reaped = linux::reap_adopted()?;
+            let reaped = platform::reap_adopted(record.tree_scope.as_ref())?;
             descendant_failure |= reaped.failed;
             reaped.none_remaining
         } else {
             false
         };
-        let members = linux::descendants(std::process::id(), store.node_ref())?;
+        let members = platform::descendants(std::process::id(), store.node_ref())?;
         record.observed_members = members.iter().take(256).cloned().collect();
-        // ECHILD from the subreaper is the decisive tree-completion proof.
-        // A single /proc snapshot may miss a grandchild being adopted while
-        // its exiting parent disappears during enumeration.
+        // The platform's kernel proof is decisive: ECHILD from a Linux
+        // subreaper, or a private Darwin coalition containing only this worker.
+        // Process enumeration alone can miss a concurrently reparented child.
         if no_children_remaining && members.is_empty() {
             let (reason, detail) = match &stop {
                 Some((reason, _, detail)) => (*reason, Some(detail.clone())),
@@ -302,7 +316,8 @@ fn supervise_command(
             } else {
                 libc::SIGTERM
             };
-            if let Err(error) = linux::signal_tree(std::process::id(), store.node_ref(), signal) {
+            if let Err(error) = platform::signal_tree(std::process::id(), store.node_ref(), signal)
+            {
                 // Do not manufacture a stopped tree or grant permission to reuse it.
                 record.observation_detail = Some(format!(
                     "{reason:?}; stop not confirmed: {}",
@@ -326,7 +341,7 @@ fn watch_existing(
     record.observed_members = vec![request.process.clone()];
     loop {
         let now = unix_millis()?;
-        let observation = linux::observe_process(&request.process);
+        let observation = platform::observe_process(&request.process);
         if observation != ProcessObservation::Alive {
             let detail = match observation {
                 ProcessObservation::Gone => {

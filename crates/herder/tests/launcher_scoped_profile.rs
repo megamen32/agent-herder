@@ -1003,6 +1003,7 @@ for line in sys.stdin:
  else:time.sleep(30);v=None
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "#).unwrap();
+    fs::set_permissions(&adapter, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
         "kind":"chatgpt","principal":"owner","node":"node","instance":"browser-fixture",
         "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":adapter,"code_home":f.root,"cwd":f.root}}).to_string()).unwrap();
@@ -1010,7 +1011,7 @@ for line in sys.stdin:
     fs::write(&driver, r#"import json,os,select,subprocess,sys
 compat=os.environ.get('HERDER_V1_COMPAT_BINARY')
 env=os.environ.copy();env['HERDER_NATIVE_COMMAND']=sys.argv[1]
-p=subprocess.Popen([compat or sys.argv[1],'--trusted-owner-profile',sys.argv[2]],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+p=subprocess.Popen([compat or sys.argv[1],'--trusted-owner-profile',sys.argv[2]],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,text=True,bufsize=1)
 def call(i,method,params):
  p.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params})+'\n');p.stdin.flush()
  assert select.select([p.stdout],[],[],5)[0], 'timeout '+method

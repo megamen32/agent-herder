@@ -462,7 +462,7 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     }
     let mut file = OpenOptions::new()
         .read(true)
-        .custom_flags(0x20000 | 0x800)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
     let meta = file.metadata()?;
     if !meta.is_file()
@@ -492,7 +492,7 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     // O_NOFOLLOW | O_NONBLOCK prevents symlink and special-file blocking.
     let database = OpenOptions::new()
         .read(true)
-        .custom_flags(0x20000 | 0x800)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&p.database)?;
     let dm = database.metadata()?;
     if !dm.is_file()

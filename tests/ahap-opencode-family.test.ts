@@ -30,12 +30,15 @@ for (const family of ["v2","v22"] as const) it(`pins ${family} before one fresh 
     input.end(requests.map(x=>JSON.stringify(x)).join("\n")+"\n");await done;
     const response=chunks.join("").trim().split("\n").map(x=>JSON.parse(x));
     expect(response[0].result.capabilities.nativeProtocol).toBe(family);
+    expect(response[0].result.capabilities.nativeStartAdmission).toBe(family === "v2" ? "steer-before-turn-v1" : undefined);
     expect(response[1].result.id).toBe("ses_test");
     const create=calls.find(c=>c.method==="POST" && c.path.endsWith("/session")); expect(create?.path).toBe(family==="v2"?"/api/session":"/session");
     const send=calls.filter(c=>c.method==="POST").at(-1)!;
     expect(send.path).toBe(family==="v2"?"/api/session/ses_test/prompt":"/session/ses_test/message");
-    expect(send.body).toEqual(family==="v2"?{text:"hello",delivery:"queue",metadata:{agentHerderInputId:"key"}}:{parts:[{type:"text",text:"hello"}]});
+    expect(send.body).toEqual(family==="v2"?{text:"hello",delivery:"steer",metadata:{agentHerderInputId:"key"}}:{parts:[{type:"text",text:"hello"}]});
     expect(response[2].result).toMatchObject({admitted:true,nativeInputMessageId:"msg_ABC"});
+    expect(calls.filter(c=>c.method==="PATCH")).toHaveLength(0);
+    expect(calls.filter(c=>c.method==="POST" && c.path===(family==="v2"?"/api/session/ses_test/prompt":"/session/ses_test/message"))).toHaveLength(1);
   } finally {server.close();}
 });
 

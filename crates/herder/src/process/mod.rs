@@ -1,11 +1,18 @@
 //! Herder-owned supervised executions. Authorization belongs to the application.
 //! This module never acquires resource ownership or delivers agent messages.
+#[cfg(target_os = "macos")]
+mod darwin;
+#[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+use darwin as platform;
+#[cfg(target_os = "linux")]
+use linux as platform;
 mod storage;
 mod types;
 mod worker;
 
-pub use linux::{capture_process, observe_process};
+pub use platform::{capture_process, observe_process};
 pub use storage::{ExecutionStore, execution_ref_for};
 pub use types::*;
 pub use worker::{ExecutionHooks, NoopHooks, run_worker, run_worker_with_hooks};

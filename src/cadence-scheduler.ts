@@ -13,8 +13,8 @@ export interface CadenceSchedule {
 }
 export interface CadenceOptions {
   path: string; now?: () => number;
-  inspect: (sessionId: string, harness: string) => Promise<"idle" | "busy" | "held" | "unavailable">;
-  deliver: (schedule: CadenceSchedule) => Promise<{ status: "accepted" | "rejected" | "unknown"; receipt?: Record<string, unknown> }>;
+  inspect: (sessionId: string, harness: string) => Promise<"idle" | "busy" | "held" | "waiting" | "unavailable">;
+  deliver: (schedule: CadenceSchedule) => Promise<{ status: "accepted" | "rejected" | "unknown" | "deferred"; receipt?: Record<string, unknown> }>;
 }
 const MINUTE = 60_000;
 export const CADENCE_MESSAGE = "Продолжи исходную задачу в этом же чате: проверь актуальное состояние, выполни следующий полезный шаг и обнови результат. Если цель достигнута, заверши cadence через cadence_control action=complete. При явной паузе прекрати расписание через action=pause. Это пробуждение не разрешает финансовые или иные ранее не разрешённые внешние действия.";
@@ -86,6 +86,8 @@ export class CadenceScheduler {
         if(observation==="held") {
           await this.transaction(rows=>{const row=rows.find(r=>r.id===candidate.id);if(row?.state==="scheduled"){row.state="paused";row.reason="HumanStop";}});continue;
         }
+        // A process wait is temporary; it never becomes a HumanStop pause.
+        if(observation==="waiting")continue;
         const due=Date.parse(candidate.nextAt);
         const hourly=due>Date.parse(candidate.activatedAt)+120*MINUTE;
         if(due<=this.now() && hourly && (observation==="busy" || this.now()-due>=MINUTE)) {
@@ -116,6 +118,7 @@ export class CadenceScheduler {
           row.result={status:result.status,...result.receipt};
           // A concurrent explicit pause/complete remains authoritative.
           if(row.state!=="dispatching")return;
+          if(result.status==="deferred"){row.state="scheduled";row.reason="process wait before submission";return;}
           if(result.status!=="accepted"){row.state=result.status==="unknown"?"delivery_unknown":"blocked";return;}
           const now=this.now();row.lastWakeAt=new Date(now).toISOString();row.nextAt=new Date(nextCadenceAt(Date.parse(row.activatedAt),now)).toISOString();row.state="scheduled";
         });

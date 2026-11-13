@@ -88,6 +88,7 @@ export async function serveOpenCodeAhap(
           ])],
           deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"],
           nativeProtocol: family,
+          ...(family === "v2" ? { nativeStartAdmission: "steer-before-turn-v1" } : {}),
           controlCapabilities: { ...CONTROL_CAPABILITIES, resume: canResume, recover: canRecover },
         },
       } });
@@ -147,13 +148,15 @@ export async function serveOpenCodeAhap(
             attemptedStartSessionIds.add(params.id);
             delivery = { ...delivery, queue: false, start: true, activeTurnOnly: true };
           } else if (options.start === true) {
-            // Preserve the existing fresh Start compatibility route on v2.
+            // A fresh v2 Start must enter native execution with its original input.
+            // Queue parks it in session_inbox; native steer admits it once now.
+            // activeTurnOnly suppresses the separate wakeInboxItem PATCH.
             if (!createdSessionIds.has(params.id) || attemptedStartSessionIds.has(params.id)) {
               error(id, -32602, "v2 Start requires a fresh runner-created session; use queue or steer for an existing session");
               continue;
             }
             attemptedStartSessionIds.add(params.id);
-            delivery = { ...delivery, queue: true, start: false, activeTurnOnly: true };
+            delivery = { ...delivery, queue: false, steer: true, start: false, activeTurnOnly: true };
           }
           result = await adapter.sendMessage(params.id, delivery);
           const receipt = result as SendMessageResult;

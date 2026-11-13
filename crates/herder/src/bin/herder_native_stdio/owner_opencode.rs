@@ -78,6 +78,21 @@ impl ApplicationPort for App {
                 };
                 return Some(rmcp::model::CallToolResult::structured(value));
             }
+            if let catalog::Request::Automation(catalog::Automation::WaitStatus{harness,native_session_id,node_ref})=&request{
+                if !matches!(identity.caller(),Caller::Principal(p) if p.id==self.policy.principal){
+                    return Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"unauthorized","effect":"none"})));
+                }
+                if harness!=&self.harness || node_ref.as_ref().is_some_and(|n|n!=&self.instance.node.0){
+                    return Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"owner_profile_mismatch","effect":"none"})));
+                }
+                if native_session_id.is_empty() || native_session_id.len()>4096{
+                    return Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"invalid_native_session","effect":"none"})));
+                }
+                return match &self.process{
+                    Some(process)=>process.call(identity,request).await,
+                    None=>Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"process_runtime_not_configured","effect":"none"}))),
+                };
+            }
             if let Some(result) = super::owner_registration::call(identity, &request,
                 &self.adapter, &self.policy, &self.instance, &self.authority, &self.grants) {
                 return Some(result);
@@ -205,6 +220,7 @@ impl ApplicationPort for App {
     }
 }
 pub struct BoundOwner {
+    pub harness: String,
     pub process: Option<Arc<ProcessAutomationApplication>>,
     pub server: ScopedTaskServer,
     pub policy: Arc<OwnerPolicy>,
@@ -269,13 +285,21 @@ pub(super) fn open_adapter(owner: &OwnerProfile, instance: &InstanceRef)
         && client.capabilities().get("nativeProtocol").and_then(serde_json::Value::as_str) != Some("v2") {
         SendMode::Start
     } else { SendMode::Queue };
+    // Fresh v2 sessions need their first input admitted before a turn starts.
+    // Continuations still use Queue. Older pinned runners retain their
+    // declared compatibility route until the paired adapter update is installed.
+    let initial_delivery_mode=if harness=="opencode"
+        && client.capabilities().get("nativeProtocol").and_then(serde_json::Value::as_str)==Some("v2")
+        && client.capabilities().get("nativeStartAdmission").and_then(serde_json::Value::as_str)==Some("steer-before-turn-v1"){
+        SendMode::Start
+    }else{delivery_mode};
     let adapter = Arc::new(
         AhapOpenCode::new_with_policy(
             Arc::new(client),
             instance.clone(),
             owner.cwd.clone(),
             "Herder".into(),
-            AhapPortPolicy { harness: harness.clone(), initial_delivery_mode: delivery_mode },
+            AhapPortPolicy { harness: harness.clone(), initial_delivery_mode },
         )
         .map_err(|_| "AHAP capabilities invalid")?,
     );
@@ -363,7 +387,7 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
     let app = Arc::new(App {
         authority: authority.clone(),
         instance: instance.clone(),
-        harness,
+        harness:harness.clone(),
         grants: grants.clone(),
         policy: policy.clone(),
         adapter: adapter.clone(),
@@ -376,5 +400,5 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
     let server = ScopedTaskServer::new(identity, grants, authority, app)
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
-    Ok(BoundOwner { server, policy, instance, process })
+    Ok(BoundOwner { server, policy, instance, process, harness })
 }

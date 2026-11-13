@@ -653,7 +653,7 @@ impl NativeSessionControl for CodexControl {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl crate::application::scoped_stop::BoundedNativeHandoff for CodexControl {
     fn submit_bounded(
         &self,

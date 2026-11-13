@@ -189,6 +189,16 @@ fn decode_receipt(raw: &str, b: &ReceiptBinding<'_>) -> Option<NativeReceipt> {
     })
 }
 
+/// Encode trusted native readback for a caller that already holds the fenced
+/// transaction and has compared the complete intent snapshot after native I/O.
+pub(crate) fn encode_native_receipt(
+    binding: &ReceiptBinding<'_>,
+    receipt: &NativeReceipt,
+) -> Option<String> {
+    let raw = serde_json::to_string(&envelope(binding, receipt)?).ok()?;
+    (raw.len() <= 65536).then_some(raw)
+}
+
 /// Save a receipt only for the exact durable intent; never replace existing evidence.
 /// The caller supplies a fenced writer connection, an authoritatively resolved
 /// binding and the actual receipt of this request. This format is not a signature
@@ -274,8 +284,8 @@ pub enum MissingReceiptRecovery {
 /// Persist UNKNOWN for interrupted admissions lacking a stored receipt.
 /// The caller must provide the store's fenced writer connection after ensuring
 /// that no dispatcher for this intent remains active. This is not a native
-/// lookup: the current reader port cannot query by request key. Stored receipt
-/// bytes are left untouched and require an authoritative binding to decode.
+/// lookup. The scoped task reconciler separately uses the optional exact-key
+/// native read port. Stored bytes require an authoritative binding to decode.
 pub fn recover_missing_receipt(
     connection: &mut Connection,
     intent_id: &str,

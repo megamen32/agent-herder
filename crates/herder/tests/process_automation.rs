@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 use herder::{
     application::{
         process_bindings::ProcessRuntimeConfig,
@@ -59,7 +59,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
             "herder-process-automation-{}-{}",
             std::process::id(),
             SystemTime::now()
@@ -410,6 +410,9 @@ struct Native {
     snapshots: AtomicUsize,
     busy: AtomicBool,
     lose_ack: AtomicBool,
+    recovery_enabled: AtomicBool,
+    recoveries: AtomicUsize,
+    accepted: std::sync::Mutex<Option<(SessionAddress, String)>>,
 }
 impl Native {
     fn new() -> Arc<Self> {
@@ -418,6 +421,9 @@ impl Native {
             snapshots: AtomicUsize::new(0),
             busy: AtomicBool::new(false),
             lose_ack: AtomicBool::new(false),
+            recovery_enabled: AtomicBool::new(false),
+            recoveries: AtomicUsize::new(0),
+            accepted: std::sync::Mutex::new(None),
         })
     }
 }
@@ -451,16 +457,24 @@ impl NativeSessionReader for Native {
             receipt: receipt.clone(),
         })
     }
+    async fn recover_admission(&self,target:&SessionAddress,key:&RequestKey)->Result<Option<NativeReceipt>,ReadError>{
+        self.recoveries.fetch_add(1,Ordering::SeqCst);
+        if !self.recovery_enabled.load(Ordering::SeqCst){return Ok(None)}
+        let accepted=self.accepted.lock().unwrap();
+        Ok(accepted.as_ref().filter(|(address,original)|address==target && original==&key.0)
+            .map(|(address,_)|NativeReceipt{target:address.clone(),native_id:"fixture-wake".into()}))
+    }
 }
 impl BoundedNativeHandoff for Native {
     fn submit_bounded(
         &self,
         plan: DispatchPlan,
         _: &str,
-        _: &RequestKey,
+        key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
         assert_eq!(plan.target.native_session_id, "native-parent");
         self.submits.fetch_add(1, Ordering::SeqCst);
+        *self.accepted.lock().unwrap()=Some((plan.target.clone(),key.0.clone()));
         if self.lose_ack.load(Ordering::SeqCst) {
             return Err(SubmitError::OutcomeUnknown {
                 receipt: None,
@@ -630,7 +644,7 @@ async fn completion_available_during_registration_returns_ready_without_wake() {
         .launch_prepared_with_backend(
             &record.execution_ref,
             Path::new(env!("CARGO_BIN_EXE_herder_process_worker")),
-            WorkerBackend::Direct,
+            if cfg!(target_os = "macos") { WorkerBackend::LaunchdUser } else { WorkerBackend::Direct },
         )
         .unwrap();
     fixture
@@ -920,4 +934,180 @@ async fn human_stop_then_release_does_not_reauthorize_an_old_wake() {
     }
     assert_eq!(native.submits.load(Ordering::SeqCst), 0);
     assert_eq!(fixture.wake_intents(), 0);
+}
+
+
+fn native_wait_query(native: &str) -> catalog::Automation {
+    catalog::Automation::WaitStatus {
+        harness: "fixture".into(), native_session_id: native.into(), node_ref: Some("node".into()),
+    }
+}
+
+#[tokio::test]
+async fn wait_status_is_read_only_and_cancelled_wait_stays_blocked_until_finalization() {
+    let fixture=Fixture::new();
+    let native=Native::new();
+    let app=application(&fixture,native.clone(),true);
+    let missing=call(&app,native_wait_query("not-registered")).await;
+    assert_eq!(missing["complete"],true);
+    assert_eq!(missing["mapped"],false);
+    assert_eq!(missing["blocked"],false);
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["blocked"],false);
+    let first=call(&app,fixture.create("readonly-wait",vec![])).await;
+    let rule=reference(&first,"rule_ref");
+    let status=call(&app,native_wait_query("native-parent")).await;
+    assert_eq!(status["blocked"],true);
+    assert_eq!(status["sessionRefs"],serde_json::json!(["parent"]));
+    assert_eq!(status["ruleRefs"],serde_json::json!([rule]));
+    call(&app,catalog::Automation::Delete{rule_ref:rule.clone(),revision:first["revision"].as_u64().unwrap()}).await;
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["blocked"],true);
+    fixture.finish();
+    fixture.execution_until(&reference(&first,"execution_ref"),|s|s.record.receipt.is_some() && !s.record.finalization_pending).await;
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["blocked"],false);
+    fixture.authority().stop(&identity("alice"),&base_grants(),"global","completed fixture stop","now").unwrap();
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["reason"],"human_stop_active");
+    let unregistered=call(&app,native_wait_query("unregistered-after-stop")).await;
+    assert_eq!(unregistered["mapped"],false);
+    assert_eq!(unregistered["blocked"],true);
+    assert_eq!(unregistered["reason"],"human_stop_active");
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);
+    assert_eq!(native.snapshots.load(Ordering::SeqCst),0);
+    assert_eq!(fixture.wake_intents(),0);
+}
+
+#[tokio::test]
+async fn wait_status_fences_registration_crash_unknown_delivery_and_human_stop() {
+    let fixture=Fixture::new();
+    let native=Native::new();
+    let app=application(&fixture,native.clone(),true);
+    let first=call(&app,fixture.create("readonly-crash",vec![])).await;
+    let rule=reference(&first,"rule_ref");
+    let scope="automation:process-completion:alice";
+    let key=format!("state:{rule}");
+    {
+        let metadata=fs::metadata(&fixture.gate).unwrap();
+        let _gate=acquire_pinned(&fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+        let writer=Connection::open(&fixture.db).unwrap();
+        let version:i64=writer.pragma_query_value(None,"user_version",|r|r.get(0)).unwrap();
+        writer.create_scalar_function("herder_writer_version",0,
+            FunctionFlags::SQLITE_UTF8|FunctionFlags::SQLITE_DETERMINISTIC,move |_|Ok(version)).unwrap();
+        // Crash after immutable rule admission but before its state write.
+        writer.execute("DELETE FROM settings WHERE scope=?1 AND setting_key=?2",[scope,key.as_str()]).unwrap();
+    }
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["blocked"],true);
+    {
+        let metadata=fs::metadata(&fixture.gate).unwrap();
+        let _gate=acquire_pinned(&fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+        let mut writer=Writer::open_file(&fixture.db).unwrap();
+        let mut state=first["wait"].clone();state["phase"]=serde_json::json!("delivery_unknown");
+        writer.put_setting_once(scope,&key,&serde_json::to_string(&state).unwrap(),"now").unwrap();
+    }
+    fixture.finish();
+    fixture.execution_until(&reference(&first,"execution_ref"),|s|s.record.receipt.is_some() && !s.record.finalization_pending).await;
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["blocked"],true);
+    let wrong_owner=raw_call(&app,"mallory",native_wait_query("native-parent")).await;
+    assert_eq!(wrong_owner.is_error,Some(true));
+    fixture.authority().stop(&identity("alice"),&base_grants(),"global","fixture stop","now").unwrap();
+    assert_eq!(call(&app,native_wait_query("native-parent")).await["reason"],"human_stop_active");
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);
+    assert_eq!(native.snapshots.load(Ordering::SeqCst),0);
+    assert_eq!(fixture.wake_intents(),0);
+}
+
+
+#[tokio::test]
+async fn lost_wake_ack_is_recovered_after_restart_without_another_native_turn() {
+    let fixture=Fixture::new();
+    let native=Native::new();
+    native.lose_ack.store(true,Ordering::SeqCst);
+    let app=application(&fixture,native.clone(),true);
+    let first=call(&app,fixture.create("recover-wake-ack",vec![])).await;
+    let rule=reference(&first,"rule_ref");
+    fixture.finish();
+    fixture.execution_until(&reference(&first,"execution_ref"),|s|s.record.receipt.is_some()).await;
+    until_phase(&app,&rule,"delivery_unknown").await;
+    assert_eq!(native.submits.load(Ordering::SeqCst),1);
+    drop(app);
+    // The native session exposes the original admission after reconnect.
+    native.recovery_enabled.store(true,Ordering::SeqCst);
+    let restarted=application(&fixture,native.clone(),true);
+    let recovered=until_phase(&restarted,&rule,"confirmed").await;
+    assert_eq!(recovered["wait"]["wake_cancelled"],false);
+    assert_eq!(native.submits.load(Ordering::SeqCst),1);
+    assert_eq!(fixture.wake_intents(),1);
+    let reads=native.recoveries.load(Ordering::SeqCst);
+    assert!(reads>0);
+    for _ in 0..3 {
+        assert_eq!(call(&restarted,reconcile(&rule)).await["wait"]["phase"],"confirmed");
+    }
+    assert_eq!(native.submits.load(Ordering::SeqCst),1);
+    assert_eq!(native.recoveries.load(Ordering::SeqCst),reads);
+}
+
+
+#[tokio::test]
+async fn stop_after_durable_registration_before_launch_prevents_a_new_build_after_restart() {
+    let fixture=Fixture::new();
+    let native=Native::new();
+    let binding=fixture.lease();
+    let resource_ref=binding.resource_ref.clone();
+    let request=fixture.create("crash-before-launch",vec![binding]);
+    let catalog::Automation::Create{session_ref,request_key,
+        rule:catalog::AutomationRule::ProcessCompletion{execution,bindings,wake_message}}=request
+        else{panic!("expected process fixture")};
+    let catalog::ProcessExecution::Start{argv,cwd,deadline_unix_ms,stop_grace_ms}=&execution
+        else{panic!("expected supervised start")};
+    let record=fixture.store().prepare_start(StartRequest{
+        principal_ref:"alice".into(),session_ref:session_ref.clone(),request_key:request_key.clone(),
+        argv:argv.clone(),cwd:cwd.into(),deadline_unix_ms:*deadline_unix_ms,
+        stop_grace_ms:stop_grace_ms.unwrap_or(2000),
+    }).unwrap();
+    herder::application::process_bindings::write_delegation(
+        &fixture.store(),&record.execution_ref,"alice",&fixture.config.resources,bindings.clone()).unwrap();
+    for binding in &bindings {
+        claim::bind_execution(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized,
+            &binding.claim_id,"alice",binding.revision,&record.execution_ref).unwrap();
+    }
+    let rule=format!("process-rule:{}",record.execution_ref.trim_start_matches("exec-"));
+    let immutable=serde_json::json!({"version":1,"rule_ref":rule,"principal":"alice",
+        "session_ref":session_ref,"request_key":request_key,"execution_ref":record.execution_ref,
+        "execution":execution,"bindings":bindings,"wake_message":wake_message});
+    {
+        let metadata=fs::metadata(&fixture.gate).unwrap();
+        let _gate=acquire_pinned(&fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+        let mut writer=Writer::open_file(&fixture.db).unwrap();
+        writer.put_setting_once("automation:process-completion:alice",&format!("rule:{rule}"),
+            &immutable.to_string(),"now").unwrap();
+        // Simulate a crash before the initial WaitState and supervisor launch.
+    }
+    fixture.authority().stop(&identity("alice"),&base_grants(),"global","stop before launch","now").unwrap();
+    let restarted=application(&fixture,native.clone(),true);
+    let held=call(&restarted,reconcile(&rule)).await;
+    assert_eq!(held["wait"]["phase"],"cancelled");
+    assert!(held["execution"]["record"]["process"].is_null());
+    assert!(held["execution"]["record"]["started_at_unix_ms"].is_null());
+    assert_eq!(held["execution"]["record"]["receipt"]["tree_complete"],true);
+    assert_eq!(held["execution"]["record"]["receipt"]["process_may_be_running"],false);
+    assert_eq!(held["execution"]["record"]["finalization_pending"],false);
+    assert!(claim::read_current(&fixture.config.resources,&resource_ref,Authorization::Authorized).unwrap().is_none());
+    assert_eq!(call(&restarted,native_wait_query("native-parent")).await["blocked"],true);
+    {
+        let metadata=fs::metadata(&fixture.gate).unwrap();
+        let _gate=acquire_pinned(&fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+        let connection=Connection::open(&fixture.db).unwrap();
+        let version:i64=connection.pragma_query_value(None,"user_version",|r|r.get(0)).unwrap();
+        connection.create_scalar_function("herder_writer_version",0,
+            FunctionFlags::SQLITE_UTF8|FunctionFlags::SQLITE_DETERMINISTIC,move |_|Ok(version)).unwrap();
+        connection.execute("UPDATE humanstop_holds SET released_at='later' WHERE scope_ref='global'",[]).unwrap();
+    }
+    for _ in 0..3 {
+        let value=call(&restarted,reconcile(&rule)).await;
+        assert_eq!(value["wait"]["phase"],"cancelled");
+        assert!(value["execution"]["record"]["process"].is_null());
+        assert!(value["execution"]["record"]["started_at_unix_ms"].is_null());
+    }
+    assert!(!fixture.root.join("runs").exists());
+    assert_eq!(call(&restarted,native_wait_query("native-parent")).await["blocked"],false);
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);
+    assert_eq!(fixture.wake_intents(),0);
 }

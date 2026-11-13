@@ -167,18 +167,11 @@ fn load_authority(path: &Path) -> Result<StorageAuthority, String> {
 }
 
 fn authorize_local_storage(authority: &StorageAuthority) -> io::Result<String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::os::unix::fs::MetadataExt;
 
-        let effective_uid = fs::read_to_string("/proc/self/status")?
-            .lines()
-            .find_map(|line| {
-                line.strip_prefix("Uid:")
-                    .and_then(|values| values.split_whitespace().nth(1))
-            })
-            .and_then(|uid| uid.parse::<u32>().ok())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::PermissionDenied, "caller identity unavailable"))?;
+        let effective_uid = unsafe { libc::geteuid() };
         if !authority.root.is_absolute() || fs::canonicalize(&authority.root)? != authority.root {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -195,14 +188,16 @@ fn authorize_local_storage(authority: &StorageAuthority) -> io::Result<String> {
                 "caller does not own a private local authority",
             ));
         }
-        return Ok(format!("linux-euid:{effective_uid}"));
+        // Keep existing Linux owner identities stable across this migration.
+        let platform = if cfg!(target_os = "linux") { "linux" } else { "macos" };
+        return Ok(format!("{platform}-euid:{effective_uid}"));
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = authority;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "offline ownership currently requires Linux OS identity",
+            "offline ownership requires a supported Unix OS identity",
         ))
     }
 }

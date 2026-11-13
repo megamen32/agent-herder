@@ -90,7 +90,7 @@ impl NativeCreateControl for CodexCreateControl {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl crate::application::scoped_stop::BoundedFreshRootCreate for CodexCreateControl {
     fn instance(&self) -> &InstanceRef {
         self.control.instance()
@@ -165,7 +165,7 @@ mod tests {
             control.create_once("", "specification").await,
             NativeCreateOutcome::DefinitelyNotSent { .. }
         ));
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         assert!(matches!(
             crate::application::scoped_stop::BoundedFreshRootCreate::create_root_bounded(
                 &control,

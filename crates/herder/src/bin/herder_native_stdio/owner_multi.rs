@@ -50,6 +50,40 @@ impl ServerHandler for MultiOwner {
             let Ok(binding) = self.by_session(session) else { return Ok(denied("session_unavailable")); };
             return binding.server.call_tool(request, ctx).await;
         }
+        if request.name.as_ref()=="automation" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("wait_status"){
+            let Some(arguments)=args else{return Ok(denied("invalid_request"))};
+            let dispatched=herder::mcp::catalog::dispatch("automation",Value::Object(arguments.clone()));
+            let Ok(herder::mcp::catalog::Dispatched{request:herder::mcp::catalog::Request::Automation(
+                herder::mcp::catalog::Automation::WaitStatus{harness,node_ref,..}),..})=dispatched else{return Ok(denied("invalid_request"))};
+            let mut mapped=Vec::new();let mut count=0usize;let mut observed=None;let mut blocking_unmapped=None;
+            for binding in &self.bindings{
+                if binding.harness!=harness || node_ref.as_ref().is_some_and(|n|n!=&binding.instance.node.0){continue}
+                count+=1;
+                let result=binding.server.call_tool(request.clone(),ctx.clone()).await?;
+                let CallToolResponse::Complete(result)=result else{return Ok(denied("process_wait_unavailable"))};
+                if result.is_error==Some(true){return Ok(result.into())}
+                let Some(value)=result.structured_content else{return Ok(denied("process_wait_unavailable"))};
+                if value.get("version")!=Some(&json!(1)) || value.get("configured")!=Some(&Value::Bool(true))
+                    || value.get("complete")!=Some(&Value::Bool(true))
+                    || value.get("blocked").and_then(Value::as_bool).is_none()
+                    || value.get("mapped").and_then(Value::as_bool).is_none()
+                    || value.get("observedAt").and_then(Value::as_str).is_none()
+                    {return Ok(denied("process_wait_unavailable"))}
+                observed=value.get("observedAt").cloned();
+                if value.get("mapped")==Some(&Value::Bool(true)){mapped.push(value)}
+                else if value.get("blocked")==Some(&Value::Bool(true)){blocking_unmapped=Some(value)}
+            }
+            if count==0{return Ok(denied("harness_authority_not_configured"))}
+            let value=if mapped.len()>1{
+                json!({"version":1,"configured":true,"complete":true,"blocked":true,"reason":"ambiguous_native_session",
+                    "mapped":true,"sessionRefs":[],"ruleRefs":[],"observedAt":observed})
+            }else if let Some(value)=blocking_unmapped{value}
+            else if let Some(value)=mapped.pop(){value}else{
+                json!({"version":1,"configured":true,"complete":true,"blocked":false,"reason":"native_session_not_registered",
+                    "mapped":false,"sessionRefs":[],"ruleRefs":[],"observedAt":observed})
+            };
+            return Ok(CallToolResult::structured(value).into());
+        }
         // Process rule refs are located in the exact owner authority. No
         // adapter request or native session probe is used for this routing.
         if request.name.as_ref()=="automation" {

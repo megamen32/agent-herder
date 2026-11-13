@@ -1,4 +1,4 @@
-use super::{linux, types::*, unix_millis};
+use super::{platform, types::*, unix_millis};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use std::{
@@ -31,6 +31,24 @@ struct StoreMetadata {
 pub(crate) struct FileLock {
     file: File,
 }
+pub(crate) const WORKER_ENVIRONMENT_NAMES: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+    "HERDER_PROCESS_CONFIG",
+];
 impl Drop for FileLock {
     fn drop(&mut self) {
         unsafe {
@@ -455,6 +473,10 @@ impl ExecutionStore {
         worker_binary: &Path,
         backend: WorkerBackend,
     ) -> io::Result<ExecutionSnapshot> {
+        let dir = self.execution_directory(execution_ref)?;
+        // Shares its admission boundary with try_cancel_unlaunched. A worker
+        // additionally owns worker.lock before reading or changing Prepared.
+        let _launch_guard = lock(&dir.join("launch.lock"), true)?.expect("blocking lock");
         let record = self.load_record(execution_ref)?;
         if record.state != ExecutionState::Prepared
             && !(record.receipt.is_some() && record.finalization_pending)
@@ -470,7 +492,36 @@ impl ExecutionStore {
         if !worker_binary.is_file() {
             return Err(invalid("worker executable is not a file"));
         }
-        let dir = self.execution_directory(execution_ref)?;
+        #[cfg(target_os = "linux")]
+        if backend == WorkerBackend::LaunchdUser {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "launchd backend requires macOS",
+            ));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            if backend == WorkerBackend::SystemdUser {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "systemd backend requires Linux",
+                ));
+            }
+            // A finalization-only helper never spawns the command and needs no new
+            // launchd job. The original LaunchOnlyOnce job must never be restarted.
+            if record.receipt.is_none() {
+                if backend != WorkerBackend::Direct {
+                    platform::launch_worker(self, execution_ref, &worker_binary, &_launch_guard)?;
+                    return self.status(execution_ref);
+                }
+                if matches!(record.request, ExecutionRequest::Start(_)) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "macOS supervised commands require a private launchd coalition",
+                    ));
+                }
+            }
+        }
         let log = open_private(&dir.join("supervisor.log"), true, true)?;
         let user_runtime = PathBuf::from(format!("/run/user/{}", unsafe { libc::geteuid() }));
         let systemd_available = Path::new("/usr/bin/systemd-run").is_file()
@@ -483,24 +534,7 @@ impl ExecutionStore {
             ));
         }
         let use_systemd = backend != WorkerBackend::Direct && systemd_available;
-        let environment_names = [
-            "PATH",
-            "HOME",
-            "USER",
-            "LOGNAME",
-            "LANG",
-            "LC_ALL",
-            "TMPDIR",
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "NO_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-            "no_proxy",
-            "HERDER_PROCESS_CONFIG",
-        ];
+        let environment_names = WORKER_ENVIRONMENT_NAMES;
         let mut command = if use_systemd {
             let mut c = Command::new("/usr/bin/systemd-run");
             c.args(["--user", "--quiet", "--collect", "--no-block"])
@@ -558,6 +592,17 @@ impl ExecutionStore {
                 Ok(())
             });
         }
+        if record.receipt.is_none() {
+            let marker = serde_json::json!({"version":1,"execution_ref":execution_ref});
+            match read_json::<serde_json::Value>(&dir.join("launch.json")) {
+                Ok(saved) if saved == marker => (),
+                Ok(_) => return Err(conflict("launch admission identity mismatch")),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    atomic_json(&dir.join("launch.json"), &marker)?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
         let mut worker = command.spawn()?;
         // Do not retain the MCP request or leave a zombie if this control plane lives.
         let _ = std::thread::Builder::new()
@@ -566,6 +611,99 @@ impl ExecutionStore {
                 let _ = worker.wait();
             });
         self.status(execution_ref)
+    }
+
+    /// Publish a no-effect cancellation only while command admission is still
+    /// provably unused. This does not write cancel.json or signal a process.
+    /// Launch markers, an active worker, uncertain states, and Attach are refused.
+    pub fn try_cancel_unlaunched(&self, execution_ref: &str) -> io::Result<UnlaunchedCancellation> {
+        let dir = self.execution_directory(execution_ref)?;
+        enum Proof {
+            NotProven,
+            Cancelled,
+            AlreadyTerminal,
+        }
+        let outcome = (|| -> io::Result<Proof> {
+            let Some(_launch) = lock(&dir.join("launch.lock"), false)? else {
+                return Ok(Proof::NotProven);
+            };
+            let Some(_worker) = lock(&dir.join("worker.lock"), false)? else {
+                return Ok(Proof::NotProven);
+            };
+            let gate = lock(&dir.join("record.lock"), true)?.expect("blocking lock");
+            let mut record = self.load_record(execution_ref)?;
+            if !matches!(record.request, ExecutionRequest::Start(_)) {
+                return Ok(Proof::NotProven);
+            }
+            if record.receipt.is_some() {
+                return Ok(Proof::AlreadyTerminal);
+            }
+            if record.state != ExecutionState::Prepared
+                || record.worker.is_some()
+                || record.tree_scope.is_some()
+                || record.process.is_some()
+                || record.started_at_unix_ms.is_some()
+                || record.heartbeat_at_unix_ms.is_some()
+                || record.root_exit.is_some()
+                || !record.observed_members.is_empty()
+            {
+                return Ok(Proof::NotProven);
+            }
+            for name in [
+                "launch.json",
+                "launchd.json",
+                "launchd.plist",
+                "stdout.log",
+                "stderr.log",
+            ] {
+                match fs::symlink_metadata(dir.join(name)) {
+                    Ok(_) => return Ok(Proof::NotProven),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+                    Err(e) => return Err(e),
+                }
+            }
+            let receipt = CompletionReceipt {
+                execution_ref: execution_ref.into(),
+                node_ref: self.node_ref.clone(),
+                reason: CompletionReason::Cancelled,
+                started_at_unix_ms: None,
+                finished_at_unix_ms: unix_millis()?,
+                exit_code: None,
+                signal: None,
+                descendant_failure: false,
+                tree_complete: true,
+                process_may_be_running: false,
+                evidence_source: "herder_prepared_execution_fenced_before_launch".into(),
+                stdout_path: dir.join("stdout.log"),
+                stderr_path: dir.join("stderr.log"),
+                detail: Some(
+                    "cancelled before any supervisor launch admission; no command effect".into(),
+                ),
+            };
+            let expected = receipt.clone();
+            self.finish_locked(&mut record, receipt, &gate)?;
+            Ok(if record.receipt.as_ref() == Some(&expected) {
+                Proof::Cancelled
+            } else {
+                Proof::AlreadyTerminal
+            })
+        })()?;
+        // Release all operation locks before reporting a fresh snapshot or
+        // letting the caller perform ordinary resource finalization hooks.
+        let snapshot = self.status(execution_ref)?;
+        Ok(match outcome {
+            Proof::Cancelled => UnlaunchedCancellation::Cancelled(snapshot),
+            Proof::AlreadyTerminal => UnlaunchedCancellation::AlreadyTerminal(snapshot),
+            // A terminal receipt is immutable proof even while a finalization-only
+            // worker still holds worker.lock. Attach never gains no-effect proof.
+            Proof::NotProven
+                if matches!(snapshot.record.request, ExecutionRequest::Start(_))
+                    && snapshot.record.receipt.is_some() =>
+            {
+                UnlaunchedCancellation::AlreadyTerminal(snapshot)
+            }
+            Proof::NotProven => UnlaunchedCancellation::NotProven(snapshot),
+        })
     }
     pub fn status(&self, execution_ref: &str) -> io::Result<ExecutionSnapshot> {
         let record = self.load_record(execution_ref)?;
@@ -577,15 +715,15 @@ impl ExecutionStore {
         let worker_alive = record
             .worker
             .as_ref()
-            .is_some_and(|v| linux::observe_process(v) == ProcessObservation::Alive);
+            .is_some_and(|v| platform::observe_process(v) == ProcessObservation::Alive);
         let members_alive = record
             .process
             .as_ref()
-            .is_some_and(|v| linux::observe_process(v) == ProcessObservation::Alive)
+            .is_some_and(|v| platform::observe_process(v) == ProcessObservation::Alive)
             || record
                 .observed_members
                 .iter()
-                .any(|v| linux::observe_process(v) == ProcessObservation::Alive);
+                .any(|v| platform::observe_process(v) == ProcessObservation::Alive);
         let confirmed_live = record.state == ExecutionState::Running
             && record.receipt.is_none()
             && worker_lock_held
@@ -625,19 +763,19 @@ impl ExecutionStore {
                 .record
                 .worker
                 .as_ref()
-                .is_some_and(|p| linux::observe_process(p) == ProcessObservation::Gone);
+                .is_some_and(|p| platform::observe_process(p) == ProcessObservation::Gone);
             if gone {
                 let supervised = matches!(snapshot.record.request, ExecutionRequest::Start(_));
                 let rebooted = snapshot
                     .record
                     .worker
                     .as_ref()
-                    .is_some_and(|p| linux::boot_changed(&p.boot_id));
+                    .is_some_and(|p| platform::boot_changed(&p.boot_id));
                 let empty_scope = snapshot
                     .record
                     .tree_scope
                     .as_ref()
-                    .is_some_and(linux::scope_proven_empty);
+                    .is_some_and(platform::scope_proven_empty);
                 if supervised && (rebooted || empty_scope) {
                     let dir = self.execution_directory(execution_ref)?;
                     let receipt = CompletionReceipt {
@@ -646,7 +784,7 @@ impl ExecutionStore {
                         started_at_unix_ms: snapshot.record.started_at_unix_ms,
                         finished_at_unix_ms: unix_millis()?, exit_code: None, signal: None,
                         descendant_failure: false, tree_complete: true, process_may_be_running: false,
-                        evidence_source: if rebooted { "node_boot_changed" } else { "owned_cgroup_empty" }.into(),
+                        evidence_source: if rebooted { "node_boot_changed" } else { platform::empty_scope_evidence() }.into(),
                         stdout_path: dir.join("stdout.log"), stderr_path: dir.join("stderr.log"),
                         detail: Some("supervisor result was lost; local execution scope is proven empty, exit status remains unknown".into()),
                     };
@@ -654,7 +792,7 @@ impl ExecutionStore {
                     snapshot.observation = ExecutionObservation::Terminal;
                 } else {
                     snapshot.record.state = ExecutionState::Unknown;
-                    snapshot.record.observation_detail = Some("supervisor lost; checked boot/process identities and cgroup evidence; execution is never replayed and its tree may still exist".into());
+                    snapshot.record.observation_detail = Some("supervisor lost; checked boot/process identities and owned kernel scope evidence; execution is never replayed and its tree may still exist".into());
                     self.save_record(&snapshot.record)?;
                     snapshot.observation = ExecutionObservation::Unknown;
                 }
@@ -734,7 +872,16 @@ impl ExecutionStore {
         receipt: CompletionReceipt,
     ) -> io::Result<()> {
         let dir = self.execution_directory(&record.execution_ref)?;
-        let _gate = lock(&dir.join("record.lock"), true)?.expect("blocking lock");
+        let gate = lock(&dir.join("record.lock"), true)?.expect("blocking lock");
+        self.finish_locked(record, receipt, &gate)
+    }
+    fn finish_locked(
+        &self,
+        record: &mut ExecutionRecord,
+        receipt: CompletionReceipt,
+        _gate: &FileLock,
+    ) -> io::Result<()> {
+        let dir = self.execution_directory(&record.execution_ref)?;
         let receipt_path = dir.join("receipt.json");
         let durable = match read_json::<CompletionReceipt>(&receipt_path) {
             Ok(existing) => existing,

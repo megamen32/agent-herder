@@ -67,7 +67,12 @@ pub fn capture_source(store:&ExecutionStore,record:&ExecutionRecord)->io::Result
         ExecutionRequest::Start(r)=>Some(r.cwd.clone()),
         ExecutionRequest::Attach(r)=>{
             if crate::process::observe_process(&r.process)==crate::process::ProcessObservation::Alive{
-                fs::read_link(format!("/proc/{}/cwd",r.process.pid)).ok()
+                #[cfg(target_os = "linux")]
+                { fs::read_link(format!("/proc/{}/cwd",r.process.pid)).ok() }
+                // Attach does not supply a trusted source workspace on Darwin.
+                // Missing source evidence remains explicit, never guessed.
+                #[cfg(target_os = "macos")]
+                { None }
             }else{None}
         }
     };

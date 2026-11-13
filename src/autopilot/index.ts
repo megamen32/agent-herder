@@ -1,3 +1,4 @@
+import { processWaitBlocks, type ProcessWaitSource } from "../process-wait-gate.js";
 import { JudgeRequestTrace } from "./judge-request.js";
 import { runZaiModelCycle } from "./zai-failover.js";
 import { buildAutopilotJudgeContext } from "./judge-context.js";
@@ -414,6 +415,8 @@ export function createAutopilotCore(options: {
    * and whatever the new turn id is.
    */
   pendingQuestions?: PendingQuestionSource;
+  /** Canonical supervised process waits defer both judgement and continuation. */
+  processWaits?: ProcessWaitSource;
   effectivePolicy?: EffectivePolicy;
   policyBypassSessionId?: string;
   harness?: "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
@@ -546,6 +549,8 @@ export function createAutopilotCore(options: {
         return {};
       }
 
+      if (await processWaitBlocks(options.processWaits, options.harness ?? input.harness ?? "codex", input.session_id, input.cwd)) return {};
+
       const budgetKey = `${input.session_id}:${input.turn_id}`;
       const currentCount =
         continuationCounts.get(budgetKey) ??
@@ -561,6 +566,9 @@ export function createAutopilotCore(options: {
             remainingContinuations,
           }),
         );
+
+        // A process wait may have been armed while the judge request was in flight.
+        if (await processWaitBlocks(options.processWaits, options.harness ?? input.harness ?? "codex", input.session_id, input.cwd)) return {};
 
         const publishIncident = async (kind: Receipt["kind"], text: string) => {
           const update = incidentUpdate(input, options.noticeIncident!, kind, text, options.harness ?? input.harness ?? "codex");

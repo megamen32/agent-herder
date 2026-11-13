@@ -1,9 +1,12 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+use herder::process::UnlaunchedCancellation;
 use herder::process::{
-    AttachRequest, CompletionReason, ExecutionObservation, ExecutionRequest, ExecutionSnapshot,
-    ExecutionState, ExecutionStore, ProcessObservation, StartRequest, WorkerBackend,
-    capture_process, execution_ref_for, observe_process, unix_millis,
+    AttachRequest, CompletionReason, ExecutionSnapshot, ExecutionState, ExecutionStore,
+    ProcessObservation, StartRequest, WorkerBackend, capture_process, execution_ref_for,
+    observe_process, unix_millis,
 };
+#[cfg(target_os = "linux")]
+use herder::process::{ExecutionObservation, ExecutionRequest};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -12,6 +15,15 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(target_os = "linux")]
+fn backend() -> WorkerBackend {
+    WorkerBackend::Direct
+}
+#[cfg(target_os = "macos")]
+fn backend() -> WorkerBackend {
+    WorkerBackend::LaunchdUser
+}
+
 fn binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_herder_process_worker"))
 }
@@ -47,7 +59,7 @@ impl Fixture {
     fn start(&self, request: StartRequest) -> ExecutionSnapshot {
         let r = self.store.prepare_start(request).unwrap();
         self.store
-            .launch_prepared_with_backend(&r.execution_ref, binary(), WorkerBackend::Direct)
+            .launch_prepared_with_backend(&r.execution_ref, binary(), backend())
             .unwrap()
     }
     fn until(
@@ -102,6 +114,7 @@ impl Drop for Fixture {
                 }
                 thread::sleep(Duration::from_millis(25));
             }
+            #[cfg(target_os = "linux")]
             for r in refs {
                 if let Ok(s) = self.store.status(&r) {
                     if matches!(s.record.request, ExecutionRequest::Start(_)) {
@@ -120,6 +133,24 @@ impl Drop for Fixture {
                             unsafe {
                                 libc::kill(p.pid as i32, libc::SIGKILL);
                             }
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if let Ok(entries) = fs::read_dir(&self.root) {
+            for entry in entries.filter_map(Result::ok) {
+                if let Ok(bytes) = fs::read(entry.path().join("launchd.json")) {
+                    if let Ok(intent) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                        if let (Some(domain), Some(label)) =
+                            (intent["domain"].as_str(), intent["label"].as_str())
+                        {
+                            let _ = Command::new("/bin/launchctl")
+                                .args(["bootout", &format!("{domain}/{label}")])
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .status();
                         }
                     }
                 }
@@ -178,11 +209,7 @@ fn immediate_registration_restart_and_concurrent_retries_run_one_command() {
             thread::spawn(move || {
                 let prepared = store.prepare_start(request).unwrap();
                 store
-                    .launch_prepared_with_backend(
-                        &prepared.execution_ref,
-                        binary(),
-                        WorkerBackend::Direct,
-                    )
+                    .launch_prepared_with_backend(&prepared.execution_ref, binary(), backend())
                     .unwrap();
             })
         })
@@ -205,10 +232,19 @@ fn immediate_registration_restart_and_concurrent_retries_run_one_command() {
 #[test]
 fn parent_exit_waits_for_background_and_setsid_descendants() {
     let f = Fixture::new();
-    let r = f.start(f.request(
+    #[cfg(target_os = "linux")]
+    let request = f.request(
         "descendants",
         "setsid /bin/sh -c 'sleep 0.5; printf complete > descendant' & exit 0",
-    ));
+    );
+    #[cfg(target_os = "macos")]
+    let request = {
+        let mut r = f.request("descendants", "true");
+        r.argv = vec!["/usr/bin/python3".into(), "-c".into(),
+            "import os,time,pathlib; p=os.fork();\nif p==0:\n os.setsid(); time.sleep(.5); pathlib.Path('descendant').write_text('complete'); os._exit(0)\nos._exit(0)".into()];
+        r
+    };
+    let r = f.start(request);
     let reference = r.record.execution_ref;
     let live = f.until(&reference, |s| s.confirmed_live);
     assert!(live.record.receipt.is_none());
@@ -253,7 +289,7 @@ fn cancellation_before_launch_has_no_command_effect() {
         .unwrap();
     f.store.cancel(&prepared.execution_ref).unwrap();
     f.store
-        .launch_prepared_with_backend(&prepared.execution_ref, binary(), WorkerBackend::Direct)
+        .launch_prepared_with_backend(&prepared.execution_ref, binary(), backend())
         .unwrap();
     let r = f.until(&prepared.execution_ref, |s| s.record.receipt.is_some());
     let receipt = r.record.receipt.unwrap();
@@ -294,7 +330,7 @@ fn attach_observes_exact_birth_and_never_claims_success_on_disappearance() {
         })
         .unwrap();
     f.store
-        .launch_prepared_with_backend(&attached.execution_ref, binary(), WorkerBackend::Direct)
+        .launch_prepared_with_backend(&attached.execution_ref, binary(), backend())
         .unwrap();
     f.until(&attached.execution_ref, |s| s.confirmed_live);
     assert_eq!(
@@ -313,6 +349,7 @@ fn attach_observes_exact_birth_and_never_claims_success_on_disappearance() {
         "descendants of an attached process remain unproven"
     );
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn lost_direct_supervisor_never_replays_or_guesses_tree_empty() {
     let f = Fixture::new();
@@ -333,7 +370,7 @@ fn lost_direct_supervisor_never_replays_or_guesses_tree_empty() {
     let repeated = f.store.prepare_start(request).unwrap();
     let snapshot = f
         .store
-        .launch_prepared_with_backend(&repeated.execution_ref, binary(), WorkerBackend::Direct)
+        .launch_prepared_with_backend(&repeated.execution_ref, binary(), backend())
         .unwrap();
     assert_eq!(snapshot.record.state, ExecutionState::Unknown);
     assert_eq!(fs::read_to_string(f.root.join("effect")).unwrap(), "x");
@@ -389,6 +426,7 @@ fn receipt_written_before_record_is_recovered_without_reexecution() {
     );
     assert_eq!(fs::read_to_string(f.root.join("effect")).unwrap(), "x");
 }
+#[cfg(target_os = "linux")]
 #[test]
 fn systemd_cgroup_proves_empty_after_worker_crash_with_unknown_exit() {
     let bus = PathBuf::from(format!("/run/user/{}/bus", unsafe { libc::geteuid() }));
@@ -425,6 +463,7 @@ fn systemd_cgroup_proves_empty_after_worker_crash_with_unknown_exit() {
     assert_eq!(fs::read_to_string(f.root.join("effect")).unwrap(), "x");
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn adopted_descendant_failure_is_preserved_after_successful_parent_exit() {
     let f = Fixture::new();
@@ -444,10 +483,19 @@ fn adopted_descendant_failure_is_preserved_after_successful_parent_exit() {
 #[test]
 fn live_cancellation_stops_owned_setsid_descendants_before_receipt() {
     let f = Fixture::new();
-    let r = f.start(f.request(
+    #[cfg(target_os = "linux")]
+    let request = f.request(
         "cancel-live",
         r#"trap '' TERM; setsid /bin/sh -c 'trap "" TERM; sleep 10' & wait"#,
-    ));
+    );
+    #[cfg(target_os = "macos")]
+    let request = {
+        let mut r = f.request("cancel-live", "true");
+        r.argv = vec!["/usr/bin/python3".into(), "-c".into(),
+            "import os,time,signal; signal.signal(signal.SIGTERM,signal.SIG_IGN); p=os.fork();\nif p==0: os.setsid()\ntime.sleep(10)".into()];
+        r
+    };
+    let r = f.start(request);
     let live = f.until(&r.record.execution_ref, |s| s.confirmed_live);
     let members = live.record.observed_members.clone();
     f.store.cancel(&r.record.execution_ref).unwrap();
@@ -459,4 +507,225 @@ fn live_cancellation_stops_owned_setsid_descendants_before_receipt() {
     for member in members {
         assert_eq!(observe_process(&member), ProcessObservation::Gone);
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn launchd_coalition_survives_worker_loss_until_escaped_child_exits() {
+    let f = Fixture::new();
+    let mut request = f.request("launchd-worker-crash", "true");
+    request.argv = vec!["/usr/bin/python3".into(), "-c".into(),
+        "import os,time,pathlib; pathlib.Path('effect').open('a').write('x'); p=os.fork();\nif p==0:\n os.setsid(); pathlib.Path('ready').touch(); end=time.monotonic()+6\n while not pathlib.Path('release').exists() and time.monotonic()<end: time.sleep(.02)\n os._exit(0)\nwhile not pathlib.Path('ready').exists(): time.sleep(.01)\nos._exit(0)".into()];
+    let r = f.start(request.clone());
+    let reference = r.record.execution_ref;
+    let live = f.until(&reference, |s| {
+        s.confirmed_live && f.root.join("ready").exists() && s.record.root_exit.is_some()
+    });
+    let Some(herder::process::ProcessTreeScope::DarwinCoalition(scope)) = live.record.tree_scope
+    else {
+        panic!("launchd scope missing");
+    };
+    let killed = Command::new("/bin/launchctl")
+        .args([
+            "kill",
+            "SIGKILL",
+            &format!("{}/{}", scope.launchd_domain, scope.launchd_label),
+        ])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let lost = f.until(&reference, |s| {
+        !s.worker_lock_held && s.record.state == ExecutionState::Unknown
+    });
+    assert!(
+        lost.record.receipt.is_none(),
+        "live escaped child must retain occupancy"
+    );
+    let prepared = f.store.prepare_start(request).unwrap();
+    let repeated = f
+        .store
+        .launch_prepared_with_backend(&prepared.execution_ref, binary(), backend())
+        .unwrap();
+    assert!(repeated.record.receipt.is_none());
+    assert_eq!(fs::read_to_string(f.root.join("effect")).unwrap(), "x");
+    fs::write(f.root.join("release"), b"stop").unwrap();
+    let terminal = f.until(&reference, |s| s.record.receipt.is_some());
+    let receipt = terminal.record.receipt.unwrap();
+    assert_eq!(receipt.reason, CompletionReason::ObservationLost);
+    assert_eq!(
+        receipt.exit_code, None,
+        "lost worker result must not be guessed"
+    );
+    assert!(receipt.tree_complete && !receipt.process_may_be_running);
+    assert_eq!(receipt.evidence_source, "owned_launchd_coalition_empty");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn direct_macos_start_fails_before_any_command_effect() {
+    let f = Fixture::new();
+    let prepared = f
+        .store
+        .prepare_start(f.request("unsafe-direct", "touch unexpected"))
+        .unwrap();
+    let error = f
+        .store
+        .launch_prepared_with_backend(&prepared.execution_ref, binary(), WorkerBackend::Direct)
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    assert!(!f.root.join("unexpected").exists());
+    assert_eq!(
+        f.store
+            .status(&prepared.execution_ref)
+            .unwrap()
+            .record
+            .state,
+        ExecutionState::Prepared
+    );
+}
+
+#[test]
+fn unlaunched_cancellation_is_durable_and_late_launch_cannot_run_the_command() {
+    let f = Fixture::new();
+    let prepared = f
+        .store
+        .prepare_start(f.request("never-launched", "printf unexpected > effect"))
+        .unwrap();
+    let UnlaunchedCancellation::Cancelled(cancelled) = f
+        .store
+        .try_cancel_unlaunched(&prepared.execution_ref)
+        .unwrap()
+    else {
+        panic!("unused execution admission was not cancelled");
+    };
+    let receipt = cancelled.record.receipt.unwrap();
+    assert_eq!(receipt.reason, CompletionReason::Cancelled);
+    assert_eq!(receipt.started_at_unix_ms, None);
+    assert_eq!(receipt.exit_code, None);
+    assert!(receipt.tree_complete && !receipt.process_may_be_running);
+    assert_eq!(
+        receipt.evidence_source,
+        "herder_prepared_execution_fenced_before_launch"
+    );
+    assert!(!cancelled.worker_lock_held);
+    // Even an already queued caller may only finalize the saved receipt.
+    f.store
+        .launch_prepared_with_backend(&prepared.execution_ref, binary(), backend())
+        .unwrap();
+    f.until(&prepared.execution_ref, |s| {
+        s.record.receipt.is_some() && !s.record.finalization_pending
+    });
+    assert!(!f.root.join("effect").exists());
+    let reopened = ExecutionStore::from_existing_root(&f.root).unwrap();
+    let UnlaunchedCancellation::AlreadyTerminal(repeated) = reopened
+        .try_cancel_unlaunched(&prepared.execution_ref)
+        .unwrap()
+    else {
+        panic!("terminal cancellation was not preserved");
+    };
+    assert_eq!(repeated.record.receipt.as_ref(), Some(&receipt));
+}
+
+#[test]
+fn unlaunched_cancellation_refuses_launch_markers_and_uncertain_states() {
+    let f = Fixture::new();
+    let prepared = f
+        .store
+        .prepare_start(f.request("uncertain-admission", "true"))
+        .unwrap();
+    let dir = f
+        .store
+        .execution_directory(&prepared.execution_ref)
+        .unwrap();
+    for name in ["launch.json", "launchd.json", "launchd.plist"] {
+        fs::write(dir.join(name), b"existing launch admission").unwrap();
+        assert!(matches!(
+            f.store
+                .try_cancel_unlaunched(&prepared.execution_ref)
+                .unwrap(),
+            UnlaunchedCancellation::NotProven(_)
+        ));
+        assert!(!dir.join("receipt.json").exists());
+        assert!(!dir.join("cancel.json").exists());
+        fs::remove_file(dir.join(name)).unwrap();
+    }
+    let mut uncertain = prepared.clone();
+    uncertain.state = ExecutionState::Starting;
+    fs::write(
+        dir.join("record.json"),
+        serde_json::to_vec(&uncertain).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        f.store
+            .try_cancel_unlaunched(&prepared.execution_ref)
+            .unwrap(),
+        UnlaunchedCancellation::NotProven(_)
+    ));
+    assert!(!dir.join("receipt.json").exists());
+}
+
+#[test]
+fn unlaunched_cancellation_never_claims_an_attached_process_has_no_effect() {
+    let f = Fixture::new();
+    let mut child = Command::new("/bin/sleep").arg("5").spawn().unwrap();
+    let identity = capture_process(child.id(), "test-node").unwrap();
+    let record = f
+        .store
+        .prepare_attach(AttachRequest {
+            principal_ref: "alice".into(),
+            session_ref: "session-on-test-node".into(),
+            request_key: "external-no-effect-refusal".into(),
+            process: identity.clone(),
+            deadline_unix_ms: None,
+        })
+        .unwrap();
+    assert!(matches!(
+        f.store
+            .try_cancel_unlaunched(&record.execution_ref)
+            .unwrap(),
+        UnlaunchedCancellation::NotProven(_)
+    ));
+    assert!(
+        f.store
+            .status(&record.execution_ref)
+            .unwrap()
+            .record
+            .receipt
+            .is_none()
+    );
+    assert_eq!(observe_process(&identity), ProcessObservation::Alive);
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+#[test]
+fn unlaunched_cancellation_does_not_stop_an_admitted_command() {
+    let f = Fixture::new();
+    let mut request = f.request(
+        "already-admitted",
+        "printf ready > ready; while test ! -f release; do sleep 0.02; done",
+    );
+    request.deadline_unix_ms = Some(unix_millis().unwrap() + 7000);
+    let execution = f.start(request);
+    f.until(&execution.record.execution_ref, |s| {
+        s.confirmed_live && f.root.join("ready").exists()
+    });
+    assert!(matches!(
+        f.store
+            .try_cancel_unlaunched(&execution.record.execution_ref)
+            .unwrap(),
+        UnlaunchedCancellation::NotProven(_)
+    ));
+    let dir = f
+        .store
+        .execution_directory(&execution.record.execution_ref)
+        .unwrap();
+    assert!(!dir.join("cancel.json").exists());
+    assert!(!dir.join("receipt.json").exists());
+    fs::write(f.root.join("release"), b"complete").unwrap();
+    let terminal = f.until(&execution.record.execution_ref, |s| {
+        s.record.receipt.is_some()
+    });
+    assert!(terminal.record.receipt.unwrap().succeeded());
 }
