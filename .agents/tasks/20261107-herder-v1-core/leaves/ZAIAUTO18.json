@@ -1,0 +1,80 @@
+{
+  "id": "ZAIAUTO18",
+  "kind": "task",
+  "parent": "MRESUME10",
+  "label": "Автопилот продолжает задачу в чате Z.ai",
+  "description": "Приоритет владельца: только Z.ai. Расширить существующий V1 browser autopilot на Z.ai UserIO как цель; использовать уже авторизованный точный профиль Default, один свежий собственный тестовый чат, тот же V1 MCP и существующего судью UserIO. Другие адаптеры, глобальные настройки и прежние UNKNOWN не трогать.",
+  "acceptance": "На загруженном исправленном расширении обычный Herder создаёт свой Z.ai чат, видит завершённый ответ и сохраняет точный нативный ID. Тот же worker сам принимает решение и выполняет ровно одно следующее сообщение в этом чате, с отдельным terminal ответом; независимый readback и остановка/уборка своего теста. HumanStop и запрет повтора сохраняются. Подключение Z.ai в роли только судьи за PASS не считать.",
+  "status": "done",
+  "estimate_minutes": 15,
+  "owner": "Lead + Terra",
+  "model": "gpt-6.1-terra",
+  "tier": "middle",
+  "created_at": "2026-11-11T03:56:41+03:00",
+  "updated_at": "2026-11-11T06:37:48+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T03:56:41+03:00",
+      "note": "",
+      "changes": {
+        "id": "ZAIAUTO18",
+        "kind": "task",
+        "parent": "MRESUME10",
+        "label": "Автопилот продолжает задачу в чате Z.ai",
+        "description": "Приоритет владельца: только Z.ai. Расширить существующий V1 browser autopilot на Z.ai UserIO как цель; использовать уже авторизованный точный профиль Default, один свежий собственный тестовый чат, тот же V1 MCP и существующего судью UserIO. Другие адаптеры, глобальные настройки и прежние UNKNOWN не трогать.",
+        "acceptance": "На загруженном исправленном расширении обычный Herder создаёт свой Z.ai чат, видит завершённый ответ и сохраняет точный нативный ID. Тот же worker сам принимает решение и выполняет ровно одно следующее сообщение в этом чате, с отдельным terminal ответом; независимый readback и остановка/уборка своего теста. HumanStop и запрет повтора сохраняются. Подключение Z.ai в роли только судьи за PASS не считать.",
+        "status": "queued",
+        "estimate_minutes": 15,
+        "owner": "Lead + Terra",
+        "model": "gpt-6.1-terra",
+        "tier": "middle"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T04:28:01+03:00",
+      "note": "Начат узкий Z.ai autopilot: сначала тесты и интеграция патча Terra, затем одна реальная автоматическая продолженная реплика.",
+      "changes": {
+        "status": "running",
+        "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "harness": "codex"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T06:37:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 126,
+        "result": "Доказано и опубликовано: commit 6ef0fce7 на origin/main; Terra patch 1e41c8d, 83 релевантных теста PASS, tsc PASS; candidate build bundle 0987ef4169167ef5bfa9ccf9039c5579ab6342d5b6fe26614565749843edef41 и release checks 15/15; --check/--once PASS на Z.ai UserIO config. Оставшееся live-поведение вынесено в ZAIAUTO20: browser Z.ai preflight/continuation не подтверждены, exact result zai_first_preflight_failed/not_submitted, provider writes 0."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "actual_minutes": 126,
+  "result": "Доказано и опубликовано: commit 6ef0fce7 на origin/main; Terra patch 1e41c8d, 83 релевантных теста PASS, tsc PASS; candidate build bundle 0987ef4169167ef5bfa9ccf9039c5579ab6342d5b6fe26614565749843edef41 и release checks 15/15; --check/--once PASS на Z.ai UserIO config. Оставшееся live-поведение вынесено в ZAIAUTO20: browser Z.ai preflight/continuation не подтверждены, exact result zai_first_preflight_failed/not_submitted, provider writes 0."
+}

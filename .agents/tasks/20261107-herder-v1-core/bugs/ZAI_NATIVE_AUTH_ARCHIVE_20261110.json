@@ -12,13 +12,47 @@
         "status": "open",
         "title": "Z.ai принимает гостевой scope и теряет подтверждение archive"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T21:54:38+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/userio-zai-archive-0931/auth-green.log",
+            "red_proof_path": "evidence/resume-20261110/userio-zai-archive-0931/auth-red.log",
+            "red_result": "name: 'AssertionError'",
+            "red_sha256": "7c77ed905234e1799421db961742e8ca23799c41a748a2c757a80a6fccd31542",
+            "result": "# pass 25",
+            "sha256": "2a11c68e4ec89d809f34cfd5de407fb36fe23b53cfda30217ba92666ed3aa2a7",
+            "test_command": "node --test extensions/vk-inbox/tests/zai.test.mjs"
+          },
+          "kind": "fixed",
+          "reason": "Source auth/archive fix installed034. NativeDefault authenticatedscope confirmed; fullconsumer token/login remains ZAITOKEN15 blocked."
+        },
+        "status": "fixed"
+      }
     }
   ],
   "id": "ZAI_NATIVE_AUTH_ARCHIVE_20261110",
   "owner": "Lead",
   "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/userio-zai-archive-0931/auth-green.log",
+      "red_proof_path": "evidence/resume-20261110/userio-zai-archive-0931/auth-red.log",
+      "red_result": "name: 'AssertionError'",
+      "red_sha256": "7c77ed905234e1799421db961742e8ca23799c41a748a2c757a80a6fccd31542",
+      "result": "# pass 25",
+      "sha256": "2a11c68e4ec89d809f34cfd5de407fb36fe23b53cfda30217ba92666ed3aa2a7",
+      "test_command": "node --test extensions/vk-inbox/tests/zai.test.mjs"
+    },
+    "kind": "fixed",
+    "reason": "Source auth/archive fix installed034. NativeDefault authenticatedscope confirmed; fullconsumer token/login remains ZAITOKEN15 blocked."
+  },
   "source": "zai-live14/list-bound-reconciled.json; mac-zai-auth-read.log; lib/zai.js",
-  "status": "open",
+  "status": "fixed",
   "title": "Z.ai принимает гостевой scope и теряет подтверждение archive",
-  "updated_at": "2026-11-10T20:19:00+00:00"
+  "updated_at": "2026-11-10T21:54:38+00:00"
 }

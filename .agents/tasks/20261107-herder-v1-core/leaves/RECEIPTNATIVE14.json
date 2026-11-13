@@ -1,0 +1,59 @@
+{
+  "id": "RECEIPTNATIVE14",
+  "parent": "MRESUME10",
+  "label": "Подтвердить secondsend и восстановить исход первой отправки",
+  "status": "done",
+  "owner": "Terra",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "Real033firstclickсоздалnativechat6af3844e;DOMreceiptнеузналnewUI,coreUNKNOWNretained. OrdinarySDKnativeuser21658394+assistant1b54bb83,endTurntrue confirmed. Reusecanonicalreadreceiptfirst/secondoneclick.",
+  "acceptance": "034sourceRED/GREEN,secondnativeconfirmed; originalfirst033/034providerreadback withoutresend. Новыйfirstreceipt035отдельныйFIRSTRECEIPT15.",
+  "created_at": "2026-11-11T00:00:19+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-11T00:57:41+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T00:00:19+03:00",
+      "note": "",
+      "changes": {
+        "id": "RECEIPTNATIVE14",
+        "parent": "MRESUME10",
+        "label": "Подтверждать browser send по nativeAPI снимку",
+        "status": "running",
+        "owner": "Terra",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "Real033firstclickсоздалnativechat6af3844e;DOMreceiptнеузналnewUI,coreUNKNOWNretained. OrdinarySDKnativeuser21658394+assistant1b54bb83,endTurntrue confirmed. Reusecanonicalreadreceiptfirst/secondoneclick.",
+        "acceptance": "RED/GREEN noDOMnativeID+nativeAPImatch,noresend;034package/runtime. ExistingoriginalconfirmedbyrecipientwithoutrewritingUNKNOWN; second+restart/archiveordinarycore,newfirstreceiptifneeded."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T00:57:41+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "label": "Подтвердить secondsend и восстановить исход первой отправки",
+        "acceptance": "034sourceRED/GREEN,secondnativeconfirmed; originalfirst033/034providerreadback withoutresend. Новыйfirstreceipt035отдельныйFIRSTRECEIPT15.",
+        "result": "Published1e9a7a5,034installed,second14cconfirmed57e82db3. First14c и14e delivered+terminalreply readback proven,originalUNKNOWNretained,resend0. Source141extensiontests; frameexception/queryvariationcandidate035reviewedneedsinstall/liveFIRSTRECEIPT15. ART/native-chatgpt14c,native-chatgpt14e,userio-chatgpt-native-receipt-0934."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Published1e9a7a5,034installed,second14cconfirmed57e82db3. First14c и14e delivered+terminalreply readback proven,originalUNKNOWNretained,resend0. Source141extensiontests; frameexception/queryvariationcandidate035reviewedneedsinstall/liveFIRSTRECEIPT15. ART/native-chatgpt14c,native-chatgpt14e,userio-chatgpt-native-receipt-0934."
+}

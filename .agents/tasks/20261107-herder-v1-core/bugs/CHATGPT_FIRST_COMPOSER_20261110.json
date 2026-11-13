@@ -12,13 +12,47 @@
         "status": "open",
         "title": "Первая отправка требует sendbutton до ввода текста"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T21:54:38+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/userio-chatgpt-first-0932/focused.log",
+            "red_proof_path": "evidence/resume-20261110/userio-chatgpt-first-0932/red.log",
+            "red_result": "name: 'AssertionError'",
+            "red_sha256": "305e2014d74611c025fe64563a8a1369e1e0d76c9a9f46029e0dfddb9f6b8254",
+            "result": "# pass 15",
+            "sha256": "3321db517fa8ed9a3af304f9d043eb5124a306d550d068fa16dc0b703dfc32c6",
+            "test_command": "node --test extensions/vk-inbox/tests/scoped-chatgpt.test.mjs"
+          },
+          "kind": "fixed",
+          "reason": "Source032 fix, installed034 real14C/14E first native input and terminal reply confirmed; receipt bug tracked separately."
+        },
+        "status": "fixed"
+      }
     }
   ],
   "id": "CHATGPT_FIRST_COMPOSER_20261110",
   "owner": "Lead",
   "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/userio-chatgpt-first-0932/focused.log",
+      "red_proof_path": "evidence/resume-20261110/userio-chatgpt-first-0932/red.log",
+      "red_result": "name: 'AssertionError'",
+      "red_sha256": "305e2014d74611c025fe64563a8a1369e1e0d76c9a9f46029e0dfddb9f6b8254",
+      "result": "# pass 15",
+      "sha256": "3321db517fa8ed9a3af304f9d043eb5124a306d550d068fa16dc0b703dfc32c6",
+      "test_command": "node --test extensions/vk-inbox/tests/scoped-chatgpt.test.mjs"
+    },
+    "kind": "fixed",
+    "reason": "Source032 fix, installed034 real14C/14E first native input and terminal reply confirmed; receipt bug tracked separately."
+  },
   "source": "native-chatgpt14 originalcommand37e074 receipt; scoped-chatgpt.js:firstSend",
-  "status": "open",
+  "status": "fixed",
   "title": "Первая отправка требует sendbutton до ввода текста",
-  "updated_at": "2026-11-10T20:31:34+00:00"
+  "updated_at": "2026-11-10T21:54:38+00:00"
 }

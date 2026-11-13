@@ -1,18 +1,18 @@
 {
   "parent": "MRESUME10",
   "label": "Завершить установленный Z.ai через личное подключение",
-  "status": "queued",
+  "status": "done",
   "owner": "Lead",
   "model": "gpt-6-astra",
   "estimate_minutes": 15,
   "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
   "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии.",
-  "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer.",
+  "result": "Доказано: Default Chrome readback 0.9.36; active extension path найден и CAS-hotfix/backups сохранены; GPTAdmin Profile Manager exact default отказал unmanaged_unavailable; новые canary attempts сохранили exact UNKNOWN/not_submitted без provider writes. Остальное native lifecycle вынесено в ZAITOKEN20.",
   "id": "ZAITOKEN15",
   "created_at": "2026-11-11T00:31:25+03:00",
   "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
   "harness": "codex",
-  "updated_at": "2026-11-11T03:45:56+03:00",
+  "updated_at": "2026-11-11T06:37:48+03:00",
   "progress_events": [
     {
       "at": "2026-11-11T00:31:25+03:00",
@@ -83,6 +83,55 @@
       },
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T03:53:33+03:00",
+      "note": "",
+      "changes": {
+        "note": "Приоритет владельца: только Z.ai. После подтверждения загруженного исправления в Default — один новый свой чат и штатный автопилот на Z.ai как на управляемой сессии. Предыдущую UNKNOWN не повторять; другие среды не трогать."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T04:28:02+03:00",
+      "note": "Параллельная сверка разрешённого личного Z.ai lifecycle по существующему собственному canary; старые UNKNOWN не повторяются.",
+      "changes": {
+        "status": "running"
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "mcp_metadata"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T06:37:48+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "actual_minutes": 126,
+        "result": "Доказано: Default Chrome readback 0.9.36; active extension path найден и CAS-hotfix/backups сохранены; GPTAdmin Profile Manager exact default отказал unmanaged_unavailable; новые canary attempts сохранили exact UNKNOWN/not_submitted без provider writes. Остальное native lifecycle вынесено в ZAITOKEN20."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
     }
-  ]
+  ],
+  "note": "Приоритет владельца: только Z.ai. После подтверждения загруженного исправления в Default — один новый свой чат и штатный автопилот на Z.ai как на управляемой сессии. Предыдущую UNKNOWN не повторять; другие среды не трогать.",
+  "actual_minutes": 126
 }

@@ -6,10 +6,10 @@
     "goal_status": "unknown",
     "frontier": "admission_unknown",
     "next_decision": "none",
-    "fingerprint": "e4877a3190ccb0f2e2d0584b356c2531e9ad52c4a6117e12643450cc0bb2da09",
+    "fingerprint": "3fa2bba69d8ee0417b8e62724312a0a65b979eea39736649604b87ae9c7af9f1",
     "decision_fresh": false,
     "candidates": [
-      "ZAITOKEN15",
+      "ZAITOKEN20",
       "EXTRELEASE10"
     ],
     "decision": null,
@@ -173,7 +173,7 @@
   ],
   "external_waits": "",
   "slots": 4,
-  "updated_at": "2026-11-11T03:45:56+03:00",
+  "updated_at": "2026-11-11T06:37:49+03:00",
   "tasks": [
     {
       "id": "BACKENDCONTRACT11",
@@ -2476,6 +2476,69 @@
       "finished_at": "2026-11-09T05:28:36+03:00"
     },
     {
+      "id": "CONNECTED15",
+      "label": "Получить длинное чтение Herder через подключённый GPTAdmin",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Послеfence104childrestart ordinarymessages14c SDKworks,Hubjobcdc33191sameclientreceiptrejected. tasks.start9a648c13receiptunavailable. Isolatedsameclientfixture/authnegatives; exactfailedpredicatebeforefix.",
+      "acceptance": "ExactHubRED/fix/GREENifconfirmed; reviewedscopedpublication/installonlyauthorizedroute; actualconnectedmessagesreturns4nativeIDs withsameclient. Noauthbypass/generalhubrepair.",
+      "result": "LIVEPASS: Hub1137 installedbyotherowner includes7d2c715requestcontextfix. Freshmcp.tasks.start/read task06d8bebb completed21466ms,4expectednativeIDs+2terminalreplies,completefalse. Old1135records exactcdc33191+9a648c13 lackCaller,notrewritten; authbypass0. ART/connected-longread14/terra-live-predicate.json,live-readback.json. Child-onlyprofilefixturecandidate separatescope/sourcepending,notneededwildcardconsumer.",
+      "owner": "Terra Archimedes",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T00:26:51+03:00",
+          "note": "",
+          "changes": {
+            "parent": "MRESUME10",
+            "label": "Получить длинное чтение Herder через подключённый GPTAdmin",
+            "status": "running",
+            "owner": "Terra Archimedes",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Послеfence104childrestart ordinarymessages14c SDKworks,Hubjobcdc33191sameclientreceiptrejected. tasks.start9a648c13receiptunavailable. Isolatedsameclientfixture/authnegatives; exactfailedpredicatebeforefix.",
+            "acceptance": "ExactHubRED/fix/GREENifconfirmed; reviewedscopedpublication/installonlyauthorizedroute; actualconnectedmessagesreturns4nativeIDs withsameclient. Noauthbypass/generalhubrepair."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:55:57+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "LIVEPASS: Hub1137 installedbyotherowner includes7d2c715requestcontextfix. Freshmcp.tasks.start/read task06d8bebb completed21466ms,4expectednativeIDs+2terminalreplies,completefalse. Old1135records exactcdc33191+9a648c13 lackCaller,notrewritten; authbypass0. ART/connected-longread14/terra-live-predicate.json,live-readback.json. Child-onlyprofilefixturecandidate separatescope/sourcepending,notneededwildcardconsumer."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T00:26:51+03:00",
+      "started_at": "2026-11-11T00:26:51+03:00",
+      "finished_at": "2026-11-11T00:55:57+03:00"
+    },
+    {
       "id": "COREWAIT",
       "label": "Разобрать зависание native browser Tasks",
       "status": "done",
@@ -3184,6 +3247,87 @@
       "created_at": "2026-11-10T22:14:56+03:00",
       "started_at": "2026-11-10T22:14:56+03:00",
       "finished_at": "2026-11-10T22:32:00+03:00"
+    },
+    {
+      "id": "EXTINSTALL14",
+      "label": "Установить UserIO 0.9.34 на сервере и в двух профилях Chrome",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Backend034 штатно установлен: imagefa960b7f, container58357346, fence61 released. Native AX после reload подтверждает loaded0.9.34 Carevio и Default; fence62 released. Независимая проверка публичных ZIP,31hashes,19accounts и сохранённых настроек выполняется.",
+      "acceptance": "Both profiles loaded034; publicZIP67375e43;31backendhashes,19accounts/frontendvoice preserved. Native lifecycle отдельно CHATNATIVE14.",
+      "result": "UserIO0.9.34 установлен штатно подfence61: imagefa960b7f/container58357346. Независимыйinstalled-proof31hashes и19accountIDs совпали,frontend/voiceсохранены,обаpublicZIP67375e43/version034. NativeAX loaded034 Carevio+Default, reloadfence62released. RestartCount2исследуется отдельно; это proof установки,живойlifecycle CHATNATIVE14. ART/userio-backend-package-0934/installed-proof.json,mac-carevio-loaded034.log,mac-default-loaded034.log.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-10T23:38:34+03:00",
+          "note": "",
+          "changes": {
+            "id": "EXTINSTALL14",
+            "parent": "MRESUME10",
+            "label": "Установить UserIO0.9.32 с исправлением первого ввода и Z.ai identity",
+            "status": "running",
+            "owner": "Lead",
+            "model": "gpt-6-astra",
+            "estimate_minutes": 15,
+            "description": "3372b2c sourcepackage032ZIP5278. Macfilesfence57, loadedDefault/Carevio032. Backendpackage-onlyderivativepreparedbyTerra,preservecurrenttailfixa3e.",
+            "acceptance": "Bothbrowserloaded032 exactSHA,backend31hashes+19accountsandfrontendvoicepreserved,publicZIPsha. NativeChatGPTnewfirst/second/archive separateCHATNATIVE14, Zaiunauthrefusal exact."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:11:51+03:00",
+          "note": "",
+          "changes": {
+            "label": "Установить UserIO 0.9.34 на сервере и в двух профилях Chrome",
+            "description": "Backend034 штатно установлен: imagefa960b7f, container58357346, fence61 released. Native AX после reload подтверждает loaded0.9.34 Carevio и Default; fence62 released. Независимая проверка публичных ZIP,31hashes,19accounts и сохранённых настроек выполняется.",
+            "acceptance": "Both profiles loaded034; publicZIP67375e43;31backendhashes,19accounts/frontendvoice preserved. Native lifecycle отдельно CHATNATIVE14."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:12:54+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "UserIO0.9.34 установлен штатно подfence61: imagefa960b7f/container58357346. Независимыйinstalled-proof31hashes и19accountIDs совпали,frontend/voiceсохранены,обаpublicZIP67375e43/version034. NativeAX loaded034 Carevio+Default, reloadfence62released. RestartCount2исследуется отдельно; это proof установки,живойlifecycle CHATNATIVE14. ART/userio-backend-package-0934/installed-proof.json,mac-carevio-loaded034.log,mac-default-loaded034.log."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-10T23:38:34+03:00",
+      "started_at": "2026-11-10T23:38:34+03:00",
+      "finished_at": "2026-11-11T00:12:54+03:00"
     },
     {
       "id": "EXTPOLL10",
@@ -5660,6 +5804,72 @@
       "started_at": "2026-11-08T19:05:02+03:00"
     },
     {
+      "id": "RECEIPTNATIVE14",
+      "label": "Подтвердить secondsend и восстановить исход первой отправки",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Real033firstclickсоздалnativechat6af3844e;DOMreceiptнеузналnewUI,coreUNKNOWNretained. OrdinarySDKnativeuser21658394+assistant1b54bb83,endTurntrue confirmed. Reusecanonicalreadreceiptfirst/secondoneclick.",
+      "acceptance": "034sourceRED/GREEN,secondnativeconfirmed; originalfirst033/034providerreadback withoutresend. Новыйfirstreceipt035отдельныйFIRSTRECEIPT15.",
+      "result": "Published1e9a7a5,034installed,second14cconfirmed57e82db3. First14c и14e delivered+terminalreply readback proven,originalUNKNOWNretained,resend0. Source141extensiontests; frameexception/queryvariationcandidate035reviewedneedsinstall/liveFIRSTRECEIPT15. ART/native-chatgpt14c,native-chatgpt14e,userio-chatgpt-native-receipt-0934.",
+      "owner": "Terra",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T00:00:19+03:00",
+          "note": "",
+          "changes": {
+            "id": "RECEIPTNATIVE14",
+            "parent": "MRESUME10",
+            "label": "Подтверждать browser send по nativeAPI снимку",
+            "status": "running",
+            "owner": "Terra",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Real033firstclickсоздалnativechat6af3844e;DOMreceiptнеузналnewUI,coreUNKNOWNretained. OrdinarySDKnativeuser21658394+assistant1b54bb83,endTurntrue confirmed. Reusecanonicalreadreceiptfirst/secondoneclick.",
+            "acceptance": "RED/GREEN noDOMnativeID+nativeAPImatch,noresend;034package/runtime. ExistingoriginalconfirmedbyrecipientwithoutrewritingUNKNOWN; second+restart/archiveordinarycore,newfirstreceiptifneeded."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:57:41+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "label": "Подтвердить secondsend и восстановить исход первой отправки",
+            "acceptance": "034sourceRED/GREEN,secondnativeconfirmed; originalfirst033/034providerreadback withoutresend. Новыйfirstreceipt035отдельныйFIRSTRECEIPT15.",
+            "result": "Published1e9a7a5,034installed,second14cconfirmed57e82db3. First14c и14e delivered+terminalreply readback proven,originalUNKNOWNretained,resend0. Source141extensiontests; frameexception/queryvariationcandidate035reviewedneedsinstall/liveFIRSTRECEIPT15. ART/native-chatgpt14c,native-chatgpt14e,userio-chatgpt-native-receipt-0934."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T00:00:19+03:00",
+      "started_at": "2026-11-11T00:00:19+03:00",
+      "finished_at": "2026-11-11T00:57:41+03:00"
+    },
+    {
       "id": "RECEIPTTAIL14",
       "label": "Ускорить чтение квитанций UserIO без полного сканирования журнала",
       "status": "done",
@@ -5861,6 +6071,69 @@
       "created_at": "2026-11-10T15:11:04+03:00",
       "started_at": "2026-11-10T15:14:34+03:00",
       "finished_at": "2026-11-10T15:26:57+03:00"
+    },
+    {
+      "id": "RELEASEPORT15",
+      "label": "Исправить передачу порта при штатном обновлении UserIO",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Подтверждённый034handover2restarts/10bindconflicts18096. Smallboundedguard штатногоcontainer_release.py, busydoesnotkill/continue,rollbackpreserved.",
+      "acceptance": "Meaningful actualbaselineRED/fix/GREEN; exactownedsourcepublished afterreview. Healthy034непереустанавливать; publiccontentsalreadyverified.",
+      "result": "Publishedoriginmain0298419d exact2ownedpaths scripts/container_release.py+tests/test_container_release_revision.py. ActualbaselineRED existingreplacementdeletes/createswhileoldendpointbusy;GREEN33checks verifywait/refusal,oldrestartrollback,unhealthyrollbacknotclaimed. Nohealthy034runtimemutation. ART/userio-release-port-handover/final-receipt.json; guardusednextneededinstall.",
+      "owner": "Terra Sagan",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T00:26:51+03:00",
+          "note": "",
+          "changes": {
+            "parent": "MRESUME10",
+            "label": "Исправить передачу порта при штатном обновлении UserIO",
+            "status": "running",
+            "owner": "Terra Sagan",
+            "model": "gpt-6.1-terra",
+            "estimate_minutes": 15,
+            "description": "Подтверждённый034handover2restarts/10bindconflicts18096. Smallboundedguard штатногоcontainer_release.py, busydoesnotkill/continue,rollbackpreserved.",
+            "acceptance": "Meaningful actualbaselineRED/fix/GREEN; exactownedsourcepublished afterreview. Healthy034непереустанавливать; publiccontentsalreadyverified."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T00:39:10+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "result": "Publishedoriginmain0298419d exact2ownedpaths scripts/container_release.py+tests/test_container_release_revision.py. ActualbaselineRED existingreplacementdeletes/createswhileoldendpointbusy;GREEN33checks verifywait/refusal,oldrestartrollback,unhealthyrollbacknotclaimed. Nohealthy034runtimemutation. ART/userio-release-port-handover/final-receipt.json; guardusednextneededinstall."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T00:26:51+03:00",
+      "started_at": "2026-11-11T00:26:51+03:00",
+      "finished_at": "2026-11-11T00:39:10+03:00"
     },
     {
       "id": "RESTORECONTRACTS",
@@ -7108,6 +7381,92 @@
       "finished_at": "2026-11-11T00:31:25+03:00"
     },
     {
+      "id": "ZAIAUTO18",
+      "label": "Автопилот продолжает задачу в чате Z.ai",
+      "status": "done",
+      "parent": "MRESUME10",
+      "description": "Приоритет владельца: только Z.ai. Расширить существующий V1 browser autopilot на Z.ai UserIO как цель; использовать уже авторизованный точный профиль Default, один свежий собственный тестовый чат, тот же V1 MCP и существующего судью UserIO. Другие адаптеры, глобальные настройки и прежние UNKNOWN не трогать.",
+      "acceptance": "На загруженном исправленном расширении обычный Herder создаёт свой Z.ai чат, видит завершённый ответ и сохраняет точный нативный ID. Тот же worker сам принимает решение и выполняет ровно одно следующее сообщение в этом чате, с отдельным terminal ответом; независимый readback и остановка/уборка своего теста. HumanStop и запрет повтора сохраняются. Подключение Z.ai в роли только судьи за PASS не считать.",
+      "result": "Доказано и опубликовано: commit 6ef0fce7 на origin/main; Terra patch 1e41c8d, 83 релевантных теста PASS, tsc PASS; candidate build bundle 0987ef4169167ef5bfa9ccf9039c5579ab6342d5b6fe26614565749843edef41 и release checks 15/15; --check/--once PASS на Z.ai UserIO config. Оставшееся live-поведение вынесено в ZAIAUTO20: browser Z.ai preflight/continuation не подтверждены, exact result zai_first_preflight_failed/not_submitted, provider writes 0.",
+      "owner": "Lead + Terra",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "tier": "middle",
+      "origin": "",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T03:56:41+03:00",
+          "note": "",
+          "changes": {
+            "id": "ZAIAUTO18",
+            "kind": "task",
+            "parent": "MRESUME10",
+            "label": "Автопилот продолжает задачу в чате Z.ai",
+            "description": "Приоритет владельца: только Z.ai. Расширить существующий V1 browser autopilot на Z.ai UserIO как цель; использовать уже авторизованный точный профиль Default, один свежий собственный тестовый чат, тот же V1 MCP и существующего судью UserIO. Другие адаптеры, глобальные настройки и прежние UNKNOWN не трогать.",
+            "acceptance": "На загруженном исправленном расширении обычный Herder создаёт свой Z.ai чат, видит завершённый ответ и сохраняет точный нативный ID. Тот же worker сам принимает решение и выполняет ровно одно следующее сообщение в этом чате, с отдельным terminal ответом; независимый readback и остановка/уборка своего теста. HumanStop и запрет повтора сохраняются. Подключение Z.ai в роли только судьи за PASS не считать.",
+            "status": "queued",
+            "estimate_minutes": 15,
+            "owner": "Lead + Terra",
+            "model": "gpt-6.1-terra",
+            "tier": "middle"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T04:28:01+03:00",
+          "note": "Начат узкий Z.ai autopilot: сначала тесты и интеграция патча Terra, затем одна реальная автоматическая продолженная реплика.",
+          "changes": {
+            "status": "running",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T06:37:48+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 126,
+            "result": "Доказано и опубликовано: commit 6ef0fce7 на origin/main; Terra patch 1e41c8d, 83 релевантных теста PASS, tsc PASS; candidate build bundle 0987ef4169167ef5bfa9ccf9039c5579ab6342d5b6fe26614565749843edef41 и release checks 15/15; --check/--once PASS на Z.ai UserIO config. Оставшееся live-поведение вынесено в ZAIAUTO20: browser Z.ai preflight/continuation не подтверждены, exact result zai_first_preflight_failed/not_submitted, provider writes 0."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "actual_minutes": 126.0,
+      "created_at": "2026-11-11T03:56:41+03:00",
+      "started_at": "2026-11-11T04:28:01+03:00",
+      "finished_at": "2026-11-11T06:37:48+03:00"
+    },
+    {
       "id": "ZAILIVE14",
       "label": "Найти подтверждённый аккаунт Z.ai и привязку UserIO",
       "status": "done",
@@ -7307,15 +7666,16 @@
     {
       "id": "ZAITOKEN15",
       "label": "Завершить установленный Z.ai через личное подключение",
-      "status": "queued",
+      "status": "done",
       "parent": "MRESUME10",
       "description": "Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.",
       "acceptance": "После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии.",
-      "result": "Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer.",
+      "result": "Доказано: Default Chrome readback 0.9.36; active extension path найден и CAS-hotfix/backups сохранены; GPTAdmin Profile Manager exact default отказал unmanaged_unavailable; новые canary attempts сохранили exact UNKNOWN/not_submitted без provider writes. Остальное native lifecycle вынесено в ZAITOKEN20.",
       "owner": "Lead",
       "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
       "harness": "codex",
       "model": "gpt-6-astra",
+      "note": "Приоритет владельца: только Z.ai. После подтверждения загруженного исправления в Default — один новый свой чат и штатный автопилот на Z.ai как на управляемой сессии. Предыдущую UNKNOWN не повторять; другие среды не трогать.",
       "origin": "",
       "supersedes": [],
       "progress_events": [
@@ -7388,6 +7748,53 @@
           },
           "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
           "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T03:53:33+03:00",
+          "note": "",
+          "changes": {
+            "note": "Приоритет владельца: только Z.ai. После подтверждения загруженного исправления в Default — один новый свой чат и штатный автопилот на Z.ai как на управляемой сессии. Предыдущую UNKNOWN не повторять; другие среды не трогать."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T04:28:02+03:00",
+          "note": "Параллельная сверка разрешённого личного Z.ai lifecycle по существующему собственному canary; старые UNKNOWN не повторяются.",
+          "changes": {
+            "status": "running"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "mcp_metadata"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        },
+        {
+          "at": "2026-11-11T06:37:48+03:00",
+          "note": "",
+          "changes": {
+            "status": "done",
+            "actual_minutes": 126,
+            "result": "Доказано: Default Chrome readback 0.9.36; active extension path найден и CAS-hotfix/backups сохранены; GPTAdmin Profile Manager exact default отказал unmanaged_unavailable; новые canary attempts сохранили exact UNKNOWN/not_submitted без provider writes. Остальное native lifecycle вынесено в ZAITOKEN20."
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
         }
       ],
       "depends_on": [],
@@ -7395,8 +7802,55 @@
         "minimum": 15.0,
         "maximum": 15.0
       },
+      "actual_minutes": 126.0,
       "created_at": "2026-11-11T00:31:25+03:00",
-      "started_at": "2026-11-11T01:28:32+03:00"
+      "started_at": "2026-11-11T01:28:32+03:00",
+      "finished_at": "2026-11-11T06:37:48+03:00"
+    },
+    {
+      "id": "ZAITOKEN20",
+      "label": "Z.ai: подтвердить первый живой ответ после active extension reload",
+      "status": "queued",
+      "description": "Один новый Z.ai UserIO lifecycle после точного active Chrome reload; диагностировать только preflight и подтвердить native user/assistant receipt.",
+      "acceptance": "Одна новая сессия с подтверждённой первой доставкой и завершённым assistant ответом; исходные UNKNOWN не повторяются.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "split from ZAITOKEN15",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T06:37:49+03:00",
+          "note": "",
+          "changes": {
+            "kind": "task",
+            "label": "Z.ai: подтвердить первый живой ответ после active extension reload",
+            "description": "Один новый Z.ai UserIO lifecycle после точного active Chrome reload; диагностировать только preflight и подтвердить native user/assistant receipt.",
+            "acceptance": "Одна новая сессия с подтверждённой первой доставкой и завершённым assistant ответом; исходные UNKNOWN не повторяются.",
+            "estimate_minutes": 15,
+            "owner": "Lead",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex",
+            "origin": "split from ZAITOKEN15",
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T06:37:49+03:00"
     },
     {
       "id": "ZARCHPROOF",
@@ -8813,6 +9267,56 @@
       "created_at": "2026-11-08T21:27:53+03:00",
       "started_at": "2026-11-08T21:27:53+03:00",
       "finished_at": "2026-11-08T21:48:16+03:00"
+    },
+    {
+      "id": "ZAIAUTO20",
+      "label": "Z.ai: автопилот отправляет ровно одно продолжение",
+      "status": "queued",
+      "description": "После ZAITOKEN20 worker читает exact Z.ai pair, принимает решение через UserIO judge и отправляет одно continuation в тот же chat; independent readback.",
+      "acceptance": "Одна автоматическая continuation в том же session_ref, отдельный завершённый второй ответ, UNKNOWN/HumanStop/no-replay сохранены.",
+      "owner": "Lead",
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex",
+      "model": "gpt-6.1-terra",
+      "origin": "split from ZAIAUTO18",
+      "supersedes": [],
+      "progress_events": [
+        {
+          "at": "2026-11-11T06:37:49+03:00",
+          "note": "",
+          "changes": {
+            "kind": "task",
+            "label": "Z.ai: автопилот отправляет ровно одно продолжение",
+            "description": "После ZAITOKEN20 worker читает exact Z.ai pair, принимает решение через UserIO judge и отправляет одно continuation в тот же chat; independent readback.",
+            "acceptance": "Одна автоматическая continuation в том же session_ref, отдельный завершённый второй ответ, UNKNOWN/HumanStop/no-replay сохранены.",
+            "estimate_minutes": 15,
+            "owner": "Lead",
+            "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "harness": "codex",
+            "depends_on": [
+              "ZAITOKEN20"
+            ],
+            "origin": "split from ZAIAUTO18",
+            "model": "gpt-6.1-terra"
+          },
+          "actor": {
+            "host_id": null,
+            "harness": "codex",
+            "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+            "source": "native_environment"
+          },
+          "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+          "harness": "codex"
+        }
+      ],
+      "depends_on": [
+        "ZAITOKEN20"
+      ],
+      "estimate_minutes": {
+        "minimum": 15.0,
+        "maximum": 15.0
+      },
+      "created_at": "2026-11-11T06:37:49+03:00"
     },
     {
       "id": "A11",
@@ -12665,7 +13169,7 @@
       "created_at": "2026-11-07T22:06:07+03:00"
     }
   ],
-  "leaf_count": 127,
+  "leaf_count": 134,
   "milestones": [
     {
       "id": "FLEETCUTOVER",
@@ -12713,7 +13217,9 @@
         "BROWSERREG11",
         "CHATNATIVE14",
         "CIROUTE10",
+        "CONNECTED15",
         "DELIVER10",
+        "EXTINSTALL14",
         "EXTRELEASE10",
         "FIRSTRECEIPT15",
         "HUMANQUOTA12",
@@ -12721,11 +13227,14 @@
         "INSTALLSTARTUP13",
         "LAZYBROWSER13",
         "LIFECYCLEINSTALL13",
+        "RECEIPTNATIVE14",
         "RECEIPTTAIL14",
         "RECONCILE10",
         "REGRESS10",
+        "RELEASEPORT15",
         "SMALLREG11",
         "STATE10",
+        "ZAIAUTO18",
         "ZAITOKEN15",
         "ZCODE10",
         "ZCODEINSTALL13"
@@ -12734,8 +13243,8 @@
         "minimum": 45.0,
         "maximum": 45.0
       },
-      "done": 17,
-      "total": 21
+      "done": 23,
+      "total": 26
     },
     {
       "id": "RESTORELEGACY",

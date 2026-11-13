@@ -1,0 +1,56 @@
+{
+  "parent": "MRESUME10",
+  "label": "Получить длинное чтение Herder через подключённый GPTAdmin",
+  "status": "done",
+  "owner": "Terra Archimedes",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "Послеfence104childrestart ordinarymessages14c SDKworks,Hubjobcdc33191sameclientreceiptrejected. tasks.start9a648c13receiptunavailable. Isolatedsameclientfixture/authnegatives; exactfailedpredicatebeforefix.",
+  "acceptance": "ExactHubRED/fix/GREENifconfirmed; reviewedscopedpublication/installonlyauthorizedroute; actualconnectedmessagesreturns4nativeIDs withsameclient. Noauthbypass/generalhubrepair.",
+  "id": "CONNECTED15",
+  "created_at": "2026-11-11T00:26:51+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-11T00:55:57+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T00:26:51+03:00",
+      "note": "",
+      "changes": {
+        "parent": "MRESUME10",
+        "label": "Получить длинное чтение Herder через подключённый GPTAdmin",
+        "status": "running",
+        "owner": "Terra Archimedes",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "Послеfence104childrestart ordinarymessages14c SDKworks,Hubjobcdc33191sameclientreceiptrejected. tasks.start9a648c13receiptunavailable. Isolatedsameclientfixture/authnegatives; exactfailedpredicatebeforefix.",
+        "acceptance": "ExactHubRED/fix/GREENifconfirmed; reviewedscopedpublication/installonlyauthorizedroute; actualconnectedmessagesreturns4nativeIDs withsameclient. Noauthbypass/generalhubrepair."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T00:55:57+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "LIVEPASS: Hub1137 installedbyotherowner includes7d2c715requestcontextfix. Freshmcp.tasks.start/read task06d8bebb completed21466ms,4expectednativeIDs+2terminalreplies,completefalse. Old1135records exactcdc33191+9a648c13 lackCaller,notrewritten; authbypass0. ART/connected-longread14/terra-live-predicate.json,live-readback.json. Child-onlyprofilefixturecandidate separatescope/sourcepending,notneededwildcardconsumer."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "LIVEPASS: Hub1137 installedbyotherowner includes7d2c715requestcontextfix. Freshmcp.tasks.start/read task06d8bebb completed21466ms,4expectednativeIDs+2terminalreplies,completefalse. Old1135records exactcdc33191+9a648c13 lackCaller,notrewritten; authbypass0. ART/connected-longread14/terra-live-predicate.json,live-readback.json. Child-onlyprofilefixturecandidate separatescope/sourcepending,notneededwildcardconsumer."
+}
