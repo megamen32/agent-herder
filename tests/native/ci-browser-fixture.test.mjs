@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateConfig, parseProcStat, assertProcessBindings, deriveGeneration, findAnchor,
-  browserArguments, browserEnvironment, assertManagedState, inspectAnchorScript, BrowserFixtureManager, assertRecoveryReady} from '../../deploy/fleet/ci-browser-fixture.mjs';
+  browserArguments, browserEnvironment, browserExtensionPaths, assertManagedState, inspectAnchorScript, BrowserFixtureManager, assertRecoveryReady} from '../../deploy/fleet/ci-browser-fixture.mjs';
 
 const sha = 'a'.repeat(64);
 const config = () => ({schema: 'agent-herder.ci-browser-fixture.v1', runtime_uid: 1000, runtime_gid: 1000,
@@ -16,10 +16,10 @@ const config = () => ({schema: 'agent-herder.ci-browser-fixture.v1', runtime_uid
 const processes = c => ({
   daemon: {pid: 10, ppid: 1, uid: 1000, start_ticks: '100', executable: '/owned/agent-browser', executable_sha256: sha,
     argv: ['/owned/agent-browser'], env: {AGENT_BROWSER_PROFILE: c.browser.profile_path,
-      AGENT_BROWSER_EXTENSIONS: c.browser.extensions_path, AGENT_BROWSER_SESSION: c.browser.session,
+      AGENT_BROWSER_EXTENSIONS: browserExtensionPaths(c).join(','), AGENT_BROWSER_SESSION: c.browser.session,
       AGENT_BROWSER_NAMESPACE: c.browser.namespace, AGENT_BROWSER_IDLE_TIMEOUT_MS: '0'}},
   browser: {pid: 11, ppid: 10, uid: 1000, start_ticks: '110', executable: '/owned/chrome', executable_sha256: sha,
-    argv: ['/owned/chrome', '--user-data-dir=' + c.browser.profile_path, '--load-extension=' + c.browser.extensions_path]},
+    argv: ['/owned/chrome', '--user-data-dir=' + c.browser.profile_path, '--load-extension=' + browserExtensionPaths(c).join(',')]},
   relay: {pid: 12, ppid: 1, uid: 1000, start_ticks: '90', executable: '/owned/node', executable_sha256: sha,
     argv: ['/owned/node', c.relay.script_path], env: {VIBE_MCP_AGENT_PORT: '19898', VIBE_MCP_EXTENSION_PORT: '19899',
       VIBE_MCP_STATE_DIR: c.relay.state_dir}, listening_ports: [19898, 19899], loopback_only: true},
@@ -51,6 +51,44 @@ test('every CLI call pins all launch settings and clears external auto-attach se
   // The manager pins the original HOME-scoped directory, so the child must not move it.
   assert.equal(env.XDG_RUNTIME_DIR, undefined);
   assert.equal(env.DBUS_SESSION_BUS_ADDRESS, undefined);
+});
+
+test('reviewed extra extensions preserve the primary transport and exact launch environment', () => {
+  const c = config(); c.browser.extra_extension_paths = ['/owned/bezbrowser'];
+  assert.equal(validateConfig(c), c);
+  assert.deepEqual(browserExtensionPaths(c), ['/owned/vibe-extension', '/owned/bezbrowser']);
+  assert.equal(browserEnvironment(c).AGENT_BROWSER_EXTENSIONS, '/owned/vibe-extension,/owned/bezbrowser');
+  assert.doesNotThrow(() => assertProcessBindings(c, processes(c)));
+  const reordered = processes(c);
+  reordered.browser.argv[2] = '--load-extension=/owned/bezbrowser,/owned/vibe-extension';
+  assert.doesNotThrow(() => assertProcessBindings(c, reordered));
+  const empty = config(); empty.browser.extra_extension_paths = [];
+  assert.equal(browserEnvironment(validateConfig(empty)).AGENT_BROWSER_EXTENSIONS, '/owned/vibe-extension');
+});
+
+test('extension paths reject ambiguous comma lists, duplicates and invalid extra arrays', () => {
+  for (const value of [null, '/owned/bezbrowser', {}, ['relative'], ['/owned/../foreign'], [''],
+    ['/owned/bez,browser'], ['/owned/vibe-extension'], ['/owned/bezbrowser', '/owned/bezbrowser']]) {
+    const c = config(); c.browser.extra_extension_paths = value;
+    assert.throws(() => validateConfig(c), {code: 'dedicated_browser_extensions_required'});
+  }
+  const comma = config(); comma.browser.extensions_path = '/owned/vibe,/owned/foreign';
+  assert.throws(() => validateConfig(comma), {code: 'dedicated_browser_extensions_required'});
+});
+
+test('multi-extension process proof rejects missing, extra and duplicated paths and changed environment', () => {
+  const c = config(); c.browser.extra_extension_paths = ['/owned/bezbrowser'];
+  for (const extensionList of ['/owned/vibe-extension', '/owned/bezbrowser',
+    '/owned/vibe-extension,/owned/foreign', '/owned/vibe-extension,/owned/bezbrowser,/owned/foreign',
+    '/owned/vibe-extension,/owned/vibe-extension', '/owned/vibe-extension,/owned/bezbrowser,/owned/bezbrowser']) {
+    const p = processes(c); p.browser.argv[2] = '--load-extension=' + extensionList;
+    assert.throws(() => assertProcessBindings(c, p), {code: 'fixture_browser_profile_mismatch'});
+  }
+  const wrongEnv = processes(c); wrongEnv.daemon.env.AGENT_BROWSER_EXTENSIONS = '/owned/vibe-extension';
+  assert.throws(() => assertProcessBindings(c, wrongEnv), {code: 'fixture_daemon_environment_mismatch'});
+  const single = config(), duplicate = processes(single);
+  duplicate.browser.argv.push('--load-extension=' + single.browser.extensions_path);
+  assert.throws(() => assertProcessBindings(single, duplicate), {code: 'fixture_browser_profile_mismatch'});
 });
 
 test('proc stat handles names with spaces and parentheses', () => {
