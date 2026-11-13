@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 
 const exec = promisify(execFile);
 const CONFIG_PATH = '/etc/agent-herder-ci-smoke/browser-fixture.json';
+const SCREENSHOT_SURFACE_ARG = '--enable-features=CDPScreenshotNewSurface';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = code => {throw Object.assign(new Error(code), {code});};
 const text = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && !/[\x00-\x1f]/.test(value);
@@ -39,6 +40,10 @@ async function durableWrite(path, value) {
 async function durableRename(from, to) {await rename(from, to); await syncDirectory(dirname(to));}
 async function durableUnlink(path) {await unlink(path); await syncDirectory(dirname(path));}
 
+export function browserExtensionPaths(c) {
+  return [c.browser.extensions_path, ...(c.browser.extra_extension_paths ?? [])];
+}
+
 export function validateConfig(c) {
   if (c?.schema !== 'agent-herder.ci-browser-fixture.v1' || !positive(c.runtime_uid) || !positive(c.runtime_gid)
       || !absolute(c.owner_home) || !absolute(c.state_dir) || !c.state_dir.startsWith('/var/lib/agent-herder-ci-smoke/')) fail('fixture_config_invalid');
@@ -47,7 +52,12 @@ export function validateConfig(c) {
       || !digest(b.executable_sha256) || !digest(b.chrome_sha256)
       || !/^ci-[a-zA-Z0-9_.-]+$/.test(basename(b.profile_path))
       || !/^herderci[a-zA-Z0-9_-]*$/.test(b.session) || !/^herderci[a-zA-Z0-9_-]*$/.test(b.namespace)
-      || b.idle_timeout_ms !== 0) fail('dedicated_browser_config_required');
+      || b.idle_timeout_ms !== 0
+      || (b.cdp_screenshot_new_surface !== undefined && typeof b.cdp_screenshot_new_surface !== 'boolean')) fail('dedicated_browser_config_required');
+  if (b.extra_extension_paths !== undefined && !Array.isArray(b.extra_extension_paths)) fail('dedicated_browser_extensions_required');
+  const extensionPaths = browserExtensionPaths(c);
+  if (extensionPaths.some(value => !absolute(value) || value.includes(','))
+      || new Set(extensionPaths).size !== extensionPaths.length) fail('dedicated_browser_extensions_required');
   if (r.systemd_unit !== 'agent-herder-ci-vibe.service'
       || !Number.isInteger(r.agent_port) || r.agent_port < 1024 || r.agent_port > 65534 || r.agent_port === 19888
       || r.extension_port !== r.agent_port + 1 || !/^session_[1-9][0-9]*$/.test(r.session_id)
@@ -76,7 +86,8 @@ export function browserEnvironment(c, _inherited = {}) {
   // Keep the CLI's runtime sockets under HOME/.agent-browser, as daemonPidFile
   // and the original isolated namespace require. XDG_RUNTIME_DIR relocates them.
   return {HOME: c.owner_home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8',
-    AGENT_BROWSER_PROFILE: c.browser.profile_path, AGENT_BROWSER_EXTENSIONS: c.browser.extensions_path,
+    AGENT_BROWSER_PROFILE: c.browser.profile_path, AGENT_BROWSER_EXTENSIONS: browserExtensionPaths(c).join(','),
+    ...(c.browser.cdp_screenshot_new_surface === true ? {AGENT_BROWSER_ARGS: SCREENSHOT_SURFACE_ARG} : {}),
     AGENT_BROWSER_SESSION: c.browser.session, AGENT_BROWSER_NAMESPACE: c.browser.namespace,
     AGENT_BROWSER_AUTO_CONNECT: 'false', AGENT_BROWSER_HEADED: 'false', AGENT_BROWSER_IDLE_TIMEOUT_MS: String(c.browser.idle_timeout_ms)};
 }
@@ -113,9 +124,10 @@ function assertDaemon(c, process, idle) {
   assertOwner(c, process);
   const b = c.browser, denv = process.env || {};
   if (process.executable_sha256 !== b.executable_sha256) fail('fixture_process_binding_mismatch');
-  if (denv.AGENT_BROWSER_PROFILE !== b.profile_path || denv.AGENT_BROWSER_EXTENSIONS !== b.extensions_path
+  if (denv.AGENT_BROWSER_PROFILE !== b.profile_path || denv.AGENT_BROWSER_EXTENSIONS !== browserExtensionPaths(c).join(',')
       || denv.AGENT_BROWSER_SESSION !== b.session || denv.AGENT_BROWSER_NAMESPACE !== b.namespace
-      || denv.AGENT_BROWSER_IDLE_TIMEOUT_MS !== String(idle)) fail('fixture_daemon_environment_mismatch');
+      || denv.AGENT_BROWSER_IDLE_TIMEOUT_MS !== String(idle)
+      || (denv.AGENT_BROWSER_ARGS || '') !== (b.cdp_screenshot_new_surface === true ? SCREENSHOT_SURFACE_ARG : '')) fail('fixture_daemon_environment_mismatch');
 }
 function assertBrowser(c, process, daemonPid) {
   assertOwner(c, process);
@@ -123,8 +135,16 @@ function assertBrowser(c, process, daemonPid) {
   if (process.executable_sha256 !== b.chrome_sha256 || process.ppid !== daemonPid) fail('fixture_process_binding_mismatch');
   const profiles = argumentValues(process.argv, '--user-data-dir');
   const extensions = argumentValues(process.argv, '--load-extension').flatMap(x => String(x).split(','));
-  if (profiles.length !== 1 || profiles[0] !== b.profile_path || !extensions.length
-      || extensions.some(x => x !== b.extensions_path) || argumentValues(process.argv, '--type').length) fail('fixture_browser_profile_mismatch');
+  const expectedExtensions = browserExtensionPaths(c);
+  if (profiles.length !== 1 || profiles[0] !== b.profile_path
+      || extensions.length !== expectedExtensions.length || new Set(extensions).size !== extensions.length
+      || extensions.some(x => !expectedExtensions.includes(x)) || argumentValues(process.argv, '--type').length) fail('fixture_browser_profile_mismatch');
+  if (b.cdp_screenshot_new_surface === true) {
+    const enabled = argumentValues(process.argv, '--enable-features');
+    const disabled = argumentValues(process.argv, '--disable-features').flatMap(x => String(x).split(','));
+    if (enabled.length !== 1 || String(enabled[0]).split(',').filter(x => x.trim() === 'CDPScreenshotNewSurface').length !== 1
+        || disabled.some(x => x.trim().split(/[<:]/, 1)[0] === 'CDPScreenshotNewSurface')) fail('fixture_browser_feature_mismatch');
+  }
 }
 export function assertProcessBindings(c, p, idle = 0) {
   assertDaemon(c, p.daemon, idle); assertBrowser(c, p.browser, p.daemon.pid); assertRelay(c, p.relay);
