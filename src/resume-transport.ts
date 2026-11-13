@@ -1,6 +1,4 @@
-import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { ReceiptLedger } from "agent-resume-mcp";
-import { spawnIsolatedWorkload } from "./workload-launcher.js";
 import { coreCanDeliver, createCoreResumeTransport, defaultResumeLedgerPath } from "./resume/core-transport.js";
 
 export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
@@ -92,7 +90,7 @@ export interface AgentResumeClientOptions {
    * its own to exercise a refusal without reaching the native server.
    */
   readonly coreTransport?: ResumeTransport;
-  /** Override the machine entrypoint for tests or an installed agent-resume package. */
+  /** @deprecated Process entrypoints are retired; inject the trusted Herder transport instead. */
   readonly command?: string;
   readonly args?: readonly string[];
   readonly timeoutMs?: number;
@@ -103,28 +101,17 @@ export interface AgentResumeClientOptions {
 type ProcessResult = { stdout: string; code: number | null };
 
 /**
- * Agent Herder's narrow client for agent-resume.
- *
- * The default command is the standalone machine-facing Python entrypoint. The
- * injected invoke hook is deliberately at the process boundary, so tests and
- * callers cannot accidentally route through a HarnessAdapter.
+ * Bound resume admission inside Agent Herder. Native core and explicit trusted
+ * invoke/query ports are the only delivery routes; no standalone process fallback.
  */
 export class AgentResumeClient implements ResumeTransport {
-  private readonly command: string;
-  private readonly args: readonly string[];
-  private readonly timeoutMs: number;
   private readonly invokeOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
   private readonly queryOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
-  private readonly script: string;
   /** In-process admission over the shared core; used wherever it can deliver natively. */
   private readonly coreTransport: ResumeTransport;
   private readonly coreLedger: ReceiptLedger;
 
   constructor(options: AgentResumeClientOptions = {}) {
-    this.command = options.command ?? process.env.AGENT_RESUME_PYTHON ?? "python3";
-    this.script = process.env.AGENT_RESUME_SCRIPT ?? "agent_resume.py";
-    this.args = options.args ?? [this.script, "resume_bound_target"];
-    this.timeoutMs = options.timeoutMs ?? 30_000;
     this.invokeOverride = options.invoke;
     this.queryOverride = options.query;
     // An injected transport owns admission in tests; otherwise the core does it
@@ -138,64 +125,35 @@ export class AgentResumeClient implements ResumeTransport {
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
-    // The core owns admission whenever it can reach the target natively. A
-    // refusal or failure falls through to the legacy service, which reads the
-    // same ledger and therefore replays the stored receipt instead of sending
-    // the goal a second time.
-    if (this.coreTransport && coreCanDeliver(request.target, process.env.OPENCODE_URL)) {
+    if (coreCanDeliver(request.target, process.env.OPENCODE_URL)) {
       try {
-        const admitted = await this.coreTransport.resume(request);
-        if (admitted.status === "accepted") return admitted;
-        if (admitted.reason === "idempotency_key_required" || admitted.reason === "unsupported") {
-          // Not a delivery attempt: the legacy service may still handle it.
-        } else if (request.target.agent === "opencode") {
-          // A native OpenCode target must not fall back to the legacy service.
-          // That service cannot address an OpenCode 2 session inbox, so it
-          // delivers the goal blind: the native message carries no
-          // `metadata.agentHerderInputId` and the receipt cannot name the
-          // message that carried the goal. The refusal is reported instead of
-          // being hidden behind an unbound delivery.
-          return {
-            status: "failed",
-            target: request.target,
-            result_ref: request.result_ref,
-            reason: admitted.reason,
-            ...(admitted.detail === undefined ? {} : { detail: admitted.detail }),
-            ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
-          };
-        } else {
-          // The service shares the ledger: a key the core already admitted is
-          // replayed there instead of being delivered a second time.
-          const fallback = await this.resumeWithService(request);
-          return fallback;
-        }
-      } catch {
-        // A broken core must never cost a delivery that the service can perform.
+        // Once admission has reached its owner, preserve that result. An error
+        // after submission is uncertain and cannot authorize another writer.
+        return await this.coreTransport.resume(request);
+      } catch (error) {
+        return {
+          status: "ambiguous",
+          target: request.target,
+          result_ref: request.result_ref,
+          reason: "native_resume_outcome_unknown",
+          detail: error instanceof Error ? error.message : "native resume outcome unknown",
+          ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
+        };
       }
     }
-    // Codex must be controlled by Agent Herder's one persistent app-server
-    // connection. The legacy Agent Resume entrypoint shells out to
-    // `codex exec resume`, which becomes a second writer for the same thread.
-    // An explicitly injected transport remains available to trusted callers
-    // that route to the native Herder adapter and return a bound receipt.
-    if (request.target.agent === "codex" && !this.invokeOverride) {
-      return failed(request, "unsupported", "Codex resume requires the Agent Herder native app-server transport");
+    if (!this.invokeOverride) {
+      return failed(request, "unsupported",
+        "Resume requires the Agent Herder native transport for this harness. Standalone Agent Resume process fallback is retired.");
     }
-    return this.resumeWithService(request);
-  }
-
-  private async resumeWithService(request: ResumeTransportRequest): Promise<ResumeReceipt> {
     try {
-      const raw = this.invokeOverride
-        ? await this.invokeOverride(request)
-        : await runEntrypoint(this.command, this.args, request, this.timeoutMs);
+      const raw = await this.invokeOverride(request);
       if (typeof raw === "object" && raw !== null && "code" in raw && (raw as ProcessResult).code !== 0) {
-        throw new Error(`agent-resume exited with code ${(raw as ProcessResult).code}`);
+        throw new Error("trusted resume transport returned an unsuccessful process receipt");
       }
       const receiptInput = typeof raw === "object" && raw !== null && "stdout" in raw ? (raw as ProcessResult).stdout : raw;
       return parseReceipt(receiptInput, request);
     } catch (error) {
-      return failed(request, "unavailable", error instanceof Error ? error.message : "agent-resume unavailable");
+      return failed(request, "unavailable", error instanceof Error ? error.message : "trusted resume transport unavailable");
     }
   }
 
@@ -203,17 +161,12 @@ export class AgentResumeClient implements ResumeTransport {
   async queryReceipt(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
     if (!request.idempotency_key) throw new TypeError("idempotency_key is required for receipt queries");
-    // The core owns the ledger, so it answers the query first; the service reads
-    // the same file and is only consulted for keys the core does not know.
-    if (this.queryOverride === undefined && this.coreTransport !== undefined) {
+    if (!this.queryOverride) {
       const stored = this.coreLedger.read(request.idempotency_key);
-      if (stored) {
-        return parseReceipt(stored, request);
-      }
+      if (stored) return parseReceipt(stored, request);
+      return ambiguousReceipt(request, "receipt_not_found");
     }
-    const raw = this.queryOverride
-      ? await this.queryOverride(request)
-      : await runEntrypoint(this.command, [this.script, "query_resume_receipt", "--idempotency-key", request.idempotency_key], request, this.timeoutMs, false);
+    const raw = await this.queryOverride(request);
     if (typeof raw === "object" && raw !== null && "code" in raw && (raw as ProcessResult).code !== 0) {
       throw new Error(`agent-resume receipt query exited with code ${(raw as ProcessResult).code}`);
     }
@@ -383,33 +336,11 @@ function sameLocator(value: unknown, target: HermesResumeLocator | undefined): b
     && (candidate.profile ?? undefined) === target.profile;
 }
 
-function failed(request: ResumeTransportRequest, reason: ResumeFailureReason, _detail?: string): ResumeReceipt {
-  return { status: "failed", target: request.target, result_ref: request.result_ref, reason, ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }) };
+function failed(request: ResumeTransportRequest, reason: ResumeFailureReason, detail?: string): ResumeReceipt {
+  return { status: "failed", target: request.target, result_ref: request.result_ref, reason, ...(detail === undefined ? {} : { detail }), ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }) };
 }
 
 /** Preserve a malformed or mismatched provider receipt for human recovery rather than treating it as a rejection. */
 function ambiguousReceipt(request: ResumeTransportRequest, reason: string): ResumeReceipt {
   return { status: "ambiguous", target: request.target, result_ref: request.result_ref, reason, ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }) };
-}
-
-async function runEntrypoint(command: string, args: readonly string[], request: ResumeTransportRequest, timeoutMs: number, includeRequestArgs = true): Promise<ProcessResult> {
-  return await new Promise((resolve, reject) => {
-    const prompt = request.prompt ?? request.goal ?? `Human Request resolved: ${request.result_ref}`;
-    const childArgs = includeRequestArgs
-      ? [...args, "--target", JSON.stringify(request.target), "--prompt", prompt, ...(request.goal ? ["--goal", request.goal] : []), "--result-ref", request.result_ref, ...(request.idempotency_key ? ["--idempotency-key", request.idempotency_key] : []), "--execute"]
-      : [...args];
-    const child = spawnIsolatedWorkload(command, childArgs, {
-      label: "agent-resume",
-      stdio: ["ignore", "pipe", "ignore"],
-    }) as ChildProcessWithoutNullStreams;
-    let stdout = "";
-    let settled = false;
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("agent-resume entrypoint timed out"));
-    }, timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.once("error", (error) => { clearTimeout(timer); if (!settled) { settled = true; reject(error); } });
-    child.once("close", (code) => { clearTimeout(timer); if (!settled) { settled = true; resolve({ stdout, code }); } });
-  });
 }

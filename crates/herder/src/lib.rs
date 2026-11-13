@@ -30,6 +30,12 @@ pub mod application {
     pub mod resource;
     pub mod settings;
     pub mod workspace;
+    #[cfg(target_os = "linux")]
+    pub mod process_bindings;
+    #[cfg(target_os = "linux")]
+    pub mod process_evidence;
+    #[cfg(target_os = "linux")]
+    pub mod process_resources;
     pub mod target;
     pub mod target_gate;
     #[cfg(target_os = "linux")]
@@ -48,6 +54,9 @@ pub mod domain {
     pub mod resource;
     pub mod transcript;
 }
+
+#[cfg(target_os = "linux")]
+pub mod process;
 
 pub mod error;
 pub mod search;

@@ -64,8 +64,8 @@ catalog! {
     "stop" => Stop(Stop) { read: [], mutate: ["stop"] },
     "search" => Search(Search) { read: ["search"], mutate: [] },
     "export" => Export(Export) { read: ["export"], mutate: [] },
-    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete", "reconcile"] },
-    "resource" => Resource(Resource) { read: ["list", "get"], mutate: ["register", "update", "claim", "renew", "release", "declare"] },
+    "automation" => Automation(Automation) { read: ["list", "get"], mutate: ["create", "update", "pause", "delete", "reconcile", "reconcile_process", "cancel_execution"] },
+    "resource" => Resource(Resource) { read: ["list", "get"], mutate: ["register", "update", "claim", "renew", "release", "declare", "bind"] },
     "configure" => Configure(Configure) { read: ["get"], mutate: ["set"] },
     "permission" => Permission(Permission) { read: ["get"], mutate: ["respond"] },
     "human_request" => HumanRequest(HumanRequest) { read: [], mutate: ["create"] },
@@ -190,6 +190,39 @@ pub enum ExportFormat {
 }
 actions!(Export { Export { session_ref: String, format: ExportFormat } });
 
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProcessExecution {
+    Start {
+        argv: Vec<String>,
+        cwd: String,
+        deadline_unix_ms: Option<u64>,
+        stop_grace_ms: Option<u64>,
+    },
+    Attach {
+        pid: u32,
+        boot_id: Option<String>,
+        start_ticks: Option<u64>,
+        deadline_unix_ms: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessLeaseExit { Release, Handback }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessLeaseBinding {
+    pub resource_ref: ResourceRef,
+    pub claim_id: String,
+    pub revision: u64,
+    pub ttl_seconds: u64,
+    pub on_exit: ProcessLeaseExit,
+    pub handback_seconds: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AutomationRule {
@@ -204,12 +237,20 @@ pub enum AutomationRule {
         child_ref: String,
         wake_message: String,
     },
+    ProcessCompletion {
+        execution: ProcessExecution,
+        #[serde(default)]
+        bindings: Vec<ProcessLeaseBinding>,
+        wake_message: String,
+    },
 }
 actions!(Automation {
     List { session_ref: Option<String>, cursor: Option<String> },
     Get { rule_ref: String },
     Create { session_ref: String, rule: AutomationRule, request_key: String },
     Reconcile { rule_ref: String, child_ref: String, event_id: String },
+    ReconcileProcess { rule_ref: String },
+    CancelExecution { rule_ref: String, request_key: String },
     Update { rule_ref: String, revision: u64, rule: AutomationRule },
     Pause { rule_ref: String, revision: u64 },
     Delete { rule_ref: String, revision: u64 },
@@ -237,6 +278,7 @@ actions!(Resource {
     Renew { resource_ref: ResourceRef, claim_id: String, expires_at: String },
     Release { resource_ref: ResourceRef, claim_id: String },
     Declare { resource_ref: ResourceRef, declaration: Declaration },
+    Bind { execution_ref: String, binding: ProcessLeaseBinding },
 });
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -392,6 +434,8 @@ mod tests {
                 json!({"action":"reconcile","rule_ref":"r","child_ref":"child","event_id":"event"}),
                 Access::Mutate,
             ),
+            ("automation", json!({"action":"reconcile_process","rule_ref":"r"}), Access::Mutate),
+            ("automation", json!({"action":"cancel_execution","rule_ref":"r","request_key":"k"}), Access::Mutate),
             ("resource", json!({"action":"list"}), Access::Read),
             (
                 "resource",
@@ -428,6 +472,7 @@ mod tests {
                 json!({"action":"declare","resource_ref":"r","declaration":{"operation":"remove","declaration_ref":"d"}}),
                 Access::Mutate,
             ),
+            ("resource", json!({"action":"bind","execution_ref":"e","binding":{"resource_ref":"r","claim_id":"c","revision":1,"ttl_seconds":60,"on_exit":"release"}}), Access::Mutate),
             (
                 "configure",
                 json!({"action":"get","target":{"type":"node","node_ref":"n"},"key":"k"}),

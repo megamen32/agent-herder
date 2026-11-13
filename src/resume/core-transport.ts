@@ -14,9 +14,9 @@ import type { ResumeReceipt, ResumeTransport, ResumeTransportRequest, SelectedRe
  * The core owns admission: the durable receipt, the idempotency key and the
  * native delivery path. This transport only translates Herder's selected target
  * into the core's bound-target request and the core's receipt back into Herder's
- * shape. It deliberately shares one ledger file with the legacy Agent Resume
- * service, so handing a request back to that service after a core failure
- * replays the stored receipt instead of delivering the goal twice.
+ * shape. It keeps the existing ledger path for receipt recovery during
+ * migration. A failed or uncertain admission never falls back to a separate
+ * scheduler or a second harness writer.
  */
 export interface CoreResumeTransportOptions {
   /** Ledger file; defaults to the legacy Agent Resume state directory. */

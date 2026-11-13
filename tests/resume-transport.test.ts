@@ -178,3 +178,51 @@ describe("AgentResumeClient", () => {
     await expect(client.resume({ target: hermesTarget, result_ref: "result://hermes" })).resolves.toMatchObject({ status: "ambiguous" });
   });
 });
+
+describe("unified Herder resume transport", () => {
+  it("retires external process commands for every unsupported native route", async () => {
+    const root = await mkdtemp(join(tmpdir(), "herder-no-standalone-resume-"));
+    const marker = join(root, "spawned");
+    const client = new AgentResumeClient({
+      command: process.execPath,
+      args: ["-e", "require('node:fs').writeFileSync(" + JSON.stringify(marker) + ", 'spawned')"],
+      coreLedgerPath: join(root, "receipts.json"),
+    });
+    try {
+      for (const agent of ["codex", "claude", "zcode"] as const) {
+        await expect(client.resume({
+          target: { agent, session_id: "fixture-session", cwd: root },
+          result_ref: "result://retired",
+        })).resolves.toMatchObject({ status: "failed", reason: "unsupported", detail: expect.stringContaining("Agent Herder") });
+      }
+      await expect(client.queryReceipt({ ...request, idempotency_key: "absent-fixture-receipt" }))
+        .resolves.toMatchObject({ status: "ambiguous", reason: "receipt_not_found" });
+      await expect(access(marker)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a native transport exception uncertain without invoking another writer", async () => {
+    const previous = process.env.OPENCODE_URL;
+    process.env.OPENCODE_URL = "http://127.0.0.1:1";
+    let fallbackCalls = 0;
+    const client = new AgentResumeClient({
+      coreTransport: { resume: async () => { throw new Error("connection lost after submission"); } },
+      invoke: async () => { fallbackCalls++; return {}; },
+    });
+    try {
+      await expect(client.resume({
+        target: { agent: "opencode", session_id: "native-fixture", cwd: "/tmp" },
+        result_ref: "result://uncertain",
+        idempotency_key: "native:uncertain",
+      })).resolves.toMatchObject({
+        status: "ambiguous", reason: "native_resume_outcome_unknown", detail: "connection lost after submission",
+      });
+      expect(fallbackCalls).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_URL;
+      else process.env.OPENCODE_URL = previous;
+    }
+  });
+});

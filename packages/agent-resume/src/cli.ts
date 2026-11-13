@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 /**
- * The standalone Agent Resume entrypoint.
- *
- * Built and published from the Agent Herder monorepo at the same version as
- * Herder, so the tool anybody installs on its own is generated from the code
- * Agent Herder itself runs against.
+ * Agent Herder compatibility CLI. Contract, discovery and durable receipt reads
+ * remain available; standalone execution and resume have been retired.
  */
 import { CORE_CONTRACT, CORE_VERSION, coreContractHash } from "./contract.js";
 import { defaultSessionSearchDeps, searchSessions } from "./harness/search.js";
-import { JobRegistry } from "./resume/jobs.js";
 import { ReceiptLedger, validateIdempotencyKey } from "./resume/receipts.js";
-import { buildResumeCommand, resolveBoundTarget, resumeBoundTarget } from "./resume/delivery.js";
-import { OpenCodeClient } from "./harness/opencode/client.js";
+import { buildResumeCommand, resolveBoundTarget } from "./resume/delivery.js";
+import { standaloneRetirement } from "./legacy-retirement.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -27,10 +23,6 @@ function fail(message: string): never {
 const stateDir = process.env.AGENT_RESUME_STATE_DIR ?? join(homedir(), ".local/state/agent-resume");
 const ledger = new ReceiptLedger({ path: join(stateDir, "receipts.json") });
 const opencodeUrl = process.env.OPENCODE_URL;
-const nativeClient = opencodeUrl
-  ? new OpenCodeClient({ baseUrl: opencodeUrl, ...(process.env.OPENCODE_SERVER_PASSWORD ? { password: process.env.OPENCODE_SERVER_PASSWORD } : {}) })
-  : undefined;
-const jobs = new JobRegistry({ stateDir, ledger, ...(nativeClient ? { delivery: { nativeClient } } : {}) });
 
 function targetFromFlags(flags: Map<string, string>): ReturnType<typeof resolveBoundTarget> {
   return resolveBoundTarget({
@@ -74,6 +66,8 @@ async function main(): Promise<void> {
         opencode_url: opencodeUrl ?? null,
         core_version: CORE_VERSION,
         core_hash: coreContractHash(),
+        execution_owner: "agent-herder",
+        legacy_effects: "retired",
       });
       return;
     case "find": {
@@ -96,19 +90,8 @@ async function main(): Promise<void> {
       return;
     }
     case "resume": {
-      const target = targetFromFlags(flags);
-      const prompt = flags.get("prompt") ?? flags.get("goal");
-      if (!prompt) fail("--prompt or --goal is required");
-      const receipt = await resumeBoundTarget({
-        target,
-        prompt,
-        ...(flags.get("goal") ? { goal: flags.get("goal") } : {}),
-        resultRef: flags.get("result-ref") ?? `agent-resume://cli/${Date.now()}`,
-        idempotencyKey: validateIdempotencyKey(flags.get("idempotency-key")),
-        execute: flags.get("execute") !== "false",
-      }, { ledger, ...(nativeClient ? { nativeClient } : {}) });
-      emit(receipt);
-      if (receipt.status === "failed" || receipt.status === "rejected") process.exitCode = 1;
+      emit(standaloneRetirement("resume"));
+      process.exitCode = 1;
       return;
     }
     case "receipt": {
@@ -119,11 +102,8 @@ async function main(): Promise<void> {
       return;
     }
     case "job": {
-      const jobId = flags.get("job-id");
-      if (!jobId) fail("--job-id is required");
-      const status = jobs.status(jobId);
-      if (!status) fail(`job not found: ${jobId}`);
-      emit(status);
+      emit(standaloneRetirement("job"));
+      process.exitCode = 1;
       return;
     }
     case "mcp": {

@@ -8,6 +8,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +24,20 @@ pub enum ClaimOutcome {
     Acquired,
     AlreadyOwned,
     Busy,
+}
+
+/// Durable occupancy evidence. A dead watcher does not prove its children
+/// stopped. Only the execution adapter may resolve this binding after reading
+/// a durable terminal receipt for the exact execution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionBinding {
+    pub resource_ref: ResourceRef,
+    pub claim_id: String,
+    pub principal_ref: String,
+    pub resource_revision: u64,
+    pub execution_ref: String,
+    pub resolved_receipt: Option<String>,
 }
 
 /// Atomically claim one registered resource using the caller's stable UUID nonce.
@@ -69,17 +84,55 @@ fn claim_inner(
         return Err(invalid_data("resource identity changed before claim"));
     }
 
+    if retired_nonce(&resource_dir, &requested.claim_id)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "claim nonce was retired; use a new acquisition request",
+        ));
+    }
+
     match authority.read_owner_bytes(resource_ref, authorization)? {
         Some(bytes) => {
             let current: OwnerRecord = serde_json::from_slice(&bytes)
                 .map_err(|_| invalid_data("owner record JSON is invalid"))?;
             validate_owner(authority, resource_ref, &current)?;
-            if current.claim == requested
-                || (recover_acquired_at && same_intent_except_acquired_at(&current.claim, &requested))
-            {
-                return Ok(ClaimOutcome::AlreadyOwned);
+            if !claim_live_at(&current.claim, now_seconds()?)? {
+                if current.claim.claim_id == requested.claim_id {
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "claim expired"));
+                }
+                ensure_live_at(&requested, now_seconds()?)?;
+                if unresolved_binding(&resource_dir)? {
+                    return Ok(ClaimOutcome::Busy);
+                }
+                // Never wait for an old effect while holding the owner guard.
+                // A surviving effect or an unresolved binding prevents reuse.
+                let _execution_lock = match crate::ownership::release_runner::TargetExecutionLock::try_acquire(
+                    authority, resource_ref, authorization,
+                ) {
+                    Ok(lock) => lock,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(ClaimOutcome::Busy),
+                    Err(error) => return Err(error),
+                };
+                retire_nonce(&resource_dir, &current.claim.claim_id)?;
+                let replacement = OwnerRecord {
+                    schema: authority.schema.clone(),
+                    storage_id: authority.storage_id.clone(),
+                    scope: marker.scope,
+                    claim: requested,
+                };
+                write_owner_atomic(&resource_dir, &replacement)?;
+                return Ok(ClaimOutcome::Acquired);
             }
             if current.claim.claim_id == requested.claim_id {
+                // Renewal changes the effective deadline, not the acquisition
+                // request. Recover its immutable payload for a lost-ACK retry.
+                let intent = read_acquisition_intent(authority, resource_ref, &resource_dir, &current)?
+                    .unwrap_or_else(|| current.claim.clone());
+                if intent == requested
+                    || (recover_acquired_at && same_intent_except_acquired_at(&intent, &requested))
+                {
+                    return Ok(ClaimOutcome::AlreadyOwned);
+                }
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "claim nonce was reused with different owner data",
@@ -88,6 +141,10 @@ fn claim_inner(
             Ok(ClaimOutcome::Busy)
         }
         None => {
+            ensure_live_at(&requested, now_seconds()?)?;
+            if unresolved_binding(&resource_dir)? {
+                return Ok(ClaimOutcome::Busy);
+            }
             let (current_dir, current_marker) =
                 authority.read_local_resource_marker(resource_ref, authorization)?;
             if current_dir != resource_dir || current_marker != marker {
@@ -130,22 +187,81 @@ pub fn read_by_claim_id(
             "claim ID must be a UUID",
         ));
     }
+    Ok(read_current(authority, resource_ref, authorization)?
+        .filter(|claim| claim.claim_id == claim_id))
+}
+
+/// Read the canonical owner as evidence, including an expired generation.
+/// Call read_live_by_claim_id under the effect lock before authorizing work.
+pub fn read_current(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+) -> io::Result<Option<ResourceClaim>> {
     let Some(bytes) = authority.read_owner_bytes(resource_ref, authorization)? else {
         return Ok(None);
     };
     let owner: OwnerRecord = serde_json::from_slice(&bytes)
         .map_err(|_| invalid_data("owner record JSON is invalid"))?;
     validate_owner(authority, resource_ref, &owner)?;
-    Ok((owner.claim.claim_id == claim_id).then_some(owner.claim))
+    Ok(Some(owner.claim))
 }
 
-/// Extend the expiry of the current claim only when its claim ID still matches.
+/// Read an effective lease. Expired and retired records remain available through
+/// read_by_claim_id for reconciliation, but never authorize a new effect.
+pub fn read_live_by_claim_id(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+) -> io::Result<Option<ResourceClaim>> {
+    let claim = read_by_claim_id(authority, resource_ref, authorization, claim_id)?;
+    if let Some(current) = &claim {
+        ensure_live_at(current, now_seconds()?)?;
+        let (dir, _) = authority.read_local_resource_marker(resource_ref, authorization)?;
+        if retired_nonce(&dir, claim_id)? {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim nonce was retired"));
+        }
+    }
+    Ok(claim)
+}
+
+/// Extend the expiry of the current live claim only when its nonce still matches.
 pub fn renew(
     authority: &StorageAuthority,
     resource_ref: &ResourceRef,
     authorization: Authorization,
     claim_id: &str,
     expires_at: Option<String>,
+) -> io::Result<ResourceClaim> {
+    renew_inner(authority, resource_ref, authorization, claim_id, expires_at, None)
+}
+
+/// A delegated renewal cannot change principal, nonce or resource revision and
+/// cannot resurrect an expired lease. The caller must prove execution liveness.
+/// A bounded handback uses this same operation with its finite handback deadline.
+pub fn renew_owned(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    principal_ref: &str,
+    expected_revision: u64,
+    expires_at: String,
+) -> io::Result<ResourceClaim> {
+    renew_inner(
+        authority, resource_ref, authorization, claim_id, Some(expires_at),
+        Some((principal_ref, expected_revision)),
+    )
+}
+
+fn renew_inner(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    expires_at: Option<String>,
+    expected_owner: Option<(&str, u64)>,
 ) -> io::Result<ResourceClaim> {
     if !is_uuid(claim_id) {
         return Err(io::Error::new(
@@ -176,6 +292,32 @@ pub fn renew(
             "claim ID does not own this resource",
         ));
     }
+    if let Some((principal_ref, revision)) = expected_owner {
+        if owner.claim.principal_ref != principal_ref {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim belongs to another principal"));
+        }
+        if marker.descriptor.as_ref().map(|d| d.revision) != Some(revision) {
+            return Err(io::Error::new(io::ErrorKind::WouldBlock, "resource revision changed"));
+        }
+    }
+    ensure_live_at(&owner.claim, now_seconds()?)?;
+    if retired_nonce(&resource_dir, claim_id)? {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim nonce was retired"));
+    }
+    if let Some(expiry) = &expires_at {
+        if parse_expiry_seconds(expiry)? <= now_seconds()? {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "new expiry must be in the future"));
+        }
+    }
+    // Lazily preserve the original request, including its expiry, before the
+    // first renewal. Existing owner.json records need no migration or rewrite.
+    if read_acquisition_intent(authority, resource_ref, &resource_dir, &owner)?.is_none() {
+        write_metadata_atomic(
+            &resource_dir,
+            "claim-intent.json",
+            &serde_json::to_vec(&owner).map_err(|_| invalid_data("claim intent cannot encode"))?,
+        )?;
+    }
     owner.claim.expires_at = expires_at;
     write_owner_atomic(&resource_dir, &owner)?;
     Ok(owner.claim)
@@ -193,6 +335,10 @@ pub fn release(
             io::ErrorKind::InvalidInput,
             "claim ID must be a UUID",
         ));
+    }
+    let (resource_dir, _) = authority.read_local_resource_marker(resource_ref, authorization)?;
+    if unresolved_binding(&resource_dir)? {
+        return Err(io::Error::new(io::ErrorKind::WouldBlock, "execution binding requires terminal reconciliation before release"));
     }
     // Serialize ownership release with a target's in-flight external effect.
     // New claims may proceed only after the old effect has released this lock.
@@ -225,12 +371,292 @@ pub fn release(
             "claim ID does not own this resource",
         ));
     }
+    if unresolved_binding(&resource_dir)? {
+        return Err(io::Error::new(io::ErrorKind::WouldBlock, "execution binding requires terminal reconciliation before release"));
+    }
     #[cfg(test)]
     inject_owner_write_failure(FAIL_BEFORE_OWNER_UNLINK)?;
+    // Persist retirement before unlink. A crash may retain the old record, but
+    // replay can never reacquire the same generation after a release took effect.
+    retire_nonce(&resource_dir, claim_id)?;
     fs::remove_file(resource_dir.join("owner.json"))?;
     #[cfg(test)]
     inject_owner_write_failure(FAIL_AFTER_OWNER_UNLINK)?;
     File::open(resource_dir)?.sync_all()
+}
+
+/// Persist occupancy before starting an execution. An unresolved binding
+/// prevents both release and expiry takeover even if the worker loses its lock.
+pub fn bind_execution(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    principal_ref: &str,
+    expected_revision: u64,
+    execution_ref: &str,
+) -> io::Result<ExecutionBinding> {
+    if execution_ref.is_empty() || execution_ref.len() > 4096 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "execution reference is required"));
+    }
+    let (_guard, dir, marker, owner) = locked_owner(authority, resource_ref, authorization)?;
+    check_owner(&owner.claim, claim_id, principal_ref)?;
+    ensure_live_at(&owner.claim, now_seconds()?)?;
+    if retired_nonce(&dir, claim_id)? {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim nonce was retired"));
+    }
+    if marker.descriptor.as_ref().map(|d| d.revision) != Some(expected_revision) {
+        return Err(io::Error::new(io::ErrorKind::WouldBlock, "resource revision changed"));
+    }
+    let binding = ExecutionBinding {
+        resource_ref: resource_ref.clone(),
+        claim_id: claim_id.into(),
+        principal_ref: principal_ref.into(),
+        resource_revision: expected_revision,
+        execution_ref: execution_ref.into(),
+        resolved_receipt: None,
+    };
+    if let Some(current) = read_binding(&dir)? {
+        if current == binding { return Ok(current); }
+        if current.execution_ref == execution_ref {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "execution reference was already bound with different state"));
+        }
+        if current.resolved_receipt.is_none() {
+            return Err(io::Error::new(io::ErrorKind::WouldBlock, "resource has an unresolved execution binding"));
+        }
+    }
+    write_binding_atomic(&dir, &binding)?;
+    Ok(binding)
+}
+
+/// Mark occupancy resolved after the caller verified a durable terminal receipt.
+/// This does not release the claim or extend its expiry. A different execution
+/// or principal cannot clear it; an expired owner may still reconcile its work.
+pub fn clear_execution_binding(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    principal_ref: &str,
+    execution_ref: &str,
+    receipt_ref: &str,
+) -> io::Result<ExecutionBinding> {
+    if receipt_ref.is_empty() || receipt_ref.len() > 4096 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "verified terminal receipt reference is required"));
+    }
+    let (_guard, dir, _, owner) = locked_owner(authority, resource_ref, authorization)?;
+    check_owner(&owner.claim, claim_id, principal_ref)?;
+    let mut binding = read_binding(&dir)?.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "execution binding not found"))?;
+    if binding.resource_ref != *resource_ref || binding.claim_id != claim_id
+        || binding.principal_ref != principal_ref || binding.execution_ref != execution_ref {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "execution binding identity does not match"));
+    }
+    if let Some(existing) = &binding.resolved_receipt {
+        if existing == receipt_ref { return Ok(binding); }
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "execution binding already resolved by another receipt"));
+    }
+    binding.resolved_receipt = Some(receipt_ref.into());
+    write_binding_atomic(&dir, &binding)?;
+    Ok(binding)
+}
+
+pub fn read_execution_binding(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+) -> io::Result<Option<ExecutionBinding>> {
+    let (dir, _) = authority.read_local_resource_marker(resource_ref, authorization)?;
+    let binding = read_binding(&dir)?;
+    if binding.as_ref().is_some_and(|b| b.resource_ref != *resource_ref) {
+        return Err(invalid_data("execution binding resource identity mismatch"));
+    }
+    Ok(binding)
+}
+
+fn locked_owner(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+) -> io::Result<(File, std::path::PathBuf, crate::ownership::manifest::ResourceMarker, OwnerRecord)> {
+    let (dir, marker) = authority.read_local_resource_marker(resource_ref, authorization)?;
+    require_registered(&marker)?;
+    let guard = open_guard(&dir)?;
+    guard.lock()?;
+    let (current_dir, current_marker) = authority.read_local_resource_marker(resource_ref, authorization)?;
+    if current_dir != dir || current_marker != marker { return Err(invalid_data("resource identity changed before binding")); }
+    let bytes = authority.read_owner_bytes(resource_ref, authorization)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "resource has no owner"))?;
+    let owner: OwnerRecord = serde_json::from_slice(&bytes).map_err(|_| invalid_data("owner record JSON is invalid"))?;
+    validate_owner(authority, resource_ref, &owner)?;
+    Ok((guard, dir, marker, owner))
+}
+
+fn check_owner(claim: &ResourceClaim, claim_id: &str, principal_ref: &str) -> io::Result<()> {
+    if claim.claim_id != claim_id || claim.principal_ref != principal_ref {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim principal or generation does not match"));
+    }
+    Ok(())
+}
+
+fn read_binding(dir: &Path) -> io::Result<Option<ExecutionBinding>> {
+    let Some(bytes) = read_metadata(dir, "execution-binding.json")? else { return Ok(None); };
+    let binding: ExecutionBinding = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_data("execution binding JSON is invalid"))?;
+    if dir.file_name().and_then(|v| v.to_str()) != Some(binding.resource_ref.0.as_str())
+        || !is_uuid(&binding.claim_id)
+        || binding.principal_ref.is_empty()
+        || binding.resource_revision == 0
+        || binding.execution_ref.is_empty()
+        || binding.execution_ref.len() > 4096
+        || binding.resolved_receipt.as_ref().is_some_and(|v| v.is_empty() || v.len() > 4096)
+    {
+        return Err(invalid_data("execution binding identity is invalid"));
+    }
+    Ok(Some(binding))
+}
+
+fn unresolved_binding(dir: &Path) -> io::Result<bool> {
+    Ok(read_binding(dir)?.is_some_and(|b| b.resolved_receipt.is_none()))
+}
+
+fn write_binding_atomic(dir: &Path, binding: &ExecutionBinding) -> io::Result<()> {
+    write_metadata_atomic(dir, "execution-binding.json", &serde_json::to_vec(binding)
+        .map_err(|_| invalid_data("execution binding cannot encode"))?)
+}
+
+fn read_acquisition_intent(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    dir: &Path,
+    current: &OwnerRecord,
+) -> io::Result<Option<ResourceClaim>> {
+    let Some(bytes) = read_metadata(dir, "claim-intent.json")? else { return Ok(None); };
+    let intent: OwnerRecord = serde_json::from_slice(&bytes)
+        .map_err(|_| invalid_data("claim intent JSON is invalid"))?;
+    validate_owner(authority, resource_ref, &intent)?;
+    if intent.claim.claim_id != current.claim.claim_id { return Ok(None); }
+    let mut effective = intent.claim.clone();
+    effective.expires_at = current.claim.expires_at.clone();
+    if effective != current.claim || intent.scope != current.scope {
+        return Err(invalid_data("claim acquisition intent does not match its owner"));
+    }
+    Ok(Some(intent.claim))
+}
+
+fn read_metadata(dir: &Path, name: &str) -> io::Result<Option<Vec<u8>>> {
+    let path = dir.join(name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if !metadata.file_type().is_file() => Err(invalid_data("lease metadata is not a regular file")),
+        Ok(_) => fs::read(path).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn write_metadata_atomic(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let temp = dir.join(format!(".lease-meta-{}-{}.tmp", std::process::id(), NEXT_ID.fetch_add(1, Ordering::Relaxed)));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        let mut file = options.open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp, dir.join(name))?;
+        File::open(dir)?.sync_all()
+    })();
+    if result.is_err() { let _ = fs::remove_file(temp); }
+    result
+}
+
+fn retired_nonce(dir: &Path, claim_id: &str) -> io::Result<bool> {
+    match fs::symlink_metadata(dir.join("retired-claims").join(claim_id)) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn retire_nonce(dir: &Path, claim_id: &str) -> io::Result<()> {
+    let retired = dir.join("retired-claims");
+    fs::create_dir_all(&retired)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+    match options.open(retired.join(claim_id)) {
+        Ok(mut file) => { file.write_all(claim_id.as_bytes())?; file.sync_all()?; },
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+        Err(error) => return Err(error),
+    }
+    File::open(&retired)?.sync_all()?;
+    File::open(dir)?.sync_all()
+}
+
+pub fn now_seconds() -> io::Result<u64> {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs())
+        .map_err(|_| io::Error::other("system clock unavailable"))
+}
+
+/// Expiry is enforced at second precision. Fractional RFC3339 deadlines are
+/// rounded down so an effect is never authorized past the supplied deadline.
+pub fn ensure_live_at(claim: &ResourceClaim, now_unix_seconds: u64) -> io::Result<()> {
+    if claim_live_at(claim, now_unix_seconds)? { Ok(()) }
+    else { Err(io::Error::new(io::ErrorKind::TimedOut, "claim expired")) }
+}
+
+fn claim_live_at(claim: &ResourceClaim, now_unix_seconds: u64) -> io::Result<bool> {
+    claim.expires_at.as_deref().map(parse_expiry_seconds).transpose()
+        .map(|expiry| expiry.is_none_or(|t| t > now_unix_seconds))
+}
+
+/// Accept the existing unix-seconds form and strict RFC3339 numeric timestamps.
+pub fn parse_expiry_seconds(value: &str) -> io::Result<u64> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidInput, "expiry must be RFC3339 or unix-seconds:N");
+    if let Some(seconds) = value.strip_prefix("unix-seconds:") {
+        if seconds.is_empty() || !seconds.bytes().all(|c| c.is_ascii_digit()) { return Err(invalid()); }
+        return seconds.parse().map_err(|_| invalid());
+    }
+    if !value.is_ascii() || value.len() < 20 || value.len() > 64 { return Err(invalid()); }
+    let b = value.as_bytes();
+    if b[4] != b'-' || b[7] != b'-' || !matches!(b[10], b'T' | b't') || b[13] != b':' || b[16] != b':' { return Err(invalid()); }
+    let number = |range: std::ops::Range<usize>| -> io::Result<i64> {
+        let v = &value[range];
+        if !v.bytes().all(|c| c.is_ascii_digit()) { return Err(invalid()); }
+        v.parse().map_err(|_| invalid())
+    };
+    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
+    if year < 1970 || !(1..=12).contains(&month) || hour > 23 || minute > 59 || second > 59 { return Err(invalid()); }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let max_day = match month { 2 => if leap { 29 } else { 28 }, 4 | 6 | 9 | 11 => 30, _ => 31 };
+    if day < 1 || day > max_day { return Err(invalid()); }
+    let mut index = 19;
+    if b[index] == b'.' {
+        index += 1;
+        let start = index;
+        while index < b.len() && b[index].is_ascii_digit() { index += 1; }
+        if index == start { return Err(invalid()); }
+    }
+    let offset = match b.get(index) {
+        Some(b'Z' | b'z') if index + 1 == b.len() => 0,
+        Some(sign @ (b'+' | b'-')) if index + 6 == b.len() && b[index + 3] == b':' => {
+            let h = number(index + 1..index + 3)?;
+            let m = number(index + 4..index + 6)?;
+            if h > 23 || m > 59 { return Err(invalid()); }
+            (h * 3600 + m * 60) * if *sign == b'+' { 1 } else { -1 }
+        },
+        _ => return Err(invalid()),
+    };
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year / 400;
+    let year_of_era = adjusted_year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let seconds = (era * 146097 + day_of_era - 719468) * 86400 + hour * 3600 + minute * 60 + second - offset;
+    u64::try_from(seconds).map_err(|_| invalid())
 }
 
 fn validate_request(resource_ref: &ResourceRef, claim: &ResourceClaim) -> io::Result<()> {
@@ -244,6 +670,9 @@ fn validate_request(resource_ref: &ResourceRef, claim: &ResourceClaim) -> io::Re
             io::ErrorKind::InvalidInput,
             "claim identity, UUID nonce, principal, purpose, and acquired_at are required",
         ));
+    }
+    if let Some(expiry) = &claim.expires_at {
+        parse_expiry_seconds(expiry)?;
     }
     Ok(())
 }
@@ -263,6 +692,8 @@ fn validate_owner(
     resource_ref: &ResourceRef,
     owner: &OwnerRecord,
 ) -> io::Result<()> {
+    validate_request(resource_ref, &owner.claim)
+        .map_err(|_| invalid_data("owner record claim fields are invalid"))?;
     if owner.schema != authority.schema
         || owner.storage_id != authority.storage_id
         || owner.claim.resource_ref != *resource_ref
@@ -592,7 +1023,7 @@ mod tests {
                 &resource_ref,
                 Authorization::Authorized,
                 wrong_id,
-                Some("2026-11-08T00:00:00Z".into()),
+                Some("2099-11-08T00:00:00Z".into()),
             )
             .unwrap_err()
             .kind(),
@@ -603,10 +1034,10 @@ mod tests {
             &resource_ref,
             Authorization::Authorized,
             claim_id,
-            Some("2026-11-08T00:00:00Z".into()),
+            Some("2099-11-08T00:00:00Z".into()),
         )
         .unwrap();
-        assert_eq!(updated.expires_at.as_deref(), Some("2026-11-08T00:00:00Z"));
+        assert_eq!(updated.expires_at.as_deref(), Some("2099-11-08T00:00:00Z"));
 
         assert_eq!(
             release(
@@ -700,3 +1131,7 @@ mod tests {
 #[cfg(test)]
 #[path = "../../tests/ownership/crash.rs"]
 mod crash_tests;
+
+#[cfg(test)]
+#[path = "../../tests/ownership/lease_lifecycle.rs"]
+mod lease_tests;

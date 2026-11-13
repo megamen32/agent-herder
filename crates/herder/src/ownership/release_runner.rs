@@ -25,6 +25,25 @@ impl TargetExecutionLock {
         resource_ref: &ResourceRef,
         authorization: Authorization,
     ) -> io::Result<Self> {
+        Self::acquire_inner(authority, resource_ref, authorization, true)
+    }
+
+    /// Nonblocking acquisition for lease takeover and supervised work. Busy
+    /// resources return WouldBlock instead of holding an MCP request open.
+    pub fn try_acquire(
+        authority: &StorageAuthority,
+        resource_ref: &ResourceRef,
+        authorization: Authorization,
+    ) -> io::Result<Self> {
+        Self::acquire_inner(authority, resource_ref, authorization, false)
+    }
+
+    fn acquire_inner(
+        authority: &StorageAuthority,
+        resource_ref: &ResourceRef,
+        authorization: Authorization,
+        blocking: bool,
+    ) -> io::Result<Self> {
         resource::get(authority, resource_ref, authorization)?;
         let (resource_dir, marker) =
             authority.read_local_resource_marker(resource_ref, authorization)?;
@@ -39,7 +58,14 @@ impl TargetExecutionLock {
             use std::os::unix::fs::PermissionsExt;
             file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         }
-        file.lock()?;
+        if blocking {
+            file.lock()?;
+        } else {
+            file.try_lock().map_err(|error| match error {
+                std::fs::TryLockError::WouldBlock => io::Error::new(io::ErrorKind::WouldBlock, "resource execution is still active"),
+                std::fs::TryLockError::Error(error) => error,
+            })?;
+        }
 
         let (locked_dir, locked_marker) =
             authority.read_local_resource_marker(resource_ref, authorization)?;
@@ -96,13 +122,30 @@ impl TargetExecutionLock {
                 "deployed resource revision changed; reload before effect",
             ));
         }
-        claim::read_by_claim_id(authority, &self.resource_ref, authorization, claim_id)?
+        claim::read_live_by_claim_id(authority, &self.resource_ref, authorization, claim_id)?
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     "claim is no longer the current resource owner",
                 )
             })
+    }
+
+    /// Check the exact principal as well as current nonce, expiry and revision
+    /// while the caller holds the execution lock for the external effect.
+    pub fn verify_owned_claim(
+        &self,
+        authority: &StorageAuthority,
+        authorization: Authorization,
+        claim_id: &str,
+        principal_ref: &str,
+        expected_revision: u64,
+    ) -> io::Result<ResourceClaim> {
+        let claim = self.verify_current_claim(authority, authorization, claim_id, expected_revision)?;
+        if claim.principal_ref != principal_ref {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "claim belongs to another principal"));
+        }
+        Ok(claim)
     }
 }
 

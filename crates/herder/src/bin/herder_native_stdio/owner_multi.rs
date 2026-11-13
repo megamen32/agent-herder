@@ -50,6 +50,38 @@ impl ServerHandler for MultiOwner {
             let Ok(binding) = self.by_session(session) else { return Ok(denied("session_unavailable")); };
             return binding.server.call_tool(request, ctx).await;
         }
+        // Process rule refs are located in the exact owner authority. No
+        // adapter request or native session probe is used for this routing.
+        if request.name.as_ref()=="automation" {
+            if let Some(rule_ref)=args.and_then(|a|a.get("rule_ref")).and_then(Value::as_str) {
+                if rule_ref.starts_with("process-rule:") {
+                    let mut selected=None;
+                    for binding in &self.bindings {
+                        if let Some(process)=&binding.process {
+                            if process.owns_rule(&binding.policy.principal.0,rule_ref).map_err(|_|unavailable())? {
+                                if selected.is_some(){return Ok(denied("ambiguous_process_rule"))}
+                                selected=Some(binding);
+                            }
+                        }
+                    }
+                    let Some(binding)=selected else{return Ok(denied("rule_not_found"))};
+                    return binding.server.call_tool(request,ctx).await;
+                }
+            }
+        }
+        if request.name.as_ref()=="resource" {
+            if args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("bind") {
+                let Some(execution)=args.and_then(|a|a.get("execution_ref")).and_then(Value::as_str) else{return Ok(denied("execution_ref_required"))};
+                let Some(process)=&self.bindings[0].process else{return Ok(denied("process_runtime_not_configured"))};
+                let Some(session)=process.execution_session(&self.bindings[0].policy.principal.0,execution)
+                    .map_err(|_|unavailable())? else{return Ok(denied("execution_unavailable"))};
+                let Ok(binding)=self.by_session(&session) else{return Ok(denied("session_unavailable"))};
+                return binding.server.call_tool(request,ctx).await;
+            }
+            // All configured owners share one launcher-pinned resource authority
+            // and one authenticated principal (validated by serve).
+            return self.bindings[0].server.call_tool(request,ctx).await;
+        }
         // A completion callback routes only through its exact registered child.
         // The selected authority verifies the rule's parent/child binding.
         if request.name.as_ref() == "automation"

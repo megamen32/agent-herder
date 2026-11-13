@@ -8,6 +8,7 @@ use herder::{
     application::scoped_stop::{
         ScopedAuthority,
         automation::ScopedAutomationApplication,
+        process_automation::ProcessAutomationApplication,
         create_prompt::FreshSessionGrantPolicy,
         mcp_create::ScopedCreateApplication,
         mcp_deliver::ScopedDeliverApplication,
@@ -48,6 +49,8 @@ struct App {
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
     automation: Arc<dyn ApplicationPort>,
+    process: Option<Arc<ProcessAutomationApplication>>,
+    resources: Option<Arc<dyn ApplicationPort>>,
 }
 impl ApplicationPort for App {
     fn call<'a>(
@@ -88,6 +91,35 @@ impl ApplicationPort for App {
             }
             if matches!(&request, catalog::Request::Deliver(_)) {
                 return self.deliver.call(identity, request).await;
+            }
+            if matches!(&request, catalog::Request::Automation(catalog::Automation::List { .. })) {
+                let mut result=self.automation.call(identity,request.clone()).await?;
+                if result.is_error!=Some(true) {
+                    if let Some(process)=&self.process {
+                        let extra=process.call(identity,request).await?;
+                        if extra.is_error==Some(true){return Some(extra)}
+                        if let (Some(base),Some(extra))=(&mut result.structured_content,extra.structured_content){
+                            if let (Some(rows),Some(add))=(base.get_mut("rules").and_then(serde_json::Value::as_array_mut),extra.get("rules").and_then(serde_json::Value::as_array)){
+                                rows.extend(add.iter().cloned());
+                            }
+                        }
+                    }
+                }
+                if result.is_error!=Some(true) {
+                    if let Some(value)=result.structured_content.take(){
+                        return Some(rmcp::model::CallToolResult::structured(value));
+                    }
+                }
+                return Some(result);
+            }
+            if let Some(process)=&self.process {
+                if let Some(result)=process.call(identity,request.clone()).await{return Some(result)}
+            }
+            if matches!(&request,catalog::Request::Resource(_)) {
+                return match &self.resources {
+                    Some(resources)=>resources.call(identity,request).await,
+                    None=>Some(rmcp::model::CallToolResult::structured_error(serde_json::json!({"code":"resource_runtime_not_configured","effect":"none"}))),
+                };
             }
             if matches!(&request, catalog::Request::Automation(_)) {
                 return self.automation.call(identity, request).await;
@@ -173,6 +205,7 @@ impl ApplicationPort for App {
     }
 }
 pub struct BoundOwner {
+    pub process: Option<Arc<ProcessAutomationApplication>>,
     pub server: ScopedTaskServer,
     pub policy: Arc<OwnerPolicy>,
     pub instance: InstanceRef,
@@ -310,6 +343,23 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
             _ => catalog::DeliveryMode::Start,
         },
     ));
+    let reconciler = Arc::new(ScopedReceiptReconciler::new(authority.clone(), adapter.clone()));
+    let config=herder::application::process_bindings::ProcessRuntimeConfig::from_environment()?;
+    let resources=match &config {
+        Some(config)=>Some(Arc::new(herder::application::process_resources::ProcessResourceApplication::new(config.clone())?) as Arc<dyn ApplicationPort>),
+        None=>None,
+    };
+    let process=match config {
+        Some(config)=>{
+            let process=Arc::new(ProcessAutomationApplication::new(authority.clone(),instance.clone(),
+                grants.clone(),policy.clone(),deliver.clone(),match delivery_mode {
+                    SendMode::Queue=>catalog::DeliveryMode::Queue,_=>catalog::DeliveryMode::Start,
+                },reconciler.clone(),config)?);
+            process.start_background(identity.clone());
+            Some(process)
+        },
+        None=>None,
+    };
     let app = Arc::new(App {
         authority: authority.clone(),
         instance: instance.clone(),
@@ -320,10 +370,11 @@ pub fn build(opened: OpenedOwner) -> Result<BoundOwner, Box<dyn std::error::Erro
         create,
         deliver,
         automation,
+        process:process.clone(),
+        resources,
     });
-    let reconciler = Arc::new(ScopedReceiptReconciler::new(authority.clone(), adapter));
     let server = ScopedTaskServer::new(identity, grants, authority, app)
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
-    Ok(BoundOwner { server, policy, instance })
+    Ok(BoundOwner { server, policy, instance, process })
 }

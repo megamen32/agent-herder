@@ -1,25 +1,27 @@
-# Agent Resume core
+# Agent Herder resume compatibility library
 
-The shared core of the Agent Herder monorepo. It owns:
+This workspace package supplies internal harness protocol clients, session
+lookup, immutable target bindings and durable delivery receipts to Agent Herder.
+The package name is retained for dependency and receipt compatibility.
 
-- harness protocol knowledge (OpenCode, Codex, Claude): enumerate sessions, read
-  messages, admit an input into a live turn, interrupt, wait, models;
-- marker search for finding a session;
-- durable receipts and idempotency for any delivery;
-- detached long-running jobs and their status.
+Agent Herder owns supervised processes, resource leases, waiting and agent
+continuation. There is no standalone scheduler in the package CLI or MCP server.
 
-It does not own orchestration: the coordination board, autopilot policy and
-judge, fleet/mesh, the web UI and the MCP surfaces stay in Agent Herder.
+Existing configurations can still read the core contract, discover sessions,
+build a command for inspection and read saved receipts. Legacy effect commands
+return an actionable retirement error by default. Trusted Herder integration
+code may inject an explicit facade into the compatibility MCP factory; that
+facade owns admission, identity checks and idempotency.
 
-Agent Herder depends on this package and pins `coreContractHash()`; changing a
-capability or an entrypoint here fails the Herder test suite until Herder is
-rebuilt and re-pins it.
+Use Agent Herder's Resource and Automation APIs for new work. Keep the same
+request key when reconciling an interrupted execution. Existing receipt files
+are preserved. A PID disappearing is not evidence of a successful build or a
+safe reason to rerun it.
 
-The same source is published as a standalone installable tool at the monorepo
-version:
+The old JobRegistry implementation remains a deprecated compatibility helper
+for historical records and focused fixtures. Product entrypoints do not create
+it. It is not an advertised execution capability.
 
-```bash
-npx agent-resume-mcp contract   # machine-readable contract of this build
-```
-
-Nothing in this package is maintained outside the Agent Herder repository.
+The core contract hash and Herder's pin change together, so the dependent build
+detects a mismatched compatibility surface. The CLI contract command remains
+available for release verification.

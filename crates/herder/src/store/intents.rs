@@ -74,6 +74,30 @@ impl Writer {
         Ok(result)
     }
 
+
+    /// Versioned state in the existing fenced settings store. This does not
+    /// create a second automation authority or alter the database schema.
+    pub fn get_setting_versioned(&self, scope: &str, key: &str)
+        -> Result<Option<(u64, String)>> {
+        self.connection.query_row(
+            "SELECT revision,value_json FROM settings WHERE scope=?1 AND setting_key=?2",
+            params![scope,key], |row| Ok((row.get(0)?,row.get(1)?))
+        ).optional()
+    }
+
+    /// Compare-and-set is required for cancellation versus wake dispatch.
+    pub fn compare_and_set_setting(&mut self, scope: &str, key: &str,
+        expected_revision: u64, value: &str, now: &str) -> Result<bool> {
+        if expected_revision == 0 || [scope,key,value,now].iter()
+            .any(|v| v.is_empty() || v.len() > 65536) {
+            return Ok(false);
+        }
+        Ok(self.connection.execute(
+            "UPDATE settings SET value_json=?3,revision=revision+1,updated_at=?4 WHERE scope=?1 AND setting_key=?2 AND revision=?5",
+            params![scope,key,value,now,expected_revision]
+        )? == 1)
+    }
+
     pub fn get_setting(&self, scope: &str, key: &str) -> Result<Option<String>> {
         self.connection
             .query_row(

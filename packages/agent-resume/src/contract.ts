@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
  *
  * Agent Herder pins this hash. Any change to the core's capability surface or
  * entrypoints changes the hash, which fails the Herder side until Herder is
- * rebuilt and re-pins it — that is what makes "ship a core change without the
+ * rebuilt and re-pins it. That is what makes "ship a core change without the
  * dependent side" impossible.
  */
 export const CORE_VERSION = "0.2.2";
@@ -19,7 +19,6 @@ export type CoreCapability =
   | "harness.marker-search"
   | "resume.delivery"
   | "resume.receipts"
-  | "resume.detached-jobs"
   | "integration.hermes";
 
 export type CoreEntrypoint =
@@ -44,7 +43,6 @@ export const CORE_CAPABILITIES: readonly CoreCapability[] = [
   "harness.marker-search",
   "resume.delivery",
   "resume.receipts",
-  "resume.detached-jobs",
   "integration.hermes",
 ];
 
@@ -53,27 +51,27 @@ export const CORE_ENTRYPOINTS: readonly CoreEntrypoint[] = [
   { kind: "cli", command: "config", purpose: "Print the effective state directory, default agent and core identity." },
   { kind: "cli", command: "find", purpose: "Find a native session by cwd, query or marker." },
   { kind: "cli", command: "command", purpose: "Print the command that would resume one bound session." },
-  { kind: "cli", command: "resume", purpose: "Resume one native session with a goal, optionally detached." },
+  { kind: "cli", command: "resume", purpose: "Retired compatibility command; use the Agent Herder native resume transport." },
   { kind: "cli", command: "receipt", purpose: "Read the durable admission receipt for one idempotency key." },
-  { kind: "cli", command: "job", purpose: "Read the state and liveness of one background watch job." },
-  { kind: "cli", command: "mcp", purpose: "Serve the standalone MCP surface over stdio." },
+  { kind: "cli", command: "job", purpose: "Retired compatibility alias; execution status belongs to Agent Herder." },
+  { kind: "cli", command: "mcp", purpose: "Serve compatibility reads and explicit Herder facade aliases over stdio." },
   { kind: "mcp", tool: "get_resume_receipt", purpose: "Read the durable admission receipt for one idempotency key." },
   { kind: "mcp", tool: "query_resume_receipt", purpose: "Read the durable admission receipt for one idempotency key." },
   { kind: "mcp", tool: "get_config", purpose: "Read the effective core configuration and resolved endpoints." },
   { kind: "mcp", tool: "find_sessions", purpose: "Find candidate sessions by cwd, query or marker." },
   { kind: "mcp", tool: "build_resume_command", purpose: "Print the command that resumes one bound session." },
-  { kind: "mcp", tool: "resume_bound_target", purpose: "Admit one goal into one already-selected target, exactly once." },
-  { kind: "mcp", tool: "run_and_resume", purpose: "Watch a background command and admit one resume when it ends." },
-  { kind: "mcp", tool: "attach_pid_and_resume", purpose: "Watch a pid and admit one resume when it exits." },
-  { kind: "mcp", tool: "attach_query_and_resume", purpose: "Find a process by command substring, watch it and admit one resume." },
-  { kind: "mcp", tool: "wait_and_resume", purpose: "Wait a fixed duration and admit one resume." },
-  { kind: "mcp", tool: "wait_job_status", purpose: "Read the state and liveness of one background watch job." },
+  { kind: "mcp", tool: "resume_bound_target", purpose: "Delegate to an explicit Herder facade or return a standalone retirement error." },
+  { kind: "mcp", tool: "run_and_resume", purpose: "Delegate supervised execution to an explicit Herder facade or return a retirement error." },
+  { kind: "mcp", tool: "attach_pid_and_resume", purpose: "Delegate exact process attachment to an explicit Herder facade or return a retirement error." },
+  { kind: "mcp", tool: "attach_query_and_resume", purpose: "Retired process-query alias; Herder requires exact execution identity." },
+  { kind: "mcp", tool: "wait_and_resume", purpose: "Delegate waiting to an explicit Herder facade or return a retirement error." },
+  { kind: "mcp", tool: "wait_job_status", purpose: "Retired compatibility alias; execution status belongs to Agent Herder." },
   { kind: "library", symbol: "OpenCodeClient", purpose: "Native OpenCode protocol client owned by the core." },
   { kind: "library", symbol: "OpenCodeClient.announceIdentity", purpose: "Let a session learn its own name, id and workspace natively." },
   { kind: "library", symbol: "searchSessions", purpose: "Marker-first session discovery across every supported store." },
-  { kind: "library", symbol: "JobRegistry", purpose: "Durable records and liveness for long background work." },
+  { kind: "library", symbol: "JobRegistry", purpose: "Deprecated compatibility helper, never instantiated by product entrypoints." },
   { kind: "library", symbol: "HermesWakeClient", purpose: "Wake exactly one bound Hermes session through its authenticated seam." },
-  { kind: "library", symbol: "createResumeMcpServer", purpose: "The standalone MCP surface, built from this same source." },
+  { kind: "library", symbol: "createResumeMcpServer", purpose: "Compatibility reads and retired aliases without a local scheduler." },
   { kind: "library", symbol: "coreContractHash", purpose: "Stable hash Herder pins to detect an unshipped core change." },
 ];
 

@@ -68,6 +68,17 @@ def prepare(selector):
                 or companion.get('kind') != item['kind']):
             raise ValueError('remote configuration mismatch')
         pinned[identity] = str(script)
+    process_env = {}
+    if 'process_worker' in manifest or 'process_config' in manifest:
+        for key in ('process_worker', 'process_config'):
+            path = Path(manifest[key])
+            if not path.is_absolute() or path.resolve() != path or digest(path) != manifest['sha256'][key]:
+                raise ValueError('process artifact digest mismatch: ' + key)
+        process = private_json(manifest['process_config'])
+        if (process.get('version') != 1 or process.get('worker') != manifest['process_worker']
+                or not isinstance(process.get('administrators'), list) or not process['administrators']):
+            raise ValueError('invalid process configuration')
+        process_env = {'HERDER_PROCESS_CONFIG': manifest['process_config']}
     argv = [manifest['compat']]
     for path in profiles:
         profile = private_json(path)
@@ -79,10 +90,18 @@ def prepare(selector):
         if owner['ahap_script'] != canonical and pinned.get(identity) != owner['ahap_script']:
             raise ValueError('profile does not select the installed artifact')
         argv.extend(['--trusted-owner-profile', path])
-    return argv, dict(os.environ, HERDER_NATIVE_COMMAND=manifest['core']), {
+    env = dict(os.environ)
+    # An inherited process config cannot override a manifest with no such feature.
+    env.pop('HERDER_PROCESS_CONFIG', None)
+    env.pop('HERDER_PROCESS_WORKER', None)
+    env.update(process_env)
+    env['HERDER_NATIVE_COMMAND'] = manifest['core']
+    return argv, env, {
         'manifest': str(manifest_path), 'manifest_sha256': config['manifest_sha256'],
         'source_commit': manifest['source_commit'], 'core_sha256': manifest['sha256']['core'],
         'profiles': profiles, 'argv': argv,
+        'process_worker_sha256': manifest.get('sha256', {}).get('process_worker'),
+        'process_config_sha256': manifest.get('sha256', {}).get('process_config'),
     }
 
 

@@ -129,6 +129,7 @@ impl ScopedAuthority {
         }
         let scope = format!("session:{}", session.0);
         tx.execute("INSERT INTO humanstop_holds(scope_ref,reason,created_at,released_at) VALUES (?1,'mcp_stop',?2,NULL) ON CONFLICT(scope_ref) DO UPDATE SET reason=excluded.reason,created_at=excluded.created_at,released_at=NULL",params![scope,now]).map_err(|_|GateError::Store)?;
+        super::process_automation::cancel_for_stop(&tx,&scope,now)?;
         let possible:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM intents WHERE target=?1 AND state IN ('dispatching','admitted','unknown','confirmed'))",[&session.0],|r|r.get(0)).map_err(|_|GateError::Store)?;
         tx.commit().map_err(|_| GateError::Store)?;
         Ok(if possible {

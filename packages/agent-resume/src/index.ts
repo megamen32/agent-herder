@@ -68,6 +68,7 @@ export {
   type SessionCandidate,
   type SessionSearchCriteria,
 } from "./harness/marker-search.js";
+/** @deprecated Product entrypoints delegate execution to Agent Herder. */
 export {
   JobRegistry,
   findPidsByQuery,
@@ -93,6 +94,7 @@ export {
   type SessionSearchDeps,
 } from "./harness/search.js";
 export { createResumeMcpServer, type ResumeMcpOptions, type ResumeRuntime } from "./mcp/server.js";
+export { standaloneRetirement, type HerderLegacyFacade, type LegacyResumeOperation } from "./legacy-retirement.js";
 export {
   HermesWakeClient,
   hermesTokenMatches,

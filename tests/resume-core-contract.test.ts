@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { CORE_CONTRACT, coreContractHash } from "agent-resume-mcp";
@@ -25,7 +26,7 @@ it("core, Herder and the standalone artifact share one version", () => {
   expect(CORE_CONTRACT.version).toBe(herder.version);
 });
 
-it("the published core declares an installable standalone entrypoint", () => {
+it("the published core retains installable compatibility entrypoints", () => {
   const core = readJson("packages/agent-resume/package.json");
   const bin = core.bin as Record<string, string>;
   // Bins must resolve inside a published directory: dist/ holds build artifacts,
@@ -51,5 +52,28 @@ it("core capabilities never include Herder's orchestration", () => {
   const forbidden = ["coordination", "autopilot", "fleet", "mesh", "web-ui", "human-request", "choice"];
   for (const capability of CORE_CONTRACT.capabilities) {
     expect(forbidden.some((owned) => capability.includes(owned))).toBe(false);
+  }
+});
+it("does not advertise an independent process scheduler", () => {
+  expect(CORE_CONTRACT.capabilities).not.toContain("resume.detached-jobs");
+});
+
+it("the compatibility CLI retires effects before touching a harness or job registry", () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "herder-cli-retired-"));
+  try {
+    for (const command of ["resume", "job"]) {
+      const result = spawnSync(process.execPath, [join(root, "packages/agent-resume/dist/cli.js"), command], {
+        encoding: "utf8",
+        env: { ...process.env, AGENT_RESUME_STATE_DIR: stateDir },
+      });
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        reason: "agent_resume_standalone_retired", operation: command, execution_owner: "agent-herder",
+      });
+    }
+    expect(existsSync(join(stateDir, "jobs"))).toBe(false);
+    expect(existsSync(join(stateDir, "receipts.json"))).toBe(false);
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
   }
 });

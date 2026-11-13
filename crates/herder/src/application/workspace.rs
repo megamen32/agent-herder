@@ -7,7 +7,7 @@ use crate::{
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::{
         address::Authorization,
-        resource::{ResourceClaim, ResourceRef},
+        resource::{ResourceClaim, ResourceDescriptor, ResourceRef},
     },
     mcp::{
         catalog,
@@ -16,6 +16,7 @@ use crate::{
     ownership::{
         claim::{self, ClaimOutcome},
         manifest::StorageAuthority,
+        resource as registry,
     },
 };
 use rmcp::model::CallToolResult;
@@ -33,8 +34,8 @@ pub enum WorkspaceError {
     Ownership(io::Error),
 }
 
-/// Handles the existing `resource.claim` and `resource.release` MCP catalog
-/// calls. Other resource operations stay with their current application owner.
+/// Authenticated mutations over the one canonical descriptor and owner store.
+/// Read operations remain with the resource application's filtered registry.
 pub struct WorkspaceApplication {
     authority: StorageAuthority,
     grants: Vec<Grant>,
@@ -51,6 +52,26 @@ impl WorkspaceApplication {
         request: catalog::Resource,
     ) -> Option<CallToolResult> {
         match request {
+            catalog::Resource::Register { resource_ref, scope, kind, external_ref, authority_ref, attachment } => {
+                let descriptor = ResourceDescriptor::new(resource_ref, scope, kind, external_ref, authority_ref, attachment, 0);
+                Some(match register_resource(identity, &self.grants, &self.authority, descriptor) {
+                    Ok(descriptor) => CallToolResult::structured(json!({"status":"registered", "resource":descriptor})),
+                    Err(error) => workspace_error(error),
+                })
+            }
+            catalog::Resource::Update { resource_ref, revision, scope, kind, external_ref, attachment } => {
+                let descriptor = ResourceDescriptor::new(resource_ref, scope, kind, external_ref, self.authority.storage_id.0.clone(), attachment, revision);
+                Some(match update_resource(identity, &self.grants, &self.authority, descriptor, revision) {
+                    Ok(descriptor) => CallToolResult::structured(json!({"status":"updated", "resource":descriptor})),
+                    Err(error) => workspace_error(error),
+                })
+            }
+            catalog::Resource::Renew { resource_ref, claim_id, expires_at } => {
+                Some(match renew_resource(identity, &self.grants, &self.authority, &resource_ref, &claim_id, expires_at) {
+                    Ok(claim) => CallToolResult::structured(json!({"status":"renewed", "resource_ref":resource_ref, "claim":claim})),
+                    Err(error) => workspace_error(error),
+                })
+            }
             catalog::Resource::Claim {
                 resource_ref,
                 purpose,
@@ -124,6 +145,9 @@ fn claim_id_for(
     request_key: &str,
 ) -> Result<String, WorkspaceError> {
     let principal = principal(identity)?;
+    if request_key.is_empty() || request_key.len() > 4096 {
+        return Err(WorkspaceError::Ownership(io::Error::new(io::ErrorKind::InvalidInput, "acquisition request key is required")));
+    }
     let mut hash = Sha256::new();
     for part in [
         authority.storage_id.0.as_str(),
@@ -163,6 +187,65 @@ fn workspace_error(error: WorkspaceError) -> CallToolResult {
         WorkspaceError::Ownership(error) => error.to_string(),
     };
     CallToolResult::error(vec![rmcp::model::ContentBlock::text(message)])
+}
+
+pub fn register_resource(
+    identity: &ConnectionIdentity,
+    grants: &[Grant],
+    authority: &StorageAuthority,
+    descriptor: ResourceDescriptor,
+) -> Result<ResourceDescriptor, WorkspaceError> {
+    require_write(identity, grants, descriptor.resource_ref())?;
+    registry::register_or_update(authority, descriptor, Authorization::Authorized, None)
+        .map_err(WorkspaceError::Ownership)
+}
+
+pub fn update_resource(
+    identity: &ConnectionIdentity,
+    grants: &[Grant],
+    authority: &StorageAuthority,
+    descriptor: ResourceDescriptor,
+    expected_revision: u64,
+) -> Result<ResourceDescriptor, WorkspaceError> {
+    require_write(identity, grants, descriptor.resource_ref())?;
+    registry::register_or_update(authority, descriptor, Authorization::Authorized, Some(expected_revision))
+        .map_err(WorkspaceError::Ownership)
+}
+
+/// Renew only a claim belonging to the authenticated principal. Possessing its
+/// identifier or a write grant for the resource does not impersonate its owner.
+pub fn renew_resource(
+    identity: &ConnectionIdentity,
+    grants: &[Grant],
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    claim_id: &str,
+    expires_at: String,
+) -> Result<ResourceClaim, WorkspaceError> {
+    let principal_ref = require_write(identity, grants, resource_ref)?;
+    let current = claim::read_by_claim_id(authority, resource_ref, Authorization::Authorized, claim_id)
+        .map_err(WorkspaceError::Ownership)?
+        .ok_or_else(|| WorkspaceError::Ownership(io::Error::new(io::ErrorKind::NotFound, "claim is not current")))?;
+    if current.principal_ref != principal_ref { return Err(WorkspaceError::NotOwner); }
+    let descriptor = registry::get(authority, resource_ref, Authorization::Authorized)
+        .map_err(WorkspaceError::Ownership)?;
+    claim::renew_owned(authority, resource_ref, Authorization::Authorized, claim_id, &principal_ref, descriptor.revision, expires_at)
+        .map_err(WorkspaceError::Ownership)
+}
+
+/// Establish a renewal delegation only from an authenticated, authorized owner.
+pub fn bind_resource_execution(
+    identity: &ConnectionIdentity,
+    grants: &[Grant],
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    claim_id: &str,
+    expected_revision: u64,
+    execution_ref: &str,
+) -> Result<claim::ExecutionBinding, WorkspaceError> {
+    let principal_ref = require_write(identity, grants, resource_ref)?;
+    claim::bind_execution(authority, resource_ref, Authorization::Authorized, claim_id, &principal_ref, expected_revision, execution_ref)
+        .map_err(WorkspaceError::Ownership)
 }
 
 /// Claim a registered resource in the canonical file ownership library.
@@ -546,5 +629,41 @@ mod tests {
         )
         .unwrap();
         assert!(fixture.cli("status", "ignored").unwrap()["status"] == "free");
+    }
+
+    #[tokio::test]
+    async fn registered_generic_resource_reaches_authenticated_mutation_dispatch() {
+        let fixture = Fixture::new();
+        let resource_ref = ResourceRef("new-build-slot".into());
+        let alice = identity("alice");
+        let alice_grants = vec![grant("alice", &resource_ref, Action::Write)];
+        let app = WorkspaceApplication::new(fixture.authority.clone(), alice_grants.clone());
+        let register = catalog::Resource::Register {
+            resource_ref: resource_ref.clone(), scope: ResourceScope::Global,
+            kind: ResourceKind::Other("build_slot".into()), external_ref: "fixture:build-slot".into(),
+            authority_ref: fixture.authority.storage_id.0.clone(), attachment: None,
+        };
+        let denied = WorkspaceApplication::new(fixture.authority.clone(), vec![])
+            .call(&alice, catalog::Request::Resource(register.clone())).await.unwrap();
+        assert_eq!(denied.is_error, Some(true));
+        let created = app.call(&alice, catalog::Request::Resource(register)).await.unwrap();
+        assert_ne!(created.is_error, Some(true));
+        assert_eq!(registry::get(&fixture.authority, &resource_ref, Authorization::Authorized).unwrap().revision, 1);
+        let update = catalog::Resource::Update {
+            resource_ref: resource_ref.clone(), revision: 1, scope: ResourceScope::Global,
+            kind: ResourceKind::Other("build_slot".into()), external_ref: "fixture:build-slot".into(), attachment: None,
+        };
+        assert_ne!(app.call(&alice, catalog::Request::Resource(update.clone())).await.unwrap().is_error, Some(true));
+        assert_eq!(app.call(&alice, catalog::Request::Resource(update)).await.unwrap().is_error, Some(true));
+        claim_resource(&alice, &alice_grants, &fixture.authority, &resource_ref, "build-request", "test build".into(), None).unwrap();
+        let claim_id = claim_id_for(&alice, &fixture.authority, &resource_ref, "build-request").unwrap();
+        let renew = catalog::Resource::Renew { resource_ref: resource_ref.clone(), claim_id: claim_id.clone(), expires_at: "2099-01-01T00:00:00Z".into() };
+        let bob = identity("bob");
+        let bob_app = WorkspaceApplication::new(fixture.authority.clone(), vec![grant("bob", &resource_ref, Action::Write)]);
+        assert_eq!(bob_app.call(&bob, catalog::Request::Resource(renew.clone())).await.unwrap().is_error, Some(true));
+        assert_ne!(app.call(&alice, catalog::Request::Resource(renew)).await.unwrap().is_error, Some(true));
+        let current = claim::read_by_claim_id(&fixture.authority, &resource_ref, Authorization::Authorized, &claim_id).unwrap().unwrap();
+        assert_eq!(current.principal_ref, "alice");
+        assert_eq!(current.expires_at.as_deref(), Some("2099-01-01T00:00:00Z"));
     }
 }
