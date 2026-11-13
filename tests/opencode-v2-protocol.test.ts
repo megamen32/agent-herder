@@ -585,6 +585,9 @@ it("controls v2 turns, lineage, recovery, permissions and models", async () => {
     expect(await adapter.forkSession("ses_root", "continue here")).toMatchObject({ ok: true, sessionId: "ses_forked" });
     expect(await adapter.recover("ses_running", "resume please")).toMatchObject({ ok: true, admitted: true });
     expect(state.calls.some((call) => call.path === "/api/experimental/session/ses_running/wait")).toBe(true);
+    const recoveryPrompt = state.calls.find((call) => call.method === "POST" && call.path === "/api/session/ses_running/prompt");
+    expect(recoveryPrompt).toBeDefined();
+    expect(JSON.parse(recoveryPrompt!.body!)).not.toHaveProperty("model");
 
     expect(await adapter.respondPermission("ses_running", "per_1", "allow", true)).toEqual({ ok: true });
     expect(await adapter.respondPermission("ses_running", "per_1", "deny")).toEqual({ ok: true });

@@ -12,7 +12,7 @@ import type {
 } from "./types/index.js";
 
 type OpenCodePort = Pick<OpenCodeAdapter,
-  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages"> & Partial<Pick<OpenCodeAdapter, "archiveSession">> & LegacyReadPort;
+  "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages"> & Partial<Pick<OpenCodeAdapter, "archiveSession" | "resumeSession" | "recover">> & LegacyReadPort;
 
 type RpcId = string | number;
 type RpcRequest = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
@@ -73,10 +73,23 @@ export async function serveOpenCodeAhap(
         continue;
       }
       initialized = true;
+      const canResume = family === "v2" && typeof adapter.resumeSession === "function";
+      const canRecover = family === "v2" && typeof adapter.recover === "function";
       write({ jsonrpc: "2.0", id, result: {
         harness: "opencode",
         name: "OpenCode bounded adapter",
-        capabilities: { methods: [...new Set([...METHODS, ...legacyReadMethods(adapter), ...(family === "v2" && typeof adapter.archiveSession === "function" ? ["archiveSession"] : [])])], deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"], nativeProtocol: family, controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: {
+          methods: [...new Set([
+            ...METHODS,
+            ...legacyReadMethods(adapter),
+            ...(family === "v2" && typeof adapter.archiveSession === "function" ? ["archiveSession"] : []),
+            ...(canResume ? ["resumeSession"] : []),
+            ...(canRecover ? ["recover"] : []),
+          ])],
+          deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"],
+          nativeProtocol: family,
+          controlCapabilities: { ...CONTROL_CAPABILITIES, resume: canResume, recover: canRecover },
+        },
       } });
       continue;
     }
@@ -175,6 +188,21 @@ export async function serveOpenCodeAhap(
           }
           result = await adapter.getSessionMessages(params.id, params.limit as number | undefined);
           break;
+        case "resumeSession":
+          if (family !== "v2" || typeof adapter.resumeSession !== "function") { error(id, -32601, "method not implemented"); continue; }
+          if (typeof params.id !== "string" || !params.id.trim()) { error(id, -32602, "resumeSession requires session id"); continue; }
+          result = await adapter.resumeSession(params.id);
+          break;
+        case "recover": {
+          if (family !== "v2" || typeof adapter.recover !== "function") { error(id, -32601, "method not implemented"); continue; }
+          if (typeof params.id !== "string" || !params.id.trim()) { error(id, -32602, "recover requires session id"); continue; }
+          if (params.message !== undefined && (typeof params.message !== "string" || params.message.length === 0 || params.message.length > 4 * 1024 * 1024)) {
+            error(id, -32602, "recover message must be a non-empty string up to 4 MiB");
+            continue;
+          }
+          result = await adapter.recover(params.id, params.message as string | undefined);
+          break;
+        }
         default:
           error(id, -32601, "method not implemented");
           continue;

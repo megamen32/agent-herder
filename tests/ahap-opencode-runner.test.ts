@@ -3,13 +3,13 @@ import { expect, it } from "vitest";
 import type { OpenCodeAdapter } from "../src/adapters/opencode.js";
 import { serveOpenCodeAhap } from "../src/ahap-opencode-runner.js";
 
-async function run(adapter: Partial<OpenCodeAdapter>, requests: unknown[]) {
+async function run(adapter: Partial<OpenCodeAdapter>, requests: unknown[], family: "v2" | "v22" = "v22") {
   const input = new PassThrough();
   const output = new PassThrough();
   const chunks: string[] = [];
   output.setEncoding("utf8");
   output.on("data", (chunk: string) => chunks.push(chunk));
-  const completed = serveOpenCodeAhap(adapter as OpenCodeAdapter, input, output, "v22");
+  const completed = serveOpenCodeAhap(adapter as OpenCodeAdapter, input, output, family);
   input.end(requests.map((request) => JSON.stringify(request)).join("\n") + "\n");
   await completed;
   return chunks.join("").trim().split("\n").map((line) => JSON.parse(line));
@@ -145,6 +145,29 @@ it("v2 forwards a second delivery to an existing session with exact mode and cal
   expect(calls).toEqual([["existing-before-runner",options]]);
   expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
+});
+
+it("v2 exposes same-session resume and recover without selecting a model", async () => {
+  const calls: Array<{ method: string; args: unknown[] }> = [];
+  const adapter = {
+    async resumeSession(id: string) { calls.push({ method: "resumeSession", args: [id] }); return { ok: true }; },
+    async recover(id: string, message?: string) { calls.push({ method: "recover", args: [id, message] }); return { ok: true }; },
+  };
+  const replies = await run(adapter, [
+    initialize,
+    { jsonrpc: "2.0", id: 2, method: "resumeSession", params: { id: "ses_failed" } },
+    { jsonrpc: "2.0", id: 3, method: "recover", params: { id: "ses_failed", message: "Продолжи текущую задачу в этой же сессии." } },
+    { jsonrpc: "2.0", id: 4, method: "shutdown" },
+  ], "v2");
+
+  expect(replies[0].result.capabilities.methods).toEqual(expect.arrayContaining(["resumeSession", "recover"]));
+  expect(replies[0].result.capabilities.controlCapabilities).toMatchObject({ resume: true, recover: true, modelSwitch: false });
+  expect(replies[1].result).toEqual({ ok: true });
+  expect(replies[2].result).toEqual({ ok: true });
+  expect(calls).toEqual([
+    { method: "resumeSession", args: ["ses_failed"] },
+    { method: "recover", args: ["ses_failed", "Продолжи текущую задачу в этой же сессии."] },
+  ]);
 });
 
 it('pins an instance model on create and send, and rejects conflicting requests before effects', async () => {
