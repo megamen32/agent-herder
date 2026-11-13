@@ -113,8 +113,8 @@ export function healthModelForHarness(harness: string, execution: HealthExecutio
 /** Owner-selected default incident model. */
 export const INCIDENT_EXECUTION: HealthExecutionProfile = {
   runtime: "opencode",
-  provider: "omniroute",
-  model: "omniroute/cx/gpt-6-luna",
+  provider: "minimax-coding-plan",
+  model: "MiniMax-M3.1-Flash",
   reasoning: "default",
   topic: "health",
 };
@@ -123,15 +123,11 @@ export function normalizeIncidentExecution(value: unknown): HealthExecutionProfi
     throw new Error("incident execution profile must be an object");
   }
   const raw = value as Record<string, unknown>;
-  const runtime = bounded(raw.runtime, "runtime");
-  const provider = bounded(raw.provider, "provider");
-  const model = bounded(raw.model, "model", MAX_HEALTH_MODEL_LENGTH);
-  const reasoning = bounded(raw.reasoning, "reasoning");
-  const topic = bounded(raw.topic, "topic");
-  if (runtime !== "opencode") throw new Error("incident execution runtime must be opencode");
-  if (!/^[A-Za-z0-9._:-]+$/.test(provider)) throw new Error("incident execution provider is invalid");
-  if (!/^[A-Za-z0-9._:$-]+(?:\/[A-Za-z0-9._:$-]+)*$/.test(model)) throw new Error("incident execution model is invalid");
-  if (reasoning !== "default" && reasoning !== "high") throw new Error("incident execution reasoning is invalid");
-  if (topic !== "health") throw new Error("incident execution topic must be health");
-  return { runtime, provider: provider as HealthExecutionProfile["provider"], model, reasoning, topic };
+  for (const field of ["runtime", "provider", "model", "reasoning", "topic"] as const) {
+    const actual = bounded(raw[field], field, field === "model" ? MAX_HEALTH_MODEL_LENGTH : 64);
+    if (actual !== INCIDENT_EXECUTION[field]) {
+      throw new Error(`incident execution ${field} must be ${INCIDENT_EXECUTION[field]}`);
+    }
+  }
+  return { ...INCIDENT_EXECUTION };
 }

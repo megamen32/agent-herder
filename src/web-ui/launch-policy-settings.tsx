@@ -822,7 +822,9 @@ export function modelValueIssue(value: string): string | undefined {
 export function incidentModelIssue(value: string): string | undefined {
   const issue = modelValueIssue(value);
   if (issue) return issue;
-  if (!/^[A-Za-z0-9._:$-]+(?:\/[A-Za-z0-9._:$-]+)*$/.test(value.trim())) return "Укажите корректный идентификатор модели.";
+  if (value.trim() !== INCIDENT_EXECUTION.model) {
+    return "Локальный маршрут Herder закреплён за " + INCIDENT_EXECUTION.model + ". Измените только настройки общей политики запуска.";
+  }
   return undefined;
 }
 
@@ -873,7 +875,7 @@ export function LaunchPolicySettings({ onOpenProjects }: { onOpenProjects?: () =
       const model = route.models?.[harness] ?? policy.models[harness];
       return Boolean(model?.trim()) && model.length <= 256;
     }));
-  const incidentModelOptions = modelOptions[policy.incidentExecution?.runtime ?? "opencode"] ?? [];
+  const incidentModelOptions = [INCIDENT_EXECUTION.model];
   const incidentIssue = policy.incidentExecution ? incidentModelIssue(policy.incidentExecution.model) : undefined;
   const incidentWarning = policy.incidentExecution
     ? modelCatalogIssue(policy.incidentExecution.runtime, incidentModelRoute(policy), incidentModelOptions)

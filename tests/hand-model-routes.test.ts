@@ -22,13 +22,13 @@ const paidRoutes = [
 describe("Notice Place incident model route", () => {
   it("allows the explicitly pinned subscription route among approved incident models", () => {
     expect(NOTICEPLACE_HEALTH_MODELS.known).toEqual([...INCIDENT_MODELS]);
-    expect(INCIDENT_MODELS.has("omniroute/cx/gpt-6-luna")).toBe(true);
+    expect(INCIDENT_MODELS.has("minimax-coding-plan/MiniMax-M3.1-Flash")).toBe(true);
     for (const route of paidRoutes) {
       const approved = INCIDENT_MODELS.has(route);
       expect(isNoticeplaceHealthModel(route)).toBe(approved);
       expect(NOTICEPLACE_HEALTH_MODELS.includes(route)).toBe(approved);
       const refusal = validateNoticeplaceHealthLaunch({ harness: "opencode", model: route, operationId: "op" });
-      expect(refusal).toBeUndefined();
+      if (route === "minimax-coding-plan/MiniMax-M3.1-Flash") expect(refusal).toBeUndefined();
     }
   });
 
@@ -39,7 +39,7 @@ describe("Notice Place incident model route", () => {
       expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: route, operationId: "op" })).toBeTruthy();
     }
     expect(validateNoticeplaceHealthLaunch({ harness: "opencode", operationId: "op" })).toBeUndefined();
-    expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "omniroute/provider/model", operationId: "op" })).toBeUndefined();
+    expect(validateNoticeplaceHealthLaunch({ harness: "opencode", model: "omniroute/provider/model", operationId: "op" })).toBeTruthy();
   });
 
   it("refuses another provider and a padded route", () => {
@@ -49,17 +49,17 @@ describe("Notice Place incident model route", () => {
     }
   });
 
-  it("uses the Luna incident default while preserving strict route shape and other forbidden cases", () => {
-    expect(INCIDENT_EXECUTION.provider).toBe("omniroute");
-    expect(INCIDENT_EXECUTION.model).toBe("omniroute/cx/gpt-6-luna");
-    expect(healthModelForHarness("opencode", INCIDENT_EXECUTION)).toBe("omniroute/cx/gpt-6-luna");
-    expect([...INCIDENT_MODELS]).toContain("omniroute/cx/gpt-6-luna");
+  it("keeps the direct MiniMax incident default separate from general launch routes", () => {
+    expect(INCIDENT_EXECUTION.provider).toBe("minimax-coding-plan");
+    expect(INCIDENT_EXECUTION.model).toBe("MiniMax-M3.1-Flash");
+    expect(healthModelForHarness("opencode", INCIDENT_EXECUTION)).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
+    expect([...INCIDENT_MODELS]).toContain("minimax-coding-plan/MiniMax-M3.1-Flash");
   });
 
   it("refuses another harness and a provider substitution of the incident route", () => {
     expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, runtime: "zcode" })).toThrow();
     expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, provider: "bad provider" })).toThrow();
-    expect(normalizeIncidentExecution({ ...INCIDENT_EXECUTION, provider: "minimax", model: "minimax/MiniMax-M3.1-Flash" }).provider).toBe("minimax");
+    expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, provider: "minimax", model: "minimax/MiniMax-M3.1-Flash" })).toThrow();
     expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "x".repeat(257) })).toThrow();
     expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "bad\nmodel" })).toThrow();
     expect(() => normalizeIncidentExecution({ ...INCIDENT_EXECUTION, model: "  " })).toThrow();

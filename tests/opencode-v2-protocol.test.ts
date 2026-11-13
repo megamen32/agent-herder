@@ -476,6 +476,45 @@ it("recursively resolves nested configured OmniRoute combos and fails closed on 
   }
 });
 
+it("normalizes OmniRoute combo-ref members before resolving nested leaves", async () => {
+  const state = sessionFixture();
+  state.models = [{ id: "outer-combo", modelID: "outer-combo", providerID: "omniroute" }];
+  const server = v2Fixture(state);
+  const fetcher: typeof fetch = async (input) => {
+    const path = new URL(typeof input === "string" ? input : input.toString()).pathname;
+    const payload = path === "/v1/models"
+      ? { data: [
+        { id: "outer-combo", owned_by: "combo", root: "outer-combo", parent: null },
+        { id: "inner-combo", owned_by: "combo", root: "inner-combo", parent: null },
+        { id: "minimax/MiniMax-M3.1-Flash", owned_by: "minimax", root: "MiniMax-M3.1-Flash", parent: null },
+      ] }
+      : path === "/api/combos"
+        ? { total: 2, combos: [
+          { id: "outer-id", name: "outer-combo", models: [{ kind: "combo-ref", comboName: "inner-combo" }] },
+          { id: "inner-id", name: "inner-combo", models: [
+            { providerId: "minimax", model: "minimax/MiniMax-M3.1-Flash" },
+          ] },
+        ] }
+        : path === "/api/model-combo-mappings"
+          ? { total: 0, mappings: [] }
+          : { aliases: {} };
+    return new Response(JSON.stringify(payload), { status: 200 });
+  };
+  const adapter = new OpenCodeAdapter({ baseUrl: await start(server) });
+  try {
+    await expect(adapter.resolveModelProviderLeaves("omniroute/outer-combo", {
+      omniRouteBaseUrl: "http://omniroute.test",
+      omniRouteApiKey: "fixture-key",
+      omniRouteManagementToken: "fixture-management",
+      fetcher,
+    })).resolves.toMatchObject({
+      resolvedProviderLeaves: [{ providerId: "minimax", modelId: "minimax/MiniMax-M3.1-Flash" }],
+    });
+  } finally {
+    server.close();
+  }
+});
+
 it("steers a live v2 turn natively and records the once-only receipt", async () => {
   const state = sessionFixture();
   // Unique identity: the durable receipt store outlives a single test run.

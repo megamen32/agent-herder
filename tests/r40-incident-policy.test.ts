@@ -11,18 +11,16 @@ const general = { version: 1, allowedHarnesses: ["codex"], preferredHarness: "co
 describe("Notice Place incident subscription policy", () => {
   it("keeps the incident route separate from ordinary launch defaults", () => {
     expect(validateAutomationLaunchPolicy({ ...general, incidentExecution })).toEqual({ ...general, incidentExecution });
-    expect(healthModelForHarness("opencode", incidentExecution)).toBe("omniroute/cx/gpt-6-luna");
+    expect(healthModelForHarness("opencode", incidentExecution)).toBe("minimax-coding-plan/MiniMax-M3.1-Flash");
   });
 
-  it("retains direct MiniMax compatibility and rejects invalid Luna profile substitutions", () => {
-    expect(normalizeIncidentExecution({runtime:"opencode",provider:"minimax-coding-plan",model:"MiniMax-M3.1-Flash",reasoning:"default",topic:"health"}).model).toBe("MiniMax-M3.1-Flash");
-    for (const provider of ["bad provider", "x".repeat(257)]) {
+  it("pins the approved direct subscription incident execution profile and rejects substitutions", () => {
+    for (const provider of ["auto", "openai-codex", "minimax", "omniroute"]) {
       expect(() => normalizeIncidentExecution({ ...incidentExecution, provider })).toThrow(/provider/);
     }
-    for (const model of ["x".repeat(257), "bad model", "bad\nmodel"]) {
+    for (const model of ["minimax-combo-m3.1", "omniroute/minimax-combo-m3.1", "omniroute/minimax-coding-plan/MiniMax-M3.1-Flash", "omniroute/glm-5.3-flash-minimax-m3.1", "zai/GLM-4.6", "x".repeat(257), "bad\nmodel"]) {
       expect(() => normalizeIncidentExecution({ ...incidentExecution, model })).toThrow(/model/);
     }
-    expect(normalizeIncidentExecution({ ...incidentExecution, model: "omniroute/cx/gpt-6-luna/extra" }).model).toBe("omniroute/cx/gpt-6-luna/extra");
   });
 
   it("persists the exact direct subscription choice across a store restart", async () => {

@@ -43,8 +43,8 @@ export function hasNoticeplaceHealthBearer(authorization: string | undefined): b
 export function validateNoticeplaceHealthLaunch(input: {
   harness?: unknown; model?: unknown; operationId?: unknown;
 }): string | undefined {
-  if (input.harness !== "opencode" || (input.model !== undefined && !isIncidentModelRoute(input.model))) {
-    return "Для анализа инцидента нужен OpenCode и полный маршрут модели provider/model.";
+  if (input.harness !== "opencode" || (input.model !== undefined && !INCIDENT_MODELS.has(String(input.model)))) {
+    return `Для анализа инцидента разрешён только OpenCode с утверждённой моделью по подписке: ${[...INCIDENT_MODELS].join(", ")}. Другие модели не допускаются.`;
   }
   if (typeof input.operationId !== "string" || !input.operationId.trim()) {
     return "Для анализа инцидента требуется стабильный operation_id.";
