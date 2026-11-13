@@ -216,11 +216,11 @@ function aliasesIntersect(aliases: Record<string, string>, modelIds: readonly st
 }
 
 /**
- * True when one of the model ids is itself used as an alias name. An alias
- * name shadows the id it points at, so the model id no longer identifies one
- * route. An alias that only points at a model gives that model a second public
- * name; it does not change which provider the id reaches, so it is not an
- * identity conflict.
+ * True when one of the fully qualified provider/model ids is itself used as an
+ * alias name. OpenCode selects a leaf by the provider-qualified id, so a bare
+ * alias such as 'glm-5.3-flash' does not shadow 'glm/glm-5.3-flash'.
+ * An alias that only points at a model gives that model a second public name;
+ * it does not change which provider-qualified id the combo reaches.
  */
 function aliasesNamed(aliases: Record<string, string>, modelIds: readonly string[]): boolean {
   const names = new Set(modelIds);
@@ -1114,7 +1114,9 @@ export class OpenCodeAdapter implements HarnessAdapter {
       // A leaf id must not itself be an alias name, because an alias name
       // shadows the id it points at. An alias that only points at the leaf gives
       // the same model a second public name without changing its provider.
-      if (aliasesNamed(modelAliases, uniqueLeaves.map((leaf) => leaf.modelId))) return null;
+      if (aliasesNamed(modelAliases, uniqueLeaves.map((leaf) =>
+        leaf.modelId.includes("/") ? leaf.modelId : leaf.providerId + "/" + leaf.modelId,
+      ))) return null;
       const identityModels = [...new Set(uniqueLeaves.map((leaf) => leaf.modelId.split("/").at(-1)!).filter(Boolean))];
       if (identityModels.length === 0) return null;
       const identityPatterns = new Set(identityModels.map((identity) => `${rootCombo.name}/${identity}`));

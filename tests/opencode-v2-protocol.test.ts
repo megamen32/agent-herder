@@ -1097,7 +1097,17 @@ it("keeps a combo route verifiable when another enabled mapping serves the same 
       ],
     });
 
-    // An alias name that shadows a leaf id stays a conflict.
+    // A bare alias does not shadow a provider-qualified leaf id.
+    modelAliases = { "MiniMax-M3": "other-model" };
+    await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toMatchObject({
+      nativeModelId: "omniroute/minimax-combo-m3",
+      resolvedProviderLeaves: [
+        { providerId: "minimax-code", modelId: "mmcode/MiniMax-M3" },
+        { providerId: "minimax", modelId: "minimax/MiniMax-M3" },
+      ],
+    });
+
+    // An alias name that shadows the full leaf id stays a conflict.
     modelAliases = { "minimax/MiniMax-M3": "other-model" };
     await expect(adapter.resolveModelProviderLeaves("omniroute/minimax-combo-m3", options)).resolves.toBeNull();
 
