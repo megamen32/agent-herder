@@ -1,5 +1,7 @@
 //! Sealed project-release compatibility over the canonical resource owner.
 //! The compatibility ledger is never a second ownership authority.
+#[cfg(target_os = "linux")]
+pub mod reconcile;
 use crate::{
     application::process_bindings::ProcessRuntimeConfig,
     auth::identity::PrincipalId,
@@ -214,6 +216,14 @@ pub struct Bridge {
 }
 impl Bridge {
     pub fn open(config_path: &Path) -> Result<Self> {
+        let executable = std::env::current_exe()
+            .and_then(|p| p.canonicalize())
+            .map_err(|_| config_error())?;
+        Self::open_registered(config_path, &executable)
+    }
+    // Shared validation for the explicit, separately authenticated reconciler.
+    // The ordinary bridge always supplies its actual executable above.
+    fn open_registered(config_path: &Path, executable: &Path) -> Result<Self> {
         let path = canonical_path(config_path).map_err(|_| config_error())?;
         let config: BridgeConfig = read_private(&path, true).map_err(|_| config_error())?;
         if config.version != 1
@@ -239,13 +249,10 @@ impl Bridge {
             return Err(config_error());
         }
         let ledger: SealedLedger = serde_json::from_value(raw).map_err(|_| config_error())?;
-        let executable = std::env::current_exe()
-            .and_then(|p| p.canonicalize())
-            .map_err(|_| config_error())?;
         if ledger.version != 2
             || ledger.canonical.version != 1
             || ledger.canonical.config != path
-            || ledger.canonical.bridge != executable
+            || ledger.canonical.bridge.as_path() != executable
             || ledger.canonical.seal_id != config.seal_id
             || ledger.projects.values().any(|value| !value.is_object())
         {

@@ -26,6 +26,9 @@ ENDPOINT = "http://127.0.0.1:18787/api/canonical-runtime-status"
 PORT = 18787
 CAPABILITY = "canonical-scheduler-wait-gate-v1"
 MAX_AGE_MS = 60000
+TCP_TABLE_MAX_BYTES = 64 * 1024 * 1024
+TCP_TABLE_MAX_ROWS = 524288
+TCP_TABLE_MAX_LINE_BYTES = 4096
 HASH = re.compile(r"[a-f0-9]{64}")
 SOURCE = re.compile(r"[a-f0-9]{40}")
 BOOT = re.compile(r"[a-f0-9-]{36}")
@@ -529,20 +532,62 @@ def systemd_snapshot(pid, expected_environment, node, entry):
             "canonical_environment_sha256": json_hash(selected)}
 
 
+def _tcp_table_rows():
+    """Scan both tables completely with bounded memory and busy-host limits."""
+    total_bytes = total_rows = 0
+    for filename, width in (("/proc/net/tcp", 8), ("/proc/net/tcp6", 32)):
+        address = re.compile(r"[0-9A-F]{%d}:[0-9A-F]{4}" % width)
+        header_pending = True
+        with Path(filename).open("rb") as table:
+            while True:
+                raw = table.readline(TCP_TABLE_MAX_LINE_BYTES + 1)
+                if not raw:
+                    if header_pending:
+                        raise ValueError("local TCP socket inventory is malformed")
+                    break
+                total_bytes += len(raw)
+                if len(raw) > TCP_TABLE_MAX_LINE_BYTES or total_bytes > TCP_TABLE_MAX_BYTES:
+                    raise ValueError("local listening socket inventory exceeds its bound")
+                if not raw.endswith(b"\n"):
+                    raise ValueError("local TCP socket inventory is truncated")
+                try:
+                    parts = raw.decode("ascii").split()
+                except UnicodeDecodeError:
+                    raise ValueError("local TCP socket inventory is malformed") from None
+                if header_pending:
+                    if (len(parts) != 12 or parts[:2] != ["sl", "local_address"]
+                            or parts[2] not in ("rem_address", "remote_address")
+                            or parts[3:] != ["st", "tx_queue", "rx_queue", "tr", "tm->when",
+                                             "retrnsmt", "uid", "timeout", "inode"]):
+                        raise ValueError("local TCP socket inventory header is malformed")
+                    header_pending = False
+                    continue
+                total_rows += 1
+                if total_rows > TCP_TABLE_MAX_ROWS:
+                    raise ValueError("local listening socket inventory exceeds its bound")
+                if (len(parts) < 10 or not re.fullmatch(r"[0-9]{1,20}:", parts[0])
+                        or not address.fullmatch(parts[1]) or not address.fullmatch(parts[2])
+                        or not re.fullmatch(r"[0-9A-F]{2}", parts[3])
+                        or any(not re.fullmatch(r"[0-9A-F]{1,16}:[0-9A-F]{1,16}", parts[i])
+                               for i in (4, 5))
+                        or not re.fullmatch(r"[0-9A-F]{1,16}", parts[6])
+                        or not re.fullmatch(r"[0-9]{1,10}", parts[7])
+                        or int(parts[7]) > 0xffffffff
+                        or any(not re.fullmatch(r"[0-9]{1,20}", parts[i]) for i in (8, 9))
+                        or int(parts[9]) > 0xffffffffffffffff):
+                    raise ValueError("local TCP socket inventory row is malformed")
+                yield parts
+
+
 def listening_socket(pid):
     inodes = set()
-    for filename in ("/proc/net/tcp", "/proc/net/tcp6"):
-        data = Path(filename).read_bytes()
-        if len(data) > 4 * 1024 * 1024:
-            raise ValueError("local listening socket inventory exceeds its bound")
-        for line in data.decode().splitlines()[1:]:
-            parts = line.split()
-            address, port = parts[1].split(":")
-            if int(port, 16) != PORT or parts[3] != "0A":
-                continue
-            if address not in ("0100007F", "00000000", "0" * 32, "0" * 24 + "01000000") or int(parts[7]) != os.getuid():
-                raise ValueError("TS listener address or owner is ambiguous")
-            inodes.add(parts[9])
+    for parts in _tcp_table_rows():
+        address, port = parts[1].split(":")
+        if int(port, 16) != PORT or parts[3] != "0A":
+            continue
+        if address not in ("0100007F", "00000000", "0" * 32, "0" * 24 + "01000000") or int(parts[7]) != os.getuid():
+            raise ValueError("TS listener address or owner is ambiguous")
+        inodes.add(parts[9])
     owned = set()
     for fd in (Path("/proc") / str(pid) / "fd").iterdir():
         try:

@@ -486,5 +486,119 @@ class SchedulerProofContracts(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1)
 
 
+class ListeningSocketInventory(unittest.TestCase):
+    HEADER = b"sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n"
+
+    @staticmethod
+    def row(index=0, address="0100007F", port=1, state="06", uid=None, inode=0):
+        uid = os.getuid() if uid is None else uid
+        remote = "0" * len(address)
+        return (f"{index}: {address}:{port:04X} {remote}:0000 {state} "
+                f"00000000:00000000 00:00000000 00000000 {uid} 0 {inode} "
+                "1 0000000000000000 20 4 0 10 -1\n").encode()
+
+    @classmethod
+    def setUpClass(cls):
+        cls.large_unrelated = b"".join(cls.row(index=i) for i in range(40000))
+        assert len(cls.large_unrelated) > 4 * 1024 * 1024
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="herder-tcp-inventory-")
+        self.addCleanup(self.temp.cleanup)
+        self.proc = Path(self.temp.name) / "proc"
+        (self.proc / "net").mkdir(parents=True)
+        self.pid = 1234
+        fd = self.proc / str(self.pid) / "fd"
+        fd.mkdir(parents=True)
+        (fd / "7").symlink_to("socket:[12345]")
+        self.tcp = self.proc / "net/tcp"
+        self.tcp6 = self.proc / "net/tcp6"
+        self.tcp.write_bytes(self.HEADER)
+        self.tcp6.write_bytes(self.HEADER.replace(b"rem_address", b"remote_address"))
+
+        def proc_path(value):
+            path = Path(value)
+            return self.proc / path.relative_to("/proc") if path.is_relative_to("/proc") else path
+
+        mocked_path = patch.object(readiness, "Path", side_effect=proc_path)
+        mocked_path.start()
+        self.addCleanup(mocked_path.stop)
+
+    def listener(self, **changes):
+        return self.row(port=readiness.PORT, state="0A", inode=12345, **changes)
+
+    def test_large_inventory_finds_owned_listener_after_unrelated_rows(self):
+        self.tcp.write_bytes(self.HEADER + self.large_unrelated + self.listener())
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("whole-table read")):
+            self.assertEqual(readiness.listening_socket(self.pid),
+                             {"port": readiness.PORT, "inode": "12345"})
+
+    def test_large_tail_cannot_hide_foreign_or_ambiguous_listener(self):
+        cases = (
+            (self.listener(uid=os.getuid() + 1), "address or owner"),
+            (self.listener(address="0200007F"), "address or owner"),
+            (self.row(port=readiness.PORT, state="0A", inode=67890), "MainPID"),
+        )
+        for tail, error in cases:
+            with self.subTest(error=error, tail=tail):
+                self.tcp.write_bytes(self.HEADER + self.listener() + self.large_unrelated + tail)
+                with self.assertRaisesRegex(ValueError, error):
+                    readiness.listening_socket(self.pid)
+
+    def test_owned_inode_and_all_original_address_forms_are_required(self):
+        for address in ("0100007F", "00000000", "0" * 32, "0" * 24 + "01000000"):
+            with self.subTest(address=address):
+                self.tcp.write_bytes(self.HEADER)
+                self.tcp6.write_bytes(self.HEADER.replace(b"rem_address", b"remote_address"))
+                target = self.tcp if len(address) == 8 else self.tcp6
+                with target.open("ab") as stream:
+                    stream.write(self.listener(address=address))
+                self.assertEqual(readiness.listening_socket(self.pid)["inode"], "12345")
+                with self.assertRaises(FileNotFoundError):
+                    readiness.listening_socket(self.pid + 1)
+        self.tcp.write_bytes(self.HEADER + self.large_unrelated
+                             + self.row(port=readiness.PORT, state="0A", inode=67890))
+        self.tcp6.write_bytes(self.HEADER)
+        with self.assertRaisesRegex(ValueError, "MainPID"):
+            readiness.listening_socket(self.pid)
+
+    def test_tcp6_tail_is_scanned_after_large_tcp_table(self):
+        self.tcp.write_bytes(self.HEADER + self.listener() + self.large_unrelated)
+        self.tcp6.write_bytes(self.HEADER + self.row(address="0" * 32,
+                             port=readiness.PORT, state="0A", inode=67890))
+        with self.assertRaisesRegex(ValueError, "MainPID"):
+            readiness.listening_socket(self.pid)
+
+    def test_line_byte_and_row_limits_fail_after_a_valid_listener(self):
+        self.tcp.write_bytes(self.HEADER + self.listener())
+        tail = self.HEADER + self.row(address="0" * 32)
+        for setting, limit in (("TCP_TABLE_MAX_BYTES", self.tcp.stat().st_size + len(tail) - 1),
+                               ("TCP_TABLE_MAX_ROWS", 1)):
+            with self.subTest(setting=setting):
+                self.tcp6.write_bytes(tail)
+                with patch.object(readiness, setting, limit):
+                    with self.assertRaisesRegex(ValueError, "exceeds its bound"):
+                        readiness.listening_socket(self.pid)
+        self.tcp6.write_bytes(self.HEADER + b"x" * readiness.TCP_TABLE_MAX_LINE_BYTES + b"\n")
+        with self.assertRaisesRegex(ValueError, "exceeds its bound"):
+            readiness.listening_socket(self.pid)
+
+    def test_malformed_or_truncated_tail_never_accepts_an_earlier_listener(self):
+        self.tcp.write_bytes(self.HEADER + self.listener())
+        row = self.row(address="0" * 32)
+        malformed = [b"", b"wrong header\n", self.HEADER + b"missing columns\n",
+                     self.HEADER + row.rstrip(b"\n"), self.HEADER + b"\xff\n"]
+        for index, value in ((1, "0000:0001"), (3, "GG"), (7, "bad"),
+                             (7, "4294967296"), (9, "18446744073709551616")):
+            parts = row.decode().split()
+            parts[index] = value
+            malformed.append(self.HEADER + (" ".join(parts) + "\n").encode())
+        for data in malformed:
+            with self.subTest(data=data[:120]):
+                self.tcp6.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    readiness.listening_socket(self.pid)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -646,3 +646,6 @@ fn acquired_identity_survives_repository_move_without_authorizing_fresh_acquire(
         43
     );
 }
+
+#[path = "support/project_release_reconcile.rs"]
+mod reconciliation;

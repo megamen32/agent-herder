@@ -323,11 +323,67 @@ def read_occupancy(selector):
     if state["job_id"] != pointer["job_id"] or state["selector"] != str(selector):
         raise ValueError("rollout occupancy does not match its checkpoint")
     if pointer.get("phase") == "resolved":
-        if state.get("phase") not in TERMINAL or pointer.get("final_state_sha256") != candidate.digest(Path(pointer["job_dir"]) / "state.json"):
+        if (state.get("phase") not in TERMINAL and not canonical_reconciliation_valid(state)) or pointer.get("final_state_sha256") != candidate.digest(Path(pointer["job_dir"]) / "state.json"):
             raise ValueError("resolved occupancy has no exact terminal evidence")
     elif pointer.get("phase") != "active":
         raise ValueError("unknown rollout occupancy phase")
     return pointer
+
+
+def canonical_reconciliation_valid(state):
+    """A separate exact native receipt may settle occupancy, never rewrite UNKNOWN."""
+    annotation = state.get("canonical_reconciliation")
+    if state.get("phase") != "unknown" or not isinstance(annotation, dict):
+        return False
+    try:
+        if (set(annotation) != {"version", "outcome", "receipt", "original_state"}
+                or annotation["version"] != 1 or annotation["outcome"] != "candidate"):
+            return False
+
+        def read_pin(pin):
+            if not isinstance(pin, dict) or set(pin) != {"path", "sha256"}:
+                raise ValueError("invalid reconciliation pin")
+            raw = candidate.private_file(pin["path"]).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != pin["sha256"]:
+                raise ValueError("reconciliation pin changed")
+            return json.loads(raw)
+
+        original = read_pin(annotation["original_state"])
+        if original != {key: value for key, value in state.items() if key != "canonical_reconciliation"}:
+            return False
+        receipt = read_pin(annotation["receipt"])
+        if (receipt.get("version") != 1 or receipt.get("kind") != "herder-paired-rollout-reconciled-v1"
+                or receipt.get("outcome") != "candidate" or receipt.get("complete") is not True
+                or receipt.get("job_id") != state["job_id"] or receipt.get("original_state") != annotation["original_state"]):
+            return False
+        evidence = read_pin(receipt["evidence"])
+        paired = read_pin(evidence["paired_proof"])
+        native = read_pin(receipt["native_receipt"])
+        guard = read_pin(evidence["guard_intent"])
+        acknowledgement = receipt["native_acknowledgement"]
+        return (evidence.get("kind") == "herder-project-release-reconciliation-v1"
+            and evidence.get("outcome") == "candidate" and evidence.get("job_id") == state["job_id"]
+            and evidence.get("job_dir") == state["job_dir"]
+            and evidence.get("state") == {"path": str(Path(state["job_dir"]) / "state.json"), "sha256": annotation["original_state"]["sha256"]}
+            and paired.get("kind") == "herder-paired-rollout-reconciliation-v1"
+            and paired.get("outcome") == "candidate" and paired.get("complete") is True
+            and paired.get("job_id") == state["job_id"]
+            and paired.get("original_state_snapshot") == annotation["original_state"]
+            and paired.get("old_scheduler_identity") == state["scheduler_identity"]
+            and native.get("kind") == "herder-project-release-reconciliation-receipt-v1"
+            and native.get("outcome") == "candidate" and native.get("job_id") == state["job_id"]
+            and native.get("evidence") == receipt["evidence"] and native.get("paired_proof") == evidence["paired_proof"]
+            and native.get("guard") == guard and guard.get("fence") == state["release_identity"]["fence"]
+            and native.get("original_binding_sha256") == evidence.get("binding_sha256")
+            and acknowledgement.get("finished") is True and acknowledgement.get("reconciled") is True
+            and acknowledgement.get("jobId") == state["job_id"]
+            and acknowledgement.get("guardId") == guard.get("guard_id")
+            and acknowledgement.get("evidenceSha256") == receipt["evidence"]["sha256"]
+            and acknowledgement.get("receiptPath") == receipt["native_receipt"]["path"]
+            and acknowledgement.get("receiptSha256") == receipt["native_receipt"]["sha256"]
+            and acknowledgement.get("receiptRef") == guard["execution_ref"] + ":reconciled:" + receipt["native_receipt"]["sha256"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def save_state(state, **changes):
@@ -342,7 +398,7 @@ def save_state(state, **changes):
 
 
 def resolve_occupancy(state):
-    if state["phase"] not in TERMINAL:
+    if state["phase"] not in TERMINAL and not canonical_reconciliation_valid(state):
         raise ValueError("nonterminal rollout cannot release occupancy")
     selector = Path(state["selector"])
     with candidate.selector_lock(selector):
@@ -508,7 +564,9 @@ def status(args):
             "restart_ack_recorded": (Path(args.job_dir) / "restart-ack.json").exists(),
             "consumer_receipt_recorded": (Path(args.job_dir) / "consumer-receipt.json").exists(),
             "scheduler_receipt_recorded": (Path(args.job_dir) / "scheduler-consumer.json").exists(),
-            "checkpoint_sha256": candidate.digest(Path(args.job_dir) / "state.json")}
+            "checkpoint_sha256": candidate.digest(Path(args.job_dir) / "state.json"),
+            **({"canonical_reconciliation": state["canonical_reconciliation"]}
+               if canonical_reconciliation_valid(state) else {})}
 
 
 def admit(args, gate):
