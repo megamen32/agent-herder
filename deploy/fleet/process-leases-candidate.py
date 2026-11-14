@@ -204,6 +204,18 @@ def selector_lock(selector):
         os.close(fd)
 
 
+def canonical_migration_identity(manifest):
+    """Use the reviewed source validator, independently of the supplied launcher."""
+    if "canonical_migration" not in manifest:
+        return None
+    loader = importlib.machinery.SourceFileLoader(
+        "process_leases_trusted_migration_launcher", str(Path(__file__).with_name("launch-v1-core.py")))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module.migration_binding(manifest)
+
+
 def check_selector(selector, launcher, require_worker=True):
     selector = private_file(selector)
     selection = read_json(selector)
@@ -254,6 +266,10 @@ def check_selector(selector, launcher, require_worker=True):
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     argv, env, receipt = module.prepare(str(selector))
+    migration = canonical_migration_identity(manifest)
+    expected_epoch = migration["epoch"] if migration is not None else None
+    if env.get("AGENT_HERDER_MIGRATION_EPOCH") != expected_epoch or receipt.get("canonical_migration") != migration:
+        raise ValueError("launcher does not pass the pinned canonical migration epoch and receipt")
     if env.get("HERDER_NATIVE_COMMAND") != manifest["core"]:
         raise ValueError("launcher does not select the pinned native core")
     if "process_worker" in manifest and env.get("HERDER_PROCESS_WORKER") not in (None, manifest["process_worker"]):
@@ -268,6 +284,7 @@ def check_selector(selector, launcher, require_worker=True):
             "process_remote_bridge_sha256": manifest["sha256"].get("process_remote_bridge"),
             "process_config_sha256": manifest["sha256"].get("process_config"),
             "source_commit": manifest.get("source_commit"),
+            "canonical_migration": migration,
             "profiles_count": len(selection["profiles"])}
 
 
@@ -329,7 +346,7 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
     return m
 
 
-ADAPTER_UPDATES = {"opencode", "zcode"}
+ADAPTER_UPDATES = {"opencode", "zcode", "codex"}
 
 
 def strict_json(raw):
@@ -404,7 +421,7 @@ def adapter_source(manifest, kind):
     source = provenance.get(kind + "_source_commit")
     if source is None and not provenance:
         source = manifest.get("source_commit")
-    if source is None and kind == "zcode":
+    if source is None and kind in {"zcode", "codex"}:
         source = provenance.get("unchanged_source_commit")
     if source is None and kind == "opencode" and (
             manifest.get("build_inputs", {}).get("source_commit_role") ==
@@ -531,10 +548,36 @@ def bundle_process_remote_bridge(repo, output, source, base, compilation=None):
     return {"path": str(shipped), "sha256": digest(shipped), "build": evidence}
 
 
+def uses_reviewed_local_adapter(profile, manifest, updates):
+    """Preserve an exact per-instance remote wrapper when its local kind updates."""
+    owner = profile["owner"]
+    kind = owner["kind"]
+    if kind not in updates:
+        return False
+    if owner["ahap_script"] == manifest["adapters"][kind]:
+        return True
+    wrappers = manifest.get("remote_ahap_wrappers", [])
+    fields = {"node", "instance", "kind", "script", "script_sha256", "config_sha256"}
+    if not isinstance(wrappers, list) or any(not isinstance(item, dict) or set(item) != fields for item in wrappers):
+        raise ValueError("invalid retained remote wrapper")
+    identity = (owner.get("node"), owner.get("instance"), kind)
+    matches = [item for item in wrappers if (item["node"], item["instance"], item["kind"]) == identity]
+    if len(matches) != 1 or matches[0]["script"] != owner["ahap_script"]:
+        raise ValueError("profile is neither the reviewed local adapter nor an exact retained remote wrapper")
+    wrapper = matches[0]
+    script = canonical(wrapper["script"])
+    companion = private_file(str(script) + ".json")
+    config = strict_json(companion.read_bytes())
+    if (digest(script) != wrapper["script_sha256"] or digest(companion) != wrapper["config_sha256"]
+            or config.get("nodeRef") != owner.get("node") or config.get("kind") != kind):
+        raise ValueError("retained remote wrapper identity or digest changed")
+    return False
+
+
 def stage_adapter_migration(base, manifest, selection, selector, output, source, adapters, build):
     """Stage bytes only; protected authority directories are never written here."""
     if not adapters or not set(adapters) <= ADAPTER_UPDATES:
-        raise ValueError("only explicit opencode/zcode adapter updates are supported")
+        raise ValueError("only explicit opencode/zcode/codex adapter updates are supported")
     payload_dir = output / "profile-payloads"
     payload_dir.mkdir(mode=0o700)
     profiles = []
@@ -542,9 +585,9 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     for path in selection["profiles"]:
         path = private_file(path)
         all_hashes[str(path)] = digest(path)
-        profile = read_json(path)
+        profile = strict_json(path.read_bytes())
         kind = profile["owner"]["kind"]
-        if kind not in adapters:
+        if not uses_reviewed_local_adapter(profile, base, adapters):
             continue
         profile, raw = protected_profile(path)
         payload = profile_payload(raw, base["adapters"][kind], adapters[kind]["path"])
@@ -638,6 +681,8 @@ def adapter_transition(before, after):
                     or digest(private_file(item["path"])) != item["sha256"]):
                 raise ValueError("adapter transition artifact changed")
     updates = migration["adapters"] if migration else {}
+    if before.get("remote_ahap_wrappers", []) != after.get("remote_ahap_wrappers", []):
+        raise ValueError("unreviewed remote wrapper replacement")
     if set(before["adapters"]) != set(after["adapters"]):
         raise ValueError("adapter kind set changed")
     for kind in before["adapters"]:
@@ -696,7 +741,8 @@ def profile_transition(old, new, before, after, *, installed=False):
             raise FileExistsError("new protected profile destination already exists")
         by_old[str(previous)] = item
         destinations.add(target)
-    affected = {path for path in old["profiles"] if read_json(path)["owner"]["kind"] in migration["adapters"]}
+    affected = {path for path in old["profiles"]
+                if uses_reviewed_local_adapter(strict_json(private_file(path).read_bytes()), before, migration["adapters"])}
     if set(by_old) != affected or {item["kind"] for item in rows} != set(migration["adapters"]):
         raise ValueError("adapter migration omits or adds selected profile bindings")
     expected["profiles"] = [by_old[path]["path"] if path in by_old else path for path in old["profiles"]]
@@ -763,6 +809,14 @@ def build(args):
     updates = getattr(args, "adapter_update", [])
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
+    canonical_config = getattr(args, "canonical_config", None)
+    canonical_hash = getattr(args, "canonical_config_sha256", None)
+    if (canonical_config is None) != (canonical_hash is None):
+        raise ValueError("canonical config path and digest must be provided together")
+    migration_binding = None
+    if canonical_config is not None:
+        migration_binding = {"config": str(private_file(canonical_config)), "sha256": canonical_hash}
+        canonical_migration_identity({"canonical_migration": migration_binding})
     profile_hashes = {path: digest(private_file(path)) for path in selection["profiles"]}
     config = process_config(selection, output / "fixture/herder_process_worker", args.node_ref,
                             args.execution_root, args.resource_root, args.storage_id)
@@ -819,6 +873,10 @@ def build(args):
     manifest = compose_manifest(base, output, sha, base_path, selection["manifest_sha256"], hashes, argv)
     if remote_bridge:
         manifest["build_inputs"]["process_remote_bridge"] = remote_bridge["build"]
+    if migration_binding is not None:
+        if digest(private_file(migration_binding["config"])) != migration_binding["sha256"]:
+            raise ValueError("canonical migration configuration changed during build")
+        manifest["canonical_migration"] = migration_binding
     migration = None
     if updates:
         adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
@@ -978,6 +1036,8 @@ def main():
     b.add_argument("--cargo", type=Path, help="explicit Cargo executable, including a rustup proxy")
     b.add_argument("--node-ref", required=True)
     b.add_argument("--storage-id", required=True)
+    b.add_argument("--canonical-config", type=Path, help="reviewed immutable canonical migration configuration")
+    b.add_argument("--canonical-config-sha256", help="exact digest of the canonical migration configuration")
     b.add_argument("--adapter-update", action="append", default=[], choices=sorted(ADAPTER_UPDATES),
                    help="explicit reviewed AHAP update; may be repeated once per kind")
     c = sub.add_parser("check")

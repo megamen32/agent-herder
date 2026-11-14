@@ -125,7 +125,7 @@ describe("actual canonical runtime proof", () => {
 
   it("reports backend identity without inventing a native observation when no probe was requested", async () => {
     const f = await fixture();
-    expect(await f.status().observe({ challenge })).toMatchObject({ probe: null, migration_ready: true });
+    expect(await f.status().observe({ challenge })).toMatchObject({ probe: null, migration_ready: false, readiness_scope: "preflight" });
     expect(f.call).not.toHaveBeenCalled();
   });
 

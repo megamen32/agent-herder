@@ -17,6 +17,7 @@ pub mod create_prompt;
 pub mod create_task;
 pub mod mcp_read;
 pub mod registration;
+pub mod migration_quarantine;
 pub mod automation;
 pub mod process_automation;
 pub mod automation_driver;
@@ -136,6 +137,7 @@ pub struct ScopedAuthority {
     db: PathBuf,
     gate: PathBuf,
     generation: String,
+    migration_epoch: Option<String>,
 }
 mod index_snapshot;
 impl ScopedAuthority {
@@ -147,11 +149,13 @@ impl ScopedAuthority {
         {
             return Err(GateError::Invalid);
         }
-        Ok(Self {
-            db,
-            gate,
-            generation,
-        })
+        let migration_epoch = match std::env::var("AGENT_HERDER_MIGRATION_EPOCH") {
+            Ok(value) if !value.is_empty() && value.len() <= 128 && value.trim() == value
+                && !value.chars().any(char::is_control) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            _ => return Err(GateError::Invalid),
+        };
+        Ok(Self { db, gate, generation, migration_epoch })
     }
     fn lock(&self) -> Result<(PinnedTargetGateGuard, Writer), GateError> {
         self.lock_inner(false)
@@ -245,6 +249,21 @@ impl ScopedAuthority {
                 .map(|b| format!("{b:02x}"))
                 .collect::<String>()
         );
+        // Recovery of an existing exact request is observational. Quarantine
+        // must prevent a fresh intent and native creation, never replay one.
+        let existing: Option<String> = writer.connection().query_row(
+            "SELECT payload_hash FROM intents WHERE principal=?1 AND target=?2 AND request_key=?3",
+            params![principal.id.0, target, request.request_key], |r| r.get(0),
+        ).optional().map_err(|_| GateError::Store)?;
+        if let Some(existing) = existing {
+            return if existing == payload { Ok(CreateResult::Existing) } else { Err(GateError::Invalid) };
+        }
+        if migration_quarantine::check_locked(
+            writer.connection(), &self.generation, self.migration_epoch.as_deref(),
+            instance, None, Some(request.request_key),
+        )?.blocked {
+            return Err(GateError::Invalid);
+        }
         let intent = NewCreateLineageIntent {
             intent_id: request.intent_id,
             task_id: request.task_id,
@@ -529,6 +548,28 @@ impl ScopedAuthority {
                 tx.execute("UPDATE intents SET state='unknown',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::Unknown);
+            }
+            let mut migration = self.migration_for_address(&tx, b.address, b.request_key)?;
+            // Derived wake/create keys never erase the original reserved key.
+            // Resolve trusted lineage from this same authority transaction.
+            if !migration.blocked {
+                let origins = [
+                    process_automation::migration_origin_key(&tx,b.principal,b.target_ref,b.request_key)?,
+                    wait_automation::migration_origin_key(&tx,b.principal,b.target_ref,b.request_key,b.address)?,
+                    create_prompt::migration_origin_key(&tx,b)?,
+                ];
+                for key in origins.into_iter().flatten() {
+                    let decision=self.migration_for_address(&tx,b.address,&key)?;
+                    if decision.blocked {migration=decision;break}
+                }
+            }
+            if migration.blocked {
+                tx.execute("UPDATE intents SET state='rejected',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
+                tx.execute("UPDATE humanstop_dispatches SET phase='stopped',updated_at=?2 WHERE intent_id=?1 AND phase='claimed'",params![b.intent_id,now]).map_err(|_|GateError::Store)?;
+                let result = serde_json::json!({"outcome":"migration_quarantined","native_submit":"definitely_not_sent","reason":migration.reason,"record_refs":migration.record_refs}).to_string();
+                tx.execute("UPDATE tasks SET result_json=?2,updated_at=?3 WHERE task_id=(SELECT task_id FROM intents WHERE intent_id=?1)", params![b.intent_id,result,now]).map_err(|_|GateError::Store)?;
+                tx.commit().map_err(|_| GateError::Store)?;
+                return Ok(DurableDispatch::StoppedBeforeHandoff);
             }
             if scope_held(&tx, b)? {
                 tx.execute("UPDATE intents SET state='rejected',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;

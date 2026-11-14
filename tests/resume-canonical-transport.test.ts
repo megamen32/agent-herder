@@ -171,6 +171,34 @@ describe("sealed legacy receipt reservation", () => {
     await expect(f.transport.resume({ ...request, prompt: "different" })).resolves.toMatchObject({ status: "rejected", reason: "idempotency_conflict" });
     expect(f.calls).toHaveLength(0);
   });
+  it("recognizes the exact retired OpenCode preflight refusal without releasing its key", async () => {
+    const target = { ...request.target, agent: "opencode" as const, session_id: "ses_legacy" };
+    const selected = { ...request, target };
+    const row = { ...old(), target, status: "rejected", transport: "opencode-api", reason: "resume_rejected",
+      error: "OpenCode v2 config has an invalid shape", executed: false, pending: false,
+      admitted: false, admission_unknown: false,
+      fingerprint: receiptFingerprint({ target: target as any, prompt: selected.prompt!, goal: selected.goal,
+        resultRef: selected.result_ref, idempotencyKey: selected.idempotency_key! }) };
+    const f = await fixture({ [selected.idempotency_key!]: row });
+    const before = await fs.readFile(f.ledger);
+    expect((await readRetainedResumeReceipts(f.client)).blockers).toEqual([]);
+    await expect(f.transport.resume(selected)).resolves.toMatchObject({ status: "rejected", reason: "resume_rejected" });
+    await expect(f.transport.resume({ ...selected, prompt: "changed" })).resolves.toMatchObject({ status: "rejected", reason: "idempotency_conflict" });
+    expect(f.calls).toHaveLength(0);
+    expect(await fs.readFile(f.ledger)).toEqual(before);
+  });
+  it.each([
+    { admission_unknown: true }, { admission_unknown: undefined }, { admitted: true },
+    { admissionUnknown: true }, { pending: undefined }, { executed: true },
+    { error: "OpenCode connection failed (TimeoutError)" }, { transport: "unknown" },
+  ])("keeps contradictory or incomplete legacy refusal evidence unresolved: %j", async changed => {
+    const row = { ...old(), target: { ...request.target, agent: "opencode", session_id: "ses_legacy" },
+      status: "rejected", transport: "opencode-api", error: "OpenCode v2 config has an invalid shape",
+      executed: false, pending: false, admitted: false, admission_unknown: false, ...changed };
+    const f = await fixture({ [request.idempotency_key!]: row });
+    expect((await readRetainedResumeReceipts(f.client)).blockers).toEqual([request.idempotency_key]);
+    expect(f.state.nativeEffects).toBe(0);
+  });
   it("retains unknown keys and blocks new sends until they have reviewed evidence", async () => {
     const f = await fixture({ [request.idempotency_key!]: { ...old(), status: "ambiguous" } });
     await expect(f.transport.resume(request)).resolves.toMatchObject({ status: "ambiguous", reason: "retained_legacy_outcome_unknown" });

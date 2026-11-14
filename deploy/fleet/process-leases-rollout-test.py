@@ -128,6 +128,78 @@ class CoordinatorContracts(unittest.TestCase):
         candidate.create(self.args.job_dir / "consumer-receipt.json", candidate.encoded(consumer))
         candidate.create(self.args.job_dir / "scheduler-consumer.json", candidate.encoded({"fixture": "scheduler-consumer"}))
 
+    def prepare_native_drain(self):
+        capture = self.root / "native-before.json"
+        result = rollout.capture_drain(argparse.Namespace(selector=self.args.selector,
+            launcher=self.args.launcher, compat_pid=self.args.compat_pid, core_pid=self.args.core_pid, output=capture))
+        self.args.drained_baseline = capture
+        self.args.drained_baseline_sha256 = result["sha256"]
+        self.args.drain_receipt = self.root / "native-disable.json"
+        receipt = {"schema":1, "kind":"native-drain", "baseline_sha256":result["sha256"],
+                   "observed_at_unix_ms":rollout.now_ms(), "provider_operation_id":"gptadmin-native-disable-fixture",
+                   "target":rollout.CONTROLLER, "ref":rollout.CHILD, "method":"mcp_manage", "action":"disable", "disabled":True}
+        candidate.create(self.args.drain_receipt, candidate.encoded(receipt), 0o400)
+        self.args.drain_receipt_sha256 = candidate.digest(self.args.drain_receipt)
+        return receipt
+
+    def test_typed_drained_baseline_enables_only_new_runtime_and_full_consumers(self):
+        self.prepare_native_drain()
+        def runtime(selector, launcher, compat_pid, core_pid, expected_cwd=None):
+            if core_pid == 102:
+                raise AssertionError("a drained core cannot be observed alive during candidate admission")
+            return self.runtime_pair(selector, launcher, compat_pid, core_pid, expected_cwd)
+        def operator(_):
+            self.publish_receipts(restart_update={"action":"enable", "drain_receipt_sha256":self.args.drain_receipt_sha256})
+        with patch.object(rollout, "runtime_pair", side_effect=runtime), patch.object(rollout.time, "sleep", side_effect=operator):
+            result = rollout.run(self.args)
+        self.assertEqual(result["status"], "completed")
+        state = rollout.read_state(self.args.job_dir)
+        self.assertEqual(state["native_drain"]["receipt"]["sha256"], self.args.drain_receipt_sha256)
+        self.assertEqual(Path(state["native_drain"]["baseline"]["path"]).stat().st_mode & 0o777, 0o400)
+        self.assertIn("scheduler-consumer", self.events)
+        self.assertIn("runtime-202", self.events)
+
+    def test_drained_baseline_refuses_live_or_unknown_old_identity(self):
+        self.prepare_native_drain()
+        for status in ("live", "unknown"):
+            with self.subTest(status=status), patch.object(rollout, "identity_state", return_value=status):
+                with self.assertRaisesRegex(ValueError, "drain is unproved"):
+                    rollout.run(self.args)
+            self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.before_selector)
+            self.assertFalse(self.args.job_dir.exists())
+
+    def test_drained_baseline_refuses_configuration_drift_and_untyped_receipt(self):
+        receipt = self.prepare_native_drain()
+        receipt["action"] = "restart"
+        candidate.replace(self.args.drain_receipt, candidate.encoded(receipt), self.args.drain_receipt_sha256, 0o400)
+        self.args.drain_receipt_sha256 = candidate.digest(self.args.drain_receipt)
+        with self.assertRaisesRegex(ValueError, "exact typed disable"):
+            rollout.run(self.args)
+        receipt["action"] = "disable"
+        candidate.replace(self.args.drain_receipt, candidate.encoded(receipt), self.args.drain_receipt_sha256, 0o400)
+        self.args.drain_receipt_sha256 = candidate.digest(self.args.drain_receipt)
+        data = self.fixture.launcher.read_bytes() + b"\n"
+        candidate.replace(self.fixture.launcher, data, candidate.digest(self.fixture.launcher), 0o700)
+        with self.assertRaises((ValueError, RuntimeError)):
+            rollout.run(self.args)
+        self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.before_selector)
+        self.assertFalse(self.args.job_dir.exists())
+
+    def test_enable_is_rejected_without_native_drain_and_drain_rejects_wrong_ack(self):
+        with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(restart_update={"action":"enable"})):
+            with self.assertRaisesRegex(ValueError, "typed child restart"):
+                rollout.run(self.args)
+        self.assertEqual(rollout.read_state(self.args.job_dir)["phase"], "unknown")
+
+    def test_drained_mode_requires_enable_binding_and_forbids_baseline_recovery(self):
+        self.prepare_native_drain()
+        with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(restart_update={"action":"enable", "drain_receipt_sha256":"f" * 64})):
+            with self.assertRaisesRegex(ValueError, "enable receipt does not bind"):
+                rollout.run(self.args)
+        recovery = argparse.Namespace(job_dir=self.args.job_dir, outcome="baseline")
+        with self.assertRaisesRegex(ValueError, "cannot reactivate"):
+            rollout.recover(recovery)
+
     def test_guard_covers_install_restart_and_fresh_consumer(self):
         def operator(_):
             self.publish_receipts()
@@ -418,6 +490,11 @@ class ComponentAncestry(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unreviewed.*replacement"):
             rollout.component_guard(self.repo / ".git", self.before, self.after)
 
+    def test_existing_migration_binding_cannot_be_silently_removed(self):
+        self.before["canonical_migration"] = {"config": "/fixture/canonical.json", "sha256": "a" * 64}
+        with self.assertRaisesRegex(ValueError, "canonical migration authority"):
+            rollout.component_guard(self.repo / ".git", self.before, self.after)
+
     def test_missing_composite_core_provenance_is_not_replaced_by_top_sha(self):
         del self.before["component_provenance"]["core_source_commit"]
         with self.assertRaisesRegex(ValueError, "provenance is unknown"):
@@ -429,7 +506,7 @@ class ComponentAncestry(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         fixture.base["component_provenance"].update(core_source_commit=self.core,
-            opencode_source_commit=self.core, zcode_source_commit=previous_zcode)
+            opencode_source_commit=self.core, zcode_source_commit=previous_zcode, codex_source_commit=self.core)
         fixture.base_manifest.write_bytes(candidate.encoded(fixture.base))
         fixture.selection["manifest_sha256"] = candidate.digest(fixture.base_manifest)
         fixture.selector.write_bytes(candidate.encoded(fixture.selection))
@@ -437,14 +514,14 @@ class ComponentAncestry(unittest.TestCase):
         fixture.manifest["process_leases_build"]["source_commit"] = self.new
         fixture.manifest["component_provenance"].update(core_source_commit=self.new,
             process_worker_source_commit=self.new, process_config_source_commit=self.new,
-            opencode_source_commit=self.new, zcode_source_commit=self.new)
+            opencode_source_commit=self.new, zcode_source_commit=self.new, codex_source_commit=self.new)
         fixture.migration.update(source_commit=self.new,
             base_manifest_sha256=candidate.digest(fixture.base_manifest),
             base_selector_sha256=candidate.digest(fixture.selector))
         fixture.migration["build"]["source_commit"] = self.new
         for kind, item in fixture.migration["adapters"].items():
             item["source_commit"] = self.new
-            item["previous_source_commit"] = self.core if kind == "opencode" else previous_zcode
+            item["previous_source_commit"] = previous_zcode if kind == "zcode" else self.core
         fixture.reseal()
         fixture.check()
         return fixture.base, fixture.manifest
@@ -453,7 +530,7 @@ class ComponentAncestry(unittest.TestCase):
         before, after = self.adapter_transition(self.core)
         checked = rollout.component_guard(self.repo / ".git", before, after)
         adapters = {item["component"]: item for item in checked if item["component"].startswith("adapter:")}
-        self.assertEqual(set(adapters), {"adapter:opencode", "adapter:zcode"})
+        self.assertEqual(set(adapters), {"adapter:opencode", "adapter:zcode", "adapter:codex"})
         self.assertEqual(adapters["adapter:zcode"]["previous_source"], self.core)
 
     def test_typed_migration_cannot_discard_newer_installed_adapter_commits(self):

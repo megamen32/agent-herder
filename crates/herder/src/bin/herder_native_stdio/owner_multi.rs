@@ -60,6 +60,7 @@ impl ServerHandler for MultiOwner {
             let Ok(herder::mcp::catalog::Dispatched{request:herder::mcp::catalog::Request::Automation(
                 herder::mcp::catalog::Automation::WaitStatus{harness,node_ref,..}),..})=dispatched else{return Ok(denied("invalid_request"))};
             let mut mapped=Vec::new();let mut count=0usize;let mut observed=None;let mut blocking_unmapped=None;
+            let mut migration_authorities=Vec::new();
             for binding in &self.bindings{
                 if binding.harness!=harness || node_ref.as_ref().is_some_and(|n|n!=&binding.instance.node.0){continue}
                 count+=1;
@@ -74,11 +75,13 @@ impl ServerHandler for MultiOwner {
                     || value.get("observedAt").and_then(Value::as_str).is_none()
                     {return Ok(denied("process_wait_unavailable"))}
                 observed=value.get("observedAt").cloned();
+                let Some(proof)=value.get("migration") else{return Ok(denied("legacy_migration_unavailable"))};
+                migration_authorities.push(proof.clone());
                 if value.get("mapped")==Some(&Value::Bool(true)){mapped.push(value)}
                 else if value.get("blocked")==Some(&Value::Bool(true)){blocking_unmapped=Some(value)}
             }
             if count==0{return Ok(denied("harness_authority_not_configured"))}
-            let value=if mapped.len()>1{
+            let mut value=if mapped.len()>1{
                 json!({"version":1,"configured":true,"complete":true,"blocked":true,"reason":"ambiguous_native_session",
                     "mapped":true,"sessionRefs":[],"ruleRefs":[],"observedAt":observed})
             }else if let Some(value)=blocking_unmapped{value}
@@ -86,6 +89,7 @@ impl ServerHandler for MultiOwner {
                 json!({"version":1,"configured":true,"complete":true,"blocked":false,"reason":"native_session_not_registered",
                     "mapped":false,"sessionRefs":[],"ruleRefs":[],"observedAt":observed})
             };
+            value["migration_authorities"]=json!(migration_authorities);
             return Ok(CallToolResult::structured(value).into());
         }
         // Process rule refs are located in the exact owner authority. No

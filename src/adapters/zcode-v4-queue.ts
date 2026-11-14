@@ -30,7 +30,19 @@ export function queueProcessingState(snapshot: Snapshot): ZcodeQueueProcessingSt
 
 /** One owned official subscription. A legacy runtime.stateRevision is never a V4 revision.
  * Callers must first prove that this exact session is already loaded. */
-export async function openZcodeQueueSnapshot(client: ZcodeClientLike, workspace: Record<string, unknown>, sessionId: string, timeoutMs = 5000) {
+export function openZcodeQueueSnapshot(client: ZcodeClientLike, workspace: Record<string, unknown>, sessionId: string, timeoutMs = 5000) {
+  return openOwnedQueueSubscription(client, workspace, sessionId, timeoutMs);
+}
+
+/** Controlled lifecycle preparation for an already gated Herder handoff.
+ * This official V4 call may cold-restore the session; the caller must prove
+ * exact empty persisted input/terminal state before calling and reconcile any
+ * uncertainty without repeating it. Keep the returned subscription through send. */
+export function prepareZcodeContinuationSubscription(client: ZcodeClientLike, workspace: Record<string, unknown>, sessionId: string, timeoutMs = 5000) {
+  return openOwnedQueueSubscription(client, workspace, sessionId, timeoutMs);
+}
+
+async function openOwnedQueueSubscription(client: ZcodeClientLike, workspace: Record<string, unknown>, sessionId: string, timeoutMs: number) {
   if (!client.callIfReady || !client.listen) throw new Error('Existing V4 transport is unavailable');
   const call = (method: string, extra: Record<string, unknown> = {}) => client.callIfReady!('zcode-agent',method,[{...workspace,sessionId,runtimePolicy:'existing-only',...extra}]);
   let subscriptionId: string | undefined, closed = false;

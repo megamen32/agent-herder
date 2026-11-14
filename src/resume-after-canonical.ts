@@ -125,15 +125,16 @@ export class CanonicalResumeAfterService implements ResumeAfterBackend {
   constructor(private readonly client: CanonicalAutomationClient) {}
 
   /** Observe the actual loaded backend without a second facade or native call. */
-  async canonicalReadiness(): Promise<{ config: string; config_sha256: string; epoch: string; authority: string; writer_drain_sha256: string }> {
+  async canonicalReadiness(scope: "preflight" | "operational" = "operational"): Promise<{ config: string; config_sha256: string; epoch: string; authority: string; writer_drain_sha256: string; quarantine?: import("./canonical-quarantine.js").CanonicalQuarantineStatus }> {
     const { canonicalClientBinding } = await import("./canonical-herder.js");
     const binding = canonicalClientBinding(this.client);
     if (!binding) throw new Error("canonical_client_binding_unavailable");
     await this.client.assertCurrent();
-    await requireCanonicalMigrationReady(this.client);
+    const { canonicalMigrationStatus } = await import("./canonical-herder.js");
+    const quarantine = await canonicalMigrationStatus(this.client, scope === "operational");
     await this.client.assertCurrent();
     return { ...binding, epoch: this.client.epoch, authority: this.client.config.authority,
-      writer_drain_sha256: this.client.config.writer_drain.sha256 };
+      writer_drain_sha256: this.client.config.writer_drain.sha256, ...(quarantine ? { quarantine } : {}) };
   }
 
   private async readCanonical(id: string): Promise<ReturnType<typeof projection> | null> {

@@ -77,6 +77,8 @@ def prepare(ledger_path, config_path, bridge_path, now_ms=None):
         if (marker.get("schema") != authority["schema"] or marker.get("storage_id") != authority["storage_id"] or marker.get("resource_ref") != resource
                 or descriptor.get("resource_ref") != resource or descriptor.get("revision") != mapping["revision"]):
             raise ValueError("cutover_resource_revision_mismatch")
+        if (resource_dir / "migration-hold.json").exists():
+            blockers.append({"resource_ref": resource, "reason": "canonical_migration_occupancy_unknown"})
         if (resource_dir / "owner.json").exists():
             blockers.append({"resource_ref": resource, "reason": "canonical_owner_requires_reconciliation"})
         if (resource_dir / "execution-binding.json").exists():

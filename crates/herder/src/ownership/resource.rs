@@ -42,6 +42,7 @@ pub fn register_or_update(
         if current.resource_ref != *stored_descriptor.resource_ref() {
             return Err(invalid_data("resource marker identity does not match path"));
         }
+        crate::ownership::migration_hold::ensure_clear(authority, stored_descriptor.resource_ref(), authorization)?;
         match (current.descriptor, expected_revision) {
             (None, None) => {
                 if current.resource_ref != *stored_descriptor.resource_ref()

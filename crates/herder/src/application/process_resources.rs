@@ -45,6 +45,7 @@ impl ProcessResourceApplication {
             },
             None => false,
         };
+        let migration = crate::ownership::migration_hold::read(authority, resource_ref, Authorization::Authorized)?;
         let occupancy = claim::read_execution_binding(authority, resource_ref, Authorization::Authorized)?;
         let (dir, _) = authority.read_local_resource_marker(resource_ref, Authorization::Authorized)?;
         let now = claim::now_seconds()?;
@@ -53,7 +54,7 @@ impl ProcessResourceApplication {
             Ok(json!({"declaration":record,"expired":expired,"advisory":true}))
         }).collect::<io::Result<Vec<_>>>()?;
         Ok(json!({"resource":descriptor,"claim":owner,"claim_live":live,
-            "execution_binding":occupancy,"declarations":declarations}))
+            "execution_binding":occupancy,"migration_occupancy":migration,"declarations":declarations}))
     }
 
     fn declare(&self, principal: &PrincipalId, resource_ref: &ResourceRef, operation: Declaration) -> io::Result<Value> {

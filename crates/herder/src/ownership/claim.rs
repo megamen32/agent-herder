@@ -84,6 +84,9 @@ fn claim_inner(
         return Err(invalid_data("resource identity changed before claim"));
     }
 
+    if crate::ownership::migration_hold::read(authority, resource_ref, authorization)?.is_some() {
+        return Ok(ClaimOutcome::Busy);
+    }
     if retired_nonce(&resource_dir, &requested.claim_id)? {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -408,6 +411,7 @@ pub fn bind_execution(
     if marker.descriptor.as_ref().map(|d| d.revision) != Some(expected_revision) {
         return Err(io::Error::new(io::ErrorKind::WouldBlock, "resource revision changed"));
     }
+    crate::ownership::migration_hold::ensure_clear(authority, resource_ref, authorization)?;
     let binding = ExecutionBinding {
         resource_ref: resource_ref.clone(),
         claim_id: claim_id.into(),
@@ -888,6 +892,67 @@ mod tests {
             acquired_at: "2026-11-07T00:00:00Z".into(),
             expires_at: None,
         }
+    }
+
+    fn install_legacy_hold(root:&Path, authority:&StorageAuthority) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        use sha2::{Digest,Sha256};
+        let digest=|bytes:&[u8]| Sha256::digest(bytes).iter().map(|b|format!("{b:02x}")).collect::<String>();
+        let lease=serde_json::json!({"owner":{"hostId":"old-node","harness":"codex","nativeSessionId":"old-native"},
+            "fence":9,"tokenHash":"a".repeat(64),"acquiredAt":1,"expiresAt":2});
+        let archive=root.join("original-ledger.json");
+        let raw=serde_json::to_vec(&serde_json::json!({"version":1,"projects":{"/old/project/.git":{"fence":9,"lease":lease}}})).unwrap();
+        fs::write(&archive,&raw).unwrap();fs::set_permissions(&archive,fs::Permissions::from_mode(0o400)).unwrap();
+        let hold=crate::ownership::migration_hold::MigrationHold {version:1,kind:"herder-legacy-resource-quarantine".into(),
+            epoch:"migration".into(),schema:authority.schema.clone(),storage_id:authority.storage_id.clone(),
+            resource_ref:ResourceRef("r".into()),resource_revision:1,source_project:"/old/project/.git".into(),
+            source_fence:9,source_owner:lease["owner"].clone(),source_token_hash:"a".repeat(64),
+            source_lease_sha256:digest(&serde_json::to_vec(&lease).unwrap()),
+            archive:crate::ownership::migration_hold::Evidence{path:archive.clone(),sha256:digest(&raw)},outcome:"unknown".into()};
+        let path=root.join("resources/r/migration-hold.json");
+        fs::write(&path,serde_json::to_vec(&hold).unwrap()).unwrap();fs::set_permissions(&path,fs::Permissions::from_mode(0o400)).unwrap();
+        archive
+    }
+
+    #[test]
+    fn migration_unknown_blocks_claim_and_effect_without_expiry_or_fake_owner() {
+        let (root,authority)=fixture();
+        let resource_ref=ResourceRef("r".into());
+        let first=requested("01234567-89ab-4cde-8fab-0123456789ab");
+        assert_eq!(claim(&authority,&resource_ref,Authorization::Authorized,first.clone()).unwrap(),ClaimOutcome::Acquired);
+        let before=fs::read(root.join("resources/r/owner.json")).unwrap();
+        let archive=install_legacy_hold(&root,&authority);
+        assert_eq!(bind_execution(&authority,&resource_ref,Authorization::Authorized,&first.claim_id,
+            &first.principal_ref,1,"must-not-launch").unwrap_err().kind(),io::ErrorKind::WouldBlock);
+        assert!(!root.join("resources/r/execution-binding.json").exists());
+        let marker:ResourceMarker=serde_json::from_slice(&fs::read(root.join("resources/r/resource.json")).unwrap()).unwrap();
+        let descriptor_bytes=fs::read(root.join("resources/r/resource.json")).unwrap();
+        assert_eq!(crate::ownership::resource::register_or_update(&authority,marker.descriptor.unwrap(),
+            Authorization::Authorized,Some(1)).unwrap_err().kind(),io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(root.join("resources/r/resource.json")).unwrap(),descriptor_bytes);
+        assert_eq!(claim(&authority,&resource_ref,Authorization::Authorized,first.clone()).unwrap(),ClaimOutcome::Busy);
+        let lock=crate::ownership::release_runner::TargetExecutionLock::acquire(&authority,&resource_ref,Authorization::Authorized).unwrap();
+        assert_eq!(lock.verify_current_claim(&authority,Authorization::Authorized,&first.claim_id,1).unwrap_err().kind(),io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(root.join("resources/r/owner.json")).unwrap(),before);
+        assert_eq!(crate::ownership::migration_hold::read(&authority,&resource_ref,Authorization::Authorized).unwrap().unwrap().outcome,"unknown");
+        fs::remove_file(archive).unwrap();
+        assert!(crate::ownership::migration_hold::read(&authority,&resource_ref,Authorization::Authorized).is_err());
+        drop(lock);fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migration_hold_does_not_block_an_unrelated_resource() {
+        let (root,authority)=fixture();
+        install_legacy_hold(&root,&authority);
+        let other_dir=root.join("resources/other");fs::create_dir(&other_dir).unwrap();
+        let mut marker:serde_json::Value=serde_json::from_slice(&fs::read(root.join("resources/r/resource.json")).unwrap()).unwrap();
+        marker["resource_ref"]=serde_json::json!("other");marker["descriptor"]["resource_ref"]=serde_json::json!("other");
+        marker["descriptor"]["external_ref"]=serde_json::json!("other-device");
+        fs::write(other_dir.join("resource.json"),serde_json::to_vec(&marker).unwrap()).unwrap();
+        let mut request=requested("01234567-89ab-4cde-8fab-0123456789ab");request.resource_ref=ResourceRef("other".into());
+        assert_eq!(claim(&authority,&request.resource_ref.clone(),Authorization::Authorized,request).unwrap(),ClaimOutcome::Acquired);
+        assert!(!root.join("resources/r/owner.json").exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

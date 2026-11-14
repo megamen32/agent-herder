@@ -171,6 +171,18 @@ impl ProcessAutomationApplication {
     }
     /// Query only canonical metadata. Never contact a harness or reconcile a job.
     fn wait_status(&self,identity:&ConnectionIdentity,native:&str,node:Option<&str>)->Result<Value,&'static str>{
+        self.principal(identity)?;
+        if node.is_some_and(|n|n!=self.instance.node.0){return Err("owner_node_mismatch")}
+        let decision=self.authority.migration_decision(&self.instance,Some(native),None)
+            .map_err(|_|"legacy_migration_unavailable")?;
+        let mut value=if decision.blocked{
+            json!({"version":1,"configured":true,"complete":true,"blocked":true,
+                "reason":decision.reason,"mapped":false,"sessionRefs":[],"ruleRefs":[],
+                "migrationRecordRefs":decision.record_refs,"observedAt":super::mcp_deliver::utc_now().map_err(|_|"clock_unavailable")?})
+        }else{self.wait_status_unquarantined(identity,native,node)?};
+        value["migration"]=decision.proof;Ok(value)
+    }
+    fn wait_status_unquarantined(&self,identity:&ConnectionIdentity,native:&str,node:Option<&str>)->Result<Value,&'static str>{
         let principal=self.principal(identity)?;
         if native.is_empty() || native.len()>4096 || native.chars().any(char::is_control){return Err("invalid_native_session")}
         let observed=super::mcp_deliver::utc_now().map_err(|_|"clock_unavailable")?;
@@ -411,6 +423,9 @@ impl ProcessAutomationApplication {
             .map_err(|_|"session_stopped_or_unavailable")?{
             return Ok(false);
         }
+        let migration=self.authority.migration_for_address(writer.connection(),&address,&rule.request_key)
+            .map_err(|_|"legacy_migration_unavailable")?;
+        if migration.blocked{return Ok(false)}
         // Keep the exact canonical gate through the supervisor's launch
         // admission, so a stop that wins this gate prevents a new command.
         self.store.launch_prepared(&rule.execution_ref,&self.config.worker).map_err(|_|"execution_launch_unavailable")?;
@@ -519,8 +534,15 @@ impl ProcessAutomationApplication {
         // canonical atomic intent admission with this same stable key: a
         // cancelled async caller cannot duplicate a surviving bounded handoff.
         // Existing unknown intents above are never submitted again.
-        self.authority.resolve_session(identity,&grants,&SessionRef(rule.session_ref.clone()),&self.instance)
+        let (address,_)=self.authority.resolve_session(identity,&grants,&SessionRef(rule.session_ref.clone()),&self.instance)
             .map_err(|_|"session_stopped_or_unavailable")?;
+        let migration=self.authority.migration_decision(&self.instance,Some(&address.native_session_id),Some(&rule.request_key))
+            .map_err(|_|"legacy_migration_unavailable")?;
+        if migration.blocked{
+            state.detail=Some(migration.reason.into());
+            let _=self.state_cas(rule,revision,&state)?;
+            return self.snapshot_value(rule)
+        }
         state.phase="dispatching".into();
         state.detail=None;
         if !self.state_cas(rule,revision,&state)?{return self.snapshot_value(rule)}
@@ -572,8 +594,11 @@ impl ProcessAutomationApplication {
         process_bindings::validate_bindings(&bindings).map_err(|_|"invalid_bindings")?;
         self.config.grants_for(identity,&bindings).map_err(|_|"resource_grant_required")?;
         let grants=self.grants(identity,&SessionRef(session_ref.clone()))?;
-        self.authority.resolve_session(identity,&grants,&SessionRef(session_ref.clone()),&self.instance)
+        let (address,_)=self.authority.resolve_session(identity,&grants,&SessionRef(session_ref.clone()),&self.instance)
             .map_err(|_|"session_stopped_or_unavailable")?;
+        let migration=self.authority.migration_decision(&self.instance,Some(&address.native_session_id),Some(&request_key))
+            .map_err(|_|"legacy_migration_unavailable")?;
+        if migration.blocked{return Err("legacy_migration_quarantined")}
         let execution_ref=process::execution_ref_for(&principal,&session_ref,&request_key);
         let rule_ref=format!("process-rule:{}",execution_ref.trim_start_matches("exec-"));
         let rule=ProcessRule{version:1,rule_ref,principal,session_ref,request_key,execution_ref,execution,bindings,wake_message};
@@ -585,6 +610,8 @@ impl ProcessAutomationApplication {
                 "SELECT EXISTS(SELECT 1 FROM humanstop_scopes s JOIN humanstop_holds h ON h.scope_ref=s.scope_ref WHERE s.session_ref=?1 AND h.released_at IS NULL) OR EXISTS(SELECT 1 FROM holds WHERE released_at IS NULL AND (session_ref=?1 OR session_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1)))",
                 [&rule.session_ref],|r|r.get(0)).map_err(|_|"store_unavailable")?;
             if held{return Err("session_stopped_or_unavailable")}
+            if self.authority.migration_for_address(writer.connection(),&address,&rule.request_key)
+                .map_err(|_|"legacy_migration_unavailable")?.blocked{return Err("legacy_migration_quarantined")}
             writer.put_setting_once(&Self::scope(&rule.principal),&Self::rule_key(&rule.rule_ref),
                 &serde_json::to_string(&rule).map_err(|_|"invalid_request")?,
                 &super::mcp_deliver::utc_now().map_err(|_|"clock_unavailable")?).map_err(|_|"store_unavailable")?
@@ -738,6 +765,19 @@ pub(super) fn cancel_for_stop(c:&rusqlite::Connection,scope:&str,now:&str)->Resu
     }
     Ok(())
 }
+/// Recover the original registration key from the authoritative durable rule.
+/// The caller retains the handoff gate through this read and native admission.
+pub(super) fn migration_origin_key(c:&rusqlite::Connection,principal:&str,target:&str,key:&str)
+    ->Result<Option<String>,super::GateError>{
+    let Some(reference)=key.strip_prefix("process-wake:") else{return Ok(None)};
+    let raw:String=c.query_row("SELECT value_json FROM settings WHERE scope=?1 AND setting_key=?2",
+        rusqlite::params![ProcessAutomationApplication::scope(principal),ProcessAutomationApplication::rule_key(reference)],|r|r.get(0))
+        .map_err(|_|super::GateError::Store)?;
+    let rule:ProcessRule=serde_json::from_str(&raw).map_err(|_|super::GateError::Store)?;
+    if rule.session_ref!=target || rule.principal!=principal || rule.rule_ref!=reference{return Err(super::GateError::Invalid)}
+    Ok(Some(rule.request_key))
+}
+
 pub(super) fn wake_cancelled(c:&rusqlite::Connection,principal:&str,target:&str,request_key:&str)->Result<bool,super::GateError>{
     let Some(rule_ref)=request_key.strip_prefix("process-wake:") else{return Ok(false)};
     let scope=ProcessAutomationApplication::scope(principal);

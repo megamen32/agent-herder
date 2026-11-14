@@ -295,3 +295,38 @@ it("preserves closed read diagnostics without leaking native exception text", as
   expect(JSON.stringify(privateFailure)).not.toContain("secret-prompt-token");
   expect(privateFailure[1].error.data.diagnostic).toBeUndefined();
 });
+
+it("advertises and routes only the complete controlled cold Queue seam", async () => {
+  const calls: string[] = [];
+  const adapter = {
+    nativeColdContinuationSupported: true,
+    async getQueuedContinuationState(id: string) { calls.push("cold-read"); return { id, status: "error",
+      meta: { nativeStateObserved: false, nativeLoaded: false, nativeColdContinuation: { state: "cold_preparable" } } }; },
+    async sendHerderQueuedMessage(id: string, options: any) { calls.push("controlled-queue"); return {
+      ok: true, admitted: true, inputId: options.inputId, nativeInputMessageId: "msg_cold_exact", sessionId: id }; },
+    async sendMessage() { calls.push("ordinary-send"); return { ok: false }; },
+    async dispose() {},
+  };
+  const replies = await run(adapter, [initialize,
+    { jsonrpc: "2.0", id: 2, method: "getQueuedContinuationState", params: { id: "cold-exact" } },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "cold-exact", options: { queue: true, message: "one wake", inputId: "process-wake:key" } } },
+  ]);
+  expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBe("cold-queue-subscription-v1");
+  expect(replies[0].result.capabilities.methods).toContain("getQueuedContinuationState");
+  expect(replies[1].result.status).toBe("error");
+  expect(replies[2].result.nativeInputMessageId).toBe("msg_cold_exact");
+  expect(calls).toEqual(["cold-read", "controlled-queue"]);
+});
+
+it("does not advertise cold continuation from a partial or absent implementation", async () => {
+  for (const adapter of [{ async dispose() {} }, {
+    nativeColdContinuationSupported: true, async getQueuedContinuationState() { throw new Error("must not read"); }, async dispose() {},
+  }]) {
+    const replies = await run(adapter, [initialize,
+      { jsonrpc: "2.0", id: 2, method: "getQueuedContinuationState", params: { id: "cold-exact" } },
+    ]);
+    expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBe("unsupported-no-idle-admission-v1");
+    expect(replies[0].result.capabilities.methods).not.toContain("getQueuedContinuationState");
+    expect(replies[1].error.code).toBe(-32601);
+  }
+});
