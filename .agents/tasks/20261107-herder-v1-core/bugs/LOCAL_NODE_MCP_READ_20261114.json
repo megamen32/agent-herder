@@ -12,13 +12,34 @@
         "status": "open",
         "title": "Локальный узел не отдаёт проверяемое чтение сессий через MCP Herder"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "current",
+      "at": "2026-11-14T08:55:00+00:00",
+      "changes": {
+        "details": "Fixed in source and proven at the MCP level. Not yet live: the running agent-herder MCP edge is the GPTAdmin child MCP over the fixture bundles herder-v1-userio-lazy-cebecc13 -> herder-v1-browser-diagnostics-a7fbc548, not the installed release 80420046, so the live edge still serves the pre-fix code until a release with this fix is built and the edge is re-pointed. The deploy gate stays closed until the live ChatGPT/Z.ai/ZCode profiles exist.",
+        "resolution": {
+          "kind": "fixed",
+          "reason": "Root cause measured: the local native read path calls the AHAP listSessions with {options:{limit:256}}, and the codex adapter ignored that limit whenever no native controller was ready, returning the complete persisted codex index (8666 threads, 8.2M preview chars, ~10.8 MB). The AHAP frame limit (4 MiB) refused it with -32001 and the Rust facade mapped that to source_unavailable. A remote node never reached the native call (empty registered corpus), which is why only the local node failed. Fix: one bounded page size for every codex listing path plus a frame-budget guard in the AHAP read path. Verified end to end: the same MCP call now answers with the five registered codex-local sessions, complete=true, native_coverage_complete=true.",
+          "evidence": {
+            "proof_path": ".agents/tasks/20261107-herder-v1-core/evidence/local-node-read-20261114/READ.md",
+            "red_result": "FAIL",
+            "red_sha256": "pre-fix bundle herder-v1-userio-lazy-cebecc13 answers listSessions with -32001 (AHAP response exceeds 4 MiB frame limit)",
+            "result": "PASS",
+            "sha256": "fixed runner answers the same request with a 241994 byte frame of 100 rows; MCP sessions list answers complete=true, native_coverage_complete=true",
+            "test_command": "npx vitest run tests/ahap-legacy-read-runner.test.ts tests/codex-app-server.test.ts"
+          }
+        },
+        "status": "fixed"
+      }
     }
   ],
   "id": "LOCAL_NODE_MCP_READ_20261114",
   "owner": "current",
   "reporter": "current",
   "source": "MCP agent-herder sessions list/recent на локальном узле + GET /api/sessions того же демона (релиз 80420046)",
-  "status": "open",
+  "status": "fixed",
   "title": "Локальный узел не отдаёт проверяемое чтение сессий через MCP Herder",
-  "updated_at": "2026-11-13T23:32:44+00:00"
+  "updated_at": "2026-11-14T08:55:00+00:00"
 }

@@ -35,6 +35,15 @@ for (const harness of ["opencode", "zcode", "chatgpt", "zai"]) {
     expect(replies[0].result.capabilities.methods).not.toContain("listProjects");
   });
 }
+it("a native adapter that ignores the requested page limit still answers inside the AHAP frame budget", async () => {
+  const preview = "x".repeat(64 * 1024);
+  const rows = Array.from({ length: 400 }, (_, index) => ({ id: `row-${index}`, cwd: "/tmp/project", lastMessage: preview }));
+  const adapter = { init: vi.fn(), listSessions: vi.fn(async () => rows) };
+  const replies = await run("opencode", adapter, [rpc(3, "listSessions", { options: { limit: 5 } })]);
+  expect(replies[2].error).toBeUndefined();
+  expect(replies[2].result).toHaveLength(5);
+  expect(replies[2].result[0]).toMatchObject({ id: "row-0", cwd: "/tmp/project" });
+});
 it("oversized native export returns explicit bounded error and continues JSONL reads", async () => {
   const adapter={init:vi.fn(),getRawTranscript:vi.fn(async()=>({bytes:new Uint8Array(4*1024*1024),complete:true,source:{kind:"native-file",location:"fixture",format:"jsonl"},timestampCoverage:"native"})),listSessions:vi.fn(async()=>[{id:"still-readable"}])};
   const replies=await run("opencode",adapter,[rpc(3,"getRawTranscript",{id:"large"}),rpc(4,"listSessions")]);

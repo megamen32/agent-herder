@@ -11,6 +11,47 @@ export const LEGACY_READ_METHODS = ["listSessions", "getRawTranscript", "listPro
 export function legacyReadMethods(adapter: LegacyReadPort): string[] {
   return LEGACY_READ_METHODS.filter(method => typeof adapter[method] === "function");
 }
+/** The AHAP frame budget. A native page that cannot fit it must not be framed. */
+export const AHAP_FRAME_BUDGET_BYTES = 4 * 1024 * 1024;
+/** Identity fields every native session row carries; bulk preview stays optional. */
+const AHAP_SESSION_IDENTITY_FIELDS = ["id", "harness", "status", "title", "cwd", "lastActivity", "hostId", "model", "needsPermission"] as const;
+const AHAP_SESSION_TEXT_LIMIT = 4096;
+
+function frameBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function projectIdentity(row: unknown): unknown {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+  const source = row as Record<string, unknown>;
+  const projected: Record<string, unknown> = {};
+  for (const field of AHAP_SESSION_IDENTITY_FIELDS) {
+    const value = source[field];
+    if (value === undefined) continue;
+    projected[field] = typeof value === "string" ? value.slice(0, AHAP_SESSION_TEXT_LIMIT) : value;
+  }
+  return projected;
+}
+
+/**
+ * A native session page is an observation, not transcript bytes. Keep the
+ * requested row count and stay inside the AHAP frame budget: an unbounded
+ * enumeration must never fail the whole read, and a row that does not fit is
+ * reduced to its identity instead of being invented or dropped silently.
+ */
+export function boundSessionRows(rows: unknown, options?: ListSessionsOptions): unknown {
+  if (!Array.isArray(rows)) return rows;
+  const limit = options?.limit;
+  const bounded = limit !== undefined && rows.length > limit ? rows.slice(0, limit) : rows;
+  if (frameBytes(bounded) <= AHAP_FRAME_BUDGET_BYTES) return bounded;
+  const projected = bounded.map(projectIdentity);
+  if (frameBytes(projected) <= AHAP_FRAME_BUDGET_BYTES) return projected;
+  throw new AhapReadError(-32001, "AHAP session page exceeds the 4 MiB frame limit; request a smaller page. No partial page was returned.");
+}
 export class AhapReadError extends Error {
   constructor(readonly code: number, message: string) { super(message); }
 }
@@ -29,7 +70,7 @@ export async function legacyRead(adapter: LegacyReadPort, method: string, params
         throw new AhapReadError(-32602, "listSessions options require positive integer limit and absolute cwd when supplied");
       }
     }
-    return adapter.listSessions!(options as ListSessionsOptions | undefined);
+    return boundSessionRows(await adapter.listSessions!(options as ListSessionsOptions | undefined), options as ListSessionsOptions | undefined);
   }
   if (method === "listProjects") return adapter.listProjects!();
   if (!validSessionId(params.id)) throw new AhapReadError(-32602, "getRawTranscript expects {id: non-empty exact native session ID}");
