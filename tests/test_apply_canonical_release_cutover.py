@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import fcntl
 import importlib.util
@@ -213,6 +214,38 @@ class GuardedCutoverTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "occupancy_unresolved"):
             self.apply()
         self.assertEqual(json.loads(self.ledger.read_bytes())["version"], 1)
+
+    def test_overlong_unrelated_argument_keeps_following_writer_checks(self):
+        process = self.proc / "200"
+        process.mkdir()
+        overlong = str(self.root / ("x" * 5000)).encode()
+        (process / "cmdline").write_bytes(overlong + b"\0")
+        MODULE.verify_runtime(self.policy, self.proc)
+
+        alias = self.root / "writer-alias.js"
+        alias.symlink_to(self.writer)
+        for writer in (self.writer, alias):
+            with self.subTest(writer=writer.name):
+                (process / "cmdline").write_bytes(overlong + b"\0" + str(writer).encode() + b"\0")
+                with self.assertRaisesRegex(RuntimeError, "cutover_writer_still_running"):
+                    MODULE.verify_runtime(self.policy, self.proc)
+
+    def test_unexpected_path_resolution_error_still_blocks_runtime_verification(self):
+        process = self.proc / "200"
+        process.mkdir()
+        unreadable = self.root / "unrelated-io-error"
+        (process / "cmdline").write_bytes(str(unreadable).encode() + b"\0")
+        original_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path == unreadable:
+                raise OSError(errno.EIO, "fixture I/O failure")
+            return original_resolve(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", resolve):
+            with self.assertRaises(OSError) as failure:
+                MODULE.verify_runtime(self.policy, self.proc)
+        self.assertEqual(failure.exception.errno, errno.EIO)
 
     def test_crash_after_archive_preserves_source_and_reconcile_never_claims_success(self):
         before = self.ledger.read_bytes()

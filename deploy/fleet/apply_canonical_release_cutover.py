@@ -7,6 +7,7 @@ agents. The original private ledger remains archived byte for byte.
 """
 import argparse
 from contextlib import contextmanager
+import errno
 import fcntl
 import hashlib
 import json
@@ -136,6 +137,11 @@ def verify_runtime(manifest, proc_root=Path("/proc")):
                         raise RuntimeError("cutover_writer_still_running")
                 except (FileNotFoundError, NotADirectoryError, PermissionError):
                     pass
+                except OSError as error:
+                    # Rewritten argv can contain a whole command line instead
+                    # of a pathname. Keep scanning every subsequent argument.
+                    if error.errno != errno.ENAMETOOLONG:
+                        raise
     kinds = set()
     for item in manifest.get("consumer_verifications", []):
         kind = item.get("kind")
