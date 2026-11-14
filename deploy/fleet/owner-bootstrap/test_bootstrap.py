@@ -27,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
     parser.add_argument("--temp-parent", type=Path,
-                        default=Path(__file__).resolve().parents[3] / ".tmp")
+                        default=Path.home())
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     args.temp_parent.mkdir(mode=0o700, exist_ok=True)

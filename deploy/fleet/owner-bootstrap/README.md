@@ -14,11 +14,14 @@ python3 deploy/fleet/owner-bootstrap/test_bootstrap.py crates/herder/target/debu
 sha256sum crates/herder/target/debug/ahap-owner-bootstrap
 ```
 
-The test script creates private, disposable homes under the checkout's `.tmp/`.
-It checks schema v4, initialized authority, empty search tables, file modes and
-duplicate refusal with unchanged file bytes, inodes and modification times.
-It also checks pre-existing authority, symlinks, unsafe permissions and invalid
-paths. It does not use a runtime owner home.
+The test script creates a private, disposable parent under the caller's home
+directory by default. The parent is created with mode `0700`; this is required
+because the bootstrap rejects any group/other-writable ancestor. A custom
+`--temp-parent` is supported when that parent and all of its ancestors satisfy
+the same trust policy. The test checks schema v4, initialized authority, empty
+search tables, file modes and duplicate refusal with unchanged file bytes,
+inodes and modification times. It also checks pre-existing authority, symlinks,
+unsafe permissions and invalid paths. It does not use a runtime owner home.
 
 For provisioning, the caller supplies an existing absolute canonical directory
 named `herder-owner-home`, owned by the caller with mode `0700`. All ancestors
