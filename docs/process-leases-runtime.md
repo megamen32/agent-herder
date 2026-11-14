@@ -45,10 +45,10 @@ The manifest pins every new executable, reader and configuration digest. The wor
 
 The process configuration contains version 1, the real execution node, immutable worker path, durable execution root, local resource StorageAuthority and administrators from the selected trusted profiles. All six currently selected profiles use principal local-owner. Only configured administrators gain the process/resource capability; merely knowing a session identity does not grant it.
 
-Use stable store identities across releases. The resource marker storage.json is exactly:
+Use stable store identities across releases. The reviewed candidate uses execution root /home/roomhacker/.local/state/agent-herder/process-executions-v1 and resource root /home/roomhacker/.local/state/agent-herder/resource-ownership-v1. Its bundled bridge is not an executor registration: remote_executors is absent until a separately reviewed executor is configured. The resource marker storage.json is exactly:
 
 ~~~json
-{"schema":"v1","storage_id":"herder-server-100-v1"}
+{"schema":"v1","storage_id":"herder-resources-server-100-v1"}
 ~~~
 
 The engine owns execution-root/store.json and its node identity. Project-scoped resources additionally require a pre-existing project marker. The candidate helper never invents project markers.
@@ -69,7 +69,7 @@ Build writes profile payloads only under the candidate. The planned installed pr
 
 During the continuously held release guard, install first records every planned profile creation in durable rollback evidence. It creates the siblings exclusively with mode 0400, verifies their exact bytes and actual manifest bindings, and only then performs launcher/selector CAS. Existing profiles and databases are never rewritten. A creation race, expired admission or partial failure preserves the unresolved rollout checkpoint; it does not overwrite a file, silently adopt a leftover sibling, replay a restart or manufacture success. Reviewed rollback selects the unchanged old profiles. It leaves any already created new siblings available for inspection.
 
-The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. The runner separately advertises nativeAutomaticContinuation: unsupported-no-idle-admission-v1 for the inspected v2 protocol. A real canary produced two assistant replies for one canonical wake, and the native prompt contract lacks an atomic idle/turn condition. New automatic waits and canonical resume refuse before protected effects; old jobs continue observation and claim finalization. Do not enable this capability from a source test or a single input receipt. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
+The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. The updated runner advertises nativeAutomaticContinuation: unsupported-no-idle-admission-v1. The core disables automatic continuation for every OpenCode protocol, including v22. The observed failure was on v2: a real canary produced two assistant replies for one canonical wake, and its native prompt contract lacks an atomic idle/turn condition. This is the new candidate's policy; the unchanged public bundle is still the historical baseline. New automatic waits and canonical resume refuse before protected effects; old jobs continue observation and claim finalization. Do not enable this capability from a source test or a single input receipt. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
 
 Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
 
@@ -95,9 +95,9 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" build \
   --output "$HERDER_BUNDLE" \
   --build-dir /home/roomhacker/herder-artifacts/build/process-leases \
   --node-ref roomhacker-server-100 \
-  --execution-root /home/roomhacker/.local/state/agent-herder/process-executions \
-  --resource-root /home/roomhacker/.local/state/agent-herder/resource-authority \
-  --storage-id herder-server-100-v1 \
+  --execution-root /home/roomhacker/.local/state/agent-herder/process-executions-v1 \
+  --resource-root /home/roomhacker/.local/state/agent-herder/resource-ownership-v1 \
+  --storage-id herder-resources-server-100-v1 \
   --adapter-update opencode --adapter-update zcode
 
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" check \

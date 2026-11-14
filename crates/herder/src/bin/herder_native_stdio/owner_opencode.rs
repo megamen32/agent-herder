@@ -188,6 +188,15 @@ impl ApplicationPort for App {
                                 extra.get("rules").and_then(serde_json::Value::as_array),
                             ) {
                                 rows.extend(add.iter().cloned());
+                                let process_rows: Vec<_> = add.iter()
+                                    .filter(|row| row.get("kind").and_then(serde_json::Value::as_str) == Some("process_completion"))
+                                    .cloned().collect();
+                                let process_complete = extra.get("complete") == Some(&serde_json::Value::Bool(true))
+                                    && process_rows.len() == add.len();
+                                base["process_gauges"] = serde_json::json!(
+                                    herder::application::process_diagnostics::list_gauges(&process_rows, process_complete));
+                                base["complete"] = serde_json::json!(
+                                    base.get("complete") == Some(&serde_json::Value::Bool(true)) && process_complete);
                             }
                         }
                     }

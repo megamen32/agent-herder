@@ -8,7 +8,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs::{self, OpenOptions}, io::{self, Write}, os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt}},
+use std::{fs::{self, OpenOptions}, io::{self, Read, Write}, os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt}},
     path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +93,41 @@ pub fn validate_bindings(bindings: &[ProcessLeaseBinding]) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Read current enrollment metadata for diagnostics only. Access comes from the
+/// current installed configuration, never from this file's authority field.
+/// This operation neither locks nor changes an owner, lease, or execution.
+pub fn read_delegation_for_diagnostics(store: &ExecutionStore, execution_ref: &str,
+    principal: &PrincipalId, config: &ProcessRuntimeConfig) -> io::Result<Delegation> {
+    if !config.authorizes_principal(principal) || config.node_ref!=store.node_ref()
+        || config.execution_root!=store.root() {return Err(denied())}
+    let dir=store.execution_directory(execution_ref)?;
+    let path=dir.join("bindings.json");
+    let file=OpenOptions::new().read(true)
+        .custom_flags(libc::O_NOFOLLOW|libc::O_CLOEXEC|libc::O_NONBLOCK).open(&path)?;
+    let opened=file.metadata()?;
+    let named=fs::symlink_metadata(&path)?;
+    const MAX_BYTES:u64=262_144;
+    if !opened.is_file() || opened.uid()!=unsafe{libc::geteuid()} || opened.nlink()!=1
+        || opened.mode()&0o077!=0 || opened.len()>MAX_BYTES
+        || (opened.dev(),opened.ino())!=(named.dev(),named.ino()) {return Err(denied())}
+    let mut bytes=Vec::new();
+    (&file).take(MAX_BYTES+1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64>MAX_BYTES {return Err(io::Error::new(io::ErrorKind::InvalidData,"delegation exceeds diagnostic limit"))}
+    let current=file.metadata()?;
+    let named=fs::symlink_metadata(&path)?;
+    if (opened.dev(),opened.ino(),opened.len(),opened.mtime(),opened.mtime_nsec(),opened.ctime(),opened.ctime_nsec())
+        !=(current.dev(),current.ino(),current.len(),current.mtime(),current.mtime_nsec(),current.ctime(),current.ctime_nsec())
+        || (current.dev(),current.ino())!=(named.dev(),named.ino()) {
+        return Err(io::Error::new(io::ErrorKind::WouldBlock,"delegation changed during diagnostic read"));
+    }
+    let d:Delegation=serde_json::from_slice(&bytes)
+        .map_err(|_|io::Error::new(io::ErrorKind::InvalidData,"invalid delegation metadata"))?;
+    if d.version!=1 || d.execution_ref!=execution_ref || d.principal_ref!=principal.0
+        || d.authority!=config.resources {return Err(denied())}
+    validate_bindings(&d.bindings)?;
+    Ok(d)
 }
 
 pub fn write_delegation(store: &ExecutionStore, execution_ref: &str, principal: &str,
@@ -187,10 +222,22 @@ impl BindingHooks {
         let Some(d)=self.delegation()? else {return Ok(())};
         let now=claim::now_seconds()?;
         for b in d.bindings {
-            claim::bind_execution(&d.authority,&b.resource_ref,Authorization::Authorized,
-                &b.claim_id,&d.principal_ref,b.revision,&d.execution_ref)?;
-            claim::renew_owned(&d.authority,&b.resource_ref,Authorization::Authorized,
-                &b.claim_id,&d.principal_ref,b.revision,format!("unix-seconds:{}",now+b.ttl_seconds))?;
+            use crate::application::process_diagnostics::{record_renewal_attempt,RenewalStage};
+            if let Err(error)=claim::bind_execution(&d.authority,&b.resource_ref,Authorization::Authorized,
+                &b.claim_id,&d.principal_ref,b.revision,&d.execution_ref) {
+                let _=record_renewal_attempt(&self.execution_dir,&d.execution_ref,&d.principal_ref,
+                    &b,RenewalStage::BindExecution,Err(&error),
+                    crate::process::unix_millis().unwrap_or(now.saturating_mul(1000)));
+                return Err(error);
+            }
+            let renewed=claim::renew_owned(&d.authority,&b.resource_ref,Authorization::Authorized,
+                &b.claim_id,&d.principal_ref,b.revision,format!("unix-seconds:{}",now+b.ttl_seconds));
+            // Recording a result never participates in lease authorization.
+            // Preserve the canonical success/error even if telemetry is unwritable.
+            let _=record_renewal_attempt(&self.execution_dir,&d.execution_ref,&d.principal_ref,
+                &b,RenewalStage::RenewLease,renewed.as_ref(),
+                crate::process::unix_millis().unwrap_or(now.saturating_mul(1000)));
+            renewed?;
         }
         Ok(())
     }

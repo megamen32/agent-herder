@@ -85,23 +85,34 @@ class WaitGate(unittest.TestCase):
         write(self.selector, {"manifest": str(self.manifest), "manifest_sha256": sha(self.manifest),
                               "profiles": list(map(str, profiles))})
 
-    def add_rule(self, phase="armed", complete=False, pending=False, with_state=True):
+    def add_rule(self, phase="armed", complete=False, pending=False, with_state=True, intent="auto"):
         rule = {"version": 1, "rule_ref": self.rule_ref, "principal": "alice",
-                "session_ref": "session", "execution_ref": self.execution_ref}
+                "session_ref": "session", "execution_ref": self.execution_ref, "request_key": "fixture-process"}
+        if intent == "auto":
+            intent = "confirmed" if phase == "confirmed" else None
+        wake_key = "process-wake:" + self.rule_ref
+        task = "mcp-delivery-task:" + hashlib.sha256(json.dumps(
+            ["mcp-deliver-v1", "alice", "session", wake_key], separators=(",", ":")).encode()).hexdigest()
+        state = {"phase": phase, "detail": None, "delivery_task": task if intent is not None else None,
+                 "wake_cancelled": phase == "cancelled", "cancel_generation": 1 if phase == "cancelled" else 0,
+                 "wake_message": None}
         with sqlite3.connect(self.root / "local.db") as c:
             c.execute("DELETE FROM settings")
+            c.execute("DELETE FROM intents")
             c.execute("INSERT INTO settings VALUES(?,?,?)",
                 ("automation:process-completion:alice", "rule:" + self.rule_ref, json.dumps(rule)))
             if with_state:
                 c.execute("INSERT INTO settings VALUES(?,?,?)",
-                    ("automation:process-completion:alice", "state:" + self.rule_ref, json.dumps({"phase": phase})))
+                    ("automation:process-completion:alice", "state:" + self.rule_ref, json.dumps(state)))
+            if intent is not None:
+                c.execute("INSERT INTO intents VALUES(?,?,?,?,?)", (task, "alice", "session", wake_key, intent))
         directory = self.executions / self.execution_ref
         directory.mkdir(mode=0o700, exist_ok=True)
         receipt = {"execution_ref": self.execution_ref, "node_ref": "executor",
                    "tree_complete": True, "process_may_be_running": False} if complete else None
         write(directory / "record.json", {"schema_version": 1, "execution_ref": self.execution_ref,
               "node_ref": "executor", "principal_ref": "alice", "session_ref": "session",
-              "receipt": receipt, "finalization_pending": pending})
+              "request_key": "fixture-process", "receipt": receipt, "finalization_pending": pending})
 
     def query(self, **changes):
         request = {"harness": "codex", "nativeSessionId": "native", **changes}
@@ -133,6 +144,54 @@ class WaitGate(unittest.TestCase):
                 self.assertTrue(self.query()["blocked"])
                 self.add_rule(phase=phase, complete=False)
                 self.assertTrue(self.query()["blocked"])
+
+    def test_process_terminal_phase_requires_original_delivery_intent(self):
+        for phase in ("ready", "confirmed", "cancelled"):
+            for intent in ("prepared", "dispatching", "admitted", "unknown"):
+                with self.subTest(phase=phase, intent=intent):
+                    self.add_rule(phase=phase, complete=True, intent=intent)
+                    before = self.snapshot()
+                    self.assertTrue(self.query()["blocked"])
+                    self.assertEqual(self.snapshot(), before)
+        self.add_rule(phase="confirmed", complete=True, intent=None)
+        self.assertTrue(self.query()["blocked"])
+        for intent in (None, "confirmed", "rejected"):
+            self.add_rule(phase="cancelled", complete=True, intent=intent)
+            self.assertFalse(self.query()["blocked"])
+        for changed in ("target", "task_id"):
+            self.add_rule(phase="cancelled", complete=True, intent="confirmed")
+            with sqlite3.connect(self.root / "local.db") as c:
+                c.execute("UPDATE intents SET " + changed + "='foreign'")
+            self.assertTrue(self.query()["blocked"])
+        for field, value in (("delivery_task", "foreign-task"), ("wake_cancelled", False)):
+            self.add_rule(phase="cancelled", complete=True)
+            with sqlite3.connect(self.root / "local.db") as c:
+                raw = c.execute("SELECT value_json FROM settings WHERE setting_key=?",
+                                ("state:" + self.rule_ref,)).fetchone()[0]
+                state = json.loads(raw)
+                state[field] = value
+                c.execute("UPDATE settings SET value_json=? WHERE setting_key=?",
+                          (json.dumps(state), "state:" + self.rule_ref))
+            self.assertTrue(self.query()["blocked"])
+
+    def test_process_cancelled_unknown_survives_released_human_stop(self):
+        self.add_rule(phase="cancelled", complete=True, intent="unknown")
+        with sqlite3.connect(self.root / "local.db") as c:
+            c.execute("INSERT INTO humanstop_holds VALUES('global','human','now',NULL)")
+        self.assertEqual(self.query()["reason"], "human_stop_active")
+        with sqlite3.connect(self.root / "local.db") as c:
+            c.execute("UPDATE humanstop_holds SET released_at='later'")
+        before = self.snapshot()
+        self.assertTrue(self.query()["blocked"])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_process_receipt_request_key_cannot_be_substituted(self):
+        self.add_rule(phase="ready", complete=True)
+        path = self.executions / self.execution_ref / "record.json"
+        record = json.loads(path.read_text())
+        record["request_key"] = "other-operation"
+        write(path, record)
+        self.assertTrue(self.query()["blocked"])
 
     def test_unrelated_native_session_is_unblocked_after_verified_absence(self):
         self.add_rule()

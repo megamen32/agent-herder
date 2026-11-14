@@ -408,6 +408,7 @@ impl FreshSessionGrantPolicy for Policy {
 struct Native {
     submits: AtomicUsize,
     snapshots: AtomicUsize,
+    reconciliations: AtomicUsize,
     busy: AtomicBool,
     lose_ack: AtomicBool,
     recovery_enabled: AtomicBool,
@@ -419,6 +420,7 @@ impl Native {
         Arc::new(Self {
             submits: AtomicUsize::new(0),
             snapshots: AtomicUsize::new(0),
+            reconciliations: AtomicUsize::new(0),
             busy: AtomicBool::new(false),
             lose_ack: AtomicBool::new(false),
             recovery_enabled: AtomicBool::new(false),
@@ -453,6 +455,7 @@ impl NativeSessionReader for Native {
         })
     }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
+        self.reconciliations.fetch_add(1, Ordering::SeqCst);
         Ok(Observation::Confirmed {
             receipt: receipt.clone(),
         })
@@ -840,6 +843,70 @@ async fn lost_native_ack_never_resubmits_after_restart() {
 }
 
 #[tokio::test]
+async fn wait_status_cancelled_unknown_wake_stays_blocked_after_stop_release_without_resubmit() {
+    for cancellation in ["delete", "human_stop"] {
+        let fixture = Fixture::new();
+        let native = Native::new();
+        native.lose_ack.store(true, Ordering::SeqCst);
+        let app = application(&fixture, native.clone(), true);
+        let first = call(&app, fixture.create(cancellation, vec![])).await;
+        let rule = reference(&first, "rule_ref");
+        fixture.finish();
+        fixture.execution_until(&reference(&first, "execution_ref"), |s| {
+            s.record.receipt.is_some() && !s.record.finalization_pending
+        }).await;
+        let unknown = until_phase(&app, &rule, "delivery_unknown").await;
+        assert_eq!(native.submits.load(Ordering::SeqCst), 1);
+        assert_eq!(call(&app, native_wait_query("native-parent")).await["blocked"], true);
+        if cancellation == "delete" {
+            let deleted = call(&app, catalog::Automation::Delete {
+                rule_ref: rule.clone(), revision: unknown["revision"].as_u64().unwrap(),
+            }).await;
+            assert_eq!(deleted["wait"]["phase"], "cancelled");
+        } else {
+            fixture.authority().stop(&identity("alice"), &base_grants(), "global", "fixture stop after uncertain wake", "now").unwrap();
+            assert_eq!(call(&app, native_wait_query("native-parent")).await["reason"], "human_stop_active");
+            let metadata = fs::metadata(&fixture.gate).unwrap();
+            let _gate = acquire_pinned(&fixture.gate, metadata.dev(), metadata.ino()).unwrap();
+            let connection = Connection::open(&fixture.db).unwrap();
+            let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0)).unwrap();
+            connection.create_scalar_function("herder_writer_version", 0,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                move |_| Ok(version)).unwrap();
+            // An independently authorized later hold release cannot erase the
+            // old native handoff's still uncertain receipt.
+            connection.execute("UPDATE humanstop_holds SET released_at='later' WHERE scope_ref='global'", []).unwrap();
+        }
+        drop(app);
+        let restarted = application(&fixture, native.clone(), true);
+        let before_reads = (native.snapshots.load(Ordering::SeqCst), native.recoveries.load(Ordering::SeqCst), native.reconciliations.load(Ordering::SeqCst));
+        let status = call(&restarted, native_wait_query("native-parent")).await;
+        assert_eq!(status["blocked"], true, "{cancellation}: {status}");
+        assert_eq!(status["ruleRefs"], serde_json::json!([rule]));
+        assert_eq!((native.snapshots.load(Ordering::SeqCst), native.recoveries.load(Ordering::SeqCst), native.reconciliations.load(Ordering::SeqCst)), before_reads);
+        let result = call(&restarted, reconcile(&rule)).await;
+        assert_eq!(result["wait"]["phase"], "cancelled");
+        assert_eq!(call(&restarted, native_wait_query("native-parent")).await["blocked"], true);
+        assert_eq!(native.submits.load(Ordering::SeqCst), 1);
+        assert_eq!(fixture.wake_intents(), 1);
+        {
+            let metadata=fs::metadata(&fixture.gate).unwrap();
+            let _gate=acquire_pinned(&fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+            let connection=Connection::open(&fixture.db).unwrap();
+            let version:i64=connection.pragma_query_value(None,"user_version",|row|row.get(0)).unwrap();
+            connection.create_scalar_function("herder_writer_version",0,
+                FunctionFlags::SQLITE_UTF8|FunctionFlags::SQLITE_DETERMINISTIC,move |_|Ok(version)).unwrap();
+            // A row under the original computed task with a foreign binding is
+            // inconsistent evidence, never proof that this wake had no intent.
+            assert_eq!(connection.execute("UPDATE intents SET target='foreign-session' WHERE task_id=?1",
+                [unknown["wait"]["delivery_task"].as_str().unwrap()]).unwrap(),1);
+        }
+        assert_eq!(call(&restarted,native_wait_query("native-parent")).await["blocked"],true);
+        assert_eq!(native.submits.load(Ordering::SeqCst),1);
+    }
+}
+
+#[tokio::test]
 async fn installed_process_grant_and_session_grant_are_both_required() {
     let fixture = Fixture::new();
     let native = Native::new();
@@ -940,6 +1007,275 @@ async fn human_stop_then_release_does_not_reauthorize_an_old_wake() {
 fn native_wait_query(native: &str) -> catalog::Automation {
     catalog::Automation::WaitStatus {
         harness: "fixture".into(), native_session_id: native.into(), node_ref: Some("node".into()),
+    }
+}
+
+mod remote_wait_status {
+    use super::*;
+    use herder::process::{
+        CompletionReason, CompletionReceipt, ExecutionRecord, ExecutionState, ProcessIdentity,
+        remote::{RemoteDeadlineCapability, RemoteExecutorConfig, RemoteStartRequest, RemoteTransportConfig},
+    };
+    use sha2::{Digest, Sha256};
+
+    struct RemoteWait {
+        fixture: Fixture,
+        native: Arc<Native>,
+        record: ExecutionRecord,
+        control: Value,
+        rule: Value,
+        state: Value,
+        directory: PathBuf,
+        transport: PathBuf,
+    }
+    fn private_json(path: &Path, value: &impl serde::Serialize) {
+        fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    impl RemoteWait {
+        fn new() -> Self {
+            let mut fixture = Fixture::new();
+            let native = Native::new();
+            let remote = ExecutionStore::open(fixture.root.join("executor"), "executor-node").unwrap();
+            // Pinned fixture artifacts are never executed. Any transport attempt
+            // leaves a marker and fails, without contacting a remote host.
+            let transport = fixture.root.join("fixture-transport");
+            fs::write(&transport, b"#!/bin/sh\nprintf unexpected > \"$0.executed\"\nexit 91\n").unwrap();
+            fs::set_permissions(&transport, fs::Permissions::from_mode(0o700)).unwrap();
+            let digest: String = Sha256::digest(fs::read(&transport).unwrap()).iter().map(|v|format!("{v:02x}")).collect();
+            let mesh = fixture.root.join("fixture-mesh.json");
+            private_json(&mesh, &serde_json::json!({}));
+            let metadata = fs::metadata(remote.root()).unwrap();
+            let executor = RemoteExecutorConfig {
+                executor_ref: "fixture-executor".into(), node_ref: remote.node_ref().into(),
+                transport: RemoteTransportConfig {
+                    node_binary: transport.clone(), node_sha256: digest.clone(),
+                    bridge: transport.clone(), bridge_sha256: digest.clone(), fleet_mesh_config: mesh,
+                    credential_pin: "a".repeat(64), target: "shell:fixture-executor".into(),
+                },
+                worker: transport.clone(), worker_sha256: digest,
+                endpoint_config: fixture.root.join("fixture-endpoint.json"), endpoint_config_sha256: "b".repeat(64),
+                execution_root: remote.root().into(), root_device: metadata.dev(), root_inode: metadata.ino(),
+                max_runtime_ms: 60_000, deadline_capability: RemoteDeadlineCapability::LinuxBootWatchdogV1,
+            };
+            fixture.config.remote_executors.push(executor.clone());
+            let now = herder::process::unix_millis().unwrap();
+            let spec = RemoteStartRequest {
+                principal_ref: "alice".into(), session_ref: "parent".into(),
+                request_key: fixture.key("terminal-remote"), argv: vec!["/bin/true".into()],
+                cwd: fixture.root.clone(), deadline_unix_ms: now + 50_000, stop_grace_ms: 2000,
+                executor: executor.clone(),
+            };
+            let mut record = fixture.store().prepare_remote_start(spec.clone()).unwrap();
+            let mut observed = remote.prepare_start(spec.command()).unwrap();
+            let receipt = CompletionReceipt {
+                execution_ref: record.execution_ref.clone(), node_ref: executor.node_ref.clone(),
+                reason: CompletionReason::Exited, started_at_unix_ms: Some(now), finished_at_unix_ms: now + 1,
+                exit_code: Some(0), signal: None, descendant_failure: false,
+                tree_complete: true, process_may_be_running: false,
+                evidence_source: "fixture_exact_executor_receipt".into(),
+                stdout_path: remote.root().join("stdout.log"), stderr_path: remote.root().join("stderr.log"), detail: None,
+            };
+            for value in [&mut record, &mut observed] {
+                value.state = ExecutionState::Finished;
+                value.started_at_unix_ms = receipt.started_at_unix_ms;
+                value.receipt = Some(receipt.clone());
+                value.finalization_pending = false;
+            }
+            let handle = serde_json::json!({
+                "version":1,"controller_node_ref":fixture.config.node_ref,"executor_node_ref":executor.node_ref,
+                "executor_ref":executor.executor_ref,"execution_ref":record.execution_ref,
+                "controller_payload_hash":record.payload_hash,"command_hash":observed.payload_hash,
+                "worker_sha256":executor.worker_sha256,"endpoint_config_sha256":executor.endpoint_config_sha256,
+                "nonce":"c".repeat(64),"root_device":executor.root_device,"root_inode":executor.root_inode,
+                "boot_id":"fixture-executor-boot","deadline_boot_ms":100_000,"deadline_unix_ms":spec.deadline_unix_ms,
+            });
+            let request = serde_json::json!({"version":1,"request_id":"d".repeat(64),
+                "controller_node_ref":fixture.config.node_ref,"executor_node_ref":executor.node_ref,
+                "executor_ref":executor.executor_ref,"operation":{"action":"status","handle":handle}});
+            let response = serde_json::json!({"version":1,"request_id":request["request_id"],
+                "controller_node_ref":fixture.config.node_ref,"executor_node_ref":executor.node_ref,
+                "executor_ref":executor.executor_ref,"observation":{"handle":handle,
+                    "observed_boot_id":"fixture-executor-boot","observed_boot_ms":2000,
+                    "snapshot":{"record":observed,"observation":"terminal","confirmed_live":false,"worker_lock_held":false},
+                    "source":{"execution_ref":record.execution_ref,"executor_node":executor.node_ref,"request_digest":observed.payload_hash}}});
+            let control = serde_json::json!({"version":1,"controller_node_ref":fixture.config.node_ref,
+                "execution_ref":record.execution_ref,"controller_payload_hash":record.payload_hash,
+                "handle":handle,"start_dispatched":true,
+                "start_permit":{"boot_id":"fixture-executor-boot","observed_boot_ms":1000,"expires_boot_ms":2000},
+                "observation":{"request":request,"response":response,"received_at_unix_ms":now+1,
+                    "request_started_at_unix_ms":now,"round_trip_ms":1},"terminal_observed_at_unix_ms":now+1});
+            let rule_ref = format!("process-rule:{}", record.execution_ref.trim_start_matches("exec-"));
+            let execution = catalog::ProcessExecution::RemoteStart {
+                executor_ref: executor.executor_ref, argv: spec.argv.clone(), cwd: spec.cwd.display().to_string(),
+                deadline_unix_ms: spec.deadline_unix_ms, stop_grace_ms: None,
+            };
+            let rule = serde_json::json!({"version":1,"rule_ref":rule_ref,"principal":"alice","session_ref":"parent",
+                "request_key":record.request_key,"execution_ref":record.execution_ref,
+                "execution":execution,"bindings":[],"wake_message":"Read the original completion."});
+            let state = serde_json::json!({"phase":"ready","detail":null,"delivery_task":null,
+                "wake_cancelled":false,"cancel_generation":0,"wake_message":null});
+            let directory = fixture.store().execution_directory(&record.execution_ref).unwrap();
+            let value = Self {fixture,native,record,control,rule,state,directory,transport};
+            value.persist();
+            assert!(herder::process::remote_terminal_observed_at(&value.record,&value.directory).unwrap().is_some());
+            assert_eq!(value.fixture.store().status(&value.record.execution_ref).unwrap().record.receipt,value.record.receipt);
+            value
+        }
+        fn persist(&self) {
+            let metadata = fs::metadata(&self.fixture.gate).unwrap();
+            let _gate = acquire_pinned(&self.fixture.gate,metadata.dev(),metadata.ino()).unwrap();
+            private_json(&self.directory.join("record.json"),&self.record);
+            private_json(&self.directory.join("receipt.json"),self.record.receipt.as_ref().unwrap());
+            private_json(&self.directory.join("remote-control.json"),&self.control);
+            let mut writer = Writer::open_file(&self.fixture.db).unwrap();
+            let scope = "automation:process-completion:alice";
+            for (prefix,value) in [("rule",&self.rule),("state",&self.state)] {
+                let key = format!("{prefix}:{}",self.rule["rule_ref"].as_str().unwrap());
+                match writer.get_setting_versioned(scope,&key).unwrap() {
+                    Some((revision,_)) => assert!(writer.compare_and_set_setting(scope,&key,revision,&value.to_string(),"now").unwrap()),
+                    None => {writer.put_setting_once(scope,&key,&value.to_string(),"now").unwrap();},
+                }
+            }
+        }
+        async fn query(&self) -> Value {
+            let app = application(&self.fixture,self.native.clone(),true);
+            let before = ["record.json","receipt.json","remote-control.json"].map(|name|
+                fs::read(self.directory.join(name)).ok());
+            let result = call(&app,native_wait_query("native-parent")).await;
+            assert_eq!(result["version"],1);assert_eq!(result["complete"],true);assert_eq!(result["mapped"],true);
+            assert_eq!(result["sessionRefs"],serde_json::json!(["parent"]));
+            assert_eq!(before,["record.json","receipt.json","remote-control.json"].map(|name|
+                fs::read(self.directory.join(name)).ok()),"wait_status mutated durable execution evidence");
+            assert_eq!(self.native.submits.load(Ordering::SeqCst),0);
+            assert_eq!(self.native.snapshots.load(Ordering::SeqCst),0);
+            assert_eq!(self.native.reconciliations.load(Ordering::SeqCst),0);
+            assert_eq!(self.native.recoveries.load(Ordering::SeqCst),0);
+            assert_eq!(self.fixture.wake_intents(),0);
+            assert!(!self.transport.with_extension("executed").exists(),"wait_status executed transport");
+            assert!(!self.directory.join("launch.json").exists(),"wait_status launched a worker");
+            result
+        }
+    }
+
+    #[tokio::test]
+    async fn ready_remote_completion_clears_only_from_persisted_executor_proof() {
+        let fixture = RemoteWait::new();
+        assert_ne!(fixture.record.node_ref,fixture.record.receipt.as_ref().unwrap().node_ref);
+        // A stale live observation cannot renew a lease, but an exact immutable
+        // terminal receipt remains valid without an RPC or a live executor PID.
+        let value = fixture.query().await;
+        assert_eq!(value["blocked"],false,"verified finalized remote completion must clear the gate: {value}");
+        assert_eq!(value["ruleRefs"],serde_json::json!([]));
+        assert_eq!(value["reason"],"no_process_wait");
+    }
+
+    #[tokio::test]
+    async fn diagnostics_get_and_list_join_claim_and_wait_without_effects_or_false_history() {
+        let mut fixture=RemoteWait::new();
+        let binding=fixture.fixture.lease();
+        herder::application::process_bindings::write_delegation(&fixture.fixture.store(),
+            &fixture.record.execution_ref,"alice",&fixture.fixture.config.resources,vec![binding.clone()]).unwrap();
+        fixture.rule["bindings"]=serde_json::to_value(vec![binding.clone()]).unwrap();
+        fixture.persist();
+        let before_claim=claim::read_current(&fixture.fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap();
+        let before_files=["record.json","receipt.json","remote-control.json"].map(|name|fs::read(fixture.directory.join(name)).unwrap());
+        let app=application(&fixture.fixture,fixture.native.clone(),true);
+        let rule=fixture.rule["rule_ref"].as_str().unwrap().to_owned();
+        let get=call(&app,catalog::Automation::Get{rule_ref:rule.clone()}).await;
+        assert_eq!(get["wait_target"],serde_json::json!({"session_ref":"parent","complete":true,
+            "address":{"instance":{"node":"node","instance_id":instance().instance_id},"native_session_id":"native-parent"}}));
+        assert_eq!(get["bindings"],serde_json::to_value(vec![binding.clone()]).unwrap());
+        assert_eq!(get["controller_node"],"node");assert_eq!(get["executor_node"],"executor-node");
+        assert!(get["delivery_status"].is_null());
+        let diagnostics=&get["diagnostics"];
+        assert_eq!(diagnostics["non_authoritative"],true);
+        assert_eq!(diagnostics["intent_readable"],true);
+        assert_eq!(diagnostics["hold_active"],false);
+        assert!(diagnostics["native_idle_blocked"].is_null());
+        assert_eq!(diagnostics["next_action"],"inspect_receipt");
+        assert_eq!(diagnostics["renewal"]["availability"],"no_evidence");
+        assert_eq!(diagnostics["renewal"]["history_complete"],false);
+        assert!(diagnostics["renewal"]["recorded"].is_null());
+        assert_eq!(diagnostics["retention"]["deduplication"],"indefinite");
+        assert_eq!(diagnostics["resources_complete"],true);
+        let resource=&diagnostics["resources"][0];
+        assert_eq!(resource["availability"],"available");
+        assert_eq!(resource["claim"]["claim_id"],CLAIM);
+        assert_eq!(resource["claim"]["principal_ref"],"alice");
+        assert_eq!(resource["claim_live"],true);
+        assert_eq!(resource["claim_generation_matches"],true);
+        assert_eq!(resource["execution_binding_matches"],false);
+        assert!(resource["remaining_ttl_ms"].as_u64().unwrap()>0);
+        let list=call(&app,catalog::Automation::List{session_ref:Some("parent".into()),cursor:None}).await;
+        assert_eq!(list["rules"].as_array().unwrap().len(),1);
+        assert_eq!(list["rules"][0]["rule_ref"],rule);
+        assert_eq!(list["gauges"]["sampled"],1);
+        assert_eq!(list["gauges"]["terminal"],1);
+        assert!(list["gauges"]["recorded_renewal_attempts"].is_null());
+        assert!(list["gauges"]["lifetime_renewal_attempts"].is_null());
+
+        // Diagnostic corruption cannot turn missing renewal history into zero
+        // or make the canonical rule/status unavailable.
+        let telemetry=fixture.directory.join("renewal-observations.json");
+        fs::write(&telemetry,b"{corrupt observation").unwrap();
+        fs::set_permissions(&telemetry,fs::Permissions::from_mode(0o600)).unwrap();
+        let get=call(&app,catalog::Automation::Get{rule_ref:rule}).await;
+        assert_eq!(get["wait"]["phase"],"ready");
+        assert_eq!(get["diagnostics"]["renewal"]["availability"],"unavailable");
+        assert!(get["diagnostics"]["renewal"]["recorded"].is_null());
+        assert_eq!(fs::read(&telemetry).unwrap(),b"{corrupt observation");
+        assert_eq!(claim::read_current(&fixture.fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap(),before_claim);
+        assert_eq!(["record.json","receipt.json","remote-control.json"].map(|name|fs::read(fixture.directory.join(name)).unwrap()),before_files);
+        assert_eq!(fixture.query().await["blocked"],false);
+    }
+
+    #[tokio::test]
+    async fn missing_or_changed_remote_proof_binding_and_unsettled_wait_remain_blocked() {
+        let mut fixture = RemoteWait::new();
+        let original_record = fixture.record.clone();let original_control = fixture.control.clone();
+        let original_rule = fixture.rule.clone();let original_state = fixture.state.clone();
+        let original_config = fixture.fixture.config.clone();
+        for scenario in ["missing_proof","altered_receipt","wrong_receipt_node","changed_handle",
+            "missing_terminal_time","current_config_drift","removed_executor","rule_executor",
+            "rule_argv","rule_cwd","rule_deadline","rule_stop_grace","rule_request_key",
+            "local_process","local_members","pending_finalization","unknown_wake",
+            "foreign_task_pointer","cancelled_without_cancellation","confirmed_missing_intent"] {
+            fixture.record = original_record.clone();fixture.control = original_control.clone();
+            fixture.rule = original_rule.clone();fixture.state = original_state.clone();
+            fixture.fixture.config = original_config.clone();
+            match scenario {
+                "altered_receipt" => fixture.record.receipt.as_mut().unwrap().exit_code=Some(42),
+                "wrong_receipt_node" => fixture.record.receipt.as_mut().unwrap().node_ref="node".into(),
+                "changed_handle" => fixture.control["handle"]["nonce"]=serde_json::json!("e".repeat(64)),
+                "missing_terminal_time" => fixture.control["terminal_observed_at_unix_ms"]=Value::Null,
+                "current_config_drift" => fixture.fixture.config.remote_executors[0].transport.credential_pin="f".repeat(64),
+                "removed_executor" => fixture.fixture.config.remote_executors.clear(),
+                "rule_executor" => fixture.rule["execution"]["executor_ref"]=serde_json::json!("other-executor"),
+                "rule_argv" => fixture.rule["execution"]["argv"]=serde_json::json!(["/bin/false"]),
+                "rule_cwd" => fixture.rule["execution"]["cwd"]=serde_json::json!("/other-worktree"),
+                "rule_deadline" => fixture.rule["execution"]["deadline_unix_ms"]=serde_json::json!(1),
+                "rule_stop_grace" => fixture.rule["execution"]["stop_grace_ms"]=serde_json::json!(100),
+                "rule_request_key" => fixture.rule["request_key"]=serde_json::json!("another-operation"),
+                "local_process" | "local_members" => {
+                    let identity = ProcessIdentity {node_ref:"node".into(),boot_id:"local-fixture".into(),pid:1,start_ticks:1};
+                    if scenario=="local_process" {fixture.record.process=Some(identity)}
+                    else {fixture.record.observed_members.push(identity)}
+                },
+                "pending_finalization" => fixture.record.finalization_pending=true,
+                "unknown_wake" => fixture.state["phase"]=serde_json::json!("delivery_unknown"),
+                "foreign_task_pointer" => fixture.state["delivery_task"]=serde_json::json!("foreign-task"),
+                "cancelled_without_cancellation" => fixture.state["phase"]=serde_json::json!("cancelled"),
+                "confirmed_missing_intent" => fixture.state["phase"]=serde_json::json!("confirmed"),
+                "missing_proof" => (),
+                _ => unreachable!(),
+            }
+            fixture.persist();
+            if scenario=="missing_proof" {fs::remove_file(fixture.directory.join("remote-control.json")).unwrap();}
+            let value = fixture.query().await;
+            assert_eq!(value["blocked"],true,"{scenario}: {value}");
+            assert_eq!(value["ruleRefs"],serde_json::json!([fixture.rule["rule_ref"]]),"{scenario}: {value}");
+        }
     }
 }
 

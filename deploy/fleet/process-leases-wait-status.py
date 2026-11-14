@@ -195,7 +195,9 @@ def execution(config, rule):
     if (record.get("schema_version") != 1 or record.get("execution_ref") != reference
             or record.get("node_ref") != config["node_ref"]
             or record.get("principal_ref") != rule["principal"]
-            or record.get("session_ref") != rule["session_ref"]):
+            or record.get("session_ref") != rule["session_ref"]
+            or not isinstance(rule.get("request_key"), str) or not rule["request_key"]
+            or record.get("request_key") != rule["request_key"]):
         raise ValueError("execution binding mismatch")
     receipt = record.get("receipt")
     if record.get("request", {}).get("mode") == "remote_start":
@@ -280,6 +282,30 @@ def canonical_waits(connection, profile, query, session):
     return blocked
 
 
+def process_delivery_settled(connection, rule, state):
+    """A cancelled phase cannot hide an uncertain original native handoff."""
+    principal, session = rule["principal"], rule["session_ref"]
+    wake_key = "process-wake:" + rule["rule_ref"]
+    task = "mcp-delivery-task:" + hashlib.sha256(json.dumps(
+        ["mcp-deliver-v1", principal, session, wake_key],
+        ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    if state.get("delivery_task") not in (None, task):
+        raise ValueError("process wait delivery task changed")
+    intents = connection.execute(
+        "SELECT task_id,principal,target,request_key,state FROM intents WHERE task_id=? "
+        "OR (principal=? AND target=? AND request_key=?) LIMIT 2",
+        (task, principal, session, wake_key)).fetchall()
+    if (len(intents) > 1 or (intents and (intents[0][:4] != (task, principal, session, wake_key)
+            or intents[0][4] not in {"prepared", "dispatching", "admitted", "unknown", "confirmed", "rejected"}))):
+        raise ValueError("process wait intent mismatch")
+    intent = intents[0][4] if intents else None
+    phase = state["phase"]
+    return ((phase == "ready" and intent is None)
+            or (phase == "confirmed" and intent == "confirmed")
+            or (phase == "cancelled" and state.get("wake_cancelled") is True
+                and intent in {None, "confirmed", "rejected"}))
+
+
 def inspect_profile(profile, query, config):
     owner = profile["owner"]
     with authority(profile) as connection:
@@ -337,7 +363,7 @@ def inspect_profile(profile, query, config):
             # Receipt absence, unresolved descendants, or incomplete finalization
             # keep the session asleep even if wake authorization was cancelled.
             complete = execution(config, rule)
-            if not complete or phase not in {"ready", "confirmed", "cancelled"}:
+            if not complete or not process_delivery_settled(connection, rule, state):
                 blocked.append(rule["rule_ref"])
         blocked.extend(canonical_waits(connection, profile, query, session))
         return result(bool(blocked), "process_wait_active" if blocked else "no_process_wait",

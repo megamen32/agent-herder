@@ -1,6 +1,6 @@
 # Herder process leases implementation
 
-Status: local and remote source integration is implemented in an isolated worktree. Coherent verification and immutable candidate preparation are in progress. Full native acceptance is incomplete. Shared runtime has not been switched.
+Status: local and remote source integration is implemented in an isolated worktree. The merged 414b9566 checkpoint passed coherent verification and has an immutable candidate. Final metadata-gate and diagnostic hardening is in progress. Full native acceptance is incomplete. Shared runtime has not been switched.
 The user authorised the full plan on 2026-11-13.
 Plan: https://chatgpt.com/space/page_835ee164266081918e5e4297ac92a2a3
 
@@ -8,7 +8,7 @@ Plan: https://chatgpt.com/space/page_835ee164266081918e5e4297ac92a2a3
 
 Base: origin/main b371e9a0e57f12f44bf069ef5277e71afb81991f.
 Latest fetched origin/main: a1c17a48ef05ff132af53f5018053e365cbece61, observed 2026-11-14.
-The source checkpoint will retain the new shared-core packaging work when merged.
+Merge commit 414b95667416470e6311c9d0873938ed586d8a11 contains that upstream checkpoint and preserves its shared-core packaging work. The feature through 414b9566 is pushed.
 Worktree: /home/roomhacker/agents-projects/.worktrees/herder-process-leases-20261113.
 Branch: feat/herder-process-leases-20261113.
 Coordinator: ChatGPT session 6af76992-9198-8191-b01c-aaa6f7c6a044.
@@ -43,7 +43,8 @@ explicit principals. MCP arguments never grant access. Existing session ACLs,
 native address bindings and scope generations remain mandatory.
 
 A process has a stable execution reference, immutable request digest, real
-executor identity, absolute deadline and durable completion receipt. Source
+executor identity and durable completion receipt. Local execution may specify an
+absolute deadline; RemoteStart requires one. Source
 metadata is captured explicitly as Git status evidence, not a content snapshot.
 Artifacts require separate verification.
 
@@ -75,8 +76,8 @@ Fleet GPTAdmin transport. It binds the actual executor, immutable job handle,
 worker/config/root identity, one start dispatch and an independent Linux
 deadline supervisor. Only the central authority owns resource claims. A stale
 live ACK, transport partition or uncertain start cannot cause a command replay
-or an indefinite renew. This source integration still needs its own native
-remote execution receipt.
+or an indefinite renew. The isolated 414b9566 remote build now has a native
+receipt, recorded below. Observer/watchdog fault acceptance is separate.
 
 Local Linux and macOS share the process API and worker contract. Remote
 lease execution on macOS and lease-bound RemoteAttach remain explicitly
@@ -88,7 +89,7 @@ profile do not establish remote job completion.
 All paths below belong to this task under
 /home/roomhacker/herder-artifacts/process-leases-20261113.
 
-### Immutable Linux candidate
+### Historical first Linux candidate
 
 Candidate: /home/roomhacker/herder-artifacts/releases/process-leases-0d398e19-v2.
 Manifest SHA256:
@@ -164,8 +165,10 @@ The installed Hindsight hook already uses synthetic resume:false but inserts
 its message with the native default delivery semantics. Simply changing Queue
 to Steer could interrupt a concurrently started human turn. The updated runner
 therefore advertises nativeAutomaticContinuation:
-unsupported-no-idle-admission-v1. Automatic process, timer, dependency and child
-wait creation must refuse before a new protected effect on that profile.
+unsupported-no-idle-admission-v1. The new core disables automatic continuation for every OpenCode protocol,
+including v22. Automatic process, timer, dependency and child wait creation
+refuse before a new protected effect on those profiles. The failure above was
+observed on v2; the shared installed bundle is unchanged.
 Existing jobs still reconcile and finalize resources; original delivery intents
 remain available for read-only recovery.
 
@@ -181,7 +184,7 @@ model turn.
 | Codex local | Quota guard rejected thread/start before native submission. Fresh 2026-11-14 provider read reports 6% remaining, while the unchanged local policy reserves 20%. | Blocked by the configured reserve; no session created and no policy bypass. |
 | Codex server-44 | Exact create returned create_not_sent with no create/prompt effect. | Not accepted; do not infer a model turn occurred. |
 | OpenCode v2 | Paired f488d9b0 candidate admitted the initial prompt and completed the real build. One canonical wake produced two native assistant replies. | FAILED_NATIVE_DUPLICATE. Automatic continuation is capability-gated off for this installed protocol; explicit delivery and fresh creation remain separate. |
-| ZCode | One exact promoted input and matching native user message found. The model failed with Token Plan quota code 2056. | Native admission proven, model continuation blocked. Lost-ACK recovery must be checked in the updated candidate. |
+| ZCode | One exact promoted input and matching native user message found. The model failed with Token Plan quota code 2056. | Original admission recovery accepted through candidate 414b9566 without resend. Successful model continuation remains unverified. |
 | ChatGPT UserIO | Original create remains dispatching/UNKNOWN after caller timeout. | Preserve original operation, reconcile read-only, never repeat create blindly. |
 | ZAI UserIO | One bounded create ended after the native 120-second handoff with outcome_unknown; no persisted native binding. | Not accepted. Preserve the original key and do not repeat create. |
 | Claude | Disabled according to the user's choice. | Excluded. |
@@ -255,7 +258,7 @@ their overlap.
 - The first full Rust run passed 220 library tests but stopped at one launcher
   fixture whose script was group-writable under umask 0002. The fixture now
   explicitly uses mode 0700; the exact regression passed with that umask.
-  The full run must be resumed after the coherent recovery fixes.
+  The coherent serial run below supersedes that incomplete attempt.
 - Coherent Rust verification on 2026-11-14 passed all 33 targets: 465 tests
   passed and 7 native/opt-in tests remained ignored. The command used --locked,
   --all-targets, --no-fail-fast and --test-threads=1. The private
@@ -315,7 +318,9 @@ The native owner runtime now hosts ProcessCompletion, Timer, SessionCompletion
 and existing child completion through one automation driver. Timer due times
 are persisted once. Dependencies bind exact native turn identity and reject
 cross-profile cycles. Read-only session.resolve and deliver.receipt use scoped
-bindings and work without starting an adapter. Missing or ambiguous evidence
+bindings without invoking native adapter methods. A cold owner runtime can
+start its AHAP companion during initialization; these reads do not start a
+model turn. Missing or ambiguous evidence
 remains a typed error.
 
 Canonical TypeScript compatibility delegates to that runtime over the exact
@@ -334,10 +339,10 @@ HumanRequest-bound canonical waits and Darwin writer-drain activation remain
 explicitly unsupported pending their own reviewed authority/verifier.
 No legacy fallback is allowed after selecting canonical mode.
 
-The candidate includes the immutable remote bridge. Native execution will use
-only an isolated controller on roomhacker-server-100 and the freshly verified
-server-44 executor, with existing credential generation and exact artifact pins.
-The remote test does not send a model prompt.
+The candidate includes the immutable remote bridge. Its successful native
+execution used only the isolated controller on roomhacker-server-100 and the
+verified server-44 executor, with the existing credential generation and exact
+artifact pins. The remote test sent no model prompt.
 
 The production coordinator also requires a paired TypeScript canonical cutover
 proof. The old installed TS scheduler must not remain capable of continuing
@@ -349,6 +354,103 @@ do not change shared services.
 See canonical-waits-and-resume.md and remote-process-execution.md for exact
 contracts and focused test evidence. These source changes do not settle the
 native/profile or migration blockers recorded above.
+
+## Verified checkpoint 2026-11-14
+
+### Committed source and immutable candidate
+
+Canonical waits, direct resume, remote execution and paired-runtime hardening
+were committed in ac571a99765dd29a5a20e6da77a855e973793b24. Merge
+414b95667416470e6311c9d0873938ed586d8a11 preserves upstream a1c17a48.
+Its clean build worktree is
+/home/roomhacker/agents-projects/.worktrees/herder-process-leases-build-414b9566.
+
+Candidate: /home/roomhacker/herder-artifacts/releases/process-leases-414b9566-v1.
+Manifest SHA256:
+53751988f12f54ee1165a9f1af186bdaf3d115be29c82d27c5457154355f1a7c.
+Core SHA256:
+369009122759f43e114ac48364d4123f2c5d8ec12ece4d808d0059dcafba9ca3.
+Worker SHA256:
+a7b5093f6659e5d2125fc201657665ba2e9df2ef188314ece0d42a7482abfef5.
+Remote bridge SHA256:
+dcd4317d0d6b2ba8eb764a9828d88ecc162b6b47eae12f5b97d7d24c06e7f1f5.
+
+The six staged profiles passed the pinned launcher check, explicitly
+staged_payloads_not_installed. Its shared process config packages the remote
+bridge but registers no executor. The remote canary uses private separately
+pinned controller/executor configurations. Receipt: candidate-414b9566-receipt.json.
+The final follow-up candidate must include the metadata-gate fixes described
+below; this baseline artifact does not contain later source edits.
+
+### Merged source verification
+
+At 414b9566, build:core passed; all 84 internal package tests passed in 13
+suites. Full Vitest passed 5738 tests in 632 files, with 15 explicit skips and
+no failures. TypeScript checking passed. Adapter packaging passed 12 tests and
+candidate packaging passed 17. Provider opt-ins were disabled. These counts
+describe source checks, not live native continuation.
+Receipt: merged-typescript-414b9566/state.json.
+SHA256: 23e0fa6af350c7463fed589d551b36726c606754238ee5d4ba5b30771b961b2c.
+
+On the Mac Mini, exact 414b9566 source passed cargo check --bins,
+canonical_waits 14 tests and delivery_keys 7 tests. All 188 transferred source
+files remained unchanged. These 21 tests are separate from the earlier 15
+process-supervision checks, which were retained without rerunning.
+Receipt: macmini-414b95667416470e/acceptance-414b95667416470e.json.
+SHA256: c1ea58c925fdd419dfd772feeeb7b82c3b910e6fb09a09781f7cc070f315c8a7.
+
+### Real remote build and central lease
+
+The isolated controller on roomhacker-server-100 used the immutable 414b9566
+worker and Fleet bridge to execute one C build on server-44.
+Execution: exec-36582ac0d8d745c9dadb76b84e8092f050f8f53eccf1847d6489d9e94eb0eb8b.
+The remote command lasted 40.290 seconds. The original central claim had a
+15-second TTL and was observed live with a renewed expiry after that original
+TTL. Its exact remote receipt records exit 0, tree_complete true and
+process_may_be_running false. Canonical release followed claim finalization.
+
+An independent executor read confirmed exactly one invocation marker, matching
+source and command hashes, output herder-remote-canary-ok, and artifact SHA256
+c8036d97ea3a14ad33c8441c9af209892bf4e4ef79be7e093a1f4a8930a53b53.
+The pinned watchdog was ready before command admission. The recorded process
+births and exact cgroup were absent under the same boot after completion.
+No model wake was used. This ordinary-success run did not inject observer or
+watchdog failure and does not prove their restart behavior.
+
+Controller summary:
+remote-canary-controller-v1/executions/exec-36582ac0d8d745c9dadb76b84e8092f050f8f53eccf1847d6489d9e94eb0eb8b/canary-summary.json.
+SHA256: e98d812b29ff17b99107bed422514094400f67812bb13e7024f16cbef11bb984.
+Independent executor readback:
+remote-canary-preparation-v1/native-canary-readback-exec-36582ac0.json.
+SHA256: dc779d52ce8adfaefdcbf64952c45fd2f12c2d55ae81034283470a18d5523168.
+
+Review found that public wait_status compared a remote receipt with the
+controller node. Two regression tests demonstrated both a stuck valid wait and
+acceptance of a substituted controller receipt. The source fix verifies the
+executor, current installed configuration, original rule and exact durable
+terminal proof without RPC. Both new tests and both existing local wait_status
+tests passed. The baseline 414b9566 candidate predates that fix.
+
+### Original ZCode acknowledgement recovered
+
+At 2026-11-14 01:01:13 UTC, candidate 414b9566 recovered the exact original
+child intent with compat_task.get, then returned a recovered projection for
+the original aggregate. The native message remains
+msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c. Only the original child task
+result and intent receipt changed. The aggregate's stored result, authority
+generation, database/gate inodes, model, environment, session binding, original
+profile and old checkpoint were preserved. No create, send or resume call was
+made. This proves native admission recovery, not a successful model turn.
+Receipt: reconcile-zcode-original-414b9566/attempt2/acceptance.json.
+SHA256: f406c122a21cd2334641f492d53e07b5e13b45753b82d0caf58eb57faab32035.
+
+A fresh quota read at 01:11:54 UTC reported MiniMax interval and weekly
+remaining percentages of 100 after its previous window expired. Codex still
+reported 6 percent remaining against the unchanged 20 percent local reserve;
+GLM remained unknown after provider code 500. A quota report is not proof of
+a successful model turn and does not authorize changing a profile or model.
+Receipt: quota-preflight-after-window-20261114.json.
+SHA256: 1672a58fec7ad84e5bae1d3b61d9996d2dd283d0346d8c13b80e823d2019cd96.
 
 ## Remaining closure work
 

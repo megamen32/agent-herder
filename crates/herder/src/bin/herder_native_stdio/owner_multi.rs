@@ -171,6 +171,13 @@ impl ServerHandler for MultiOwner {
             sources.push(json!({"instance_ref":binding.instance.instance_id,"result":data}));
         }
         let mut value = json!({"complete":complete,"next_cursor":null,"scope":"configured_owner_instances", "sources":sources});
+        if field == "rules" {
+            let process_rows: Vec<_> = rows.iter()
+                .filter(|row| row.get("kind").and_then(Value::as_str) == Some("process_completion"))
+                .cloned().collect();
+            value["process_gauges"] = json!(
+                herder::application::process_diagnostics::list_gauges(&process_rows, complete));
+        }
         value[field] = json!(rows);
         if field == "hits" {
             value["total_hits"] = json!(total_hits); value["has_more"] = json!(has_more);

@@ -34,6 +34,8 @@ pub mod application {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod process_bindings;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub mod process_diagnostics;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod project_release_bridge;
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub mod process_evidence;

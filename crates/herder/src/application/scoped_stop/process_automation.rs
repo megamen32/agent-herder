@@ -1,8 +1,8 @@
 //! Durable process waits in the existing scoped authority; no second scheduler service.
 use crate::{
-    application::process_bindings::{self, BindingHooks, ProcessRuntimeConfig},
-    auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
-    domain::address::{InstanceRef, SessionRef},
+    application::{process_bindings::{self, BindingHooks, ProcessRuntimeConfig}, process_diagnostics::{self, WaitDiagnosticContext}},
+    auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource},
+    domain::address::{InstanceRef, SessionAddress, SessionRef},
     mcp::{catalog, transport::{ApplicationFuture, ApplicationPort}},
     process::{self, AttachRequest, ExecutionHooks, ExecutionObservation,
         ExecutionStore, StartRequest},
@@ -222,13 +222,60 @@ impl ProcessAutomationApplication {
             let state:WaitState=serde_json::from_str(&raw).map_err(|_|"store_unavailable")?;
             if !matches!(state.phase.as_str(),"prepared"|"armed"|"dispatching"|"waiting_receipt"|"delivery_unknown"|"ready"|"confirmed"|"cancelled"|"paused"|"rejected"){return Err("invalid_wait_state")}
             let complete=self.store.status(&rule.execution_ref).ok().is_some_and(|snapshot|{
-                let record=snapshot.record;
-                record.principal_ref==principal && record.session_ref==session && record.execution_ref==rule.execution_ref
-                    && record.node_ref==self.config.node_ref && !record.finalization_pending
-                    && record.receipt.is_some_and(|receipt|receipt.execution_ref==rule.execution_ref
-                        && receipt.node_ref==self.config.node_ref && receipt.tree_complete && !receipt.process_may_be_running)
+                let record=&snapshot.record;
+                if record.principal_ref!=principal || record.session_ref!=session
+                    || record.execution_ref!=rule.execution_ref || record.request_key!=rule.request_key
+                    || record.node_ref!=self.config.node_ref || record.finalization_pending {
+                    return false;
+                }
+                let Some(receipt)=&record.receipt else{return false};
+                if receipt.execution_ref!=rule.execution_ref || receipt.node_ref!=record.executor_node_ref()
+                    || !receipt.tree_complete || receipt.process_may_be_running {
+                    return false;
+                }
+                match (&record.request,&rule.execution) {
+                    (process::ExecutionRequest::RemoteStart(spec),catalog::ProcessExecution::RemoteStart {
+                        executor_ref,argv,cwd,deadline_unix_ms,stop_grace_ms,
+                    })=>{
+                        // The controller record cannot substitute a local PID or
+                        // an old executor configuration for exact terminal proof.
+                        record.process.is_none() && record.observed_members.is_empty() && record.tree_scope.is_none()
+                            && spec.principal_ref==principal && spec.session_ref==session && spec.request_key==rule.request_key
+                            && spec.executor.executor_ref==*executor_ref && spec.argv==*argv && spec.cwd.as_path()==Path::new(cwd)
+                            && spec.deadline_unix_ms==*deadline_unix_ms && spec.stop_grace_ms==stop_grace_ms.unwrap_or(2000)
+                            && self.config.remote_executors.iter().find(|e|e.executor_ref==*executor_ref)==Some(&spec.executor)
+                            && self.store.execution_directory(&rule.execution_ref).ok().is_some_and(|dir|
+                                matches!(process::remote_terminal_observed_at(record,&dir),Ok(Some(_))))
+                    },
+                    (process::ExecutionRequest::RemoteStart(_),_)|(_,catalog::ProcessExecution::RemoteStart{..})=>false,
+                    _=>true,
+                }
             });
-            if !complete || !matches!(state.phase.as_str(),"ready"|"confirmed"|"cancelled"){blocked.push(rule.rule_ref)}
+            let delivery_clear=if complete {
+                // Cancelling a wake cannot erase an uncertain handoff. Read
+                // the exact original intent while the canonical gate is held.
+                let task=Self::task_id(&rule);let wake_key=Self::task_key(&rule);
+                let mut statement=writer.connection().prepare(
+                    "SELECT task_id,principal,target,request_key,state FROM intents WHERE task_id=?1 OR (principal=?2 AND target=?3 AND request_key=?4) LIMIT 2")
+                    .map_err(|_|"store_unavailable")?;
+                let rows=statement.query_map(rusqlite::params![task,rule.principal,rule.session_ref,wake_key],
+                    |r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?)))
+                    .map_err(|_|"store_unavailable")?.collect::<Result<Vec<_>,_>>().map_err(|_|"store_unavailable")?;
+                let intent=match rows.as_slice(){
+                    []=>Ok(None),
+                    [(actual_task,principal,target,key,intent)] if actual_task==&task && principal==&rule.principal
+                        && target==&rule.session_ref && key==&wake_key=>Ok(Some(intent.as_str())),
+                    _=>Err(()),
+                };
+                if state.delivery_task.as_ref().is_some_and(|pointer|pointer!=&task){false}
+                else {match (state.phase.as_str(),intent) {
+                    ("ready",Ok(None))=>true,
+                    ("confirmed",Ok(Some("confirmed")))=>true,
+                    ("cancelled",Ok(None|Some("confirmed"|"rejected")))=>state.wake_cancelled,
+                    _=>false,
+                }}
+            }else{false};
+            if !delivery_clear{blocked.push(rule.rule_ref)}
         }
         blocked.sort();
         Ok(response(!blocked.is_empty(),if blocked.is_empty(){"no_process_wait"}else{"process_wait_active"},vec![session],blocked))
@@ -294,10 +341,39 @@ impl ProcessAutomationApplication {
     fn snapshot_value(&self,rule:&ProcessRule)->Result<Value,&'static str>{
         let (revision,state)=self.read_state(rule)?;
         let snapshot=self.store.status(&rule.execution_ref).map_err(|_|"execution_unavailable")?;
+        // Diagnostic joins are advisory. Failure to read one fact remains
+        // explicit and never authorizes a wake or hides the canonical snapshot.
+        let (address,intent,hold_active)=match self.authority.lock(){
+            Ok((_gate,writer))=>{
+                let address=writer.connection().query_row(
+                    "SELECT b.native_session_id FROM session_bindings b JOIN humanstop_sessions s ON s.session_ref=b.session_ref WHERE b.session_ref=?1 AND b.node_ref=?2 AND b.instance_id=?3 AND s.authority_generation=?4",
+                    rusqlite::params![rule.session_ref,self.instance.node.0,self.instance.instance_id,self.authority.generation],|r|r.get::<_,String>(0))
+                    .optional().ok().flatten().map(|native_session_id|SessionAddress{instance:self.instance.clone(),native_session_id});
+                let intent=writer.connection().query_row(
+                    "SELECT state FROM intents WHERE task_id=?1 AND principal=?2 AND target=?3 AND request_key=?4",
+                    rusqlite::params![Self::task_id(rule),rule.principal,rule.session_ref,Self::task_key(rule)],|r|r.get::<_,String>(0))
+                    .optional().map_err(|_|());
+                let held=writer.connection().query_row(
+                    "SELECT EXISTS(SELECT 1 FROM humanstop_holds WHERE released_at IS NULL AND (scope_ref='global' OR scope_ref=('session:'||?1) OR scope_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1))) OR EXISTS(SELECT 1 FROM holds WHERE released_at IS NULL AND (session_ref='global' OR session_ref=?1 OR session_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1)))",
+                    [&rule.session_ref],|r|r.get::<_,bool>(0)).ok();
+                (address,intent,held)
+            },
+            Err(_)=>(None,Err(()),None),
+        };
+        let observed_at_unix_ms=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()
+            .and_then(|d|u64::try_from(d.as_millis()).ok()).ok_or("clock_unavailable")?;
+        let diagnostics=process_diagnostics::observe(&self.store,&snapshot,&self.config,
+            &PrincipalId(rule.principal.clone()),&rule.bindings,WaitDiagnosticContext{
+                phase:&state.phase,intent_state:intent.as_ref().map(|v|v.as_deref()).map_err(|_|()),
+                hold_active,native_idle_blocked:None,
+            },observed_at_unix_ms);
         Ok(json!({"rule_ref":rule.rule_ref,"kind":"process_completion","session_ref":rule.session_ref,
             "execution_ref":rule.execution_ref,"controller_node":self.config.node_ref,
             "executor_node":snapshot.record.executor_node_ref(),
             "revision":revision,"wait":state,"execution":snapshot,
+            "bindings":rule.bindings,"delivery_status":intent.as_ref().ok().and_then(|v|v.as_deref()),
+            "wait_target":{"session_ref":rule.session_ref,"complete":address.is_some(),"address":address},
+            "diagnostics":diagnostics,
             "source_evidence":self.store.execution_directory(&rule.execution_ref).ok().map(|d|d.join("source.json")),
             "completion_evidence":self.store.execution_directory(&rule.execution_ref).ok().map(|d|d.join("completion-evidence.json")).filter(|p|p.exists()),
             "instruction":if state.phase=="armed"{"End the current turn; Herder owns the wait and will deliver the receipt."}else{"Inspect the durable wait and execution receipt."}}))
@@ -578,7 +654,8 @@ impl ApplicationPort for ProcessAutomationApplication{
                                 if self.authorized_rule(identity,&rule.rule_ref).is_err(){continue}
                                 match self.snapshot_value(&rule){Ok(value)=>rows.push(value),Err(code)=>return Some(error(code))}
                             }
-                            Ok(json!({"rules":rows,"complete":true,"source":"scoped_process_rules"}))
+                            let gauges=process_diagnostics::list_gauges(&rows,true);
+                            Ok(json!({"rules":rows,"complete":true,"source":"scoped_process_rules","gauges":gauges}))
                         }
                     }
                 },

@@ -8,12 +8,12 @@ Agent Herder owns process supervision, resource claims and session continuation.
 2. Acquire the resource claim and keep its returned claim ID and descriptor revision.
 3. Create one process-completion rule with a stable request key. Start through Herder when possible. Include the claim bindings in the same request.
 4. Check that the response contains the durable rule and execution references. If its status is pending reconciliation, inspect that same registration. Never start another command because an acknowledgement is missing.
-5. Once the wait is armed, end the current agent turn. Herder continues the same native session after completion. Do not poll with model turns and do not use HumanStop to simulate sleeping.
+5. Once the wait is armed, end the current agent turn. After completion Herder continues the same native session when its native admission and stop policy allow it. A busy session is deferred; an uncertain delivery remains visible for reconciliation. Do not poll with model turns and do not use HumanStop to simulate sleeping.
 6. On wake, inspect the completion receipt, source evidence and logs. Verify the produced artifact before using or deploying it. A successful process exit is evidence about that process, not proof that an application was deployed.
 
 The worker is responsible for lease renewal. The agent does not have to remain connected. The shared automatic-continuation gate reads durable process, timer and session-completion waits before starting an LLM judge, inventory continuation or cadence turn.
 
-The installed harness must support the required native admission contract. The observed OpenCode v2 protocol currently advertises unsupported-no-idle-admission-v1 after an isolated canary produced two native assistant turns for one wake. Automatic wait creation refuses before a process or lease binding starts on that profile. Explicit manual delivery and fresh-session creation have separate contracts. Do not infer support from the existence of an automation tool alone.
+The installed harness must support the required native admission contract. An isolated OpenCode v2 canary produced two native assistant turns for one wake. This release's core disables automatic continuation for every OpenCode protocol, including v22, until its native admission contract is verified. The updated runner advertises unsupported-no-idle-admission-v1; this candidate capability is not evidence that the unchanged shared installation already contains it. Automatic wait creation refuses before a process or lease binding starts on those profiles. Explicit manual delivery and fresh-session creation have separate contracts. Do not infer support from the existence of an automation tool alone.
 
 ## Resource identity
 
@@ -52,7 +52,7 @@ Read **resource.get** to obtain the current **resource.revision**, **claim.claim
 
 A request replay preserves the original acquisition identity. An expired or retired nonce cannot be renewed into a new acquisition. Each operation checks the exact claim ID, owner, resource revision and execution binding before changing ownership.
 
-## Start, wait and resume atomically
+## Durable registration of execution and continuation
 
 Pass an argument vector and an absolute working directory. The following is an example to adapt to an existing owned session and claim:
 
@@ -82,7 +82,7 @@ Pass an argument vector and an absolute working directory. The following is an e
 }
 ~~~
 
-The request is written durably before the command starts. Repeating the same request key and payload reads the same operation; changing that payload under the same key conflicts. The deadline is absolute and survives a core restart.
+The request is written durably before the command starts. Registration, supervisor admission and continuation use fenced recovery phases; they are not one external transaction. Repeating the same request key and payload reads the same operation; changing that payload under the same key conflicts. A configured local deadline is absolute and survives a core restart. RemoteStart requires an absolute deadline.
 
 Choose **on_exit: release** for a build slot that is free when the process tree ends. Choose **on_exit: handback** with **handback_seconds** when the same session needs a bounded follow-up interval, for example to inspect a device after testing. The handback deadline is anchored to the original completion timestamp. Reconciliation cannot extend it indefinitely or resurrect an expired claim.
 
@@ -137,7 +137,7 @@ A local SSH client exiting does not prove that its remote build has finished. Re
 | Inspect a wait | automation.get with rule_ref | Returns its registration, current wait state and execution evidence. |
 | Check a remote scheduler before a model turn | automation.wait_status with harness, native_session_id and optional exact node_ref | Reads canonical waits across the configured owner profiles without contacting a harness. Incomplete, unavailable or ambiguous evidence blocks automatic continuation. |
 | Inspect all session waits | automation.list with session_ref | Reads registered rules. |
-| Reconcile an ambiguous process observation | automation.reconcile_process with rule_ref | Reads the same process and native delivery intent; does not submit a replacement build. |
+| Reconcile an existing process wait | automation.reconcile_process with rule_ref | Can admit the original Prepared execution, recover its observer, finalize claims and dispatch its original wake, subject to the existing gates. It does not create a replacement build. |
 | Inspect a direct continuation | deliver.receipt with session_ref and request_key | Reads the canonical scoped intent and receipt without native I/O or another send. |
 | Reconcile an already admitted native delivery | compat_task.get with its original task_ref | Reconciles only that existing task; never creates a replacement operation. |
 | Cancel a supervised build | automation.cancel_execution with rule_ref and request_key | Requests termination of the owned execution; release still requires confirmed tree completion. |
@@ -145,6 +145,10 @@ A local SSH client exiting does not prove that its remote build has finished. Re
 | Change wake text or re-arm an explicitly paused wait | automation.update with the current revision and the same execution/bindings | Uses CAS; the operation cannot be replaced under an existing rule. |
 | Remove automatic wake | automation.delete with rule_ref and revision | Retains the cancellation tombstone and process evidence. It does not kill the build. |
 | Add a process-owned lease | resource.bind with execution_ref and binding | Checks current execution and claim ownership before binding. |
+
+Get and List also return non-authoritative diagnostics: the exact native wait target when known, current delivery state, resource owner and claim generation, remaining TTL, recorded renewal results, finalization state and a typed next_action. The resource join includes claims added after launch through resource.bind. These reads neither renew a claim nor contact a native harness. Missing or inconsistent metadata is reported as unavailable or incomplete.
+
+List gauges describe only its returned process rows and are bounded to 256 samples. Recorded renewal counters cover observations since the first retained result; lifetime counters stay null without evidence. Diagnostic metadata never authorizes a continuation or changes an UNKNOWN result.
 
 HumanStop is a separate explicit stop authority. It cancels pending automatic wake within the stop transaction. Releasing HumanStop later does not revive that cancelled wait. A new explicitly authorized operation needs a new registration.
 
@@ -164,6 +168,14 @@ A completion receipt distinguishes the command result from certainty about resou
 The worker writes the terminal receipt before finalizing claim bindings. A separate finalization acknowledgement makes crash recovery repeatable. Core restarts, retrying finalization and a lost wake ACK cannot start the command again.
 
 One stable native delivery key belongs to one rule. Delivery is reconciled against the existing canonical intent and native message receipt. UNKNOWN is retained instead of retrying an uncertain native send. This provides one logical continuation where the native adapter exposes the required admission evidence; it does not promise impossible network-wide exactly-once execution.
+
+## Evidence retention
+
+This release keeps process stdout, stderr, supervisor logs and produced artifacts until an explicitly reviewed archival or cleanup operation. No automatic log expiry or execution-directory garbage collection is enabled. This policy also applies while native delivery or migration remains unresolved.
+
+Completion receipts, request-key bindings, retired claim nonces, cancellation tombstones and native delivery deduplication evidence have a separate indefinite retention policy. Removing an old log must never remove these records or reopen its request key. Do not delete an execution directory to reclaim its logs: it also contains durable identity, occupancy and recovery evidence.
+
+Historical counters are reported only when their observations exist. A missing telemetry record means unavailable history, not zero failures or proof that an uncertain operation did not run.
 
 ## Migration and operation
 
