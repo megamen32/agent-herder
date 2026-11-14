@@ -28,7 +28,8 @@ function fixture(empty = false) {
         permission TEXT,last_outcome TEXT,time_updated INTEGER);
       CREATE TABLE session_input(id TEXT PRIMARY KEY,session_id TEXT,kind TEXT,status TEXT,status_reason TEXT,
         promoted_message_id TEXT,admitted_sequence INTEGER,promoted_sequence INTEGER,time_updated INTEGER);
-      CREATE TABLE turn_usage(turn_id TEXT PRIMARY KEY,session_id TEXT,user_message_id TEXT,status TEXT,
+      CREATE TABLE turn_usage(turn_id TEXT PRIMARY KEY,session_id TEXT,user_message_id TEXT,
+        status TEXT CHECK(status IN ('running','completed','error','cancelled')),
         started_at INTEGER,completed_at INTEGER,cancelled_by_user INTEGER,model_request_count INTEGER,
         model_retry_count INTEGER,tool_call_count INTEGER);
       CREATE TABLE session_runtime_presence(session_id TEXT,owner_id TEXT,process_id INTEGER);
@@ -56,7 +57,7 @@ function fixture(empty = false) {
         "turn-1", SESSION, "message-user", "error", 100, 200, 0, 1, 0, 1,
       );
       db.prepare("INSERT INTO model_usage VALUES(?,?,?,?,?,?)").run("model-request-1", SESSION, "turn-1", "error", 100, 190);
-      db.prepare("INSERT INTO tool_usage VALUES(?,?,?,?,?,?)").run("tool-1", SESSION, "turn-1", "success", 110, 180);
+      db.prepare("INSERT INTO tool_usage VALUES(?,?,?,?,?,?)").run("tool-1", SESSION, "turn-1", "completed", 110, 180);
       const message = db.prepare("INSERT INTO message VALUES(?,?,?,?,?,?)");
       message.run("message-user", SESSION, 1, 100, 200, JSON.stringify({ role: "user", source: "fixture" }));
       message.run("message-assistant", SESSION, 2, 110, 200, JSON.stringify({ role: "assistant", error: "terminal fixture error" }));
@@ -111,6 +112,19 @@ describe("ZCode cold continuation eligibility and final native proof", () => {
     const live = prepared(before);
     expect(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue)).not.toThrow();
     expect(() => assertZcodeColdPreflightUnchanged(before, native.read())).not.toThrow();
+  });
+
+  it("accepts the native completed turn before a later process wake", () => {
+    const native = fixture();
+    native.change("UPDATE turn_usage SET status=?", "completed");
+    native.change("UPDATE model_usage SET status=?", "completed");
+    const before = native.read();
+    expect(before.lastTurnId).toBe("turn-1");
+    const live = prepared(before);
+    live.queue.control.phase = "completed";
+    expect(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue)).not.toThrow();
+    native.change("UPDATE turn_usage SET completed_at=?", null);
+    rejects(native.read, "unfinished_native_turn");
   });
 
   it("accepts an exactly empty cold conversation with persisted model and permission", () => {

@@ -79,7 +79,7 @@ export function readZcodeColdPreflight(dbPath: string, sessionId: string): Zcode
     requireProof(presence.length === 0, "native_runtime_owner");
     requireProof(targets.length === 0, "native_goal");
     requireProof(inputs.every(row => ["promoted", "cancelled", "discarded", "failed"].includes(String(row.status))), "pending_native_input");
-    requireProof(turns.every(row => textId(row.turn_id) && ["success", "error", "cancelled"].includes(String(row.status))
+    requireProof(turns.every(row => textId(row.turn_id) && ["completed", "error", "cancelled"].includes(String(row.status))
       && typeof row.started_at === "number" && Number.isFinite(row.started_at)
       && typeof row.completed_at === "number" && Number.isFinite(row.completed_at) && row.completed_at >= row.started_at
       && (row.cancelled_by_user === 0 || row.cancelled_by_user === 1)), "unfinished_native_turn");
