@@ -19,10 +19,22 @@ const eventSchema = z.object({
 }).passthrough();
 
 const coordinationNoteSchema = z.object({
-  id: z.string(), kind: z.enum(["working", "avoid", "handoff", "info"]), message: z.string(), cwd: z.string(), paths: z.array(z.string()),
+  id: z.string(), scope: z.enum(["global", "workspace"]), kind: z.enum(["working", "avoid", "handoff", "info", "question"]), message: z.string(), cwd: z.string().optional(), hostId: z.string().optional(), paths: z.array(z.string()),
   authorHarness: z.string().optional(), authorSessionId: z.string(), source: z.enum(["manual", "hook"]).optional(), activityKey: z.string().optional(),
-  createdAt: z.string(), updatedAt: z.string(), expiresAt: z.string(),
+  createdAt: z.string(), updatedAt: z.string(), expiresAt: z.string(), status: z.enum(["open", "closed"]).optional(), readBy: z.array(z.string()).optional(), readAt: z.string().optional(), answer: z.string().optional(), answeredBy: z.string().optional(), answeredAt: z.string().optional(), closedAt: z.string().optional(),
 }).passthrough();
+
+const coordinationNoteCreateSchema = z.object({
+  scope: z.enum(["global", "workspace"]).optional(),
+  authorSessionId: z.string().trim().min(1).max(256), authorHarness: z.string().trim().min(1).max(64).optional(),
+  cwd: z.string().min(1).optional(), hostId: z.string().min(1).max(512).optional(),
+  paths: z.array(z.string().min(1).max(4096)).max(64).default([]), kind: z.enum(["working", "avoid", "handoff", "info", "question"]),
+  message: z.string().trim().min(1).max(4000), ttlSeconds: z.number().int().min(60).max(604800).optional(),
+}).superRefine((args, ctx) => {
+  const scope = args.scope ?? "workspace";
+  if (scope === "workspace" && !args.cwd) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cwd"], message: "cwd is required for workspace notes" });
+  if (scope === "global" && (args.cwd !== undefined || args.hostId !== undefined)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["scope"], message: "global notes cannot include hostId or cwd" });
+});
 
 export function registerControlPlaneTools(server: McpServer, deps: {
   jobs: HerderJobRegistry;
@@ -83,18 +95,14 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   });
 
   server.registerTool("coordination_note_create", {
-    description: "Publish a TTL coordination note for agents in the same workspace. Active notes are injected automatically into later Agent Herder-delivered turns.",
-    inputSchema: z.object({
-      authorSessionId: z.string().trim().min(1).max(256), authorHarness: z.string().trim().min(1).max(64).optional(), cwd: z.string().min(1), hostId: z.string().min(1).max(512).optional(),
-      paths: z.array(z.string().min(1).max(4096)).max(64).default([]), kind: z.enum(["working", "avoid", "handoff", "info"]),
-      message: z.string().trim().min(1).max(4000), ttlSeconds: z.number().int().min(60).max(604800).optional(),
-    }),
+    description: "Publish a TTL coordination note. scope=workspace uses the current hostId+cwd and preserves working/avoid/handoff/info behavior; scope=global omits hostId and cwd. Active notes are injected automatically into later Agent Herder-delivered turns.",
+    inputSchema: coordinationNoteCreateSchema,
     outputSchema: z.object({ note: coordinationNoteSchema }),
   }, async (args) => structuredResult({ note: await coordination.create(args) }, true));
 
   server.registerTool("coordination_note_list", {
-    description: "List active coordination notes explicitly. Agent Herder also injects matching notes into new turns automatically.",
-    inputSchema: z.object({ cwd: z.string().optional(), hostId: z.string().min(1).max(512).optional(), path: z.string().optional(), authorSessionId: z.string().optional() }),
+    description: "List active coordination notes by scope. workspace notes use hostId+cwd; global notes have neither. Agent Herder also injects matching workspace notes into new turns automatically.",
+    inputSchema: z.object({ scope: z.enum(["global", "workspace"]).optional(), cwd: z.string().optional(), hostId: z.string().min(1).max(512).optional(), path: z.string().optional(), authorSessionId: z.string().optional(), includeClosed: z.boolean().optional() }),
     outputSchema: z.object({ notes: z.array(coordinationNoteSchema) }),
   }, async (args) => structuredResult({ notes: await coordination.list(args) }, true));
 
@@ -103,6 +111,18 @@ export function registerControlPlaneTools(server: McpServer, deps: {
     inputSchema: z.object({ noteId: z.string().uuid() }),
     outputSchema: z.object({ note: coordinationNoteSchema.nullable() }),
   }, async (args) => structuredResult({ note: await coordination.get(args.noteId) }, true));
+
+  server.registerTool("coordination_ownership_read", {
+    description: "Read ownership questions from the existing coordination notes store. If a question relates to your work, answer it and close it with coordination_ownership_answer; if it is not yours, leave it open.",
+    inputSchema: z.object({ questionId: z.string().uuid().optional(), readerSessionId: z.string().trim().min(1).max(256), scope: z.enum(["global", "workspace"]).optional(), cwd: z.string().optional(), hostId: z.string().min(1).max(512).optional(), includeClosed: z.boolean().optional() }),
+    outputSchema: z.object({ questions: z.array(coordinationNoteSchema) }),
+  }, async (args) => structuredResult({ questions: await coordination.readQuestions(args) }, true));
+
+  server.registerTool("coordination_ownership_answer", {
+    description: "Answer an ownership question that relates to your work and close it by default. Repeating answer is idempotent and never overwrites a closed answer; leave questions unrelated to your work open.",
+    inputSchema: z.object({ questionId: z.string().uuid(), answererSessionId: z.string().trim().min(1).max(256), answer: z.string().trim().min(1).max(4000), close: z.boolean().optional().default(true) }),
+    outputSchema: z.object({ question: coordinationNoteSchema }),
+  }, async (args) => structuredResult({ question: await coordination.answerQuestion(args.questionId, args.answer, args.answererSessionId, args.close) }, true));
 
   server.registerTool("coordination_note_update", {
     description: "Edit your own coordination note. authorSessionId must match the creator.",

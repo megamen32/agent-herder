@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CoordinationNoteStore, autoTtlSeconds } from "../src/coordination-notes.js";
+import { CoordinationNoteStore, autoTtlSeconds, normalizeHostId } from "../src/coordination-notes.js";
 import { HerderEventBus } from "../src/herder-events.js";
 
 describe("coordination notes", () => {
@@ -96,6 +96,13 @@ describe("coordination notes", () => {
     await expect(store.declareWorkspace({ sessionId: "bad-path", harness: "codex", hostId: "host-88", cwd: "~other/project" })).rejects.toThrow(/absolute/);
   });
 
+  it("maps Codex SSH host aliases to canonical node refs", () => {
+    expect(normalizeHostId("remote-ssh-discovered:104.bezrabotnyi.com", "roomhacker-server-100")).toBe("roomhacker-server-100");
+    expect(normalizeHostId("104.bezrabotnyi.com", "other-local")).toBe("roomhacker-server-100");
+    expect(normalizeHostId("remote-ssh-discovered:44.bezrabotnyi.com", "roomhacker-server-100")).toBe("server-44");
+    expect(normalizeHostId("44.bezrabotnyi.com", "other-local")).toBe("server-44");
+  });
+
   it("renders declared remote workspace ownership without mixing a same-path local board", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agent-herder-remote-render-"));
     const store = new CoordinationNoteStore(join(dir, "notes.json"));
@@ -128,6 +135,43 @@ describe("coordination notes", () => {
     expect(autoTtlSeconds()).toBe(60);
     if (old === undefined) delete process.env.AGENT_HERDER_AUTO_TTL_SECONDS;
     else process.env.AGENT_HERDER_AUTO_TTL_SECONDS = old;
+  });
+
+  it("keeps global notes host/cwd-free and scopes workspace notes by the current host and cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-scoped-notes-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    const global = await store.create({ scope: "global", kind: "info", message: "fleet-wide note", paths: [], authorSessionId: "global-owner" });
+    expect(global).toMatchObject({ scope: "global", kind: "info" });
+    expect(global).not.toHaveProperty("hostId");
+    expect(global).not.toHaveProperty("cwd");
+
+    const workspace = await store.create({ scope: "workspace", kind: "avoid", message: "workspace note", cwd: "/repo", paths: ["src/a.ts"], authorSessionId: "workspace-owner" });
+    expect(workspace).toMatchObject({ scope: "workspace", hostId: store.localHostId, cwd: "/repo" });
+    expect(await store.list({ scope: "global" })).toEqual([expect.objectContaining({ id: global.id })]);
+    expect(await store.renderForSession({ id: "reader-a", harness: "codex", cwd: "/repo" })).toContain("fleet-wide note");
+    expect(await store.renderForSession({ id: "reader-b", harness: "zcode", cwd: "/another-repo" })).toContain("fleet-wide note");
+    expect(await store.list({ scope: "workspace", cwd: "/repo" })).toEqual([expect.objectContaining({ id: workspace.id })]);
+    expect(await store.list({ scope: "workspace", hostId: "other-host", cwd: "/repo" })).toEqual([]);
+  });
+
+  it("reads ownership questions, closes its own answer by default, and makes the same answer idempotent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agent-herder-ownership-questions-"));
+    const store = new CoordinationNoteStore(join(dir, "notes.json"));
+    const question = await store.create({ scope: "workspace", kind: "question", message: "May I take ownership of src/a.ts?", cwd: "/repo", paths: ["src/a.ts"], authorSessionId: "owner" });
+
+    const read = await store.readQuestions({ questionId: question.id, readerSessionId: "owner" });
+    expect(read[0]).toMatchObject({ id: question.id, status: "open", readBy: ["owner"] });
+    const answered = await store.answerQuestion(question.id, "Yes, I own it", "owner");
+    expect(answered).toMatchObject({ status: "closed", answer: "Yes, I own it", answeredBy: "owner" });
+    const updatedAt = answered.updatedAt;
+
+    const repeated = await store.answerQuestion(question.id, "Yes, I own it", "owner");
+    expect(repeated).toEqual(answered);
+    expect(repeated.updatedAt).toBe(updatedAt);
+    const different = await store.answerQuestion(question.id, "No, changed my mind", "other-agent");
+    expect(different).toEqual(answered);
+    expect(await store.list({ scope: "workspace", cwd: "/repo" })).toEqual([]);
+    expect(await store.list({ scope: "workspace", cwd: "/repo", includeClosed: true })).toEqual([expect.objectContaining({ id: question.id, status: "closed" })]);
   });
 });
 
