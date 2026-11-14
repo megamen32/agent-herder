@@ -1,13 +1,14 @@
 # Herder process leases implementation
 
-Status: implementation and native acceptance in an isolated worktree. Shared runtime has not been switched.
+Status: local and remote source integration is implemented in an isolated worktree. Coherent verification and immutable candidate preparation are in progress. Full native acceptance is incomplete. Shared runtime has not been switched.
 The user authorised the full plan on 2026-11-13.
 Plan: https://chatgpt.com/space/page_835ee164266081918e5e4297ac92a2a3
 
 ## Source and ownership
 
 Base: origin/main b371e9a0e57f12f44bf069ef5277e71afb81991f.
-Latest fetched origin/main: 80420046, observed 2026-11-13.
+Latest fetched origin/main: a1c17a48ef05ff132af53f5018053e365cbece61, observed 2026-11-14.
+The source checkpoint will retain the new shared-core packaging work when merged.
 Worktree: /home/roomhacker/agents-projects/.worktrees/herder-process-leases-20261113.
 Branch: feat/herder-process-leases-20261113.
 Coordinator: ChatGPT session 6af76992-9198-8191-b01c-aaa6f7c6a044.
@@ -58,21 +59,29 @@ to the original completion time.
 | Linux supervision | PID birth and boot identity, pidfd signalling, systemd user scope or direct subreaper, whole-tree evidence, crash recovery and no command replay. |
 | macOS supervision | launchd job, boot and PID generation identity, private coalition task counts and kernel-checked signalling. No generic PID kill fallback. |
 | Lease lifecycle | Bind before command, renew while owned work is live, stop owned work on lease loss, receipt before finalization, bounded handback. |
-| Wait lifecycle | Durable registration, fast return, background reconciliation, busy-parent deferral, pause, cancellation and exact session continuation. |
+| Wait lifecycle | ProcessCompletion, Timer and SessionCompletion use durable registration, fast return, one background driver, busy-parent deferral, pause/CAS cancellation and exact session continuation. |
 | HumanStop | Cancellation generation persists through restart. Process launch admission and HumanStop use the same canonical gate. A stopped registration cannot start a later build. |
 | Lost ACK | Bounded native admission recovery using original request key, exact session and real native message ID. Full before/after CAS, atomic dispatch finalization, no resend, original UNKNOWN evidence retained. |
 | Aggregate create tasks | A confirmed child admission can refresh an old aggregate projection using one exact native create receipt. Original parent bytes remain evidence. |
 | Automatic work gates | Stop judge, unfinished-session paths, cadence and final automatic native admission inspect canonical waits. Human messages remain independent. |
 | Remote scheduler reads | Existing pinned GPTAdmin transport reaches exact central AgentHerder authority. Missing, stale or ambiguous evidence blocks automatic work. |
+| Canonical compatibility | resume_after and scheduled delivery use the same native automation authority; direct resume uses scoped native receipts and a principal-wide key reservation. No legacy clock or writable ReceiptLedger is constructed in canonical mode. |
 | Legacy API | Standalone Agent Resume effectful entrypoints retire explicitly or use a trusted injected Herder facade. No fallback detached resume daemon is started. |
 | Release compatibility | TypeScript and Python release gates delegate to one canonical resource bridge after a sealed, fenced migration. |
 | Rollout | Immutable candidate, exact component provenance, guarded selector CAS, durable occupancy, independent process identity and consumer schema receipts. |
 
-The remote scheduler read route is not a remote execution backend. The current
-execution API starts or attaches work on its configured local execution node.
-Linux and macOS share the same API and worker contract. SSH client completion,
-container client exit and a remote harness profile do not establish remote job
-completion. No unverified remote builder is advertised as supported.
+RemoteStart now has a separate trusted executor backend using the existing
+Fleet GPTAdmin transport. It binds the actual executor, immutable job handle,
+worker/config/root identity, one start dispatch and an independent Linux
+deadline supervisor. Only the central authority owns resource claims. A stale
+live ACK, transport partition or uncertain start cannot cause a command replay
+or an indefinite renew. This source integration still needs its own native
+remote execution receipt.
+
+Local Linux and macOS share the process API and worker contract. Remote
+lease execution on macOS and lease-bound RemoteAttach remain explicitly
+unsupported. SSH client completion, container client exit and a remote harness
+profile do not establish remote job completion.
 
 ## Native acceptance evidence
 
@@ -117,18 +126,71 @@ The canary harness now retries only the bounded read operation on an explicit
 effect:none scope_unavailable response. It never retries a possible mutation.
 The exact original checkpoint and receipt remain available for reconciliation.
 
+### Paired candidate f488d9b0 and rejected wake acceptance
+
+The immutable candidate is
+/home/roomhacker/herder-artifacts/releases/process-leases-f488d9b0-v1.
+Source commit: f488d9b001c139cf49f67186b1558a05e98d4a8a.
+Manifest SHA256:
+9eec5f04617567ed36b8c971ec74670a92bef1a508b2d4d195fdc3f0f7cfa223.
+Core SHA256:
+3f56a10649648d0e5f770b5fcc75b2ec7ad5afab1278b339ee4a9bba43f777cf.
+Worker SHA256:
+294eb29bf7ff009d48f5c194e788bdc190a6f26587cf3dd842b9cad0a1e88a65.
+
+Run: canary-opencode-f488d9b0-v1.
+Session: session:86b362c58630f70aebca7d019758bbd8.
+Native session: ses_e28d1a406ffeboMQ5p2YPwj6Up.
+The C build ran once for 40.452 seconds. With a 15-second claim and the
+control plane absent for 18 seconds, the same claim renewed and the same
+execution completed with exit 0 and proven empty process tree. Claim release
+and artifact digest were independently observed.
+
+The original quick check returned PASS after seeing the first assistant answer.
+Its history projection was incomplete. Review of actual native records found
+two assistant messages for the single wake intent:
+msg_1d72f22da001t2BiLzZYF0Wb3b and
+msg_1d72f38e6001ToSuu6D56sg7Mk.
+The original user input is msg_1d72f22a800118GOIOBnk8yk4V.
+The one canonical task is
+mcp-delivery-task:28ec46e0dc95c1ffbe7b66fe875705315324f351373db16afc8b2704213643a2.
+
+The checkpoint now says FAILED_NATIVE_DUPLICATE and preserves the original
+quick-check evidence, both native message identities, and the valid build/lease
+receipts. No build or wake was resent. This is not full native acceptance.
+
+The installed native prompt schema has no atomic idle/turn admission condition.
+The installed Hindsight hook already uses synthetic resume:false but inserts
+its message with the native default delivery semantics. Simply changing Queue
+to Steer could interrupt a concurrently started human turn. The updated runner
+therefore advertises nativeAutomaticContinuation:
+unsupported-no-idle-admission-v1. Automatic process, timer, dependency and child
+wait creation must refuse before a new protected effect on that profile.
+Existing jobs still reconcile and finalize resources; original delivery intents
+remain available for read-only recovery.
+
+The canary helper now waits for stable native idle, checks duplicate assistant
+answers, and requires complete history before accepting a unique continuation.
+A native receipt proves input admission; it cannot by itself prove exactly one
+model turn.
+
 ### Harness matrix
 
 | Harness/profile | Observed outcome | Acceptance state |
 | --- | --- | --- |
-| Codex local | Quota guard rejected thread/start before native submission. | Blocked by provider quota; no session created. |
+| Codex local | Quota guard rejected thread/start before native submission. Fresh 2026-11-14 provider read reports 6% remaining, while the unchanged local policy reserves 20%. | Blocked by the configured reserve; no session created and no policy bypass. |
 | Codex server-44 | Exact create returned create_not_sent with no create/prompt effect. | Not accepted; do not infer a model turn occurred. |
-| OpenCode v2 | Initial queued prompt exposed an empty-turn boundary. The isolated session later received its actual input and returned the exact marker. | Fresh-start route corrected in source; paired core/adapter rebuild and fresh acceptance required. |
+| OpenCode v2 | Paired f488d9b0 candidate admitted the initial prompt and completed the real build. One canonical wake produced two native assistant replies. | FAILED_NATIVE_DUPLICATE. Automatic continuation is capability-gated off for this installed protocol; explicit delivery and fresh creation remain separate. |
 | ZCode | One exact promoted input and matching native user message found. The model failed with Token Plan quota code 2056. | Native admission proven, model continuation blocked. Lost-ACK recovery must be checked in the updated candidate. |
 | ChatGPT UserIO | Original create remains dispatching/UNKNOWN after caller timeout. | Preserve original operation, reconcile read-only, never repeat create blindly. |
 | ZAI UserIO | One bounded create ended after the native 120-second handoff with outcome_unknown; no persisted native binding. | Not accepted. Preserve the original key and do not repeat create. |
 | Claude | Disabled according to the user's choice. | Excluded. |
 | Hermes | No active public native profile in the inspected six-profile installation. | Not enabled for this rollout. |
+
+Read-only quota evidence from 2026-11-14 00:16 UTC is retained in
+quota-preflight-20261114.json. Codex provider allowed:true does not override
+Herder's configured reserve. MiniMax still reports quota_exhausted; GLM reports
+unknown after a provider error. No new native submission was made by this check.
 
 ZCode evidence binds the exact original create-prompt key, native session
 sess_bae78beb-46f1-4199-8eaa-d1a145b1833e and native user message
@@ -194,8 +256,22 @@ their overlap.
   fixture whose script was group-writable under umask 0002. The fixture now
   explicitly uses mode 0700; the exact regression passed with that umask.
   The full run must be resumed after the coherent recovery fixes.
-- TypeScript --noEmit and git diff --check passed at the reported source
-  checkpoints. A final coherent committed revision still requires verification.
+- Coherent Rust verification on 2026-11-14 passed all 33 targets: 465 tests
+  passed and 7 native/opt-in tests remained ignored. The command used --locked,
+  --all-targets, --no-fail-fast and --test-threads=1. The private
+  rust-source-test-receipt-20261114.json binds the log and 167 crate source files.
+  The initial parallel run exposed a transient fake-executable ETXTBUSY and an
+  invalid two-second fixture wall-clock assertion. The latter now checks one
+  actual admission; canonical_waits also passed 14/14 in parallel.
+- Canonical direct resume passed 18 focused tests after the typed conflict fix.
+  Principal-wide delivery keys passed 7, scoped receipt recovery passed 20.
+- Paired runtime readiness passed 34 TypeScript tests, plus 9 existing gate/auth
+  checks and tsc. Python readiness 10, coordinator 22, candidate 17 and paired
+  adapter packaging 12 passed; the final persistent environment hardening was
+  rechecked in the readiness suite.
+- TypeScript --noEmit and git diff --check passed at reported source
+  checkpoints. Final merged TypeScript and immutable candidate checks are
+  recorded with their own commit and receipt.
 
 Logs and native task receipts are retained with this task. The final report
 must distinguish source tests, isolated candidate evidence and actual installed
@@ -233,21 +309,46 @@ Airlock VPS is excluded. No calls or notifications to people are permitted in
 acceptance. Keep the existing default and public-child selectors distinct.
 Preserve the shared dirty main and the separately retained local commit 98593d9c.
 
-## Remaining source integration
+## Canonical source integration and migration boundary
 
-The process gate does not itself migrate every older scheduler. At this
-checkpoint src/resume-after.ts still owns JSON wait files and a periodic
-scheduler; scheduled delivery delegates to that service. Canonical timer/join
-facades and their core handlers are being implemented separately. They must
-preserve exact native turn evidence, request keys, HumanStop and uncertain
-delivery. Retained legacy records require explicit drain/import; enabling a
-facade must never silently replay them.
+The native owner runtime now hosts ProcessCompletion, Timer, SessionCompletion
+and existing child completion through one automation driver. Timer due times
+are persisted once. Dependencies bind exact native turn identity and reject
+cross-profile cycles. Read-only session.resolve and deliver.receipt use scoped
+bindings and work without starting an adapter. Missing or ambiguous evidence
+remains a typed error.
 
-Remote ProcessCompletion is also a separate implementation item. A remote
-session destination and a remote wait-status query do not execute the build
-remotely. A trusted provider needs an external task handle, exact executor
-identity and independent liveness/terminal/cancellation evidence. Do not mark
-this item complete from the current local Linux/macOS tests.
+Canonical TypeScript compatibility delegates to that runtime over the exact
+pinned Fleet route. It starts no legacy resume-after sweep and constructs no
+legacy ReceiptLedger. Its direct-resume key is principal-wide, durably bound to
+one target and payload inside the existing resource authority, and rechecked
+at the actual native handoff. Cross-session key reuse and corrupted bindings
+cannot produce another send. A lost ACK reads only the original intent and
+receipt.
+
+Old waits and receipts remain at their original locations as sealed evidence.
+The activation barrier checks exact inventories and original writer birth
+identities; an old process already inside handoff must be drained. UNKNOWN,
+pending and insufficiently settled cancelled records block new admission.
+HumanRequest-bound canonical waits and Darwin writer-drain activation remain
+explicitly unsupported pending their own reviewed authority/verifier.
+No legacy fallback is allowed after selecting canonical mode.
+
+The candidate includes the immutable remote bridge. Native execution will use
+only an isolated controller on roomhacker-server-100 and the freshly verified
+server-44 executor, with existing credential generation and exact artifact pins.
+The remote test does not send a model prompt.
+
+The production coordinator also requires a paired TypeScript canonical cutover
+proof. The old installed TS scheduler must not remain capable of continuing
+sessions while the new native core owns waits. Installed process identity,
+immutable source/configuration, writer drain and a fresh query through the
+actual TS gate must be verified across the native switch. Isolated candidates
+do not change shared services.
+
+See canonical-waits-and-resume.md and remote-process-execution.md for exact
+contracts and focused test evidence. These source changes do not settle the
+native/profile or migration blockers recorded above.
 
 ## Remaining closure work
 

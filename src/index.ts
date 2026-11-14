@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createCanonicalRuntimeStatus } from "./canonical-runtime-status.js";
 import { createAutostartSourceVerifierTick } from "./autopilot/autostart-source-verifier.js";
 import { isMainEntrypoint } from "./main-entrypoint.js";
 import { resumePendingProjectIntegrations } from "./project-integration.js";
@@ -91,8 +92,8 @@ import { registerDeliveryResponseResource, type DeliveryResponseResourceBinding 
 import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner-routing.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
-import { createResumeAfterRuntime } from "./resume-after-runtime.js";
-import type { ResumeAfterService } from "./resume-after.js";
+import { createConfiguredResumeAfterRuntime } from "./resume-after-runtime.js";
+import type { ResumeAfterBackend } from "./resume-after.js";
 import type { CadenceScheduler } from "./cadence-scheduler.js";
 import { createCadenceRuntime } from "./cadence-runtime.js";
 import { registerCadenceTools } from "./mcp/cadence-tools.js";
@@ -723,7 +724,7 @@ function registerTools(
   humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   humanResumeQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>,
   inventorySupervisor?: SessionSupervisor,
-  resumeAfter?: ResumeAfterService,
+  resumeAfter?: ResumeAfterBackend,
   cadence?: CadenceScheduler,
   userMessageDelivery?: UserMessageDelivery,
   trustedMeshIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>,
@@ -834,7 +835,7 @@ export interface AgentHerderMcpServerOptions {
   /** Shared process-owned message admission across MCP and HTTP delivery ingress. */
   userMessageDelivery?: UserMessageDelivery;
   /** Shared durable joins, never scoped to an MCP transport. */
-  resumeAfter?: ResumeAfterService;
+  resumeAfter?: ResumeAfterBackend;
   /** Durable HumanRequest registry for the resume_after question join. */
   humanRequests?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
   cadence?: CadenceScheduler;
@@ -1240,7 +1241,7 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
     permissionNoticeObserver,
   });
-  const resumeAfterRuntime = createResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
+  const resumeAfterRuntime = await createConfiguredResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
     undefined, undefined, async wait => {
       if (!wait.humanRequestId) return "closed";
       const verdict = await humanRequests.timeoutResumeWait(wait.humanRequestId, wait.id, "question expired");
@@ -1515,6 +1516,7 @@ async function main() {
     if (isQuotaLensEnabled()) startQuotaLensSampler();
     const webServer = createWebServer({
       adapters,
+      canonicalRuntimeStatus: createCanonicalRuntimeStatus(resumeAfterRuntime.service),
       hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,
       humanRequests,

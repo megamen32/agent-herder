@@ -211,7 +211,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let root=std::env::temp_dir().join(format!("herder-resource-dispatch-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-            let config=ProcessRuntimeConfig {version:1,node_ref:"fixture-node".into(),worker:"/fixture/worker".into(),execution_root:root.join("executions"),
+            let config=ProcessRuntimeConfig {remote_executors: Vec::new(),version:1,node_ref:"fixture-node".into(),worker:"/fixture/worker".into(),execution_root:root.join("executions"),
                 resources:StorageAuthority {storage_id:StorageId("fixture-storage".into()),authority_node:NodeRef("fixture-node".into()),root:root.join("resources-store"),schema:"v1".into(),route:AuthorityRoute::Local},
                 administrators:vec!["alice".into(),"bob".into()]};
             Self {root,config}

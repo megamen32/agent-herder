@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { projectReleaseLeases, terminalReleaseAt, type ProjectReleaseLeaseStore, type ReleaseOwner, type ProjectIntegration } from "./project-release-lease.js";
-import type { ResumeAfterService } from "./resume-after.js";
+import type { ResumeAfterBackend } from "./resume-after.js";
 
 const run = promisify(execFile);
 export async function integrationProject(cwd: string) {
@@ -13,7 +13,7 @@ export async function integrationProject(cwd: string) {
   const { stdout } = await run("git", ["-C", canonical, "rev-parse", "--git-common-dir"], { timeout: 5000 });
   return { project: await realpath(resolve(canonical, stdout.trim())), cwd: canonical };
 }
-export type IntegrationWake = (input: Parameters<ResumeAfterService["register"]>[0]) => ReturnType<ResumeAfterService["register"]>;
+export type IntegrationWake = (input: Parameters<ResumeAfterBackend["register"]>[0]) => ReturnType<ResumeAfterBackend["register"]>;
 
 /** Bounded existing-hook continuation, no scanner or new permanent background worker. */
 export async function recordProjectLifecycle(

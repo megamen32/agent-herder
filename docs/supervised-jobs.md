@@ -4,14 +4,16 @@ Agent Herder owns process supervision, resource claims and session continuation.
 
 ## Standard procedure for every harness
 
-1. Resolve the exact registered session and the registered resource to protect. Reuse a shared resource identity for a shared device, deployment target or build slot.
+1. Resolve the exact registered session with session.resolve and check its automatic-continuation capability. Resolve the registered resource to protect. Reuse a shared resource identity for a shared device, deployment target or build slot.
 2. Acquire the resource claim and keep its returned claim ID and descriptor revision.
 3. Create one process-completion rule with a stable request key. Start through Herder when possible. Include the claim bindings in the same request.
 4. Check that the response contains the durable rule and execution references. If its status is pending reconciliation, inspect that same registration. Never start another command because an acknowledgement is missing.
 5. Once the wait is armed, end the current agent turn. Herder continues the same native session after completion. Do not poll with model turns and do not use HumanStop to simulate sleeping.
 6. On wake, inspect the completion receipt, source evidence and logs. Verify the produced artifact before using or deploying it. A successful process exit is evidence about that process, not proof that an application was deployed.
 
-The worker is responsible for lease renewal. The agent does not have to remain connected. The shared automatic-continuation gate reads durable waits before starting an LLM judge, inventory continuation or cadence turn.
+The worker is responsible for lease renewal. The agent does not have to remain connected. The shared automatic-continuation gate reads durable process, timer and session-completion waits before starting an LLM judge, inventory continuation or cadence turn.
+
+The installed harness must support the required native admission contract. The observed OpenCode v2 protocol currently advertises unsupported-no-idle-admission-v1 after an isolated canary produced two native assistant turns for one wake. Automatic wait creation refuses before a process or lease binding starts on that profile. Explicit manual delivery and fresh-session creation have separate contracts. Do not infer support from the existence of an automation tool alone.
 
 ## Resource identity
 
@@ -88,6 +90,18 @@ A process can bind multiple existing claims. Registration checks every binding b
 
 The session's harness location and the execution node are different concepts. A remote Codex conversation can wait for a build on server-100. That does not turn the build into a server-44 process. The installed execution configuration and receipt name the actual executor.
 
+## Timers, dependencies and compatibility
+
+A timer uses automation.create with rule.kind timer and a delay or absolute trigger. The native authority persists the due instant once. A session-completion rule captures exact registered dependencies and their current native turn identities; an idle projection is insufficient. These rules share the process wait's lifecycle, HumanStop fence, busy-session deferral and durable delivery path. See [canonical-waits-and-resume.md](canonical-waits-and-resume.md) for exact request examples and migration configuration.
+
+In canonical mode, resume_after and scheduled delivery are stateless compatibility facades. They create no timer loop or second writable registry. Direct resume compatibility resolves the same native authority and reads deliver.receipt before a new send. A principal-wide compatibility key reserves one exact session and payload in the existing resource authority. Reusing that key for another target conflicts, including after a lost ACK.
+
+## Remote owned execution
+
+RemoteStart uses an executor_ref from the installed trusted capability list, not an arbitrary SSH host supplied by an agent. The remote endpoint returns an immutable handle and authoritative executor evidence. The controller renews the same central resource claims; the executor owns no second claim ledger. Its independent Linux deadline supervisor continues even if the controller or transport disappears. A delayed live reply cannot extend freshness indefinitely.
+
+Only a configured, pinned provider can start remote work. A missing start ACK retains the same operation for observation and never submits the command again. Remote lease execution on macOS and lease-bound RemoteAttach are explicitly unsupported until they have the required independent supervisor. See [remote-process-execution.md](remote-process-execution.md) for configuration, receipt guarantees and native acceptance.
+
 ## Attach an existing local process
 
 Use this only when the process was already started:
@@ -123,7 +137,9 @@ A local SSH client exiting does not prove that its remote build has finished. Re
 | Inspect a wait | automation.get with rule_ref | Returns its registration, current wait state and execution evidence. |
 | Check a remote scheduler before a model turn | automation.wait_status with harness, native_session_id and optional exact node_ref | Reads canonical waits across the configured owner profiles without contacting a harness. Incomplete, unavailable or ambiguous evidence blocks automatic continuation. |
 | Inspect all session waits | automation.list with session_ref | Reads registered rules. |
-| Reconcile an ambiguous observation | automation.reconcile_process with rule_ref | Reads the same process and native delivery intent; does not submit a replacement build. |
+| Reconcile an ambiguous process observation | automation.reconcile_process with rule_ref | Reads the same process and native delivery intent; does not submit a replacement build. |
+| Inspect a direct continuation | deliver.receipt with session_ref and request_key | Reads the canonical scoped intent and receipt without native I/O or another send. |
+| Reconcile an already admitted native delivery | compat_task.get with its original task_ref | Reconciles only that existing task; never creates a replacement operation. |
 | Cancel a supervised build | automation.cancel_execution with rule_ref and request_key | Requests termination of the owned execution; release still requires confirmed tree completion. |
 | Pause automatic wake | automation.pause with rule_ref and revision | Prevents wake while the worker and lease lifecycle continue. |
 | Change wake text or re-arm an explicitly paused wait | automation.update with the current revision and the same execution/bindings | Uses CAS; the operation cannot be replaced under an existing rule. |
@@ -153,6 +169,6 @@ One stable native delivery key belongs to one rule. Delivery is reconciled again
 
 Standalone Agent Resume entrypoints no longer start another scheduler or detached Python resume process. An explicitly injected compatibility facade may forward an old operation into Herder. Without such a configured facade, old effectful aliases return an actionable retired error. Receipt and native-client utilities can remain internal libraries.
 
-Existing legacy records remain evidence. A stale running flag with no surviving PID is not success. Do not replay old commands or bulk-wake their sessions. Project release leases move to the canonical resource authority only through the reviewed, sealed cutover described in **canonical-release-cutover.md**.
+Existing legacy records remain evidence. A stale running flag with no surviving PID is not success. Do not replay old commands or bulk-wake their sessions. Project release leases move to the canonical resource authority only through the reviewed, sealed cutover described in **canonical-release-cutover.md**. Canonical timer and direct-resume activation likewise requires pinned inventories of the original waits/receipts and a verified drain of every former writer. Sealing files does not prove that a process already inside native handoff stopped. Unknown records remain reserved and block new admission until positively reconciled.
 
 See **process-leases-runtime.md** for immutable candidate preparation, guarded rollout, consumer verification and recovery. See **implementation/process-leases-20261113.md** for the implementation and acceptance record.

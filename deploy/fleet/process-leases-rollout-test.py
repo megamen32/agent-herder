@@ -34,10 +34,12 @@ candidate = rollout.candidate
 def tools_schema(process=True):
     values = ["create"]
     if process:
-        values += ["process_completion", "reconcile_process", "cancel_execution"]
+        values += ["process_completion", "reconcile_process", "cancel_execution", "timer", "session_completion", "wait_status"]
     return [
         {"name": "automation", "inputSchema": {"oneOf": [{"const": value} for value in values]}},
         {"name": "resource", "inputSchema": {"properties": {"action": {"enum": ["claim", "bind"] if process else ["claim"]}}}},
+        {"name": "session", "inputSchema": {"properties": {"action": {"enum": ["resolve"] if process else ["list"]}}}},
+        {"name": "deliver", "inputSchema": {"properties": {"action": {"enum": ["receipt"] if process else ["session"]}}}},
     ]
 
 
@@ -50,12 +52,14 @@ class CoordinatorContracts(unittest.TestCase):
         self.events = []
         self.proof = self.root / "proof.json"
         self.ledger = self.root / "lease-ledger.json"
+        self.scheduler_proof = self.root / "scheduler-preflight.json"
+        candidate.create(self.scheduler_proof, candidate.encoded({"fixture": "scheduler-preflight"}), 0o400)
         candidate.create(self.proof, candidate.encoded({"project": str(self.root), "owner": "test-owner",
                                                        "fence": 8, "token": "fixture-private-token"}))
         candidate.create(self.ledger, candidate.encoded({"version": 1}))
         self.args = argparse.Namespace(**vars(self.fixture.install_args),
             job_dir=self.root / "job", proof=self.proof, release_state=self.ledger,
-            target=None, compat_pid=101, core_pid=102, deadline_seconds=1)
+            target=None, compat_pid=101, core_pid=102, deadline_seconds=1, scheduler_proof=self.scheduler_proof)
         owner = self
 
         class FakeGate:
@@ -81,6 +85,14 @@ class CoordinatorContracts(unittest.TestCase):
         patch.object(rollout, "ReleaseGate", FakeGate).start()
         patch.object(rollout, "component_guard", return_value=[{"component": "core", "source": "fixture"}]).start()
         patch.object(rollout, "runtime_pair", side_effect=self.runtime_pair).start()
+        self.scheduler_identity = {"process": {"pid": 301}, "canonical": {"epoch": "fixture-epoch"},
+                                   "runtime": {"source_commit": self.fixture.manifest["process_leases_build"]["source_commit"]}}
+        def scheduler_proof(receipt, source_commit, **kwargs):
+            self.events.append("scheduler-" + kwargs["stage"])
+            return {"identity": self.scheduler_identity, "response_sha256": "a" * 64,
+                    "observed_at_unix_ms": rollout.now_ms(), "provider_operation_id": "fixture-scheduler-read"}
+        self.scheduler_validator = patch.object(rollout.scheduler, "validate_receipt", side_effect=scheduler_proof).start()
+        self.scheduler_observer = patch.object(rollout.scheduler, "observe", return_value=self.scheduler_identity).start()
         self.real_identity_state = rollout.identity_state
 
         def live_state(expected):
@@ -114,6 +126,7 @@ class CoordinatorContracts(unittest.TestCase):
         consumer = self.receipt(state, process=process)
         candidate.create(self.args.job_dir / "restart-ack.json", candidate.encoded(restart))
         candidate.create(self.args.job_dir / "consumer-receipt.json", candidate.encoded(consumer))
+        candidate.create(self.args.job_dir / "scheduler-consumer.json", candidate.encoded({"fixture": "scheduler-consumer"}))
 
     def test_guard_covers_install_restart_and_fresh_consumer(self):
         def operator(_):
@@ -124,12 +137,41 @@ class CoordinatorContracts(unittest.TestCase):
         self.assertEqual(result["occupancy"], "resolved")
         self.assertLess(self.events.index("guard-enter"), self.events.index("runtime-202"))
         self.assertGreater(self.events.index("finished"), self.events.index("runtime-202"))
+        self.assertGreater(self.events.index("finished"), self.events.index("scheduler-consumer"))
         state = rollout.read_state(self.args.job_dir)
         self.assertEqual(state["consumer_evidence"]["method"], "mcp_tools")
         self.assertTrue(state["consumer_evidence"]["schema_sha256"])
         self.assertNotIn("token", json.dumps(state))
         self.assertEqual(self.fixture.database.read_bytes(), self.fixture.before_db)
         self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.new_selector.read_bytes())
+
+    def test_missing_scheduler_proof_refuses_before_any_selector_mutation(self):
+        self.args.scheduler_proof = self.root / "missing-scheduler.json"
+        with self.assertRaises(FileNotFoundError):
+            rollout.run(self.args)
+        self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.before_selector)
+        self.assertEqual(self.fixture.launcher.read_bytes(), self.fixture.before_launcher)
+        self.assertFalse(self.args.job_dir.exists())
+
+    def test_changed_scheduler_is_rechecked_before_selector_mutation(self):
+        self.scheduler_observer.side_effect = ValueError("scheduler PID changed")
+        with self.assertRaisesRegex(ValueError, "scheduler PID changed"):
+            rollout.run(self.args)
+        self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.before_selector)
+        self.assertEqual(self.fixture.launcher.read_bytes(), self.fixture.before_launcher)
+        self.assertEqual(rollout.read_state(self.args.job_dir)["phase"], "unknown")
+        self.assertNotIn("finished", self.events)
+
+    def test_native_consumer_alone_cannot_finish_the_paired_rollout(self):
+        self.args.deadline_seconds = 0.02
+        def native_only(_):
+            self.publish_receipts()
+            (self.args.job_dir / "scheduler-consumer.json").unlink(missing_ok=True)
+        with patch.object(rollout.time, "sleep", side_effect=native_only):
+            with self.assertRaises(TimeoutError):
+                rollout.run(self.args)
+        self.assertNotIn("finished", self.events)
+        self.assertEqual(rollout.read_state(self.args.job_dir)["phase"], "unknown")
 
     def test_old_schema_names_do_not_prove_new_core_ready(self):
         with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(process=False)):
@@ -229,7 +271,7 @@ class CoordinatorContracts(unittest.TestCase):
         path = self.root / "recovery-consumer.json"
         candidate.create(path, candidate.encoded(receipt))
         return argparse.Namespace(job_dir=self.args.job_dir, proof=self.proof, outcome="candidate",
-                                  compat_pid=201, core_pid=202, consumer_receipt=path)
+                                  compat_pid=201, core_pid=202, consumer_receipt=path, scheduler_proof=self.scheduler_proof)
 
     def test_legacy_recovery_observes_settled_state_without_new_effect(self):
         args = self.prepare_recovery()
@@ -257,7 +299,8 @@ class CoordinatorContracts(unittest.TestCase):
         candidate.create(receipt, candidate.encoded(self.receipt(state)))
         before = list(self.events)
         result = rollout.recover(argparse.Namespace(job_dir=self.args.job_dir, outcome="candidate",
-            proof=self.proof, compat_pid=201, core_pid=202, consumer_receipt=receipt))
+            proof=self.proof, compat_pid=201, core_pid=202, consumer_receipt=receipt,
+            scheduler_proof=self.scheduler_proof))
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["occupancy"], "resolved")
         self.assertNotIn("guard-enter", self.events[len(before):])
@@ -354,6 +397,19 @@ class ComponentAncestry(unittest.TestCase):
 
     def test_installed_core_commit_cannot_be_discarded(self):
         self.before["component_provenance"]["core_source_commit"] = self.adapter
+        with self.assertRaisesRegex(rollout.main_guard.MainGuardError, "discard_live_commits"):
+            rollout.component_guard(self.repo / ".git", self.before, self.after)
+
+    def test_remote_companion_replacement_checks_its_own_component_ancestry(self):
+        self.before["process_remote_bridge"] = "/fixture/old-remote.mjs"
+        self.before["sha256"]["process_remote_bridge"] = "1" * 64
+        self.before["component_provenance"]["process_remote_bridge_source_commit"] = self.core
+        self.after["process_remote_bridge"] = "/fixture/new-remote.mjs"
+        self.after["sha256"]["process_remote_bridge"] = "2" * 64
+        self.after["component_provenance"]["process_remote_bridge_source_commit"] = self.new
+        checked = rollout.component_guard(self.repo / ".git", self.before, self.after)
+        self.assertEqual(next(row for row in checked if row["component"] == "process_remote_bridge")["previous_source"], self.core)
+        self.before["component_provenance"]["process_remote_bridge_source_commit"] = self.adapter
         with self.assertRaisesRegex(rollout.main_guard.MainGuardError, "discard_live_commits"):
             rollout.component_guard(self.repo / ".git", self.before, self.after)
 

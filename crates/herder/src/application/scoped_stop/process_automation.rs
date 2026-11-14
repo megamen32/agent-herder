@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs::{File, OpenOptions}, io, os::{fd::AsRawFd, unix::fs::{MetadataExt,OpenOptionsExt}},
-    path::Path, sync::Arc, time::Duration};
+    path::Path, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +76,7 @@ pub struct ProcessAutomationApplication {
     reconciler:Arc<dyn super::task_reconcile::TaskReconciler>,
     config:ProcessRuntimeConfig,
     store:ExecutionStore,
+    automatic_continuation:bool,
 }
 impl ProcessAutomationApplication {
     pub fn new(
@@ -86,7 +87,11 @@ impl ProcessAutomationApplication {
     )->io::Result<Self> {
         config.validate()?;
         let store=ExecutionStore::open(&config.execution_root,&config.node_ref)?;
-        Ok(Self{authority,instance,grants,policy,deliver,delivery_mode,reconciler,config,store})
+        Ok(Self{authority,instance,grants,policy,deliver,delivery_mode,reconciler,config,store,automatic_continuation:true})
+    }
+    /// Supplied by the installed owner capability, never by an MCP caller.
+    pub fn with_automatic_continuation(mut self,enabled:bool)->Self{
+        self.automatic_continuation=enabled;self
     }
     fn principal<'a>(&self,identity:&'a ConnectionIdentity)->Result<&'a str,&'static str> {
         let Caller::Principal(p)=identity.caller() else{return Err("unauthorized")};
@@ -258,6 +263,18 @@ impl ProcessAutomationApplication {
                     session_ref:rule.session_ref.clone(),request_key:rule.request_key.clone(),process,
                     deadline_unix_ms:*deadline_unix_ms}).map_err(|_|"execution_prepare_failed")?;
             }
+            catalog::ProcessExecution::RemoteStart {executor_ref,argv,cwd,deadline_unix_ms,stop_grace_ms} => {
+                let executor=self.config.remote_executors.iter().find(|e|e.executor_ref==*executor_ref)
+                    .ok_or("remote_executor_not_configured")?.clone();
+                if executor.deadline_capability!=process::remote::RemoteDeadlineCapability::LinuxBootWatchdogV1{
+                    return Err("remote_executor_deadline_unavailable");
+                }
+                self.store.prepare_remote_start(process::remote::RemoteStartRequest{
+                    principal_ref:rule.principal.clone(),session_ref:rule.session_ref.clone(),request_key:rule.request_key.clone(),
+                    argv:argv.clone(),cwd:cwd.into(),deadline_unix_ms:*deadline_unix_ms,
+                    stop_grace_ms:stop_grace_ms.unwrap_or(2000),executor,
+                }).map_err(|_|"remote_execution_prepare_failed")?;
+            },
         }
         process_bindings::write_delegation(&self.store,&rule.execution_ref,&rule.principal,
             &self.config.resources,rule.bindings.clone()).map_err(|_|"binding_prepare_failed")?;
@@ -278,7 +295,8 @@ impl ProcessAutomationApplication {
         let (revision,state)=self.read_state(rule)?;
         let snapshot=self.store.status(&rule.execution_ref).map_err(|_|"execution_unavailable")?;
         Ok(json!({"rule_ref":rule.rule_ref,"kind":"process_completion","session_ref":rule.session_ref,
-            "execution_ref":rule.execution_ref,"executor_node":self.config.node_ref,
+            "execution_ref":rule.execution_ref,"controller_node":self.config.node_ref,
+            "executor_node":snapshot.record.executor_node_ref(),
             "revision":revision,"wait":state,"execution":snapshot,
             "source_evidence":self.store.execution_directory(&rule.execution_ref).ok().map(|d|d.join("source.json")),
             "completion_evidence":self.store.execution_directory(&rule.execution_ref).ok().map(|d|d.join("completion-evidence.json")).filter(|p|p.exists()),
@@ -300,6 +318,7 @@ impl ProcessAutomationApplication {
     /// already admitted execution after this bounded supervisor call returns.
     fn admit_prepared_launch(&self,identity:&ConnectionIdentity,grants:&[Grant],rule:&ProcessRule,
         expected_revision:u64,expected_cancel_generation:u64)->Result<bool,&'static str>{
+        if !self.automatic_continuation{return Ok(false)}
         let (address,generation)=self.authority.resolve_session(identity,grants,
             &SessionRef(rule.session_ref.clone()),&self.instance).map_err(|_|"session_stopped_or_unavailable")?;
         let (_gate,writer)=self.authority.lock().map_err(|_|"scope_unavailable")?;
@@ -342,6 +361,11 @@ impl ProcessAutomationApplication {
                 }
             } else {
                 if state.settled(){return self.snapshot_value(rule)}
+                if !self.automatic_continuation{
+                    state.detail=Some("automatic_continuation_unsupported; prepared execution was not launched".into());
+                    let _=self.state_cas(rule,revision,&state)?;
+                    return self.snapshot_value(rule);
+                }
                 self.prepare(rule)?;
                 if !self.admit_prepared_launch(identity,&grants,rule,revision,state.cancel_generation)?{
                     return self.snapshot_value(rule);
@@ -355,6 +379,14 @@ impl ProcessAutomationApplication {
             state.phase="armed".into();
             if !self.state_cas(rule,revision,&state)?{return self.snapshot_value(rule)}
             (revision,state)=self.read_state(rule)?;
+        }
+        if matches!(initial.record.request,process::ExecutionRequest::RemoteStart(_))
+            && initial.record.state!=process::ExecutionState::Prepared
+            && initial.record.receipt.is_none() && !initial.worker_lock_held {
+            // Restart only the observer. Its durable start-dispatched boundary
+            // forbids another remote command, including after HumanStop.
+            self.store.launch_prepared(&rule.execution_ref,&self.config.worker)
+                .map_err(|_|"remote_reconnect_unavailable")?;
         }
         let snapshot=self.store.reconcile(&rule.execution_ref).map_err(|_|"execution_reconcile_unavailable")?;
         let Some(receipt)=&snapshot.record.receipt else{
@@ -402,6 +434,11 @@ impl ProcessAutomationApplication {
             let _=self.state_cas(rule,revision,&state)?;
             return self.snapshot_value(rule);
         }
+        if !self.automatic_continuation{
+            state.detail=Some("automatic_continuation_unsupported; terminal receipt retained without a new wake".into());
+            let _=self.state_cas(rule,revision,&state)?;
+            return self.snapshot_value(rule);
+        }
         // The OS gate serializes reconcilers. Delivery additionally uses the
         // canonical atomic intent admission with this same stable key: a
         // cancelled async caller cannot duplicate a surviving bounded handoff.
@@ -437,27 +474,22 @@ impl ProcessAutomationApplication {
         let _=self.state_cas(rule,revision,&state)?;
         self.snapshot_value(rule)
     }
+    pub async fn reconcile_registered(&self,identity:&ConnectionIdentity){
+        let Ok(principal)=self.principal(identity) else{return};
+        if !super::automation_driver::has_rule_hint(&self.authority,&Self::scope(principal)){return}
+        let Ok(rules)=self.rules(principal) else{return};
+        for rule in rules {
+            // Settled wakes may still require lease finalization recovery.
+            let _=self.reconcile_rule(identity,&rule,false).await;
+        }
+    }
     pub fn start_background(self:&Arc<Self>,identity:ConnectionIdentity){
-        let weak=Arc::downgrade(self);
-        tokio::spawn(async move{
-            let mut interval=tokio::time::interval(Duration::from_secs(2));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                interval.tick().await;
-                let Some(app)=weak.upgrade() else{break};
-                let Ok(principal)=app.principal(&identity) else{break};
-                let Ok(rules)=app.rules(principal) else{continue};
-                for rule in rules{
-                    // A cancelled/confirmed wake still needs execution and
-                    // lease finalization recovery after a worker failure.
-                    // Recovery runs only over authenticated, admitted waits.
-                    let _=app.reconcile_rule(&identity,&rule,false).await;
-                }
-            }
-        });
+        let module:Arc<dyn super::automation_driver::AutomationTick>=self.clone();
+        let _=super::automation_driver::start(vec![super::automation_driver::AutomationOwner::new(identity,vec![module])]);
     }
     async fn create(&self,identity:&ConnectionIdentity,session_ref:String,execution:catalog::ProcessExecution,
         bindings:Vec<catalog::ProcessLeaseBinding>,wake_message:String,request_key:String)->Result<Value,&'static str>{
+        if !self.automatic_continuation{return Err("automatic_continuation_unsupported")}
         let principal=self.principal(identity)?.to_owned();
         if request_key.is_empty() || request_key.len()>4096 || request_key.chars().any(char::is_control)
             || wake_message.trim().is_empty() || wake_message.len()>16384{return Err("invalid_request")}
@@ -642,4 +674,9 @@ pub(super) fn wake_cancelled(c:&rusqlite::Connection,principal:&str,target:&str,
         .map_err(|_|super::GateError::Store)?;
     let state:WaitState=serde_json::from_str(&raw).map_err(|_|super::GateError::Store)?;
     Ok(state.wake_cancelled || matches!(state.phase.as_str(),"paused"|"cancelled"|"ready"))
+}
+impl super::automation_driver::AutomationTick for ProcessAutomationApplication {
+    fn tick<'a>(&'a self,identity:&'a ConnectionIdentity)->std::pin::Pin<Box<dyn std::future::Future<Output=()>+Send+'a>>{
+        Box::pin(self.reconcile_registered(identity))
+    }
 }

@@ -68,6 +68,7 @@ class WaitGate(unittest.TestCase):
                 CREATE TABLE humanstop_holds(scope_ref,reason,created_at,released_at);
                 CREATE TABLE holds(session_ref,released_at);
                 CREATE TABLE settings(scope,setting_key,value_json);
+                CREATE TABLE intents(task_id,principal,target,request_key,state);
             """)
             c.execute("INSERT INTO humanstop_authority VALUES(1,?,?,?,?,?)",
                 ("generation", gate.stat().st_dev, gate.stat().st_ino, db.stat().st_dev, db.stat().st_ino))
@@ -202,6 +203,56 @@ class WaitGate(unittest.TestCase):
         self.select([self.profile])
         self.assertEqual(self.query(), {"blocked": False, "reason": "process_wait_unconfigured",
                                        "ruleRefs": [], "sessionRefs": []})
+
+    def add_canonical_wait(self, phase="armed", kind="timer", intent=None, with_state=True):
+        reference = "wait-rule:" + hashlib.sha256(json.dumps(
+            ["canonical-wait-v1", "alice", "session", "fixture-wait"], separators=(",", ":")).encode()).hexdigest()
+        wake_key = "wait-wake:" + reference
+        task = "mcp-delivery-task:" + hashlib.sha256(json.dumps(
+            ["mcp-deliver-v1", "alice", "session", wake_key], separators=(",", ":")).encode()).hexdigest()
+        rule = {"version": 1, "rule_ref": reference, "principal": "alice", "session_ref": "session",
+                "request_key": "fixture-wait", "rule": {"kind": kind}, "target": {
+                    "session_ref": "session", "authority_generation": "generation", "owner": {
+                        "harness": "codex", "native_session_id": "native", "node_ref": "node", "instance_ref": "profile"}}}
+        state = {"phase": phase, "detail": None, "delivery_task": task if intent is not None else None,
+                 "wake_cancelled": phase == "cancelled", "cancel_generation": 1 if phase == "cancelled" else 0,
+                 "wake_message": None, "completed_dependencies": {}, "completed_at": None}
+        with sqlite3.connect(self.root / "local.db") as c:
+            c.execute("DELETE FROM settings")
+            c.execute("DELETE FROM intents")
+            c.execute("INSERT INTO settings VALUES(?,?,?)", ("automation:canonical-wait:alice", "rule:" + reference, json.dumps(rule)))
+            if with_state:
+                c.execute("INSERT INTO settings VALUES(?,?,?)", ("automation:canonical-wait:alice", "state:" + reference, json.dumps(state)))
+            if intent is not None:
+                c.execute("INSERT INTO intents VALUES(?,?,?,?,?)", (task, "alice", "session", wake_key, intent))
+        return reference
+
+    def test_timer_and_session_wait_registration_suppress_legacy_local_judges(self):
+        for kind in ("timer", "session_completion"):
+            for phase in ("armed", "paused", "dispatching", "waiting_receipt", "delivery_unknown", "rejected"):
+                with self.subTest(kind=kind, phase=phase):
+                    ref = self.add_canonical_wait(kind=kind, phase=phase)
+                    self.assertEqual(self.query()["ruleRefs"], [ref])
+                    self.assertFalse(self.query(nativeSessionId="unrelated")["blocked"])
+            self.add_canonical_wait(kind=kind, with_state=False)
+            self.assertTrue(self.query()["blocked"])
+
+    def test_canonical_terminal_phase_requires_exact_intent_and_preserves_unknown(self):
+        self.add_canonical_wait(phase="confirmed")
+        self.assertTrue(self.query()["blocked"])
+        self.add_canonical_wait(phase="confirmed", intent="confirmed")
+        before = self.snapshot()
+        self.assertFalse(self.query()["blocked"])
+        self.assertEqual(self.snapshot(), before)
+        self.add_canonical_wait(phase="cancelled")
+        self.assertFalse(self.query()["blocked"])
+        for intent in ("prepared", "dispatching", "admitted", "unknown"):
+            self.add_canonical_wait(phase="cancelled", intent=intent)
+            self.assertTrue(self.query()["blocked"])
+        self.add_canonical_wait(phase="confirmed", intent="confirmed")
+        with sqlite3.connect(self.root / "local.db") as c:
+            c.execute("UPDATE intents SET target='foreign-session'")
+        self.assertTrue(self.query()["blocked"])
 
 
 if __name__ == "__main__":

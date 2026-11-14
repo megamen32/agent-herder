@@ -6,6 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { GptAdminTransport } from "./mesh/gptadmin.js";
 import { unwrapResult } from "./mesh/protocol.js";
+import { canonicalMode, canonicalClientBinding, createCanonicalAutomationClient, requireCanonicalMigrationReady } from "./canonical-herder.js";
+import type { CanonicalAutomationClient } from "./canonical-herder.js";
 
 const execute = promisify(execFile);
 
@@ -22,10 +24,21 @@ export type ProcessWaitDecision = {
   ruleRefs?: string[];
   observedAt?: string;
 };
+export type CanonicalWaitDecision = ProcessWaitDecision & {
+  version: 1; configured: boolean; complete: boolean; mapped: boolean;
+  sessionRefs: string[]; ruleRefs: string[]; observedAt: string;
+};
+export type CanonicalWaitObservation = {
+  request: { harness: string; native_session_id: string; node_ref?: string };
+  decision: CanonicalWaitDecision; gateBlocked: boolean;
+  config: string; config_sha256: string; epoch: string; authority: string;
+};
 
 /** A read-only view of the canonical native authority, never another wait registry. */
 export interface ProcessWaitSource {
   blocks(harness: string, sessionId: string, cwd?: string): Promise<boolean>;
+  /** The same canonical branch used by blocks(), with its exact read proof. */
+  observeCanonical?(target: ProcessWaitTarget): Promise<CanonicalWaitObservation>;
 }
 
 type Options = {
@@ -100,6 +113,7 @@ function authoritativeDecision(value: unknown, started: number, finished: number
     throw new Error("invalid canonical wait status");
   }
   if (!result.complete) return unavailable("process_wait_authority_incomplete");
+  if (!result.configured) return unavailable("process_wait_authority_unconfigured");
   if (result.mapped === false && (result.sessionRefs.length !== 0 || result.ruleRefs.length !== 0)) {
     throw new Error("ambiguous canonical wait mapping");
   }
@@ -131,6 +145,7 @@ export function createProcessWaitGate(options: Options = {}): ProcessWaitSource 
   const clock = options.now ?? Date.now;
   const getTransport = remoteTransport(options, env);
   let observedConfiguration = false;
+  let canonicalClient: CanonicalAutomationClient | undefined;
 
   const authorityQuery = async (target: ProcessWaitTarget): Promise<ProcessWaitDecision> => {
     if (typeof authority !== "string" || !/^mcp:shell:[A-Za-z0-9._-]+:AgentHerder$/.test(authority)) {
@@ -184,9 +199,40 @@ export function createProcessWaitGate(options: Options = {}): ProcessWaitSource 
   };
 
   const query = options.query ?? (authority !== undefined ? authorityQuery : installedQuery);
+  const observeCanonical = async (target: ProcessWaitTarget): Promise<CanonicalWaitObservation> => {
+    if (canonicalMode(env) !== "canonical") throw new Error("canonical_wait_backend_required");
+    canonicalClient ??= await createCanonicalAutomationClient({ env, transportFactory: options.transportFactory });
+    if (!canonicalClient) throw new Error("canonical_wait_backend_unavailable");
+    await requireCanonicalMigrationReady(canonicalClient);
+    if ((authority !== undefined && authority !== canonicalClient.config.authority)
+      || (nodeRef !== undefined && canonicalClient.config.node_ref !== undefined
+        && nodeRef !== canonicalClient.config.node_ref)) throw new Error("canonical_wait_authority_mismatch");
+    const ownerNode = nodeRef ?? canonicalClient.config.node_ref;
+    // A readiness probe cannot select a different target than the installed gate.
+    if (target.nodeRef !== undefined && target.nodeRef !== ownerNode) throw new Error("canonical_wait_node_mismatch");
+    const request = { harness: target.harness, native_session_id: target.nativeSessionId,
+      ...(ownerNode ? { node_ref: ownerNode } : {}) };
+    const started = clock();
+    const result = await boundedRead(canonicalClient.call("automation", { action: "wait_status", ...request }));
+    await canonicalClient.assertCurrent();
+    const gateBlocked = authoritativeDecision(result, started, clock()).blocked;
+    const value = unwrapResult(result);
+    const binding = canonicalClientBinding(canonicalClient);
+    if (!binding) throw new Error("canonical_wait_binding_unavailable");
+    const decision: CanonicalWaitDecision = {
+      version: 1, configured: value.configured as boolean, complete: value.complete as boolean,
+      mapped: value.mapped as boolean, blocked: value.blocked as boolean, reason: value.reason as string,
+      sessionRefs: [...value.sessionRefs as string[]], ruleRefs: [...value.ruleRefs as string[]], observedAt: value.observedAt as string,
+    };
+    return { request, decision, gateBlocked, ...binding, epoch: canonicalClient.epoch, authority: canonicalClient.config.authority };
+  };
   return {
+    observeCanonical,
     async blocks(harness, sessionId) {
       try {
+        if (canonicalMode(env) === "canonical") {
+          return (await observeCanonical({ harness, nativeSessionId: sessionId })).gateBlocked;
+        }
         const decision = validateDecision(await query({
           harness, nativeSessionId: sessionId, ...(nodeRef ? { nodeRef } : {}),
         }));
@@ -199,6 +245,9 @@ export function createProcessWaitGate(options: Options = {}): ProcessWaitSource 
 }
 
 const installedProcessWaits = createProcessWaitGate();
+export async function observeInstalledCanonicalProcessWait(target: ProcessWaitTarget): Promise<CanonicalWaitObservation> {
+  return await installedProcessWaits.observeCanonical!(target);
+}
 
 /** A failed canonical read is a deferral, including for injected gate providers. */
 export async function processWaitBlocks(

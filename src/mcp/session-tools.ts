@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
-import type { ResumeAfterService } from "../resume-after.js";
+import type { ResumeAfterBackend } from "../resume-after.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
@@ -123,7 +123,7 @@ export function registerSessionTools(server: McpServer, deps: {
   /** Owner-routed explicit ZCode queue processing, backed by its native owner's durable job registry. */
   sessionQueueControl?: SessionQueueControlGateway;
   /** Durable resume-after service backing scheduled deliveries. */
-  resumeAfter?: ResumeAfterService;
+  resumeAfter?: ResumeAfterBackend;
   /** Session supervisor that delivers the owner MCP intro into freshly created or first-adopted chats. */
   supervisor?: Pick<SessionSupervisor, "sendMessage">;
 }): void {

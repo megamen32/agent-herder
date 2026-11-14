@@ -143,7 +143,7 @@ pub(crate) fn lock(path: &Path, blocking: bool) -> io::Result<Option<FileLock>> 
     }
     Ok(Some(FileLock { file: f }))
 }
-fn lock_is_held(path: &Path) -> io::Result<bool> {
+pub(crate) fn lock_is_held(path: &Path) -> io::Result<bool> {
     let f = match open_private(path, false, false) {
         Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -316,6 +316,10 @@ impl ExecutionStore {
                 }
                 check_string(&r.process.boot_id, "boot_id")?;
             }
+            ExecutionRequest::RemoteStart(r) => {
+                r.validate(&self.node_ref)?;
+                r.executor.verify_local_transport()?;
+            }
         }
         Ok(request)
     }
@@ -324,6 +328,9 @@ impl ExecutionStore {
     }
     pub fn prepare_attach(&self, request: AttachRequest) -> io::Result<ExecutionRecord> {
         self.prepare(ExecutionRequest::Attach(request))
+    }
+    pub fn prepare_remote_start(&self, request: super::remote::RemoteStartRequest) -> io::Result<ExecutionRecord> {
+        self.prepare(ExecutionRequest::RemoteStart(request))
     }
     fn prepare(&self, request: ExecutionRequest) -> io::Result<ExecutionRecord> {
         let request = self.validate_request(request)?;
@@ -418,7 +425,7 @@ impl ExecutionStore {
         if record.receipt.is_none() {
             match read_json::<CompletionReceipt>(&dir.join("receipt.json")) {
                 Ok(receipt) => {
-                    if receipt.execution_ref != execution_ref || receipt.node_ref != self.node_ref {
+                    if receipt.execution_ref != execution_ref || receipt.node_ref != record.executor_node_ref() {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             "completion receipt identity mismatch",
@@ -478,11 +485,14 @@ impl ExecutionStore {
         // additionally owns worker.lock before reading or changing Prepared.
         let _launch_guard = lock(&dir.join("launch.lock"), true)?.expect("blocking lock");
         let record = self.load_record(execution_ref)?;
+        let remote = matches!(record.request, ExecutionRequest::RemoteStart(_));
         if record.state != ExecutionState::Prepared
             && !(record.receipt.is_some() && record.finalization_pending)
+            && !remote
         {
             return self.reconcile(execution_ref);
         }
+        if remote && lock_is_held(&dir.join("worker.lock"))? { return self.status(execution_ref); }
         if !worker_binary.is_absolute() {
             return Err(invalid(
                 "worker executable must be an absolute configured path",
@@ -509,7 +519,7 @@ impl ExecutionStore {
             }
             // A finalization-only helper never spawns the command and needs no new
             // launchd job. The original LaunchOnlyOnce job must never be restarted.
-            if record.receipt.is_none() {
+            if record.receipt.is_none() && !remote {
                 if backend != WorkerBackend::Direct {
                     platform::launch_worker(self, execution_ref, &worker_binary, &_launch_guard)?;
                     return self.status(execution_ref);
@@ -533,7 +543,9 @@ impl ExecutionStore {
                 "owned systemd user manager unavailable",
             ));
         }
-        let use_systemd = backend != WorkerBackend::Direct && systemd_available;
+        // The central remote controller is an observer, not the protected
+        // process tree. Restarting it must not restart a one-shot command unit.
+        let use_systemd = !remote && backend != WorkerBackend::Direct && systemd_available;
         let environment_names = WORKER_ENVIRONMENT_NAMES;
         let mut command = if use_systemd {
             let mut c = Command::new("/usr/bin/systemd-run");
@@ -552,6 +564,11 @@ impl ExecutionStore {
                     "--property=StandardError=append:{}",
                     dir.join("supervisor.log").display()
                 ));
+            if let Some(remaining)=super::remote_deadline::runtime_limit(self,&record)?{
+                c.arg(format!("--property=RuntimeMaxSec={remaining}ms"))
+                    .arg("--property=SendSIGKILL=yes")
+                    .arg("--property=TimeoutStopSec=1s");
+            }
             for name in environment_names {
                 if let Some(value) = std::env::var_os(name) {
                     let mut assignment = std::ffi::OsString::from(format!("--setenv={name}="));
@@ -716,14 +733,16 @@ impl ExecutionStore {
             .worker
             .as_ref()
             .is_some_and(|v| platform::observe_process(v) == ProcessObservation::Alive);
-        let members_alive = record
+        let members_alive = if matches!(record.request, ExecutionRequest::RemoteStart(_)) {
+            super::remote_controller::confirmed_live(self, &record)?
+        } else { record
             .process
             .as_ref()
             .is_some_and(|v| platform::observe_process(v) == ProcessObservation::Alive)
             || record
                 .observed_members
                 .iter()
-                .any(|v| platform::observe_process(v) == ProcessObservation::Alive);
+                .any(|v| platform::observe_process(v) == ProcessObservation::Alive) };
         let confirmed_live = record.state == ExecutionState::Running
             && record.receipt.is_none()
             && worker_lock_held
@@ -751,6 +770,11 @@ impl ExecutionStore {
     /// Reconciliation never launches work. A lost supervisor preserves uncertainty.
     pub fn reconcile(&self, execution_ref: &str) -> io::Result<ExecutionSnapshot> {
         let mut snapshot = self.status(execution_ref)?;
+        if matches!(snapshot.record.request, ExecutionRequest::RemoteStart(_)) {
+            // The controller's boot, PID, flock or cgroup can never prove a
+            // remote tree stopped. Only its exact executor receipt can do so.
+            return Ok(snapshot);
+        }
         if matches!(
             snapshot.record.state,
             ExecutionState::Running | ExecutionState::Starting | ExecutionState::Unknown
@@ -812,16 +836,16 @@ impl ExecutionStore {
         let dir = self.execution_directory(execution_ref)?;
         let _gate = lock(&dir.join("record.lock"), true)?.expect("blocking lock");
         let durable: CompletionReceipt = read_json(&dir.join("receipt.json"))?;
+        let mut record = self.load_record(execution_ref)?;
         if durable != *receipt
             || durable.execution_ref != execution_ref
-            || durable.node_ref != self.node_ref
+            || durable.node_ref != record.executor_node_ref()
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "finalization receipt does not match durable evidence",
             ));
         }
-        let mut record = self.load_record(execution_ref)?;
         if record.receipt.as_ref() != Some(&durable) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -881,6 +905,10 @@ impl ExecutionStore {
         receipt: CompletionReceipt,
         _gate: &FileLock,
     ) -> io::Result<()> {
+        if receipt.execution_ref != record.execution_ref || receipt.node_ref != record.executor_node_ref()
+            || receipt.tree_complete == receipt.process_may_be_running {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"completion receipt identity mismatch"));
+        }
         let dir = self.execution_directory(&record.execution_ref)?;
         let receipt_path = dir.join("receipt.json");
         let durable = match read_json::<CompletionReceipt>(&receipt_path) {
@@ -891,7 +919,7 @@ impl ExecutionStore {
             }
             Err(e) => return Err(e),
         };
-        if durable.execution_ref != record.execution_ref || durable.node_ref != self.node_ref {
+        if durable.execution_ref != record.execution_ref || durable.node_ref != record.executor_node_ref() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "completion receipt identity mismatch",

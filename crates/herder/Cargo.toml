@@ -10,6 +10,7 @@ name = "herder-wire-probe"
 path = "src/main.rs"
 
 [dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 base64 = "0.22"
 libc = "0.2"
 futures-util = { version = "0.3", features = ["sink"] }

@@ -574,3 +574,196 @@ fn ambiguous_create_receipts_never_choose_a_recent_child_or_trigger_native_recov
     let stored: String = Connection::open(&fixture.db).unwrap().query_row("SELECT result_json FROM tasks WHERE task_id='combined'", [], |row| row.get(0)).unwrap();
     assert_eq!(stored, original);
 }
+
+struct ReceiptReadOnlyNative;
+impl NativeSessionReader for ReceiptReadOnlyNative {
+    async fn snapshot(&self, _: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
+        panic!("receipt lookup must not call the native reader")
+    }
+    async fn reconcile(&self, _: &NativeReceipt) -> Result<Observation, ReadError> {
+        panic!("receipt lookup must not reconcile native state")
+    }
+}
+impl BoundedNativeHandoff for ReceiptReadOnlyNative {
+    fn submit_bounded(&self, _: DispatchPlan, _: &str, _: &RequestKey) -> Result<Admission, SubmitError> {
+        panic!("receipt lookup must not submit")
+    }
+}
+fn canonical_receipt_fixture(confirmed: bool) -> (Fixture, String, String) {
+    let fixture = Fixture::new("unknown", true);
+    let suffix = Sha256::digest(serde_json::to_vec(&("mcp-deliver-v1","alice","issued","original-key")).unwrap())
+        .iter().map(|byte|format!("{byte:02x}")).collect::<String>();
+    let task = format!("mcp-delivery-task:{suffix}");
+    let intent = format!("mcp-delivery-intent:{suffix}");
+    let mut connection = mutation_connection(&fixture.db);
+    connection.pragma_update(None,"defer_foreign_keys",true).unwrap();
+    let tx = connection.transaction().unwrap();
+    tx.execute("UPDATE tasks SET task_id=?1 WHERE task_id='task'",[&task]).unwrap();
+    tx.execute("UPDATE intents SET intent_id=?1,task_id=?2 WHERE intent_id='intent'",params![intent,task]).unwrap();
+    if confirmed {
+        let address=address();
+        let binding=ReceiptBinding{intent_id:&intent,principal:"alice",target_ref:"issued",
+            request_key:"original-key",address:&address};
+        let receipt=NativeReceipt{target:address.clone(),native_id:"native-message-exact".into()};
+        let encoded=json!({"version":1,"intent_id":binding.intent_id,"principal":binding.principal,
+            "target_ref":binding.target_ref,"request_key":binding.request_key,
+            "address":binding.address,"native_id":receipt.native_id}).to_string();
+        tx.execute("UPDATE intents SET state='confirmed',native_receipt=?1 WHERE intent_id=?2",params![encoded,intent]).unwrap();
+        tx.execute("UPDATE tasks SET result_json=?1 WHERE task_id=?2",
+            params![json!({"content":[],"structuredContent":{"outcome":"confirmed","native_receipt_id":"native-message-exact"}}).to_string(),task]).unwrap();
+    }
+    tx.commit().unwrap();
+    (fixture,task,intent)
+}
+fn receipt_read_app(fixture:&Fixture, allowed:Vec<Grant>)
+    -> herder::application::scoped_stop::mcp_deliver::ScopedDeliverApplication<ReceiptReadOnlyNative,ReceiptReadOnlyNative> {
+    herder::application::scoped_stop::mcp_deliver::ScopedDeliverApplication::new(
+        Arc::new(fixture.authority()),address().instance,allowed,
+        Arc::new(ReceiptReadOnlyNative),Arc::new(ReceiptReadOnlyNative),"retain".into()).unwrap()
+}
+fn receipt_read_request(key:&str) -> herder::mcp::catalog::Request {
+    herder::mcp::catalog::Request::Deliver(herder::mcp::catalog::Deliver::Receipt{
+        session_ref:"issued".into(),request_key:key.into()})
+}
+#[tokio::test]
+async fn canonical_delivery_receipt_read_preserves_unknown_under_human_stop_without_native_io() {
+    use herder::mcp::transport::ApplicationPort;
+    let (fixture,task,_) = canonical_receipt_fixture(false);
+    fixture.execute("INSERT INTO humanstop_holds VALUES ('global','human instruction','held',NULL)");
+    let before: (String,Option<String>,String) = Connection::open(&fixture.db).unwrap().query_row(
+        "SELECT i.state,i.native_receipt,t.result_json FROM intents i JOIN tasks t ON t.task_id=i.task_id WHERE t.task_id=?1",
+        [&task],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+    let app=receipt_read_app(&fixture,grants("alice"));
+    let result=app.call(&identity("alice"),receipt_read_request("original-key")).await.unwrap();
+    assert_ne!(result.is_error,Some(true));
+    let value=result.structured_content.unwrap();
+    assert_eq!(value["found"],true);
+    assert_eq!(value["state"],"unknown");
+    assert_eq!(value["task_ref"],task);
+    assert!(value["native_receipt"].is_null());
+    let after: (String,Option<String>,String) = Connection::open(&fixture.db).unwrap().query_row(
+        "SELECT i.state,i.native_receipt,t.result_json FROM intents i JOIN tasks t ON t.task_id=i.task_id WHERE t.task_id=?1",
+        [&task],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+    assert_eq!(before,after);
+    let held:bool=Connection::open(&fixture.db).unwrap().query_row(
+        "SELECT EXISTS(SELECT 1 FROM humanstop_holds WHERE scope_ref='global' AND released_at IS NULL)",[],|row|row.get(0)).unwrap();
+    assert!(held);
+}
+#[tokio::test]
+async fn canonical_delivery_receipt_read_is_scoped_and_rejects_unbound_confirmation() {
+    use herder::mcp::transport::ApplicationPort;
+    let (fixture,_,intent) = canonical_receipt_fixture(true);
+    let app=receipt_read_app(&fixture,grants("alice"));
+    let result=app.call(&identity("alice"),receipt_read_request("original-key")).await.unwrap();
+    let value=result.structured_content.unwrap();
+    assert_eq!(value["state"],"confirmed");
+    assert_eq!(value["native_receipt"]["native_id"],"native-message-exact");
+    assert_eq!(value["target"]["native_session_id"],"native-session");
+    assert_eq!(value["delivery_mode"],"start");
+    let missing=app.call(&identity("alice"),receipt_read_request("different-key")).await.unwrap();
+    assert_eq!(missing.structured_content.unwrap()["found"],false);
+    let denied=app.call(&identity("bob"),receipt_read_request("original-key")).await.unwrap();
+    assert_eq!(denied.is_error,Some(true));
+    let other=receipt_read_app(&fixture,grants("bob"));
+    let unrelated=other.call(&identity("bob"),receipt_read_request("original-key")).await.unwrap();
+    assert_eq!(unrelated.structured_content.unwrap()["found"],false);
+    mutation_connection(&fixture.db).execute("UPDATE intents SET native_receipt='{}' WHERE intent_id=?1",[&intent]).unwrap();
+    let corrupt=app.call(&identity("alice"),receipt_read_request("original-key")).await.unwrap();
+    assert_eq!(corrupt.is_error,Some(true));
+    assert_eq!(corrupt.structured_content.unwrap()["code"],"delivery_receipt_unavailable");
+}
+
+
+#[test]
+fn canonical_resume_payload_matches_typescript_golden_vector() {
+    let plan = herder::domain::adapter::DispatchPlan {
+        target: SessionAddress { instance: InstanceRef { node: NodeRef("qa-node".into()),
+            instance_id: "qa-instance".into() }, native_session_id: "thread-qa".into() },
+        mode: herder::domain::adapter::SendMode::Start,
+        expected_turn: None,
+    };
+    assert_eq!(herder::application::reconcile::dispatch_payload_binding(&plan, "Привет \"QA\"\nline\\path"),
+        "sha256-dispatch-v1:e894ba7ab624401b386b68164016c11265b68e7493ccfc4c9e60096bcc364589");
+}
+
+
+#[derive(Default)]
+struct CanonicalKeyNative {
+    submissions: AtomicUsize,
+    corrupt_registry: Option<PathBuf>,
+}
+impl NativeSessionReader for CanonicalKeyNative {
+    async fn snapshot(&self,target:&SessionAddress)->Result<SessionSnapshot,ReadError> {
+        use herder::domain::{adapter::SessionActivity,address::{Capability,CapabilityVersion,Support,Availability,Authorization}};
+        if let Some(directory)=&self.corrupt_registry {
+            let record=fs::read_dir(directory).unwrap().filter_map(Result::ok)
+                .find(|entry|entry.path().extension().is_some_and(|v|v=="json")).unwrap().path();
+            let mut value:Value=serde_json::from_slice(&fs::read(&record).unwrap()).unwrap();
+            value["payload_hash"]=json!(format!("sha256-dispatch-v1:{}","c".repeat(64)));
+            fs::write(&record,serde_json::to_vec(&value).unwrap()).unwrap();
+        }
+        Ok(SessionSnapshot{address:target.clone(),human_stop:false,activity:SessionActivity::Idle,
+            capabilities:vec![Capability{name:"deliver.start".into(),version:CapabilityVersion{adapter_version:"fixture".into(),capability_version:"1".into()},
+                supported:Support::Supported,available:Availability::Available,authorized:Authorization::Authorized}]})
+    }
+    async fn reconcile(&self,receipt:&NativeReceipt)->Result<Observation,ReadError>{
+        Ok(Observation::Confirmed{receipt:receipt.clone()})
+    }
+}
+impl BoundedNativeHandoff for CanonicalKeyNative {
+    fn submit_bounded(&self,plan:DispatchPlan,_:&str,_:&RequestKey)->Result<Admission,SubmitError>{
+        self.submissions.fetch_add(1,Ordering::SeqCst);
+        Ok(Admission{receipt:NativeReceipt{target:plan.target,native_id:"native-global-key".into()}})
+    }
+}
+fn global_keys(fixture:&Fixture)->Arc<herder::application::delivery_keys::DeliveryKeyRegistry>{
+    use herder::ownership::manifest::{StorageAuthority,StorageId,AuthorityRoute};
+    let root=fixture.root.join("resources-authority");fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root,fs::Permissions::from_mode(0o700)).unwrap();
+    let marker=root.join("storage.json");fs::write(&marker,r#"{"schema":"v1","storage_id":"qa-native-keys"}"#).unwrap();
+    fs::set_permissions(marker,fs::Permissions::from_mode(0o600)).unwrap();
+    Arc::new(herder::application::delivery_keys::DeliveryKeyRegistry::new(StorageAuthority{
+        storage_id:StorageId("qa-native-keys".into()),authority_node:NodeRef("node".into()),root,
+        schema:"v1".into(),route:AuthorityRoute::Local}).unwrap())
+}
+fn key_send(session:&str,key:&str)->herder::mcp::catalog::Request{
+    use herder::mcp::catalog::{Request,Deliver,DeliveryMode};
+    Request::Deliver(Deliver::Session{session_ref:session.into(),request_key:key.into(),message:"one selected payload".into(),mode:DeliveryMode::Start})
+}
+#[tokio::test]
+async fn compatibility_key_target_switch_is_rejected_before_a_second_native_submission() {
+    use herder::mcp::{transport::ApplicationPort,catalog};
+    let fixture=Fixture::new("rejected",true);fixture.other_scope();
+    let keys=global_keys(&fixture);let native=Arc::new(CanonicalKeyNative::default());
+    let mut allowed=grants("alice");
+    for session in ["issued","other-issued"] {
+        allowed.push(Grant{principal:PrincipalId("alice".into()),resource:PrivateResource::Session(SessionRef(session.into())),action:Action::Write});
+        allowed.push(Grant{principal:PrincipalId("alice".into()),resource:PrivateResource::Session(SessionRef(session.into())),action:Action::Read});
+    }
+    let app=herder::application::scoped_stop::mcp_deliver::ScopedDeliverApplication::new(
+        Arc::new(fixture.authority()),address().instance,allowed,native.clone(),native.clone(),"retain".into()).unwrap().with_delivery_keys(keys);
+    let key=format!("compat-resume:v1:{}","a".repeat(64));
+    let first=app.call(&identity("alice"),key_send("issued",&key)).await.unwrap();
+    assert_ne!(first.is_error,Some(true),"{first:?}");assert_eq!(native.submissions.load(Ordering::SeqCst),1);
+    let second=app.call(&identity("alice"),key_send("other-issued",&key)).await.unwrap();
+    assert_eq!(second.structured_content.unwrap()["code"],"idempotency_conflict");
+    let read=app.call(&identity("alice"),catalog::Request::Deliver(catalog::Deliver::Receipt{session_ref:"other-issued".into(),request_key:key.clone()})).await.unwrap();
+    assert_eq!(read.structured_content.unwrap()["code"],"idempotency_conflict");
+    let replay=app.call(&identity("alice"),key_send("issued",&key)).await.unwrap();
+    assert_ne!(replay.is_error,Some(true));assert_eq!(native.submissions.load(Ordering::SeqCst),1);
+}
+#[tokio::test]
+async fn compatibility_key_is_revalidated_inside_the_actual_native_handoff() {
+    use herder::mcp::transport::ApplicationPort;
+    let fixture=Fixture::new("rejected",true);
+    let keys=global_keys(&fixture);let native=Arc::new(CanonicalKeyNative{submissions:AtomicUsize::new(0),
+        corrupt_registry:Some(fixture.root.join("resources-authority/delivery-bindings"))});
+    let mut allowed=grants("alice");allowed.push(Grant{principal:PrincipalId("alice".into()),resource:PrivateResource::Session(SessionRef("issued".into())),action:Action::Write});
+    let app=herder::application::scoped_stop::mcp_deliver::ScopedDeliverApplication::new(
+        Arc::new(fixture.authority()),address().instance,allowed,native.clone(),native.clone(),"retain".into()).unwrap().with_delivery_keys(keys);
+    let key=format!("compat-resume:v1:{}","b".repeat(64));
+    let _=app.call(&identity("alice"),key_send("issued",&key)).await.unwrap();
+    assert_eq!(native.submissions.load(Ordering::SeqCst),0);
+    let state:String=Connection::open(&fixture.db).unwrap().query_row("SELECT state FROM intents WHERE request_key=?1",[key],|r|r.get(0)).unwrap();
+    assert_eq!(state,"rejected");
+}

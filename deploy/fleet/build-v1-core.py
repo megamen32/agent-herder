@@ -21,24 +21,33 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNERS = ("opencode", "zcode", "browser", "codex")
-BUNDLE = r'''
+BUNDLE_RUNTIME = r'''
 import { rolldown } from 'rolldown';
-const [compiled, output] = process.argv.slice(1);
-for (const name of ['opencode', 'zcode', 'browser', 'codex']) {
+async function bundleEntry(input, output) {
   const bundle = await rolldown({
-    input: `${compiled}/ahap-${name}-runner.js`, platform: 'node',
+    input, platform: 'node',
     onLog(level, log, handler) {
       if (log.code === 'UNRESOLVED_IMPORT') throw new Error(log.message);
       handler(level, log);
     },
   });
   try {
-    await bundle.write({file: `${output}/ahap-${name}-runner.mjs`, format: 'esm',
+    await bundle.write({file: output, format: 'esm',
       inlineDynamicImports: true, sourcemap: false,
       banner: 'import { createRequire as __ahapCreateRequire } from "node:module";\nconst require = __ahapCreateRequire(import.meta.url);',
     });
   } finally { await bundle.close(); }
 }
+'''
+BUNDLE = BUNDLE_RUNTIME + r'''
+const [compiled, output] = process.argv.slice(1);
+for (const name of ['opencode', 'zcode', 'browser', 'codex']) {
+  await bundleEntry(`${compiled}/ahap-${name}-runner.js`, `${output}/ahap-${name}-runner.mjs`);
+}
+'''
+BUNDLE_ENTRY = BUNDLE_RUNTIME + r'''
+const [input, output] = process.argv.slice(1);
+await bundleEntry(input, output);
 '''
 
 

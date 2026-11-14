@@ -29,8 +29,14 @@ _spec = importlib.util.spec_from_loader(_loader.name, _loader)
 candidate = importlib.util.module_from_spec(_spec)
 _loader.exec_module(candidate)
 
+_scheduler_loader = importlib.machinery.SourceFileLoader(
+    "process_leases_scheduler_readiness", str(Path(__file__).with_name("process-leases-scheduler-readiness.py")))
+_scheduler_spec = importlib.util.spec_from_loader(_scheduler_loader.name, _scheduler_loader)
+scheduler = importlib.util.module_from_spec(_scheduler_spec)
+_scheduler_loader.exec_module(scheduler)
+
 TERMINAL = {"completed", "recovered_baseline", "recovered_candidate"}
-CHANGED_COMPONENTS = ("core", "process_worker", "process_wait_reader", "resource_bridge")
+CHANGED_COMPONENTS = ("core", "process_worker", "process_wait_reader", "resource_bridge", "process_remote_bridge")
 CONTROLLER = "shell:roomhacker-server-100"
 CHILD = "AgentHerder"
 
@@ -149,7 +155,7 @@ def component_guard(git_dir, before, after):
     if "process_config" in before:
         old_config = candidate.read_json(before["process_config"])
         new_config = candidate.read_json(after["process_config"])
-        for key in ("node_ref", "execution_root", "resources", "administrators"):
+        for key in ("node_ref", "execution_root", "resources", "administrators", "remote_executors"):
             if old_config.get(key) != new_config.get(key):
                 raise ValueError("process authority migration requires separate review: " + key)
     source = after.get("process_leases_build", {}).get("source_commit")
@@ -268,6 +274,10 @@ class MutationGuard:
                 or candidate.digest(candidate.private_file(Path(state["candidate"]).parent / "fixture/launch-v1-core.py"))
                     != state["launcher_after_sha256"]):
             raise RuntimeError("candidate changed after ancestry admission")
+        # A native-only switch would leave an older TS scheduler free to wake a
+        # sleeping agent. The exact installed TS service must already be sealed
+        # in canonical mode before either selector mutation is admitted.
+        scheduler.observe(state["scheduler_identity"])
 
 
 def receipt_common(state, receipt, kind, minimum):
@@ -314,18 +324,28 @@ def validate_consumer(state, receipt, minimum, require_process=True):
     if len(names) != len(tools) or len(set(names)) != len(names):
         raise ValueError("consumer tool schemas are malformed or ambiguous")
     indexed = {tool["name"]: tool for tool in tools}
-    for name in ("automation", "resource"):
+    for name in (("automation", "resource", "session", "deliver") if require_process else ("automation", "resource")):
         if not isinstance(indexed.get(name, {}).get("inputSchema"), dict):
             raise ValueError("consumer is missing the public " + name + " schema")
     if require_process:
-        for value in ("process_completion", "reconcile_process", "cancel_execution"):
+        for value in ("process_completion", "reconcile_process", "cancel_execution", "timer", "session_completion", "wait_status"):
             if not schema_has_value(indexed["automation"]["inputSchema"], value):
                 raise ValueError("running automation schema lacks " + value)
         if not schema_has_value(indexed["resource"]["inputSchema"], "bind"):
             raise ValueError("running resource schema lacks bind")
+        if not schema_has_value(indexed["session"]["inputSchema"], "resolve"):
+            raise ValueError("running session schema lacks resolve")
+        if not schema_has_value(indexed["deliver"]["inputSchema"], "receipt"):
+            raise ValueError("running deliver schema lacks receipt")
     return {"target": CONTROLLER, "ref": CHILD, "method": "mcp_tools",
             "provider_operation_id": receipt["provider_operation_id"],
             "observed_at_unix_ms": receipt["observed_at_unix_ms"], "schema_sha256": receipt["schema_sha256"]}
+
+
+def validate_scheduler_consumer(state, receipt, minimum):
+    return scheduler.validate_receipt(receipt, state["scheduler_identity"]["runtime"]["source_commit"],
+        stage="consumer", expected=state["scheduler_identity"], challenge=state["challenge"],
+        job_id=state["job_id"], minimum=minimum)
 
 
 def record_receipt(args):
@@ -335,10 +355,14 @@ def record_receipt(args):
         raise ValueError("rollout is already resolved")
     if args.kind == "restart":
         validate_restart(state, receipt)
+    elif args.kind == "scheduler":
+        validate_scheduler_consumer(state, receipt,
+            state.get("awaiting_restart_at_unix_ms", state["created_at_unix_ms"]))
     else:
         validate_consumer(state, receipt, state.get("awaiting_restart_at_unix_ms", state["created_at_unix_ms"]),
                           require_process=args.kind != "baseline-consumer")
     name = {"restart": "restart-ack.json", "consumer": "consumer-receipt.json",
+            "scheduler": "scheduler-consumer.json",
             "baseline-consumer": "baseline-consumer-receipt.json"}[args.kind]
     path = Path(args.job_dir) / name
     data = candidate.encoded(receipt)
@@ -368,6 +392,7 @@ def status(args):
                 (state["phase"] in TERMINAL or state["phase"] == "unknown" or identity_state(state["coordinator"]) != "live"),
             "restart_ack_recorded": (Path(args.job_dir) / "restart-ack.json").exists(),
             "consumer_receipt_recorded": (Path(args.job_dir) / "consumer-receipt.json").exists(),
+            "scheduler_receipt_recorded": (Path(args.job_dir) / "scheduler-consumer.json").exists(),
             "checkpoint_sha256": candidate.digest(Path(args.job_dir) / "state.json")}
 
 
@@ -385,6 +410,12 @@ def admit(args, gate):
     if before_pair_again != before_pair:
         raise ValueError("running baseline changed during admission")
     candidate.profile_transition(selection, new_selection, baseline, proposed)
+    # This proof is fresh but needs no native call: a newly installed canonical
+    # TS service may safely fail closed while the old core lacks wait_status.
+    proof_bytes, _ = scheduler.read_file(str(args.scheduler_proof))
+    scheduler_receipt = json.loads(proof_bytes)
+    scheduler_evidence = scheduler.validate_receipt(scheduler_receipt,
+        proposed["process_leases_build"]["source_commit"], stage="preflight")
     root = Path(args.job_dir)
     if not root.is_absolute() or root.parent.resolve(strict=True) != root.parent or root.exists():
         raise ValueError("new private job directory must have a canonical existing parent")
@@ -399,7 +430,7 @@ def admit(args, gate):
         state = {"schema": 1, "job_id": "rollout-" + uuid.uuid4().hex, "job_dir": str(root),
                  "phase": "admitted", "created_at_unix_ms": stamp, "updated_at_unix_ms": stamp,
                  "deadline_unix_ms": stamp + int(args.deadline_seconds * 1000),
-                 "challenge": uuid.uuid4().hex, "coordinator": identity(os.getpid()),
+                 "challenge": uuid.uuid4().hex + uuid.uuid4().hex, "coordinator": identity(os.getpid()),
                  "selector": str(selector), "launcher": str(launcher), "candidate": str(args.candidate),
                  "selector_before_sha256": candidate.digest(selector),
                  "launcher_before_sha256": candidate.digest(launcher),
@@ -409,10 +440,14 @@ def admit(args, gate):
                  "candidate_manifest": new_selection["manifest"], "candidate_manifest_sha256": checked["manifest_sha256"],
                  "baseline_runtime": before_pair, "component_ancestry": ancestry,
                  "adapter_migration_sha256": checked.get("adapter_migration_sha256"),
+                 "scheduler_identity": scheduler_evidence["identity"],
+                 "scheduler_preflight_evidence": scheduler_evidence,
+                 "scheduler_preflight_sha256": hashlib.sha256(proof_bytes).hexdigest(),
                  "proof_path": str(candidate.private_file(args.proof)),
                  "release_state": str(candidate.private_file(gate.state_path)),
                  "release_identity": {key: gate.proof[key] for key in ("project", "owner", "fence")},
                  "deployment_target": gate.target, "backup": str(args.backup)}
+        candidate.create(root / "scheduler-preflight.json", proof_bytes, 0o400)
         candidate.create(root / "state.json", candidate.encoded(state))
         pointer = {"schema": 1, "job_id": state["job_id"], "job_dir": str(root),
                    "selector": str(selector), "phase": "active"}
@@ -429,6 +464,7 @@ def observe_completion(state, gate):
     while now_ms() < state["deadline_unix_ms"]:
         gate.check()
         restart_path, consumer_path = root / "restart-ack.json", root / "consumer-receipt.json"
+        scheduler_path = root / "scheduler-consumer.json"
         if restart_path.exists():
             restart = candidate.read_json(restart_path)
             validate_restart(state, restart)
@@ -447,6 +483,11 @@ def observe_completion(state, gate):
             if consumer_path.exists():
                 receipt = candidate.read_json(consumer_path)
                 consumer = validate_consumer(state, receipt, restart["observed_at_unix_ms"])
+                if not scheduler_path.exists():
+                    time.sleep(0.25)
+                    continue
+                scheduler_evidence = validate_scheduler_consumer(state, candidate.read_json(scheduler_path),
+                                                                 restart["observed_at_unix_ms"])
                 gate.check()
                 confirmed_pair = runtime_pair(Path(state["selector"]), Path(state["launcher"]),
                                               restart["compat_pid"], restart["core_pid"],
@@ -454,6 +495,8 @@ def observe_completion(state, gate):
                 if confirmed_pair != pair:
                     raise RuntimeError("runtime changed while verifying consumer readiness")
                 save_state(state, phase="verified", final_runtime=pair, consumer_evidence=consumer,
+                           scheduler_consumer_evidence=scheduler_evidence,
+                           scheduler_consumer_sha256=candidate.digest(scheduler_path),
                            restart_receipt_sha256=candidate.digest(restart_path),
                            consumer_receipt_sha256=candidate.digest(consumer_path))
                 return
@@ -477,6 +520,7 @@ def run(args):
             state = admit(args, gate)
             save_state(state, phase="installing")
             result = candidate.install(args, guard=MutationGuard(gate, state))
+            scheduler.observe(state["scheduler_identity"])
             save_state(state, phase="awaiting_restart", awaiting_restart_at_unix_ms=now_ms(),
                        install_receipt=result["rollback_receipt"])
             observe_completion(state, gate)
@@ -517,9 +561,19 @@ def recover(args):
     receipt = candidate.read_json(args.consumer_receipt)
     consumer = validate_consumer(state, receipt, max(state["updated_at_unix_ms"], now_ms() - 60000),
                                  require_process=is_candidate)
+    # Recovery cannot erase the paired-runtime requirement. A candidate needs
+    # another actual gate query; a settled old core may lack that API, so its
+    # canonical TS service is proved without a probe and remains fail closed.
+    scheduler_receipt = candidate.read_json(args.scheduler_proof)
+    scheduler_evidence = (validate_scheduler_consumer(state, scheduler_receipt,
+        max(state["updated_at_unix_ms"], now_ms() - 60000)) if is_candidate else
+        scheduler.validate_receipt(scheduler_receipt, state["scheduler_identity"]["runtime"]["source_commit"],
+            stage="preflight", expected=state["scheduler_identity"], challenge=state["challenge"],
+            minimum=max(state["updated_at_unix_ms"], now_ms() - 60000)))
     ledger = candidate.read_json(state["release_state"])
     evidence = {"observed_at_unix_ms": now_ms(), "outcome": args.outcome, "runtime": pair,
-                "consumer": consumer, "consumer_receipt_sha256": candidate.digest(args.consumer_receipt)}
+                "consumer": consumer, "consumer_receipt_sha256": candidate.digest(args.consumer_receipt),
+                "scheduler": scheduler_evidence, "scheduler_proof_sha256": candidate.digest(args.scheduler_proof)}
     if terminal:
         expected_outcome = "baseline" if state["phase"] == "recovered_baseline" else "candidate"
         if args.outcome != expected_outcome:
@@ -545,6 +599,7 @@ def recover(args):
             raise RuntimeError("runtime changed during legacy reconciliation")
         if candidate.digest(selector) != expected_s or candidate.digest(state["launcher"]) != expected_l:
             raise RuntimeError("configuration changed during legacy reconciliation")
+        scheduler.observe(state["scheduler_identity"])
         save_state(state, phase="recovery_verified", recovery_evidence=evidence,
                    recovery_release_identity={key: proof[key] for key in ("project", "owner", "fence")})
     save_state(state, phase="recovered_candidate" if is_candidate else "recovered_baseline")
@@ -556,7 +611,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     r = sub.add_parser("run")
-    for name in ("candidate", "selector", "launcher", "backup", "job-dir", "proof"):
+    for name in ("candidate", "selector", "launcher", "backup", "job-dir", "proof", "scheduler-proof"):
         r.add_argument("--" + name, type=Path, required=True)
     r.add_argument("--release-state", type=Path)
     r.add_argument("--target", type=Path, help="existing private deploymentTarget JSON")
@@ -568,10 +623,10 @@ def main():
     s.add_argument("--job-dir", type=Path, required=True)
     a = sub.add_parser("record")
     a.add_argument("--job-dir", type=Path, required=True)
-    a.add_argument("--kind", choices=("restart", "consumer", "baseline-consumer"), required=True)
+    a.add_argument("--kind", choices=("restart", "consumer", "baseline-consumer", "scheduler"), required=True)
     a.add_argument("--receipt", type=Path, required=True)
     c = sub.add_parser("recover")
-    for name in ("job-dir", "proof", "consumer-receipt"):
+    for name in ("job-dir", "proof", "consumer-receipt", "scheduler-proof"):
         c.add_argument("--" + name, type=Path, required=True)
     c.add_argument("--outcome", choices=("baseline", "candidate"), required=True)
     c.add_argument("--compat-pid", type=int, required=True)

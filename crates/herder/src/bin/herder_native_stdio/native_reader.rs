@@ -1,6 +1,9 @@
 //! Read-only, instance-bound Codex snapshot and exact receipt observation.
 use herder::{
     adapters::codex::connection::{CodexConnection, CodexInstance},
+    application::scoped_stop::wait_automation::{
+        NativeTurn, NativeTurnReader, NativeTurnStatus, native_turn,
+    },
     domain::{
         adapter::{
             NativeReceipt, NativeSessionReader, Observation, ReadError, SessionActivity,
@@ -73,6 +76,62 @@ impl NativeReader {
             return Err(ReadError("thread turns unavailable".into()));
         }
         Ok(thread.clone())
+    }
+}
+fn exact_wait_turn(
+    thread: &Value,
+    captured: Option<&str>,
+) -> Result<Option<NativeTurn>, ReadError> {
+    let turns = thread
+        .get("turns")
+        .and_then(Value::as_array)
+        .ok_or_else(|| ReadError("thread turns unavailable".into()))?;
+    let mut seen = std::collections::HashSet::new();
+    let mut parsed = Vec::new();
+    for turn in turns {
+        let id = turn
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ReadError("turn identity unavailable".into()))?;
+        if !seen.insert(id) {
+            return Err(ReadError("ambiguous turn identity".into()));
+        }
+        let status = turn
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ReadError("turn state unavailable".into()))?;
+        if !matches!(
+            status,
+            "inProgress" | "completed" | "failed" | "interrupted"
+        ) {
+            return Err(ReadError("turn state unavailable".into()));
+        }
+        parsed.push(native_turn(id, status).ok_or_else(|| ReadError("invalid turn proof".into()))?);
+    }
+    if let Some(captured) = captured {
+        return Ok(parsed.into_iter().find(|t| t.turn_id == captured));
+    }
+    let mut running = parsed
+        .iter()
+        .filter(|t| t.status == NativeTurnStatus::Running);
+    let active = running.next();
+    if running.next().is_some() {
+        return Err(ReadError("ambiguous current turn".into()));
+    }
+    // thread/read exposes the ordered native turn history. Explicit turn status
+    // is required even when the enclosing thread advertises idle.
+    Ok(active.or_else(|| parsed.last()).cloned())
+}
+impl NativeTurnReader for NativeReader {
+    fn current_turn(&self, target: &SessionAddress) -> Result<Option<NativeTurn>, ReadError> {
+        exact_wait_turn(&self.read(target)?, None)
+    }
+    fn observed_turn(
+        &self,
+        target: &SessionAddress,
+        turn_id: &str,
+    ) -> Result<Option<NativeTurn>, ReadError> {
+        exact_wait_turn(&self.read(target)?, Some(turn_id))
     }
 }
 fn activity(thread: &Value) -> SessionActivity {
@@ -183,6 +242,29 @@ impl NativeSessionReader for NativeReader {
 mod tests {
     use super::*;
     use herder::domain::address::NodeRef;
+    #[test]
+    fn waits_require_exact_native_turn_and_keep_prior_turn_proof_after_a_new_run() {
+        let thread = json!({"status":{"type":"idle"},"turns":[{"id":"old","status":"failed"},{"id":"current","status":"inProgress"}]});
+        assert_eq!(
+            exact_wait_turn(&thread, None).unwrap().unwrap().turn_id,
+            "current"
+        );
+        let old = exact_wait_turn(&thread, Some("old")).unwrap().unwrap();
+        assert_eq!(old.status, NativeTurnStatus::Failed);
+        assert_eq!(exact_wait_turn(&thread, Some("missing")).unwrap(), None);
+        assert_eq!(
+            exact_wait_turn(&json!({"status":{"type":"idle"},"turns":[]}), None).unwrap(),
+            None
+        );
+        for malformed in [
+            json!({"turns":[{"id":"same","status":"completed"},{"id":"same","status":"completed"}]}),
+            json!({"turns":[{"id":"a","status":"inProgress"},{"id":"b","status":"inProgress"}]}),
+            json!({"turns":[{"id":"a","status":"idle"}]}),
+            json!({"turns":[{"status":"completed"}]}),
+        ] {
+            assert!(exact_wait_turn(&malformed, None).is_err());
+        }
+    }
     fn receipt() -> NativeReceipt {
         NativeReceipt {
             target: SessionAddress {
@@ -293,6 +375,14 @@ for line in sys.stdin:
             reader.reconcile(&r).await.unwrap(),
             Observation::Confirmed { .. }
         ));
+        assert_eq!(
+            reader.current_turn(&r.target).unwrap(),
+            Some(NativeTurn {
+                turn_id: "t".into(),
+                status: NativeTurnStatus::Completed
+            })
+        );
+        assert!(reader.observed_turn(&r.target, "other").unwrap().is_none());
         let mut wrong = r.target.clone();
         wrong.instance.instance_id = "other".into();
         assert!(reader.snapshot(&wrong).await.is_err());

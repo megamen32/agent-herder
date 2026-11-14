@@ -21,6 +21,11 @@ pub trait ExecutionHooks {
     fn tick(&mut self, _record: &ExecutionRecord) -> io::Result<()> {
         Ok(())
     }
+    /// Remaining permission for one remote spawn, based on the exact canonical
+    /// claims. Generic observer hooks never grant a protected remote effect.
+    fn launch_valid_for_ms(&mut self, _record: &ExecutionRecord) -> io::Result<u64> {
+        Err(io::Error::new(io::ErrorKind::PermissionDenied, "remote_launch_grant_unavailable"))
+    }
     /// The immutable completion receipt is already durable when this is called.
     /// This hook must be idempotent; failed finalization is persisted and retried.
     fn terminal(
@@ -56,6 +61,9 @@ pub fn run_worker_with_hooks(
             finalize_hooks(store, &mut record, hooks)?;
         }
         return Ok(WorkerOutcome::Completed);
+    }
+    if matches!(record.request, ExecutionRequest::RemoteStart(_)) {
+        return super::remote_controller::run(store, record, hooks);
     }
     if record.state != ExecutionState::Prepared {
         // Starting was recorded before any OS spawn. Absence of a process receipt
@@ -106,10 +114,11 @@ pub fn run_worker_with_hooks(
     match record.request.clone() {
         ExecutionRequest::Start(request) => supervise_command(store, record, request, hooks),
         ExecutionRequest::Attach(request) => watch_existing(store, record, request, hooks),
+        ExecutionRequest::RemoteStart(_) => Err(io::Error::other("remote controller routing mismatch")),
     }
 }
 
-fn finalize_hooks(
+pub(crate) fn finalize_hooks(
     store: &ExecutionStore,
     record: &mut ExecutionRecord,
     hooks: &mut dyn ExecutionHooks,
@@ -204,6 +213,12 @@ fn supervise_command(
         )?;
         return Ok(WorkerOutcome::Completed);
     }
+    if let Err(error) = super::remote_deadline::admit(store, &record) {
+        finish(store, &mut record, hooks, CompletionReason::LaunchFailed, true, false,
+            Some(bounded_detail(error)))?;
+        return Ok(WorkerOutcome::Completed);
+    }
+    let remote_permit = super::remote_deadline::spawn_cutoff(store, &record)?;
     let directory = store.execution_directory(&record.execution_ref)?;
     let spawn = (|| {
         let stdout = open_private(&directory.join("stdout.log"), true, true)?;
@@ -217,7 +232,12 @@ fn supervise_command(
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
         unsafe {
-            command.pre_exec(|| {
+            command.pre_exec(move || {
+                if let Some(cutoff) = remote_permit {
+                    if super::remote_deadline::boot_millis()? >= cutoff {
+                        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "remote_start_permit_expired"));
+                    }
+                }
                 if libc::setsid() == -1 {
                     return Err(io::Error::last_os_error());
                 }

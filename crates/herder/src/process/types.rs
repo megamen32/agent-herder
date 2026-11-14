@@ -39,30 +39,35 @@ pub struct AttachRequest {
 pub enum ExecutionRequest {
     Start(StartRequest),
     Attach(AttachRequest),
+    RemoteStart(super::remote::RemoteStartRequest),
 }
 impl ExecutionRequest {
     pub fn principal_ref(&self) -> &str {
         match self {
             Self::Start(v) => &v.principal_ref,
             Self::Attach(v) => &v.principal_ref,
+            Self::RemoteStart(v) => &v.principal_ref,
         }
     }
     pub fn session_ref(&self) -> &str {
         match self {
             Self::Start(v) => &v.session_ref,
             Self::Attach(v) => &v.session_ref,
+            Self::RemoteStart(v) => &v.session_ref,
         }
     }
     pub fn request_key(&self) -> &str {
         match self {
             Self::Start(v) => &v.request_key,
             Self::Attach(v) => &v.request_key,
+            Self::RemoteStart(v) => &v.request_key,
         }
     }
     pub fn deadline(&self) -> Option<u64> {
         match self {
             Self::Start(v) => v.deadline_unix_ms,
             Self::Attach(v) => v.deadline_unix_ms,
+            Self::RemoteStart(v) => Some(v.deadline_unix_ms),
         }
     }
 }
@@ -169,6 +174,15 @@ pub struct ExecutionRecord {
     pub finalization_pending: bool,
     pub finalization_error: Option<String>,
     pub observation_detail: Option<String>,
+}
+impl ExecutionRecord {
+    /// Controller identity and execution identity are distinct for remote work.
+    pub fn executor_node_ref(&self) -> &str {
+        match &self.request {
+            ExecutionRequest::RemoteStart(r) => &r.executor.node_ref,
+            _ => &self.node_ref,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

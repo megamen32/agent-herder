@@ -3,6 +3,9 @@ import { join } from "node:path";
 import type { HarnessAdapter, MessageAdmissionResult, SendMessageResult } from "./types/index.js";
 import { ResumeAfterService, type ResumeAfterWait, type SessionRef } from "./resume-after.js";
 import { readExactCodexActiveSession } from "./adapters/codex-active-runtime.js";
+import { canonicalMode, createCanonicalAutomationClient } from "./canonical-herder.js";
+import { createCanonicalResumeAfterRuntime } from "./resume-after-canonical.js";
+import type { ResumeAfterBackend } from "./resume-after.js";
 
 interface Supervisor {
   sendMessage(harness:string,id:string,options:{message:string;origin:"automation";inputId:string;queue:boolean}):Promise<SendMessageResult & {delivery?:string}>;
@@ -19,6 +22,7 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
   held:(harness:string,id:string)=>Promise<boolean>,directory=process.env.AGENT_HERDER_RESUME_AFTER_DIR ?? join(homedir(),".local/state/agent-herder/resume-after"),
   holdExistingWaitingAtStartup=parseResumeAfterStartupHold(),
   onHumanRequestTimeout?:(wait:ResumeAfterWait)=>Promise<"closed"|"already_answered">) {
+  if(canonicalMode()!=="legacy")throw new Error("canonical_resume_after_requires_configured_runtime");
   const inputId=(wait:ResumeAfterWait)=>"resume-after:"+wait.id;
   const service=new ResumeAfterService({
     directory,
@@ -126,4 +130,13 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
     timer.unref?.();void service.sweep().catch(report);
     return ()=>{if(timer)clearInterval(timer);timer=undefined;for(const stop of subscriptions)stop();subscriptions=[];};
   }};
+}
+
+/** Select one backend at startup; a broken canonical binding never falls back. */
+export async function createConfiguredResumeAfterRuntime(...args: Parameters<typeof createResumeAfterRuntime>): Promise<{
+  service: ResumeAfterBackend; start(): Promise<() => void>;
+}> {
+  const client = await createCanonicalAutomationClient();
+  if (client) return createCanonicalResumeAfterRuntime(client);
+  return createResumeAfterRuntime(...args);
 }

@@ -127,7 +127,7 @@ impl Fixture {
             fs::Permissions::from_mode(0o600),
         )
         .unwrap();
-        let config = ProcessRuntimeConfig {
+        let config = ProcessRuntimeConfig {remote_executors: Vec::new(),
             version: 1,
             node_ref: "node".into(),
             worker: PathBuf::from(env!("CARGO_BIN_EXE_herder_process_worker")),
@@ -1110,4 +1110,80 @@ async fn stop_after_durable_registration_before_launch_prevents_a_new_build_afte
     assert_eq!(call(&restarted,native_wait_query("native-parent")).await["blocked"],false);
     assert_eq!(native.submits.load(Ordering::SeqCst),0);
     assert_eq!(fixture.wake_intents(),0);
+}
+
+fn continuation_disabled(fixture:&Fixture,native:Arc<Native>)->ProcessAutomationApplication{
+    Arc::try_unwrap(application(fixture,native,true)).ok().unwrap().with_automatic_continuation(false)
+}
+
+#[tokio::test]
+async fn disabled_continuation_rejects_create_before_execution_or_lease_binding(){
+    let fixture=Fixture::new();let native=Native::new();let binding=fixture.lease();
+    let before=claim::read_current(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap();
+    let app=continuation_disabled(&fixture,native.clone());
+    let result=raw_call(&app,"alice",fixture.create("disabled-create",vec![binding.clone()])).await;
+    assert_eq!(result.is_error,Some(true));
+    assert_eq!(result.structured_content.unwrap()["code"],"automatic_continuation_unsupported");
+    let reference=herder::process::execution_ref_for("alice","parent",&fixture.key("disabled-create"));
+    assert!(!fixture.store().execution_directory(&reference).unwrap().exists());
+    assert_eq!(claim::read_current(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap(),before);
+    assert!(claim::read_execution_binding(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap().is_none());
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);assert_eq!(fixture.wake_intents(),0);
+}
+
+#[tokio::test]
+async fn disabled_continuation_blocks_prepared_recovery_but_keeps_cancel_cleanup(){
+    let fixture=Fixture::new();let native=Native::new();let binding=fixture.lease();
+    let catalog::Automation::Create{session_ref,request_key,
+        rule:catalog::AutomationRule::ProcessCompletion{execution,bindings,wake_message}}=
+        fixture.create("disabled-prepared",vec![binding.clone()]) else{panic!()};
+    let catalog::ProcessExecution::Start{argv,cwd,deadline_unix_ms,stop_grace_ms}=&execution else{panic!()};
+    let record=fixture.store().prepare_start(StartRequest{principal_ref:"alice".into(),session_ref:session_ref.clone(),
+        request_key:request_key.clone(),argv:argv.clone(),cwd:cwd.into(),deadline_unix_ms:*deadline_unix_ms,
+        stop_grace_ms:stop_grace_ms.unwrap_or(2000)}).unwrap();
+    herder::application::process_bindings::write_delegation(&fixture.store(),&record.execution_ref,"alice",
+        &fixture.config.resources,bindings.clone()).unwrap();
+    claim::bind_execution(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized,
+        &binding.claim_id,"alice",binding.revision,&record.execution_ref).unwrap();
+    let rule=format!("process-rule:{}",record.execution_ref.trim_start_matches("exec-"));
+    let immutable=serde_json::json!({"version":1,"rule_ref":rule,"principal":"alice","session_ref":session_ref,
+        "request_key":request_key,"execution_ref":record.execution_ref,"execution":execution,"bindings":bindings,
+        "wake_message":wake_message});
+    {
+        let m=fs::metadata(&fixture.gate).unwrap();let _gate=acquire_pinned(&fixture.gate,m.dev(),m.ino()).unwrap();
+        Writer::open_file(&fixture.db).unwrap().put_setting_once("automation:process-completion:alice",
+            &format!("rule:{rule}"),&immutable.to_string(),"now").unwrap();
+    }
+    let app=continuation_disabled(&fixture,native.clone());
+    let held=call(&app,reconcile(&rule)).await;
+    assert_eq!(held["execution"]["record"]["state"],"prepared");
+    assert!(held["wait"]["detail"].as_str().unwrap().contains("automatic_continuation_unsupported"));
+    assert!(!fixture.root.join("runs").exists());
+    assert!(!fixture.store().execution_directory(&record.execution_ref).unwrap().join("launch.json").exists());
+    call(&app,catalog::Automation::Delete{rule_ref:rule.clone(),revision:held["revision"].as_u64().unwrap()}).await;
+    let cancelled=call(&app,reconcile(&rule)).await;
+    assert_eq!(cancelled["execution"]["record"]["receipt"]["tree_complete"],true);
+    assert_eq!(cancelled["execution"]["record"]["finalization_pending"],false);
+    assert!(claim::read_current(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap().is_none());
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);assert_eq!(fixture.wake_intents(),0);
+}
+
+#[tokio::test]
+async fn disabled_continuation_finalizes_existing_terminal_lease_without_new_wake(){
+    let fixture=Fixture::new();let native=Native::new();let binding=fixture.lease();
+    let app=application(&fixture,native.clone(),true);
+    let first=call(&app,fixture.create("disabled-terminal",vec![binding.clone()])).await;
+    let rule=reference(&first,"rule_ref");let execution=reference(&first,"execution_ref");
+    fixture.execution_until(&execution,|s|s.confirmed_live).await;
+    drop(app);
+    let marker=fixture.config.resources.root.join("storage.json");let original=fs::read(&marker).unwrap();
+    fs::write(&marker,b"{injected unavailable authority").unwrap();fixture.finish();
+    fixture.execution_until(&execution,|s|s.record.receipt.is_some() && s.record.finalization_pending).await;
+    fs::write(&marker,original).unwrap();
+    let app=continuation_disabled(&fixture,native.clone());
+    let completed=call(&app,reconcile(&rule)).await;
+    assert_eq!(completed["execution"]["record"]["finalization_pending"],false);
+    assert!(completed["wait"]["detail"].as_str().unwrap().contains("automatic_continuation_unsupported"));
+    assert!(claim::read_current(&fixture.config.resources,&binding.resource_ref,Authorization::Authorized).unwrap().is_none());
+    assert_eq!(native.submits.load(Ordering::SeqCst),0);assert_eq!(fixture.wake_intents(),0);
 }

@@ -7,12 +7,20 @@ export interface FleetFacadeOptions {
  /** Bound by integration to one verified client/profile/user/host/credential generation; secrets stay in memory. */
  headersProvider:()=>Promise<Record<string,string>>|Record<string,string>;
  fetch?:typeof fetch;readDeadlineMs?:number;createDeadlineMs?:number;
+ /** An exact authority may preserve typed domain payloads containing a result field. */
+ unwrapResponse?:(value:unknown)=>Record<string,unknown>;
+ /** Trusted native protocol composition. Its exact target uses recipient AHAP admission guards. */
+ nativeHerderAuthority?:string;
 }
 /** Existing tenant GPTAdmin facade only. No admin API, token mint, registry or mutation retries. */
 export class FleetGptAdminTransport implements GptAdminTransport {
  private initialized=false;private initializing?:Promise<void>;private sessionId?:string;
  private readonly endpoint:URL;private readonly fetcher:typeof fetch;
- constructor(private readonly options:FleetFacadeOptions){this.endpoint=new URL(options.endpoint);if(!['http:','https:'].includes(this.endpoint.protocol)||this.endpoint.username||this.endpoint.password||this.endpoint.hash)throw new Error('Invalid GPTAdmin facade endpoint');this.fetcher=options.fetch??fetch;}
+ private readonly nativeHerderAuthority?:string;
+ constructor(private readonly options:FleetFacadeOptions){this.endpoint=new URL(options.endpoint);if(!['http:','https:'].includes(this.endpoint.protocol)||this.endpoint.username||this.endpoint.password||this.endpoint.hash)throw new Error('Invalid GPTAdmin facade endpoint');this.fetcher=options.fetch??fetch;
+  if(options.nativeHerderAuthority!==undefined&&!/^mcp:shell:[A-Za-z0-9._-]+:AgentHerder$/.test(options.nativeHerderAuthority))throw new Error('native_herder_authority_invalid');
+  this.nativeHerderAuthority=options.nativeHerderAuthority;
+ }
  private async rpc(method:string,params:unknown,deadline:number):Promise<Record<string,unknown>>{
   const controller=new AbortController(),remaining=deadline-Date.now();if(remaining<=0)throw new Error('gptadmin_deadline');
   const timer=setTimeout(()=>controller.abort(),remaining);
@@ -40,13 +48,14 @@ export class FleetGptAdminTransport implements GptAdminTransport {
   this.initializing=this.rpc('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'agent-herder-fleet',version:'1'}},deadline).then(async()=>{await this.rpc('notifications/initialized',{},deadline);this.initialized=true;}).catch(error=>{this.initialized=false;this.sessionId=undefined;throw error;}).finally(()=>{this.initializing=undefined;});return this.initializing;
  }
  private async facade(tool:string,args:Record<string,unknown>,deadline:number):Promise<Record<string,unknown>>{
-  await this.connect(deadline);let result=unwrapResult(await this.rpc('tools/call',{name:tool,arguments:args},deadline));
+  const unwrap=this.options.unwrapResponse??unwrapResult;
+  await this.connect(deadline);let result=unwrap(await this.rpc('tools/call',{name:tool,arguments:args},deadline));
   // The facade's async job is observed, never resubmitted. Owner target comes from this exact receipt.
   for(let reads=0;reads<32&&['queued','running','waiting','pending'].includes(String(result.status));reads++){
    const id=result.job_id??result.id;if(typeof id!=='string')throw new Error('gptadmin_job_identity_missing');
    if(Date.now()+100>=deadline)throw new Error('gptadmin_job_incomplete');
    await new Promise(resolve=>setTimeout(resolve,Math.max(100,Math.min(1000,Math.floor((deadline-Date.now())/(32-reads))))));
-   result=unwrapResult(await this.rpc('tools/call',{name:'job',arguments:{id,...(typeof result.owner_target==='string'?{owner_target:result.owner_target}:{}),detail:'full'}},deadline));
+   result=unwrap(await this.rpc('tools/call',{name:'job',arguments:{id,...(typeof result.owner_target==='string'?{owner_target:result.owner_target}:{}),detail:'full'}},deadline));
   }
   if(['queued','running','waiting','pending'].includes(String(result.status)))throw new Error('gptadmin_job_read_limit');
   return result;
@@ -64,7 +73,12 @@ export class FleetGptAdminTransport implements GptAdminTransport {
  schema(target:string):Promise<unknown>{return this.facade('schema',{target,detail:'full'},Date.now()+(this.options.readDeadlineMs??10000));}
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(idempotencyKey&&idempotencyKey.length>200)throw new Error('gptadmin_idempotency_key_too_long');
-  await assertRemoteCodexAdmission(tool,args,()=>this.call(target,"model_quotas",{}));
+  if(this.nativeHerderAuthority!==undefined){
+   if(target!==this.nativeHerderAuthority)throw new Error('native_herder_authority_mismatch');
+   assertNativeHerderCall(tool,args);
+   // Native Codex AHAP enforces its recipient quota immediately before each
+   // consuming write. The legacy model_quotas facade is not a native MCP tool.
+  }else await assertRemoteCodexAdmission(tool,args,()=>this.call(target,"model_quotas",{}));
   // The hub retired its direct execute facade for programmatic callers: the
   // native tool DTO is reached through the exec sandbox's mcp.call bridge,
   // and mutation idempotency stays with the native inputId admission.
@@ -72,6 +86,29 @@ export class FleetGptAdminTransport implements GptAdminTransport {
   const code=`return await mcp.call(${JSON.stringify(target)},${JSON.stringify(tool)},${JSON.stringify(args)});`;
   return this.facade('exec',{code,timeout_ms:Math.min(60000,Math.max(1,deadline-Date.now())),max_output_bytes:65536},deadline);
  }
+}
+
+/** A native transport cannot become a legacy delivery escape hatch through extra fields. */
+function assertNativeHerderCall(tool:string,args:Record<string,unknown>):void{
+ const exact=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=4096&&value.trim()===value&&!/[\x00-\x1f\x7f]/.test(value);
+ const keys=(required:string[],optional:string[]=[]):boolean=>required.every(key=>Object.hasOwn(args,key))&&Object.keys(args).every(key=>required.includes(key)||optional.includes(key));
+ const revision=()=>Number.isSafeInteger(args.revision)&&Number(args.revision)>0;
+ let valid=false;
+ if(tool==='session'&&args.action==='resolve')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
+ if(tool==='deliver'&&args.action==='receipt')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
+ if(tool==='deliver'&&args.action==='session')valid=keys(['action','session_ref','request_key','message','mode'])&&exact(args.session_ref)&&exact(args.request_key)&&typeof args.message==='string'&&args.message.length>0&&args.message.length<=1024*1024&&['queue','start'].includes(String(args.mode));
+ if(tool==='compat_task'&&args.action==='get')valid=keys(['action','task_ref'])&&exact(args.task_ref);
+ if(tool==='automation'){
+  if(args.action==='list')valid=keys(['action']);
+  if(args.action==='get')valid=keys(['action','rule_ref'])&&exact(args.rule_ref);
+  if(args.action==='delete'||args.action==='pause')valid=keys(['action','rule_ref','revision'])&&exact(args.rule_ref)&&revision();
+  if(args.action==='wait_status')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
+  if(args.action==='create'){
+   const rule=args.rule&&typeof args.rule==='object'&&!Array.isArray(args.rule)?args.rule as Record<string,unknown>:undefined;
+   valid=keys(['action','session_ref','request_key','rule'])&&exact(args.session_ref)&&exact(args.request_key)&&!!rule&&['timer','session_completion'].includes(String(rule.kind));
+  }
+ }
+ if(!valid)throw new Error('native_herder_call_not_allowed');
 }
 
 async function abortable<T>(promise:Promise<T>,signal:AbortSignal):Promise<T>{

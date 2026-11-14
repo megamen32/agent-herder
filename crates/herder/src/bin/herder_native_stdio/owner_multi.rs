@@ -8,7 +8,7 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt,
         GetTaskResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerConfig},
     service::RequestContext};
 use serde_json::{json, Value};
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 struct MultiOwner { bindings: Vec<BoundOwner> }
 fn unavailable() -> ErrorData { ErrorData::invalid_params("unknown or ambiguous owner instance/session/task", None) }
@@ -42,6 +42,10 @@ impl ServerHandler for MultiOwner {
     }
     async fn call_tool(&self, request: CallToolRequestParams, ctx: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
         let args = request.arguments.as_ref();
+        if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
+            // The shared registry resolves exact canonical metadata with fresh ACLs.
+            return self.bindings[0].server.call_tool(request,ctx).await;
+        }
         if let Some(instance) = args.and_then(|a| a.get("instance_ref")).and_then(Value::as_str) {
             let Ok(binding) = self.by_instance(instance) else { return Ok(denied("invalid_instance")); };
             return binding.server.call_tool(request, ctx).await;
@@ -88,9 +92,13 @@ impl ServerHandler for MultiOwner {
         // adapter request or native session probe is used for this routing.
         if request.name.as_ref()=="automation" {
             if let Some(rule_ref)=args.and_then(|a|a.get("rule_ref")).and_then(Value::as_str) {
-                if rule_ref.starts_with("process-rule:") {
+                if rule_ref.starts_with("process-rule:") || rule_ref.starts_with("wait-rule:") {
                     let mut selected=None;
                     for binding in &self.bindings {
+                        if rule_ref.starts_with("wait-rule:") && binding.waits.owns_rule(&binding.policy.principal.0,rule_ref).map_err(|_|unavailable())?{
+                            if selected.is_some(){return Ok(denied("ambiguous_automation_rule"))}
+                            selected=Some(binding);
+                        }
                         if let Some(process)=&binding.process {
                             if process.owns_rule(&binding.policy.principal.0,rule_ref).map_err(|_|unavailable())? {
                                 if selected.is_some(){return Ok(denied("ambiguous_process_rule"))}
@@ -191,7 +199,10 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
             return Err("multi-owner requires one principal and distinct AHAP instance refs".into());
         }
     }
-    let bindings = profiles.into_iter().map(owner_opencode::build).collect::<Result<Vec<_>, _>>()?;
+    let registry=Arc::new(herder::application::scoped_stop::wait_automation::DependencyRegistry::new());
+    let bindings = profiles.into_iter().map(|profile|owner_opencode::build_with_registry(profile,registry.clone())).collect::<Result<Vec<_>, _>>()?;
+    registry.configure(bindings.iter().map(|b|b.source.clone()).collect())?;
+    herder::application::scoped_stop::automation_driver::start(bindings.iter().map(BoundOwner::driver_owner).collect())?;
     MultiOwner { bindings }.serve(rmcp::transport::stdio()).await?.waiting().await?;
     Ok(())
 }

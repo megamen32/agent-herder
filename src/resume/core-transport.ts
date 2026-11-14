@@ -7,6 +7,8 @@ import {
   type ResumeReceiptRecord,
 } from "agent-resume-mcp";
 import type { ResumeReceipt, ResumeTransport, ResumeTransportRequest, SelectedResumeTarget } from "../resume-transport.js";
+import { canonicalMode } from "../canonical-herder.js";
+import { createCanonicalResumeTransport, type CanonicalResumeTransportOptions } from "./canonical-transport.js";
 
 /**
  * Herder's in-process resume transport over the shared core.
@@ -25,6 +27,7 @@ export interface CoreResumeTransportOptions {
   opencodeUrl?: string;
   opencodePassword?: string;
   env?: NodeJS.ProcessEnv;
+  canonical?: CanonicalResumeTransportOptions;
 }
 
 export function defaultResumeLedgerPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -41,6 +44,8 @@ export function coreCanDeliver(target: SelectedResumeTarget, opencodeUrl?: strin
 
 export function createCoreResumeTransport(options: CoreResumeTransportOptions = {}): ResumeTransport {
   const env = options.env ?? process.env;
+  if (canonicalMode(env) === "canonical") return createCanonicalResumeTransport({ ...options.canonical, env });
+  if (options.canonical !== undefined) throw new Error("canonical_mode_required");
   const ledger = new ReceiptLedger({ path: options.ledgerPath ?? defaultResumeLedgerPath(env) });
   const opencodeUrl = options.opencodeUrl ?? env.OPENCODE_URL;
 

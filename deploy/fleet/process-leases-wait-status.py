@@ -87,6 +87,102 @@ def authority(profile):
         os.close(fd)
 
 
+def remote_completion(config, rule, directory, record, receipt):
+    """Validate the original remote proof without contacting either executor."""
+    request = record["request"]
+    spec = request["request"]
+    executor = spec["executor"]
+    candidates = [item for item in config.get("remote_executors", [])
+                  if item.get("executor_ref") == executor.get("executor_ref")]
+    if len(candidates) != 1 or candidates[0] != executor:
+        raise ValueError("remote executor installation changed")
+    reference = record["execution_ref"]
+    controller_node = config["node_ref"]
+    executor_node = executor["node_ref"]
+    payload = hashlib.sha256(json.dumps(request, ensure_ascii=False,
+                                       separators=(",", ":")).encode()).hexdigest()
+    if (payload != record["payload_hash"] or executor_node == controller_node
+            or spec["principal_ref"] != rule["principal"]
+            or spec["session_ref"] != rule["session_ref"]
+            or spec["request_key"] != rule["request_key"]
+            or record.get("request_key") != rule["request_key"]
+            or record.get("process") is not None or record.get("observed_members") != []):
+        raise ValueError("remote command binding changed")
+    command = {key: spec[key] for key in ("principal_ref", "session_ref", "request_key", "argv", "cwd",
+                                        "deadline_unix_ms", "stop_grace_ms")}
+    remote_request = {"mode": "start", "request": command}
+    command_hash = hashlib.sha256(json.dumps(remote_request, ensure_ascii=False,
+                                            separators=(",", ":")).encode()).hexdigest()
+    identity_hash = hashlib.sha256()
+    for key in ("principal_ref", "session_ref", "request_key"):
+        part = spec[key].encode()
+        identity_hash.update(len(part).to_bytes(8, "big"))
+        identity_hash.update(part)
+    if reference != "exec-" + identity_hash.hexdigest():
+        raise ValueError("remote execution key changed")
+    control = document(directory / "remote-control.json")
+    handle = control["handle"]
+    observed = control["observation"]
+    response = observed["response"]
+    original_read = observed["request"]
+    remote_observed = response["observation"]
+    remote_record = remote_observed["snapshot"]["record"]
+    source = remote_observed["source"]
+    if (control.get("version") != 1 or control.get("controller_node_ref") != controller_node
+            or control.get("execution_ref") != reference or control.get("controller_payload_hash") != payload
+            or not isinstance(control.get("start_dispatched"), bool)
+            or control["start_dispatched"] != (control.get("start_permit") is not None)
+            or not isinstance(handle, dict) or handle.get("version") != 1
+            or handle.get("controller_node_ref") != controller_node
+            or handle.get("executor_node_ref") != executor_node
+            or handle.get("executor_ref") != executor["executor_ref"]
+            or handle.get("execution_ref") != reference
+            or handle.get("controller_payload_hash") != payload
+            or handle.get("command_hash") != command_hash
+            or handle.get("worker_sha256") != executor["worker_sha256"]
+            or handle.get("endpoint_config_sha256") != executor["endpoint_config_sha256"]
+            or handle.get("root_device") != executor["root_device"]
+            or handle.get("root_inode") != executor["root_inode"]
+            or handle.get("deadline_unix_ms") != spec["deadline_unix_ms"]
+            or not isinstance(handle.get("deadline_boot_ms"), int) or handle["deadline_boot_ms"] <= 0
+            or not isinstance(handle.get("boot_id"), str) or not handle["boot_id"]
+            or not isinstance(handle.get("nonce"), str) or not re.fullmatch(r"[0-9a-f]{64}", handle["nonce"])
+            or remote_observed.get("handle") != handle):
+        raise ValueError("remote execution handle changed")
+    for envelope in (original_read, response):
+        if (envelope.get("version") != 1 or envelope.get("controller_node_ref") != controller_node
+                or envelope.get("executor_node_ref") != executor_node
+                or envelope.get("executor_ref") != executor["executor_ref"]):
+            raise ValueError("remote response route changed")
+    request_id = original_read.get("request_id")
+    if (not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{64}", request_id)
+            or response.get("request_id") != request_id
+            or remote_record.get("execution_ref") != reference or remote_record.get("node_ref") != executor_node
+            or remote_record.get("principal_ref") != rule["principal"]
+            or remote_record.get("session_ref") != rule["session_ref"]
+            or remote_record.get("request_key") != rule["request_key"]
+            or remote_record.get("payload_hash") != command_hash
+            or remote_record.get("request") != remote_request
+            or source.get("execution_ref") != reference or source.get("executor_node") != executor_node
+            or source.get("request_digest") != command_hash):
+        raise ValueError("remote response correlation changed")
+    operation = original_read["operation"]
+    if operation.get("action") == "prepare":
+        if operation.get("controller_payload_hash") != payload or operation.get("command") != command:
+            raise ValueError("remote prepare correlation changed")
+    elif (operation.get("action") not in {"start", "status", "reconcile", "cancel"}
+          or operation.get("handle") != handle):
+        raise ValueError("remote read handle changed")
+    if (not isinstance(receipt, dict) or receipt != remote_record.get("receipt")
+            or receipt != document(directory / "receipt.json")
+            or receipt.get("execution_ref") != reference or receipt.get("node_ref") != executor_node
+            or not isinstance(control.get("terminal_observed_at_unix_ms"), int)
+            or control["terminal_observed_at_unix_ms"] <= 0):
+        raise ValueError("remote terminal receipt changed")
+    return (receipt.get("tree_complete") is True and receipt.get("process_may_be_running") is False
+            and record.get("finalization_pending") is False)
+
+
 def execution(config, rule):
     reference = rule["execution_ref"]
     if not isinstance(reference, str) or not re.fullmatch(r"exec-[0-9a-f]{64}", reference):
@@ -102,12 +198,86 @@ def execution(config, rule):
             or record.get("session_ref") != rule["session_ref"]):
         raise ValueError("execution binding mismatch")
     receipt = record.get("receipt")
+    if record.get("request", {}).get("mode") == "remote_start":
+        # A pending remote execution cannot release the wait. Once terminal,
+        # require its exact pinned executor proof, never a local node fallback.
+        if not isinstance(receipt, dict):
+            return False
+        return remote_completion(config, rule, directory, record, receipt)
     complete = (isinstance(receipt, dict) and receipt.get("execution_ref") == reference
                 and receipt.get("node_ref") == config["node_ref"]
                 and receipt.get("tree_complete") is True
                 and receipt.get("process_may_be_running") is False
                 and record.get("finalization_pending") is False)
     return complete
+
+
+def canonical_waits(connection, profile, query, session):
+    """Read timer/session waits in the same authority; never run their driver."""
+    owner = profile["owner"]
+    scope = "automation:canonical-wait:" + owner["principal"]
+    rows = connection.execute(
+        "SELECT setting_key,value_json FROM settings WHERE scope=? AND setting_key LIKE 'rule:%'",
+        (scope,)).fetchall()
+    blocked = []
+    for key, raw in rows:
+        rule = json.loads(raw)
+        reference = rule.get("rule_ref")
+        expected = "wait-rule:" + hashlib.sha256(json.dumps(
+            ["canonical-wait-v1", owner["principal"], rule.get("session_ref"), rule.get("request_key")],
+            ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        if (rule.get("version") != 1 or rule.get("principal") != owner["principal"]
+                or not isinstance(rule.get("request_key"), str) or not rule["request_key"]
+                or reference != expected or key != "rule:" + reference
+                or rule.get("rule", {}).get("kind") not in {"timer", "session_completion"}):
+            raise ValueError("invalid durable canonical wait")
+        if rule.get("session_ref") != session:
+            continue
+        target = rule["target"]
+        expected_owner = {"harness": owner.get("kind", "codex"), "native_session_id": query["nativeSessionId"],
+                          "node_ref": owner["node"], "instance_ref": owner["instance"]}
+        if (target.get("session_ref") != session or target.get("owner") != expected_owner
+                or target.get("authority_generation") != profile["generation"]):
+            raise ValueError("canonical wait owner changed")
+        state_row = connection.execute("SELECT value_json FROM settings WHERE scope=? AND setting_key=?",
+            (scope, "state:" + reference)).fetchone()
+        if state_row is None:
+            blocked.append(reference)
+            continue
+        state = json.loads(state_row[0])
+        phase = state.get("phase")
+        if (set(state) != {"phase", "detail", "delivery_task", "wake_cancelled", "cancel_generation",
+                           "wake_message", "completed_dependencies", "completed_at"}
+                or phase not in {"armed", "paused", "cancelled", "dispatching", "waiting_receipt",
+                                 "delivery_unknown", "confirmed", "rejected"}
+                or not isinstance(state["wake_cancelled"], bool)
+                or type(state["cancel_generation"]) is not int or state["cancel_generation"] < 0
+                or not isinstance(state["completed_dependencies"], dict)):
+            raise ValueError("invalid canonical wait state")
+        wake_key = "wait-wake:" + reference
+        task = "mcp-delivery-task:" + hashlib.sha256(json.dumps(
+            ["mcp-deliver-v1", owner["principal"], session, wake_key],
+            ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        if state["delivery_task"] not in {None, task}:
+            raise ValueError("canonical wait delivery task changed")
+        if phase not in {"confirmed", "cancelled"}:
+            blocked.append(reference)
+            continue
+        # A phase label cannot hide an admitted/UNKNOWN native handoff.
+        intents = connection.execute(
+            "SELECT task_id,principal,target,request_key,state FROM intents WHERE task_id=? "
+            "OR (principal=? AND target=? AND request_key=?)",
+            (task, owner["principal"], session, wake_key)).fetchall()
+        if (len(intents) > 1 or (intents and (intents[0][:4] != (task, owner["principal"], session, wake_key)
+                or intents[0][4] not in {"prepared", "dispatching", "admitted", "unknown", "confirmed", "rejected"}))):
+            raise ValueError("canonical wait intent mismatch")
+        intent = intents[0][4] if intents else None
+        complete = ((phase == "confirmed" and intent == "confirmed" and state["delivery_task"] == task)
+                    or (phase == "cancelled" and state["wake_cancelled"] is True
+                        and intent in {None, "confirmed", "rejected"}))
+        if not complete:
+            blocked.append(reference)
+    return blocked
 
 
 def inspect_profile(profile, query, config):
@@ -169,6 +339,7 @@ def inspect_profile(profile, query, config):
             complete = execution(config, rule)
             if not complete or phase not in {"ready", "confirmed", "cancelled"}:
                 blocked.append(rule["rule_ref"])
+        blocked.extend(canonical_waits(connection, profile, query, session))
         return result(bool(blocked), "process_wait_active" if blocked else "no_process_wait",
                       [session], blocked)
 

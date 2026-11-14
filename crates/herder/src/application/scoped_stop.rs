@@ -19,6 +19,9 @@ pub mod mcp_read;
 pub mod registration;
 pub mod automation;
 pub mod process_automation;
+pub mod automation_driver;
+pub mod wait_automation;
+mod wait_sources;
 
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
 use crate::domain::address::SessionRef;
@@ -638,6 +641,7 @@ impl ScopedAuthority {
         }
         tx.execute("INSERT INTO humanstop_holds(scope_ref,reason,created_at,released_at) VALUES (?1,?2,?3,NULL) ON CONFLICT(scope_ref) DO UPDATE SET reason=excluded.reason,created_at=excluded.created_at,released_at=NULL",params![scope,reason,now]).map_err(|_|GateError::Store)?;
         process_automation::cancel_for_stop(&tx,scope,now)?;
+        wait_automation::cancel_for_stop(&tx,scope,now)?;
         let possible: bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM intents i JOIN humanstop_scopes s ON s.session_ref=i.target WHERE s.scope_ref=?1 AND i.state IN ('dispatching','admitted','unknown','confirmed'))", [scope], |r|r.get(0)).map_err(|_|GateError::Store)?;
         tx.commit().map_err(|_| GateError::Store)?;
         Ok(if possible {
@@ -757,5 +761,6 @@ fn scope_identity_valid(
 }
 fn scope_held(c: &rusqlite::Connection, b: &ReceiptBinding<'_>) -> Result<bool, GateError> {
     if process_automation::wake_cancelled(c,b.principal,b.target_ref,b.request_key)? {return Ok(true)}
+    if wait_automation::wake_cancelled(c,b.principal,b.target_ref,b.request_key)? {return Ok(true)}
     c.query_row("SELECT EXISTS(SELECT 1 FROM humanstop_scopes s JOIN humanstop_holds h ON h.scope_ref=s.scope_ref WHERE s.session_ref=?1 AND h.released_at IS NULL) OR EXISTS(SELECT 1 FROM holds h WHERE h.released_at IS NULL AND (h.session_ref=?1 OR h.session_ref IN (SELECT scope_ref FROM humanstop_scopes WHERE session_ref=?1)))",[b.target_ref],|r|r.get(0)).map_err(|_|GateError::Store)
 }

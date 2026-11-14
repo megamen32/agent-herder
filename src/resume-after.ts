@@ -39,6 +39,17 @@ export interface ResumeAfterWait {
   observed?: Record<string, TurnObservation>;
   dependencyTurns?: Record<string, string>;
   delivery?: Delivery;
+  canonical?: { ruleRef: string; epoch: string; phase: string; requestKey: string; sessionRef: string; deliveryTask?: string };
+  migration?: { epoch: string; retained: true; dispatchBlocked: true; recordSha256: string };
+}
+/** Public compatibility seam. The backend may be the canonical Herder authority. */
+export interface ResumeAfterBackend {
+  readonly authority?: "legacy" | "canonical";
+  register(input: ResumeAfterRequest): Promise<ResumeAfterWait>;
+  get(id: string): Promise<ResumeAfterWait | null>;
+  list(): Promise<ResumeAfterWait[]>;
+  cancel(id: string, owner: SessionRef): Promise<ResumeAfterWait | null>;
+  invalidateByHumanRequest(requestId: string, reason: string): Promise<number>;
 }
 type Delivery = { status: "accepted" | "rejected" | "failed" | "ambiguous"; reason?: string; receipt?: Record<string, unknown> };
 export interface ResumeAfterOptions {
@@ -61,10 +72,12 @@ export interface ResumeAfterOptions {
 }
 const key = (ref: SessionRef): string => JSON.stringify([ref.harness, ref.sessionId]);
 const terminal = new Set(["turn.completed", "turn.failed", "session.deleted"]);
-const defaultMessage = "Указанные сессии закончили выполнение. Продолжи исходную задачу: проверь их результаты, подтяни изменения, сведи PR и повтори необходимые тесты. Завершение сессии само по себе не означает зелёный результат.";
+export const DEFAULT_RESUME_AFTER_MESSAGE = "Указанные сессии закончили выполнение. Продолжи исходную задачу: проверь их результаты, подтяни изменения, сведи PR и повтори необходимые тесты. Завершение сессии само по себе не означает зелёный результат.";
+const defaultMessage = DEFAULT_RESUME_AFTER_MESSAGE;
 
 /** One process-owned, durable join. No model polling and no extra agent. */
-export class ResumeAfterService {
+export class ResumeAfterService implements ResumeAfterBackend {
+  readonly authority = "legacy" as const;
   private queue: Promise<unknown> = Promise.resolve();
   private pendingSweep: Promise<void> | undefined;
   private readonly startupHeldWaitIds = new Set<string>();
@@ -375,7 +388,7 @@ export class ResumeAfterService {
   }
 }
 
-function validRfc3339Instant(value:string):boolean{
+export function validRfc3339Instant(value:string):boolean{
   const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
   if(!match)return false;
   const [,year,month,day,hour,minute,second,zone,offsetHour,offsetMinute]=match;

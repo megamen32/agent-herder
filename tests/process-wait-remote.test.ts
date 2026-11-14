@@ -77,6 +77,7 @@ describe("canonical remote process wait authority", () => {
     const cases = [
       { blocked: false, reason: "old-untyped-response" },
       status({ complete: false }),
+      status({ configured: false, reason: "process_wait_unconfigured" }),
       status({ observedAt: "2000-01-01T00:00:00Z" }),
       status({ observedAt: new Date(Date.now() + 60_000).toISOString() }),
       status({ mapped: false, sessionRefs: ["unexplained-match"] }),
@@ -89,7 +90,7 @@ describe("canonical remote process wait authority", () => {
       expect(await gate.blocks("codex", "native-session")).toBe(true);
     }
     const call = vi.fn().mockResolvedValue({ structuredContent: { result: status({
-      configured: false, reason: "process_wait_unconfigured",
+      configured: true, reason: "native_session_not_registered",
     }) } });
     expect(await createProcessWaitGate({ authority, env: {}, transportFactory: async () => ({ call }) })
       .blocks("codex", "native-session")).toBe(false);

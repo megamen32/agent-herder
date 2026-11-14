@@ -31,6 +31,7 @@ for (const family of ["v2","v22"] as const) it(`pins ${family} before one fresh 
     const response=chunks.join("").trim().split("\n").map(x=>JSON.parse(x));
     expect(response[0].result.capabilities.nativeProtocol).toBe(family);
     expect(response[0].result.capabilities.nativeStartAdmission).toBe(family === "v2" ? "steer-before-turn-v1" : undefined);
+    expect(response[0].result.capabilities.nativeAutomaticContinuation).toBe(family === "v2" ? "unsupported-no-idle-admission-v1" : undefined);
     expect(response[1].result.id).toBe("ses_test");
     const create=calls.find(c=>c.method==="POST" && c.path.endsWith("/session")); expect(create?.path).toBe(family==="v2"?"/api/session":"/session");
     const send=calls.filter(c=>c.method==="POST").at(-1)!;

@@ -47,7 +47,8 @@ impl crate::application::scoped_stop::registration::BoundedSessionProbe for Ahap
         self.read_snapshot(&SessionAddress {
             instance: self.instance.clone(),
             native_session_id: native_session_id.to_owned(),
-        }).map_err(|_| ())
+        })
+        .map_err(|_| ())
     }
 }
 impl AhapOpenCode {
@@ -151,6 +152,12 @@ impl AhapOpenCode {
         ))
     }
 
+    /// Current OpenCode v2 has no native idle/turn admission CAS; v22 exposes
+    /// initial-only start. Neither a missing marker nor Queue is positive proof.
+    pub fn automatic_continuation_supported(&self) -> bool {
+        automatic_continuation_supported(&self.policy.harness, self.capabilities())
+    }
+
     fn advertises_mode(&self, mode: &str) -> bool {
         self.capabilities()
             .get("deliveryModes")
@@ -159,14 +166,9 @@ impl AhapOpenCode {
     }
 
     fn mutation_ready(&self) -> bool {
-        [
-            "init",
-            "sendMessage",
-            "getSession",
-            "getSessionMessages",
-        ]
-        .iter()
-        .all(|method| self.client.supports(method))
+        ["init", "sendMessage", "getSession", "getSessionMessages"]
+            .iter()
+            .all(|method| self.client.supports(method))
     }
 
     fn read_snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
@@ -272,6 +274,92 @@ impl AhapOpenCode {
     }
 }
 
+impl crate::application::scoped_stop::wait_automation::NativeTurnReader for AhapOpenCode {
+    fn current_turn(
+        &self,
+        target: &SessionAddress,
+    ) -> Result<Option<crate::application::scoped_stop::wait_automation::NativeTurn>, ReadError>
+    {
+        use crate::application::scoped_stop::wait_automation::{NativeTurnStatus, native_turn};
+        if !self.matches(target) {
+            return Err(ReadError("wrong instance".into()));
+        }
+        let session = self.raw_call("getSession", json!({"id":target.native_session_id}))?;
+        if !exact_native_session(&session, &target.native_session_id, &self.policy.harness) {
+            return Ok(None);
+        }
+        let busy = matches!(
+            session.get("status").and_then(Value::as_str),
+            Some("running" | "busy")
+        );
+        if busy && self.client.supports("getCoordinationActiveTurnId") {
+            let active = self.raw_call(
+                "getCoordinationActiveTurnId",
+                json!({"id":target.native_session_id}),
+            )?;
+            return Ok(active.as_str().and_then(|id| native_turn(id, "running")));
+        }
+        let turn = exact_native_turn(&session, &target.native_session_id, &self.policy.harness);
+        Ok(turn.filter(|turn| {
+            if busy {
+                turn.status == NativeTurnStatus::Running
+            } else {
+                turn.status.terminal()
+            }
+        }))
+    }
+    fn observed_turn(
+        &self,
+        target: &SessionAddress,
+        turn_id: &str,
+    ) -> Result<Option<crate::application::scoped_stop::wait_automation::NativeTurn>, ReadError>
+    {
+        if !self.matches(target) || !valid_native_id(turn_id) {
+            return Ok(None);
+        }
+        let session = self.raw_call("getSession", json!({"id":target.native_session_id}))?;
+        Ok(
+            exact_native_turn(&session, &target.native_session_id, &self.policy.harness)
+                .filter(|t| t.turn_id == turn_id),
+        )
+    }
+}
+fn exact_native_session(session: &Value, session_id: &str, harness: &str) -> bool {
+    session.get("id").and_then(Value::as_str) == Some(session_id)
+        && session.get("harness").and_then(Value::as_str) == Some(harness)
+        && !session
+            .pointer("/meta/nativeSessionId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id != session_id)
+        && session
+            .pointer("/meta/nativeStateObserved")
+            .and_then(Value::as_bool)
+            != Some(false)
+        && session
+            .pointer("/meta/nativeTurnStateUnavailable")
+            .and_then(Value::as_bool)
+            != Some(true)
+}
+fn exact_native_turn(
+    session: &Value,
+    session_id: &str,
+    harness: &str,
+) -> Option<crate::application::scoped_stop::wait_automation::NativeTurn> {
+    if !exact_native_session(session, session_id, harness) {
+        return None;
+    }
+    let projected = session.pointer("/meta/nativeLastTurn");
+    let root = session.get("nativeLastTurn");
+    if projected.is_some() && root.is_some() && projected != root {
+        return None;
+    }
+    let turn = projected.or(root)?;
+    crate::application::scoped_stop::wait_automation::native_turn(
+        turn.get("turnId")?.as_str()?,
+        turn.get("status")?.as_str()?,
+    )
+}
+
 impl crate::application::scoped_stop::automation::CompletedTurnReader for AhapOpenCode {
     fn confirms_completed_turn(
         &self,
@@ -284,8 +372,14 @@ impl crate::application::scoped_stop::automation::CompletedTurnReader for AhapOp
 fn exact_completed_turn(session: &Value, session_id: &str, harness: &str, event_id: &str) -> bool {
     if session.get("id").and_then(Value::as_str) != Some(session_id)
         || session.get("harness").and_then(Value::as_str) != Some(harness)
-        || session.pointer("/meta/nativeStateObserved").and_then(Value::as_bool) == Some(false)
-        || session.pointer("/meta/nativeTurnStateUnavailable").and_then(Value::as_bool) == Some(true)
+        || session
+            .pointer("/meta/nativeStateObserved")
+            .and_then(Value::as_bool)
+            == Some(false)
+        || session
+            .pointer("/meta/nativeTurnStateUnavailable")
+            .and_then(Value::as_bool)
+            == Some(true)
     {
         return false;
     }
@@ -304,7 +398,12 @@ fn valid_native_id(v: &str) -> bool {
 /// Positive evidence comes from native message fields, never a synthesized
 /// display ID or prompt text. Prefixes are the exact ZCode automation mapping;
 /// they are compared to observed native anchors, not stripped from caller IDs.
-fn recovered_message_id(messages: &Value, session: &str, key: &str, harness: &str) -> Option<String> {
+fn recovered_message_id(
+    messages: &Value,
+    session: &str,
+    key: &str,
+    harness: &str,
+) -> Option<String> {
     if !valid_native_id(session) || !valid_native_id(key) {
         return None;
     }
@@ -322,20 +421,37 @@ fn recovered_message_id(messages: &Value, session: &str, key: &str, harness: &st
         accepted.extend(automation_anchors.iter().cloned());
     }
     let rows = messages.as_array()?;
-    if rows.len() > 200 { return None }
-    let correlated = |value: &Value| value.as_str()
-        .is_some_and(|id| accepted.iter().any(|expected| expected == id));
-    let candidates: Vec<_> = rows.iter().filter(|row| {
-        ["sourceCommandId", "inputId"].iter()
-            .any(|field| row.get(*field).is_some_and(&correlated))
-    }).collect();
-    if candidates.len() != 1 { return None }
+    if rows.len() > 200 {
+        return None;
+    }
+    let correlated = |value: &Value| {
+        value
+            .as_str()
+            .is_some_and(|id| accepted.iter().any(|expected| expected == id))
+    };
+    let candidates: Vec<_> = rows
+        .iter()
+        .filter(|row| {
+            ["sourceCommandId", "inputId"]
+                .iter()
+                .any(|field| row.get(*field).is_some_and(&correlated))
+        })
+        .collect();
+    if candidates.len() != 1 {
+        return None;
+    }
     let row = candidates[0];
     if row.get("role").and_then(Value::as_str) != Some("user")
-        || row.get("sessionId").is_some_and(|id| id.as_str() != Some(session))
-        || harness == "zcode" && !row.get("sourceCommandId").and_then(Value::as_str)
-            .is_some_and(|id| automation_anchors.iter().any(|anchor| anchor == id))
-        || ["sourceCommandId", "inputId"].iter()
+        || row
+            .get("sessionId")
+            .is_some_and(|id| id.as_str() != Some(session))
+        || harness == "zcode"
+            && !row
+                .get("sourceCommandId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| automation_anchors.iter().any(|anchor| anchor == id))
+        || ["sourceCommandId", "inputId"]
+            .iter()
             .any(|field| row.get(*field).is_some_and(|value| !correlated(value)))
     {
         return None;
@@ -387,7 +503,9 @@ impl ReceiptReference {
 }
 fn transport_failure(e: AhapError) -> SubmitError {
     match e {
-        AhapError::BrowserSendUnconfirmed(diagnostic) => SubmitError::BrowserOutcomeUnknown(diagnostic),
+        AhapError::BrowserSendUnconfirmed(diagnostic) => {
+            SubmitError::BrowserOutcomeUnknown(diagnostic)
+        }
         AhapError::CodexCreateQuotaNotSubmitted => SubmitError::DefinitelyNotSent {
             reason: "Codex quota guard rejected thread/start before native submission".into(),
         },
@@ -411,7 +529,8 @@ impl BoundedFreshRootCreate for AhapOpenCode {
         self.policy.initial_delivery_mode
     }
     fn create_root_bounded(&self, key: &str, _prompt: &str) -> Result<SessionAddress, SubmitError> {
-        if !self.mutation_ready() || !self.client.supports("createSession") || !valid_native_id(key) {
+        if !self.mutation_ready() || !self.client.supports("createSession") || !valid_native_id(key)
+        {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "invalid request key".into(),
             });
@@ -592,11 +711,16 @@ impl NativeSessionReader for AhapOpenCode {
             return Err(ReadError("AHAP session identity mismatch".into()));
         }
         let messages = self.messages(target, 200)?;
-        Ok(recovered_message_id(&messages, &target.native_session_id, &key.0, &self.policy.harness)
-            .map(|id| NativeReceipt {
-                target: target.clone(),
-                native_id: ReceiptReference::Message(id).encode(),
-            }))
+        Ok(recovered_message_id(
+            &messages,
+            &target.native_session_id,
+            &key.0,
+            &self.policy.harness,
+        )
+        .map(|id| NativeReceipt {
+            target: target.clone(),
+            native_id: ReceiptReference::Message(id).encode(),
+        }))
     }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         if !self.matches(&receipt.target) {
@@ -678,9 +802,24 @@ mod tests {
             "status":"idle",
             "meta":{"nativeSessionId":"child-session","nativeLastTurn":{"turnId":"turn-7","status":"completed"}}
         });
-        assert!(exact_completed_turn(&session, "child-session", "codex", "turn-7"));
-        assert!(!exact_completed_turn(&session, "child-session", "codex", "turn-6"));
-        assert!(!exact_completed_turn(&session, "child-session", "opencode", "turn-7"));
+        assert!(exact_completed_turn(
+            &session,
+            "child-session",
+            "codex",
+            "turn-7"
+        ));
+        assert!(!exact_completed_turn(
+            &session,
+            "child-session",
+            "codex",
+            "turn-6"
+        ));
+        assert!(!exact_completed_turn(
+            &session,
+            "child-session",
+            "opencode",
+            "turn-7"
+        ));
     }
 
     #[test]
@@ -693,10 +832,26 @@ mod tests {
             "id":"child-session","harness":"codex",
             "meta":{"nativeLastTurn":{"turnId":"turn-7","status":"completed"},"nativeStateObserved":false}
         });
-        assert!(!exact_completed_turn(&unavailable, "child-session", "codex", "turn-7"));
-        assert!(!exact_completed_turn(&failed_observation, "child-session", "codex", "turn-7"));
-        let idle_only = serde_json::json!({"id":"child-session","harness":"codex","status":"idle","meta":{}});
-        assert!(!exact_completed_turn(&idle_only, "child-session", "codex", "turn-7"));
+        assert!(!exact_completed_turn(
+            &unavailable,
+            "child-session",
+            "codex",
+            "turn-7"
+        ));
+        assert!(!exact_completed_turn(
+            &failed_observation,
+            "child-session",
+            "codex",
+            "turn-7"
+        ));
+        let idle_only =
+            serde_json::json!({"id":"child-session","harness":"codex","status":"idle","meta":{}});
+        assert!(!exact_completed_turn(
+            &idle_only,
+            "child-session",
+            "codex",
+            "turn-7"
+        ));
     }
     struct Temp(PathBuf);
     impl Drop for Temp {
@@ -793,15 +948,29 @@ for line in sys.stdin:
     #[tokio::test]
     async fn existing_session_send_does_not_require_create_capability() {
         let (f, b) = setup("no_create");
-        let a = SessionAddress { instance:b.instance.clone(), native_session_id:"sesABC".into() };
+        let a = SessionAddress {
+            instance: b.instance.clone(),
+            native_session_id: "sesABC".into(),
+        };
         assert!(b.create_root_bounded("create", "prompt").is_err());
-        let snapshot=b.snapshot(&a).await.unwrap();
-        let plan=crate::domain::adapter::decide_send(&snapshot, &crate::domain::adapter::SendCommand {mode:SendMode::Start}).unwrap();
-        let receipt=b.submit_bounded(plan,"hi",&RequestKey("key".into())).unwrap();
-        assert!(matches!(b.reconcile(&receipt.receipt).await.unwrap(),Observation::Confirmed{..}));
+        let snapshot = b.snapshot(&a).await.unwrap();
+        let plan = crate::domain::adapter::decide_send(
+            &snapshot,
+            &crate::domain::adapter::SendCommand {
+                mode: SendMode::Start,
+            },
+        )
+        .unwrap();
+        let receipt = b
+            .submit_bounded(plan, "hi", &RequestKey("key".into()))
+            .unwrap();
+        assert!(matches!(
+            b.reconcile(&receipt.receipt).await.unwrap(),
+            Observation::Confirmed { .. }
+        ));
         drop(b);
-        let trace=fs::read_to_string(f.0.join("trace")).unwrap();
-        assert!(!trace.lines().any(|m|m=="createSession"));
+        let trace = fs::read_to_string(f.0.join("trace")).unwrap();
+        assert!(!trace.lines().any(|m| m == "createSession"));
     }
     #[tokio::test]
     async fn exact_start_receipt_and_native_readback() {
@@ -997,29 +1166,67 @@ for line in sys.stdin:
         let row = json!({"id":"msg-native","nativeMessageId":"msg-native","role":"user",
             "sessionId":"session-a","sourceCommandId":"queue_agent-herder:auto:request-k"});
         let messages = json!([row.clone()]);
-        assert_eq!(recovered_message_id(&messages, "session-a", "request-k", "zcode"), Some("msg-native".into()));
-        assert_eq!(recovered_message_id(&messages, "session-b", "request-k", "zcode"), None);
-        assert_eq!(recovered_message_id(&messages, "session-a", "other-key", "zcode"), None);
-        assert_eq!(recovered_message_id(&messages, "session-a", "request-k", "opencode"), None);
+        assert_eq!(
+            recovered_message_id(&messages, "session-a", "request-k", "zcode"),
+            Some("msg-native".into())
+        );
+        assert_eq!(
+            recovered_message_id(&messages, "session-b", "request-k", "zcode"),
+            None
+        );
+        assert_eq!(
+            recovered_message_id(&messages, "session-a", "other-key", "zcode"),
+            None
+        );
+        assert_eq!(
+            recovered_message_id(&messages, "session-a", "request-k", "opencode"),
+            None
+        );
         let opencode = json!([{"id":"msg-opencode","nativeMessageId":"msg-opencode","role":"user",
             "sessionId":"session-a","inputId":"request-k"}]);
-        assert_eq!(recovered_message_id(&opencode, "session-a", "request-k", "opencode"), Some("msg-opencode".into()));
-        assert_eq!(recovered_message_id(&opencode, "session-a", "other-key", "opencode"), None);
-        assert_eq!(recovered_message_id(&json!([row.clone(), row.clone()]), "session-a", "request-k", "zcode"), None);
+        assert_eq!(
+            recovered_message_id(&opencode, "session-a", "request-k", "opencode"),
+            Some("msg-opencode".into())
+        );
+        assert_eq!(
+            recovered_message_id(&opencode, "session-a", "other-key", "opencode"),
+            None
+        );
+        assert_eq!(
+            recovered_message_id(
+                &json!([row.clone(), row.clone()]),
+                "session-a",
+                "request-k",
+                "zcode"
+            ),
+            None
+        );
         for field in ["nativeMessageId", "sourceCommandId"] {
             let mut incomplete = row.clone();
             incomplete.as_object_mut().unwrap().remove(field);
-            assert_eq!(recovered_message_id(&json!([incomplete]), "session-a", "request-k", "zcode"), None);
+            assert_eq!(
+                recovered_message_id(&json!([incomplete]), "session-a", "request-k", "zcode"),
+                None
+            );
         }
         let mut conflicting = row.clone();
         conflicting["inputId"] = json!("different-key");
-        assert_eq!(recovered_message_id(&json!([conflicting]), "session-a", "request-k", "zcode"), None);
+        assert_eq!(
+            recovered_message_id(&json!([conflicting]), "session-a", "request-k", "zcode"),
+            None
+        );
         let mut synthetic = row.clone();
         synthetic["id"] = json!("zcode-message-0");
-        assert_eq!(recovered_message_id(&json!([synthetic]), "session-a", "request-k", "zcode"), None);
+        assert_eq!(
+            recovered_message_id(&json!([synthetic]), "session-a", "request-k", "zcode"),
+            None
+        );
         let mut assistant = row;
         assistant["role"] = json!("assistant");
-        assert_eq!(recovered_message_id(&json!([assistant]), "session-a", "request-k", "zcode"), None);
+        assert_eq!(
+            recovered_message_id(&json!([assistant]), "session-a", "request-k", "zcode"),
+            None
+        );
     }
 
     #[test]
@@ -1032,45 +1239,149 @@ for line in sys.stdin:
             json!({"sourceCommandId":"request-k","inputId":"request-k"}),
         ] {
             let mut row = base.clone();
-            row.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
-            assert_eq!(recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"), None);
+            row.as_object_mut()
+                .unwrap()
+                .extend(fields.as_object().unwrap().clone());
+            assert_eq!(
+                recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"),
+                None
+            );
         }
-        for anchor in ["agent-herder:auto:request-k", "queue_agent-herder:auto:request-k"] {
+        for anchor in [
+            "agent-herder:auto:request-k",
+            "queue_agent-herder:auto:request-k",
+        ] {
             let mut row = base.clone();
             row["sourceCommandId"] = json!(anchor);
             row["inputId"] = json!("request-k");
-            assert_eq!(recovered_message_id(&json!([row.clone()]), "session-a", "request-k", "zcode"), Some("msg-native".into()));
+            assert_eq!(
+                recovered_message_id(&json!([row.clone()]), "session-a", "request-k", "zcode"),
+                Some("msg-native".into())
+            );
             row["sessionId"] = json!("other-session");
-            assert_eq!(recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"), None);
+            assert_eq!(
+                recovered_message_id(&json!([row]), "session-a", "request-k", "zcode"),
+                None
+            );
         }
-        for key in ["agent-herder:auto:request-k", "queue_agent-herder:auto:request-k"] {
+        for key in [
+            "agent-herder:auto:request-k",
+            "queue_agent-herder:auto:request-k",
+        ] {
             let mut row = base.clone();
             row["sourceCommandId"] = json!(key);
-            assert_eq!(recovered_message_id(&json!([row]), "session-a", key, "zcode"), None);
+            assert_eq!(
+                recovered_message_id(&json!([row]), "session-a", key, "zcode"),
+                None
+            );
         }
         let key = "create-prompt:782a4a3d9263b0e2690f1847a710fd7597a48c57a9e0f04e8cf5a24dc85b672d";
         let row = json!({"id":"msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c",
             "nativeMessageId":"msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c","role":"user",
             "sessionId":"sess_bae78beb-46f1-4199-8eaa-d1a145b1833e",
             "sourceCommandId":format!("agent-herder:auto:{key}")});
-        assert_eq!(recovered_message_id(&json!([row]), "sess_bae78beb-46f1-4199-8eaa-d1a145b1833e", key, "zcode"),
-            Some("msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c".into()));
+        assert_eq!(
+            recovered_message_id(
+                &json!([row]),
+                "sess_bae78beb-46f1-4199-8eaa-d1a145b1833e",
+                key,
+                "zcode"
+            ),
+            Some("msg_mwfieii0_d643363f-cb40-4f1d-a28f-570d5ee3a54c".into())
+        );
     }
 
     #[tokio::test]
     async fn zcode_lost_ack_recovery_uses_only_bounded_native_reads() {
-        let (fixture, adapter) = setup_with_policy("recovery", "zcode", SendMode::Queue, "session:opaque").unwrap();
-        let target = SessionAddress { instance: adapter.instance.clone(), native_session_id: "session:opaque".into() };
-        let receipt = adapter.recover_admission(&target, &RequestKey("key".into())).await.unwrap().unwrap();
-        assert!(matches!(ReceiptReference::decode(&receipt.native_id).unwrap(), ReceiptReference::Message(id) if id == "native/message:β"));
-        assert!(matches!(adapter.reconcile(&receipt).await.unwrap(), Observation::Confirmed { .. }));
+        let (fixture, adapter) =
+            setup_with_policy("recovery", "zcode", SendMode::Queue, "session:opaque").unwrap();
+        let target = SessionAddress {
+            instance: adapter.instance.clone(),
+            native_session_id: "session:opaque".into(),
+        };
+        let receipt = adapter
+            .recover_admission(&target, &RequestKey("key".into()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(ReceiptReference::decode(&receipt.native_id).unwrap(), ReceiptReference::Message(id) if id == "native/message:β")
+        );
+        assert!(matches!(
+            adapter.reconcile(&receipt).await.unwrap(),
+            Observation::Confirmed { .. }
+        ));
         drop(adapter);
         let trace = fs::read_to_string(fixture.0.join("trace")).unwrap();
-        assert!(trace.lines().all(|method| matches!(method, "initialize" | "init" | "getSession" | "getSessionMessages")));
-        assert_eq!(trace.lines().filter(|method| *method == "getSessionMessages").count(), 2);
+        assert!(trace.lines().all(|method| matches!(
+            method,
+            "initialize" | "init" | "getSession" | "getSessionMessages"
+        )));
+        assert_eq!(
+            trace
+                .lines()
+                .filter(|method| *method == "getSessionMessages")
+                .count(),
+            2
+        );
     }
+}
+
+fn automatic_continuation_supported(harness: &str, capabilities: &Value) -> bool {
+    harness != "opencode"
+        && capabilities
+            .get("nativeAutomaticContinuation")
+            .and_then(Value::as_str)
+            != Some("unsupported-no-idle-admission-v1")
 }
 
 #[cfg(test)]
 #[path = "../../../../tests/ahap_v1_reuse.rs"]
 mod ahap_v1_reuse;
+
+#[cfg(test)]
+mod canonical_wait_turn_tests {
+    use super::*;
+    use crate::application::scoped_stop::wait_automation::NativeTurnStatus;
+    #[test]
+    fn opencode_queue_and_absent_marker_never_prove_automatic_continuation() {
+        for capabilities in [
+            json!({}),
+            json!({"nativeProtocol":"v2","deliveryModes":["queue","steer","start"]}),
+            json!({"nativeProtocol":"v22","deliveryModes":["start"]}),
+            json!({"nativeProtocol":"v2","nativeAutomaticContinuation":"unsupported-no-idle-admission-v1"}),
+        ] {
+            assert!(!automatic_continuation_supported("opencode", &capabilities));
+        }
+        assert!(automatic_continuation_supported("codex", &json!({})));
+        assert!(!automatic_continuation_supported(
+            "codex",
+            &json!({"nativeAutomaticContinuation":"unsupported-no-idle-admission-v1"})
+        ));
+    }
+    #[test]
+    fn native_turn_requires_exact_identity_and_explicit_status() {
+        let base = json!({"id":"child","harness":"codex","status":"idle",
+            "meta":{"nativeLastTurn":{"turnId":"turn-1","status":"failed"}}});
+        assert_eq!(
+            exact_native_turn(&base, "child", "codex").unwrap().status,
+            NativeTurnStatus::Failed
+        );
+        assert!(exact_native_turn(&base, "other", "codex").is_none());
+        assert!(exact_native_turn(&base, "child", "other").is_none());
+        for (path, value) in [
+            ("nativeStateObserved", json!(false)),
+            ("nativeTurnStateUnavailable", json!(true)),
+            ("nativeSessionId", json!("other")),
+        ] {
+            let mut rejected = base.clone();
+            rejected["meta"][path] = value;
+            assert!(exact_native_turn(&rejected, "child", "codex").is_none());
+        }
+        let idle = json!({"id":"child","harness":"codex","status":"idle"});
+        assert!(exact_native_turn(&idle, "child", "codex").is_none());
+        let mut ambiguous = base;
+        ambiguous["nativeLastTurn"] = json!({"turnId":"another","status":"completed"});
+        assert!(exact_native_turn(&ambiguous, "child", "codex").is_none());
+    }
+}

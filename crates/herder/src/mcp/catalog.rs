@@ -57,9 +57,9 @@ pub enum DispatchError {
 catalog! {
     "discover" => Discover(Discover) { read: ["nodes", "instances", "models", "projects"], mutate: [] },
     "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
-    "session" => Session(Session) { read: ["recent", "context", "messages"], mutate: ["archive", "register", "workspace"] },
+    "session" => Session(Session) { read: ["recent", "context", "messages", "resolve"], mutate: ["archive", "register", "workspace"] },
     "create" => Create(Create) { read: [], mutate: ["create"] },
-    "deliver" => Deliver(Deliver) { read: [], mutate: ["session", "reply_to"] },
+    "deliver" => Deliver(Deliver) { read: ["receipt"], mutate: ["session", "reply_to"] },
     "resume" => Resume(Resume) { read: [], mutate: ["resume"] },
     "stop" => Stop(Stop) { read: [], mutate: ["stop"] },
     "search" => Search(Search) { read: ["search"], mutate: [] },
@@ -158,6 +158,7 @@ pub struct SessionWorkspace {
     pub purpose: Option<String>,
 }
 actions!(Session {
+    Resolve { harness: String, native_session_id: String, node_ref: Option<String> },
     Archive { session_ref: String, request_key: String },
     Recent { session_ref: String, cursor: Option<String> },
     Context { session_ref: Option<String> },
@@ -176,6 +177,7 @@ pub enum DeliveryMode {
     Start,
 }
 actions!(Deliver {
+    Receipt { session_ref: String, request_key: String },
     Session { session_ref: String, message: String, mode: DeliveryMode, request_key: String },
     ReplyTo { reply_to: String, message: String, mode: DeliveryMode, request_key: String },
 });
@@ -194,6 +196,14 @@ actions!(Export { Export { session_ref: String, format: ExportFormat } });
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProcessExecution {
+    /// Start once through a configured authenticated executor; the deadline is immutable.
+    RemoteStart {
+        executor_ref: String,
+        argv: Vec<String>,
+        cwd: String,
+        deadline_unix_ms: u64,
+        stop_grace_ms: Option<u64>,
+    },
     /// Start once on the configured execution node. A stable request key identifies the same job across retries and core restarts.
     Start {
         argv: Vec<String>,
@@ -225,9 +235,26 @@ pub struct ProcessLeaseBinding {
     pub handback_seconds: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TimerTrigger {
+    Delay { delay_ms: u64 },
+    At { at: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AutomationRule {
+    /// A one-shot wait; its due time is captured only on the first admission.
+    Timer {
+        trigger: TimerTrigger,
+        wake_message: String,
+    },
+    /// Capture and wait for the exact current native turn of each canonical session.
+    SessionCompletion {
+        dependencies: Vec<String>,
+        wake_message: String,
+    },
     Schedule {
         expression: String,
         timezone: String,
@@ -332,6 +359,8 @@ mod tests {
         // Each declared action gets an input that must deserialize and carry the
         // intended access class; the schema must expose exactly those actions.
         let cases = [
+            ("session", json!({"action":"resolve","harness":"codex","native_session_id":"native","node_ref":"node"}), Access::Read),
+            ("deliver", json!({"action":"receipt","session_ref":"session","request_key":"original"}), Access::Read),
             ("automation", json!({"action":"wait_status","harness":"codex","native_session_id":"native","node_ref":"node"}), Access::Read),
             ("discover", json!({"action":"nodes"}), Access::Read),
             ("discover", json!({"action":"instances"}), Access::Read),

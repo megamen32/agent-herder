@@ -63,6 +63,16 @@ fn once(path:&Path,value:&Value)->io::Result<Value>{
 pub fn capture_source(store:&ExecutionStore,record:&ExecutionRecord)->io::Result<Value>{
     let path=store.execution_directory(&record.execution_ref)?.join("source.json");
     if path.exists(){return read(&path)}
+    if matches!(record.request,ExecutionRequest::RemoteStart(_)){
+        let observed=crate::process::remote_source_evidence(store,record)?;
+        let value=json!({"version":1,"execution_ref":record.execution_ref,"controller_node":record.node_ref,
+            "executor_node":record.executor_node_ref(),"request_digest":record.payload_hash,
+            "source":observed,"observed_at_unix_ms":crate::process::unix_millis()?,
+            "source_location":"remote_executor"});
+        // A pending remote read does not permanently replace source evidence
+        // with a local guess about the same-looking filesystem path.
+        return if value["source"].is_null(){Ok(value)}else{once(&path,&value)};
+    }
     let cwd=match &record.request{
         ExecutionRequest::Start(r)=>Some(r.cwd.clone()),
         ExecutionRequest::Attach(r)=>{
@@ -74,7 +84,8 @@ pub fn capture_source(store:&ExecutionStore,record:&ExecutionRecord)->io::Result
                 #[cfg(target_os = "macos")]
                 { None }
             }else{None}
-        }
+        },
+        ExecutionRequest::RemoteStart(_)=>None,
     };
     once(&path,&json!({"version":1,"execution_ref":record.execution_ref,"executor_node":record.node_ref,
         "request_digest":record.payload_hash,"observed_at_unix_ms":crate::process::unix_millis()?,
@@ -85,7 +96,9 @@ pub fn completion(store:&ExecutionStore,record:&ExecutionRecord)->io::Result<Val
     let path=dir.join("completion-evidence.json");
     if path.exists(){return read(&path)}
     let receipt=record.receipt.as_ref().ok_or_else(||io::Error::other("completion receipt unavailable"))?;
-    let source=match read(&dir.join("source.json")){Ok(v)=>v,Err(e) if e.kind()==io::ErrorKind::NotFound=>Value::Null,Err(e)=>return Err(e)};
+    let source=match read(&dir.join("source.json")){Ok(v)=>v,Err(e) if e.kind()==io::ErrorKind::NotFound=>{
+        if matches!(record.request,ExecutionRequest::RemoteStart(_)){capture_source(store,record)?}else{Value::Null}
+    },Err(e)=>return Err(e)};
     let delegation:Delegation=serde_json::from_slice(&fs::read(dir.join("bindings.json"))?).map_err(io::Error::other)?;
     if delegation.execution_ref!=record.execution_ref || delegation.principal_ref!=record.principal_ref{
         return Err(io::Error::other("completion delegation mismatch"));
@@ -98,7 +111,8 @@ pub fn completion(store:&ExecutionStore,record:&ExecutionRecord)->io::Result<Val
             "current_claim_id":current.as_ref().map(|c|&c.claim_id),"expires_at":current.as_ref().and_then(|c|c.expires_at.as_ref()),
             "on_exit":b.on_exit,"execution_binding":occupancy}));
     }
-    let value=json!({"version":1,"execution_ref":record.execution_ref,"receipt":receipt,"source":source,
+    let value=json!({"version":1,"execution_ref":record.execution_ref,"controller_node":record.node_ref,
+        "executor_node":record.executor_node_ref(),"receipt":receipt,"source":source,
         "claims_at_completion":claims,"artifacts":[],"artifact_verification":"not_declared",
         "evidence_path":path,"observed_at_unix_ms":crate::process::unix_millis()?});
     once(&path,&value)

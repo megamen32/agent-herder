@@ -9,11 +9,18 @@ use darwin as platform;
 #[cfg(target_os = "linux")]
 use linux as platform;
 mod storage;
+pub mod remote;
+mod remote_controller;
+mod remote_endpoint;
+mod remote_deadline;
 mod types;
 mod worker;
 
 pub use platform::{capture_process, observe_process};
 pub use storage::{ExecutionStore, execution_ref_for};
+pub use remote_controller::{remote_terminal_observed_at,remote_source_evidence};
+pub use remote_endpoint::remote_endpoint;
+pub use remote_deadline::run_deadline_watchdog;
 pub use types::*;
 pub use worker::{ExecutionHooks, NoopHooks, run_worker, run_worker_with_hooks};
 

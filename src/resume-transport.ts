@@ -1,5 +1,7 @@
 import { ReceiptLedger } from "agent-resume-mcp";
 import { coreCanDeliver, createCoreResumeTransport, defaultResumeLedgerPath } from "./resume/core-transport.js";
+import { canonicalMode } from "./canonical-herder.js";
+import type { CanonicalResumeTransportOptions } from "./resume/canonical-transport.js";
 
 export type ResumeAgent = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
 
@@ -78,9 +80,12 @@ type ResumeFailureReason = "unavailable" | "unsupported" | "invalid" | "failed";
 
 export interface ResumeTransport {
   resume(request: ResumeTransportRequest): Promise<ResumeReceipt>;
+  queryReceipt?(request: ResumeTransportRequest): Promise<ResumeReceipt>;
 }
 
 export interface AgentResumeClientOptions {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly canonical?: CanonicalResumeTransportOptions;
   /** Ledger the shared core reads and writes; defaults to the legacy state file. */
   coreLedgerPath?: string;
   /**
@@ -109,23 +114,30 @@ export class AgentResumeClient implements ResumeTransport {
   private readonly queryOverride?: (request: ResumeTransportRequest) => Promise<unknown>;
   /** In-process admission over the shared core; used wherever it can deliver natively. */
   private readonly coreTransport: ResumeTransport;
-  private readonly coreLedger: ReceiptLedger;
+  private readonly coreLedger?: ReceiptLedger;
+  private readonly canonical: boolean;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(options: AgentResumeClientOptions = {}) {
     this.invokeOverride = options.invoke;
     this.queryOverride = options.query;
+    this.env = options.env ?? process.env;
+    this.canonical = canonicalMode(this.env) === "canonical";
     // An injected transport owns admission in tests; otherwise the core does it
     // in-process whenever it can reach the target natively.
-    this.coreLedger = new ReceiptLedger({ path: options.coreLedgerPath ?? defaultResumeLedgerPath() });
-    this.coreTransport = options.coreTransport
-      ?? (process.env.AGENT_HERDER_CORE_RESUME === "false"
+    this.coreLedger = this.canonical ? undefined : new ReceiptLedger({ path: options.coreLedgerPath ?? defaultResumeLedgerPath(this.env) });
+    // Canonical mode cannot be bypassed by the old injected invoke/query ports.
+    this.coreTransport = this.canonical
+      ? createCoreResumeTransport({ env: this.env, canonical: options.canonical })
+      : options.coreTransport
+      ?? (this.env.AGENT_HERDER_CORE_RESUME === "false"
         ? { resume: async (request) => ({ status: "rejected", target: request.target, result_ref: request.result_ref, reason: "core_resume_disabled" }) }
-        : createCoreResumeTransport());
+        : createCoreResumeTransport({ env: this.env, ledgerPath: options.coreLedgerPath }));
   }
 
   async resume(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
-    if (coreCanDeliver(request.target, process.env.OPENCODE_URL)) {
+    if (this.canonical || coreCanDeliver(request.target, this.env.OPENCODE_URL)) {
       try {
         // Once admission has reached its owner, preserve that result. An error
         // after submission is uncertain and cannot authorize another writer.
@@ -161,8 +173,12 @@ export class AgentResumeClient implements ResumeTransport {
   async queryReceipt(input: ResumeTransportRequest): Promise<ResumeReceipt> {
     const request = freezeRequest(input);
     if (!request.idempotency_key) throw new TypeError("idempotency_key is required for receipt queries");
+    if (this.canonical) {
+      if (!this.coreTransport.queryReceipt) return ambiguousReceipt(request, "canonical_receipt_query_unavailable");
+      return this.coreTransport.queryReceipt(request);
+    }
     if (!this.queryOverride) {
-      const stored = this.coreLedger.read(request.idempotency_key);
+      const stored = this.coreLedger?.read(request.idempotency_key);
       if (stored) return parseReceipt(stored, request);
       return ambiguousReceipt(request, "receipt_not_found");
     }
@@ -187,7 +203,7 @@ function freezeRequest(input: ResumeTransportRequest): ResumeTransportRequest {
   if (!input || typeof input !== "object") throw new TypeError("resume request is required");
   const target = input.target;
   if (!target || typeof target !== "object") throw new TypeError("resume target is required");
-  if (!["codex", "opencode", "claude", "hermes", "zcode"].includes(target.agent)) throw new TypeError("unsupported resume agent");
+  if (!["codex", "opencode", "claude", "hermes", "zcode", "chatgpt", "zai"].includes(target.agent)) throw new TypeError("unsupported resume agent");
   if (target.agent === "hermes") {
     validateHermesLocator(target.locator);
   } else {

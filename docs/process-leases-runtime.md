@@ -1,6 +1,6 @@
 # Process leases: native runtime and rollout
 
-Agent Herder owns supervised execution, generic resource claims, completion receipts and the decision to resume an agent. The process worker and resource bridge are immutable companion executables in the same release. Neither is a separate resume service.
+Agent Herder owns supervised execution, generic resource claims, completion receipts and the decision to resume an agent. The process worker, resource bridge and optional remote transport bridge are immutable companion executables in the same release. None is a separate resume service.
 
 This runbook covers the native public MCP, the TypeScript automatic continuation gates, and the release coordinator. The user workflow is documented separately in [supervised-jobs.md](supervised-jobs.md).
 
@@ -17,7 +17,7 @@ The following observations were made on server-100 on 2026-11-13. Re-read the se
 | Baseline manifest | /home/roomhacker/herder-artifacts/releases/ahap-opencode-resume-bce62de3-v1/manifest.json | SHA256 4a711887a69126c02ac870b42c896f806db312382f83120f998a45c00a1fe770. |
 | Composite components | Core and browser adapter a7fbc548; compat, Node, bootstrap, Codex and ZCode cebecc13; OpenCode bce62de3 | Preserve each component's provenance. The top manifest commit is not the running core commit. |
 | Trusted profiles | Six: local Codex, remote44 Codex, noticeplace OpenCode, ChatGPT browser, ZCode and ZAI | Preserve authority and wrapper pins. Only the explicit reviewed adapter transition creates new sibling profile paths. |
-| TypeScript service | agent-herder.service; source c9bc35a6; 127.0.0.1:18787 | Its scheduler code is a separate rollout. Restarting it does not replace the public Rust core. |
+| TypeScript service | agent-herder.service; source c9bc35a6; 127.0.0.1:18787 | Its scheduler code needs a coordinated cutover. Production core rollout must prove the installed TS gate and matching canonical configuration. |
 | NoticePlace bridge | agent-herder-v1-noticeplace.service; source b33f5b37; 127.0.0.1:18797 | Its existing target is the native MCP. |
 | Fleet transport child | HerderFleet | Different authority from AgentHerder. Do not use a remapped fleet route for canonical process waits. |
 
@@ -37,10 +37,11 @@ A candidate contains:
 - fixture/launch-v1-core.py and fixture/process-runtime.json.
 - fixture/process-wait-status.py when the source includes the read-only wait reader.
 - fixture/herder_resource_bridge when the source contains that Cargo bin.
+- fixture/herder-process-remote-bridge.mjs when the source contains the trusted remote transport entry.
 - manifest.json, selector.json, process-leases-build.json and the build log.
 - For an explicit adapter update: adapter-migration.json, check-selector.json, profile-payloads and the selected immutable AHAP bundles.
 
-The manifest pins every new executable, reader and configuration digest. The worker is selected by process-runtime.json.worker, and the launcher passes the verified HERDER_PROCESS_CONFIG. HERDER_PROCESS_WORKER is not exported by the new launcher; an inherited override is cleared. An optional resource_bridge and sha256.resource_bridge pin the resource companion; the launcher also verifies that pin. A legacy source commit without the reader or resource bridge remains buildable.
+The manifest pins every new executable, reader and configuration digest. The worker is selected by process-runtime.json.worker, and the launcher passes the verified HERDER_PROCESS_CONFIG. HERDER_PROCESS_WORKER is not exported by the new launcher; an inherited override is cleared. An optional resource_bridge and sha256.resource_bridge pin the resource companion; the launcher also verifies that pin. An optional process_remote_bridge and sha256.process_remote_bridge pin the remote companion and its source provenance. It uses the retained Node pin, a fresh workspace compilation and the existing V1 bundler. Packaging a bridge does not register an executor or launch remote work. A later candidate cannot silently remove configured remote_executors. A legacy source commit without these optional companions remains buildable.
 
 The process configuration contains version 1, the real execution node, immutable worker path, durable execution root, local resource StorageAuthority and administrators from the selected trusted profiles. All six currently selected profiles use principal local-owner. Only configured administrators gain the process/resource capability; merely knowing a session identity does not grant it.
 
@@ -68,7 +69,7 @@ Build writes profile payloads only under the candidate. The planned installed pr
 
 During the continuously held release guard, install first records every planned profile creation in durable rollback evidence. It creates the siblings exclusively with mode 0400, verifies their exact bytes and actual manifest bindings, and only then performs launcher/selector CAS. Existing profiles and databases are never rewritten. A creation race, expired admission or partial failure preserves the unresolved rollout checkpoint; it does not overwrite a file, silently adopt a leftover sibling, replay a restart or manufacture success. Reviewed rollback selects the unchanged old profiles. It leaves any already created new siblings available for inspection.
 
-The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
+The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. The runner separately advertises nativeAutomaticContinuation: unsupported-no-idle-admission-v1 for the inspected v2 protocol. A real canary produced two assistant replies for one canonical wake, and the native prompt contract lacks an atomic idle/turn condition. New automatic waits and canonical resume refuse before protected effects; old jobs continue observation and claim finalization. Do not enable this capability from a source test or a single input receipt. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
 
 Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
 
@@ -119,6 +120,38 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" inspect \
   --core-pid "<fresh verified core PID>"
 ~~~
 
+## Paired TypeScript scheduler admission
+
+Production switching requires the actual agent-herder.service to run the same
+source commit as the candidate in canonical mode. Its immutable compiled Herder
+tree, pinned Node, exact systemd MainPID/boot/start identity, argv, persistent
+environment, listener and canonical epoch are checked independently. The
+original wait and direct-resume writers must be drained and their retained
+records sealed through the reviewed migration barrier.
+
+The installed TS process exposes authenticated GET /api/canonical-runtime-status
+through the existing HTTP server and authentication boundary. A preflight
+challenge returns the actual loaded backend's proof without calling the old
+native core. This allows a new canonical TS scheduler to remain fail closed
+while the old core has no wait_status action. A post-restart request also
+provides an exact native probe; that request invokes the same installed wait
+gate used by automatic continuations and must return fresh complete evidence.
+
+Pin AGENT_HERDER_TS_RUNTIME_MANIFEST and its SHA256 in persistent systemd
+Environment alongside the canonical client configuration. The versioned
+herder-canonical-ts-runtime manifest enumerates every compiled Herder file,
+its source commit, immutable root, index.js entry and exact Node binary/hash.
+The inventory covers the project's compiled tree and Node. It does not claim
+to seal unrelated external third-party node_modules. Unexpected Node preload,
+loader or library-injection settings are rejected.
+
+The read-only process-leases-scheduler-readiness.py verifier binds the operator's
+authenticated HTTP receipt to actual OS and systemd observations. A ready
+boolean, copied status file, different process, stale epoch or native-only
+restart cannot satisfy it. See canonical-waits-and-resume.md for the exact
+preflight and consumer receipt shapes. Missing proof blocks production
+admission; isolated candidate builds and canaries remain independent.
+
 ## One held release transaction
 
 The coordinator is a bounded native task. It holds ReleaseGate across installation, the explicit child restart and readiness evidence. It never initiates a restart itself. Start it through the existing durable task facility so its PID, output and completion survive the agent turn.
@@ -133,6 +166,7 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" run \
   --backup "/home/roomhacker/herder-artifacts/releases/process-leases-backup-$HERDER_SOURCE_SHA" \
   --job-dir "<new absolute coordinator directory>" \
   --proof "<existing private release proof>" \
+  --scheduler-proof "<fresh private TS preflight receipt>" \
   --release-state "<actual existing release ledger>" \
   --target "<private JSON with the exact deploymentTarget>" \
   --expected-selector-sha256 "<literal build receipt base_selector_sha256>" \
@@ -143,7 +177,7 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" run \
 
 The source must be merged into freshly fetched origin/main before this production path admits it. Isolated candidate canaries may run before merge. The coordinator does not honor an inherited emergency unmerged-rollout override.
 
-The durable order is admission, install intent, rollback snapshot, state preparation, launcher switch, selector switch, awaiting_restart, awaiting_consumer, verified and completed. A private occupancy pointer is stored next to the exact selector:
+The durable order is paired TS preflight, release admission, install intent, rollback snapshot, state preparation, launcher switch, selector switch, awaiting_restart, native and TS consumer verification, verified and completed. The coordinator rechecks the installed scheduler around each protected mutation. A private occupancy pointer is stored next to the exact selector:
 
 ~~~text
 .gptadmin-entry.json.process-leases-rollout.json
@@ -189,7 +223,9 @@ Use actual timestamps and PIDs. Submit it with record --job-dir ... --kind resta
 
 For consumer proof, call typed ShellMCP mcp_tools with ref AgentHerder after the restart, preferably as a durable provider task. Save the actual returned tools array in a separate receipt with kind consumer, method mcp_tools, the same target/ref/job/challenge, the new operation ID and observed_at_unix_ms. Add schema_sha256 as SHA256 of the tools array serialized with sorted keys and compact JSON separators. All strings in this array must be preserved.
 
-Submit with record --kind consumer. The coordinator requires automation and resource input schemas, including process_completion, reconcile_process, cancel_execution and resource.bind. Old tools with the same names do not prove the new core is serving. The process pair is independently re-read around this evidence. Only then does the held canonical channel report finished.
+Submit with record --kind consumer. The coordinator requires automation, resource, session and deliver schemas, including process_completion, timer, session_completion, wait_status, reconcile_process, cancel_execution, resource.bind, session.resolve and deliver.receipt. Old tools with the same names do not prove the new core is serving. The process pair is independently re-read around this evidence.
+
+Also submit record --kind scheduler with a fresh authenticated TS consumer receipt. Use the same job ID, 64-hex challenge, TS process/source/configuration and exact native probe. The response must contain the installed gate's fresh complete wait_status decision from the newly selected authority. A preflight response with probe:null cannot serve as this consumer proof. Both native schemas and the actual TS gate must be verified before the held canonical channel reports finished.
 
 The public HTTP endpoint was probed read-only and returned 401 without its existing OAuth context. Use the supported typed ShellMCP route for this installation. Do not create or search for a new bearer credential merely for rollout. The typed consumer receipt is evidence from the trusted operator; it is explicitly separate from independent OS/configuration verification.
 
@@ -208,7 +244,8 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" recover \
   --outcome candidate \
   --compat-pid "<fresh verified PID>" \
   --core-pid "<fresh verified PID>" \
-  --consumer-receipt "<fresh private typed tools/list receipt>"
+  --consumer-receipt "<fresh private typed tools/list receipt>" \
+  --scheduler-proof "<fresh private paired TS receipt>"
 ~~~
 
 For the legacy ledger, recover can settle durable occupancy after those observations under a new held release guard. It changes no selector and performs no restart. A mixed or unrelated configuration is refused.
@@ -221,13 +258,14 @@ The backup retains exact previous selector/launcher bytes, hashes and modes, inc
 
 A registered wait must suppress automatic model work while the process runs. src/process-wait-gate.ts is consulted before the Stop judge, cadence/unfinished judges and planners, continuation admission and native resume. Important send fences read again after asynchronous judging or admission. There is no negative-result cache and no new writable wait registry.
 
-The local mode invokes the trusted launcher with --process-wait-status and an identity-only JSON query. The pinned process-leases-wait-status.py reader opens canonical owner databases read-only, verifies trusted principal/node/kind/native session bindings, HumanStop generation and DB/gate inode identity, then reads the canonical process rule and execution evidence. It does not start an adapter, worker, harness or reconciliation.
+When explicitly using legacy local mode, the gate invokes the trusted launcher with --process-wait-status and an identity-only JSON query. The pinned process-leases-wait-status.py reader opens canonical owner databases read-only, verifies trusted principal/node/kind/native session bindings, HumanStop generation and DB/gate inode identity, then reads the canonical process, timer and session-completion rules and the exact intent or execution evidence. It does not start an adapter, worker, harness or reconciliation.
 
 | Canonical observation | Automatic continuation |
 | --- | --- |
 | Registered rule before WaitState is persisted | Blocked immediately. |
 | prepared, armed, dispatching, waiting_receipt, delivery_unknown, paused or rejected | Blocked. Rejected delivery needs explicit resolution. |
-| ready, confirmed or cancelled with matching terminal receipt, complete process tree and finished lease finalization | May continue, subject to ordinary HumanStop and admission policy. |
+| A process wait whose cancellation or completed wake is settled, with matching terminal receipt, complete process tree and finished lease finalization | May continue, subject to ordinary HumanStop and admission policy. |
+| A timer/dependency wait confirmed with its exact confirmed intent, or cancelled without unresolved handoff | May continue, subject to ordinary HumanStop and admission policy. |
 | Missing evidence, UNKNOWN, ambiguous native binding, corrupt state, unavailable configured authority or incomplete read | Blocked. |
 | Complete verified read with no exact native binding or no outstanding rule | Unblocked. |
 | Active HumanStop | Blocked independently of process completion. Releasing a hold does not reauthorize an old cancelled wake. |
@@ -238,7 +276,9 @@ With no explicit activation, an absent local selector on an older TS node is tre
 
 ### Remote TS schedulers use the canonical central authority
 
-A local empty or missing store on server-44, server-88 or a Mac does not establish absence of a wait stored in the six-profile authority on server-100. Enable the remote route explicitly in the scheduler's trusted configuration:
+A local empty or missing store on server-44, server-88 or a Mac does not establish absence of a wait stored in the six-profile authority on server-100. Canonical mode always uses the same sealed native authority as timer and direct-resume compatibility. A missing local selector or empty store cannot disable that gate. Follow [canonical-waits-and-resume.md](canonical-waits-and-resume.md) for the common client, writer-drain and retained-record barrier.
+
+For an explicitly configured legacy scheduler using only the remote wait gate, select the route in trusted configuration:
 
 ~~~text
 AGENT_HERDER_PROCESS_WAIT_AUTHORITY=mcp:shell:roomhacker-server-100:AgentHerder
@@ -260,7 +300,7 @@ This uses FleetGptAdminTransport and readFleetMeshBinding, including the existin
 
 The tool is automation on the exact AgentHerder target. FleetDirectTransport is intentionally not used because it remaps to HerderFleet and may fall back to an unrelated local TS listener. Remote mode has no local or SSH fallback, no discovery, no token creation and no alternate store.
 
-node_ref is an explicit owner identity. For example, the installed owner profile uses server-44 while the ShellMCP registry uses roomhacker-server-44. Do not normalize one into the other by guessing. Omitting node_ref asks the authority to inspect all applicable trusted profiles; multiple native binding matches block.
+node_ref is an explicit owner identity. For example, the remote Codex owner profile uses server-44. The latest executor preflight also resolved the actual route as shell:server-44; historical aliases are not rollout evidence. Do not normalize an owner identity into a host alias by guessing. Omitting node_ref asks the authority to inspect all applicable trusted profiles; multiple native binding matches block.
 
 WaitStatus returns version 1, configured, complete, blocked, reason, mapped, sessionRefs, ruleRefs and observedAt. Remote TS permits a continuation only after a fresh, complete typed response. Unknown/unconfigured harness authority, missing pin, credential rotation without the approved generation, stale response, error or timeout blocks. An old endpoint with no wait_status action therefore fails closed after explicit activation.
 
@@ -268,7 +308,7 @@ Deploy the TS gate code and this explicit route on every scheduler that can adva
 
 ## Unified process API
 
-The public tool is automation and action values use snake case. Select a registered session_ref that the caller owns. A process runs on the configured local execution node even when its destination session belongs to a different harness.
+The public tool is automation and action values use snake case. Select a registered session_ref that the caller owns. Local start/attach runs on the configured local execution node even when its destination session belongs to a different harness. RemoteStart instead selects one trusted executor_ref and preserves separate controller/executor identities. See [remote-process-execution.md](remote-process-execution.md); no local SSH-client exit can stand in for an executor receipt.
 
 ~~~json
 {
@@ -309,6 +349,8 @@ After installation, a designated isolated native acceptance session must demonst
 
 At checkpoint 0d398e19, packages/agent-resume/src/mcp/server.ts no longer creates JobRegistry work for run_and_resume, attach_pid_and_resume, attach_query_and_resume or wait_and_resume. Legacy effects require an explicitly injected HerderLegacyFacade; without it they return the retirement/migration result. They never start a fallback scheduler, Python watcher, lease keeper or alternate wake queue. Compatibility reads and immutable target utilities may remain while callers still use them.
 
-src/resume-transport.ts now requires the selected Herder native transport or an explicit trusted owner transport. The standalone process fallback is retired. Old aliases are compatibility surfaces, not an independent Agent Resume deployment.
+In canonical mode, src/resume-transport.ts and src/resume/core-transport.ts use the shared CanonicalAutomationClient and do not construct ReceiptLedger. Direct sends reserve principal-wide compatibility keys in the existing resource authority, inspect deliver.receipt and reconcile the exact original task after uncertain ACK. The former ReceiptLedger remains sealed read-only evidence and reserves all old keys. resume_after, scheduled delivery, judges and admission gates use the same configured native authority and migration barrier. A broken canonical configuration never falls back to legacy effects.
+
+The standalone process fallback is retired. Old aliases are compatibility surfaces, not an independent Agent Resume deployment. Legacy mode exists only until the explicit writer drain and reviewed cutover; choosing canonical mode does not import or bulk-replay old work.
 
 Preserve the 47 legacy records whose metadata said running while both recorded process and watcher PIDs were absent. They need individual reconciliation. Do not mass-wake, relaunch or infer success. Existing profile databases also contain UNKNOWN operations; installation does not reset them. Bounded config inventory found no active standalone AgentResume entry in the inspected server-100 Codex, OpenCode and Hermes configs; it did not establish fleet-wide absence.

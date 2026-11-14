@@ -41,6 +41,15 @@ def prepare(selector):
 
 
 class RolloutContracts(unittest.TestCase):
+    def test_shared_core_descriptors_cannot_be_copied_to_a_replaced_core(self):
+        for key in ("core_release", "products", "product_sha256"):
+            with self.subTest(key=key):
+                base = copy.deepcopy(self.base)
+                base[key] = {"previous_core": self.base["core"]}
+                with self.assertRaisesRegex(ValueError, "require regeneration"):
+                    candidate.compose_manifest(base, self.new, "new-source", self.base_manifest,
+                        candidate.digest(self.base_manifest), {}, ["cargo", "build"])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="herder-process-leases-test-")
         self.addCleanup(self.tmp.cleanup)
@@ -179,6 +188,42 @@ class RolloutContracts(unittest.TestCase):
         Path(self.manifest["process_worker"]).write_bytes(b"corrupted")
         with self.assertRaisesRegex(ValueError, "artifact mismatch"):
             candidate.check_selector(self.new_selector, self.new_launcher)
+
+    def test_optional_remote_companion_is_pinned_without_changing_node_or_profiles(self):
+        self.assertIsNone(candidate.check_selector(self.new_selector, self.new_launcher)["process_remote_bridge_sha256"])
+        bridge = self.new / "fixture/herder-process-remote-bridge.mjs"
+        candidate.create(bridge, b"export const fixture = true;", 0o400)
+        node_before = self.manifest["node"], self.manifest["sha256"]["node"]
+        self.manifest["process_remote_bridge"] = str(bridge)
+        self.manifest["sha256"]["process_remote_bridge"] = candidate.digest(bridge)
+        self.manifest["component_provenance"]["process_remote_bridge_source_commit"] = "a" * 40
+        self.manifest["build_inputs"]["process_remote_bridge"] = {
+            "version": 1, "source_commit": "a" * 40, "source_path": "src/herder-process-remote-bridge.ts",
+            "source_sha256": "b" * 64, "compiled_entrypoint_sha256": "c" * 64, "bundler_sha256": "d" * 64,
+            "compile_argv": [["node", "tsc", "package"], ["node", "tsc", "workspace"]]}
+        self.manifest["remote_ahap_wrappers"] = []
+        self.manifest_path.write_bytes(candidate.encoded(self.manifest))
+        self.new_selection["manifest_sha256"] = candidate.digest(self.manifest_path)
+        self.new_selector.write_bytes(candidate.encoded(self.new_selection))
+        self.profile.write_bytes(candidate.encoded({"owner": {"principal": "owner-a", "kind": "codex",
+            "executable": self.manifest["node"], "ahap_script": self.manifest["adapters"]["codex"]}}))
+        profile_before = self.profile.read_bytes()
+        checked = candidate.check_selector(self.new_selector, self.new_launcher)
+        self.assertEqual(checked["process_remote_bridge_sha256"], candidate.digest(bridge))
+        loader = importlib.machinery.SourceFileLoader("fixture_remote_launcher", str(Path(__file__).with_name("launch-v1-core.py")))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        launcher = importlib.util.module_from_spec(spec)
+        loader.exec_module(launcher)
+        _, _, receipt = launcher.prepare(str(self.new_selector))
+        self.assertEqual(receipt["process_remote_bridge_sha256"], candidate.digest(bridge))
+        self.assertEqual((self.manifest["node"], self.manifest["sha256"]["node"]), node_before)
+        self.assertEqual(self.profile.read_bytes(), profile_before)
+        bridge.chmod(0o600)
+        bridge.write_bytes(b"changed after review")
+        with self.assertRaisesRegex(ValueError, "process remote bridge digest mismatch"):
+            candidate.check_selector(self.new_selector, self.new_launcher)
+        with self.assertRaisesRegex(ValueError, "process remote bridge digest mismatch"):
+            launcher.prepare(str(self.new_selector))
 
     def test_config_corruption_is_rejected(self):
         self.config_path.write_bytes(b"{}")

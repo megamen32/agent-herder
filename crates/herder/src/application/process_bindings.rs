@@ -20,6 +20,8 @@ pub struct ProcessRuntimeConfig {
     pub execution_root: PathBuf,
     pub resources: StorageAuthority,
     pub administrators: Vec<String>,
+    #[serde(default)]
+    pub remote_executors: Vec<crate::process::remote::RemoteExecutorConfig>,
 }
 
 impl ProcessRuntimeConfig {
@@ -36,6 +38,15 @@ impl ProcessRuntimeConfig {
             || !self.execution_root.is_absolute() || !self.resources.root.is_absolute()
             || self.administrators.is_empty() || self.administrators.iter().any(|v|v.is_empty()) {
             return Err(invalid("invalid installed process configuration"));
+        }
+        let mut executors = std::collections::HashSet::new();
+        let mut targets = std::collections::HashSet::new();
+        for executor in &self.remote_executors {
+            executor.validate(&self.node_ref)?;
+            if !executors.insert(&executor.executor_ref)
+                || !targets.insert((&executor.node_ref, &executor.execution_root)) {
+                return Err(invalid("duplicate installed remote executor"));
+            }
         }
         Ok(())
     }
@@ -187,9 +198,34 @@ impl BindingHooks {
 impl ExecutionHooks for BindingHooks {
     fn before_spawn(&mut self,_record:&ExecutionRecord)->io::Result<()> { self.renew() }
     fn tick(&mut self,_record:&ExecutionRecord)->io::Result<()> { self.renew() }
+    fn launch_valid_for_ms(&mut self,_record:&ExecutionRecord)->io::Result<u64> {
+        let _gate=delegation_lock(&self.execution_dir)?;
+        let Some(d)=self.delegation()? else {return Err(denied())};
+        let now_ms=crate::process::unix_millis()?;
+        let mut remaining=crate::process::remote::MAX_PERMIT_MS;
+        for b in d.bindings {
+            let c=claim::read_live_by_claim_id(&d.authority,&b.resource_ref,Authorization::Authorized,&b.claim_id)?
+                .ok_or_else(denied)?;
+            let descriptor=crate::ownership::resource::get(&d.authority,&b.resource_ref,Authorization::Authorized)?;
+            let occupancy=claim::read_execution_binding(&d.authority,&b.resource_ref,Authorization::Authorized)?
+                .ok_or_else(denied)?;
+            if c.principal_ref!=d.principal_ref || descriptor.revision!=b.revision
+                || occupancy.claim_id!=b.claim_id || occupancy.execution_ref!=d.execution_ref {
+                return Err(denied());
+            }
+            if let Some(expiry)=c.expires_at.as_ref() {
+                let expiry_ms=claim::parse_expiry_seconds(expiry)?.checked_mul(1000).ok_or_else(denied)?;
+                remaining=remaining.min(expiry_ms.saturating_sub(now_ms));
+            }
+        }
+        // Reserve time for the final local write. The remote permit clock is
+        // anchored at the preceding remote observation, so network delay only
+        // shortens this permission. Retry never changes an issued permit.
+        Ok(remaining.saturating_sub(250))
+    }
     fn terminal(&mut self,record:&ExecutionRecord,receipt:&CompletionReceipt)->io::Result<()> {
         if record.execution_ref!=self.execution_ref || record.principal_ref!=self.principal_ref
-            || receipt.execution_ref!=record.execution_ref || receipt.node_ref!=record.node_ref {
+            || receipt.execution_ref!=record.execution_ref || receipt.node_ref!=record.executor_node_ref() {
             return Err(invalid("terminal receipt identity mismatch"));
         }
         let _gate=delegation_lock(&self.execution_dir)?;
@@ -210,7 +246,9 @@ impl ExecutionHooks for BindingHooks {
                 ProcessLeaseExit::Release => claim::release(&d.authority,&b.resource_ref,Authorization::Authorized,&b.claim_id)?,
                 ProcessLeaseExit::Handback => {
                     let now=claim::now_seconds()?;
-                    let until=receipt.finished_at_unix_ms/1000+b.handback_seconds.unwrap_or(120);
+                    let terminal_at=crate::process::remote_terminal_observed_at(record,&self.execution_dir)?
+                        .unwrap_or(receipt.finished_at_unix_ms);
+                    let until=terminal_at/1000+b.handback_seconds.unwrap_or(120);
                     if until>now && claim::ensure_live_at(&current,now).is_ok() {
                         claim::renew_owned(&d.authority,&b.resource_ref,Authorization::Authorized,
                             &b.claim_id,&d.principal_ref,b.revision,

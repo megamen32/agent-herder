@@ -47,6 +47,13 @@ def prepare(selector):
         if (not path.is_absolute() or path.resolve() != path or not os.access(path, os.X_OK)
                 or digest(path) != manifest['sha256']['resource_bridge']):
             raise ValueError('resource bridge digest mismatch')
+    if 'process_remote_bridge' in manifest:
+        path = Path(manifest['process_remote_bridge'])
+        info = path.lstat()
+        if (not path.is_absolute() or path.resolve() != path or not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1
+                or digest(path) != manifest['sha256']['process_remote_bridge']):
+            raise ValueError('process remote bridge digest mismatch')
     for kind, path in manifest['adapters'].items():
         if digest(path) != manifest['sha256']['adapters'][kind]:
             raise ValueError('adapter digest mismatch: ' + kind)
@@ -107,6 +114,7 @@ def prepare(selector):
         'profiles': profiles, 'argv': argv,
         'process_worker_sha256': manifest.get('sha256', {}).get('process_worker'),
         'resource_bridge_sha256': manifest.get('sha256', {}).get('resource_bridge'),
+        'process_remote_bridge_sha256': manifest.get('sha256', {}).get('process_remote_bridge'),
         'process_config_sha256': manifest.get('sha256', {}).get('process_config'),
     }
 

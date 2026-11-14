@@ -88,7 +88,12 @@ export async function serveOpenCodeAhap(
           ])],
           deliveryModes: family === "v22" ? ["start"] : ["queue", "steer", "start"],
           nativeProtocol: family,
-          ...(family === "v2" ? { nativeStartAdmission: "steer-before-turn-v1" } : {}),
+          ...(family === "v2" ? {
+            nativeStartAdmission: "steer-before-turn-v1",
+            // A queued wake can execute hook synthetic input before the original
+            // user input. This native API has no atomic idle admission contract.
+            nativeAutomaticContinuation: "unsupported-no-idle-admission-v1",
+          } : {}),
           controlCapabilities: { ...CONTROL_CAPABILITIES, resume: canResume, recover: canRecover },
         },
       } });

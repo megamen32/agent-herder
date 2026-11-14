@@ -5,12 +5,14 @@ use herder::{
     application::{
         scoped_stop::{
             BoundedFreshRootCreate, BoundedNativeHandoff, ScopeGenerationIssuer, ScopedAuthority,
+            automation_driver::{self, AutomationOwner},
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
             mcp_read::{ScopedMessageReader, ScopedReadApplication},
             mcp_stop::ScopedStopApplication,
             mcp_task_server::ScopedTaskServer,
+            wait_automation::{DependencyRegistry, DependencySource, WaitAutomationApplication},
         },
         target::{RegistryUnavailable, SessionRefIssuer},
     },
@@ -102,14 +104,13 @@ impl ScopedMessageReader for SharedRead {
     }
 }
 struct OwnerApp {
-    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
-    reader: Arc<OwnerNativeReader>,
     messages: Arc<Mutex<CodexReader>>,
-    control: Arc<Control>,
     create: Arc<dyn ApplicationPort>,
+    deliver: Arc<dyn ApplicationPort>,
+    waits: Arc<WaitAutomationApplication>,
 }
 impl ApplicationPort for OwnerApp {
     fn call<'a>(
@@ -120,6 +121,12 @@ impl ApplicationPort for OwnerApp {
         Box::pin(async move {
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
+            }
+            if matches!(&request, catalog::Request::Deliver(_)) {
+                return self.deliver.call(identity, request).await;
+            }
+            if let Some(result) = self.waits.call(identity, request.clone()).await {
+                return Some(result);
             }
             let session = match &request {
                 catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
@@ -184,17 +191,6 @@ impl ApplicationPort for OwnerApp {
                     }
                     Err(_) => None,
                 },
-                catalog::Request::Deliver(_) => match ScopedDeliverApplication::new(
-                    self.authority.clone(),
-                    self.instance.clone(),
-                    grants,
-                    self.reader.clone(),
-                    self.control.clone(),
-                    "9999-12-31T23:59:59Z".into(),
-                ) {
-                    Ok(a) => a.call(identity, request).await,
-                    Err(_) => None,
-                },
                 _ => None,
             }
         })
@@ -231,7 +227,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     )?)));
     let reader = Arc::new(OwnerNativeReader {
         control: control.clone(),
-        reopened,
+        reopened: reopened.clone(),
     });
     let principal = PrincipalId(opened.owner.principal);
     let identity = ConnectionIdentity::new(
@@ -256,6 +252,23 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         gate: opened.gate,
     });
     let authority = Arc::new(opened.authority);
+    let config = herder::application::process_bindings::ProcessRuntimeConfig::from_environment()?;
+    let mut deliver = ScopedDeliverApplication::new(
+        authority.clone(),
+        instance.clone(),
+        grants.clone(),
+        reader.clone(),
+        control.clone(),
+        "9999-12-31T23:59:59Z".into(),
+    )
+    .map_err(|_| "invalid delivery policy")?
+    .with_policy(policy.clone());
+    if let Some(config) = &config {
+        deliver = deliver.with_delivery_keys(Arc::new(
+            herder::application::delivery_keys::DeliveryKeyRegistry::new(config.resources.clone())?,
+        ));
+    }
+    let deliver = Arc::new(deliver);
     let create = Arc::new(
         ScopedCreateApplication::new(
             authority.clone(),
@@ -277,16 +290,35 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
             reader.clone(),
         ),
     );
+    let source = Arc::new(DependencySource::new(
+        authority.clone(),
+        instance.clone(),
+        "codex".into(),
+        policy.principal.clone(),
+        grants.clone(),
+        policy.clone(),
+        reopened,
+    ));
+    let registry = Arc::new(DependencyRegistry::new());
+    registry.configure(vec![source.clone()])?;
+    let waits = Arc::new(WaitAutomationApplication::new(
+        source,
+        registry,
+        deliver.clone(),
+        catalog::DeliveryMode::Start,
+        reconciler.clone(),
+        policy.clone(),
+    ));
     let app = Arc::new(OwnerApp {
-        authority: authority.clone(),
         instance,
         grants: grants.clone(),
         policy: policy.clone(),
-        reader,
         messages,
-        control,
         create,
+        deliver,
+        waits: waits.clone(),
     });
+    automation_driver::start(vec![AutomationOwner::new(identity.clone(), vec![waits])])?;
     let server = ScopedTaskServer::new(identity, grants, authority, app)
         .with_create_policy(policy)
         .with_reconciler(reconciler);

@@ -74,6 +74,7 @@ it("maps create, one initial Start and exact read results without rewriting rece
   expect(replies[0].result.capabilities.controlCapabilities).toMatchObject({ events: false, steer: false });
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["start"]);
   expect(replies[0].result.capabilities.nativeStartAdmission).toBeUndefined();
+  expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBeUndefined();
   expect(replies[2].result.id).toBe("ses_created_exact");
   expect(replies[3].result).toMatchObject({ inputId: "caller-input-17", nativeInputMessageId: "msg_native17", admitted: true });
   expect(replies[3].result.inputId).not.toBe(replies[3].result.nativeInputMessageId);
@@ -147,6 +148,7 @@ it("v2 forwards a second delivery to an existing session with exact mode and cal
   expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
   expect(replies[0].result.capabilities.nativeStartAdmission).toBe("steer-before-turn-v1");
+  expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBe("unsupported-no-idle-admission-v1");
 });
 
 it("v2 exposes same-session resume and recover without selecting a model", async () => {

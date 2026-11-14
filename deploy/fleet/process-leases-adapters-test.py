@@ -264,6 +264,7 @@ class FreshBundlerContract(unittest.TestCase):
                     "moduleResolution": "NodeNext", "rootDir": "src", "outDir": "dist", "declaration": True,
                     "types": [], "skipLibCheck": True}, "include": ["src/**/*"]}),
                 "packages/agent-resume/src/index.ts": 'export const evidence = "fresh-shared-package-evidence";\n',
+                "src/herder-process-remote-bridge.ts": 'import { evidence } from "agent-resume-mcp"; export const result = evidence + "-remote";\n',
                 "deploy/fleet/build-v1-core.py": Path(__file__).with_name("build-v1-core.py").read_text(),
             }
             for kind in ("opencode", "zcode", "browser", "codex"):
@@ -283,13 +284,23 @@ class FreshBundlerContract(unittest.TestCase):
             base = {"node": str(node), "sha256": {"node": candidate.digest(node),
                     "adapters": {kind: candidate.digest(old) for kind in ("opencode", "zcode")}},
                     "adapters": {kind: str(old) for kind in ("opencode", "zcode")}, "source_commit": sha}
-            adapters, evidence = candidate.bundle_adapters(source, output, sha, base, ["opencode", "zcode"])
+            compilation = candidate.compile_typescript(source, output, sha, base)
+            adapters, evidence = candidate.bundle_adapters(source, output, sha, base, ["opencode", "zcode"], compilation)
+            remote = candidate.bundle_process_remote_bridge(source, output, sha, base, compilation)
             self.assertEqual(set(adapters), {"opencode", "zcode"})
             self.assertEqual(evidence["source_commit"], sha)
             self.assertEqual(git("status", "--porcelain"), "")
             for item in adapters.values():
                 self.assertIn("fresh-shared-package-evidence", Path(item["path"]).read_text())
             self.assertFalse((output / "fixture/ahap-codex-runner.mjs").exists())
+            self.assertEqual(remote["build"]["source_commit"], sha)
+            self.assertEqual(remote["build"]["source_sha256"], candidate.digest(source / "src/herder-process-remote-bridge.ts"))
+            self.assertEqual(remote["sha256"], candidate.digest(remote["path"]))
+            self.assertEqual(Path(remote["path"]).stat().st_mode & 0o777, 0o400)
+            self.assertEqual(remote["build"]["compile_argv"], evidence["compile_argv"])
+            subprocess.run([str(node), "--input-type=module", "--eval",
+                'const m=await import(process.argv[1]);if(m.result!=="fresh-shared-package-evidence-remote")throw new Error("dependency closure mismatch");',
+                remote["path"]], check=True, capture_output=True, text=True, timeout=10)
 
 
 if __name__ == "__main__":

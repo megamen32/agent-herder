@@ -487,6 +487,7 @@ for line in sys.stdin:
  r=json.loads(line)
  if 'id' not in r: continue
  m=r['method']; p=r.get('params',{})
+ with open(os.path.join(home,'native-trace'),'a') as trace:trace.write(m+'\n')
  if m=='initialize':
   experimental=p.get('capabilities',{}).get('experimentalApi') is True
   v={'codexHome':os.path.realpath(home)}
@@ -570,7 +571,7 @@ for line in sys.stdin:
         &mut out,
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"codex-test","prompt":"unique test prompt","request_key":"one"}}}),
     );
-    assert_eq!(created["result"]["resultType"], "task", "{created}");
+    assert_eq!(created["result"]["resultType"], "task", "{created}; native trace: {}", fs::read_to_string(f.root.join("native-trace")).unwrap_or_default());
     assert!(
         f.root.join("sent").exists(),
         "prompt must pass through actual bounded fake port: {created}"
@@ -600,6 +601,15 @@ for line in sys.stdin:
         "unique test prompt",
         "{response}"
     );
+    let resolved = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"resolve","harness":"codex","native_session_id":"fake-thread","node_ref":"local"}}}));
+    assert_eq!(resolved["result"]["structuredContent"]["session_ref"], session, "{resolved}");
+    let timer_request = serde_json::json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"create","session_ref":session,"request_key":"owner-stdio-timer","rule":{"kind":"timer","trigger":{"kind":"delay","delay_ms":3600000},"wake_message":"resume after timer"}}}});
+    let timer = call(&mut input, &mut out, timer_request.clone());
+    let timer = timer["result"]["structuredContent"].clone();
+    assert_eq!(timer["status"], "armed", "{timer}");
+    let rule_ref = timer["rule_ref"].as_str().unwrap().to_owned();
+    let pending = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"wait_status","harness":"codex","native_session_id":"fake-thread","node_ref":"local"}}}));
+    assert_eq!(pending["result"]["structuredContent"]["blocked"], true, "{pending}");
     drop(input);
     let _ = child.wait();
     // A fresh launcher must derive the same exact grant from the durable receipt.
@@ -622,6 +632,14 @@ for line in sys.stdin:
         after["result"]["structuredContent"]["page"]["messages"][0]["text"], "unique test prompt",
         "{after}"
     );
+    let restored = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"get","rule_ref":rule_ref}}}));
+    assert_eq!(restored["result"]["structuredContent"], timer, "{restored}");
+    let retry = call(&mut input, &mut out, timer_request);
+    assert_eq!(retry["result"]["structuredContent"], timer, "{retry}");
+    let cancelled = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"delete","rule_ref":rule_ref,"revision":timer["revision"]}}}));
+    assert_eq!(cancelled["result"]["structuredContent"]["status"], "cancelled", "{cancelled}");
+    let settled = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"wait_status","harness":"codex","native_session_id":"fake-thread","node_ref":"local"}}}));
+    assert_eq!(settled["result"]["structuredContent"]["blocked"], false, "{settled}");
     let imported = call(
         &mut input,
         &mut out,

@@ -226,6 +226,22 @@ def check_selector(selector, launcher, require_worker=True):
     if "process_wait_reader" in manifest:
         if digest(private_file(manifest["process_wait_reader"])) != manifest["sha256"]["process_wait_reader"]:
             raise ValueError("process wait reader digest mismatch")
+    if "process_remote_bridge" in manifest:
+        if digest(private_file(manifest["process_remote_bridge"])) != manifest["sha256"]["process_remote_bridge"]:
+            raise ValueError("process remote bridge digest mismatch")
+        evidence = manifest.get("build_inputs", {}).get("process_remote_bridge")
+        if (not isinstance(evidence, dict) or set(evidence) != {"version", "source_commit", "source_path",
+                "source_sha256", "compiled_entrypoint_sha256", "bundler_sha256", "compile_argv"}
+                or evidence.get("version") != 1
+                or evidence.get("source_path") != "src/herder-process-remote-bridge.ts"
+                or evidence.get("source_commit") != manifest.get("component_provenance", {}).get("process_remote_bridge_source_commit")
+                or not re.fullmatch(r"[a-f0-9]{40}", str(evidence.get("source_commit", "")))
+                or any(not re.fullmatch(r"[a-f0-9]{64}", str(evidence.get(key, "")))
+                       for key in ("source_sha256", "compiled_entrypoint_sha256", "bundler_sha256"))
+                or not isinstance(evidence.get("compile_argv"), list) or len(evidence["compile_argv"]) != 2
+                or any(not isinstance(argv, list) or not argv or not all(isinstance(value, str) for value in argv)
+                       for argv in evidence["compile_argv"])):
+            raise ValueError("process remote bridge build provenance missing")
     config = None
     if require_worker or "process_config" in manifest:
         config_path = private_file(manifest["process_config"])
@@ -249,12 +265,19 @@ def check_selector(selector, launcher, require_worker=True):
             "core_sha256": manifest["sha256"]["core"],
             "process_worker_sha256": manifest["sha256"].get("process_worker"),
             "resource_bridge_sha256": manifest["sha256"].get("resource_bridge"),
+            "process_remote_bridge_sha256": manifest["sha256"].get("process_remote_bridge"),
             "process_config_sha256": manifest["sha256"].get("process_config"),
             "source_commit": manifest.get("source_commit"),
             "profiles_count": len(selection["profiles"])}
 
 
+def reject_unmigrated_core_descriptors(base):
+    if any(key in base for key in ("core_release", "products", "product_sha256")):
+        raise ValueError("shared-core product descriptors require regeneration for the replacement core; stale bindings are not copied")
+
+
 def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, build_argv):
+    reject_unmigrated_core_descriptors(base)
     m = copy.deepcopy(base)
     # A prior profile transition is historical provenance, not this release's
     # permission to modify profiles. Every new transition needs its own record.
@@ -268,6 +291,9 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
     if "resource_bridge" in hashes:
         m["resource_bridge"] = str(output / "fixture/herder_resource_bridge")
         m["sha256"]["resource_bridge"] = hashes["resource_bridge"]
+    if "process_remote_bridge" in hashes:
+        m["process_remote_bridge"] = str(output / "fixture/herder-process-remote-bridge.mjs")
+        m["sha256"]["process_remote_bridge"] = hashes["process_remote_bridge"]
     if "process_wait_reader" in hashes:
         m["process_wait_reader"] = str(output / "fixture/process-wait-status.py")
         m["sha256"]["process_wait_reader"] = hashes["process_wait_reader"]
@@ -290,6 +316,8 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
         process_leases_base_manifest=str(base_path), process_leases_base_manifest_sha256=base_hash)
     if "resource_bridge" in hashes:
         m["component_provenance"]["resource_bridge_source_commit"] = source_sha
+    if "process_remote_bridge" in hashes:
+        m["component_provenance"]["process_remote_bridge_source_commit"] = source_sha
     if "process_wait_reader" in hashes:
         m["component_provenance"]["process_wait_reader_source_commit"] = source_sha
     m.setdefault("composition", {})["process_leases"] = {
@@ -387,8 +415,11 @@ def adapter_source(manifest, kind):
     return source
 
 
-def bundle_adapters(repo, output, source, base, kinds):
-    """Compile fresh workspace sources and reuse the checked-in V1 bundler."""
+def compile_typescript(repo, output, source, base):
+    """Compile the exact clean workspace once for adapters and internal companions."""
+    if (subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip() != source
+            or subprocess.check_output(["git", "status", "--porcelain"], cwd=repo, text=True).strip()):
+        raise ValueError("TypeScript compilation requires the exact clean source commit")
     node = canonical(base["node"])
     if digest(node) != base["sha256"]["node"]:
         raise ValueError("pinned node changed before adapter build")
@@ -420,13 +451,27 @@ def bundle_adapters(repo, output, source, base, kinds):
          "--outDir", str(package / "dist")],
         [str(node), str(tsc), "-p", str(scratch / "tsconfig.json")],
     ]
-    bundles = scratch / "bundles"
-    bundles.mkdir(mode=0o700)
     with (output / "adapter-build.log").open("xb") as log:
         os.chmod(output / "adapter-build.log", 0o600)
         for argv in commands:
             subprocess.run(argv, cwd=repo, env={"PATH": os.defpath}, check=True,
                            stdout=log, stderr=subprocess.STDOUT, timeout=180)
+    if (subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip() != source
+            or subprocess.check_output(["git", "status", "--porcelain"], cwd=repo, text=True).strip()):
+        raise ValueError("source changed during TypeScript compilation")
+    return {"node": node, "builder": builder, "builder_path": builder_path,
+            "builder_hash": builder_hash, "scratch": scratch, "compiled": scratch / "compiled",
+            "commands": commands, "log": output / "adapter-build.log"}
+
+
+def bundle_adapters(repo, output, source, base, kinds, compilation=None):
+    """Reuse fresh workspace compilation and the checked-in V1 adapter bundler."""
+    build = compilation or compile_typescript(repo, output, source, base)
+    node, builder = build["node"], build["builder"]
+    scratch, builder_path, builder_hash = build["scratch"], build["builder_path"], build["builder_hash"]
+    bundles = scratch / "bundles"
+    bundles.mkdir(mode=0o700)
+    with build["log"].open("ab") as log:
         entries = {kind: digest(scratch / "compiled" / ("ahap-" + kind + "-runner.js"))
                    for kind in builder.RUNNERS}
         subprocess.run([str(node), "--input-type=module", "--eval", builder.BUNDLE,
@@ -449,7 +494,41 @@ def bundle_adapters(repo, output, source, base, kinds):
                         "previous_source_commit": adapter_source(base, kind),
                         "path": str(path), "sha256": digest(path), "source_commit": source,
                         "compiled_entrypoint_sha256": entries[kind]}
-    return result, {"source_commit": source, "bundler_sha256": builder_hash, "compile_argv": commands}
+    return result, {"source_commit": source, "bundler_sha256": builder_hash, "compile_argv": build["commands"]}
+
+
+def bundle_process_remote_bridge(repo, output, source, base, compilation=None):
+    """A single dependency-closed ESM companion, never a mutable dist entrypoint."""
+    source_path = "src/herder-process-remote-bridge.ts"
+    source_file = canonical(repo / source_path)
+    source_hash = digest(source_file)
+    committed = subprocess.check_output(["git", "show", source + ":" + source_path], cwd=repo)
+    if hashlib.sha256(committed).hexdigest() != source_hash:
+        raise ValueError("remote process bridge is not from the clean source commit")
+    build = compilation or compile_typescript(repo, output, source, base)
+    builder, node = build["builder"], build["node"]
+    if not isinstance(getattr(builder, "BUNDLE_ENTRY", None), str):
+        raise ValueError("source has no reviewed single-entry bundler")
+    compiled = build["compiled"] / "herder-process-remote-bridge.js"
+    compiled_hash = digest(compiled)
+    bundles = build["scratch"] / "process-remote-bundle"
+    bundles.mkdir(mode=0o700)
+    bundled = bundles / "herder-process-remote-bridge.mjs"
+    with build["log"].open("ab") as log:
+        subprocess.run([str(node), "--input-type=module", "--eval", builder.BUNDLE_ENTRY,
+                        str(compiled), str(bundled)], cwd=repo, env={"PATH": os.defpath}, check=True,
+                       stdout=log, stderr=subprocess.STDOUT, timeout=180)
+    if (set(bundles.iterdir()) != {bundled} or digest(compiled) != compiled_hash
+            or digest(source_file) != source_hash or digest(build["builder_path"]) != build["builder_hash"]
+            or digest(node) != base["sha256"]["node"]):
+        raise ValueError("remote process bridge build input changed")
+    shipped = output / "fixture/herder-process-remote-bridge.mjs"
+    create(shipped, bundled.read_bytes(), 0o400)
+    subprocess.run([str(node), "--check", str(shipped)], env={"PATH": os.defpath}, check=True, timeout=30)
+    evidence = {"version": 1, "source_commit": source, "source_path": source_path,
+                "source_sha256": source_hash, "compiled_entrypoint_sha256": compiled_hash,
+                "bundler_sha256": build["builder_hash"], "compile_argv": build["commands"]}
+    return {"path": str(shipped), "sha256": digest(shipped), "build": evidence}
 
 
 def stage_adapter_migration(base, manifest, selection, selector, output, source, adapters, build):
@@ -665,6 +744,7 @@ def build(args):
     selection = read_json(selector)
     base_path = private_file(selection["manifest"])
     base = read_json(base_path)
+    reject_unmigrated_core_descriptors(base)
     if digest(base_path) != selection["manifest_sha256"]:
         raise ValueError("base manifest changed")
     for key in ("core", "compat", "node", "bootstrap"):
@@ -730,10 +810,18 @@ def build(args):
     if wait_reader.exists():
         create(fixture / "process-wait-status.py", wait_reader.read_bytes(), 0o500)
         hashes["process_wait_reader"] = digest(fixture / "process-wait-status.py")
+    remote_source = repo / "src/herder-process-remote-bridge.ts"
+    compilation = compile_typescript(repo, output, sha, base) if updates or remote_source.is_file() else None
+    remote_bridge = None
+    if remote_source.is_file():
+        remote_bridge = bundle_process_remote_bridge(repo, output, sha, base, compilation)
+        hashes["process_remote_bridge"] = remote_bridge["sha256"]
     manifest = compose_manifest(base, output, sha, base_path, selection["manifest_sha256"], hashes, argv)
+    if remote_bridge:
+        manifest["build_inputs"]["process_remote_bridge"] = remote_bridge["build"]
     migration = None
     if updates:
-        adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates)
+        adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]

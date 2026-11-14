@@ -1,7 +1,7 @@
 import { recordProjectLifecycle } from "../project-integration.js";
 import { projectReleaseLeases } from "../project-release-lease.js";
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
-import type { ResumeAfterService } from "../resume-after.js";
+import type { ResumeAfterBackend } from "../resume-after.js";
 import { HarnessAdapter, AgentSession } from "../types/index.js";
 import { isShortSessionId, sessionShortId } from "../session-short-id.js";
 import { z } from "zod";
@@ -1151,7 +1151,7 @@ function formatDuration(seconds: number): string {
  */
 export async function scheduleDeliver(
   adapters: Map<string, HarnessAdapter>,
-  resumeAfter: ResumeAfterService | undefined,
+  resumeAfter: ResumeAfterBackend | undefined,
   args: unknown,
   deadlineAt: number = scheduledDeliveryDeadline(),
 ): Promise<string> {
@@ -1169,9 +1169,16 @@ export async function scheduleDeliver(
   if (!parsed.sessionId) {
     throw new Error("scheduled_delivery_needs_session_id: schedule deliveries with an exact sessionId target; named targets are resolved only at immediate delivery time");
   }
-  const found = await boundedScheduledTarget(findSession(adapters, parsed.sessionId, parsed.harness), deadlineAt);
-  if (!found) throw new Error(`scheduled_delivery_target_missing: session '${parsed.sessionId}' not found`);
-  const ref = { harness: found.session.harness, sessionId: found.session.id };
+  let ref: { harness: string; sessionId: string };
+  if (resumeAfter.authority === "canonical") {
+    if (parsed.hostId) throw new Error("scheduled_delivery_canonical_host_mapping_required: omit hostId and provide the exact native harness/sessionId tuple");
+    if (!parsed.harness) throw new Error("scheduled_delivery_canonical_harness_required: provide the exact native harness");
+    ref = { harness: parsed.harness, sessionId: parsed.sessionId };
+  } else {
+    const found = await boundedScheduledTarget(findSession(adapters, parsed.sessionId, parsed.harness), deadlineAt);
+    if (!found) throw new Error(`scheduled_delivery_target_missing: session '${parsed.sessionId}' not found`);
+    ref = { harness: found.session.harness, sessionId: found.session.id };
+  }
   if (parsed.message.length > 16000) {
     throw new Error("scheduled_delivery_message_too_long: scheduled messages are limited to 16000 characters");
   }
@@ -1183,11 +1190,16 @@ export async function scheduleDeliver(
   // scheduling a second copy of the message.
   const requestId = parsed.inputId
     ?? `deliver-scheduled:${createHash("sha256").update(JSON.stringify([ref.harness, ref.sessionId, parsed.message, trigger])).digest("hex").slice(0, 40)}`;
+  if (Date.now() >= deadlineAt) throw new Error("scheduled_register_timeout: the request deadline elapsed before registration");
   const wait = await boundedScheduledTarget(
     resumeAfter.register({ owner: ref, message: parsed.message, requestId, trigger }),
     deadlineAt,
     "scheduled_register_timeout: the durable registration was slow, so treat the schedule as not confirmed — the exact same call is safe to retry (an already-registered wait is returned unchanged)",
   );
+  if (wait.migration?.retained) {
+    return JSON.stringify({ ok: false, scheduled: false, waitId: wait.id, state: wait.state,
+      retained: true, reason: "canonical_legacy_wait_retained", migration: wait.migration });
+  }
   if (wait.state !== "waiting") {
     return JSON.stringify({ ok: false, scheduled: false, waitId: wait.id, state: wait.state, reason: wait.reason ?? "the wait did not enter the waiting state" });
   }

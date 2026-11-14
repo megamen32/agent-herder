@@ -93,7 +93,7 @@ class MCP:
     def call(self, name, args):
         read_only = (name, args.get("action")) in {
             ("automation", "get"), ("resource", "get"),
-            ("session", "messages"), ("compat_task", "get")}
+            ("session", "messages"), ("sessions", "list"), ("compat_task", "get")}
         retry_deadline = time.monotonic()+150
         while True:
             value = self.rpc("tools/call", {"name": name, "arguments": args})
@@ -177,14 +177,31 @@ def messages(client, session):
 
 def wait_marker(client, session, marker, timeout=120):
     deadline = time.monotonic()+timeout
+    idle_since = None
     while time.monotonic()<deadline:
         page, rows = messages(client, session)
         found = [x for x in rows if x.get("role") == "assistant" and x.get("text", "").strip() == marker]
         if found:
-            return {"count":len(found), "ids":[x.get("id") for x in found],
-                    "text":[x.get("text") for x in found], "history_complete":page.get("complete")}
+            # A first streamed answer can precede another native turn promoted
+            # from the same inbox item. Wait for stable native idle, then inspect
+            # the history again before claiming a single continuation.
+            check(len(found)==1, "multiple native assistant replies for one expected continuation")
+            listing = client.call("sessions", {"action":"list"})
+            selected = [row for row in listing.get("sessions", []) if row.get("session_ref")==session]
+            native = selected[0].get("native") if len(selected)==1 else None
+            idle = (listing.get("native_coverage_complete") is True and isinstance(native,dict)
+                    and native.get("status")=="idle" and native.get("needsPermission") is not True)
+            if idle:
+                if idle_since is None: idle_since = time.monotonic()
+                elif time.monotonic()-idle_since >= 3:
+                    check(page.get("complete") is True, "native history incomplete; one observed reply does not prove a single continuation")
+                    return {"count":len(found), "ids":[x.get("id") for x in found],
+                            "text":[x.get("text") for x in found], "history_complete":page.get("complete"),
+                            "native_idle_confirmed":True}
+            else: idle_since = None
+        else: idle_since = None
         time.sleep(3)
-    raise TimeoutError("native assistant marker missing; no resend")
+    raise TimeoutError("native assistant marker and stable idle missing; no resend")
 
 
 def prepare(args):

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import type { ResumeAfterService } from "../resume-after.js";
+import type { ResumeAfterBackend } from "../resume-after.js";
 import type { HumanRequestRegistry } from "../human-request/registry.js";
 import { structuredResult } from "./results.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
@@ -38,7 +38,7 @@ const resumeRequest=z.union([
 ]);
 /** The durable HumanRequest seam this route binds answered questions to. */
 type HumanRequestJoin = Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
-export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterService,humanRequests?:HumanRequestJoin):void{
+export function registerResumeAfterTools(server:McpServer,service?:ResumeAfterBackend,humanRequests?:HumanRequestJoin):void{
   const requireService=()=>{if(!service)throw new Error("Resume-after requires the process-owned Herder service");return service;};
   const requireHumanRequests=()=>{if(!humanRequests)throw new Error("Resume-after HumanRequest binding requires the durable registry");return humanRequests;};
   server.registerTool("resume_after",{
