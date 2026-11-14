@@ -1,7 +1,7 @@
 import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
-import {createReadStream} from 'node:fs';
-import {readdir,readFile,stat} from 'node:fs/promises';
+import {createReadStream,type Stats} from 'node:fs';
+import {lstat,readdir,readFile,realpath,stat} from 'node:fs/promises';
 import {createInterface} from 'node:readline';
 import {homedir} from 'node:os';
 import {join,basename} from 'node:path';
@@ -13,8 +13,27 @@ type Options={signal?:AbortSignal;onStatus?:(status:SearchSourceStatus)=>void;on
 const str=(v:unknown):string=>typeof v==='string'?v:'';
 function text(v:any):string {if(typeof v==='string')return v;if(Array.isArray(v))return v.map(text).filter(Boolean).join('\n');return v&&typeof v==='object'?str(v.text)||str(v.content)||'':'';}
 function check(signal?:AbortSignal){signal?.throwIfAborted();}
-async function stamp(path:string):Promise<string>{const s=await stat(path);return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;}
+function statStamp(s:Stats):string{return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;}
+async function stamp(path:string):Promise<string>{return statStamp(await stat(path));}
 async function dbStamp(path:string){return `${await stamp(path)}:${await stamp(path+'-wal').catch(()=>'-')}`;}
+/**
+ * ZCode's read-only scan can advance ctime on the same empty WAL. This proof
+ * excludes only that field; all main-DB metadata and WAL identity stay exact.
+ */
+async function zcodeEmptyWalIdentity(path:string,revision:string):Promise<string|undefined>{
+ try{
+  const [main,wal]=await Promise.all([lstat(path),lstat(path+'-wal')]);
+  if(!main.isFile()||!wal.isFile()||main.nlink!==1||wal.nlink!==1||wal.size!==0)return undefined;
+  if(statStamp(main)+':'+statStamp(wal)!==revision)return undefined;
+  const [mainPath,walPath]=await Promise.all([realpath(path),realpath(path+'-wal')]);
+  // Bind the resolved paths and metadata to the same observed revision.
+  if(await dbStamp(path)!==revision)return undefined;
+  return JSON.stringify([
+   mainPath,main.dev,main.ino,main.size,main.mtimeMs,main.ctimeMs,main.mode,main.uid,main.gid,main.nlink,
+   walPath,wal.dev,wal.ino,wal.size,wal.mtimeMs,wal.mode,wal.uid,wal.gid,wal.nlink,
+  ]);
+ }catch{return undefined;}
+}
 /** Verify SQLite bytes when a read-only open changes file metadata (e.g. WAL ownership). */
 async function sqliteBytes(path:string):Promise<string>{
  const hash=createHash('sha256');
@@ -147,7 +166,9 @@ const digestCaches=new Map<string,DigestCache>();
 /** A periodic full rehash bounds how long an unnoticed in-place edit may stay. */
 function resyncScans():number{const value=Number(process.env.AGENT_HERDER_SESSION_SEARCH_RESYNC_SCANS);return Number.isInteger(value)&&value>0?value:60;}
 async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,options:Options):AsyncGenerator<SearchSourceSession>{
- await stat(path);const sourceRevision=await dbStamp(path);const initialBytes=harness==='opencode'?await sqliteBytes(path):undefined;const db=new DatabaseSync(path,{readOnly:true});
+ await stat(path);const sourceRevision=await dbStamp(path);const initialBytes=harness==='opencode'?await sqliteBytes(path):undefined;
+ const emptyWalIdentity=harness==='zcode'?await zcodeEmptyWalIdentity(path,sourceRevision):undefined;
+ const db=new DatabaseSync(path,{readOnly:true});
  let cacheKey='',dbClosed=false;
  const closeDb=()=>{if(!dbClosed){db.close();dbClosed=true;}};
  try{
@@ -256,7 +277,10 @@ async function* sqliteSessions(harness:'opencode'|'zcode'|'hermes',path:string,o
   // complete snapshot is withheld by the throw below.
   digestCaches.set(cacheKey,cache);
   check(options.signal);
-  if(await dbStamp(path)!==sourceRevision)throw new Error('native_source_changed_during_scan');
+  const finalRevision=await dbStamp(path);
+  if(finalRevision!==sourceRevision && !(emptyWalIdentity!==undefined
+    && await zcodeEmptyWalIdentity(path,finalRevision)===emptyWalIdentity))
+   throw new Error('native_source_changed_during_scan');
  }finally{closeDb();}
 }
 /** Read persisted source files only. No adapter caps, native writes or model calls. */
