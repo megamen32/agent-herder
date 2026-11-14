@@ -733,6 +733,42 @@ it("normalizes native v2 event frames", () => {
   });
 });
 
+it("promotes a terminal assistant provider error to turn.failed for auto-resume", () => {
+  const failed = normalizeOpenCodeEvent({
+    id: "evt_terminal_provider_error",
+    type: "message.updated",
+    properties: {
+      sessionID: "ses_failed",
+      info: {
+        id: "assistant_failed",
+        role: "assistant",
+        providerID: "zcode-start",
+        modelID: "glm-5.3-flash",
+        turnId: "turn_failed",
+        inputId: "input_failed",
+        finish: "error",
+        error: {
+          type: "provider.invalid-request",
+          code: "bad_request",
+          status: 400,
+          message: "Native tool call identity changed (HTTP 400)",
+        },
+      },
+    },
+  });
+
+  expect(failed).toMatchObject({
+    kind: "turn.failed",
+    sessionId: "ses_failed",
+    data: {
+      nativeEventId: "evt_terminal_provider_error",
+      turnId: "turn_failed",
+      inputId: "input_failed",
+      nativeErrorStatus: 400,
+    },
+  });
+});
+
 it("maps an exact delivered inbox ID onto the following native started event without inventing a turn ID", async () => {
   const adapter = new OpenCodeAdapter({ protocol: "v2" });
   const correlate = (adapter as unknown as { correlateInboxStart: (event: ReturnType<typeof normalizeOpenCodeEvent>) => ReturnType<typeof normalizeOpenCodeEvent> })

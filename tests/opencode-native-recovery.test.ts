@@ -3,7 +3,93 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionAutostartStore, UnfinishedSessionLauncher, UnfinishedSessionStore } from "../src/autopilot/unfinished-session-launcher.js";
+import { normalizeOpenCodeEvent } from "../src/adapters/opencode.js";
 import type { AgentSession, HarnessAdapter } from "../src/types/index.js";
+
+it("arms the auto-resume owner when OpenCode reports a terminal assistant provider error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencode-event-recovery-"));
+  try {
+    let current: AgentSession = {
+      id: "opencode-live-failure",
+      harness: "opencode",
+      model: "zcode-start/glm-5.3-flash",
+      title: "Live provider failure",
+      cwd: root,
+      status: "running",
+      lastActivity: new Date().toISOString(),
+      needsPermission: false,
+    };
+    const adapter = {
+      type: "opencode",
+      name: "OpenCode fixture",
+      async getSession() { return current; },
+      async resumeSession() { return { ok: true }; },
+      async sendMessage() { return { ok: true, admitted: true }; },
+    } as unknown as HarnessAdapter;
+    const store = new UnfinishedSessionStore(join(root, "unfinished.json"));
+    const settings = new SessionAutostartStore(join(root, "settings.json"), {});
+    await settings.setHarness("opencode", true);
+    const launcher = new UnfinishedSessionLauncher({
+      adapters: new Map([["opencode", adapter]]),
+      store,
+      settingsStore: settings,
+      discoveryIdleMs: 1,
+    });
+
+    await launcher.handleEvent("opencode", {
+      kind: "turn.started",
+      harness: "opencode",
+      sessionId: current.id,
+      data: { turnId: "turn-failed", inputId: "input-failed" },
+    });
+    current = {
+      ...current,
+      status: "error",
+      lastActivity: new Date().toISOString(),
+      meta: {
+        nativeLastTurn: {
+          sessionId: current.id,
+          turnId: "turn-failed",
+          userMessageId: "input-failed",
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          retryable: true,
+          pendingInput: false,
+          userMessageMatchesLatest: true,
+          assistantSucceeded: false,
+          progressedAfterFailure: false,
+          cancelledByUser: false,
+        },
+      },
+    };
+    const failed = normalizeOpenCodeEvent({
+      id: "evt-terminal-provider-error",
+      type: "message.updated",
+      properties: {
+        sessionID: current.id,
+        info: {
+          id: "assistant-failed",
+          role: "assistant",
+          providerID: "zcode-start",
+          modelID: "glm-5.3-flash",
+          turnId: "turn-failed",
+          inputId: "input-failed",
+          finish: "error",
+          error: { type: "provider.invalid-request", status: 400, message: "Native tool call identity changed (HTTP 400)" },
+        },
+      },
+    })!;
+
+    await launcher.handleEvent("opencode", failed);
+    expect(await store.list()).toEqual([expect.objectContaining({
+      recoveryCause: "turn.failed",
+      recoveryTurnId: "turn-failed",
+      recoveryInputId: "input-failed",
+    })]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it.each(["idle", "old", "pending", "session-off", "finished-notice-attempt"] as const)("does not cold-resume %s OpenCode work", async reason => {
   const root = await mkdtemp(join(tmpdir(), "opencode-cold-guard-"));

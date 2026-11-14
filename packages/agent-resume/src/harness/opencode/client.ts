@@ -399,8 +399,19 @@ export function normalizeOpenCodeEvent(raw: unknown): OpenCodeEvent | null {
         : /error|fail/i.test(statusRaw) ? "error"
           : /stop|abort/i.test(statusRaw) ? "stopped" : "idle"
     : undefined;
+  const kind = openCodeEventKind(nativeType);
+  // OpenCode 2.2.4 reports provider terminal failures as a message update
+  // carrying an empty assistant message with finish=error. Treat that frame
+  // as the failed turn that it represents so Agent Herder's native recovery
+  // owner can arm the same session immediately. Without this promotion the
+  // event is only a message update, and the cold-recovery path can miss it
+  // after OpenCode publishes the following idle frame.
+  const terminalAssistantFailure = kind === "message.updated"
+    && info?.role === "assistant"
+    && info.finish === "error"
+    && Boolean(errorMessage);
   return {
-    kind: openCodeEventKind(nativeType),
+    kind: terminalAssistantFailure ? "turn.failed" : kind,
     sessionId,
     nativeType,
     ...(messageId ? { messageId } : {}),
