@@ -66,6 +66,7 @@ it("automatic completion admits one native synthetic queue without prompt hooks,
     // outputs or invented human user records.
     expect(await f.adapter.getSessionMessages("ses_exact", 20)).toEqual([expect.objectContaining({
       id, nativeMessageId: id, nativeInputType: "synthetic", inputId: options.inputId, role: "system",
+      sessionId: "ses_exact",
     })]);
     expect(f.stored.size).toBe(1);
   } finally { await f.close(); }
@@ -95,7 +96,7 @@ it("lost native ACK remains unknown, is not retried, and retains exact readback 
     expect(f.calls.filter(call => call.method === "POST")).toHaveLength(1);
     const [message] = (await f.adapter.getSessionMessages("ses_exact", 20))!;
     expect(message).toMatchObject({ inputId: "lost-key", nativeInputType: "synthetic",
-      nativeMessageId: openCodeAutomaticInputId("ses_exact", "lost-key") });
+      sessionId: "ses_exact", nativeMessageId: openCodeAutomaticInputId("ses_exact", "lost-key") });
     expect(f.calls.filter(call => call.method === "POST")).toHaveLength(1);
   } finally { await f.close(); }
 });

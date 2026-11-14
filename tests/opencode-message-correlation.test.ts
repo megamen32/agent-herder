@@ -100,6 +100,40 @@ describe("OpenCode exact native message correlation", () => {
     expect(message.sessionId).toBeUndefined();
   });
 
+  it("preserves the observed v2 top-level session identity through the AHAP wire", async () => {
+    for (const sessionID of ["requested-session", "different-native-session"]) {
+      const [message] = await read([{
+        id: "msg_123ABC", sessionID, type: "user",
+        metadata: { agentHerderInputId: "native-key" },
+      }]);
+      expect(message).toMatchObject({
+        nativeMessageId: "msg_123ABC", sessionId: sessionID, inputId: "native-key", role: "user",
+      });
+    }
+  });
+
+  it("does not pick a matching identity from conflicting native user fields", async () => {
+    for (const [sessionID, infoSessionID] of [
+      ["requested-session", "different-native-session"],
+      ["different-native-session", "requested-session"],
+      ["", "requested-session"], [null, "requested-session"], [17, "requested-session"],
+    ]) {
+      const [message] = await read([{
+        sessionID,
+        info: { id: "actual-native-id", sessionID: infoSessionID, role: "user",
+          metadata: { agentHerderInputId: "native-key" } },
+      }]);
+      expect(message.nativeMessageId).toBe("actual-native-id");
+      expect(message.sessionId).toBeUndefined();
+    }
+    const [consistent] = await read([{
+      sessionID: "requested-session",
+      info: { id: "actual-native-id", sessionID: "requested-session", role: "user",
+        metadata: { agentHerderInputId: "native-key" } },
+    }]);
+    expect(consistent.sessionId).toBe("requested-session");
+  });
+
   it("rejects top-level proof without the exact v2 native user shape", async () => {
     for (const row of [
       { id: "display-id", type: "user", metadata: { agentHerderInputId: "key" } },
@@ -128,6 +162,7 @@ it("recognizes only exact native synthetic completion metadata and id", async ()
       agentHerderContinuation: "synthetic-queue-v1" } };
   expect((await read([native]))[0]).toMatchObject({
     id: native.id, nativeMessageId: native.id, nativeInputType: "synthetic", role: "system", inputId: key,
+    sessionId: "requested-session",
   });
   for (const row of [
     { ...native, id: "msg_unrelated" },
@@ -136,6 +171,31 @@ it("recognizes only exact native synthetic completion metadata and id", async ()
     { ...native, type: "assistant" },
     { ...native, info: {} },
   ]) {
-    expect((await read([row]))[0].nativeInputType).toBeUndefined();
+    const [message] = await read([row]);
+    expect(message.nativeInputType).toBeUndefined();
+    expect(message.sessionId).toBeUndefined();
+  }
+});
+
+
+it("requires consistent native session fields for synthetic receipt evidence", async () => {
+  const key = "process-wake:exact-key";
+  const native = { id: openCodeAutomaticInputId("requested-session", key), type: "synthetic",
+    text: "receipt", metadata: { agentHerderInputId: key, agentHerderSessionId: "requested-session",
+      agentHerderContinuation: "synthetic-queue-v1" } };
+  const [consistent] = await read([{ ...native, sessionID: "requested-session" }]);
+  expect(consistent).toMatchObject({
+    nativeMessageId: native.id, nativeInputType: "synthetic", role: "system",
+    inputId: key, sessionId: "requested-session",
+  });
+  for (const row of [
+    ...["different-native-session", "", null, 17].map(sessionID => ({ ...native, sessionID })),
+    { ...native, sessionID: "requested-session",
+      metadata: { ...native.metadata, agentHerderSessionId: "different-native-session" } },
+  ]) {
+    const [message] = await read([row]);
+    expect(message.sessionId).toBeUndefined();
+    expect(message.nativeInputType).toBeUndefined();
+    expect(message.nativeMessageId).toBeUndefined();
   }
 });

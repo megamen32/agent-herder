@@ -759,16 +759,26 @@ export class OpenCodeClient implements HarnessClient {
         // branch reads only this exact session's addressed message endpoint;
         // its native id is independent of the display fallback below.
         const syntheticKey = stringValue(message.metadata?.agentHerderInputId);
-        const verifiedSynthetic = this.isV2 && message.info === undefined && message.type === "synthetic"
+        const syntheticSessionId = stringValue(message.metadata?.agentHerderSessionId);
+        const nativeSessionId = stringValue(message.sessionID, info.sessionID);
+        // Keep native identity separate from the addressed endpoint. Conflicting
+        // or malformed explicit fields cannot become receipt evidence.
+        const sessionFields = [message.sessionID, info.sessionID,
+          ...(this.isV2 && message.type === "synthetic" ? [message.metadata?.agentHerderSessionId] : []),
+        ].filter((value) => value !== undefined);
+        const sessionConflict = sessionFields.some((value) =>
+          typeof value !== "string" || value.length === 0 || value !== sessionFields[0]);
+        const verifiedSynthetic = !sessionConflict && this.isV2 && message.info === undefined && message.type === "synthetic"
           && message.metadata?.agentHerderContinuation === "synthetic-queue-v1"
-          && message.metadata?.agentHerderSessionId === id && Boolean(syntheticKey)
+          && syntheticSessionId === id && Boolean(syntheticKey)
           && message.id === openCodeAutomaticInputId(id, syntheticKey!);
         const v2InputId = verifiedSynthetic ? syntheticKey
           : this.isV2 && message.info === undefined && message.type === "user"
             && typeof message.id === "string" && /^msg_[A-Za-z0-9]+$/.test(message.id)
             ? stringValue(message.metadata?.agentHerderInputId) : undefined;
         const nativeMessageId = stringValue(info.id) ?? (v2InputId ? message.id : undefined);
-        const sessionId = stringValue(info.sessionID);
+        const sessionId = sessionConflict ? undefined
+          : nativeSessionId ?? (verifiedSynthetic ? syntheticSessionId : undefined);
         // The correlation must come from the same native record as its id.
         // Older display-only rows retain their field without gaining proof.
         const inputId = v2InputId ?? (nativeMessageId ? stringValue(info.metadata?.agentHerderInputId)
