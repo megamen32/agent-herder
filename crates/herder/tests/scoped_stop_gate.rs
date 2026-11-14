@@ -4812,3 +4812,150 @@ fn archive_preserves_unknown_and_respects_stop() {
     let parsed=herder::mcp::catalog::dispatch("session",json!({"action":"archive","session_ref":"issued","request_key":"cleanup"})).unwrap();
     assert_eq!(parsed.access,herder::mcp::catalog::Access::Mutate);
 }
+
+
+#[test]
+fn migration_quarantine_create_gate_blocks_before_native_effect() {
+    let outcome = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "migration_quarantine_create_gate_child", "--nocapture"])
+        .env("HERDER_MIGRATION_CREATE_FIXTURE", "1")
+        .env("AGENT_HERDER_MIGRATION_EPOCH", "migration-create-fixture")
+        .output().unwrap();
+    assert!(outcome.status.success(), "stdout={} stderr={}",
+        String::from_utf8_lossy(&outcome.stdout), String::from_utf8_lossy(&outcome.stderr));
+}
+
+#[test]
+fn migration_quarantine_create_gate_child() {
+    if std::env::var("HERDER_MIGRATION_CREATE_FIXTURE").as_deref() != Ok("1") { return; }
+    use herder::application::scoped_stop::migration_quarantine::{SCOPE, KEY, digest};
+    struct CountingCreate(InstanceRef, AtomicUsize);
+    impl BoundedFreshRootCreate for CountingCreate {
+        fn instance(&self) -> &InstanceRef { &self.0 }
+        fn create_root_bounded(&self, _: &str, _: &str) -> Result<SessionAddress, SubmitError> {
+            self.1.fetch_add(1, Ordering::SeqCst);
+            Ok(SessionAddress { instance:self.0.clone(),native_session_id:"created-native".into() })
+        }
+    }
+    fn snapshot(f: &Fixture, hold_profile: &str, hold_native: Option<&str>, key: &str) {
+        let source_sha = "a".repeat(64);
+        let inventory = digest(format!("/sealed/fixture.json\0{source_sha}\n").as_bytes());
+        let value=serde_json::json!({"version":1,"kind":"herder-legacy-quarantine",
+            "epoch":"migration-create-fixture","authority_generation":"authority-1",
+            "node_ref":"node","instance_ref":"isolated","writer_drain_sha256":"d".repeat(64),
+            "inventory_sha256":inventory,"sources":[{"path":"/sealed/fixture.json","sha256":source_sha}],
+            "records":[{"record_ref":"legacy-create","source_path":"/sealed/fixture.json",
+                "source_sha256":source_sha,"record_sha256":"b".repeat(64),"request_keys":[key],
+                "outcome":"unknown","holds":[{"node_ref":"node","instance_ref":hold_profile,
+                    "native_session_id":hold_native}]}]});
+        let meta=fs::metadata(&f.gate).unwrap();
+        let _guard=acquire_pinned(&f.gate,meta.dev(),meta.ino()).unwrap();
+        migration_fixture_connection(f).execute(
+            "INSERT INTO settings(scope,setting_key,value_json,revision,updated_at) VALUES (?1,?2,?3,1,'fixture')",
+            rusqlite::params![SCOPE,KEY,value.to_string()],
+        ).unwrap();
+    }
+    fn create(f: &Fixture, control: &CountingCreate, key: &str) -> Result<CreateResult, GateError> {
+        f.authority().create_fresh_root(&identity(),&grants(),control,&Issuer,&Generation,CreateRequest {
+            intent_id:"migration-create",task_id:"migration-create-task",request_key:key,
+            specification:"isolated",now:"now",retain_until:"later",
+        })
+    }
+    for case in ["missing", "profile", "reserved", "unaffected"] {
+        let f=Fixture::new();
+        let control=CountingCreate(address().instance,AtomicUsize::new(0));
+        match case {
+            "profile" => snapshot(&f,"isolated",None,"other-key"),
+            "reserved" => snapshot(&f,"other-profile",None,"new-key"),
+            "unaffected" => snapshot(&f,"other-profile",None,"other-key"),
+            _ => (),
+        }
+        let outcome=create(&f,&control,"new-key");
+        if case=="unaffected" {
+            assert!(matches!(outcome,Ok(CreateResult::Created(_))),"{case}: {outcome:?}");
+            assert_eq!(control.1.load(Ordering::SeqCst),1);
+            // Exact recovery remains a read even after a new profile hold.
+            migration_fixture_connection(&f).execute("DELETE FROM settings WHERE scope=?1 AND setting_key=?2",rusqlite::params![SCOPE,KEY]).unwrap();
+            snapshot(&f,"isolated",None,"new-key");
+            assert_eq!(create(&f,&control,"new-key"),Ok(CreateResult::Existing));
+            assert_eq!(control.1.load(Ordering::SeqCst),1);
+        } else {
+            assert!(outcome.is_err(),"{case}: {outcome:?}");
+            assert_eq!(control.1.load(Ordering::SeqCst),0,"{case}");
+            let count:i64=Connection::open(&f.db).unwrap().query_row("SELECT COUNT(*) FROM intents",[],|r|r.get(0)).unwrap();
+            assert_eq!(count,0,"{case}: must refuse before fresh intent");
+        }
+    }
+}
+
+
+#[tokio::test]
+async fn migration_quarantine_create_prompt_rechecks_original_key_and_recovers_receipt() {
+    use herder::application::scoped_stop::{create_prompt::{create_with_prompt,CreatePromptOutcome,NoAdditionalGrant},
+        migration_quarantine::{SCOPE,KEY,digest}};
+    struct Create(InstanceRef,AtomicUsize);
+    impl BoundedFreshRootCreate for Create {
+        fn instance(&self)->&InstanceRef{&self.0}
+        fn create_root_bounded(&self,_:&str,_:&str)->Result<SessionAddress,SubmitError>{
+            self.1.fetch_add(1,Ordering::SeqCst);Ok(address())
+        }
+    }
+    struct Submit(AtomicUsize);
+    impl BoundedNativeHandoff for Submit{
+        fn submit_bounded(&self,_:DispatchPlan,_:&str,_:&RequestKey)->Result<Admission,SubmitError>{
+            self.0.fetch_add(1,Ordering::SeqCst);
+            Err(SubmitError::DefinitelyNotSent{reason:"fixture no native effect".into()})
+        }
+    }
+    for prior_prompt in [false,true] {
+        let f=Fixture::new();
+        let authority=f.authority();
+        let create=Create(address().instance,AtomicUsize::new(0));
+        let submit=Submit(AtomicUsize::new(0));
+        let reader=FixtureReader{target:address(),reads:AtomicUsize::new(0),db:f.db.clone()};
+        let request=||CreateRequest{intent_id:"create",task_id:"create-task",request_key:"original-create-key",
+            specification:"prompt",now:"now",retain_until:"later"};
+        if prior_prompt {
+            assert!(matches!(create_with_prompt(&authority,&identity(),&grants(),&create,&Issuer,&Generation,
+                &reader,&submit,&NoAdditionalGrant,request()).await.unwrap(),CreatePromptOutcome::DeliveryDefinitelyNotSent{..}));
+        } else {
+            assert!(matches!(authority.create_fresh_root(&identity(),&grants(),&create,&Issuer,&Generation,request()).unwrap(),CreateResult::Created(_)));
+        }
+        let source_sha="a".repeat(64);
+        let snapshot=serde_json::json!({"version":1,"kind":"herder-legacy-quarantine","epoch":"test-epoch",
+            "authority_generation":"authority-1","node_ref":"node","instance_ref":"isolated",
+            "writer_drain_sha256":"d".repeat(64),"inventory_sha256":digest(format!("/sealed/source\0{source_sha}\n").as_bytes()),
+            "sources":[{"path":"/sealed/source","sha256":source_sha}],
+            "records":[{"record_ref":"legacy-original","source_path":"/sealed/source","source_sha256":source_sha,
+                "record_sha256":"b".repeat(64),"request_keys":["original-create-key"],"outcome":"unknown",
+                "holds":[{"node_ref":"node","instance_ref":"different-profile","native_session_id":null}]}]});
+        let meta=fs::metadata(&f.gate).unwrap();
+        {
+            let _guard=acquire_pinned(&f.gate,meta.dev(),meta.ino()).unwrap();
+            migration_fixture_connection(&f).execute(
+                "INSERT INTO settings(scope,setting_key,value_json,revision,updated_at) VALUES (?1,?2,?3,1,'now')",
+                rusqlite::params![SCOPE,KEY,snapshot.to_string()]).unwrap();
+        }
+        let outcome=create_with_prompt(&authority,&identity(),&grants(),&create,&Issuer,&Generation,
+            &reader,&submit,&NoAdditionalGrant,request()).await.unwrap();
+        if prior_prompt {
+            assert!(matches!(outcome,CreatePromptOutcome::DeliveryDefinitelyNotSent{..}));
+            assert_eq!(submit.0.load(Ordering::SeqCst),1);
+        } else {
+            assert!(matches!(outcome,CreatePromptOutcome::StoppedBeforeHandoff{..}),"{outcome:?}");
+            assert_eq!(submit.0.load(Ordering::SeqCst),0);
+            let diagnostic:String=Connection::open(&f.db).unwrap().query_row(
+                "SELECT t.result_json FROM tasks t JOIN intents i ON i.task_id=t.task_id WHERE i.request_key LIKE 'create-prompt:%'",[],|r|r.get(0)).unwrap();
+            assert!(diagnostic.contains("migration_quarantined"));
+        }
+        assert_eq!(create.1.load(Ordering::SeqCst),1);
+    }
+}
+
+
+fn migration_fixture_connection(f:&Fixture)->Connection{
+    let connection=Connection::open(&f.db).unwrap();
+    connection.create_scalar_function("herder_writer_version",0,
+        FunctionFlags::SQLITE_UTF8|FunctionFlags::SQLITE_DETERMINISTIC,|_|Ok(3)).unwrap();
+    connection
+}

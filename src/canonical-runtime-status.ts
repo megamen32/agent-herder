@@ -16,8 +16,9 @@ const HASH = /^[a-f0-9]{64}$/;
 const requiredFiles = ["index.js", "canonical-runtime-status.js", "canonical-herder.js", "canonical-migration.js",
   "resume-after-runtime.js", "resume-after-canonical.js", "process-wait-gate.js"];
 
-type BackendProof = { config: string; config_sha256: string; epoch: string; authority: string; writer_drain_sha256: string };
-type ObservableBackend = ResumeAfterBackend & { canonicalReadiness?: () => Promise<BackendProof> };
+type BackendProof = { config: string; config_sha256: string; epoch: string; authority: string; writer_drain_sha256: string;
+  quarantine?: import("./canonical-quarantine.js").CanonicalQuarantineStatus };
+type ObservableBackend = ResumeAfterBackend & { canonicalReadiness?: (scope?: "preflight" | "operational") => Promise<BackendProof> };
 type Manifest = { version: 1; kind: "herder-canonical-ts-runtime"; capability: typeof CAPABILITY;
   source_commit: string; root: string; entry: "index.js"; files: Record<string, string>; node_binary: string; node_sha256: string };
 export type RuntimeStatusRequest = { challenge: string; probe?: ProcessWaitTarget };
@@ -163,7 +164,7 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
       await treeProof(value);
       const node = await fileProof(value.node_binary, 256 * MiB, true);
       if (node.sha256 !== value.node_sha256 || node.stat.dev !== actual.node_device || node.stat.ino !== actual.node_inode) return fail("runtime_node_binding_mismatch");
-      const backend = await (service as ObservableBackend).canonicalReadiness!();
+      const backend = await (service as ObservableBackend).canonicalReadiness!(request.probe ? "operational" : "preflight");
       if (backend.config !== env.AGENT_HERDER_CANONICAL_CONFIG || backend.config_sha256 !== env.AGENT_HERDER_CANONICAL_CONFIG_SHA256
         || !absolute(backend.config) || !HASH.test(backend.config_sha256) || !HASH.test(backend.writer_drain_sha256)) return fail("canonical_backend_binding_mismatch");
       let probe: Record<string, unknown> | null = null;
@@ -176,7 +177,7 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
           || (request.probe.nodeRef !== undefined && observed.request.node_ref !== request.probe.nodeRef)) return fail("canonical_gate_binding_mismatch");
         probe = { request: observed.request, decision: observed.decision, gateBlocked: observed.gateBlocked };
       }
-      const currentBackend = await (service as ObservableBackend).canonicalReadiness!();
+      const currentBackend = await (service as ObservableBackend).canonicalReadiness!(request.probe ? "operational" : "preflight");
       if (JSON.stringify(currentBackend) !== JSON.stringify(backend)
         || backend.config !== env.AGENT_HERDER_CANONICAL_CONFIG || backend.config_sha256 !== env.AGENT_HERDER_CANONICAL_CONFIG_SHA256
         || canonicalMode(env) !== "canonical") return fail("canonical_backend_binding_mismatch");
@@ -187,7 +188,11 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
         process: { pid: actual.pid, boot_id: actual.boot_id, start_ticks: actual.start_ticks,
           entry: actual.entry, entry_sha256: value.files[value.entry], node_binary: value.node_binary, node_sha256: node.sha256 },
         runtime: { manifest: selected, manifest_sha256: selectedHash, source_commit: value.source_commit, capability: CAPABILITY,
-          resume_after_authority: "canonical", legacy_fallback: false }, canonical: backend, migration_ready: true, probe };
+          resume_after_authority: "canonical", legacy_fallback: false },
+        canonical: { config: backend.config, config_sha256: backend.config_sha256, epoch: backend.epoch,
+          authority: backend.authority, writer_drain_sha256: backend.writer_drain_sha256 },
+        readiness_scope: request.probe ? "operational" : "preflight", migration_ready: Boolean(request.probe),
+        ...(backend.quarantine ? { quarantine: backend.quarantine } : {}), probe };
     } catch (error) {
       if (error instanceof CanonicalRuntimeStatusError) throw error;
       throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable");

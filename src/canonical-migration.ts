@@ -102,7 +102,8 @@ export async function assertCanonicalWriterDrain(client: CanonicalAutomationClie
   const sources = proof.sources as unknown[];
   if (!sources.every(exact) || new Set(sources).size !== sources.length
     || !sources.includes(client.config.resume_after.directory)
-    || (client.config.resume_receipts && !sources.includes(client.config.resume_receipts.path))) throw new Error("canonical_writer_drain_scope_mismatch");
+    || (client.config.resume_receipts && !sources.includes(client.config.resume_receipts.path))
+    || (client.config.quarantine && !sources.includes(client.config.quarantine.legacy_jobs.directory))) throw new Error("canonical_writer_drain_scope_mismatch");
   const boot = (await fs.readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
   const identities = new Set<string>();
   const covered = new Set<string>();

@@ -68,6 +68,7 @@ pub mod search;
 pub mod store;
 
 pub mod ownership {
+    pub mod migration_hold;
     pub mod claim;
     pub mod manifest;
     pub mod resource;

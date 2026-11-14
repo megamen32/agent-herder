@@ -82,7 +82,8 @@ def process_snapshot(pid):
     environment = dict(part.split(b"=", 1) for part in (proc / "environ").read_bytes().split(b"\0") if b"=" in part)
     # Only selected nonsecret configuration identities survive this read.
     selected = {key: environment.get(key.encode(), b"").decode() for key in
-                ("HERDER_V1_ENTRY", "HERDER_NATIVE_COMMAND", "HERDER_PROCESS_CONFIG", "HERDER_PROCESS_WORKER")}
+                ("HERDER_V1_ENTRY", "HERDER_NATIVE_COMMAND", "HERDER_PROCESS_CONFIG", "HERDER_PROCESS_WORKER",
+                 "AGENT_HERDER_MIGRATION_EPOCH")}
     values = (proc / "stat").read_text().rsplit(")", 1)[1].split()
     result = {**before, "ppid": int(values[1]), "exe": os.readlink(proc / "exe"),
               "exe_sha256": candidate.digest(proc / "exe"), "argv": argv,
@@ -101,9 +102,13 @@ def selected_manifest(selector):
 
 
 def runtime_pair(selector, launcher, compat_pid, core_pid, expected_cwd=None):
-    candidate.check_selector(selector, launcher, require_worker=False)
+    checked = candidate.check_selector(selector, launcher, require_worker=False)
     selection, manifest = selected_manifest(selector)
+    if checked["manifest_sha256"] != selection["manifest_sha256"]:
+        raise ValueError("native selection changed during runtime observation")
     pair = {"compat": process_snapshot(compat_pid), "core": process_snapshot(core_pid)}
+    migration = checked["canonical_migration"]
+    migration_epoch = migration["epoch"] if migration is not None else ""
     if pair["core"]["ppid"] != compat_pid or compat_pid == core_pid:
         raise ValueError("native core is not the exact selected compat child")
     tail = [part for path in selection["profiles"] for part in ("--trusted-owner-profile", path)]
@@ -119,6 +124,8 @@ def runtime_pair(selector, launcher, compat_pid, core_pid, expected_cwd=None):
             raise ValueError("runtime selects a different process configuration")
         if env["HERDER_PROCESS_WORKER"] not in ("", manifest.get("process_worker", "")):
             raise ValueError("runtime worker override conflicts with the pinned configuration")
+        if env["AGENT_HERDER_MIGRATION_EPOCH"] != migration_epoch:
+            raise ValueError("native runtime migration epoch differs from its pinned configuration")
         if expected_cwd is not None and observed["cwd"] != expected_cwd:
             raise ValueError("runtime working directory changed")
         observed["argv_sha256"] = json_hash(observed.pop("argv"))
@@ -132,11 +139,109 @@ def exact_identity(snapshot):
     return {key: snapshot[key] for key in ("pid", "boot_id", "start_ticks")}
 
 
+def capture_drain(args):
+    """Capture a live verified baseline before the operator disables the child."""
+    selector = candidate.private_file(args.selector)
+    launcher = candidate.private_file(args.launcher)
+    output = Path(args.output)
+    if not output.is_absolute() or output.parent.resolve(strict=True) != output.parent:
+        raise ValueError("drain capture output must have a canonical private parent")
+    with candidate.selector_lock(selector):
+        before = runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
+        selection, _ = selected_manifest(selector)
+        record = {"schema": 1, "kind": "native-drain-baseline", "capture_id": uuid.uuid4().hex,
+                  "captured_at_unix_ms": now_ms(), "target": CONTROLLER, "ref": CHILD,
+                  "selector": {"path": str(selector), "sha256": candidate.digest(selector)},
+                  "launcher": {"path": str(launcher), "sha256": candidate.digest(launcher)},
+                  "manifest": {"path": selection["manifest"], "sha256": selection["manifest_sha256"]},
+                  "profiles": [{"path": path, "sha256": candidate.digest(candidate.private_file(path))}
+                               for path in selection["profiles"]], "runtime": before}
+        if runtime_pair(selector, launcher, args.compat_pid, args.core_pid) != before:
+            raise ValueError("runtime changed during drain capture")
+        for pin in [record["selector"], record["launcher"], record["manifest"], *record["profiles"]]:
+            if candidate.digest(candidate.private_file(pin["path"])) != pin["sha256"]:
+                raise ValueError("configuration changed during drain capture")
+        candidate.create(output, candidate.encoded(record), 0o400)
+    return {"baseline": str(output), "sha256": candidate.digest(output), "capture_id": record["capture_id"],
+            "runtime": before, "effects": "none"}
+
+
+def drain_evidence(baseline_pin, receipt_pin):
+    raw = candidate.private_file(baseline_pin["path"]).read_bytes()
+    receipt_raw = candidate.private_file(receipt_pin["path"]).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != baseline_pin["sha256"] or hashlib.sha256(receipt_raw).hexdigest() != receipt_pin["sha256"]:
+        raise ValueError("native drain proof pin changed")
+    baseline, receipt = json.loads(raw), json.loads(receipt_raw)
+    stamp, observed = baseline.get("captured_at_unix_ms"), receipt.get("observed_at_unix_ms")
+    if (baseline.get("schema") != 1 or baseline.get("kind") != "native-drain-baseline"
+            or not re.fullmatch(r"[0-9a-f]{32}", baseline.get("capture_id", ""))
+            or baseline.get("target") != CONTROLLER or baseline.get("ref") != CHILD
+            or not isinstance(stamp, int) or isinstance(stamp, bool) or stamp <= 0
+            or stamp > now_ms() + 5000):
+        raise ValueError("native drain baseline is invalid")
+    if (receipt.get("schema") != 1 or receipt.get("kind") != "native-drain"
+            or receipt.get("baseline_sha256") != baseline_pin["sha256"]
+            or receipt.get("method") != "mcp_manage" or receipt.get("action") != "disable"
+            or receipt.get("disabled") is not True or receipt.get("target") != CONTROLLER or receipt.get("ref") != CHILD
+            or not isinstance(observed, int) or isinstance(observed, bool) or observed < stamp or observed > now_ms() + 5000
+            or not re.fullmatch(r"[A-Za-z0-9_:/.-]{8,240}", receipt.get("provider_operation_id", ""))):
+        raise ValueError("native drain requires an exact typed disable receipt after capture")
+    pair = baseline["runtime"]
+    if set(pair) != {"compat", "core"} or pair["compat"]["pid"] == pair["core"]["pid"]:
+        raise ValueError("native drain runtime pair is invalid")
+    for role in ("compat", "core"):
+        old = exact_identity(pair[role])
+        if (not isinstance(old["pid"], int) or isinstance(old["pid"], bool) or old["pid"] <= 1
+                or not isinstance(old["start_ticks"], int) or isinstance(old["start_ticks"], bool) or old["start_ticks"] <= 0
+                or not isinstance(old["boot_id"], str) or not old["boot_id"]
+                or identity_state(old) != "dead"):
+            raise ValueError("old native runtime is still live or drain is unproved")
+    return baseline, receipt, raw, receipt_raw
+
+
+def drained_baseline(args):
+    names = ("drained_baseline", "drained_baseline_sha256", "drain_receipt", "drain_receipt_sha256")
+    values = [getattr(args, name, None) for name in names]
+    if not any(value is not None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError("drained mode requires both exact proof paths and SHA256 pins")
+    baseline_pin = {"path": str(values[0]), "sha256": values[1]}
+    receipt_pin = {"path": str(values[2]), "sha256": values[3]}
+    baseline, receipt, raw, receipt_raw = drain_evidence(baseline_pin, receipt_pin)
+    selector, launcher = candidate.private_file(args.selector), candidate.private_file(args.launcher)
+    selection, _ = selected_manifest(selector)
+    candidate.check_selector(selector, launcher, require_worker=False)
+    if (baseline["selector"] != {"path": str(selector), "sha256": args.expected_selector_sha256}
+            or baseline["launcher"]["path"] != str(launcher)
+            or baseline["manifest"] != {"path": selection["manifest"], "sha256": selection["manifest_sha256"]}
+            or [pin["path"] for pin in baseline["profiles"]] != selection["profiles"]
+            or baseline["runtime"]["compat"]["pid"] != args.compat_pid
+            or baseline["runtime"]["core"]["pid"] != args.core_pid):
+        raise ValueError("native drain baseline does not match this rollout")
+    for pin in [baseline["selector"], baseline["launcher"], baseline["manifest"], *baseline["profiles"]]:
+        if candidate.digest(candidate.private_file(pin["path"])) != pin["sha256"]:
+            raise ValueError("native drain baseline configuration changed")
+    return {"pair": baseline["runtime"], "baseline": baseline_pin, "receipt": receipt_pin,
+            "baseline_bytes": raw, "receipt_bytes": receipt_raw, "provider_operation_id": receipt["provider_operation_id"]}
+
+
+def verify_native_drain_state(state):
+    proof = state.get("native_drain")
+    if proof is None:
+        return
+    baseline, _, _, _ = drain_evidence(proof["baseline"], proof["receipt"])
+    if baseline["runtime"] != state["baseline_runtime"]:
+        raise ValueError("durable native drain does not match the admitted baseline")
+
+
 def component_guard(git_dir, before, after):
     """Preserve composite components and apply main ancestry to each replacement."""
     if os.environ.get(main_guard.EMERGENCY_ENV):
         raise RuntimeError("this coordinator does not admit an emergency main override")
     migration = candidate.adapter_transition(before, after)
+    if before.get("canonical_migration") is not None and after.get("canonical_migration") != before["canonical_migration"]:
+        raise ValueError("existing canonical migration authority requires a separately reviewed transition")
     for key in ("compat", "node", "bootstrap", "remote_ahap_wrappers"):
         if before.get(key) != after.get(key):
             raise ValueError("unreviewed component replacement: " + key)
@@ -257,6 +362,10 @@ class MutationGuard:
 
     def assert_mutation_allowed(self, selector, operation):
         self.gate.check()
+        if self.state.get("native_drain") is not None:
+            if operation == "rollback":
+                raise RuntimeError("drained migration cannot reactivate the legacy native runtime")
+            verify_native_drain_state(self.state)
         expected_phase = {"install": "installing", "rollback": "rolling_back"}[operation]
         state = read_state(self.state["job_dir"])
         pointer = read_occupancy(selector)
@@ -295,8 +404,14 @@ def receipt_common(state, receipt, kind, minimum):
 
 def validate_restart(state, receipt):
     receipt_common(state, receipt, "restart", state["awaiting_restart_at_unix_ms"])
-    if receipt.get("method") != "mcp_manage" or receipt.get("action") != "restart":
-        raise ValueError("receipt is not the explicit typed child restart")
+    drained = state.get("native_drain")
+    action = "enable" if drained is not None else "restart"
+    if receipt.get("method") != "mcp_manage" or receipt.get("action") != action:
+        raise ValueError("receipt is not the explicit typed child " + action)
+    if drained is not None:
+        verify_native_drain_state(state)
+        if receipt.get("drain_receipt_sha256") != drained["receipt"]["sha256"]:
+            raise ValueError("enable receipt does not bind the admitted native drain")
     for key in ("compat_pid", "core_pid"):
         value = receipt.get(key)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 1:
@@ -402,12 +517,14 @@ def admit(args, gate):
     selection, baseline = selected_manifest(selector)
     new_selection, proposed = selected_manifest(args.candidate)
     checked = candidate.check_candidate(args.candidate, Path(args.candidate).parent / "fixture/launch-v1-core.py")
-    before_pair = runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
+    drained = drained_baseline(args)
+    before_pair = drained["pair"] if drained is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
     gate.check()
     ancestry = component_guard(gate.proof["project"], baseline, proposed)
     gate.check()
-    before_pair_again = runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
-    if before_pair_again != before_pair:
+    drained_again = drained_baseline(args) if drained is not None else None
+    before_pair_again = drained_again["pair"] if drained_again is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
+    if drained_again != drained or before_pair_again != before_pair:
         raise ValueError("running baseline changed during admission")
     candidate.profile_transition(selection, new_selection, baseline, proposed)
     # This proof is fresh but needs no native call: a newly installed canonical
@@ -425,6 +542,8 @@ def admit(args, gate):
             raise RuntimeError("unresolved rollout occupancy requires reconciliation")
         if candidate.digest(selector) != args.expected_selector_sha256:
             raise ValueError("installed selector changed before admission")
+        if drained is not None and drained_baseline(args) != drained:
+            raise ValueError("native drain proof changed before admission")
         root.mkdir(mode=0o700)
         stamp = now_ms()
         state = {"schema": 1, "job_id": "rollout-" + uuid.uuid4().hex, "job_dir": str(root),
@@ -447,6 +566,13 @@ def admit(args, gate):
                  "release_state": str(candidate.private_file(gate.state_path)),
                  "release_identity": {key: gate.proof[key] for key in ("project", "owner", "fence")},
                  "deployment_target": gate.target, "backup": str(args.backup)}
+        if drained is not None:
+            baseline_copy, receipt_copy = root / "native-drain-baseline.json", root / "native-drain-receipt.json"
+            candidate.create(baseline_copy, drained["baseline_bytes"], 0o400)
+            candidate.create(receipt_copy, drained["receipt_bytes"], 0o400)
+            state["native_drain"] = {"baseline": {"path": str(baseline_copy), "sha256": drained["baseline"]["sha256"]},
+                                     "receipt": {"path": str(receipt_copy), "sha256": drained["receipt"]["sha256"]},
+                                     "provider_operation_id": drained["provider_operation_id"]}
         candidate.create(root / "scheduler-preflight.json", proof_bytes, 0o400)
         candidate.create(root / "state.json", candidate.encoded(state))
         pointer = {"schema": 1, "job_id": state["job_id"], "job_dir": str(root),
@@ -540,6 +666,8 @@ def run(args):
 def recover(args):
     """Read actual state; legacy can settle, canonical UNKNOWN stays fenced."""
     state = read_state(args.job_dir)
+    if state.get("native_drain") is not None and args.outcome == "baseline":
+        raise ValueError("drained migration cannot reactivate the legacy native runtime")
     terminal = state["phase"] in TERMINAL
     pointer = read_occupancy(Path(state["selector"]))
     if terminal and pointer and pointer["phase"] == "resolved":
@@ -618,6 +746,10 @@ def main():
     r.add_argument("--expected-selector-sha256", required=True)
     r.add_argument("--compat-pid", type=int, required=True)
     r.add_argument("--core-pid", type=int, required=True)
+    r.add_argument("--drained-baseline", type=Path)
+    r.add_argument("--drained-baseline-sha256")
+    r.add_argument("--drain-receipt", type=Path)
+    r.add_argument("--drain-receipt-sha256")
     r.add_argument("--deadline-seconds", type=int, default=600, choices=range(10, 1801), metavar="10..1800")
     s = sub.add_parser("status")
     s.add_argument("--job-dir", type=Path, required=True)
@@ -636,12 +768,17 @@ def main():
         i.add_argument("--" + name, type=Path, required=True)
     i.add_argument("--compat-pid", type=int, required=True)
     i.add_argument("--core-pid", type=int, required=True)
+    d = sub.add_parser("capture-drain")
+    for name in ("selector", "launcher", "output"):
+        d.add_argument("--" + name, type=Path, required=True)
+    d.add_argument("--compat-pid", type=int, required=True)
+    d.add_argument("--core-pid", type=int, required=True)
     args = parser.parse_args()
     try:
         if args.command == "inspect":
             result = runtime_pair(args.selector, args.launcher, args.compat_pid, args.core_pid)
         else:
-            result = {"run": run, "status": status, "record": record_receipt, "recover": recover}[args.command](args)
+            result = {"run": run, "status": status, "record": record_receipt, "recover": recover, "capture-drain": capture_drain}[args.command](args)
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, ValueError, KeyError, RuntimeError) as error:

@@ -133,12 +133,12 @@ export function createCanonicalResumeTransport(options: CanonicalResumeTransport
         return fromProjection(projection, request, target, key);
       }
       if (projection.automatic_continuation !== true) return outcome(request, "rejected", "canonical_automatic_continuation_unsupported");
-      if (retained.blockers.length) return outcome(request, "rejected", "canonical_legacy_receipts_unresolved");
+      if (retained.blockers.length && !authority.config.quarantine) return outcome(request, "rejected", "canonical_legacy_receipts_unresolved");
       await requireCanonicalMigrationReady(authority);
       // Recheck the immutable legacy reservation immediately before the one send.
       const finalRetained = await readRetainedResumeReceipts(authority);
       if (Object.hasOwn(finalRetained.records, request.idempotency_key)) return retainedResumeReceipt(finalRetained.records[request.idempotency_key]!, request);
-      if (finalRetained.blockers.length) return outcome(request, "rejected", "canonical_legacy_receipts_unresolved");
+      if (finalRetained.blockers.length && !authority.config.quarantine) return outcome(request, "rejected", "canonical_legacy_receipts_unresolved");
       attempted = true;
       try {
         await authority.call("deliver", { action: "session", session_ref: target.sessionRef,

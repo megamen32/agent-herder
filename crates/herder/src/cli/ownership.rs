@@ -38,8 +38,10 @@ pub fn execute(args: &[String]) -> Result<Value, String> {
                 Ok::<_, String>(record)
             })
             .transpose()?;
+        let migration = crate::ownership::migration_hold::read(&authority, &resource_ref, Authorization::Authorized).map_err(user_error)?;
         return Ok(json!({
-            "status": if owner.is_some() { "owned" } else { "free" },
+            "status": if migration.is_some() { "quarantined" } else if owner.is_some() { "owned" } else { "free" },
+            "migration_occupancy": migration,
             "resource": descriptor,
             "owner": owner,
         }));

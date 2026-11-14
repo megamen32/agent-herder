@@ -112,6 +112,32 @@ pub(super) fn delivery_identifiers(
     ))
 }
 
+/// A recovered root may still have no prompt intent. Bind that later effect to
+/// its original create key while holding the actual native handoff gate.
+pub(super) fn migration_origin_key(c:&rusqlite::Connection,b:&crate::application::reconcile::ReceiptBinding<'_>)
+    ->Result<Option<String>,GateError>{
+    if !b.request_key.starts_with("create-prompt:"){return Ok(None)}
+    let target=serde_json::to_string(&b.address.instance).map_err(|_|GateError::Invalid)?;
+    let mut query=c.prepare("SELECT request_key,native_receipt FROM intents WHERE principal=?1 AND target=?2 AND native_receipt IS NOT NULL AND json_extract(native_receipt,'$.session_ref')=?3")
+        .map_err(|_|GateError::Store)?;
+    let rows=query.query_map(rusqlite::params![b.principal,target,b.target_ref],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))
+        .map_err(|_|GateError::Store)?;
+    let mut original=None;
+    for row in rows{
+        let (key,raw)=row.map_err(|_|GateError::Store)?;
+        let receipt:serde_json::Value=serde_json::from_str(&raw).map_err(|_|GateError::Store)?;
+        let derived=delivery_identifiers(&PrincipalId(b.principal.into()),&b.address.instance,&key)?.0;
+        if derived!=b.request_key{continue}
+        if original.is_some() || receipt["session_ref"]!=b.target_ref || receipt["request_key"]!=key
+            || receipt["native_session_id"]!=b.address.native_session_id
+            || receipt["instance"]!=serde_json::to_value(&b.address.instance).map_err(|_|GateError::Invalid)?{
+            return Err(GateError::Invalid)
+        }
+        original=Some(key);
+    }
+    original.map(Some).ok_or(GateError::Unavailable)
+}
+
 /// The request and exact grants are supplied by trusted application policy.
 /// Native create never sends the prompt. A separate durable delivery key is
 /// derived from the principal, exact instance, and original create key.

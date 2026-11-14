@@ -115,6 +115,7 @@ impl TargetExecutionLock {
         claim_id: &str,
         expected_revision: u64,
     ) -> io::Result<ResourceClaim> {
+        crate::ownership::migration_hold::ensure_clear(authority, &self.resource_ref, authorization)?;
         let descriptor = resource::get(authority, &self.resource_ref, authorization)?;
         if descriptor.revision != expected_revision {
             return Err(io::Error::new(

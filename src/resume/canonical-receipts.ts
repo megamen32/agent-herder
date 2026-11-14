@@ -14,6 +14,20 @@ const exact = (value: unknown): value is string => typeof value === "string" && 
   && value.length <= 4096 && value.trim() === value && !/[\x00-\x1f\x7f]/.test(value);
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 
+/** The retired Python OpenCode adapter rejected this exact preflight before
+ * constructing a native POST. Keep its snake_case evidence intact and reserve
+ * the original key. A generic rejected label or a missing flag is insufficient. */
+function retainedNotSubmitted(row: ObjectValue): boolean {
+  if (!["rejected", "failed"].includes(String(row.status))
+    || row.admitted === true || row.admissionUnknown === true || row.admission_unknown === true) return false;
+  if (row.notSubmitted === true) return true;
+  const target = row.target as ObjectValue | undefined;
+  return row.status === "rejected" && target?.agent === "opencode"
+    && row.transport === "opencode-api" && row.error === "OpenCode v2 config has an invalid shape"
+    && row.executed === false && row.pending === false && row.admitted === false
+    && row.admission_unknown === false;
+}
+
 export interface RetainedResumeReceipts {
   records: Readonly<Record<string, ResumeReceiptRecord>>;
   blockers: string[];
@@ -51,8 +65,7 @@ export async function readRetainedResumeReceipts(client: CanonicalAutomationClie
     // An error label alone does not prove that the old writer never submitted.
     const accepted = row.status === "accepted" && exact(row.receipt_ref) && exact(row.result_ref)
       && row.target !== null && typeof row.target === "object" && !Array.isArray(row.target);
-    const notSubmitted = (row.status === "rejected" || row.status === "failed")
-      && row.notSubmitted === true && row.admitted !== true && row.admissionUnknown !== true;
+    const notSubmitted = retainedNotSubmitted(row);
     if (!accepted && !notSubmitted) blockers.push(key);
   }
   const after = await fs.lstat(config.path);
@@ -87,8 +100,7 @@ export function retainedResumeReceipt(row: ResumeReceiptRecord, request: ResumeT
       native_input_message_id: typeof row.native_input_message_id === "string" ? row.native_input_message_id : null,
     } : {}),
   };
-  if ((row.status === "rejected" || row.status === "failed") && row.notSubmitted === true
-    && row.admitted !== true && row.admissionUnknown !== true) {
+  if (retainedNotSubmitted(row as unknown as ObjectValue)) {
     return { ...base, status: "rejected", reason: row.reason ?? "retained_legacy_refusal" };
   }
   return { ...base, status: "ambiguous", reason: "retained_legacy_outcome_unknown" };

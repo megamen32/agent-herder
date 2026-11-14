@@ -116,10 +116,10 @@ def read_file(filename, maximum=8 * 1024 * 1024, policy="private"):
         os.close(fd)
 
 
-def pinned_json(filename, sha256, policy="immutable"):
+def pinned_json(filename, sha256, policy="immutable", maximum=8 * 1024 * 1024):
     if not isinstance(sha256, str) or not HASH.fullmatch(sha256):
         raise ValueError("scheduler proof digest is invalid")
-    data, metadata = read_file(filename, policy=policy)
+    data, metadata = read_file(filename, maximum=maximum, policy=policy)
     if hashlib.sha256(data).hexdigest() != sha256:
         raise ValueError("scheduler proof digest changed")
     return json.loads(data), metadata
@@ -196,10 +196,222 @@ def runtime_tree(runtime):
     return manifest, node_stat, {"device": str(directories[0][1].st_dev), "inode": str(directories[0][1].st_ino)}
 
 
+def sealed_directory(filename, identity=None):
+    path = canonical(filename)
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o500):
+        raise ValueError("retained quarantine directory is not immutable")
+    if identity is not None:
+        fields(identity, ("device", "inode"))
+        if identity != {"device": str(info.st_dev), "inode": str(info.st_ino)}:
+            raise ValueError("retained quarantine directory identity changed")
+    return path, info
+
+
+def quarantine(config):
+    """Independently bind every retained source and profile to the pinned epoch."""
+    q = fields(config["quarantine"], ("inventory_sha256", "legacy_jobs", "snapshots"))
+    fields(q["legacy_jobs"], ("directory", "snapshot", "sha256"))
+    if (not isinstance(q["inventory_sha256"], str) or not HASH.fullmatch(q["inventory_sha256"])
+            or not isinstance(q["snapshots"], list) or not 1 <= len(q["snapshots"]) <= 128):
+        raise ValueError("canonical quarantine configuration is invalid")
+    sources, originals, required_keys, directories = {}, {}, {}, []
+
+    def retain(ref, filename, digest, value, keys):
+        if ref in originals or filename in sources:
+            raise ValueError("quarantine source inventory is ambiguous")
+        sources[filename] = digest
+        required_keys[ref] = set(keys)
+        originals[ref] = (filename, digest, hashlib.sha256(json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()).hexdigest())
+
+    for name, kind, jobs in (
+            ("resume_after", "herder-resume-after-retained", False),
+            ("legacy_jobs", "herder-legacy-jobs-retained", True)):
+        binding = q[name] if jobs else config[name]
+        seal, _ = pinned_json(binding["snapshot"], binding["sha256"])
+        fields(seal, ("version", "kind", "epoch", "directory", "directory_identity", "records"), ("sealed_at",))
+        if (type(seal["version"]) is not int or seal["version"] != 1 or seal["kind"] != kind
+                or seal["epoch"] != config["epoch"] or seal["directory"] != binding["directory"]
+                or not isinstance(seal["records"], list) or len(seal["records"]) > 10000
+                or (not jobs and "sealed_at" not in seal)
+                or ("sealed_at" in seal and instant(seal["sealed_at"]) > now_ms() + 5000)):
+            raise ValueError("retained quarantine snapshot identity changed")
+        directory, before = sealed_directory(binding["directory"], seal["directory_identity"])
+        directories.append((directory, before))
+        names = set()
+        for record in seal["records"]:
+            fields(record, ("id", "sha256"))
+            ident = record["id"]
+            if (not exact(ident) or ident in (".", "..") or "/" in ident or "\\" in ident
+                    or (not jobs and not re.fullmatch(r"wait_[a-f0-9]{32}", ident))
+                    or not isinstance(record["sha256"], str) or not HASH.fullmatch(record["sha256"])):
+                raise ValueError("retained quarantine record identity is invalid")
+            entry = ident if jobs else ident + ".json"
+            if entry in names:
+                raise ValueError("retained quarantine snapshot repeats a record")
+            names.add(entry)
+            if jobs:
+                folder, folder_before = sealed_directory(str(directory / ident))
+                directories.append((folder, folder_before))
+                filename = str(folder / "meta.json")
+            else:
+                filename = str(directory / entry)
+            data, _ = read_file(filename, policy="immutable")
+            if hashlib.sha256(data).hexdigest() != record["sha256"]:
+                raise ValueError("retained quarantine source digest changed")
+            value = json.loads(data)
+            if (not isinstance(value, dict) or value.get("job_id" if jobs else "id") != ident
+                    or (jobs and not exact(value.get("state")))):
+                raise ValueError("retained quarantine source identity changed")
+            if jobs:
+                key = "agent-resume:job:" + ident
+                keys = [ident, key, "compat-resume:v1:" + hashlib.sha256(key.encode()).hexdigest()]
+            else:
+                keys = [ident, "resume-after:" + ident]
+            retain(("agent-resume-job:" if jobs else "resume-after:") + ident,
+                   filename, record["sha256"], value, keys)
+        if set(os.listdir(directory)) != names:
+            raise ValueError("retained quarantine directory inventory changed")
+
+    binding = config["resume_receipts"]
+    seal, _ = pinned_json(binding["snapshot"], binding["sha256"])
+    fields(seal, ("version", "kind", "epoch", "path", "sha256", "sealed_at", "file_identity"))
+    if (type(seal["version"]) is not int or seal["version"] != 1
+            or seal["kind"] != "herder-resume-receipts-retained" or seal["epoch"] != config["epoch"]
+            or seal["path"] != binding["path"] or instant(seal["sealed_at"]) > now_ms() + 5000):
+        raise ValueError("retained receipt quarantine snapshot changed")
+    ledger, info = pinned_json(binding["path"], seal["sha256"], maximum=16 * 1024 * 1024)
+    fields(seal["file_identity"], ("device", "inode"))
+    if seal["file_identity"] != {"device": str(info.st_dev), "inode": str(info.st_ino)}:
+        raise ValueError("retained receipt quarantine file identity changed")
+    if (not isinstance(ledger, dict) or type(ledger.get("version")) is not int or ledger["version"] != 1
+            or not isinstance(ledger.get("receipts"), dict) or len(ledger["receipts"]) > 10000):
+        raise ValueError("retained receipt quarantine ledger is invalid")
+    if binding["path"] in sources:
+        raise ValueError("quarantine source inventory is ambiguous")
+    sources[binding["path"]] = seal["sha256"]
+    for key, value in ledger["receipts"].items():
+        if not exact(key) or not isinstance(value, dict) or value.get("idempotency_key") != key:
+            raise ValueError("retained receipt quarantine key changed")
+        ref = "resume-receipt:" + hashlib.sha256(key.encode()).hexdigest()
+        required_keys[ref] = {key, "compat-resume:v1:" + hashlib.sha256(key.encode()).hexdigest()}
+        originals[ref] = (
+            binding["path"], seal["sha256"], hashlib.sha256(json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()).hexdigest())
+    inventory = "".join(sorted(filename + "\0" + digest + "\n" for filename, digest in sources.items()))
+    if hashlib.sha256(inventory.encode()).hexdigest() != q["inventory_sha256"]:
+        raise ValueError("quarantine retained source inventory digest changed")
+
+    profile_ids, baseline = set(), None
+    for profile in q["snapshots"]:
+        fields(profile, ("harness", "node_ref", "instance_ref", "authority_generation", "path", "sha256"),
+               ("legacy_host_ids",))
+        if (not all(exact(profile[key]) for key in ("harness", "node_ref", "instance_ref", "authority_generation"))
+                or ("legacy_host_ids" in profile and (not isinstance(profile["legacy_host_ids"], list)
+                    or not all(exact(host) for host in profile["legacy_host_ids"])))):
+            raise ValueError("quarantine authority profile is invalid")
+        identity = (profile["node_ref"], profile["instance_ref"])
+        if identity in profile_ids:
+            raise ValueError("quarantine authority profile is duplicated")
+        profile_ids.add(identity)
+        snapshot, _ = pinned_json(profile["path"], profile["sha256"], maximum=16 * 1024 * 1024)
+        fields(snapshot, ("version", "kind", "epoch", "authority_generation", "node_ref", "instance_ref",
+                          "writer_drain_sha256", "inventory_sha256", "sources", "records"))
+        if (type(snapshot["version"]) is not int or snapshot["version"] != 1
+                or snapshot["kind"] != "herder-legacy-quarantine" or snapshot["epoch"] != config["epoch"]
+                or any(snapshot[key] != profile[key] for key in ("node_ref", "instance_ref", "authority_generation"))
+                or snapshot["writer_drain_sha256"] != config["writer_drain"]["sha256"]
+                or snapshot["inventory_sha256"] != q["inventory_sha256"]
+                or not isinstance(snapshot["sources"], list) or len(snapshot["sources"]) != len(sources)
+                or not isinstance(snapshot["records"], list) or len(snapshot["records"]) > 20000):
+            raise ValueError("quarantine snapshot epoch, generation or inventory changed")
+        observed_sources = {}
+        for source in snapshot["sources"]:
+            fields(source, ("path", "sha256"))
+            if not isinstance(source["path"], str) or source["path"] in observed_sources:
+                raise ValueError("quarantine snapshot source is duplicated")
+            observed_sources[source["path"]] = source["sha256"]
+        if observed_sources != sources:
+            raise ValueError("quarantine snapshot source coverage is incomplete")
+        records = {}
+        for record in snapshot["records"]:
+            fields(record, ("record_ref", "source_path", "source_sha256", "record_sha256",
+                            "request_keys", "outcome", "holds"))
+            ref = record["record_ref"]
+            if (not exact(ref) or ref in records or originals.get(ref) != (
+                    record["source_path"], record["source_sha256"], record["record_sha256"])
+                    or not isinstance(record["request_keys"], list) or not record["request_keys"]
+                    or not all(exact(key) for key in record["request_keys"])
+                    or record["outcome"] not in ("accepted", "not_submitted", "unknown")
+                    or not isinstance(record["holds"], list)
+                    or (record["outcome"] == "unknown") != bool(record["holds"])):
+                raise ValueError("quarantine snapshot retained record changed")
+            if not required_keys[ref] <= set(record["request_keys"]):
+                raise ValueError("quarantine original and derived request key coverage is incomplete")
+            for hold in record["holds"]:
+                fields(hold, ("node_ref", "instance_ref", "native_session_id"))
+                if (not exact(hold["node_ref"]) or not exact(hold["instance_ref"])
+                        or (hold["native_session_id"] is not None
+                            and (not exact(hold["native_session_id"]) or hold["native_session_id"] == "*"))):
+                    raise ValueError("quarantine snapshot hold scope is invalid")
+            records[ref] = record
+        if records.keys() != originals.keys():
+            raise ValueError("quarantine snapshot record coverage is incomplete")
+        if baseline is not None and records != baseline:
+            raise ValueError("quarantine snapshots disagree on retained records")
+        baseline = records
+    if any(not same_file(before, directory.lstat()) or stat.S_IMODE(directory.stat().st_mode) != 0o500
+           for directory, before in directories):
+        raise ValueError("retained quarantine directory changed during observation")
+    return q
+
+
+def quarantine_response(config, response, *, operational):
+    q = config.get("quarantine")
+    if q is None:
+        if response is not None:
+            raise ValueError("scheduler returned an unconfigured quarantine proof")
+        return
+    fields(response, ("version", "configured", "local_verified", "native_verified",
+                      "inventory_sha256", "snapshots", "authorities"))
+    projections = [{key: profile[key] for key in (
+        "harness", "node_ref", "instance_ref", "authority_generation", "sha256")} for profile in q["snapshots"]]
+    if (type(response["version"]) is not int or response["version"] != 1 or response["configured"] is not True
+            or response["local_verified"] is not True or response["native_verified"] is not operational
+            or response["inventory_sha256"] != q["inventory_sha256"] or response["snapshots"] != projections
+            or not isinstance(response["authorities"], list)):
+        raise ValueError("scheduler quarantine proof differs from its pinned configuration")
+    if not operational:
+        if response["authorities"]:
+            raise ValueError("preflight cannot claim an operational native quarantine proof")
+        return
+    expected = {(profile["node_ref"], profile["instance_ref"], profile["authority_generation"]): profile
+                for profile in q["snapshots"]}
+    seen = set()
+    for proof in response["authorities"]:
+        fields(proof, ("version", "configured", "epoch", "authority_generation", "node_ref", "instance_ref",
+                       "required_epoch", "snapshot_sha256", "writer_drain_sha256", "inventory_sha256"))
+        identity = tuple(proof[key] for key in ("node_ref", "instance_ref", "authority_generation"))
+        if not all(exact(value) for value in identity):
+            raise ValueError("native quarantine authority identity is invalid")
+        profile = expected.get(identity)
+        if (profile is None or identity in seen or type(proof["version"]) is not int or proof["version"] != 1
+                or proof["configured"] is not True or proof["epoch"] != config["epoch"]
+                or proof["required_epoch"] != config["epoch"] or proof["snapshot_sha256"] != profile["sha256"]
+                or proof["writer_drain_sha256"] != config["writer_drain"]["sha256"]
+                or proof["inventory_sha256"] != q["inventory_sha256"]):
+            raise ValueError("native quarantine authority proof differs from the pinned snapshot")
+        seen.add(identity)
+    if seen != expected.keys():
+        raise ValueError("native quarantine authority coverage is incomplete")
+
+
 def writer_drain(canonical_identity):
     fields(canonical_identity, ("config", "config_sha256", "epoch", "authority", "writer_drain_sha256"))
     config, _ = pinned_json(canonical_identity["config"], canonical_identity["config_sha256"])
-    fields(config, ("version", "mode", "epoch", "authority", "writer_drain", "resume_after", "resume_receipts"), ("node_ref",))
+    fields(config, ("version", "mode", "epoch", "authority", "writer_drain", "resume_after", "resume_receipts"), ("node_ref", "quarantine"))
     if (config["version"] != 1 or config["mode"] != "canonical" or not exact(config["epoch"], 128)
             or config["epoch"] != canonical_identity["epoch"] or config["authority"] != AUTHORITY
             or canonical_identity["authority"] != AUTHORITY):
@@ -219,8 +431,14 @@ def writer_drain(canonical_identity):
             or not 1 <= len(proof["writers"]) <= 256):
         raise ValueError("TS scheduler writer drain is unverified")
     required_sources = {config["resume_after"]["directory"], config["resume_receipts"]["path"]}
+    if "quarantine" in config:
+        q = fields(config["quarantine"], ("inventory_sha256", "legacy_jobs", "snapshots"))
+        fields(q["legacy_jobs"], ("directory", "snapshot", "sha256"))
+        if not exact(q["legacy_jobs"]["directory"]):
+            raise ValueError("legacy jobs directory is invalid")
+        required_sources.add(q["legacy_jobs"]["directory"])
     if not required_sources <= set(proof["sources"]):
-        raise ValueError("writer drain does not cover waits and direct resume receipts")
+        raise ValueError("writer drain does not cover waits, direct resume receipts and configured legacy jobs")
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     identities, covered = set(), set()
     for writer in proof["writers"]:
@@ -258,6 +476,8 @@ def writer_drain(canonical_identity):
         snapshot, _ = pinned_json(config[key]["snapshot"], config[key]["sha256"])
         if not isinstance(snapshot, dict) or snapshot.get("epoch") != config["epoch"]:
             raise ValueError("retained migration snapshot belongs to a different epoch")
+    if "quarantine" in config:
+        quarantine(config)
     return config
 
 
@@ -400,10 +620,14 @@ def validate_receipt(receipt, source_commit, *, stage, expected=None, challenge=
             or not HASH.fullmatch(request["challenge"]) or (challenge is not None and request["challenge"] != challenge)):
         raise ValueError("scheduler readiness challenge or endpoint is different")
     response = fields(receipt["response"], ("version", "kind", "challenge", "observedAt", "process", "runtime",
-                                           "canonical", "migration_ready", "probe"))
+                                           "canonical", "migration_ready", "readiness_scope", "probe"), ("quarantine",))
+    if stage not in ("preflight", "consumer"):
+        raise ValueError("unknown scheduler readiness stage")
+    operational = stage == "consumer"
     observed_at = instant(response["observedAt"])
     if (response["version"] != 1 or response["kind"] != "herder-canonical-runtime-status"
-            or response["challenge"] != request["challenge"] or response["migration_ready"] is not True
+            or response["challenge"] != request["challenge"] or response["migration_ready"] is not operational
+            or response["readiness_scope"] != ("operational" if operational else "preflight")
             or receipt["response_sha256"] != json_hash(response) or observed_at < max(minimum, current - MAX_AGE_MS)
             or observed_at > stamp + 1000 or stamp - observed_at > 15000):
         raise ValueError("scheduler response is stale, incomplete or not tied to this request")
@@ -412,6 +636,8 @@ def validate_receipt(receipt, source_commit, *, stage, expected=None, challenge=
     identity = {key: response[key] for key in ("process", "runtime", "canonical")}
     if expected is not None and any(identity[key] != expected[key] for key in identity):
         raise ValueError("scheduler proof changed PID, source, configuration or migration epoch")
+    config = writer_drain(identity["canonical"])
+    quarantine_response(config, response.get("quarantine"), operational=operational)
     if stage == "preflight":
         if "probe" in request or response["probe"] is not None or "job_id" in receipt:
             raise ValueError("preflight must not depend on an old native core API")
@@ -443,4 +669,5 @@ def validate_receipt(receipt, source_commit, *, stage, expected=None, challenge=
     observed = observe(expected if expected is not None else identity)
     return {"identity": observed, "provider_operation_id": receipt["provider_operation_id"],
             "response_sha256": receipt["response_sha256"], "observed_at_unix_ms": stamp,
-            "request": request, "gate": response["probe"]}
+            "request": request, "gate": response["probe"], "readiness_scope": response["readiness_scope"],
+            **({"quarantine": response["quarantine"]} if "quarantine" in response else {})}

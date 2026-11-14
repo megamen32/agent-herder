@@ -186,7 +186,13 @@ impl AhapOpenCode {
         if !self.matches(target) {
             return Err(ReadError("wrong instance".into()));
         }
-        let result = self.raw_call("getSession", json!({"id":target.native_session_id}))?;
+        let cold_queue = self.policy.harness == "zcode"
+            && self.automatic_continuation_supported()
+            && self.client.supports("getQueuedContinuationState");
+        let result = self.raw_call(
+            if cold_queue { "getQueuedContinuationState" } else { "getSession" },
+            json!({"id":target.native_session_id}),
+        )?;
         if result.get("id").and_then(Value::as_str) != Some(target.native_session_id.as_str())
             || result.get("harness").and_then(Value::as_str) != Some(self.policy.harness.as_str())
         {
@@ -209,7 +215,9 @@ impl AhapOpenCode {
         } else {
             status
         };
-        let activity = match observed_status {
+        let activity = if cold_queue && zcode_cold_preparable(&result, &target.native_session_id) {
+            SessionActivity::ColdPreparable
+        } else { match observed_status {
             Some("idle") => SessionActivity::Idle,
             Some("running" | "busy") if self.client.supports("getCoordinationActiveTurnId") => {
                 match self
@@ -227,7 +235,7 @@ impl AhapOpenCode {
                 }
             }
             _ => SessionActivity::Unknown,
-        };
+        }};
         let modes = self
             .capabilities()
             .get("deliveryModes")
@@ -927,6 +935,7 @@ mod tests {
 import hashlib,json,os,sys
 harness=os.environ['AHAP_HARNESS'];session=os.environ['SESSION_ID'];native_id=os.environ['NATIVE_ID']
 automatic=os.environ['MODE']=='automatic'
+cold=os.environ['MODE'].startswith('cold')
 if automatic:native_id='msg_herderauto'+hashlib.sha256(json.dumps(['herder-opencode-synthetic-queue-v1',session,'key'],separators=(',',':')).encode()).hexdigest()
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
@@ -935,12 +944,15 @@ for line in sys.stdin:
  elif m=='init':v=None
  elif m=='createSession':v={'id':session,'harness':harness}
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
+ elif m=='getQueuedContinuationState':
+  v={'id':session,'harness':harness,'status':'error','meta':{'nativeLoaded':False,'nativeStateObserved':False,'humanStop':os.environ['MODE']=='cold_stopped','nativeColdContinuation':{'contract':'cold-queue-subscription-v1','state':'cold_preparable','sessionId':session if os.environ['MODE']!='cold_invalid' else 'wrong','fingerprint':'a'*64,'observedAtMs':1}}}
  elif m=='sendMessage':
   assert p['id']==session and p['options']['activeTurnOnly'] is False and p['options']['inputId']=='key'
   with open(os.environ['TRACE']+'.wire','a') as f:f.write(json.dumps(p)+'\n')
   if harness=='opencode' and not automatic:assert p['options']['start'] and p['options']['queue'] is False
   else:assert p['options']['queue'] is True and 'start' not in p['options']
-  if os.environ['MODE']=='runner_receipt':v={'ok':True,'admitted':True,'pending':True,'inputId':'agent-herder:auto:key'}
+  if os.environ['MODE']=='cold_unknown':v={'ok':False,'admissionUnknown':True,'inputId':'key'}
+  elif os.environ['MODE']=='runner_receipt':v={'ok':True,'admitted':True,'pending':True,'inputId':'agent-herder:auto:key'}
   elif os.environ['MODE']=='missing':v={'ok':True,'admitted':True}
   else:v={'ok':True,'admitted':True,'nativeInputMessageId':native_id}
  elif m=='getSessionMessages':
@@ -950,6 +962,7 @@ for line in sys.stdin:
   if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key'}]
  else:raise Exception(m)
  if m=='initialize' and automatic:v['capabilities'].update({'nativeProtocol':'v2','deliveryModes':['queue','start'],'nativeAutomaticContinuation':'synthetic-queue-v1'})
+ if m=='initialize' and cold:v['capabilities']['methods'].append('getQueuedContinuationState');v['capabilities']['nativeAutomaticContinuation']='cold-queue-subscription-v1'
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
@@ -995,6 +1008,38 @@ for line in sys.stdin:
         );
         b.map(|port| (Temp(dir), port))
     }
+
+    #[tokio::test]
+    async fn zcode_cold_queue_uses_typed_read_and_one_bounded_handoff() {
+        for mode in ["cold", "cold_invalid", "cold_stopped", "cold_unknown"] {
+            let (fixture, adapter) = setup_with_policy(mode, "zcode", SendMode::Queue, "cold-exact").unwrap();
+            assert!(adapter.automatic_continuation_supported());
+            let address = SessionAddress { instance: adapter.instance.clone(), native_session_id: "cold-exact".into() };
+            let snapshot = adapter.snapshot(&address).await.unwrap();
+            if mode == "cold_invalid" {
+                assert_eq!(snapshot.activity, SessionActivity::Unknown);
+            } else {
+                assert_eq!(snapshot.activity, SessionActivity::ColdPreparable);
+            }
+            let plan = crate::domain::adapter::decide_send(&snapshot, &crate::domain::adapter::SendCommand { mode: SendMode::Queue });
+            if matches!(mode, "cold_invalid" | "cold_stopped") {
+                assert!(plan.is_err());
+            } else {
+                let outcome = adapter.submit_bounded(plan.unwrap(), "hi", &RequestKey("key".into()));
+                if mode == "cold_unknown" {
+                    assert!(matches!(outcome, Err(SubmitError::OutcomeUnknown { .. })));
+                } else {
+                    assert!(outcome.is_ok());
+                }
+            }
+            let trace = fs::read_to_string(fixture.0.join("trace")).unwrap();
+            assert!(trace.lines().any(|line| line == "getQueuedContinuationState"));
+            assert!(!trace.lines().any(|line| line == "getSession"));
+            assert_eq!(trace.lines().filter(|line| *line == "sendMessage").count(),
+                usize::from(!matches!(mode, "cold_invalid" | "cold_stopped")));
+        }
+    }
+
     #[tokio::test]
     async fn automatic_composition_sets_typed_origin_and_confirms_exact_synthetic_receipt() {
         for automatic in [false, true] {
@@ -1417,9 +1462,27 @@ fn automatic_continuation_supported(harness: &str, capabilities: &Value) -> bool
             && admission == Some("synthetic-queue-v1")
             && capabilities.get("deliveryModes").and_then(Value::as_array)
                 .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("queue")))
+    } else if harness == "zcode" {
+        admission == Some("cold-queue-subscription-v1")
+            && capabilities.get("deliveryModes").and_then(Value::as_array)
+                .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("queue")))
+            && capabilities.get("methods").and_then(Value::as_array)
+                .is_some_and(|methods| methods.iter().any(|method| method.as_str() == Some("getQueuedContinuationState")))
     } else {
         admission != Some("unsupported-no-idle-admission-v1")
     }
+}
+
+fn zcode_cold_preparable(value: &Value, session_id: &str) -> bool {
+    value.pointer("/meta/nativeLoaded").and_then(Value::as_bool) == Some(false)
+        && value.pointer("/meta/nativeStateObserved").and_then(Value::as_bool) == Some(false)
+        && value.pointer("/meta/nativeColdContinuation/contract").and_then(Value::as_str) == Some("cold-queue-subscription-v1")
+        && value.pointer("/meta/nativeColdContinuation/state").and_then(Value::as_str) == Some("cold_preparable")
+        && value.pointer("/meta/nativeColdContinuation/sessionId").and_then(Value::as_str) == Some(session_id)
+        && value.pointer("/meta/nativeColdContinuation/fingerprint").and_then(Value::as_str)
+            .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        && value.pointer("/meta/nativeColdContinuation/observedAtMs").and_then(Value::as_u64)
+            .is_some_and(|value| value > 0)
 }
 
 #[cfg(test)]
@@ -1430,6 +1493,37 @@ mod ahap_v1_reuse;
 mod canonical_wait_turn_tests {
     use super::*;
     use crate::application::scoped_stop::wait_automation::NativeTurnStatus;
+
+    #[test]
+    fn zcode_cold_preparation_requires_exact_marker_and_bound_native_proof() {
+        let capabilities = json!({"deliveryModes":["queue"],"methods":["getQueuedContinuationState"],
+            "nativeAutomaticContinuation":"cold-queue-subscription-v1"});
+        assert!(automatic_continuation_supported("zcode", &capabilities));
+        for missing in ["deliveryModes", "methods", "nativeAutomaticContinuation"] {
+            let mut value = capabilities.clone();
+            value.as_object_mut().unwrap().remove(missing);
+            assert!(!automatic_continuation_supported("zcode", &value));
+        }
+        let exact = json!({"status":"error","meta":{"nativeLoaded":false,"nativeStateObserved":false,
+            "nativeColdContinuation":{"contract":"cold-queue-subscription-v1","state":"cold_preparable",
+                "sessionId":"native-exact","fingerprint":"a".repeat(64),"observedAtMs":1}}});
+        assert!(zcode_cold_preparable(&exact, "native-exact"));
+        assert!(!zcode_cold_preparable(&exact, "native-other"));
+        for (field, replacement) in [
+            ("contract", json!("unknown")), ("state", json!("idle")),
+            ("fingerprint", json!("g".repeat(64))), ("fingerprint", json!("a")),
+            ("observedAtMs", json!(0)), ("observedAtMs", json!(-1)),
+        ] {
+            let mut value = exact.clone();
+            value["meta"]["nativeColdContinuation"][field] = replacement;
+            assert!(!zcode_cold_preparable(&value, "native-exact"));
+        }
+        for field in ["nativeLoaded", "nativeStateObserved"] {
+            let mut value = exact.clone(); value["meta"][field] = json!(true);
+            assert!(!zcode_cold_preparable(&value, "native-exact"));
+        }
+    }
+
     #[test]
     fn opencode_queue_and_absent_marker_never_prove_automatic_continuation() {
         for capabilities in [

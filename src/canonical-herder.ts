@@ -6,6 +6,14 @@ import type { GptAdminTransport } from "./mesh/gptadmin.js";
 
 export type CanonicalMode = "legacy" | "canonical";
 export interface CanonicalPinnedFile { path: string; sha256: string }
+export interface CanonicalQuarantineProfile extends CanonicalPinnedFile {
+  harness: string; node_ref: string; instance_ref: string; authority_generation: string; legacy_host_ids?: string[];
+}
+export interface CanonicalQuarantineConfig {
+  inventory_sha256: string;
+  legacy_jobs: { directory: string; snapshot: string; sha256: string };
+  snapshots: CanonicalQuarantineProfile[];
+}
 export interface CanonicalHerderConfig {
   version: 1;
   mode: "canonical";
@@ -16,6 +24,7 @@ export interface CanonicalHerderConfig {
   writer_drain: CanonicalPinnedFile;
   resume_after: { directory: string; snapshot: string; sha256: string };
   resume_receipts?: { path: string; snapshot: string; sha256: string };
+  quarantine?: CanonicalQuarantineConfig;
 }
 export interface CanonicalSessionRef {
   sessionRef: string;
@@ -140,8 +149,9 @@ export async function readCanonicalPinnedJson(filename: string, sha256: string, 
 }
 
 function validateConfig(value: unknown): CanonicalHerderConfig {
-  const config = fields(value, ["version", "mode", "epoch", "authority", "writer_drain", "resume_after"], ["node_ref", "resume_receipts"]);
+  const config = fields(value, ["version", "mode", "epoch", "authority", "writer_drain", "resume_after"], ["node_ref", "resume_receipts", "quarantine"]);
   if (config.version !== 1 || config.mode !== "canonical" || !exact(config.epoch, 128)
+    || Buffer.byteLength(config.epoch, "utf8") > 128 || /[\u0000-\u001f\u007f-\u009f]/.test(config.epoch)
     || typeof config.authority !== "string" || !/^mcp:shell:[A-Za-z0-9._-]+:AgentHerder$/.test(config.authority)
     || (config.node_ref !== undefined && !exact(config.node_ref))) throw new Error("canonical_config_invalid");
   const drain = fields(config.writer_drain, ["path", "sha256"]);
@@ -151,6 +161,22 @@ function validateConfig(value: unknown): CanonicalHerderConfig {
   if (config.resume_receipts !== undefined) {
     const receipts = fields(config.resume_receipts, ["path", "snapshot", "sha256"]);
     if (!absolute(receipts.path) || !absolute(receipts.snapshot) || !hash(receipts.sha256)) throw new Error("canonical_config_invalid");
+  }
+  if (config.quarantine !== undefined) {
+    const q = fields(config.quarantine, ["inventory_sha256", "legacy_jobs", "snapshots"]);
+    const jobs = fields(q.legacy_jobs, ["directory", "snapshot", "sha256"]);
+    if (!hash(q.inventory_sha256) || !absolute(jobs.directory) || !absolute(jobs.snapshot) || !hash(jobs.sha256)
+      || !Array.isArray(q.snapshots) || !q.snapshots.length || q.snapshots.length > 128) throw new Error("canonical_config_invalid");
+    const identities = new Set<string>();
+    for (const value of q.snapshots) {
+      const profile = fields(value, ["harness", "node_ref", "instance_ref", "authority_generation", "path", "sha256"], ["legacy_host_ids"]);
+      const id = JSON.stringify([profile.node_ref, profile.instance_ref]);
+      if (![profile.harness, profile.node_ref, profile.instance_ref, profile.authority_generation].every(v => exact(v))
+        || !absolute(profile.path) || !hash(profile.sha256) || identities.has(id)) throw new Error("canonical_config_invalid");
+      if (profile.legacy_host_ids !== undefined && (!Array.isArray(profile.legacy_host_ids)
+        || !profile.legacy_host_ids.every(v => exact(v)))) throw new Error("canonical_config_invalid");
+      identities.add(id);
+    }
   }
   return config as unknown as CanonicalHerderConfig;
 }
@@ -187,6 +213,14 @@ export async function createCanonicalAutomationClient(options: CanonicalAutomati
   Object.freeze(config.writer_drain);
   Object.freeze(config.resume_after);
   if (config.resume_receipts) Object.freeze(config.resume_receipts);
+  if (config.quarantine) {
+    Object.freeze(config.quarantine.legacy_jobs);
+    for (const snapshot of config.quarantine.snapshots) {
+      if (snapshot.legacy_host_ids) Object.freeze(snapshot.legacy_host_ids);
+      Object.freeze(snapshot);
+    }
+    Object.freeze(config.quarantine.snapshots); Object.freeze(config.quarantine);
+  }
   Object.freeze(config);
   let current: { generation: string; transport: GptAdminTransport } | undefined;
   const getTransport = options.transportFactory ?? (async () => {
@@ -240,12 +274,26 @@ export async function createCanonicalAutomationClient(options: CanonicalAutomati
   return client;
 }
 
-/** Shared cutover barrier for wait creation and direct compatibility delivery. */
-export async function requireCanonicalMigrationReady(client: CanonicalAutomationClient): Promise<void> {
-  const { assertRetainedResumeAfterReady } = await import("./canonical-migration.js");
-  await assertRetainedResumeAfterReady(client);
-  if (client.config.resume_receipts) {
-    const { readRetainedResumeReceipts } = await import("./resume/canonical-receipts.js");
-    if ((await readRetainedResumeReceipts(client)).blockers.length) throw new Error("canonical_legacy_receipts_unresolved");
+/** Local preparation is observable before the native selector switch. It
+ * never authorizes work or claims operational readiness. */
+export async function canonicalMigrationStatus(client: CanonicalAutomationClient, verifyNative: boolean):
+  Promise<import("./canonical-quarantine.js").CanonicalQuarantineStatus | undefined> {
+  const { assertCanonicalWriterDrain, readRetainedResumeAfter } = await import("./canonical-migration.js");
+  await assertCanonicalWriterDrain(client);
+  const waits = await readRetainedResumeAfter(client);
+  const receipts = client.config.resume_receipts
+    ? await (await import("./resume/canonical-receipts.js")).readRetainedResumeReceipts(client) : undefined;
+  if (client.config.quarantine) {
+    const { assertCanonicalQuarantineReady } = await import("./canonical-quarantine.js");
+    return await assertCanonicalQuarantineReady(client, waits, receipts, verifyNative);
   }
+  if (waits.blockers.length) throw new Error("canonical_legacy_waits_unresolved:" + waits.blockers.join(","));
+  if (receipts?.blockers.length) throw new Error("canonical_legacy_receipts_unresolved");
+  return undefined;
+}
+
+/** Every operational wait, process launch and compatibility send requires the
+ * exact native quarantine proofs. Read-only bootstrap is a separate contract. */
+export async function requireCanonicalMigrationReady(client: CanonicalAutomationClient): Promise<void> {
+  await canonicalMigrationStatus(client, true);
 }

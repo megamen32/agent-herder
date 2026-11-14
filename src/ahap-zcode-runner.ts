@@ -7,10 +7,11 @@ import type { Readable, Writable } from "node:stream";
 import type { CreateSessionOptions, SendMessageOptions, SendMessageResult } from "./types/common.js";
 import { ZcodeAdapter } from "./adapters/zcode.js";
 import { ZcodeTranscriptReadError } from "./adapters/zcode-native-transcript.js";
+import { ZCODE_COLD_CONTINUATION } from "./adapters/zcode-cold-continuation.js";
 
 type RpcId = string | number;
 interface RpcRequest { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
-type ZcodeAhapPort = Pick<ZcodeAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose"> & Partial<Pick<ZcodeAdapter, "archiveSession">> & LegacyReadPort;
+type ZcodeAhapPort = Pick<ZcodeAdapter, "init" | "createSession" | "sendMessage" | "getSession" | "getSessionMessages" | "dispose"> & Partial<Pick<ZcodeAdapter, "archiveSession" | "getQueuedContinuationState" | "sendHerderQueuedMessage" | "nativeColdContinuationSupported">> & LegacyReadPort;
 
 const METHODS = ["init", "createSession", "sendMessage", "getSession", "getSessionMessages"];
 const CONTROL_CAPABILITIES = {
@@ -31,6 +32,8 @@ export async function serveZcodeAhap(
   const lines = createInterface({ input, crlfDelay: Infinity });
   let initialized = false;
   let stopped = false;
+  const coldQueueSupported = () => adapter.nativeColdContinuationSupported === true
+    && typeof adapter.getQueuedContinuationState === "function" && typeof adapter.sendHerderQueuedMessage === "function";
   const write = (value: unknown) => writeAhapFrame(output, value);
   const error = (id: RpcId | null, code: number, message: string, data?: unknown) =>
     write({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
@@ -63,7 +66,10 @@ export async function serveZcodeAhap(
       initialized = true;
       write({ jsonrpc: "2.0", id, result: {
         harness: "zcode", name: "ZCode legacy adapter via AHAP",
-        capabilities: { deliveryModes: ["queue", "sync", "steer"], methods: [...new Set([...METHODS, ...legacyReadMethods(adapter), ...(typeof adapter.archiveSession === "function" ? ["archiveSession"] : [])])], controlCapabilities: CONTROL_CAPABILITIES },
+        capabilities: { deliveryModes: ["queue", "sync", "steer"],
+          nativeAutomaticContinuation: coldQueueSupported() ? ZCODE_COLD_CONTINUATION : "unsupported-no-idle-admission-v1",
+          methods: [...new Set([...METHODS, ...legacyReadMethods(adapter), ...(typeof adapter.archiveSession === "function" ? ["archiveSession"] : []),
+            ...(coldQueueSupported() ? ["getQueuedContinuationState"] : [])])], controlCapabilities: CONTROL_CAPABILITIES },
       } });
       continue;
     }
@@ -96,7 +102,9 @@ export async function serveZcodeAhap(
             continue;
           }
           const options: SendMessageOptions = { ...params.options };
-          const receipt: SendMessageResult = await adapter.sendMessage(params.id, options);
+          const receipt: SendMessageResult = options.queue && !options.steer && coldQueueSupported()
+            ? await adapter.sendHerderQueuedMessage!(params.id, options)
+            : await adapter.sendMessage(params.id, options);
           // Keep the adapter's receipt fields verbatim. inputId remains the
           // caller correlation; nativeInputMessageId is present only when the
           // adapter read an exact native ZCode message anchor. turnId is separate.
@@ -112,6 +120,11 @@ export async function serveZcodeAhap(
           if (typeof adapter.archiveSession !== "function") { error(id, -32601, "method not implemented"); continue; }
           if (!validSessionId(params.id)) { error(id, -32602, "archiveSession requires exact session id"); continue; }
           result = await adapter.archiveSession(params.id);
+          break;
+        case "getQueuedContinuationState":
+          if (!coldQueueSupported()) { error(id, -32601, "controlled cold Queue preparation unavailable"); continue; }
+          if (!validSessionId(params.id)) { error(id, -32602, "getQueuedContinuationState requires exact session id"); continue; }
+          result = await adapter.getQueuedContinuationState!(params.id);
           break;
         case "getSession":
           if (!validSessionId(params.id)) { error(id, -32602, "getSession requires a valid session id"); continue; }

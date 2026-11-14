@@ -235,6 +235,11 @@ impl<R: CompletedTurnReader> ApplicationPort for ScopedAutomationApplication<R> 
                             Ok(v) => v,
                             Err(_) => return Some(error("scope_unavailable")),
                         };
+                        match self.authority.migration_for_address(writer.connection(), &parent_address, &request_key) {
+                            Ok(decision) if decision.blocked => return Some(error("legacy_migration_quarantined")),
+                            Ok(_) => (),
+                            Err(_) => return Some(error("legacy_migration_unavailable")),
+                        }
                         writer.put_setting_once(
                             &Self::rule_scope(&principal.id.0),
                             &Self::rule_key(&rule_ref),
@@ -397,6 +402,11 @@ impl<R: CompletedTurnReader> ApplicationPort for ScopedAutomationApplication<R> 
                             Ok(v) => v,
                             Err(_) => return Some(error("scope_unavailable")),
                         };
+                        match self.authority.migration_for_address(writer.connection(), &parent_address, &request_key) {
+                            Ok(decision) if decision.blocked => return Some(error("legacy_migration_quarantined")),
+                            Ok(_) => (),
+                            Err(_) => return Some(error("legacy_migration_unavailable")),
+                        }
                         let payload = hex(&Sha256::digest(
                             serde_json::to_vec(&(&parent.0, &child.0, &event_id, &message))
                                 .unwrap_or_default(),

@@ -42,6 +42,9 @@ impl SendMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionActivity {
     Idle,
+    /// Exact persisted empty/terminal proof permits controlled Queue preparation.
+    /// This is not an observation of a resident idle runtime.
+    ColdPreparable,
     Busy { turn_id: String },
     Unknown,
 }
@@ -111,6 +114,9 @@ pub fn decide_send(
     }
     let expected_turn = match (&snapshot.activity, command.mode) {
         (SessionActivity::Unknown, _) => return Err(DecisionError::ActivityUnknown),
+        (SessionActivity::ColdPreparable, SendMode::Queue) => None,
+        (SessionActivity::ColdPreparable, SendMode::Start) => return Err(DecisionError::ModeRequiresIdle),
+        (SessionActivity::ColdPreparable, SendMode::Current) => return Err(DecisionError::ModeRequiresBusy),
         (SessionActivity::Idle, SendMode::Current) => return Err(DecisionError::ModeRequiresBusy),
         (SessionActivity::Busy { .. }, SendMode::Start) => {
             return Err(DecisionError::ModeRequiresIdle);
@@ -278,6 +284,9 @@ mod tests {
             ),
             (SessionActivity::Idle, SendMode::Start, Ok(None)),
             (SessionActivity::Idle, SendMode::Queue, Ok(None)),
+            (SessionActivity::ColdPreparable, SendMode::Queue, Ok(None)),
+            (SessionActivity::ColdPreparable, SendMode::Start, Err(DecisionError::ModeRequiresIdle)),
+            (SessionActivity::ColdPreparable, SendMode::Current, Err(DecisionError::ModeRequiresBusy)),
             (
                 SessionActivity::Busy {
                     turn_id: "t1".into(),

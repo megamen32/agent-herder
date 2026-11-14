@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 
@@ -28,6 +29,54 @@ def private_json(path):
     if info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
         raise ValueError('configuration must be private and owned by this user')
     return json.loads(path.read_text())
+
+
+def migration_binding(manifest):
+    """Read the epoch from exact private configuration bytes selected by the manifest."""
+    if 'canonical_migration' not in manifest:
+        return None
+    binding = manifest['canonical_migration']
+    if (not isinstance(binding, dict) or set(binding) != {'config', 'sha256'}
+            or not isinstance(binding['config'], str)
+            or not isinstance(binding['sha256'], str)
+            or not re.fullmatch(r'[a-f0-9]{64}', binding['sha256'])):
+        raise ValueError('invalid canonical migration binding')
+    path = Path(binding['config'])
+    if not path.is_absolute() or path.resolve() != path:
+        raise ValueError('canonical migration configuration path is not canonical')
+    selected = path.lstat()
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_mode & 0o077 or before.st_nlink != 1 or before.st_size > 1024 * 1024
+                or (selected.st_dev, selected.st_ino) != (before.st_dev, before.st_ino)):
+            raise ValueError('canonical migration configuration is not private')
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(1024 * 1024 + 1)
+        after = os.fstat(fd)
+        current = path.lstat()
+        stable = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if (stable(before) != stable(after) or stable(before) != stable(current)
+                or len(raw) != before.st_size or hashlib.sha256(raw).hexdigest() != binding['sha256']):
+            raise ValueError('canonical migration configuration changed or digest mismatched')
+    finally:
+        os.close(fd)
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('duplicate canonical migration configuration member')
+            result[key] = value
+        return result
+    config = json.loads(raw, object_pairs_hook=pairs)
+    epoch = config.get('epoch') if isinstance(config, dict) else None
+    if (not isinstance(config, dict) or type(config.get('version')) is not int or config['version'] != 1
+            or config.get('mode') != 'canonical' or not isinstance(epoch, str)
+            or not 0 < len(epoch.encode('utf-8')) <= 128 or epoch.strip() != epoch
+            or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in epoch)):
+        raise ValueError('invalid canonical migration epoch')
+    return {'config': str(path), 'config_sha256': binding['sha256'], 'epoch': epoch}
 
 
 def prepare(selector):
@@ -80,6 +129,7 @@ def prepare(selector):
                 or companion.get('kind') != item['kind']):
             raise ValueError('remote configuration mismatch')
         pinned[identity] = str(script)
+    migration = migration_binding(manifest)
     process_env = {}
     if 'process_worker' in manifest or 'process_config' in manifest:
         for key in ('process_worker', 'process_config'):
@@ -106,6 +156,9 @@ def prepare(selector):
     # An inherited process config cannot override a manifest with no such feature.
     env.pop('HERDER_PROCESS_CONFIG', None)
     env.pop('HERDER_PROCESS_WORKER', None)
+    env.pop('AGENT_HERDER_MIGRATION_EPOCH', None)
+    if migration is not None:
+        env['AGENT_HERDER_MIGRATION_EPOCH'] = migration['epoch']
     env.update(process_env)
     env['HERDER_NATIVE_COMMAND'] = manifest['core']
     return argv, env, {
@@ -116,6 +169,7 @@ def prepare(selector):
         'resource_bridge_sha256': manifest.get('sha256', {}).get('resource_bridge'),
         'process_remote_bridge_sha256': manifest.get('sha256', {}).get('process_remote_bridge'),
         'process_config_sha256': manifest.get('sha256', {}).get('process_config'),
+        'canonical_migration': migration,
     }
 
 

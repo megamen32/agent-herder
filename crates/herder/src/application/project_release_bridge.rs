@@ -493,6 +493,9 @@ impl Bridge {
         Ok(counter)
     }
     fn occupancy(&self, mapping: &ProjectMapping) -> Result<bool> {
+        if crate::ownership::migration_hold::read(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)?.is_some() {
+            return Ok(true);
+        }
         if claim::read_execution_binding(&self.authority, &mapping.resource_ref, AUTH)
             .map_err(unavailable)?
             .is_some_and(|b| b.resolved_receipt.is_none())
@@ -535,7 +538,8 @@ impl Bridge {
             "harness":owner["harness"],"sessionId":owner["nativeSessionId"]})
             })
             .unwrap_or(Value::Null);
-        let canonical_busy = effective.is_some() && lease.is_null();
+        let canonical_busy = (effective.is_some() || occupied) && lease.is_null();
+        let migration = crate::ownership::migration_hold::read(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)?;
         let current_claim = if canonical_busy {
             effective.map(public_claim).unwrap_or(Value::Null)
         } else {
@@ -544,7 +548,7 @@ impl Bridge {
         Ok(
             json!({"lease":lease,"remainingSeconds":remaining,"nextFence":counter.next_fence,
             "deploymentInProgress":occupied,"contact":contact,"resourceRef":mapping.resource_ref,
-            "revision":mapping.revision,"canonicalBusy":canonical_busy,"currentClaim":current_claim}),
+            "revision":mapping.revision,"canonicalBusy":canonical_busy,"currentClaim":current_claim,"migrationQuarantine":migration}),
         )
     }
     fn acquire(&self, mapping: &ProjectMapping, request: &BridgeRequest) -> Result<Value> {

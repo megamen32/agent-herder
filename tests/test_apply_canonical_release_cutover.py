@@ -94,6 +94,77 @@ class GuardedCutoverTest(unittest.TestCase):
     def apply(self):
         return MODULE.apply(self.ledger, self.config, self.bridge, self.proof, self.manifest, self.checkpoint, proc_root=self.proc)
 
+    def reviewed_foreign_hold(self):
+        from release_quarantine import lease_digest
+        project = str(self.root / "foreign/.git")
+        resource = self.authority / "resources/foreign"
+        resource.mkdir(mode=0o700)
+        self.write(resource / "resource.json", {"schema":"v1", "storage_id":"fixture", "resource_ref":"foreign",
+            "descriptor":{"resource_ref":"foreign", "revision":1, "external_ref":"foreign-release"}})
+        target = {"fleetDir":str(self.root / "foreign-fleet"), "unit":"foreign.service"}
+        lease = {"project":project, "owner":{"hostId":"old-node", "harness":"codex", "nativeSessionId":"legacy"},
+            "fence":9, "acquiredAt":1, "expiresAt":2, "tokenHash":"b" * 64, "deploymentTarget":target}
+        self.state["projects"][project] = {"fence":9, "sessions":{}, "lease":lease}
+        self.config_data["mappings"].append({"project":project, "resource_ref":"foreign", "revision":1,
+            "previous_fence":9, "deployment_target":target})
+        self.write(self.ledger, self.state)
+        self.write(self.config, self.config_data)
+        self.policy["ledger_sha256"] = self.sha(self.ledger)
+        self.policy["resource_quarantines"] = [{"project":project, "resource_ref":"foreign", "revision":1,
+            "fence":9, "lease_sha256":lease_digest(lease), "outcome":"unknown"}]
+        self.write(self.manifest, self.policy)
+        return project, resource, lease
+
+    def test_reviewed_unknown_transfers_to_exact_resource_hold_without_success(self):
+        project, resource, lease = self.reviewed_foreign_hold()
+        original = self.ledger.read_bytes()
+        self.apply()
+        hold_path = resource / "migration-hold.json"
+        hold = json.loads(hold_path.read_bytes())
+        self.assertEqual(hold["outcome"], "unknown")
+        self.assertEqual(hold["source_owner"], lease["owner"])
+        self.assertEqual(hold["source_fence"], 9)
+        self.assertEqual(Path(hold["archive"]["path"]).read_bytes(), original)
+        self.assertEqual(hold_path.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(hold_path.stat().st_nlink, 1)
+        sealed = json.loads(self.ledger.read_bytes())
+        self.assertEqual(sealed["projects"][project]["migrationQuarantine"]["outcome"], "unknown")
+        self.assertNotIn("lease", sealed["projects"][project])
+        self.assertFalse((resource / "owner.json").exists())
+
+    def test_changed_foreign_owner_is_not_covered_by_reviewed_hold(self):
+        project, resource, lease = self.reviewed_foreign_hold()
+        self.state["projects"][project]["lease"]["owner"]["nativeSessionId"] = "different"
+        self.write(self.ledger, self.state)
+        self.policy["ledger_sha256"] = self.sha(self.ledger)
+        self.write(self.manifest, self.policy)
+        before = self.ledger.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "owner_binding_changed"):
+            self.apply()
+        self.assertEqual(self.ledger.read_bytes(), before)
+        self.assertFalse((resource / "migration-hold.json").exists())
+
+    def test_crash_after_resource_hold_preserves_unknown_and_fresh_proposal_adopts_it(self):
+        project, resource, lease = self.reviewed_foreign_hold()
+        original = self.ledger.read_bytes()
+        write_checkpoint = MODULE.checkpoint_write
+        def fail_after_hold(path, record, phase):
+            write_checkpoint(path, record, phase)
+            if phase == "quarantined":
+                raise RuntimeError("fixture lost after quarantine")
+        with mock.patch.object(MODULE, "checkpoint_write", side_effect=fail_after_hold):
+            with self.assertRaisesRegex(RuntimeError, "lost after quarantine"):
+                self.apply()
+        self.assertEqual(self.ledger.read_bytes(), original)
+        hold_path = resource / "migration-hold.json"
+        held = hold_path.read_bytes()
+        self.assertEqual(MODULE.reconcile(self.checkpoint)["outcome"], "source_unchanged_requires_fresh_guard_and_proposal")
+        self.checkpoint = self.root / "fresh-cutover.json"
+        self.apply()
+        self.assertEqual(hold_path.read_bytes(), held)
+        self.assertEqual(hold_path.stat().st_nlink, 1)
+        self.assertEqual(json.loads(self.ledger.read_bytes())["projects"][project]["migrationQuarantine"]["outcome"], "unknown")
+
     def test_apply_archives_exact_source_and_retires_only_admitted_migration_lease(self):
         before = self.ledger.read_bytes()
         result = self.apply()

@@ -32,7 +32,7 @@ class AdapterMigrationContracts(unittest.TestCase):
         fixtures.RolloutContracts.setUp(self)
         self.source = "d" * 40
         self.base["remote_ahap_wrappers"] = []
-        self.base["component_provenance"].update(opencode_source_commit="b" * 40, zcode_source_commit="c" * 40)
+        self.base["component_provenance"].update(opencode_source_commit="b" * 40, zcode_source_commit="c" * 40, codex_source_commit="a" * 40)
         gate = self.root / "gate"
         candidate.create(gate, b"existing gate")
         self.old_profiles = {}
@@ -54,6 +54,22 @@ class AdapterMigrationContracts(unittest.TestCase):
             raw = json.dumps(profile, ensure_ascii=True, indent=3).replace("\n", "\r\n").encode() + b"\r\n"
             candidate.create(path, raw)
             self.old_profiles[str(path)] = raw
+        self.base["adapters"]["browser"] = self.base["adapters"]["codex"]
+        self.base["sha256"]["adapters"]["browser"] = self.base["sha256"]["adapters"]["codex"]
+        self.wrapper = self.old / "remote-codex.mjs"
+        candidate.create(self.wrapper, b"pinned remote transport", 0o400)
+        companion = Path(str(self.wrapper) + ".json")
+        candidate.create(companion, candidate.encoded({"nodeRef": "remote-node", "kind": "codex"}), 0o400)
+        self.base["remote_ahap_wrappers"] = [{
+            "node": "remote-node", "instance": "codex-remote", "kind": "codex",
+            "script": str(self.wrapper), "script_sha256": candidate.digest(self.wrapper),
+            "config_sha256": candidate.digest(companion)}]
+        self.remote_profile = self.root / "profile-codex-remote.json"
+        remote = json.loads(self.old_profiles[str(self.root / "profile-codex.json")])
+        remote["owner"].update(node="remote-node", instance="codex-remote", ahap_script=str(self.wrapper))
+        remote_raw = candidate.encoded(remote)
+        candidate.create(self.remote_profile, remote_raw)
+        self.old_profiles[str(self.remote_profile)] = remote_raw
         self.base["adapter"] = self.base["adapters"]["opencode"]
         self.base["sha256"]["adapter"] = self.base["sha256"]["adapters"]["opencode"]
         self.base_manifest.write_bytes(candidate.encoded(self.base))
@@ -65,7 +81,7 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.manifest = candidate.compose_manifest(self.base, self.new, self.source, self.base_manifest,
             candidate.digest(self.base_manifest), hashes, ["cargo", "build"])
         adapters = {}
-        for kind in ("opencode", "zcode"):
+        for kind in ("opencode", "zcode", "codex"):
             path = self.new / "fixture" / ("ahap-" + kind + "-runner.mjs")
             candidate.create(path, ("new reviewed " + kind).encode(), 0o400)
             adapters[kind] = {"previous_path": self.base["adapters"][kind],
@@ -125,7 +141,10 @@ class AdapterMigrationContracts(unittest.TestCase):
             old = self.old_profiles[item["previous_path"]]
             expected = candidate.profile_payload(old, self.base["adapters"][item["kind"]], self.manifest["adapters"][item["kind"]])
             self.assertEqual(Path(item["payload"]).read_bytes(), expected)
-        self.assertEqual(self.manifest["adapters"]["codex"], self.base["adapters"]["codex"])
+        self.assertNotEqual(self.manifest["adapters"]["codex"], self.base["adapters"]["codex"])
+        self.assertIn(str(self.remote_profile), self.new_selection["profiles"])
+        self.assertFalse(any(item["previous_path"] == str(self.remote_profile) for item in self.migration["profiles"]))
+        self.assertEqual(self.manifest["remote_ahap_wrappers"], self.base["remote_ahap_wrappers"])
         self.assert_unchanged()
         with self.assertRaises(FileNotFoundError):
             candidate.check_selector(self.new_selector, self.new_launcher)
@@ -193,8 +212,8 @@ class AdapterMigrationContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "omits or adds"):
             self.check()
         self.migration = original
-        self.manifest["adapters"]["codex"] = self.manifest["adapters"]["opencode"]
-        self.manifest["sha256"]["adapters"]["codex"] = self.manifest["sha256"]["adapters"]["opencode"]
+        self.manifest["adapters"]["browser"] = self.manifest["adapters"]["opencode"]
+        self.manifest["sha256"]["adapters"]["browser"] = self.manifest["sha256"]["adapters"]["opencode"]
         self.reseal()
         with self.assertRaisesRegex(ValueError, "unreviewed adapter"):
             self.check()
@@ -230,6 +249,36 @@ class AdapterMigrationContracts(unittest.TestCase):
             candidate.install(self.install_args, guard=self.guard)
         self.assertTrue(all(path.exists() for path in targets))
         self.assert_unchanged()
+
+    def test_retained_remote_wrapper_requires_exact_identity_and_bytes(self):
+        profile = json.loads(self.old_profiles[str(self.remote_profile)])
+        self.assertFalse(candidate.uses_reviewed_local_adapter(profile, self.base, {"codex"}))
+        for key, value in (("node", "other-node"), ("instance", "other-instance"),
+                           ("ahap_script", self.base["adapters"]["opencode"])):
+            changed = copy.deepcopy(profile)
+            changed["owner"][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "exact retained remote wrapper"):
+                candidate.uses_reviewed_local_adapter(changed, self.base, {"codex"})
+        self.wrapper.chmod(0o600)
+        self.wrapper.write_bytes(b"changed transport")
+        with self.assertRaisesRegex(ValueError, "identity or digest changed"):
+            candidate.uses_reviewed_local_adapter(profile, self.base, {"codex"})
+
+    def test_remote_wrapper_migration_cannot_be_resealed_as_local_update(self):
+        self.manifest["remote_ahap_wrappers"][0]["instance"] = "other-instance"
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "unreviewed remote wrapper replacement"):
+            self.check()
+        self.assert_unchanged()
+
+    def test_codex_retained_source_provenance_uses_exact_composite_baseline(self):
+        manifest = copy.deepcopy(self.base)
+        del manifest["component_provenance"]["codex_source_commit"]
+        manifest["component_provenance"]["unchanged_source_commit"] = "f" * 40
+        self.assertEqual(candidate.adapter_source(manifest, "codex"), "f" * 40)
+        del manifest["component_provenance"]["unchanged_source_commit"]
+        with self.assertRaisesRegex(ValueError, "exact component provenance"):
+            candidate.adapter_source(manifest, "codex")
 
     def test_later_core_only_release_does_not_reuse_old_profile_migration(self):
         hashes = {key: self.manifest["sha256"][key] for key in ("core", "process_worker", "process_config")}
@@ -282,17 +331,17 @@ class FreshBundlerContract(unittest.TestCase):
             old = root / "old.mjs"
             candidate.create(old, b"previous adapter")
             base = {"node": str(node), "sha256": {"node": candidate.digest(node),
-                    "adapters": {kind: candidate.digest(old) for kind in ("opencode", "zcode")}},
-                    "adapters": {kind: str(old) for kind in ("opencode", "zcode")}, "source_commit": sha}
+                    "adapters": {kind: candidate.digest(old) for kind in ("opencode", "zcode", "codex")}},
+                    "adapters": {kind: str(old) for kind in ("opencode", "zcode", "codex")}, "source_commit": sha}
             compilation = candidate.compile_typescript(source, output, sha, base)
-            adapters, evidence = candidate.bundle_adapters(source, output, sha, base, ["opencode", "zcode"], compilation)
+            adapters, evidence = candidate.bundle_adapters(source, output, sha, base, ["opencode", "zcode", "codex"], compilation)
             remote = candidate.bundle_process_remote_bridge(source, output, sha, base, compilation)
-            self.assertEqual(set(adapters), {"opencode", "zcode"})
+            self.assertEqual(set(adapters), {"opencode", "zcode", "codex"})
             self.assertEqual(evidence["source_commit"], sha)
             self.assertEqual(git("status", "--porcelain"), "")
             for item in adapters.values():
                 self.assertIn("fresh-shared-package-evidence", Path(item["path"]).read_text())
-            self.assertFalse((output / "fixture/ahap-codex-runner.mjs").exists())
+            self.assertFalse((output / "fixture/ahap-browser-runner.mjs").exists())
             self.assertEqual(remote["build"]["source_commit"], sha)
             self.assertEqual(remote["build"]["source_sha256"], candidate.digest(source / "src/herder-process-remote-bridge.ts"))
             self.assertEqual(remote["sha256"], candidate.digest(remote["path"]))

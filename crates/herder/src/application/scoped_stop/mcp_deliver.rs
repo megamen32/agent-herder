@@ -206,6 +206,7 @@ impl<R: NativeSessionReader> NativeSessionReader for IdleQueueReader<'_, R> {
             && !matches!(
                 snapshot.activity,
                 crate::domain::adapter::SessionActivity::Idle
+                    | crate::domain::adapter::SessionActivity::ColdPreparable
             )
         {
             snapshot.activity = crate::domain::adapter::SessionActivity::Unknown;
@@ -389,6 +390,13 @@ where
                     Some(_) => return Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside).map_err(|_|())?.is_some(){"task"}else{"unknown"}),
                     None=>(),
                 }
+                // Native reads/replays above remain available. Every fresh MCP
+                // handoff is machine-originated, regardless of caller metadata.
+                let migration = match authority.migration_decision(&instance,Some(&address.native_session_id),Some(&request_key)) {
+                    Ok(value) => value,
+                    Err(_) => return Ok("migration_unavailable"),
+                };
+                if migration.blocked { return Ok("migration_quarantined"); }
                 let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|())?;
                 let restricted = IdleQueueReader { inner: reader.as_ref(), mode };
                 let fenced=KeyBoundHandoff {inner:control.as_ref(),registry:delivery_keys.as_deref(),principal:&principal_id,session:&session.0,request_key:&request_key};
@@ -411,6 +419,12 @@ where
                 )),
                 Ok(Ok("refused")) => Some(CallToolResult::structured_error(
                     json!({"code":"delivery_refused","effect":"none"}),
+                )),
+                Ok(Ok("migration_quarantined")) => Some(CallToolResult::structured_error(
+                    json!({"code":"legacy_migration_quarantined","effect":"none"}),
+                )),
+                Ok(Ok("migration_unavailable")) => Some(CallToolResult::structured_error(
+                    json!({"code":"legacy_migration_unavailable","effect":"none"}),
                 )),
                 Ok(Ok("registry_unavailable")) => Some(CallToolResult::structured_error(
                     json!({"code":"canonical_key_registry_unavailable","effect":"none"}),

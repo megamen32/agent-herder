@@ -127,7 +127,7 @@ class SchedulerProofContracts(unittest.TestCase):
                 "source_commit": self.source, "capability": readiness.CAPABILITY,
                 "resume_after_authority": "canonical", "legacy_fallback": False},
             "canonical": {"config": str(self.config_path), "config_sha256": self.config_hash, "epoch": epoch,
-                "authority": readiness.AUTHORITY, "writer_drain_sha256": drain_hash}, "migration_ready": True, "probe": None}
+                "authority": readiness.AUTHORITY, "writer_drain_sha256": drain_hash}, "migration_ready": False, "readiness_scope": "preflight", "probe": None}
 
     def cleanup(self):
         if self.child.poll() is None:
@@ -157,6 +157,11 @@ class SchedulerProofContracts(unittest.TestCase):
             "provider_operation_id": "fixture-authenticated-read", "observed_at_unix_ms": readiness.now_ms(),
             "request": request, "response": response}
         if consumer:
+            response["migration_ready"] = True
+            response["readiness_scope"] = "operational"
+            if "quarantine" in response:
+                response["quarantine"]["native_verified"] = True
+                response["quarantine"]["authorities"] = copy.deepcopy(self.quarantine_authorities)
             value["job_id"] = "rollout-" + "c" * 32
             request["probe"] = {"harness": "codex", "native_session_id": "fixture-native-session"}
             response["probe"] = {"request": request["probe"], "gateBlocked": True,
@@ -165,6 +170,106 @@ class SchedulerProofContracts(unittest.TestCase):
                     "ruleRefs": ["process-rule:fixture"], "observedAt": stamp()}}
         value["response_sha256"] = readiness.json_hash(response)
         return value
+
+    def pin(self, path, value):
+        if path.exists():
+            path.chmod(0o600)
+        return save(path, value)
+
+    def activate_quarantine(self):
+        """Sealed, isolated old records; no real Herder source or native authority."""
+        epoch = self.config["epoch"]
+        jobs = self.root / "old-jobs"
+        jobs.mkdir(mode=0o700)
+        job_dir = jobs / "job-1"
+        job_dir.mkdir(mode=0o700)
+        job = job_dir / "meta.json"
+        save(job, {"job_id": "job-1", "state": "completed", "execute_resume": True,
+                   "resume": {"agent": "codex", "session_id": "fixture-native-session"},
+                   "resume_result": {"ok": True, "executed": True}})
+        job_dir.chmod(0o500)
+        jobs.chmod(0o500)
+        wait_id = "wait_" + "e" * 32
+        self.waits.chmod(0o700)
+        wait = self.waits / (wait_id + ".json")
+        save(wait, {"id": wait_id, "state": "delivery_unknown", "owner": {
+            "harness": "codex", "sessionId": "fixture-native-session"}, "dependencies": [],
+            "message": "fixture", "createdAt": stamp(), "completed": {}})
+        self.waits.chmod(0o500)
+        receipt_key = "fixture-old-resume"
+        self.pin(self.receipts, {"version": 1, "receipts": {receipt_key: {
+            "idempotency_key": receipt_key, "fingerprint": "f" * 64, "status": "ambiguous",
+            "target": {"agent": "codex", "session_id": "fixture-native-session"}}}})
+        self.drain["sources"].append(str(jobs))
+        self.drain["writers"][0]["sources"].append(str(jobs))
+        drain_hash = self.pin(self.drain_path, self.drain)
+        self.config["writer_drain"]["sha256"] = drain_hash
+
+        def digest(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+
+        def identity(path):
+            info = path.stat()
+            return {"device": str(info.st_dev), "inode": str(info.st_ino)}
+
+        waits_seal = {"version": 1, "kind": "herder-resume-after-retained", "epoch": epoch,
+            "directory": str(self.waits), "directory_identity": identity(self.waits), "sealed_at": stamp(),
+            "records": [{"id": wait_id, "sha256": digest(wait)}]}
+        self.config["resume_after"]["sha256"] = self.pin(Path(self.config["resume_after"]["snapshot"]), waits_seal)
+        receipts_seal = {"version": 1, "kind": "herder-resume-receipts-retained", "epoch": epoch,
+            "path": str(self.receipts), "file_identity": identity(self.receipts), "sealed_at": stamp(),
+            "sha256": digest(self.receipts)}
+        self.config["resume_receipts"]["sha256"] = self.pin(Path(self.config["resume_receipts"]["snapshot"]), receipts_seal)
+        jobs_seal = self.root / "jobs-snapshot.json"
+        jobs_hash = save(jobs_seal, {"version": 1, "kind": "herder-legacy-jobs-retained", "epoch": epoch,
+            "directory": str(jobs), "directory_identity": identity(jobs), "sealed_at": stamp(),
+            "records": [{"id": "job-1", "sha256": digest(job)}]})
+        sources = {str(path): digest(path) for path in (wait, self.receipts, job)}
+        inventory = hashlib.sha256("".join(sorted(
+            path + "\0" + value + "\n" for path, value in sources.items())).encode()).hexdigest()
+        profiles = [{"harness": "codex", "node_ref": "server-100", "instance_ref": "primary", "authority_generation": "generation-one"},
+                    {"harness": "opencode", "node_ref": "server-100", "instance_ref": "secondary", "authority_generation": "generation-two"}]
+        records = []
+        for ref, path, row, keys in [
+            ("resume-after:" + wait_id, wait, json.loads(wait.read_bytes()), [wait_id, "resume-after:" + wait_id]),
+            ("agent-resume-job:job-1", job, json.loads(job.read_bytes()), [
+                "job-1", "agent-resume:job:job-1", "compat-resume:v1:" + hashlib.sha256(b"agent-resume:job:job-1").hexdigest()]),
+            ("resume-receipt:" + hashlib.sha256(receipt_key.encode()).hexdigest(), self.receipts,
+             json.loads(self.receipts.read_bytes())["receipts"][receipt_key],
+             [receipt_key, "compat-resume:v1:" + hashlib.sha256(receipt_key.encode()).hexdigest()]),
+        ]:
+            records.append({"record_ref": ref, "source_path": str(path), "source_sha256": digest(path),
+                "record_sha256": hashlib.sha256(json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest(),
+                "request_keys": keys, "outcome": "unknown", "holds": [{
+                    "node_ref": p["node_ref"], "instance_ref": p["instance_ref"], "native_session_id": "fixture-native-session"} for p in profiles]})
+        snapshots, authorities = [], []
+        for index, profile in enumerate(profiles):
+            path = self.root / ("quarantine-" + str(index) + ".json")
+            digest_value = save(path, {"version": 1, "kind": "herder-legacy-quarantine", "epoch": epoch,
+                **{key: profile[key] for key in ("authority_generation", "node_ref", "instance_ref")},
+                "writer_drain_sha256": drain_hash, "inventory_sha256": inventory,
+                "sources": [{"path": path, "sha256": value} for path, value in sorted(sources.items())], "records": records})
+            snapshots.append({**profile, "path": str(path), "sha256": digest_value})
+            authorities.append({"version": 1, "configured": True, "epoch": epoch, "required_epoch": epoch,
+                **{key: profile[key] for key in ("authority_generation", "node_ref", "instance_ref")},
+                "snapshot_sha256": digest_value, "writer_drain_sha256": drain_hash, "inventory_sha256": inventory})
+        self.config["quarantine"] = {"inventory_sha256": inventory,
+            "legacy_jobs": {"directory": str(jobs), "snapshot": str(jobs_seal), "sha256": jobs_hash},
+            "snapshots": snapshots}
+        self.config_hash = self.pin(self.config_path, self.config)
+        self.response["canonical"].update(config_sha256=self.config_hash, writer_drain_sha256=drain_hash)
+        self.response["quarantine"] = {"version": 1, "configured": True, "local_verified": True,
+            "native_verified": False, "inventory_sha256": inventory,
+            "snapshots": [{key: p[key] for key in ("harness", "node_ref", "instance_ref", "authority_generation", "sha256")}
+                          for p in snapshots], "authorities": []}
+        self.quarantine_authorities = authorities
+        self.env["AGENT_HERDER_CANONICAL_CONFIG_SHA256"] = self.config_hash
+        self.child.terminate(); self.child.wait(timeout=5)
+        self.child.stdout.close(); self.child.stderr.close()
+        self.child = subprocess.Popen([str(self.node), str(self.tree / "index.js")], env=self.env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(self.child.stdout.readline().strip(), str(self.port))
+        self.response["process"].update(readiness.birth(self.child.pid))
 
     def verify(self, receipt=None):
         return readiness.validate_receipt(receipt or self.receipt(), self.source, stage="preflight")
@@ -252,6 +357,125 @@ class SchedulerProofContracts(unittest.TestCase):
         self.unit_file.write_bytes(b"[Service]\n# changed during rollout\n")
         with self.assertRaisesRegex(ValueError, "configuration changed"):
             readiness.observe(identity)
+
+    def test_quarantine_preflight_and_complete_native_consumer_are_distinct(self):
+        self.activate_quarantine()
+        preflight = self.verify()
+        self.assertEqual(preflight["readiness_scope"], "preflight")
+        self.assertFalse(preflight["quarantine"]["native_verified"])
+        receipt = self.receipt(consumer=True)
+        consumer = readiness.validate_receipt(receipt, self.source, stage="consumer", expected=preflight["identity"],
+            challenge=self.response["challenge"], job_id=receipt["job_id"])
+        self.assertTrue(consumer["quarantine"]["native_verified"])
+        self.assertEqual(len(consumer["quarantine"]["authorities"]), 2)
+
+    def test_quarantine_requires_every_pinned_native_authority(self):
+        self.activate_quarantine()
+        expected = self.verify()["identity"]
+        cases = ("absent", "missing", "duplicate", "epoch", "required_epoch", "authority_generation",
+                 "snapshot_sha256", "writer_drain_sha256", "inventory_sha256", "native_verified", "snapshot_omitted")
+        for change in cases:
+            with self.subTest(change=change):
+                receipt = self.receipt(consumer=True)
+                q = receipt["response"]["quarantine"]
+                if change == "absent":
+                    del receipt["response"]["quarantine"]
+                elif change == "missing":
+                    q["authorities"].pop()
+                elif change == "duplicate":
+                    q["authorities"][1] = copy.deepcopy(q["authorities"][0])
+                elif change == "native_verified":
+                    q["native_verified"] = False
+                elif change == "snapshot_omitted":
+                    q["snapshots"].pop()
+                else:
+                    q["authorities"][0][change] = "wrong-identity"
+                receipt["response_sha256"] = readiness.json_hash(receipt["response"])
+                with self.assertRaises(ValueError):
+                    readiness.validate_receipt(receipt, self.source, stage="consumer", expected=expected,
+                        challenge=self.response["challenge"], job_id=receipt["job_id"])
+
+    def test_quarantine_preflight_cannot_claim_operational_readiness(self):
+        self.activate_quarantine()
+        for change in ("migration_ready", "readiness_scope", "native_verified", "authorities"):
+            with self.subTest(change=change):
+                receipt = self.receipt()
+                if change == "migration_ready":
+                    receipt["response"][change] = True
+                elif change == "readiness_scope":
+                    receipt["response"][change] = "operational"
+                elif change == "native_verified":
+                    receipt["response"]["quarantine"][change] = True
+                else:
+                    receipt["response"]["quarantine"][change] = copy.deepcopy(self.quarantine_authorities)
+                receipt["response_sha256"] = readiness.json_hash(receipt["response"])
+                with self.assertRaises(ValueError):
+                    self.verify(receipt)
+
+    def test_quarantine_jobs_must_be_in_the_writer_drain(self):
+        self.activate_quarantine()
+        jobs = self.config["quarantine"]["legacy_jobs"]["directory"]
+        self.drain["sources"].remove(jobs)
+        self.drain["writers"][0]["sources"].remove(jobs)
+        digest = self.pin(self.drain_path, self.drain)
+        self.config["writer_drain"]["sha256"] = digest
+        self.response["canonical"].update(config_sha256=self.pin(self.config_path, self.config), writer_drain_sha256=digest)
+        with self.assertRaisesRegex(ValueError, "configured legacy jobs"):
+            self.verify()
+
+    def test_quarantine_snapshot_epoch_generation_and_record_coverage_are_pinned(self):
+        self.activate_quarantine()
+        profile = self.config["quarantine"]["snapshots"][0]
+        path = Path(profile["path"])
+        original = json.loads(path.read_bytes())
+        for change in ("epoch", "authority_generation", "inventory_sha256", "record_omitted", "source_omitted", "record_sha256"):
+            with self.subTest(change=change):
+                snapshot = copy.deepcopy(original)
+                if change == "record_omitted":
+                    snapshot["records"].pop()
+                elif change == "source_omitted":
+                    snapshot["sources"].pop()
+                elif change == "record_sha256":
+                    snapshot["records"][0][change] = "0" * 64
+                else:
+                    snapshot[change] = "wrong-identity"
+                profile["sha256"] = self.pin(path, snapshot)
+                with self.assertRaises(ValueError):
+                    readiness.quarantine(self.config)
+        profile["sha256"] = self.pin(path, original)
+        readiness.quarantine(self.config)
+
+    def test_quarantine_original_and_derived_request_keys_cannot_be_omitted(self):
+        self.activate_quarantine()
+        self.verify()
+        profile = self.config["quarantine"]["snapshots"][0]
+        path = Path(profile["path"])
+        original = json.loads(path.read_bytes())
+        for index, record in enumerate(original["records"]):
+            for key in record["request_keys"]:
+                with self.subTest(record=record["record_ref"], omitted=key):
+                    snapshot = copy.deepcopy(original)
+                    snapshot["records"][index]["request_keys"].remove(key)
+                    profile["sha256"] = self.pin(path, snapshot)
+                    with self.assertRaisesRegex(ValueError, "request key coverage"):
+                        readiness.quarantine(self.config)
+        profile["sha256"] = self.pin(path, original)
+        self.verify()
+
+    def test_quarantine_retained_jobs_cannot_change_or_be_omitted(self):
+        self.activate_quarantine()
+        jobs = Path(self.config["quarantine"]["legacy_jobs"]["directory"])
+        metadata = jobs / "job-1" / "meta.json"
+        original = metadata.read_bytes()
+        self.pin(metadata, {"job_id": "job-1", "state": "completed", "changed": True})
+        with self.assertRaisesRegex(ValueError, "source digest changed"):
+            readiness.quarantine(self.config)
+        self.pin(metadata, original)
+        jobs.chmod(0o700)
+        (jobs / "omitted-job").mkdir(mode=0o500)
+        jobs.chmod(0o500)
+        with self.assertRaisesRegex(ValueError, "directory inventory changed"):
+            readiness.quarantine(self.config)
 
     def test_fifo_never_blocks_the_readiness_verifier(self):
         fifo = self.root / "fifo-proof"

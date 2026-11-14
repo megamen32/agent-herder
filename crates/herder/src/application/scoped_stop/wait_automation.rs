@@ -545,6 +545,9 @@ impl WaitAutomationApplication {
             }
             saved
         } else {
+            let migration = self.authority.migration_for_address(parent.writer.connection(), &target.owner.address(), &key)
+                .map_err(|_| "legacy_migration_unavailable")?;
+            if migration.blocked { return Err("legacy_migration_quarantined"); }
             let now = now_ms()?;
             let due = match &original {
                 catalog::AutomationRule::Timer {
@@ -665,6 +668,14 @@ impl WaitAutomationApplication {
         }
         if !self.automatic_continuation {
             state.detail = Some("automatic_continuation_unsupported".into());
+            let _ = self.state_cas(rule, revision, &state)?;
+            return self.snapshot(rule);
+        }
+        let migration = self.authority.migration_decision(&rule.target.owner.address().instance,
+            Some(&rule.target.owner.native_session_id), Some(&rule.request_key))
+            .map_err(|_| "legacy_migration_unavailable")?;
+        if migration.blocked {
+            state.detail = Some(migration.reason.into());
             let _ = self.state_cas(rule, revision, &state)?;
             return self.snapshot(rule);
         }
@@ -939,6 +950,22 @@ impl WaitAutomationApplication {
         self.snapshot(&saved)
     }
     fn wait_status(
+        &self, identity: &ConnectionIdentity, native: &str, node: Option<&str>,
+    ) -> Result<Value> {
+        self.principal(identity)?;
+        if node.is_some_and(|n| n != self.source.instance.node.0) { return Err("owner_node_mismatch"); }
+        let decision = self.authority.migration_decision(&self.source.instance, Some(native), None)
+            .map_err(|_| "legacy_migration_unavailable")?;
+        let mut value = if decision.blocked {
+            json!({"version":1,"configured":true,"complete":true,"blocked":true,
+                "reason":decision.reason,"mapped":false,"sessionRefs":[],"ruleRefs":[],
+                "migrationRecordRefs":decision.record_refs,"observedAt":utc_millis(now_ms()?)?})
+        } else { self.wait_status_unquarantined(identity, native, node)? };
+        value["migration"] = decision.proof;
+        Ok(value)
+    }
+
+    fn wait_status_unquarantined(
         &self,
         identity: &ConnectionIdentity,
         native: &str,
@@ -1273,6 +1300,18 @@ pub(super) fn cancel_for_stop(
     }
     Ok(())
 }
+/// Resolve the original key under the same gate as the actual handoff.
+pub(super) fn migration_origin_key(c:&rusqlite::Connection,principal:&str,target:&str,key:&str,address:&crate::domain::address::SessionAddress)
+    ->std::result::Result<Option<String>,super::GateError>{
+    let Some(reference)=key.strip_prefix("wait-wake:") else{return Ok(None)};
+    let raw:String=c.query_row("SELECT value_json FROM settings WHERE scope=?1 AND setting_key=?2",
+        rusqlite::params![WaitAutomationApplication::scope(principal),WaitAutomationApplication::rule_key(reference)],|r|r.get(0))
+        .map_err(|_|super::GateError::Store)?;
+    let rule=WaitAutomationApplication::decode_rule(&raw,principal,Some(reference)).map_err(|_|super::GateError::Store)?;
+    if rule.session_ref!=target || rule.target.owner.address()!=*address{return Err(super::GateError::Invalid)}
+    Ok(Some(rule.request_key))
+}
+
 pub(super) fn wake_cancelled(
     c: &rusqlite::Connection,
     principal: &str,

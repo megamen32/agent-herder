@@ -1,3 +1,5 @@
+import { ZCODE_COLD_CONTINUATION, ZcodeColdContinuationError, readZcodeColdPreflight, assertZcodeColdPreflightUnchanged, assertZcodePreparedContinuation } from "./zcode-cold-continuation.js";
+import { prepareZcodeContinuationSubscription } from "./zcode-v4-queue.js";
 import { reserveCurrentTurnContext, currentTurnContextReceipt } from "../coordination-active-delivery.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -2328,6 +2330,102 @@ export class ZcodeAdapter implements HarnessAdapter {
     if (!session) return [];
     const sessions = await this.listSessions({ cwd: session.cwd });
     return sessions.filter((candidate) => candidate.meta?.parentSessionId === id);
+  }
+
+  /** Read-only eligibility for the core's typed cold Queue decision. This
+   * never substitutes persisted terminal error for a live idle observation. */
+  get nativeColdContinuationSupported(): boolean {
+    return this.nativeReadWithoutActivation && this.useLocalTurnMetadata
+      && typeof this.client.callIfReady === "function" && typeof this.client.listen === "function";
+  }
+
+  async getQueuedContinuationState(id: string): Promise<AgentSession | null> {
+    const session = await this.getSession(id);
+    if (!session || !this.nativeColdContinuationSupported || session.meta?.nativeLoaded === true) return session;
+    const unavailable = (): AgentSession => ({ ...session, meta: { ...session.meta, nativeStateObserved: false } });
+    try {
+      const before = readZcodeColdPreflight(this.localDbPath, id);
+      const workspace = before.workspace;
+      this.sessionWorkspaces.set(id, workspace);
+      try {
+        const current = await this.client.callIfReady!("zcode-agent", "readSession", [{ ...workspace, sessionId: id, runtimePolicy: "existing-only", messageLimit: 1 }]);
+        if (sessionInfoFromPayload(current)?.sessionId !== id) return unavailable();
+        return await this.getSession(id);
+      } catch (error) {
+        if (zcodeTranscriptFailure(error) !== "runtime_not_ready") return unavailable();
+      }
+      const held = await getHumanStopStore().isHeld("zcode", id);
+      if (held) return { ...unavailable(), meta: { ...session.meta, nativeStateObserved: false, humanStop: true } };
+      const fresh = readZcodeColdPreflight(this.localDbPath, id);
+      assertZcodeColdPreflightUnchanged(before, fresh);
+      return { ...session, meta: { ...session.meta, nativeStateObserved: false, nativeLoaded: false,
+        nativeColdContinuation: { contract: ZCODE_COLD_CONTINUATION, sessionId: id,
+          state: "cold_preparable", fingerprint: fresh.fingerprint, observedAtMs: Date.now() } } };
+    } catch {
+      return unavailable();
+    }
+  }
+
+  /** Called only by the trusted AHAP Queue handoff. The Rust owner has already
+   * durably entered handing_off and holds authority, HumanStop and quarantine
+   * gates throughout this bounded operation. A V4 subscription is the native
+   * residency lease; neither a transport connection nor a prior read is one. */
+  async sendHerderQueuedMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    const inputId = options.inputId;
+    const refused = (reason: string): SendMessageResult => ({ ok: false, admitted: false,
+      notSubmitted: true, nonRetryable: true, ...(inputId ? { inputId } : {}), error: reason });
+    if (!this.nativeColdContinuationSupported || !options.queue || options.steer
+      || !inputId || !inputId.trim() || /[\u0000-\u001f\u007f]/u.test(inputId)
+      || options.durableUserDelivery || options.recoveryBoundary) {
+      return refused("ZCode controlled Queue preparation is unavailable for this request.");
+    }
+    let preparationAttempted = false;
+    let lease: Awaited<ReturnType<typeof prepareZcodeContinuationSubscription>> | undefined;
+    try {
+      const stopStore = getHumanStopStore();
+      if (await stopStore.isHeld("zcode", id)) return refused("ZCode session is explicitly stopped.");
+      const before = readZcodeColdPreflight(this.localDbPath, id);
+      const workspace = before.workspace;
+      this.sessionWorkspaces.set(id, workspace);
+      try {
+        const current = await this.client.callIfReady!("zcode-agent", "readSession", [{ ...workspace, sessionId: id, runtimePolicy: "existing-only", messageLimit: 1 }]) as ZcodeSnapshot;
+        if (sessionInfoFromPayload(current)?.sessionId !== id || current.session?.status !== "idle"
+          || current.runtime?.activeTurnId || current.runtime?.activeTurnKind
+          || !Array.isArray(current.runtime?.pendingRequestIds) || current.runtime.pendingRequestIds.length) {
+          return refused("ZCode current native runtime does not permit idle Queue preparation.");
+        }
+      } catch (error) {
+        if (zcodeTranscriptFailure(error) !== "runtime_not_ready") return refused("ZCode native runtime state is unverified.");
+      }
+      if (await stopStore.isHeld("zcode", id)) return refused("ZCode session is explicitly stopped.");
+      assertZcodeColdPreflightUnchanged(before, readZcodeColdPreflight(this.localDbPath, id));
+      // No await between the final persisted fence and the official lifecycle
+      // boundary. This call can restore a cold session and is never a plain read.
+      preparationAttempted = true;
+      lease = await prepareZcodeContinuationSubscription(this.client, workspace, id);
+      const current = await this.client.callIfReady!("zcode-agent", "readSession", [{ ...workspace, sessionId: id, runtimePolicy: "existing-only", messageLimit: 1 }]);
+      assertZcodePreparedContinuation(before, current, lease.snapshot);
+      assertZcodeColdPreflightUnchanged(before, readZcodeColdPreflight(this.localDbPath, id));
+      if (await stopStore.isHeld("zcode", id)) throw new ZcodeColdContinuationError("native_human_stop");
+      const queue = await lease.fresh();
+      const finalRuntime = await this.client.callIfReady!("zcode-agent", "readSession", [{ ...workspace, sessionId: id, runtimePolicy: "existing-only", messageLimit: 1 }]);
+      assertZcodePreparedContinuation(before, finalRuntime, queue);
+      if (await stopStore.isHeld("zcode", id)) throw new ZcodeColdContinuationError("native_human_stop");
+      assertZcodeColdPreflightUnchanged(before, readZcodeColdPreflight(this.localDbPath, id));
+      const result = await this.sendMessage(id, options);
+      if (result.ok !== true || result.notSubmitted === true) {
+        return { ...result, notSubmitted: undefined, admission: "unknown", admissionUnknown: true, nonRetryable: true };
+      }
+      return result;
+    } catch (error) {
+      const code = error instanceof ZcodeColdContinuationError ? error.code : "native_preparation_unknown";
+      return preparationAttempted
+        ? { ok: false, inputId, admission: "unknown", admissionUnknown: true, nonRetryable: true,
+          error: "ZCode Queue preparation crossed the lifecycle boundary: " + code }
+        : refused("ZCode Queue preparation refused: " + code);
+    } finally {
+      await lease?.close();
+    }
   }
 
   async sendMessage(id: string, options: SendMessageOptions & {workspaceCrashBoundary?:WorkspaceCrash}): Promise<SendMessageResult> {

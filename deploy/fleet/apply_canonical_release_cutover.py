@@ -20,6 +20,7 @@ import uuid
 
 from prepare_canonical_release_cutover import prepare
 from release_gate import ReleaseGate
+from release_quarantine import planned_holds, publish_holds
 
 
 def digest(data):
@@ -325,14 +326,26 @@ def apply(ledger, config, bridge, proof, manifest, checkpoint, proc_root=Path("/
                     proposal = prepare(ledger, config, bridge)
                     if proposal["unmapped_projects"]:
                         raise RuntimeError("cutover_mapping_inventory_incomplete")
-                    blockers = [b for b in proposal["blockers"] if not (b.get("project") == own_project
-                                and b.get("reason") == "legacy_owner_requires_reconciliation")]
+                    archive = checkpoint.parent / (checkpoint.name + ".legacy.json")
+                    quarantines = planned_holds(policy, state, config_data, archive, before, own_project)
+                    held_projects = {q["project"] for q in quarantines}
+                    held_resources = {q["resource_ref"] for q in quarantines}
+                    blockers = [b for b in proposal["blockers"] if not (
+                        b.get("project") in held_projects | {own_project}
+                        and b.get("reason") == "legacy_owner_requires_reconciliation")
+                        and not (b.get("resource_ref") in held_resources
+                                 and b.get("reason") == "canonical_migration_occupancy_unknown")]
                     if blockers:
                         raise RuntimeError("cutover_other_ownership_requires_reconciliation")
                     sealed = json.loads(before)
                     # Release exactly the admitted migration generation. Every
                     # prior record, including its proof hash, remains in archive.
                     del sealed["projects"][own_project]["lease"]
+                    for quarantine in quarantines:
+                        del sealed["projects"][quarantine["project"]]["lease"]
+                        sealed["projects"][quarantine["project"]]["migrationQuarantine"] = {
+                            "outcome": "unknown", "resourceRef": quarantine["resource_ref"],
+                            "evidenceSha256": quarantine["sha256"]}
                     sealed["version"] = 2
                     sealed["canonical"] = {"version": 1, "config": str(config), "bridge": str(bridge), "seal_id": config_data["seal_id"]}
                     after = encoded(sealed)
@@ -344,6 +357,7 @@ def apply(ledger, config, bridge, proof, manifest, checkpoint, proc_root=Path("/
                               "manifest_sha256": digest(manifest.read_bytes()), "manifest": str(manifest),
                               "retired_migration_owner": {"project": own_project, "owner": own_lease["owner"], "fence": own_lease["fence"]},
                               "resource_fence_seeds": proposal["resource_fence_seeds"],
+                              "resource_quarantines": [{k: q[k] for k in ("project", "resource_ref", "path", "sha256")} for q in quarantines],
                               "inventory": [{"project": p, "fence": v.get("fence", 0), "record_sha256": digest(encoded(v)),
                                   "mapping": next(m for m in config_data["mappings"] if m["project"] == p)} for p, v in state["projects"].items()]}
                     checkpoint_write(checkpoint, record, "prepared")
@@ -351,6 +365,7 @@ def apply(ledger, config, bridge, proof, manifest, checkpoint, proc_root=Path("/
                     with os.fdopen(fd, "wb") as output:
                         output.write(before)
                         output.flush()
+                        os.fchmod(output.fileno(), 0o400)
                         os.fsync(output.fileno())
                     parent = os.open(archive.parent, os.O_RDONLY | os.O_DIRECTORY)
                     try:
@@ -358,6 +373,12 @@ def apply(ledger, config, bridge, proof, manifest, checkpoint, proc_root=Path("/
                     finally:
                         os.close(parent)
                     checkpoint_write(checkpoint, record, "archived")
+                    # The same registry/effect/claim barriers remain held. A
+                    # crash here leaves conservative native occupancy and the
+                    # unchanged original ledger, never a newly free resource.
+                    publish_holds(quarantines)
+                    if quarantines:
+                        checkpoint_write(checkpoint, record, "quarantined")
                     barrier()
                     verify_runtime(policy, proc_root)
                     gate.check()
@@ -383,6 +404,12 @@ def reconcile(checkpoint):
                 raise RuntimeError("cutover_archive_evidence_changed")
         elif record.get("phase") != "prepared" or digest(current) != record["source_sha256"]:
             raise RuntimeError("cutover_archive_evidence_missing")
+        for item in record.get("resource_quarantines", []):
+            path = Path(item["path"])
+            if not path.exists() and record.get("phase") in ("prepared", "archived"):
+                continue
+            if digest(private_file(path).read_bytes()) != item["sha256"] or path.stat().st_mode & 0o777 != 0o400:
+                raise RuntimeError("cutover_quarantine_evidence_changed")
         if digest(current) == record["source_sha256"]:
             outcome = "source_unchanged_requires_fresh_guard_and_proposal"
         elif digest(current) == record["sealed_sha256"]:
