@@ -63,12 +63,14 @@ async function consolidatedHerder(): Promise<Client> {
 }
 
 describe("peer capability registry stays discoverable", () => {
-  it("advertises the machine endpoints even under policy hiding", async () => {
+  it("advertises native proofs while keeping mesh delivery names private", async () => {
     const client = await consolidatedHerder();
     const names = (await client.listTools()).tools.map(tool => tool.name);
-    for (const endpoint of ["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents"]) {
+    for (const endpoint of ["mesh_snapshot", "deliver", "fleet_node_info", "fleet_session_page", "list_agents"]) {
       expect(names).toContain(endpoint);
     }
+    expect(names).not.toContain("mesh_deliver");
+    expect(names).not.toContain("mesh_route");
   });
 
   it("proves mesh capability from the projected catalog a real peer advertises (GPTAdmin discovery)", async () => {

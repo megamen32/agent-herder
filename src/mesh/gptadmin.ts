@@ -1,7 +1,9 @@
 import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {createHash} from "node:crypto";
+import {hostname} from "node:os";
 import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
-import {addressKey,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
+import {normalizeHostId} from "../coordination-notes.js";
+import {addressKey,parseNativeReceipt,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
 import type {FleetSessionControl,FleetSessionResponse} from './fleet-session-control.js';
 import {checkDeliveryModel,deliveryRefusalText,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
@@ -24,7 +26,15 @@ export interface MeshDelivery {target:MeshAddress;sender:MeshAddress;inputId:str
 export interface MeshHostReceipt {hostId:string;target?:string;state:"available"|"unavailable";reason?:string;complete?:boolean;harnesses?:unknown[]}
 export interface MeshDiscovery {sessions:MeshSession[];hosts:MeshHostReceipt[];complete:boolean;limited:boolean}
 type DeliveryReceipt=NativeReceipt & {reason?:string};
-type Route={target:string;nativeIds:Set<string>;projects:Map<string,string|null>};
+type Route={target:string;tool:"deliver"|"send_message"|"mesh_deliver";nativeIds:Set<string>;projects:Map<string,string|null>};
+export function canonicalMeshHostId(value:string):string{
+  const raw=value.trim(),lower=raw.toLowerCase();
+  if(lower==="localhost"||lower==="127.0.0.1"||lower==="::1"||lower==="[::1]"
+    ||lower==="remote-ssh-discovered:104.bezrabotnyi.com"||lower==="104.bezrabotnyi.com"
+    ||lower==="remote-ssh-discovered:44.bezrabotnyi.com"||lower==="44.bezrabotnyi.com"
+    ||lower===hostname().toLowerCase()) return normalizeHostId(raw,hostname());
+  return raw;
+}
 const shortReason=(value:string)=>value.slice(0,192).replace(/[\x00-\x1f\x7f]/g,"").slice(0,96);
 const display=(value:unknown,limit:number,fallback="")=>typeof value==="string"?value.slice(0,limit*2).replace(/[\x00-\x1f\x7f]/g,"").slice(0,limit):fallback;
 export function projectPeerSession(raw:unknown,hostId:string):MeshSession|null{
@@ -105,7 +115,8 @@ export class GptAdminMesh {
           projects.set(key,s.project.currentCwd??s.project.launchCwd??null);
         }
         sessions.push(...projected);
-        if(tools.some(t=>t.name==="mesh_deliver"))freshRoutes.set(hostId,{target:peer.server_id,nativeIds,projects});
+        const deliveryTool=tools.some(t=>t.name==="deliver")?"deliver":tools.some(t=>t.name==="send_message")?"send_message":tools.some(t=>t.name==="mesh_deliver")?"mesh_deliver":undefined;
+        if(deliveryTool)freshRoutes.set(hostId,{target:peer.server_id,tool:deliveryTool,nativeIds,projects});
         const capabilities=compactHarnesses(snapshot.harnesses);
         receipt={hostId,target:peer.server_id,state:"available",complete:snapshot.complete===true&&!invalidSession&&!capabilities.partial&&!truncated,harnesses:capabilities.rows,...(invalidSession?{reason:"invalid_peer_session"}:capabilities.partial?{reason:"peer_capabilities_incomplete"}:{})};
       }catch(error){receipt.reason=error instanceof Error?shortReason(error.message):"mesh_read_failed";}
@@ -117,7 +128,12 @@ export class GptAdminMesh {
     return {sessions:sessions.sort((a,b)=>addressKey(a.address).localeCompare(addressKey(b.address))).slice(0,limit),hosts:hosts.sort((a,b)=>a.hostId.localeCompare(b.hostId)),complete:!outputLimited&&hosts.every(h=>h.state==="available"&&h.complete),limited:outputLimited};
   }
   async deliver(request:MeshDelivery):Promise<DeliveryReceipt>{
-    const key=addressKey(request.target)+":"+request.inputId;
+    request={...request,
+      target:{...request.target,hostId:canonicalMeshHostId(request.target.hostId)},
+      sender:{...request.sender,hostId:canonicalMeshHostId(request.sender.hostId)},
+    };
+    const targetKey=addressKey(request.target);
+    const key=targetKey+":"+request.inputId;
     addressKey(request.sender);
     if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("Stable inputId and a 1..4000 character delta are required");
     const digest=createHash("sha256").update(JSON.stringify(request)).digest("hex");
@@ -125,6 +141,16 @@ export class GptAdminMesh {
     if(previous)return previous.digest===digest?previous.result:{state:"not_attempted",inputId:request.inputId,retryable:false,reason:"input_id_conflict"};
     if(this.inputs.size>=4096)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_input_capacity"};
     let route=this.routes.get(request.target.hostId);
+    if(route&&!route.nativeIds.has(targetKey)){
+      // A host-level discovery receipt is never enough to write to an
+      // unlisted native session. Re-read that exact address when the hub can;
+      // otherwise leave the intent unattempted instead of guessing.
+      if(this.hub.readSession){
+        try{route=await this.resolveExactRoute(request.target);}catch(error){return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:error instanceof Error?shortReason(error.message):"mesh_route_unavailable"};}
+      }else{
+        return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"native_session_not_verified"};
+      }
+    }
     // A known exact address needs owner identity, schema and its own current
     // session read, not a historical snapshot of every session on every host.
     if(!route&&this.hub.readSession){
@@ -139,7 +165,17 @@ export class GptAdminMesh {
       try{
         // One call only: a timeout or lost admission response is UNKNOWN, never replayed.
         const message=await this.prepareMessage(request,route);
-        const reply=unwrapResult(await this.bounded(this.hub.call(route.target,"mesh_deliver",{...request,message},createHash("sha256").update(key).digest("hex"))));
+        const wireArgs=route.tool==="deliver"
+          ? {...request,message}
+          : route.tool==="send_message"
+          ? {sessionId:request.target.nativeSessionId,harness:request.target.harness,hostId:request.target.hostId,inputId:request.inputId,message,mode:"queue",meshSender:request.sender}
+          : {...request,message};
+        const raw=await this.bounded(this.hub.call(route.target,route.tool,wireArgs,createHash("sha256").update(key).digest("hex")));
+        if(route.tool==="send_message"){
+          const receipt=parseNativeReceipt(raw,request.inputId);
+          return JSON.stringify(receipt);
+        }
+        const reply=unwrapResult(raw);
         if(reply.inputId!==request.inputId||!["queued","admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="admitted"&&typeof reply.turnId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="queued"&&typeof reply.jobId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
@@ -159,14 +195,15 @@ export class GptAdminMesh {
     if(peers.length!==1)throw new Error("mesh_route_owner_ambiguous");
     const target=peers[0].server_id,schema=unwrapResult(await this.bounded(this.hub.schema(target)));
     const tools=Array.isArray(schema.tools)?schema.tools as Array<{name:string}>:[];
-    if(!tools.some(t=>t.name==="mesh_deliver")||!tools.some(t=>t.name==="fleet_node_info"))throw new Error("mesh_route_capability_missing");
+    const deliveryTool=tools.some(t=>t.name==="deliver")?"deliver":tools.some(t=>t.name==="send_message")?"send_message":tools.some(t=>t.name==="mesh_deliver")?"mesh_deliver":undefined;
+    if(!deliveryTool||!tools.some(t=>t.name==="fleet_node_info"))throw new Error("mesh_route_capability_missing");
     const owner=unwrapResult(await this.bounded(this.hub.call(target,"fleet_node_info",{})));
     if(owner.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
     const read=unwrapResult(await this.bounded(this.hub.readSession!(target,address.harness,address.nativeSessionId)));
     if(read.hostId!==undefined&&read.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
     const session=(read.details as {session?:Record<string,unknown>}|undefined)?.session??read.session as Record<string,unknown>|undefined;
     if(!session||session.id!==address.nativeSessionId||session.harness!==address.harness)throw new Error("native_session_identity_mismatch");
-    const key=addressKey(address);return {target,nativeIds:new Set([key]),projects:new Map([[key,typeof session.cwd==="string"?session.cwd:null]])};
+    const key=addressKey(address);return {target,tool:deliveryTool,nativeIds:new Set([key]),projects:new Map([[key,typeof session.cwd==="string"?session.cwd:null]])};
   }
   /**
    * The message of one delivery to another machine.

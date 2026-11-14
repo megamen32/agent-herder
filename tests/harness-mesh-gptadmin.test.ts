@@ -32,6 +32,23 @@ describe("GPTAdmin native mesh (focused integration; expected 5s, maximum 30s)",
   expect((await fresh.deliver({target:a,sender:{...a,nativeSessionId:"source"},inputId:"after-mcp-reconnect",message:"necessary delta"})).state).toBe("admitted");
   expect(h.call.mock.calls.filter(call=>call[1]==="mesh_deliver")).toHaveLength(1);
  });
+ it("uses ordinary send_message when the peer does not publish mesh delivery names",async()=>{
+  const h=hub();
+  h.schema.mockResolvedValue({tools:[{name:"mesh_snapshot"},{name:"send_message"},{name:"fleet_node_info"}]});
+  h.call.mockImplementation(async(_target:string,name:string,args:Record<string,unknown>)=>name==="mesh_snapshot"
+   ? {hostId:"100",sessions:[{address:a,project:{launchCwd:"/launch",currentCwd:"/actual",source:"native"},status:"running",title:"test",lastActivity:"now"}],harnesses:[],complete:true}
+   : {content:[{type:"text",text:"Native admission receipt: "+JSON.stringify({admitted:true,inputId:args.inputId,turnId:"ordinary-turn"})}]});
+  const m=new GptAdminMesh(h);await m.discover();
+  await expect(m.deliver({target:a,sender:{...a,nativeSessionId:"source"},inputId:"ordinary-wire",message:"delta"})).resolves.toMatchObject({state:"admitted",turnId:"ordinary-turn"});
+  expect(h.call.mock.calls.filter(call=>call[1]==="send_message")).toHaveLength(1);
+  expect(h.call.mock.calls.find(call=>call[1]==="send_message")?.[2]).toMatchObject({hostId:"100",harness:"codex",sessionId:"native",meshSender:{nativeSessionId:"source"}});
+ });
+ it("does not write to a native session absent from the verified peer snapshot",async()=>{
+  const h=hub(),m=new GptAdminMesh(h);await m.discover();
+  const receipt=await m.deliver({target:{...a,nativeSessionId:"unverified-native"},sender:{...a,nativeSessionId:"source"},inputId:"unverified-session",message:"must not guess"});
+  expect(receipt).toMatchObject({state:"not_attempted",retryable:true,reason:"native_session_not_verified"});
+  expect(h.call.mock.calls.filter(call=>call[1]==="mesh_deliver")).toHaveLength(0);
+ });
  it("projects oversized external capability diagnostics into known bounded fields",async()=>{
   const h=hub();
   const project={launchCwd:"/launch",currentCwd:null,source:"unverified"};

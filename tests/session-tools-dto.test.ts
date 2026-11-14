@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hostname } from "node:os";
 import { registerSessionTools } from "../src/mcp/session-tools.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
@@ -81,6 +82,17 @@ async function connectHumanStopConsumer(session: AgentSession) {
 }
 
 describe("session tool DTOs", () => {
+  it("accepts the exact target envelope on ordinary deliver and keeps the trusted ingress guard", async () => {
+    const client = await connect();
+    const result = await client.callTool({ name: "deliver", arguments: {
+      target: { hostId: hostname(), harness: "opencode", nativeSessionId: "sess-1" },
+      sender: { hostId: "sender-host", harness: "codex", nativeSessionId: "sender-session" },
+      inputId: "target-envelope-1", message: "canonical delivery",
+    } });
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({ state: "not_attempted", retryable: false, reason: "authenticated_mesh_ingress_required", inputId: "target-envelope-1" });
+  });
+
   it("routes exact scoped session sends through a per-call adapter and denies unresolved scope without ordinary fallback", async () => {
     const session = { ...fixtureSession("scoped-1"), harness: "codex" as const, status: "running" as const, cwd: process.cwd() };
     const ordinarySend = vi.fn(async () => ({ ok: true }));
@@ -257,7 +269,10 @@ describe("session tool DTOs", () => {
     const session = { ...fixtureSession("held-zcode"), harness: "zcode" as const };
     const { client, createSession, resumeSession } = await connectHumanStopConsumer(session);
     const tools = (await client.listTools()).tools;
-    const properties = (name: string) => tools.find((tool) => tool.name === name)?.inputSchema?.properties as Record<string, unknown>;
+    const properties = (name: string) => {
+      const schema = tools.find((tool) => tool.name === name)?.inputSchema as any;
+      return Object.assign({}, schema?.properties, ...(schema?.anyOf ?? []).map((candidate: any) => candidate?.properties ?? {})) as Record<string, unknown>;
+    };
 
     expect(properties("send_message")).toEqual(expect.objectContaining({
       humanRequested: expect.any(Object), fromSessionId: expect.any(Object), fromHarness: expect.any(Object),

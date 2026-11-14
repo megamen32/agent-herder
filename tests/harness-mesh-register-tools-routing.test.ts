@@ -39,18 +39,17 @@ const request = (hostId: string) => ({
   inputId: "routing-hint-test", message: "read-only route fixture",
 });
 
-it("returns the mesh_route hint for remote targets without calling native adapters", async () => {
+it("returns the ordinary deliver hint for remote compatibility calls without calling native adapters", async () => {
   const { client, getSession, sendMessage } = await registeredMesh({ transport: true });
   const tools = await client.listTools();
   const descriptions = Object.fromEntries(tools.tools.map((tool) => [tool.name, tool.description || ""]));
-  expect(descriptions.mesh_deliver).toContain("on this host only");
-  expect(descriptions.mesh_deliver).toContain("mesh_route");
-  expect(descriptions.mesh_route).toContain("remote host");
+  expect(descriptions.mesh_deliver).toContain("ordinary deliver");
+  expect(descriptions.mesh_route).toContain("ordinary deliver");
   const result = await client.callTool({ name: "mesh_deliver", arguments: request("MacBook-Pro-User.local") });
   const receipt = JSON.parse(result.content[0]?.text ?? "{}");
   expect(receipt).toMatchObject({
-    state: "not_attempted", retryable: true, reason: "remote_target_requires_mesh_route",
-    suggestedTool: "mesh_route", requestedHost: "MacBook-Pro-User.local", localHost: "roomhacker-server-100",
+    state: "not_attempted", retryable: true, reason: "remote_target_use_deliver",
+    suggestedTool: "deliver", requestedHost: "MacBook-Pro-User.local", localHost: "roomhacker-server-100",
   });
   expect(getSession).not.toHaveBeenCalled();
   expect(sendMessage).not.toHaveBeenCalled();

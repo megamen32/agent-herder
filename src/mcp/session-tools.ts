@@ -55,7 +55,8 @@ import { startJobResult } from "./results.js";
 import { readModelQuotas } from "../model-quota.js";
 import type { IntegratorFleetRuntime } from "../integrator-fleet-runtime.js";
 import { coordinationNotes, normalizeHostId, type CoordinationNoteStore } from "../coordination-notes.js";
-import type { GptAdminTransport } from "../mesh/gptadmin.js";
+import { canonicalMeshHostId, GptAdminMesh, type GptAdminTransport, type MeshDelivery } from "../mesh/gptadmin.js";
+import { LocalHarnessMesh } from "../mesh/local.js";
 import { unwrapResult, type MeshAddress } from "../mesh/protocol.js";
 import { FleetDirectTransport, fleetPeers, type DirectPeer } from "../mesh/fleet-direct-transport.js";
 import { composeSessionTitle, mergeSessionLabel, writeSessionLabel } from "../session-labels.js";
@@ -65,6 +66,24 @@ import { applySessionTarget } from "../session-target.js";
 import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]);
+const deliveryAddressSchema = z.object({
+  hostId: z.string().trim().min(1).max(512),
+  harness: z.string().trim().min(1).max(64),
+  nativeSessionId: z.string().trim().min(1).max(512),
+}).strict();
+/** Exact cross-host delivery contract used by the ordinary session tools. */
+const targetDeliverySchema = z.object({
+  target: deliveryAddressSchema,
+  sender: deliveryAddressSchema,
+  inputId: z.string().trim().min(1).max(256),
+  message: z.string().min(1).max(4000).refine((message) => message.trim().length > 0, "Message cannot be blank"),
+}).strict();
+const universalDeliverySchema = z.union([DeliverSchema, targetDeliverySchema]);
+const universalSendMessageSchema = z.union([SendMessageSchema, targetDeliverySchema]);
+
+function isTargetDelivery(value: unknown): value is MeshDelivery {
+  return Boolean(value && typeof value === "object" && "target" in value && "sender" in value && "inputId" in value && "message" in value);
+}
 
 const sessionSchema = z.object({
   id: z.string(), harness: harnessSchema, status: z.enum(["running", "idle", "needs_input", "stopped", "error"]), title: z.string(), cwd: z.string(), hostId: z.string(), launchCwd: z.string().optional(), lastActivity: z.string(),
@@ -134,6 +153,33 @@ export function registerSessionTools(server: McpServer, deps: {
       return adapter ? adapter.sendMessage(sessionId, options) : { ok: false, notSubmitted: true, error: "Адаптер отправки недоступен" };
     },
   }, jobs);
+  const localDeliveryMesh = new LocalHarnessMesh({
+    adapters,
+    hostId: hostname(),
+    userMessageDelivery,
+    deliveryPolicy: deps.deliveryPolicy,
+    ...(deps.supervisor ? { supervisor: deps.supervisor } : {}),
+  });
+  const remoteDeliveryMesh = new GptAdminMesh(
+    deps.transport ?? new FleetDirectTransport(fleetPeers()),
+    30_000,
+    deps.deliveryPolicy,
+  );
+  const deliverTargetEnvelope = async (request: MeshDelivery, ctx: unknown) => {
+    const normalizedRequest: MeshDelivery = {
+      ...request,
+      target: { ...request.target, hostId: canonicalMeshHostId(request.target.hostId) },
+      sender: { ...request.sender, hostId: canonicalMeshHostId(request.sender.hostId) },
+    };
+    const http = ctx && typeof ctx === "object" && "http" in ctx
+      ? (ctx as { http?: { authInfo?: unknown } }).http
+      : undefined;
+    const ingress = trustedMeshIngressFromMcpAuthInfo(http?.authInfo);
+    const receipt = normalizedRequest.target.hostId.toLowerCase() === hostname().toLowerCase()
+      ? await localDeliveryMesh.deliver(normalizedRequest, ingress)
+      : await remoteDeliveryMesh.deliver(normalizedRequest);
+    return { content: [{ type: "text" as const, text: JSON.stringify(receipt) }], structuredContent: receipt };
+  };
   const observeExistingUserDelivery = async (harness: string, sessionId: string, inputId: string, target: DeliveryResponseTarget | undefined): Promise<DeliveryResponseResult | undefined> => {
     const receipt = userMessageDelivery.get(harness, sessionId, inputId);
     const job = receipt?.job;
@@ -718,7 +764,8 @@ export function registerSessionTools(server: McpServer, deps: {
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
 
-  server.registerTool("send_message", { description: "Send a message to an agent and wait up to 30 seconds for new visible assistant text. The result includes the existing delivery job reference and a read-only response resource; reading it never resends the message. Ordinary coordination defaults to mode:\"steer\" for the current active turn. Explicit queue and sync use the shared durable delivery and may start work according to the harness. Agent sends require authenticated owner-MCP ingress; sender fields are attribution only. Explicit humanRequested=true marks a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. queue is intentional deferred work and may wait for current work to finish; it is not an immediate exchange. sync is a delivery mode and does not change the bounded response wait.", inputSchema: SendMessageSchema }, async (args, ctx) => {
+  server.registerTool("send_message", { description: "Send a message to an agent and wait up to 30 seconds for new visible assistant text. The result includes the existing delivery job reference and a read-only response resource; reading it never resends the message. Ordinary coordination defaults to mode:\"steer\" for the current active turn. Explicit queue and sync use the shared durable delivery and may start work according to the harness. Agent sends require authenticated owner-MCP ingress; sender fields are attribution only. Explicit humanRequested=true marks a human new task/send/resume. inputId deduplicates retries for 24 hours. Active coordination notes are injected automatically. fromSessionId/fromHarness add verified reply attribution, do not authenticate the caller. queue is intentional deferred work and may wait for current work to finish; it is not an immediate exchange. sync is a delivery mode and does not change the bounded response wait. Exact cross-host targets use target={hostId,harness,nativeSessionId}, sender and inputId; routing uses target.hostId.", inputSchema: universalSendMessageSchema }, async (args, ctx) => {
+    if (isTargetDelivery(args)) return deliverTargetEnvelope(args, ctx);
     const peer = selectedRemotePeer(args.hostId);
     if (peer) {
       if (!args.harness) throw new Error("remote_session_host_and_harness_required");
@@ -805,7 +852,8 @@ export function registerSessionTools(server: McpServer, deps: {
     deliverMcpIntroForNamedResult(deps.supervisor, result, args.humanRequested === false ? "automation" : "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Omit both to deliver immediately.", inputSchema: DeliverSchema }, async(args)=>{
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Exact native targets use target={hostId,harness,nativeSessionId}, sender and inputId; the target host selects local or remote native transport. Omit both to deliver immediately.", inputSchema: universalDeliverySchema }, async(args, ctx)=>{
+    if (isTargetDelivery(args)) return deliverTargetEnvelope(args, ctx);
     const hostId = normalizeHostId(args.hostId, hostname());
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {
       const peer = selectedRemotePeer(hostId);

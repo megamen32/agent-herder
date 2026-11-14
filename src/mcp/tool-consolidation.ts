@@ -360,11 +360,19 @@ export function withToolConsolidation(
     }
   }
 
-  // deliver already supersets the ordinary send/new-or-resume workflows.
-  // The mesh_* delivery endpoints stay advertised: mesh_deliver is a fleet
-  // capability proof (native peer readiness, GPTAdmin route resolution) and
-  // mesh_route is the exact remote-route entry the fleet resolves against.
-  // The catalog-policy capabilityRegistry pins mesh_deliver either way.
+  // These names are wire compatibility seams, never public delivery choices.
+  // Keep the registrations callable for older peers while removing them from
+  // the ordinary tools/list projection.
+  const compatibilitySeams = new Set(["mesh_deliver", "mesh_route"]);
+  for (const name of compatibilitySeams) {
+    if (captured.has(name)) hidden.add(name);
+  }
+
+  // deliver is the canonical ordinary delivery command. Its target envelope
+  // carries the native host/session address, so callers do not select a
+  // transport by naming mesh_deliver or mesh_route. Keep send_message and the
+  // mesh_* names callable for old peers and direct fleet probes; they are
+  // compatibility/capability surfaces, not required public route choices.
   if (captured.has("deliver")) {
     for (const oldName of ["send_message", "new_or_resume"]) {
       if (captured.has(oldName)) { hidden.add(oldName); legacyCommand.set(oldName, "deliver"); }
@@ -374,7 +382,7 @@ export function withToolConsolidation(
   // originals by their exact wire names; every other hidden original is only
   // an implementation detail of its facade now and no longer answers its
   // legacy name. The consolidated command is the one public path.
-  const fleetCallable = new Set<string>([...FLEET_DIRECT_TOOLS, ...capabilityRegistry, ...internalReaders]);
+  const fleetCallable = new Set<string>([...FLEET_DIRECT_TOOLS, ...capabilityRegistry, ...internalReaders, ...compatibilitySeams]);
   for (const name of hidden) {
     if (fleetCallable.has(name)) continue;
     const entry = captured.get(name);

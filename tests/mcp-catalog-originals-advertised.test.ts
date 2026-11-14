@@ -30,9 +30,11 @@ async function advertisedNames(): Promise<string[]> {
 describe("the consolidated catalog (v2: selector facades plus protected proofs)", () => {
   it("advertises the machine endpoints the fleet and peers read as capability proofs", async () => {
     const names = await advertisedNames();
-    for (const proof of ["mesh_snapshot", "mesh_deliver", "mesh_route", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]) {
+    for (const proof of ["mesh_snapshot", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]) {
       expect(names).toContain(proof);
     }
+    expect(names).not.toContain("mesh_deliver");
+    expect(names).not.toContain("mesh_route");
   });
 
   it("advertises the selector facades over the superseded originals", async () => {

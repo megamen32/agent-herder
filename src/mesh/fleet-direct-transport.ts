@@ -391,7 +391,7 @@ export class FleetDirectTransport implements GptAdminTransport {
  }
  async call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
   if(!FLEET_DIRECT_TOOLS.includes(tool))throw new Error('direct_tool_not_authorized');
-  if(tool==='mesh_deliver' && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
+  if((tool==='deliver'||tool==='mesh_deliver') && (args.sender as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   if(tool==='workspace_reserve' && (args.owner as any)?.hostId!==hostname())throw new Error('direct_sender_host_mismatch');
   // A stop writes the state of one native session of the peer itself, so an
   // explicit owning machine must be the machine the call really reaches.

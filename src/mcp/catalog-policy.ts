@@ -15,7 +15,8 @@ export const internalReaders = new Set([
  * The peer capability registry: peer herders and the fleet services prove
  * native capability from the ADVERTISED catalog before calling — GPTAdmin
  * mesh discovery and the fleet cabinet snapshot require mesh_snapshot, the
- * exact-route resolution and the native peer readiness require mesh_deliver,
+ * exact-route resolution and native peer readiness use ordinary deliver
+ * target routing (with mesh_deliver retained only as a compatibility seam),
  * owner identity checks read fleet_node_info, inventory paging reads
  * fleet_session_page and the singleton peer requires list_agents
  * (src/mesh/gptadmin.ts, src/mesh/fleet-service.ts, src/mesh/native-peer.ts,
@@ -26,7 +27,7 @@ export const internalReaders = new Set([
  * catalog to report the host's session-creation capability (createHarnesses),
  * so it stays discoverable under any projection as well.
  */
-export const capabilityRegistry = new Set(["mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]);
+export const capabilityRegistry = new Set(["mesh_snapshot", "fleet_node_info", "fleet_session_page", "list_agents", "create_session"]);
 
 interface CatalogPolicyFile {
   hide?: unknown;

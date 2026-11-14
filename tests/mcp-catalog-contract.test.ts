@@ -39,7 +39,9 @@ describe("ordinary Agent Herder catalog", () => {
     // (baseline) and callable for the fleet's direct transports.
     expect(baseline.length - projected.length).toBeGreaterThan(2);
     for (const tool of projected) expect(tool).toEqual(baseline.find(original => original.name === tool.name));
-    expect(names).toEqual(expect.arrayContaining(["resume_after", "deliver", "create_session", "list_agents", "mesh_snapshot", "mesh_deliver", "fleet_node_info", "fleet_session_page"]));
+    expect(names).toEqual(expect.arrayContaining(["resume_after", "deliver", "create_session", "list_agents", "mesh_snapshot", "fleet_node_info", "fleet_session_page"]));
+    expect(names).not.toContain("mesh_deliver");
+    expect(names).not.toContain("mesh_route");
     for (const facade of ["model", "stop", "rename", "session_info", "list_sessions", "job", "workspace", "search", "service_tier", "session_queue", "coordination_note"]) {
       expect(names).toContain(facade);
     }
