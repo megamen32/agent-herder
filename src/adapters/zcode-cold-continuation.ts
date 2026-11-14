@@ -74,7 +74,7 @@ export function readZcodeColdPreflight(dbPath: string, sessionId: string): Zcode
       historyBytes += size.bytes;
     }
     requireProof(historyBytes <= 16 * 1024 * 1024, "source_unbounded");
-    const messages = rows("message", "id,role,sequence,time_created,time_updated,data", "sequence,id");
+    const messages = rows("message", "id,sequence,time_created,time_updated,data", "sequence,id");
     const parts = rows("part", "id,message_id,sequence,time_created,time_updated,data", "message_id,sequence,id");
     requireProof(presence.length === 0, "native_runtime_owner");
     requireProof(targets.length === 0, "native_goal");

@@ -38,7 +38,7 @@ function fixture(empty = false) {
       CREATE TABLE model_usage(id TEXT PRIMARY KEY,session_id TEXT,turn_id TEXT,status TEXT,started_at INTEGER,completed_at INTEGER);
       CREATE TABLE tool_usage(id TEXT PRIMARY KEY,session_id TEXT,turn_id TEXT,status TEXT,started_at INTEGER,completed_at INTEGER);
       CREATE TABLE session_entry(session_id TEXT,type TEXT,data TEXT);
-      CREATE TABLE message(id TEXT PRIMARY KEY,session_id TEXT,role TEXT,sequence INTEGER,
+      CREATE TABLE message(id TEXT PRIMARY KEY,session_id TEXT,sequence INTEGER,
         time_created INTEGER,time_updated INTEGER,data TEXT);
       CREATE TABLE part(id TEXT PRIMARY KEY,session_id TEXT,message_id TEXT,sequence INTEGER,
         time_created INTEGER,time_updated INTEGER,data TEXT);
@@ -58,9 +58,9 @@ function fixture(empty = false) {
       );
       db.prepare("INSERT INTO model_usage VALUES(?,?,?,?,?,?)").run("model-request-1", SESSION, "turn-1", "error", 100, 190);
       db.prepare("INSERT INTO tool_usage VALUES(?,?,?,?,?,?)").run("tool-1", SESSION, "turn-1", "success", 110, 180);
-      const message = db.prepare("INSERT INTO message VALUES(?,?,?,?,?,?,?)");
-      message.run("message-user", SESSION, "user", 1, 100, 200, JSON.stringify({ role: "user", source: "fixture" }));
-      message.run("message-assistant", SESSION, "assistant", 2, 110, 200, JSON.stringify({ role: "assistant", error: "terminal fixture error" }));
+      const message = db.prepare("INSERT INTO message VALUES(?,?,?,?,?,?)");
+      message.run("message-user", SESSION, 1, 100, 200, JSON.stringify({ role: "user", source: "fixture" }));
+      message.run("message-assistant", SESSION, 2, 110, 200, JSON.stringify({ role: "assistant", error: "terminal fixture error" }));
       db.prepare("INSERT INTO part VALUES(?,?,?,?,?,?,?)").run(
         "part-1", SESSION, "message-user", 1, 100, 200, JSON.stringify({ type: "text", text: "fixture input" }),
       );
