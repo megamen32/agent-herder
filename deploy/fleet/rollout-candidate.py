@@ -48,6 +48,59 @@ MAX_RELEASES = 2
 PACKAGED = ("dist", "packages", "deploy/noticeplace", "package.json", "package-lock.json", "build-manifest.json")
 
 
+
+def _stage_native_candidate(release: Path, directory: Path):
+    """Copy exact candidate bytes for CI transport without thawing the runtime.
+
+    CI still mounts this copy read-only. Only directory modes of the private
+    transport copy gain owner write/search, so streaming tar extraction can
+    create its children. Dependency links retain their original text and layout.
+    """
+    release = release.resolve(strict=True)
+    shared = (release.parent.parent / "shared-node-modules").resolve(strict=True)
+    if release.parent.name != "releases" or not shared.is_dir():
+        raise RuntimeError("native candidate dependency layout unavailable")
+    before = release_rules.bundle_entries(release)
+    store_names = set()
+    for path in release.rglob("*"):
+        if not path.is_symlink():
+            continue
+        target = path.resolve(strict=True)
+        if target.is_relative_to(release):
+            continue
+        if not target.is_relative_to(shared) or len(target.relative_to(shared).parts) < 2:
+            raise RuntimeError("native candidate dependency outside its pinned store")
+        store_names.add(target.relative_to(shared).parts[0])
+    if not store_names:
+        raise RuntimeError("native candidate shared dependency store missing")
+    stores_before = {name: release_rules.bundle_entries(shared / name) for name in store_names}
+    stage_catalog = directory / "transport"
+    staged = stage_catalog / "releases" / release.name
+    staged.parent.mkdir(parents=True)
+    shutil.copytree(release, staged, symlinks=True)
+    stage_shared = stage_catalog / "shared-node-modules"
+    stage_shared.mkdir()
+    for name in store_names:
+        shutil.copytree(shared / name, stage_shared / name, symlinks=True)
+    # Never chmod files or links: source bytes, executable bits and dependency
+    # identities stay unchanged, and no hard link points into the frozen source.
+    for parent, children, _ in os.walk(stage_catalog, followlinks=False):
+        path = Path(parent)
+        os.chmod(path, path.stat().st_mode | 0o700)
+
+    def verify():
+        if (release_rules.bundle_entries(release) != before
+                or release_rules.bundle_entries(staged) != before):
+            raise RuntimeError("native candidate transport payload changed")
+        for name, expected in stores_before.items():
+            if (release_rules.bundle_entries(shared / name) != expected
+                    or release_rules.bundle_entries(stage_shared / name) != expected):
+                raise RuntimeError("native candidate transport dependency bytes changed")
+
+    verify()
+    return staged, verify
+
+
 def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate) -> None:
     """Run the committed candidate suite under the current release lease.
 
@@ -80,9 +133,12 @@ def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate)
         if not runner.is_file() or not codex or not opencode.is_file():
             raise RuntimeError("native candidate runner or required clients unavailable")
         receipt = catalog / "ci-receipts" / f"{sha}-rollout.json"
-        result = subprocess.run([sys.executable, str(runner), str(release.resolve()), sha,
+        staged_release, verify_staging = _stage_native_candidate(release, directory)
+        gate.check()
+        result = subprocess.run([sys.executable, str(runner), str(staged_release), sha,
                                  str(Path(codex).resolve()), str(opencode.resolve()), str(receipt)],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=240)
+        verify_staging()
         if result.returncode:
             failure = result.stderr.lower()
             if b'timeout' in failure or b'timed out' in failure:

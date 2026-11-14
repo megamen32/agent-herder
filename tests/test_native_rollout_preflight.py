@@ -52,6 +52,7 @@ class NativeRolloutPreflightTests(unittest.TestCase):
             with (rollout.ReleaseGate(str(proof_path), state_path=str(state_path)) as gate,
                   patch.object(rollout.subprocess, 'run', side_effect=run) as call,
                   patch.object(rollout.shutil, 'which', return_value='/fixture/codex'),
+                  patch.object(rollout, '_stage_native_candidate', side_effect=lambda release, directory: (release, lambda: None)),
                   patch.object(Path, 'is_file', return_value=True)):
                 rollout.run_native_candidate_preflight(root / 'release', sha, root, gate)
                 self.assertEqual(call.call_count, 2)
@@ -225,12 +226,111 @@ class NativeRolloutPreflightTests(unittest.TestCase):
         with (tempfile.TemporaryDirectory() as tmp,
               patch.object(rollout.subprocess, 'run', side_effect=results) as run,
               patch.object(rollout.shutil, 'which', return_value='/fixture/codex'),
-              patch.object(Path, 'is_file', return_value=True)):
+              patch.object(rollout, '_stage_native_candidate', side_effect=lambda release, directory: (release, lambda: None)),
+                  patch.object(Path, 'is_file', return_value=True)):
             with self.assertRaisesRegex(RuntimeError, 'deterministic model fixture') as error:
                 rollout.run_native_candidate_preflight(Path(tmp), 'a' * 40, Path(tmp), gate)
             self.assertNotIn('secret-test-value', str(error.exception))
             self.assertEqual(run.call_count, 2, 'the candidate runner must actually be invoked')
-        self.assertEqual(gate.check.call_count, 1)
+        self.assertEqual(gate.check.call_count, 2)  # Fresh lease check after private staging.
+
+
+
+
+class NativeCandidateStagingTests(unittest.TestCase):
+    def fixture(self, root):
+        import os
+        release = root / "source/releases" / ("a" * 40)
+        shared = root / "source/shared-node-modules" / ("b" * 64)
+        (release / "dist/nested").mkdir(parents=True)
+        (release / "dist/index.js").write_text("exact candidate bytes\n")
+        (release / "dist/nested/module.js").write_text("nested candidate bytes\n")
+        (release / "package.json").write_text("{}")
+        (release / "packages/agent-resume").mkdir(parents=True)
+        (release / "packages/agent-resume/package.json").write_text("{}")
+        (shared / "fixture-package").mkdir(parents=True)
+        (shared / "fixture-package/index.js").write_text("exact dependency bytes\n")
+        (release / "node_modules").mkdir()
+        os.symlink("../../../shared-node-modules/" + ("b" * 64) + "/fixture-package",
+                   release / "node_modules/fixture-package")
+        os.symlink("../packages/agent-resume", release / "node_modules/agent-resume")
+        for path in (release / "dist").rglob("*"):
+            path.chmod(0o500 if path.is_dir() else 0o400)
+        (release / "dist").chmod(0o500)
+        return release, shared
+
+    def test_sealed_payload_stages_exact_bytes_modes_and_dependency_closure(self):
+        import os
+        import stat
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release, shared = self.fixture(root)
+            before = rollout.release_rules.bundle_entries(release)
+            metadata = {p.relative_to(release).as_posix(): (p.lstat().st_mode, p.lstat().st_ino, p.lstat().st_nlink)
+                        for p in release.rglob("*")}
+            stage_root = root / "private"
+            stage_root.mkdir()
+            staged, verify = rollout._stage_native_candidate(release, stage_root)
+            verify()
+            self.assertEqual(rollout.release_rules.bundle_entries(staged), before)
+            self.assertEqual(metadata, {p.relative_to(release).as_posix(): (p.lstat().st_mode, p.lstat().st_ino, p.lstat().st_nlink)
+                                        for p in release.rglob("*")})
+            self.assertEqual(stat.S_IMODE((release / "dist").stat().st_mode), 0o500)
+            self.assertEqual(stat.S_IMODE((staged / "dist").stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((staged / "dist/index.js").stat().st_mode), 0o400)
+            self.assertNotEqual((staged / "dist/index.js").stat().st_ino, (release / "dist/index.js").stat().st_ino)
+            self.assertEqual(os.readlink(staged / "node_modules/fixture-package"),
+                             os.readlink(release / "node_modules/fixture-package"))
+            staged_shared = staged.parent.parent / "shared-node-modules" / shared.name
+            self.assertFalse(staged_shared.is_symlink())
+            self.assertEqual((staged / "node_modules/fixture-package").resolve(), staged_shared / "fixture-package")
+            self.assertEqual((staged / "node_modules/agent-resume").resolve(), staged / "packages/agent-resume")
+            self.assertEqual(rollout.release_rules.bundle_entries(staged_shared),
+                             rollout.release_rules.bundle_entries(shared))
+            archive_bytes = io.BytesIO()
+            with tarfile.open(fileobj=archive_bytes, mode="w", dereference=True) as archive_file:
+                archive_file.add(staged / "dist", arcname="dist")
+            archive_bytes.seek(0)
+            unpacked = root / "unpacked"
+            unpacked.mkdir()
+            with tarfile.open(fileobj=archive_bytes, mode="r|") as archive_file:
+                for member in archive_file:
+                    archive_file.extract(member, unpacked)
+            self.assertEqual((unpacked / "dist/nested/module.js").read_bytes(),
+                             (release / "dist/nested/module.js").read_bytes())
+
+    def test_transport_verifier_rejects_payload_and_dependency_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release, shared = self.fixture(root)
+            stage_root = root / "private"
+            stage_root.mkdir()
+            staged, verify = rollout._stage_native_candidate(release, stage_root)
+            changed = staged / "dist/index.js"
+            changed.chmod(0o600)
+            changed.write_text("unexpected replacement")
+            with self.assertRaisesRegex(RuntimeError, "payload changed"):
+                verify()
+            changed.write_bytes((release / "dist/index.js").read_bytes())
+            verify()
+            changed = staged.parent.parent / "shared-node-modules" / shared.name / "fixture-package/index.js"
+            changed.write_text("unexpected dependency replacement")
+            with self.assertRaisesRegex(RuntimeError, "dependency bytes changed"):
+                verify()
+
+    def test_staging_refuses_an_external_unpinned_dependency(self):
+        import os
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release, _ = self.fixture(root)
+            other = root / "outside"
+            other.mkdir()
+            os.symlink(str(other), release / "node_modules/unrelated")
+            stage_root = root / "private"
+            stage_root.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "outside its pinned store"):
+                rollout._stage_native_candidate(release, stage_root)
+            self.assertFalse((stage_root / "transport").exists())
 
 
 if __name__ == '__main__': unittest.main()
