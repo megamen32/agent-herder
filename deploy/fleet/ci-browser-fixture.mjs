@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 
 const exec = promisify(execFile);
 const CONFIG_PATH = '/etc/agent-herder-ci-smoke/browser-fixture.json';
+const CHROME_LAUNCHER_PATH = '/opt/agent-herder-ci-smoke/ci-browser-launcher.py';
 const SCREENSHOT_SURFACE_ARG = '--enable-features=CDPScreenshotNewSurface';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = code => {throw Object.assign(new Error(code), {code});};
@@ -86,6 +87,7 @@ export function browserEnvironment(c, _inherited = {}) {
   // Keep the CLI's runtime sockets under HOME/.agent-browser, as daemonPidFile
   // and the original isolated namespace require. XDG_RUNTIME_DIR relocates them.
   return {HOME: c.owner_home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8',
+    AGENT_BROWSER_EXECUTABLE_PATH: CHROME_LAUNCHER_PATH,
     AGENT_BROWSER_PROFILE: c.browser.profile_path, AGENT_BROWSER_EXTENSIONS: browserExtensionPaths(c).join(','),
     ...(c.browser.cdp_screenshot_new_surface === true ? {AGENT_BROWSER_ARGS: SCREENSHOT_SURFACE_ARG} : {}),
     AGENT_BROWSER_SESSION: c.browser.session, AGENT_BROWSER_NAMESPACE: c.browser.namespace,
@@ -127,9 +129,10 @@ function assertDaemon(c, process, idle) {
   if (denv.AGENT_BROWSER_PROFILE !== b.profile_path || denv.AGENT_BROWSER_EXTENSIONS !== browserExtensionPaths(c).join(',')
       || denv.AGENT_BROWSER_SESSION !== b.session || denv.AGENT_BROWSER_NAMESPACE !== b.namespace
       || denv.AGENT_BROWSER_IDLE_TIMEOUT_MS !== String(idle)
+      || (denv.AGENT_BROWSER_EXECUTABLE_PATH !== undefined && denv.AGENT_BROWSER_EXECUTABLE_PATH !== CHROME_LAUNCHER_PATH)
       || (denv.AGENT_BROWSER_ARGS || '') !== (b.cdp_screenshot_new_surface === true ? SCREENSHOT_SURFACE_ARG : '')) fail('fixture_daemon_environment_mismatch');
 }
-function assertBrowser(c, process, daemonPid) {
+function assertBrowser(c, process, daemonPid, profileExtensions = false) {
   assertOwner(c, process);
   const b = c.browser;
   if (process.executable_sha256 !== b.chrome_sha256 || process.ppid !== daemonPid) fail('fixture_process_binding_mismatch');
@@ -139,6 +142,7 @@ function assertBrowser(c, process, daemonPid) {
   if (profiles.length !== 1 || profiles[0] !== b.profile_path
       || extensions.length !== expectedExtensions.length || new Set(extensions).size !== extensions.length
       || extensions.some(x => !expectedExtensions.includes(x)) || argumentValues(process.argv, '--type').length) fail('fixture_browser_profile_mismatch');
+  if (profileExtensions && argumentValues(process.argv, '--disable-extensions-except').length) fail('fixture_browser_extension_allowlist_present');
   if (b.cdp_screenshot_new_surface === true) {
     const enabled = argumentValues(process.argv, '--enable-features');
     const disabled = argumentValues(process.argv, '--disable-features').flatMap(x => String(x).split(','));
@@ -147,7 +151,10 @@ function assertBrowser(c, process, daemonPid) {
   }
 }
 export function assertProcessBindings(c, p, idle = 0) {
-  assertDaemon(c, p.daemon, idle); assertBrowser(c, p.browser, p.daemon.pid); assertRelay(c, p.relay);
+  assertDaemon(c, p.daemon, idle);
+  // Existing managed generations remain attestable until their next normal stop/start.
+  assertBrowser(c, p.browser, p.daemon.pid, p.daemon.env?.AGENT_BROWSER_EXECUTABLE_PATH === CHROME_LAUNCHER_PATH);
+  assertRelay(c, p.relay);
 }
 function assertRelay(c, relay) {
   const r = c.relay; assertOwner(c, relay);
@@ -236,6 +243,11 @@ export async function loadConfig(path = CONFIG_PATH) {
     const info = await lstat(p);
     if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== 0 || (info.mode & 0o022)) fail('protected_fixture_parent_required');
   }
+  for (let parent = dirname(CHROME_LAUNCHER_PATH); parent !== '/'; parent = dirname(parent)) {
+    const info = await lstat(parent);
+    if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== 0 || (info.mode & 0o022)) fail('protected_fixture_parent_required');
+  }
+  await privateFile(CHROME_LAUNCHER_PATH, 0, 0o022);
   const info = await lstat(path), raw = await privateFile(path, 0, 0o037);
   const config = validateConfig(JSON.parse(raw));
   if (info.gid !== config.runtime_gid || process.getuid?.() !== config.runtime_uid) fail('fixture_runtime_principal_mismatch');

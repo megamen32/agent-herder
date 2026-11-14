@@ -29,6 +29,9 @@ for (const [name, input] of [['collector.cjs', 'tests/native/installed-browser-e
   execFileSync(process.execPath, ['--check', path], {stdio: 'pipe'});
   files[name] = createHash('sha256').update(await readFile(path)).digest('hex');
 }
+const launcher = 'ci-browser-launcher.py';
+await writeFile(resolve(output, launcher), await readFile(resolve(root, 'deploy/fleet', launcher)), {mode: 0o755});
+files[launcher] = createHash('sha256').update(await readFile(resolve(output, launcher))).digest('hex');
 const receipt = {version: 1, files, runtime_invoked: false};
 await writeFile(resolve(output, 'build.json'), JSON.stringify(receipt, null, 2) + '\n', {mode: 0o600});
 process.stdout.write(JSON.stringify(receipt) + '\n');

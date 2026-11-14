@@ -248,7 +248,8 @@ def install(args):
               'candidate_release_gate.py': Path(__file__).resolve().parents[2] / 'tests/native/candidate_release_gate.py',
               'installed-public-core.py': Path(__file__).resolve().parents[2] / 'tests/native/installed-public-core.py',
               'public-rust-consumer.py': Path(__file__).resolve().parents[2] / 'tests/v1-restored-workflows/noticeplace-native-canary.py',
-              'ci-browser-fixture.mjs': Path(args.browser_manager)}
+              'ci-browser-fixture.mjs': Path(args.browser_manager),
+              'ci-browser-launcher.py': Path(args.browser_manager).with_name('ci-browser-launcher.py')}
     helper_source = Path(__file__).with_name('installed-smoke-helper.py')
     for path in [*inputs.values(), helper_source, Path(args.fixture), Path(args.node)]:
         if not path.is_absolute() or not path.is_file() or path.is_symlink():
@@ -317,7 +318,7 @@ def install(args):
                 os.chown(directory, owner.pw_uid, owner.pw_gid); os.chmod(directory, 0o700)
             os.chmod(INSTALL, 0o755); os.chmod(CONFIG, 0o755)
             for name, path in inputs.items():
-                write_owned(INSTALL / name, path.read_bytes())
+                write_owned(INSTALL / name, path.read_bytes(), mode=0o755 if name == 'ci-browser-launcher.py' else 0o644)
             write_owned(HELPER, helper_source.read_bytes(), mode=0o755)
             write_owned(CONFIG / 'fixture.json', fixture_raw, mode=0o600, uid=owner.pw_uid, gid=owner.pw_gid)
         extract_runner_archive(archive, RUNNER_ROOT)
