@@ -14,6 +14,10 @@ async function fixture(mode: "ok" | "lost" | "conflict" = "ok") {
       const body = text ? JSON.parse(text) : undefined;
       calls.push({ method: req.method!, path: req.url!, body });
       res.setHeader("content-type", "application/json");
+      if (req.method === "GET" && req.url === "/api/config") {
+        res.end(JSON.stringify({ data: {} }));
+        return;
+      }
       if (req.method === "POST" && req.url === "/api/session/ses_exact/synthetic") {
         const row = stored.get(body.id) ?? { id: body.id, sessionID: "ses_exact",
           type: "synthetic", delivery: body.delivery,
@@ -53,7 +57,7 @@ it("automatic completion admits one native synthetic queue without prompt hooks,
     const result = await f.adapter.sendMessage("ses_exact", options);
     const id = openCodeAutomaticInputId("ses_exact", options.inputId);
     expect(result).toMatchObject({ ok: true, admitted: true, inputId: options.inputId, nativeInputMessageId: id });
-    expect(f.calls).toEqual([{ method: "POST", path: "/api/session/ses_exact/synthetic", body: {
+    expect(f.calls.filter(call => call.method === "POST")).toEqual([{ method: "POST", path: "/api/session/ses_exact/synthetic", body: {
       id, text: options.message, description: "Agent Herder completion", delivery: "queue", resume: true,
       metadata: { agentHerderInputId: options.inputId, agentHerderSessionId: "ses_exact",
         agentHerderContinuation: "synthetic-queue-v1" },
@@ -102,7 +106,7 @@ it("a conflicting first-wins native payload cannot confirm the new request", asy
     expect(await f.adapter.sendMessage("ses_exact", {
       message: "Completed", inputId: "conflict-key", queue: true, origin: "automation",
     })).toMatchObject({ ok: false, admissionUnknown: true, admission: "unknown" });
-    expect(f.calls).toHaveLength(1);
+    expect(f.calls.filter(call => call.method === "POST")).toHaveLength(1);
   } finally { await f.close(); }
 });
 
@@ -114,10 +118,10 @@ it("automatic Start and Steer fail before native I/O while manual Queue keeps th
         message: "Completed", inputId: "refused", origin: "automation", ...mode,
       })).toMatchObject({ notSubmitted: true, admission: "not_submitted" });
     }
-    expect(f.calls).toHaveLength(0);
+    expect(f.calls.filter(call => call.method === "POST")).toHaveLength(0);
     expect(await f.adapter.sendMessage("ses_exact", {
       message: "Human question", inputId: "human-key", queue: true, origin: "human", activeTurnOnly: true,
     })).toMatchObject({ ok: true, nativeInputMessageId: "msg_manual" });
-    expect(f.calls.map(call => call.path)).toEqual(["/api/session/ses_exact/prompt"]);
+    expect(f.calls.filter(call => call.method === "POST").map(call => call.path)).toEqual(["/api/session/ses_exact/prompt"]);
   } finally { await f.close(); }
 });

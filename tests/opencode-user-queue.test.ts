@@ -22,10 +22,11 @@ it("acknowledges OpenCode async admission while the native model response remain
     const url = new URL(request.url!, "http://native");
     response.setHeader("content-type", "application/json");
     const reply = (value: unknown) => response.end(JSON.stringify(value));
+    if (url.pathname === "/api/config") return reply({ data: {} });
     if (request.method === "POST") {
       posts.push(url.pathname);
       busy = true;
-      if (url.pathname === "/session/thread/prompt_async") {
+      if (url.pathname === "/api/session/thread/prompt") {
         response.statusCode = 204;
         return response.end();
       }
@@ -33,15 +34,16 @@ it("acknowledges OpenCode async admission while the native model response remain
       slowResponses.push(response);
       return;
     }
-    if (url.pathname === "/session/status") return reply({ thread: { type: busy ? "busy" : "idle" } });
-    if (url.pathname === "/session/thread/message") return reply([]);
-    if (url.pathname === "/session/thread") return reply({ id: "thread", directory: dir, title: "Fixture", time: { created: Date.now(), updated: Date.now() } });
+    if (url.pathname === "/api/session/active") return reply({ data: { thread: { type: busy ? "busy" : "idle" } } });
+    if (url.pathname === "/api/session/thread/permission") return reply({ data: [] });
+    if (url.pathname === "/api/session/thread/message") return reply({ data: [] });
+    if (url.pathname === "/api/session/thread") return reply({ data: { id: "thread", location: { directory: dir }, title: "Fixture", time: { created: Date.now(), updated: Date.now() } } });
     response.statusCode = 404;
     response.end();
   });
   await new Promise<void>((resolve) => native.listen(0, "127.0.0.1", resolve));
   const nativeAddress = native.address() as { port: number };
-  const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${nativeAddress.port}`, protocol: "v1" });
+  const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${nativeAddress.port}`, protocol: "v2" });
   const adapters = new Map([["opencode", adapter]]);
   const converter = { async convert() { return { success: true, targetSessionId: "thread", targetPath: dir, messageCount: 0 }; } };
   const supervisor = new SessionSupervisor(adapters, converter, undefined, { humanStopStore: new HumanStopStore(join(dir, "stops.json")) });
@@ -64,7 +66,7 @@ it("acknowledges OpenCode async admission while the native model response remain
       expect(receipt.admissionUnknown).not.toBe(true);
     }, { timeout: 1_000, interval: 10 });
     expect((await adapter.getSession("thread"))?.status).toBe("running");
-    expect(posts).toEqual(["/session/thread/prompt_async"]);
+    expect(posts).toEqual(["/api/session/thread/prompt"]);
     expect((await (await post()).json()).job.id).toBe(initial.job.id);
     expect(posts).toHaveLength(1);
     expect(slowResponses).toHaveLength(0);

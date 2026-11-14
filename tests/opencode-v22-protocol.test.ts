@@ -112,6 +112,25 @@ it("refuses queue and existing-session Start before POST", async () => {
   }
 });
 
+it("does not use the retired v1 active-session route", async () => {
+  const state = fixtureState();
+  const { server, baseUrl } = await startFixture(state);
+  const adapter = new OpenCodeAdapter({ baseUrl, protocol: "v22" });
+  try {
+    expect(await adapter.listActiveSessions()).toEqual([]);
+    expect(adapter.getActiveSessionSnapshotReceipt()).toMatchObject({
+      exhaustive: false,
+      source: "opencode-v22-active-status",
+      reason: "unsupported",
+    });
+    expect(state.paths).toContainEqual({ method: "GET", path: "/global/health" });
+    expect(state.paths.some((call) => call.path === "/session/status")).toBe(false);
+    expect(state.paths.some((call) => call.path === "/api/session/active")).toBe(false);
+  } finally {
+    server.close();
+  }
+});
+
 it("returns UNKNOWN after a post-effect HTTP error without retrying", async () => {
   const state = fixtureState(500);
   const { server, baseUrl } = await startFixture(state);

@@ -11,11 +11,23 @@ export interface ActiveSessionRow {id:string;harness:string;title:string;runtime
 export interface ActiveHostReceipt {hostId:string;ownerPid?:number;state:string;observedAt:string|null;reason?:string;sources?:Array<{harness:string;exhaustive:boolean;source:string;reason?:string}>}
 export interface ActiveInventory {sessions:ActiveSessionRow[];hosts:ActiveHostReceipt[];partial:boolean}
 export interface ActiveInventoryQuery {hostId?:string;runtimeHostId?:string;harness?:string;limit?:number;offset?:number}
+/** Keep the current-activity response bounded by bytes as well as row count. */
+export const ACTIVE_SESSION_BYTE_BUDGET = 300 * 1024;
+function boundedSessions(sessions:ActiveSessionRow[],limit:number|undefined){
+ const visible:ActiveSessionRow[]=[];let bytes=0;
+ for(const session of sessions){
+  if(limit!==undefined&&visible.length>=limit)break;
+  const size=Buffer.byteLength(JSON.stringify(session));
+  if(visible.length>0&&bytes+size>ACTIVE_SESSION_BYTE_BUDGET)break;
+  visible.push(session);bytes+=size;
+ }
+ return visible;
+}
 export const activeInventoryPath=()=>process.env.AGENT_HERDER_ACTIVE_INVENTORY||resolve(homedir(),'.local/state/agent-herder/active-inventory.json');
 export function filterActiveInventory(inventory:ActiveInventory,input:ActiveInventoryQuery){
  const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
  const matched=inventory.sessions.filter(row=>(!input.hostId||row.workspaces.some(w=>same(w.hostId,input.hostId!)))&&(!input.runtimeHostId||same(row.runtimeHostId,input.runtimeHostId))&&(!input.harness||input.harness==='all'||row.harness===input.harness));
- const offset=input.offset??0;const sessions=matched.slice(offset,input.limit===undefined?undefined:offset+input.limit);
+ const offset=input.offset??0;const sessions=boundedSessions(matched.slice(offset),input.limit);
  const confirmed=matched.filter(s=>s.activity?.state==='active');
  const unassigned=inventory.sessions.filter(s=>!s.workspaces.length&&(!input.runtimeHostId||same(s.runtimeHostId,input.runtimeHostId))&&(!input.harness||input.harness==='all'||s.harness===input.harness)).length;
  const partial=inventory.partial||Boolean(input.hostId&&unassigned);

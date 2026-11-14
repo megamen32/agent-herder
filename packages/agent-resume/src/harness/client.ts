@@ -93,6 +93,6 @@ export interface HarnessClient {
 export interface HarnessClientOptions {
   baseUrl?: string;
   password?: string;
-  /** Pin the native protocol instead of probing it (tests, legacy servers). */
-  protocol?: "auto" | "v1" | "v2" | "v22";
+  /** Pin the native protocol instead of probing it (tests, supported servers). */
+  protocol?: "auto" | "v2" | "v22";
 }

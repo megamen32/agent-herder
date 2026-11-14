@@ -1,7 +1,7 @@
 //! Typed, read-only session listing from one explicitly selected OpenCode instance.
 
 use reqwest::{Method, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     application::recent::{RecentMessages, SourceMessage, normalize_recent},
@@ -13,7 +13,7 @@ use crate::{
 
 use super::connection::{OpenCodeConnection, OpenCodeConnectionError};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpenCodeSessionTime {
     pub created: f64,
     pub updated: f64,
@@ -22,7 +22,7 @@ pub struct OpenCodeSessionTime {
     pub archived: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpenCodeSession {
     pub address: SessionAddress,
     pub parent_session_id: Option<String>,
@@ -32,7 +32,7 @@ pub struct OpenCodeSession {
     pub directory: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpenCodeSessionPage {
     pub sessions: Vec<OpenCodeSession>,
     pub previous: Option<String>,
@@ -64,6 +64,13 @@ struct SessionWire {
 }
 
 #[derive(Deserialize)]
+#[serde(untagged)]
+enum SessionResponseWire {
+    Direct(SessionWire),
+    Wrapped { data: SessionWire },
+}
+
+#[derive(Deserialize)]
 struct SessionTimeWire {
     created: f64,
     updated: f64,
@@ -80,6 +87,8 @@ struct SessionLocationWire {
 #[derive(Deserialize)]
 struct MessageListWire {
     data: Vec<MessageWire>,
+    #[serde(default)]
+    cursor: Option<SessionCursorWire>,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +128,26 @@ enum AssistantContentWire {
     Text { text: String },
     #[serde(other)]
     Other,
+}
+
+/// One native OpenCode message projected without inventing turn links.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OpenCodeMessage {
+    pub id: String,
+    pub role: String,
+    pub text: String,
+    pub created: f64,
+    pub completed: Option<f64>,
+    pub partial: Option<bool>,
+}
+
+/// A bounded page returned by the native message-history route.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OpenCodeSessionMessages {
+    pub session_id: String,
+    pub messages: Vec<OpenCodeMessage>,
+    pub previous: Option<String>,
+    pub next: Option<String>,
 }
 
 /// A reader whose identity and endpoint are fixed by its OpenCode connection.
@@ -165,36 +194,92 @@ impl OpenCodeSessionReader {
             .json()
             .await
             .map_err(|error| ReadError(error.to_string()))?;
-        let instance = self.connection.instance().clone();
         let mut sessions = Vec::with_capacity(wire.data.len());
         for session in wire.data {
-            if !session.id.starts_with("ses") {
-                return Err(ReadError(
-                    "OpenCode returned a session ID outside its native ID namespace".into(),
-                ));
-            }
-            sessions.push(OpenCodeSession {
-                address: SessionAddress {
-                    instance: instance.clone(),
-                    native_session_id: session.id,
-                },
-                parent_session_id: session.parent_id,
-                project_id: session.project_id,
-                outcome: session.outcome,
-                time: OpenCodeSessionTime {
-                    created: session.time.created,
-                    updated: session.time.updated,
-                    busy: session.time.busy,
-                    idle: session.time.idle,
-                    archived: session.time.archived,
-                },
-                directory: session.location.directory,
-            });
+            sessions.push(self.project_session(session)?);
         }
         Ok(OpenCodeSessionPage {
             sessions,
             previous: wire.cursor.previous,
             next: wire.cursor.next,
+        })
+    }
+
+    /// Read one exact session through the v2 session resource route.
+    pub async fn get_session(
+        &self,
+        address: &SessionAddress,
+        request_id: impl Into<String>,
+    ) -> Result<OpenCodeSession, ReadError> {
+        self.validate_address(address)?;
+        let path = format!("/api/session/{}", address.native_session_id);
+        let response = self
+            .connection
+            .request(request_id, Method::GET, &path)
+            .map_err(map_connection_error)?
+            .send()
+            .await
+            .map_err(|error| ReadError(error.to_string()))?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            return Err(ReadError(
+                "OpenCode session read rejected the configured identity".into(),
+            ));
+        }
+        if !response.status().is_success() {
+            return Err(ReadError(format!(
+                "OpenCode session read returned HTTP {}",
+                response.status().as_u16()
+            )));
+        }
+        let wire = response
+            .json::<SessionResponseWire>()
+            .await
+            .map_err(|error| ReadError(error.to_string()))?;
+        let session = match wire {
+            SessionResponseWire::Direct(session)
+            | SessionResponseWire::Wrapped { data: session } => session,
+        };
+        self.project_session(session)
+    }
+
+    /// Read the native message page without filtering away roles or content.
+    pub async fn get_session_messages(
+        &self,
+        address: &SessionAddress,
+        request_id: impl Into<String>,
+    ) -> Result<OpenCodeSessionMessages, ReadError> {
+        self.validate_address(address)?;
+        let path = format!("/api/session/{}/message", address.native_session_id);
+        let response = self
+            .connection
+            .request(request_id, Method::GET, &path)
+            .map_err(map_connection_error)?
+            .send()
+            .await
+            .map_err(|error| ReadError(error.to_string()))?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            return Err(ReadError(
+                "OpenCode message history rejected the configured identity".into(),
+            ));
+        }
+        if !response.status().is_success() {
+            return Err(ReadError(format!(
+                "OpenCode message history returned HTTP {}",
+                response.status().as_u16()
+            )));
+        }
+        let wire = response
+            .json::<MessageListWire>()
+            .await
+            .map_err(|error| ReadError(error.to_string()))?;
+        Ok(OpenCodeSessionMessages {
+            session_id: address.native_session_id.clone(),
+            messages: wire.data.into_iter().filter_map(project_message).collect(),
+            previous: wire
+                .cursor
+                .as_ref()
+                .and_then(|cursor| cursor.previous.clone()),
+            next: wire.cursor.and_then(|cursor| cursor.next),
         })
     }
 
@@ -207,17 +292,7 @@ impl OpenCodeSessionReader {
         address: &SessionAddress,
         request_id: impl Into<String>,
     ) -> Result<RecentMessages, ReadError> {
-        if address.instance != *self.connection.instance()
-            || !address.native_session_id.starts_with("ses")
-            || !address
-                .native_session_id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
-        {
-            return Err(ReadError(
-                "OpenCode session address does not belong to this instance".into(),
-            ));
-        }
+        self.validate_address(address)?;
         let request_id = request_id.into();
         let user = self
             .latest_message(
@@ -298,6 +373,79 @@ impl OpenCodeSessionReader {
         };
         Ok(Some(message))
     }
+
+    fn validate_address(&self, address: &SessionAddress) -> Result<(), ReadError> {
+        if address.instance != *self.connection.instance()
+            || !valid_native_session_id(&address.native_session_id)
+        {
+            return Err(ReadError(
+                "OpenCode session address does not belong to this instance".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn project_session(&self, session: SessionWire) -> Result<OpenCodeSession, ReadError> {
+        if !valid_native_session_id(&session.id) {
+            return Err(ReadError(
+                "OpenCode returned a session ID outside its native ID namespace".into(),
+            ));
+        }
+        Ok(OpenCodeSession {
+            address: SessionAddress {
+                instance: self.connection.instance().clone(),
+                native_session_id: session.id,
+            },
+            parent_session_id: session.parent_id,
+            project_id: session.project_id,
+            outcome: session.outcome,
+            time: OpenCodeSessionTime {
+                created: session.time.created,
+                updated: session.time.updated,
+                busy: session.time.busy,
+                idle: session.time.idle,
+                archived: session.time.archived,
+            },
+            directory: session.location.directory,
+        })
+    }
+}
+
+fn project_message(message: MessageWire) -> Option<OpenCodeMessage> {
+    match message {
+        MessageWire::User { id, time, text } => Some(OpenCodeMessage {
+            id,
+            role: "user".into(),
+            text,
+            created: time.created,
+            completed: None,
+            partial: None,
+        }),
+        MessageWire::Assistant { id, time, content } => Some(OpenCodeMessage {
+            id,
+            role: "assistant".into(),
+            text: content
+                .into_iter()
+                .filter_map(|part| match part {
+                    AssistantContentWire::Text { text } => Some(text),
+                    AssistantContentWire::Other => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            created: time.created,
+            completed: time.completed,
+            partial: time.completed.map(|_| false),
+        }),
+        MessageWire::Other => None,
+    }
+}
+
+fn valid_native_session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.starts_with("ses")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 fn map_connection_error(error: OpenCodeConnectionError) -> ReadError {

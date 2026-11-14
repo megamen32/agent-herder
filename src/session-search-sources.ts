@@ -42,9 +42,26 @@ function jsonMessage(row:any,harness:string):{id:string;text:string;role:string}
 }
 async function* jsonChunks(path:string,harness:string,signal?:AbortSignal){for await(const {row,line} of records(path,signal)){const message=jsonMessage(row,harness);if(message?.text)yield {id:message.id||`line:${line}`,text:message.text};}}
 const MAX_JSON_METADATA_CACHE=50_000;
+const MAX_JSON_METADATA_CACHE_BYTES=8*1024*1024;
 type JsonSessionMetadata={nativeSessionId:string;title:string;cwd:string;revision:string};
 type JsonMetadataCacheEntry={stamp:string;catalogId:string;catalogTitle:string;catalogCwd:string;metadata:JsonSessionMetadata};
 const jsonMetadataCache=new Map<string,JsonMetadataCacheEntry>();
+let jsonMetadataCacheBytes=0;
+/** Count the UTF-8 bytes retained for one cache key/value pair. */
+function jsonMetadataCacheEntryBytes(key:string,entry:JsonMetadataCacheEntry):number{return Buffer.byteLength(JSON.stringify([key,entry]),'utf8');}
+function removeJsonMetadataCacheEntry(key:string):void{
+ const entry=jsonMetadataCache.get(key);if(!entry)return;
+ jsonMetadataCache.delete(key);jsonMetadataCacheBytes-=jsonMetadataCacheEntryBytes(key,entry);
+}
+function storeJsonMetadataCacheEntry(key:string,entry:JsonMetadataCacheEntry):void{
+ removeJsonMetadataCacheEntry(key);
+ const bytes=jsonMetadataCacheEntryBytes(key,entry);
+ if(bytes>MAX_JSON_METADATA_CACHE_BYTES)return;
+ while(jsonMetadataCache.size>=MAX_JSON_METADATA_CACHE||jsonMetadataCacheBytes+bytes>MAX_JSON_METADATA_CACHE_BYTES){
+  const oldest=jsonMetadataCache.keys().next().value;if(oldest===undefined)break;removeJsonMetadataCacheEntry(oldest);
+ }
+ jsonMetadataCache.set(key,entry);jsonMetadataCacheBytes+=bytes;
+}
 async function jsonSession(path:string,harness:string,options:Options,catalog?:any):Promise<SearchSourceSession>{
  const catalogId=str(catalog?.id),catalogTitle=str(catalog?.title),catalogCwd=str(catalog?.cwd);
  const revision=await stamp(path);
@@ -69,8 +86,7 @@ async function jsonSession(path:string,harness:string,options:Options,catalog?:a
  }
  if(await stamp(path)!==revision)throw new Error('source_changed_during_metadata_parse');
  const metadata={nativeSessionId:id,title:title||id,cwd,revision:`${revision}:${title}:${cwd}`};
- if(!cached&&jsonMetadataCache.size>=MAX_JSON_METADATA_CACHE){const oldest=jsonMetadataCache.keys().next().value;if(oldest!==undefined)jsonMetadataCache.delete(oldest);}
- jsonMetadataCache.set(cacheKey,{stamp:revision,catalogId,catalogTitle,catalogCwd,metadata});
+ storeJsonMetadataCacheEntry(cacheKey,{stamp:revision,catalogId,catalogTitle,catalogCwd,metadata});
  return {...metadata,harness,chunks:jsonChunks(path,harness,options.signal)};
 }
 async function safeJsonSession(path:string,harness:string,options:Options,catalog?:any):Promise<SearchSourceSession|undefined>{

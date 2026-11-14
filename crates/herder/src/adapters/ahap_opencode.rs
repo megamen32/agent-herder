@@ -424,7 +424,7 @@ fn valid_native_id(v: &str) -> bool {
 fn is_opencode_synthetic_input(row: &Value, session: &str) -> bool {
     if row.get("role").and_then(Value::as_str) != Some("system")
         || row.get("nativeInputType").and_then(Value::as_str) != Some("synthetic")
-        || row.get("sessionId").is_some_and(|id| id.as_str() != Some(session))
+        || row.get("sessionId").and_then(Value::as_str) != Some(session)
     {
         return false;
     }
@@ -486,11 +486,16 @@ fn recovered_message_id(
         return None;
     }
     let row = candidates[0];
+    // OpenCode recovery must use the native record's session binding; the
+    // requested SessionAddress cannot be substituted as positive evidence.
     if !(row.get("role").and_then(Value::as_str) == Some("user")
         || harness == "opencode" && is_opencode_synthetic_input(row, session))
-        || row
-            .get("sessionId")
-            .is_some_and(|id| id.as_str() != Some(session))
+        || (harness == "opencode"
+            && row.get("sessionId").and_then(Value::as_str) != Some(session))
+        || (harness != "opencode"
+            && row
+                .get("sessionId")
+                .is_some_and(|id| id.as_str() != Some(session)))
         || harness == "zcode"
             && !row
                 .get("sourceCommandId")
@@ -972,7 +977,7 @@ for line in sys.stdin:
   v=[{'id':native_id,'role':'user','text':'hi','inputId':'key'}]
   if os.environ['MODE']=='recovery':v=[{'id':native_id,'nativeMessageId':native_id,'role':'user','sourceCommandId':'queue_agent-herder:auto:key','sessionId':session}]
   if os.environ['MODE']=='duplicate':v.append({'id':native_id,'role':'assistant','text':'ambiguous'})
-  if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key'}]
+  if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key','sessionId':session}]
  else:raise Exception(m)
  if m=='initialize' and automatic:v['capabilities'].update({'nativeProtocol':'v2','deliveryModes':['queue','start'],'nativeAutomaticContinuation':'synthetic-queue-v1'})
  if m=='initialize' and cold:v['capabilities']['methods'].append('getQueuedContinuationState');v['capabilities']['nativeAutomaticContinuation']='cold-queue-subscription-v1'
@@ -1586,7 +1591,7 @@ mod canonical_wait_turn_tests {
         let binding = serde_json::to_vec(&("herder-opencode-synthetic-queue-v1", session, key)).unwrap();
         let id = format!("msg_herderauto{}", Sha256::digest(binding).iter().map(|byte| format!("{byte:02x}")).collect::<String>());
         let row = json!({"id":id,"nativeMessageId":id,"role":"system",
-            "nativeInputType":"synthetic","inputId":key});
+            "nativeInputType":"synthetic","inputId":key,"sessionId":session});
         assert!(is_opencode_synthetic_input(&row, session));
         assert_eq!(recovered_message_id(&json!([row.clone()]), session, key, "opencode"), Some(id));
         assert_eq!(recovered_message_id(&json!([row.clone()]), session, key, "codex"), None);

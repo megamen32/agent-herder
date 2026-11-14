@@ -50,6 +50,7 @@ interface OpenCodeSessionPayload {
 
 interface OpenCodeMessagePayload {
   id?: string;
+  sessionID?: string;
   parentID?: string;
   inputId?: string;
   turnId?: string;
@@ -65,6 +66,13 @@ interface OpenCodeMessagePayload {
   outcome?: "succeeded" | "failed" | "interrupted";
   content?: string | Array<Record<string, unknown>>;
   parts?: Array<Record<string, unknown>>;
+}
+
+/** Compatibility shape for callers that normalize provider catalogs themselves. */
+export interface OpenCodeProviderCatalog {
+  all?: Array<{ id?: string; models?: Record<string, unknown> | Array<{ id?: string }> }>;
+  connected?: string[];
+  data?: Array<{ id?: string; activation?: string }>;
 }
 
 interface OpenCodeSessionStatus {
@@ -88,11 +96,27 @@ export interface OpenCodeModelCatalogEntry {
   providerID?: string;
 }
 
-/** Legacy `/provider` catalog shape, still served by OpenCode 1 servers. */
-export interface OpenCodeProviderCatalog {
-  all?: Array<{ id?: string; models?: Record<string, unknown> | Array<{ id?: string }> }>;
-  connected?: string[];
-  data?: Array<{ id?: string; activation?: string }>;
+export function openCodeConnectedProviders(catalog: OpenCodeProviderCatalog): Set<string> {
+  const connected = new Set((catalog.connected ?? []).filter((value): value is string => typeof value === "string" && value.length > 0));
+  for (const provider of catalog.data ?? []) {
+    if (typeof provider.id !== "string" || !provider.id) continue;
+    if (provider.activation === undefined || provider.activation === "enabled" || provider.activation === "connected") connected.add(provider.id);
+  }
+  return connected;
+}
+
+export function openCodeConnectedModels(catalog: OpenCodeProviderCatalog): string[] {
+  const connected = openCodeConnectedProviders(catalog);
+  const models: string[] = [];
+  for (const provider of catalog.all ?? []) {
+    const providerId = typeof provider.id === "string" ? provider.id.trim() : "";
+    if (!providerId || (connected.size > 0 && !connected.has(providerId))) continue;
+    const ids = Array.isArray(provider.models)
+      ? provider.models.map((model) => typeof model?.id === "string" ? model.id.trim() : "")
+      : Object.keys(provider.models ?? {});
+    for (const id of ids) if (id) models.push(`${providerId}/${id}`);
+  }
+  return [...new Set(models)];
 }
 
 export interface OpenCodePermissionDetails {
@@ -191,7 +215,6 @@ export interface SessionIdentity {
 
 export interface OpenCodeStatusSnapshot {
   status?: string;
-  /** Legacy servers report the same state as `type`. */
   type?: string;
   needsPermission?: boolean;
   permission?: OpenCodePermissionDetails;
@@ -277,10 +300,6 @@ export function unwrapEnvelope<T>(value: unknown): T {
 
 function isJsonResponse(response: Response): boolean {
   return (response.headers.get("content-type") ?? "").includes("json");
-}
-
-function isHtmlResponse(response: Response): boolean {
-  return (response.headers.get("content-type") ?? "").includes("text/html");
 }
 
 /**
@@ -434,30 +453,6 @@ function openCodeEventKind(nativeType: string): string {
   return "unknown";
 }
 
-/** Connected providers of a legacy `/provider` catalog, including v2's activation flag. */
-export function openCodeConnectedProviders(catalog: OpenCodeProviderCatalog): Set<string> {
-  const connected = new Set((catalog.connected ?? []).filter((value): value is string => typeof value === "string" && value.length > 0));
-  for (const provider of catalog.data ?? []) {
-    if (typeof provider.id !== "string" || !provider.id) continue;
-    if (provider.activation === undefined || provider.activation === "enabled" || provider.activation === "connected") connected.add(provider.id);
-  }
-  return connected;
-}
-
-export function openCodeConnectedModels(catalog: OpenCodeProviderCatalog): string[] {
-  const connected = openCodeConnectedProviders(catalog);
-  const models: string[] = [];
-  for (const provider of catalog.all ?? []) {
-    const providerId = typeof provider.id === "string" ? provider.id.trim() : "";
-    if (!providerId || (connected.size > 0 && !connected.has(providerId))) continue;
-    const ids = Array.isArray(provider.models)
-      ? provider.models.map((model) => typeof model?.id === "string" ? model.id.trim() : "")
-      : Object.keys(provider.models ?? {});
-    for (const id of ids) if (id) models.push(`${providerId}/${id}`);
-  }
-  return [...new Set(models)];
-}
-
 /**
  * Normalize the live catalog into complete entries. An entry without a
  * provider or without a key names no model OpenCode can select, so it is
@@ -536,7 +531,7 @@ export class OpenCodeClient implements HarnessClient {
   private headers: Record<string, string> = {};
   private apiPrefix = "";
   private protocolProbed = false;
-  private readonly pinnedProtocol?: "v1" | "v2" | "v22";
+  private readonly pinnedProtocol?: "v2" | "v22";
   private readonly directories = new Map<string, string>();
 
   constructor(options: HarnessClientOptions & { baseUrl?: string } = {}) {
@@ -547,7 +542,11 @@ export class OpenCodeClient implements HarnessClient {
     const password = options.password ?? process.env.OPENCODE_SERVER_PASSWORD;
     const username = process.env.OPENCODE_SERVER_USERNAME || "opencode";
     if (password) this.headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-    if (options.protocol === "v1" || options.protocol === "v2" || options.protocol === "v22") this.pinnedProtocol = options.protocol;
+    const protocol = options.protocol as string | undefined;
+    if (protocol !== undefined && protocol !== "auto" && protocol !== "v2" && protocol !== "v22") {
+      throw new Error(`Unsupported OpenCode protocol: ${protocol}`);
+    }
+    if (protocol === "v2" || protocol === "v22") this.pinnedProtocol = protocol;
   }
 
   /** True once the server answered as an OpenCode 2 (`/api`) instance. */
@@ -562,7 +561,7 @@ export class OpenCodeClient implements HarnessClient {
 
   async init(): Promise<void> {
     await this.probeProtocol();
-    const res = await this.fetch(this.isV22 ? "/global/health" : this.isV2 ? this.api("/config") : "/global/health");
+    const res = await this.fetch(this.isV22 ? "/global/health" : this.api("/config"));
     if (!res.ok || !isJsonResponse(res)) throw new Error(`OpenCode ${this.baseUrl} is not reachable: HTTP ${res.status}${await this.errorHint(res)}`);
   }
 
@@ -612,7 +611,7 @@ export class OpenCodeClient implements HarnessClient {
   } | null> {
     await this.probeProtocol();
     try {
-      if (!this.isV2) return { scope: "workspace", supportedModes: [], canSetMode: false, pendingRequests: [], observedAt: new Date().toISOString() };
+      if (this.isV22) return { scope: "workspace", supportedModes: [], canSetMode: false, pendingRequests: [], observedAt: new Date().toISOString() };
       const [session, requests] = await Promise.all([
         this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
         this.readSessionPermissionRequests(id),
@@ -634,7 +633,7 @@ export class OpenCodeClient implements HarnessClient {
           ...(request.resources?.length ? { command: request.resources.join(", ") } : {}),
           ...(request.message ? { reason: request.message } : {}),
           canRespond: true,
-          nativeMethod: this.isV2 ? "POST /api/session/:id/permission/:requestId/reply" : "POST /session/:id/permissions/:requestId",
+          nativeMethod: "POST /api/session/:id/permission/:requestId/reply",
         })),
         observedAt: new Date().toISOString(),
       };
@@ -668,12 +667,7 @@ export class OpenCodeClient implements HarnessClient {
       });
       return this.createdSessionAtRequestedDirectory(session, request.cwd);
     }
-    const query = new URLSearchParams({ directory: request.cwd });
-    const session = await this.fetchJson<OpenCodeSessionPayload>(`/session?${query.toString()}`, {
-      method: "POST",
-      body: JSON.stringify({ title: request.title, ...(model ? { model } : {}), ...(request.fullAccess ? { permission: [{ permission: "*", pattern: "*", action: "allow" }] } : {}) }),
-    });
-    return this.createdSessionAtRequestedDirectory(session, request.cwd);
+    throw new Error("OpenCode protocol was not selected");
   }
 
   private async createdSessionAtRequestedDirectory(session: OpenCodeSessionPayload, cwd: string): Promise<HarnessSessionSummary> {
@@ -694,7 +688,7 @@ export class OpenCodeClient implements HarnessClient {
   /** Native metadata update only: never submits input or changes execution. */
   async renameSession(id: string, title: string): Promise<void> {
     await this.probeProtocol();
-    const response = await this.fetch(this.isV2 ? this.api(`/session/${encodeURIComponent(id)}`) : `/session/${encodeURIComponent(id)}`, {
+    const response = await this.fetch(this.api(`/session/${encodeURIComponent(id)}`), {
       method: 'PATCH', body: JSON.stringify({title}),
     });
     if (!response.ok) throw new Error(`OpenCode session title update: HTTP ${response.status}`);
@@ -713,12 +707,10 @@ export class OpenCodeClient implements HarnessClient {
       // and drop them before the bounded slice keeps the requested window real.
       // The native endpoint rejects a limit above 200, so the overfetch is
       // clamped to what it accepts.
-      const fetchLimit = this.isV2 ? Math.min(bounded * 3, 200) : bounded;
+      const fetchLimit = Math.min(bounded * 3, 200);
       const endpoint = this.isV22
         ? this.api(`/session/${encodeURIComponent(id)}/message`)
-        : this.isV2
-        ? this.api(`/session/${encodeURIComponent(id)}/message?limit=${fetchLimit}&order=desc`)
-        : this.api(`/session/${encodeURIComponent(id)}/message?limit=${bounded}`);
+        : this.api(`/session/${encodeURIComponent(id)}/message?limit=${fetchLimit}&order=desc`);
       const messages = await this.fetchJson<OpenCodeMessagePayload[]>(endpoint);
       if (!Array.isArray(messages)) return null;
       // A successful empty native history is a complete observation (for
@@ -956,7 +948,7 @@ export class OpenCodeClient implements HarnessClient {
    * Read the exact v2 terminal failure represented by one native event. The
    * event ID must still be the newest persisted failed status frame, the
    * session must be terminal and permission-free, and the failed assistant
-   * message must identify its provider/model. Older v1 APIs cannot prove this
+   * message must identify its provider/model. Unsupported protocol variants cannot prove this
    * correlation and intentionally return no evidence.
    */
   async getTerminalFailureContext(
@@ -1229,21 +1221,6 @@ export class OpenCodeClient implements HarnessClient {
   async send(id: string, request: HarnessSendRequest): Promise<HarnessSendResult & { admission?: "not_submitted" | "accepted" | "pending" | "unknown"; notSubmitted?: boolean; admissionUnknown?: boolean; quotaFailure?: { classification: "quota_exhausted" } }> {
     await this.probeProtocol();
     if (this.isV22) return this.sendV22Start(id, request);
-    if (!this.isV2) {
-      // Legacy servers admit a queued input at `prompt_async` and a direct one
-      // through `message`; they have no inbox and no steer.
-      try {
-        const path = request.delivery === "queue" ? `/session/${id}/prompt_async` : `/session/${id}/message`;
-        const res = await this.fetch(path, {
-          method: "POST",
-          body: JSON.stringify({ parts: [{ type: "text", text: request.message }] }),
-        });
-        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-        return request.delivery === "queue" ? { ok: true, admitted: true } : { ok: true };
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }
     try {
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/prompt`), {
         method: "POST",
@@ -1409,24 +1386,22 @@ export class OpenCodeClient implements HarnessClient {
 
   async waitForIdle(id: string, signal?: AbortSignal): Promise<void> {
     await this.probeProtocol();
+    if (this.isV22) return;
     const wait = this.isV2
       ? await this.fetch(this.api(`/experimental/session/${encodeURIComponent(id)}/wait`), { method: "POST", signal })
-      : await this.fetch(`/session/${id}/wait`, { method: "POST", signal });
+      : await this.fetch(this.api(`/experimental/session/${encodeURIComponent(id)}/wait`), { method: "POST", signal });
     if (!wait.ok && wait.status !== 404) throw new Error(`OpenCode wait failed: HTTP ${wait.status}${await this.errorHint(wait)}`);
   }
 
   async interrupt(id: string): Promise<{ ok: boolean; error?: string }> {
     await this.probeProtocol();
+    if (this.isV22) return { ok: false, error: "OpenCode 2.2 interrupt is unsupported" };
     if (this.isV2) {
       // A user Stop must park already admitted steering/control items too.
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/interrupt?resume=false`), { method: "POST" });
       return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}${await this.errorHint(res)}` };
     }
-    const res = await this.fetch(`/session/${id}/interrupt`, { method: "POST" });
-    if (res.ok) return { ok: true };
-    if (res.status !== 404) return { ok: false, error: `HTTP ${res.status}` };
-    const abort = await this.fetch(`/session/${id}/abort`, { method: "POST" });
-    return abort.ok ? { ok: true } : { ok: false, error: `HTTP ${abort.status}` };
+    return { ok: false, error: "OpenCode protocol was not selected" };
   }
 
   /** The verdict of the rule of the owner about one route of a model. */
@@ -1436,18 +1411,11 @@ export class OpenCodeClient implements HarnessClient {
 
   async listModels(): Promise<string[]> {
     await this.probeProtocol();
-    if (this.isV2) {
-      // `/api/model` is the live v2 catalog for the current location.
-      try {
-        const models = openCodeModelCatalogEntries(await this.fetchJson<OpenCodeModelCatalogEntry[]>(this.api("/model")));
-        if (models.length > 0) return models;
-      } catch { /* fall through to the legacy catalog */ }
-    }
-    // `/provider` exposes connected providers and their current model IDs on v1.
     try {
-      const models = openCodeConnectedModels(await this.fetchJson<OpenCodeProviderCatalog>(this.api("/provider")));
+      const models = openCodeModelCatalogEntries(await this.fetchJson<OpenCodeModelCatalogEntry[]>(this.api("/model")));
       if (models.length > 0) return models;
     } catch { /* fall through to the config catalog */ }
+    if (this.isV22) return [];
     try {
       const config = await this.fetchJson<{ model?: string; models?: string[] }>(this.api("/config"));
       if (config.models?.length) return config.models;
@@ -1468,22 +1436,8 @@ export class OpenCodeClient implements HarnessClient {
    */
   async listModelCatalogEntries(): Promise<OpenCodeModelCatalogEntry[]> {
     await this.probeProtocol();
-    if (this.isV2) {
-      const entries = await this.fetchJson<OpenCodeModelCatalogEntry[]>(this.api("/model"));
-      return normalizeModelCatalogEntries(entries);
-    }
-    // Legacy v1 catalog: provider/model keys only, no separate gateway spelling.
-    const catalog = await this.fetchJson<OpenCodeProviderCatalog>(this.api("/provider"));
-    const entries: OpenCodeModelCatalogEntry[] = [];
-    for (const provider of catalog.all ?? []) {
-      const providerId = typeof provider?.id === "string" ? provider.id.trim() : "";
-      if (!providerId) continue;
-      const ids = Array.isArray(provider.models)
-        ? provider.models.map((model) => typeof model?.id === "string" ? model.id.trim() : "")
-        : Object.keys(provider.models ?? {});
-      for (const id of ids) if (id) entries.push({ providerID: providerId, id, modelID: id });
-    }
-    return entries;
+    const entries = await this.fetchJson<OpenCodeModelCatalogEntry[]>(this.api("/model"));
+    return normalizeModelCatalogEntries(entries);
   }
 
   subscribe(
@@ -1499,11 +1453,7 @@ export class OpenCodeClient implements HarnessClient {
 
   async listChildren(id: string): Promise<HarnessSessionSummary[]> {
     await this.probeProtocol();
-    if (this.isV2) {
-      const children = await this.fetchJson<OpenCodeSessionPayload[]>(this.api(`/session?parentID=${encodeURIComponent(id)}&order=asc`));
-      return children.map((child) => this.toSummary(child));
-    }
-    const children = await this.fetchJson<OpenCodeSessionPayload[]>(`/session/${encodeURIComponent(id)}/children`);
+    const children = await this.fetchJson<OpenCodeSessionPayload[]>(this.api(`/session?parentID=${encodeURIComponent(id)}&order=asc`));
     return children.map((child) => this.toSummary(child));
   }
 
@@ -1523,6 +1473,7 @@ export class OpenCodeClient implements HarnessClient {
 
   async respondPermission(sessionId: string, permissionId: string, response: "allow" | "deny", remember?: boolean): Promise<{ ok: boolean; error?: string }> {
     await this.probeProtocol();
+    if (this.isV22) return { ok: false, error: "OpenCode 2.2 permission responses are unsupported" };
     if (this.isV2) {
       const decision = response === "deny" ? "reject" : remember ? "always" : "once";
       const res = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}/permission/${encodeURIComponent(permissionId)}/reply`), {
@@ -1531,11 +1482,7 @@ export class OpenCodeClient implements HarnessClient {
       });
       return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}${await this.errorHint(res)}` };
     }
-    const res = await this.fetch(`/session/${sessionId}/permissions/${permissionId}`, {
-      method: "POST",
-      body: JSON.stringify({ response, remember }),
-    });
-    return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` };
+    return { ok: false, error: "OpenCode protocol was not selected" };
   }
 
   async setPermissions(sessionId: string, options: { allowedTools?: string; mode?: string }): Promise<{ ok: boolean; error?: string }> {
@@ -1571,13 +1518,7 @@ export class OpenCodeClient implements HarnessClient {
       }
       return { ok: true };
     }
-    if (options.mode !== undefined) return { ok: false, error: "Legacy OpenCode permission mode is directory-scoped and cannot be changed for one session" };
-    const updates: Record<string, unknown> = {};
-    if (options.allowedTools) updates.allowedTools = options.allowedTools.split(",").map((value) => value.trim());
-    const directory = await this.resolveDirectory(sessionId);
-    const query = directory ? `?${new URLSearchParams({ directory })}` : "";
-    const res = await this.fetch(`/config${query}`, { method: "PATCH", body: JSON.stringify(updates) });
-    return { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` };
+    return { ok: false, error: "OpenCode 2.2 permission updates are unsupported" };
   }
 
   async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
@@ -1586,19 +1527,11 @@ export class OpenCodeClient implements HarnessClient {
     const modelID = separator > 0 ? model.slice(separator + 1) : "";
     if (!providerID || !modelID) return { ok: false, error: "Model must use the provider/model format" };
     try {
-      const res = await this.fetch(`/api/session/${encodeURIComponent(sessionId)}/model`, {
+      const res = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}/model`), {
         method: "POST",
         body: JSON.stringify({ model: { providerID, id: modelID } }),
       });
       if (res.ok) return { ok: true };
-      if (res.status === 404) {
-        const legacy = await this.fetch(`/session/${encodeURIComponent(sessionId)}/model`, {
-          method: "POST",
-          body: JSON.stringify({ model: { providerID, id: modelID } }),
-        });
-        if (legacy.ok) return { ok: true };
-        return { ok: false, error: `Failed to select model: HTTP ${legacy.status}` };
-      }
       return { ok: false, error: `Failed to select model: HTTP ${res.status}${await this.errorHint(res)}` };
     } catch {
       return { ok: false, error: "Failed to select model: request failed" };
@@ -1646,8 +1579,7 @@ export class OpenCodeClient implements HarnessClient {
         }
         return null;
       }
-      const directory = await this.resolveDirectory(id);
-      const query = new URLSearchParams({ limit: "200", ...(directory && !this.isV2 ? { directory } : {}) });
+      const query = new URLSearchParams({ limit: "200" });
       const endpoint = this.api(`/session/${encodeURIComponent(id)}/message?${query}`);
       const messages = await this.fetchJson<unknown[]>(endpoint, { signal });
       if (!Array.isArray(messages)) return null;
@@ -1678,14 +1610,11 @@ export class OpenCodeClient implements HarnessClient {
       const first = messages.find((message) => (message.id || message.info?.id) && (message.type === "user"));
       return first ? this.toConversationMessage(first, id) : null;
     }
-    const directory = await this.resolveDirectory(id);
-    if (!directory) return null;
     const messages = await this.fetchJson<OpenCodeMessagePayload[]>(
-      `/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(directory)}&limit=10`,
+      this.api(`/session/${encodeURIComponent(id)}/message?limit=10&order=asc`),
     );
     if (!Array.isArray(messages)) return null;
-    const first = [...messages].reverse().find((message) => (message.info?.role || message.role) === "user"
-      && (!message.info?.sessionID || message.info.sessionID === id));
+    const first = [...messages].reverse().find((message) => (message.info?.role || message.role || message.type) === "user");
     return first ? this.toConversationMessage(first, id) : null;
   }
 
@@ -1747,6 +1676,7 @@ export class OpenCodeClient implements HarnessClient {
    */
   async getActiveTurnId(id: string): Promise<string | null> {
     await this.probeProtocol();
+    if (this.isV22) return null;
     const directory = await this.resolveDirectory(id);
     if (!directory) return null;
     // One cold directory read, then the three independent reads in parallel:
@@ -1755,7 +1685,7 @@ export class OpenCodeClient implements HarnessClient {
       this.fetchJson<OpenCodeMessagePayload[]>(
         this.isV2
           ? this.api(`/session/${encodeURIComponent(id)}/message?limit=10&type=user&order=desc`)
-          : `/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(directory)}&limit=50`,
+          : this.api(`/session/${encodeURIComponent(id)}/message?limit=50`),
       ),
       this.fetchJson<OpenCodeSessionPayload>(this.api(`/session/${encodeURIComponent(id)}`)),
       this.readStatuses(directory, [id]),
@@ -1767,8 +1697,9 @@ export class OpenCodeClient implements HarnessClient {
       ? messages.find((message) => message.type === "user" && typeof message.id === "string")
       : [...messages].reverse().find((message) => (message.info?.role || message.role) === "user");
     if (!user) return null;
-    if (!this.isV2 && user.info?.sessionID && user.info.sessionID !== id) return null;
-    const identity = this.isV2 ? user.id : user.info?.id;
+    const nativeSessionId = user.sessionID ?? user.info?.sessionID;
+    if (nativeSessionId !== undefined && nativeSessionId !== id) return null;
+    const identity = user.id;
     return typeof identity === "string" && identity ? identity : null;
   }
 
@@ -1823,32 +1754,30 @@ export class OpenCodeClient implements HarnessClient {
       return;
     }
     if (v2.status === 401 || v2.status === 403) throw new Error(`OpenCode API authentication failed: HTTP ${v2.status}`);
-    const v1 = await this.rawFetch("/global/health");
-    if (!v1.ok || !isJsonResponse(v1)) throw new Error(`OpenCode protocol probe failed: HTTP ${v1.status}, expected JSON health`);
-    this.apiPrefix = "";
-    this.protocolProbed = true;
+    throw new Error(`OpenCode v2 protocol probe failed: HTTP ${v2.status}, expected JSON config`);
   }
 
   private async readStatuses(directory?: string, sessionIds?: string[]): Promise<Record<string, OpenCodeStatusSnapshot>> {
     if (this.isV2) {
-      const active = await this.fetchJson<Record<string, { type?: string; status?: string }>>(this.api("/session/active"));
+      const active = await this.fetchJson<Record<string, { type?: string; status?: string; needsPermission?: boolean; permission?: OpenCodePermissionDetails }>>(this.api("/session/active"));
       if (!active || typeof active !== "object" || Array.isArray(active)) throw new Error("OpenCode active session read returned an invalid response");
       const statuses: Record<string, OpenCodeStatusSnapshot> = {};
       for (const [id, entry] of Object.entries(active)) {
         const raw = entry?.type || entry?.status;
-        statuses[id] = { status: raw === "running" ? "running" : raw === "idle" ? "idle" : raw, type: raw };
+        statuses[id] = {
+          status: raw === "running" ? "running" : raw === "idle" ? "idle" : raw,
+          type: raw,
+          ...(entry?.needsPermission === true ? { needsPermission: true } : {}),
+          ...(entry?.permission && typeof entry.permission === "object" ? { permission: entry.permission } : {}),
+        };
       }
       const candidates = sessionIds ?? Object.keys(active);
-      let legacyRequests: Promise<OpenCodePermissionRequest[]> | undefined;
       const pendingBySession: Array<{ id: string; requests: OpenCodePermissionRequest[] }> = [];
       let cursor = 0;
       await Promise.all(Array.from({ length: Math.min(8, candidates.length) }, async () => {
         while (cursor < candidates.length) {
           const id = candidates[cursor++]!;
-          const requests = await this.readSessionPermissionRequests(id, () => {
-            legacyRequests ??= this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request"));
-            return legacyRequests;
-          });
+          const requests = await this.readSessionPermissionRequests(id);
           pendingBySession.push({ id, requests });
         }
       }));
@@ -1870,23 +1799,14 @@ export class OpenCodeClient implements HarnessClient {
       }
       return statuses;
     }
-    const query = directory ? `?${new URLSearchParams({ directory })}` : "";
-    const response = await this.fetch(`/session/status${query}`);
-    if (response.status === 404) return {};
-    if (!response.ok) throw new Error(`OpenCode status read failed: HTTP ${response.status}`);
-    return unwrapEnvelope<Record<string, OpenCodeStatusSnapshot>>(await response.json()) ?? {};
+    return {};
   }
 
   private async readSessionPermissionRequests(
     sessionId: string,
-    legacyFallback?: () => Promise<OpenCodePermissionRequest[]>,
   ): Promise<OpenCodePermissionRequest[]> {
     const response = await this.fetch(this.api(`/session/${encodeURIComponent(sessionId)}/permission`), { cache: "no-store" });
-    if (response.status === 404) {
-      const legacy = await (legacyFallback?.() ?? this.fetchJson<OpenCodePermissionRequest[]>(this.api("/permission/request")));
-      if (!Array.isArray(legacy)) throw new Error("OpenCode global permission read returned an invalid response");
-      return legacy.filter((request) => request?.sessionID === sessionId);
-    }
+    if (response.status === 404) return [];
     if (!response.ok) throw new Error(`OpenCode API session permission read: HTTP ${response.status}${await this.errorHint(response)}`);
     const requests = unwrapEnvelope(await response.json());
     if (!Array.isArray(requests)) throw new Error("OpenCode session permission read returned an invalid response");
@@ -1955,26 +1875,7 @@ export class OpenCodeClient implements HarnessClient {
 
   private async fetch(path: string, init?: RequestInit): Promise<Response> {
     await this.probeProtocol();
-    const url = new URL(`${this.baseUrl}${path}`);
-    const match = url.pathname.match(/^\/(?:api\/)?session\/([^/]+)(?:\/|$)/);
-    const matchedId = match?.[1];
-    if (matchedId && matchedId !== "status" && !this.isV2 && !this.isV22 && !url.searchParams.has("directory")) {
-      const id = decodeURIComponent(matchedId);
-      const directLookup = url.pathname === `/session/${matchedId}` && (!init?.method || init.method === "GET");
-      const directory = directLookup ? this.directories.get(id) : await this.resolveDirectory(id);
-      if (directory) url.searchParams.set("directory", directory);
-    }
-    const response = await this.rawFetch(url.toString().slice(this.baseUrl.length), init);
-    if (!this.pinnedProtocol && (!init?.method || init.method === "GET") && isHtmlResponse(response)) {
-      const bare = path.startsWith("/api/") ? path.slice("/api".length) : path;
-      const retargeted: string = this.apiPrefix === "/api" ? `/api${bare}` : bare;
-      if (retargeted !== path) {
-        const retry = await this.rawFetch(retargeted, init);
-        this.apiPrefix = retargeted.startsWith("/api") ? "/api" : "";
-        return retry;
-      }
-    }
-    return response;
+    return this.rawFetch(path, init);
   }
 
   private async rawFetch(path: string, init?: RequestInit): Promise<Response> {

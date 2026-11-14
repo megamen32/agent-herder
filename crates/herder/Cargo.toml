@@ -9,6 +9,10 @@ publish = false
 name = "herder-wire-probe"
 path = "src/main.rs"
 
+[[bin]]
+name = "herder-opencode-read"
+path = "src/bin/herder_opencode_read.rs"
+
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 base64 = "0.22"
