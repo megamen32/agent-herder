@@ -376,7 +376,7 @@ def remote_ref_for(sha: str) -> tuple[str, list]:
     return pool[0][len("origin/"):], names
 
 
-def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path) -> dict:
+def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path, native_candidate_gate=None) -> dict:
     """Write the manifest of the bundle from scratch, with its fingerprint.
 
     The manifest of this build replaces the manifest of the previous build of
@@ -451,6 +451,8 @@ def write_bundle_manifest(sha: str, release: Path, catalog: Path, worktree: Path
         },
         "deployment": {"configuration": "external-private", "targetsEmbedded": False},
     }
+    if native_candidate_gate is not None:
+        document["nativeCandidateGate"] = native_candidate_gate
     # The manifest is written aside and put in place. A write over an
     # existing file would keep its inode, and that inode may belong to
     # another release: the manifest of that release would describe this
@@ -536,7 +538,16 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true", help="reuse an existing build of the same head")
     parser.add_argument("--codex-bin", default=shutil.which("codex") or "")
     parser.add_argument("--opencode-bin", default=str(Path.home() / ".npm-global/lib/node_modules/@opencode/cli/bin/opencode.exe"))
+    parser.add_argument("--zcode-local-runtime")
+    parser.add_argument("--zcode-local-runtime-sha256")
     arguments = parser.parse_args()
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/native"))
+    from zcode_candidate_local import local_configuration, check_runtime
+    native_gate = local_configuration(arguments.zcode_local_runtime, arguments.zcode_local_runtime_sha256)
+    if native_gate:
+        check_runtime(native_gate)
+    native_gate_args = (["--zcode-local-runtime", native_gate["runtime"],
+                         "--zcode-local-runtime-sha256", native_gate["runtime_sha256"]] if native_gate else [])
 
     sha = run(["git", "-C", str(REPO), "rev-parse", arguments.sha])
     try:
@@ -562,7 +573,7 @@ def main() -> int:
     release = assemble(sha, worktree, Path(arguments.catalog))
     packages = release_packages_tree(release, REPO / "node_modules")
     print("packages:", packages)
-    bundle = write_bundle_manifest(sha, release, Path(arguments.catalog), worktree)
+    bundle = write_bundle_manifest(sha, release, Path(arguments.catalog), worktree, native_gate)
     store_after = release_rules.mutable_state(store)
     results, manifest, unique_mib, bundle_manifest = checks(
         sha, release, Path(arguments.catalog), node_config_before, current_before)
@@ -601,7 +612,8 @@ def main() -> int:
             failed += 1
         else:
             ci = subprocess.run([sys.executable, str(runner), str(release.resolve()), sha,
-                                 *(str(p) for p in binaries), str(Path(arguments.catalog).resolve() / "ci-receipts" / f"{sha}.json")], check=False)
+                                 *(str(p) for p in binaries), str(Path(arguments.catalog).resolve() / "ci-receipts" / f"{sha}.json"),
+                                 *native_gate_args], check=False)
             if ci.returncode:
                 print("[FAIL] native CLI candidate gate; release INCOMPLETE")
                 failed += 1

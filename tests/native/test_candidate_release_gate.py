@@ -79,6 +79,50 @@ class CandidateReleaseGateTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_cli_candidate(data, 'a' * 40, rc)
 
+    def test_local_mode_dispatch_never_imports_remote_fallback(self):
+        from zcode_candidate_local import local_configuration
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            official = root / 'official'; official.mkdir()
+            mode = local_configuration(str(official), 'a' * 64)
+            (root / 'build-manifest.json').write_text(json.dumps({'nativeCandidateGate': mode}))
+            path = root / 'receipt.json'
+            args = ['gate', str(root), 'a' * 40, '/codex', '/opencode', str(path),
+                    '--zcode-local-runtime', str(official), '--zcode-local-runtime-sha256', 'a' * 64]
+            row = {'scope': 'zcode-official-project', 'version': '3.17.2', 'fixtureRequests': 5,
+                   'sessions': ['one', 'two'], 'transcriptPages': [3, 3],
+                   **{key: True for key in ('sessionsCreated', 'sessionsListed', 'sessionsSearched',
+                                          'projectListed', 'answer', 'transcriptComplete')}}
+            zcode = {'scope': 'isolated-candidate-only', 'status': 'PASS', 'artifact_consistent': True,
+                     'artifact_sha256': 'b' * 64, 'reports': [row]}
+            with patch.object(sys, 'argv', args), \
+                 patch.object(candidate_release_gate.subprocess, 'run', return_value=SimpleNamespace(
+                     returncode=2, stdout=json.dumps(receipt()), stderr='')), \
+                 patch('zcode_candidate_local.check_runtime'), \
+                 patch('zcode_candidate_local.run_zcode_candidate', return_value=(zcode, 'b' * 64)) as local, \
+                 patch.object(candidate_release_gate, 'run_zcode_candidate') as remote:
+                self.assertEqual(candidate_release_gate.main(), 0)
+            local.assert_called_once()
+            self.assertEqual(local.call_args.args, (str(root), 'a' * 40, mode))
+            self.assertEqual(local.call_args.kwargs['evidence_directory'].parent, root)
+            remote.assert_not_called()
+            self.assertEqual(json.loads(path.read_text())['native_candidate_gate'], mode)
+
+    def test_missing_explicit_local_flags_fails_before_any_client_or_ssh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mode = {'mode': 'local', 'runtime': '/official', 'runtime_sha256': 'a' * 64, 'version': '3.17.2'}
+            (root / 'build-manifest.json').write_text(json.dumps({'nativeCandidateGate': mode}))
+            path = root / 'receipt.json'
+            args = ['gate', str(root), 'a' * 40, '/codex', '/opencode', str(path)]
+            with patch.object(sys, 'argv', args), patch.object(candidate_release_gate.subprocess, 'run') as child, \
+                 patch.object(candidate_release_gate, 'run_zcode_candidate') as remote:
+                with self.assertRaisesRegex(ValueError, 'explicit pinned'):
+                    candidate_release_gate.main()
+            child.assert_not_called(); remote.assert_not_called()
+            self.assertEqual(json.loads(path.read_text())['cli_candidate'], 'INCOMPLETE')
+
+
 
 class V1ReportTest(unittest.TestCase):
     harnesses = ('chatgpt', 'zai', 'opencode', 'codex', 'zcode')

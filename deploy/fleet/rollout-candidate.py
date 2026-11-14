@@ -101,12 +101,30 @@ def _stage_native_candidate(release: Path, directory: Path):
     return staged, verify
 
 
-def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate) -> None:
+def native_gate_options(release: Path, configuration=None):
+    manifest = json.loads((Path(release) / "build-manifest.json").read_text())
+    pinned = manifest.get("nativeCandidateGate")
+    if configuration != pinned:
+        raise RuntimeError("native candidate gate mode missing or changed in install plan")
+    if configuration is None:
+        return []
+    if (not isinstance(configuration, dict) or set(configuration) != {"mode", "runtime", "runtime_sha256", "version"}
+            or configuration["mode"] != "local" or configuration["version"] != "3.17.2"
+            or not isinstance(configuration["runtime"], str) or not Path(configuration["runtime"]).is_absolute()
+            or not isinstance(configuration["runtime_sha256"], str)
+            or not re.fullmatch(r"[a-f0-9]{64}", configuration["runtime_sha256"])):
+        raise RuntimeError("native candidate local runtime policy invalid")
+    return ["--zcode-local-runtime", configuration["runtime"],
+            "--zcode-local-runtime-sha256", configuration["runtime_sha256"]]
+
+
+def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate, native_candidate_gate=None) -> None:
     """Run the committed candidate suite under the current release lease.
 
     This is only the three-harness candidate stage. It does not attest the
     installed process or accept the full release.
     """
+    native_options = native_gate_options(release, native_candidate_gate)
     gate.check()
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         raise RuntimeError("native candidate SHA invalid")
@@ -136,8 +154,8 @@ def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate)
         staged_release, verify_staging = _stage_native_candidate(release, directory)
         gate.check()
         result = subprocess.run([sys.executable, str(runner), str(staged_release), sha,
-                                 str(Path(codex).resolve()), str(opencode.resolve()), str(receipt)],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=240)
+                                 str(Path(codex).resolve()), str(opencode.resolve()), str(receipt), *native_options],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=420 if native_candidate_gate else 240)
         verify_staging()
         if result.returncode:
             failure = result.stderr.lower()
@@ -156,7 +174,8 @@ def run_native_candidate_preflight(release: Path, sha: str, catalog: Path, gate)
             report = value["report"]
             if (value.get("cli_candidate") != "PASS" or value.get("zcode_candidate") != "PASS"
                     or value.get("release") != "INCOMPLETE"
-                    or report["candidate_bundle"]["source_sha"] != sha):
+                    or report["candidate_bundle"]["source_sha"] != sha
+                    or (native_candidate_gate is not None and value.get("native_candidate_gate") != native_candidate_gate)):
                 raise ValueError("unexpected scoped status")
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise RuntimeError("native candidate receipt invalid; release remains incomplete") from error

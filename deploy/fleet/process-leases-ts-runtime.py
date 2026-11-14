@@ -191,10 +191,11 @@ def install(plan_path, expected_sha256, proof, journal):
     if journal.exists() or journal.parent.resolve(strict=True) != journal.parent:
         raise ValueError("fresh_install_journal_required")
     rollout = module("canonical_ts_owner_rollout", "rollout-candidate.py")
+    rollout.native_gate_options(release, plan.get("native_candidate_gate"))
     target = {"fleetDir": str(catalog), "unit": readiness.UNIT}
     with ReleaseGate(proof, target=target) as gate:
         gate.candidate_descends_from(plan["previous_source"], plan["source_commit"])
-        rollout.run_native_candidate_preflight(release, plan["source_commit"], catalog, gate)
+        rollout.run_native_candidate_preflight(release, plan["source_commit"], catalog, gate, plan.get("native_candidate_gate"))
         readiness.runtime_tree(plan["runtime"])
         readiness.writer_drain(plan["canonical"])
         stopped_service()

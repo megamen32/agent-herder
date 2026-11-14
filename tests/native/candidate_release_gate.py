@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the isolated native CLI candidate stage, never attest a release."""
+import argparse
 import json
 import hashlib
 import os
@@ -16,6 +17,16 @@ def run_zcode_candidate(*args, **kwargs):
     # isolated-candidate remote driver. Preserve that driver for its own mode.
     from zcode_candidate_remote import run_zcode_candidate as run
     return run(*args, **kwargs)
+
+
+def select_zcode_mode(release, runtime=None, expected=None):
+    from zcode_candidate_local import local_configuration
+    requested = local_configuration(runtime, expected)
+    path = Path(release) / 'build-manifest.json'
+    pinned = json.loads(path.read_text()).get('nativeCandidateGate') if path.is_file() else None
+    if pinned != requested:
+        raise ValueError('candidate local ZCode mode must match the explicit pinned runtime')
+    return requested
 
 
 def write_receipt(path, value):
@@ -475,10 +486,18 @@ def main():
         return _validate_v1_cli(sys.argv[2:], validate_installed_browser_report)
     if len(sys.argv) > 1 and sys.argv[1] == '--validate-v1':
         return _validate_v1_cli(sys.argv[2:])
-    if len(sys.argv) != 6:
-        raise ValueError('expected release, SHA, Codex binary, OpenCode binary and receipt')
-    release, sha, codex, opencode, receipt = sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('release', 'sha', 'codex', 'opencode', 'receipt'):
+        parser.add_argument(name)
+    parser.add_argument('--zcode-local-runtime')
+    parser.add_argument('--zcode-local-runtime-sha256')
+    args = parser.parse_args()
+    release, sha, codex, opencode, receipt = (getattr(args, key) for key in ('release', 'sha', 'codex', 'opencode', 'receipt'))
     invalidate_receipt(receipt)
+    mode = select_zcode_mode(release, args.zcode_local_runtime, args.zcode_local_runtime_sha256)
+    if mode:
+        from zcode_candidate_local import check_runtime
+        check_runtime(mode)
     base = Path(__file__).resolve().parent
     command = [sys.executable, str(base / 'launch.py'), '--candidate', release, '--',
                sys.executable, str(base / 'candidate_stand.py'), release, codex, opencode]
@@ -487,12 +506,18 @@ def main():
     try:
         report = json.loads(result.stdout)
         output = validate_cli_candidate(report, sha, result.returncode)
-        zcode_report, digest = run_zcode_candidate(release, sha)
+        if mode:
+            from zcode_candidate_local import run_zcode_candidate as run_local_zcode_candidate
+            evidence = Path(receipt).resolve().with_name(Path(receipt).name + '.zcode-' + str(time.time_ns()))
+            zcode_report, digest = run_local_zcode_candidate(release, sha, mode, evidence_directory=evidence)
+        else:
+            zcode_report, digest = run_zcode_candidate(release, sha)
         validate_zcode_candidate(zcode_report, digest)
     except (ValueError, TypeError) as error:
         raise ValueError(f'CLI candidate gate failed: {error}; {result.stderr[-1200:]}') from error
     output['zcode_candidate'] = 'PASS'
     output['zcode_report'] = zcode_report
+    output['native_candidate_gate'] = mode or {'mode': 'remote'}
     output['elapsed_seconds'] = round(time.monotonic() - start, 3)
     path = Path(receipt)
     write_receipt(path, output)
