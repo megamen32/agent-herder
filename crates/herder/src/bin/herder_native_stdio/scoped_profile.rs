@@ -329,7 +329,11 @@ fn trusted_executable(path: &Path) -> io::Result<()> {
     }
     for (index, component) in path.ancestors().enumerate() {
         let m = std::fs::symlink_metadata(component)?;
-        if (m.uid() != uid && m.uid() != 0)
+        // Rootless bwrap maps read-only host bind owners outside the user
+        // namespace to overflow uid 65534. They remain trusted here only for
+        // the namespace's euid 0; a normal host user never accepts that uid.
+        let trusted_owner = m.uid() == uid || m.uid() == 0 || (uid == 0 && m.uid() == 65534);
+        if !trusted_owner
             || m.mode() & 0o022 != 0
             || (index == 0 && !m.is_file())
             || (index > 0 && !m.is_dir())
