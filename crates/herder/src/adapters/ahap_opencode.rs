@@ -199,7 +199,13 @@ impl AhapOpenCode {
             return Err(ReadError("AHAP session identity mismatch".into()));
         }
         let status = result.get("status").and_then(Value::as_str);
-        let human_stop = status == Some("stopped")
+        let cold_preparable = cold_queue && zcode_cold_preparable(&result, &target.native_session_id);
+        // An unloaded catalog status is not an observed user stop when the
+        // exact current cold-continuation proof is present. Explicit stop
+        // evidence and cancelled native turns still take precedence.
+        let human_stop = (status == Some("stopped") && !cold_preparable)
+            || (cold_queue
+                && result.pointer("/meta/nativeLastTurn/cancelledByUser").and_then(Value::as_bool) == Some(true))
             || ["/humanStop", "/meta/humanStop", "/meta/automationStop"]
                 .iter()
                 .any(|path| result.pointer(path).and_then(Value::as_bool) == Some(true))
@@ -215,7 +221,7 @@ impl AhapOpenCode {
         } else {
             status
         };
-        let activity = if cold_queue && zcode_cold_preparable(&result, &target.native_session_id) {
+        let activity = if cold_preparable {
             SessionActivity::ColdPreparable
         } else { match observed_status {
             Some("idle") => SessionActivity::Idle,
@@ -932,7 +938,7 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         let script = dir.join("adapter");
         fs::write(&script,r##"#!/usr/bin/python3
-import hashlib,json,os,sys
+import hashlib,json,os,sys,time
 harness=os.environ['AHAP_HARNESS'];session=os.environ['SESSION_ID'];native_id=os.environ['NATIVE_ID']
 automatic=os.environ['MODE']=='automatic'
 cold=os.environ['MODE'].startswith('cold')
@@ -945,7 +951,14 @@ for line in sys.stdin:
  elif m=='createSession':v={'id':session,'harness':harness}
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
  elif m=='getQueuedContinuationState':
-  v={'id':session,'harness':harness,'status':'error','meta':{'nativeLoaded':False,'nativeStateObserved':False,'humanStop':os.environ['MODE']=='cold_stopped','nativeColdContinuation':{'contract':'cold-queue-subscription-v1','state':'cold_preparable','sessionId':session if os.environ['MODE']!='cold_invalid' else 'wrong','fingerprint':'a'*64,'observedAtMs':1}}}
+  mode=os.environ['MODE'];stamp=int(time.time()*1000)
+  if mode=='cold_catalog_stale':stamp-=60000
+  if mode=='cold_catalog_future':stamp+=60000
+  v={'id':session,'harness':harness,'status':'stopped' if mode.startswith('cold_catalog_') else 'error','meta':{'nativeLoaded':mode=='cold_catalog_loaded','nativeStateObserved':mode=='cold_catalog_observed','humanStop':mode in ('cold_stopped','cold_catalog_human_stop'),'nativeColdContinuation':{'contract':'cold-queue-subscription-v1','state':'cold_preparable','sessionId':session if mode not in ('cold_invalid','cold_catalog_invalid') else 'wrong','fingerprint':'a'*64,'observedAtMs':stamp}}}
+  if mode=='cold_catalog_user_cancelled':v['meta']['nativeLastTurn']={'cancelledByUser':True}
+  if mode=='cold_catalog_automation_stop':v['meta']['automationStop']=True
+  if mode=='cold_catalog_automation_hold':v['meta']['automationStop']={'reason':'user'}
+  if mode=='cold_catalog_top_human_stop':v['humanStop']=True
  elif m=='sendMessage':
   assert p['id']==session and p['options']['activeTurnOnly'] is False and p['options']['inputId']=='key'
   with open(os.environ['TRACE']+'.wire','a') as f:f.write(json.dumps(p)+'\n')
@@ -1011,18 +1024,28 @@ for line in sys.stdin:
 
     #[tokio::test]
     async fn zcode_cold_queue_uses_typed_read_and_one_bounded_handoff() {
-        for mode in ["cold", "cold_invalid", "cold_stopped", "cold_unknown"] {
+        for mode in ["cold", "cold_catalog_stopped", "cold_invalid", "cold_stopped", "cold_unknown",
+            "cold_catalog_invalid", "cold_catalog_stale", "cold_catalog_future",
+            "cold_catalog_observed", "cold_catalog_loaded", "cold_catalog_user_cancelled",
+            "cold_catalog_human_stop", "cold_catalog_automation_stop",
+            "cold_catalog_automation_hold", "cold_catalog_top_human_stop"] {
             let (fixture, adapter) = setup_with_policy(mode, "zcode", SendMode::Queue, "cold-exact").unwrap();
             assert!(adapter.automatic_continuation_supported());
             let address = SessionAddress { instance: adapter.instance.clone(), native_session_id: "cold-exact".into() };
             let snapshot = adapter.snapshot(&address).await.unwrap();
-            if mode == "cold_invalid" {
+            let invalid = matches!(mode, "cold_invalid" | "cold_catalog_invalid"
+                | "cold_catalog_stale" | "cold_catalog_future"
+                | "cold_catalog_observed" | "cold_catalog_loaded");
+            let stopped = mode == "cold_stopped"
+                || (mode.starts_with("cold_catalog_") && mode != "cold_catalog_stopped");
+            assert_eq!(snapshot.human_stop, stopped, "{mode}");
+            if invalid {
                 assert_eq!(snapshot.activity, SessionActivity::Unknown);
             } else {
                 assert_eq!(snapshot.activity, SessionActivity::ColdPreparable);
             }
             let plan = crate::domain::adapter::decide_send(&snapshot, &crate::domain::adapter::SendCommand { mode: SendMode::Queue });
-            if matches!(mode, "cold_invalid" | "cold_stopped") {
+            if invalid || stopped {
                 assert!(plan.is_err());
             } else {
                 let outcome = adapter.submit_bounded(plan.unwrap(), "hi", &RequestKey("key".into()));
@@ -1036,7 +1059,7 @@ for line in sys.stdin:
             assert!(trace.lines().any(|line| line == "getQueuedContinuationState"));
             assert!(!trace.lines().any(|line| line == "getSession"));
             assert_eq!(trace.lines().filter(|line| *line == "sendMessage").count(),
-                usize::from(!matches!(mode, "cold_invalid" | "cold_stopped")));
+                usize::from(!invalid && !stopped));
         }
     }
 
@@ -1482,7 +1505,11 @@ fn zcode_cold_preparable(value: &Value, session_id: &str) -> bool {
         && value.pointer("/meta/nativeColdContinuation/fingerprint").and_then(Value::as_str)
             .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         && value.pointer("/meta/nativeColdContinuation/observedAtMs").and_then(Value::as_u64)
-            .is_some_and(|value| value > 0)
+            .is_some_and(|observed| {
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()
+                    .is_some_and(|now| observed > 0 && u128::from(observed) <= now.as_millis()
+                        && now.as_millis() - u128::from(observed) <= 10_000)
+            })
 }
 
 #[cfg(test)]
@@ -1504,9 +1531,10 @@ mod canonical_wait_turn_tests {
             value.as_object_mut().unwrap().remove(missing);
             assert!(!automatic_continuation_supported("zcode", &value));
         }
+        let observed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
         let exact = json!({"status":"error","meta":{"nativeLoaded":false,"nativeStateObserved":false,
             "nativeColdContinuation":{"contract":"cold-queue-subscription-v1","state":"cold_preparable",
-                "sessionId":"native-exact","fingerprint":"a".repeat(64),"observedAtMs":1}}});
+                "sessionId":"native-exact","fingerprint":"a".repeat(64),"observedAtMs":observed}}});
         assert!(zcode_cold_preparable(&exact, "native-exact"));
         assert!(!zcode_cold_preparable(&exact, "native-other"));
         for (field, replacement) in [
