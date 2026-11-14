@@ -17,7 +17,7 @@ The following observations were made on server-100 on 2026-11-13. Re-read the se
 | Baseline manifest | /home/roomhacker/herder-artifacts/releases/ahap-opencode-resume-bce62de3-v1/manifest.json | SHA256 4a711887a69126c02ac870b42c896f806db312382f83120f998a45c00a1fe770. |
 | Composite components | Core and browser adapter a7fbc548; compat, Node, bootstrap, Codex and ZCode cebecc13; OpenCode bce62de3 | Preserve each component's provenance. The top manifest commit is not the running core commit. |
 | Trusted profiles | Six: local Codex, remote44 Codex, noticeplace OpenCode, ChatGPT browser, ZCode and ZAI | Preserve authority and wrapper pins. Only the explicit reviewed adapter transition creates new sibling profile paths. |
-| TypeScript service | agent-herder.service; source c9bc35a6; 127.0.0.1:18787 | Its scheduler code needs a coordinated cutover. Production core rollout must prove the installed TS gate and matching canonical configuration. |
+| TypeScript service | agent-herder.service; entry under releases/80420046b1be7cb8db03783f5c15d02e91c65fc8; observed 2026-11-14 02:19:57 UTC | This supersedes the earlier c9bc35a6 observation. Its current scheduler identity, source/configuration pins and matching canonical gate require fresh verification during paired cutover. This task did not restart or replace the service. |
 | NoticePlace bridge | agent-herder-v1-noticeplace.service; source b33f5b37; 127.0.0.1:18797 | Its existing target is the native MCP. |
 | Fleet transport child | HerderFleet | Different authority from AgentHerder. Do not use a remapped fleet route for canonical process waits. |
 

@@ -4,23 +4,33 @@
 The selected installed harness is reused only for newly created QA sessions.
 No shared Herder selector or ownership store is modified. Effects are checkpointed
 before admission and are never replayed automatically after an uncertain result.
+Native acceptance currently requires an explicit reviewed local ZCode full-history
+proof. Other harnesses stop before admission until a complete reader is proven.
 """
 import argparse
+import base64
 import copy
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 
 MARKER = "PROCESS_LEASES_V1"
+NATIVE_HISTORY_CONTRACT = "zcode-session-read-current-conversation-v1"
+NATIVE_EXPORT_SOURCE = {"kind": "native-api", "location": "zcode app-server session/read", "format": "json"}
+# ZCode persists these two accounting parts for an ordinary model turn. They
+# are not tool calls. Other part types remain outside this QA acceptance.
+QA_REPLY_PARTS = {"text", "reasoning", "step-start", "step-finish"}
 
 
 def sha(path):
@@ -53,8 +63,162 @@ def check(ok, reason):
     if not ok: raise RuntimeError(reason)
 
 
+def private_json(path):
+    path = Path(path)
+    check(path.is_absolute() and path.resolve(strict=True) == path, "noncanonical private QA evidence")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        check(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1
+              and not info.st_mode & 0o077 and info.st_size <= 8 * 1024 * 1024, "untrusted private QA evidence")
+        data = stream.read(8 * 1024 * 1024 + 1)
+        after = os.fstat(stream.fileno())
+    check(len(data) == info.st_size and (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+          == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), "QA evidence changed during read")
+    return json.loads(data), hashlib.sha256(data).hexdigest()
+
+
+def native_server_observation(pid):
+    """Read only the already reviewed native server and its non-secret route."""
+    proc = Path("/proc") / str(pid)
+    raw = (proc / "stat").read_text()
+    fields = raw[raw.rfind(")") + 2:].split()
+    argv = [arg.decode() for arg in (proc / "cmdline").read_bytes().split(b"\0") if arg]
+    env = dict(item.split(b"=", 1) for item in (proc / "environ").read_bytes().split(b"\0") if b"=" in item)
+    return {"pid": pid, "start_ticks": fields[19], "state": fields[0], "uid": proc.stat().st_uid,
+            "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "exe": os.readlink(proc / "exe"), "entry": argv[1] if len(argv) > 1 else None,
+            "agent_command": env.get(b"ZCODE_AGENT_SERVER_COMMAND", b"").decode(),
+            "agent_args": json.loads(env.get(b"ZCODE_AGENT_SERVER_ARGS_JSON", b"null"))}
+
+
+def validate_history_proof(kind, source_commit, owner, reference):
+    """A reviewed local ZCode reader is the only complete reader proven here.
+
+    The source review is independent of the old QA session named in its evidence.
+    Its release and server identity still have to match before any new effect.
+    No other harness inherits completeness from a bounded messages response.
+    """
+    check(kind == "zcode", "unsupported_native_acceptance: no reviewed complete reader for " + str(kind))
+    check(isinstance(reference, dict) and reference.get("contract") == NATIVE_HISTORY_CONTRACT
+          and isinstance(reference.get("path"), str) and isinstance(reference.get("sha256"), str)
+          and re.fullmatch(r"[0-9a-f]{64}", reference["sha256"]),
+          "unsupported_native_acceptance: explicit reviewed native history proof required")
+    proof, digest = private_json(reference["path"])
+    check(digest == reference["sha256"], "native history review digest changed")
+    conclusion = proof.get("conclusion", {})
+    check(proof.get("version") == 1 and proof.get("kind") == "herder-zcode-native-history-source-review"
+          and proof.get("source_commit") == source_commit and conclusion.get("read_route_suitable_for_qa") is True
+          and conclusion.get("hidden_default_message_limit") is False
+          and conclusion.get("not_a_tail_length_inference") is True, "unsupported_native_history_review")
+    check(sys.platform == "linux" and owner.get("node") == os.uname().nodename
+          and owner.get("kind") == kind
+          and owner.get("ahap_env", {}).get("AHAP_ZCODE_TRANSPORT") == "official-server",
+          "unsupported_native_acceptance: reviewed reader is local Linux official-server only")
+    model = owner.get("ahap_env", {}).get("AHAP_ZCODE_CREATE_MODEL")
+    check(isinstance(model, str) and model, "explicit unchanged native model required")
+    release = proof.get("installed_release", {})
+    release_root = Path(release.get("root", ""))
+    check(release_root.is_absolute() and release_root.resolve(strict=True) == release_root,
+          "native release root changed")
+    paths = {name: str(release_root / name) for name in
+             ("runtime/node", "runtime/server-core.js", "runtime/zcode.cjs", "manifest.json")}
+    files = release.get("files", [])
+    check(isinstance(files, list) and len(files) == 4
+          and {entry.get("path") for entry in files} == set(paths.values()), "native release inventory incomplete")
+    for entry in files:
+        path = Path(entry["path"]); info = path.lstat()
+        maximum = 256 * 1024 * 1024 if entry["path"] == paths["runtime/node"] else 64 * 1024 * 1024
+        check(path.resolve(strict=True) == path and stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+              and info.st_uid in (0, os.getuid()) and not info.st_mode & 0o022
+              and info.st_size <= maximum and sha(path) == entry.get("sha256"), "native release file pin changed")
+    servers = [item for item in proof.get("observed_processes", []) if item.get("entry") == paths["runtime/server-core.js"]]
+    check(len(servers) == 1 and type(servers[0].get("pid")) is int, "native server identity evidence missing")
+    expected = servers[0]; actual = native_server_observation(expected["pid"])
+    check(actual["uid"] == os.getuid() and actual["state"] != "Z"
+          and all(actual.get(key) == expected.get(key) for key in ("pid", "boot_id", "start_ticks"))
+          and actual["exe"] == paths["runtime/node"] and actual["entry"] == paths["runtime/server-core.js"]
+          and actual["agent_command"] == paths["runtime/node"]
+          and actual["agent_args"] == [paths["runtime/zcode.cjs"], "app-server", "--stdio"],
+          "native history server or exact agent route changed")
+    return reference
+
+
+def require_history_reader(state):
+    check(state.get("kind") == "zcode", "unsupported_native_acceptance: no reviewed complete reader for " + str(state.get("kind")))
+    check(isinstance(state.get("native_history"), dict)
+          and state["native_history"].get("contract") == NATIVE_HISTORY_CONTRACT,
+          "unsupported_native_acceptance: explicit reviewed native history proof required")
+    profile, profile_hash = private_json(state["profile"])
+    check(profile_hash == state.get("profile_sha256"), "prepared QA profile changed or has no reader proof")
+    manifest = json.loads(Path(state["base_manifest"]).read_text())
+    check(sha(state["base_manifest"]) == state["base_manifest_sha256"]
+          and manifest["source_commit"] == state["source_commit"]
+          and profile["owner"]["ahap_script"] == manifest["adapters"]["zcode"]
+          and sha(profile["owner"]["ahap_script"]) == manifest["sha256"]["adapters"]["zcode"],
+          "unsupported_native_acceptance: exact reviewed local adapter required")
+    return validate_history_proof(state["kind"], state["source_commit"], profile["owner"], state.get("native_history"))
+
+
+def parse_native_export(value, session_ref, native_session_id):
+    """Full current conversation, with native identities and no tail inference.
+
+    Adapted from the reviewed existing-session QA helper, with its source proof
+    recorded in native-history-source-proof.json (SHA256 e499a03f...e81d74).
+    This does not claim a forensic archive of removed rewind branches.
+    """
+    check(isinstance(value, dict) and value.get("session_ref") == session_ref
+          and value.get("format") == "native" and value.get("encoding") == "base64"
+          and value.get("complete") is True, "native_export_incomplete_or_misbound")
+    check(value.get("source") == NATIVE_EXPORT_SOURCE and value.get("timestampCoverage") == "native",
+          "unsupported_native_export_source")
+    encoded = value.get("bytes_base64")
+    check(isinstance(encoded, str) and len(encoded) <= 24 * 1024 * 1024, "native_export_bytes_missing_or_unbounded")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+        snapshot = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError) as error:
+        raise RuntimeError("invalid_native_export_encoding") from error
+    check(isinstance(snapshot, dict), "native_export_snapshot_not_object")
+    session = snapshot.get("session", snapshot)
+    check(isinstance(session, dict) and session.get("sessionId") == native_session_id
+          and snapshot.get("sessionId", native_session_id) == native_session_id, "native_export_session_mismatch")
+    source_rows = snapshot.get("messages")
+    check(isinstance(source_rows, list) and len(source_rows) <= 10000, "native_export_messages_unavailable_or_unbounded")
+    rows = []
+    for message in source_rows:
+        check(isinstance(message, dict), "invalid_native_message")
+        info = message.get("info"); parts = message.get("parts")
+        check(isinstance(info, dict) and isinstance(parts, list), "native_message_shape_unsupported")
+        native_id = info.get("messageId"); role = info.get("role")
+        check(isinstance(native_id, str) and re.fullmatch(r"msg_[A-Za-z0-9_-]+", native_id)
+              and role in {"user", "assistant", "system", "developer", "tool"}, "native_message_identity_missing")
+        check(info.get("sessionId", native_session_id) == native_session_id, "native_message_session_mismatch")
+        check(all(isinstance(part, dict) and isinstance(part.get("type"), str) for part in parts),
+              "native_message_parts_unsupported")
+        texts = [part.get("text") for part in parts if part["type"] == "text"]
+        check(all(isinstance(text, str) for text in texts), "native_message_text_invalid")
+        anchor = info.get("anchor") or {}; metadata = info.get("metadata") or {}
+        check(isinstance(anchor, dict) and isinstance(metadata, dict), "native_message_correlation_invalid")
+        row = {"id": native_id, "nativeMessageId": native_id, "role": role, "text": "\n".join(texts),
+               "part_types": [part["type"] for part in parts]}
+        for target, source in (("parentMessageId", info.get("parentMessageId")),
+                               ("sourceCommandId", anchor.get("sourceCommandId")), ("inputId", metadata.get("inputId"))):
+            if source is not None:
+                check(isinstance(source, str) and source, "native_message_correlation_invalid")
+                row[target] = source
+        rows.append(row)
+    check(len({row["id"] for row in rows}) == len(rows), "duplicate_native_message_ids")
+    return {"complete": True, "scope": "current_native_conversation", "source": NATIVE_EXPORT_SOURCE,
+            "timestampCoverage": "native", "raw_sha256": hashlib.sha256(raw).hexdigest(), "raw_bytes": len(raw),
+            "message_count": len(rows), "native_session_id": native_session_id}, rows
+
+
 class MCP:
     def __init__(self, root, state):
+        self.root = root
+        self.state = state
+        self.history_reader = None
         self.seq = 0
         self.buffer = b""
         self.err = open(root / "native-mcp.stderr.log", "ab")
@@ -93,17 +257,20 @@ class MCP:
     def call(self, name, args):
         read_only = (name, args.get("action")) in {
             ("automation", "get"), ("resource", "get"),
-            ("session", "messages"), ("sessions", "list"), ("compat_task", "get")}
+            ("session", "messages"), ("sessions", "list"), ("compat_task", "get"), ("automation", "wait_status")}
+        read_only = read_only or (name == "export" and args.get("action") == "export"
+            and args.get("format") == "native" and isinstance(args.get("session_ref"), str)
+            and bool(args["session_ref"]) and set(args) == {"action", "session_ref", "format"})
         retry_deadline = time.monotonic()+150
         while True:
             value = self.rpc("tools/call", {"name": name, "arguments": args})
             if not value.get("isError"): break
-            detail = value.get("structuredContent") or value.get("content")
+            detail = value.get("structuredContent")
             # A canonical writer may hold the gate during a bounded native
             # admission. Retry this read only; never retry a possible effect.
             if read_only and isinstance(detail, dict) and detail.get("effect") == "none" and detail.get("code") == "scope_unavailable" and time.monotonic()<retry_deadline:
                 time.sleep(0.5);continue
-            raise RuntimeError("tool "+name+" failed: "+json.dumps(detail)[:1000])
+            raise RuntimeError("tool "+name+" failed: "+json.dumps(detail or value.get("content"))[:1000])
         data = value.get("structuredContent")
         if isinstance(data, dict): return data
         for part in value.get("content", []):
@@ -170,38 +337,142 @@ def observe_task(client, root, state, label, timeout=180):
 
 
 def messages(client, session):
-    value = client.call("session", {"action":"messages", "session_ref":session})
-    page = value.get("page", value)
-    return page, page.get("messages", [])
+    state = client.state
+    check(session == state.get("session_ref") and state.get("native_session_id"), "exact native history binding missing")
+    if client.history_reader is None:
+        client.history_reader = require_history_reader(state)
+    value = client.call("export", {"action": "export", "session_ref": session, "format": "native"})
+    proof, rows = parse_native_export(value, session, state["native_session_id"])
+    # Native read plus optional indexing in this private authority. The full
+    # export is retained so the ID/count proof remains independently reviewable.
+    artifact = client.root / ("native-export-" + str(time.time_ns()) + ".json")
+    create(artifact, value)
+    proof.update(export_artifact=str(artifact), export_artifact_sha256=sha(artifact))
+    return proof, rows
+
+
+def profile_owner(state):
+    profile, digest = private_json(state["profile"])
+    check(digest == state.get("profile_sha256") and profile["database"] == state["database"]
+          and profile["generation"] == state["generation"], "original QA authority/profile changed")
+    return profile["owner"]
+
+
+def exact_message_receipt(state, request_key):
+    owner = profile_owner(state)
+    with sqlite3.connect("file:" + state["database"] + "?mode=ro", uri=True) as db:
+        rows = db.execute("SELECT task_id,principal,target,state,native_receipt FROM intents WHERE request_key=?",
+                          (request_key,)).fetchall()
+    check(len(rows) == 1 and rows[0][1] == owner["principal"] and rows[0][2] == state["session_ref"]
+          and rows[0][3] == "confirmed" and rows[0][4], "exact canonical native delivery receipt missing")
+    receipt = json.loads(rows[0][4])
+    address = {"instance": {"node": owner["node"], "instance_id": owner["instance"]},
+               "native_session_id": state["native_session_id"]}
+    check(receipt.get("version") == 1 and receipt.get("request_key") == request_key
+          and receipt.get("target_ref") == state["session_ref"] and receipt.get("principal") == owner["principal"]
+          and receipt.get("address") == address, "native_receipt_binding_mismatch")
+    encoded = receipt.get("native_id", ""); prefix = "ahap-receipt:v1:"
+    check(isinstance(encoded, str) and encoded.startswith(prefix), "native_message_receipt_required")
+    native = json.loads(encoded[len(prefix):])
+    check(native.get("kind") == "message" and isinstance(native.get("native_id"), str)
+          and re.fullmatch(r"msg_[A-Za-z0-9_-]+", native["native_id"]), "exact_native_message_id_required")
+    return {"task_ref": rows[0][0], "message_id": native["native_id"], "request_key": request_key, "receipt": receipt}
+
+
+def initial_prompt_key(state):
+    # Exact Rust scoped_stop/create_prompt.rs::delivery_identifiers contract.
+    # Use the admitted create key, never a new key after a missing ACK.
+    owner = profile_owner(state)
+    key = state["effects"]["create_session"]["request_key"]
+    check(isinstance(key, str) and key, "original create key missing")
+    value = ["create-prompt-v1", owner["principal"], {"node": owner["node"], "instance_id": owner["instance"]}, key]
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+    return "create-prompt:" + hashlib.sha256(encoded).hexdigest()
+
+
+def assert_native_idle(client, session):
+    state = client.state
+    check(session == state.get("session_ref"), "native idle target mismatch")
+    listing = client.call("sessions", {"action": "list"})
+    selected = [row for row in listing.get("sessions", []) if row.get("session_ref") == session]
+    check(listing.get("native_coverage_complete") is True and len(selected) == 1, "native_status_incomplete")
+    native = selected[0].get("native", {})
+    check(native.get("id") == state["native_session_id"] and native.get("harness") == state["kind"]
+          and native.get("status") == "idle" and native.get("needsPermission") is not True, "native_session_not_idle")
+    configured = profile_owner(state)["ahap_env"]["AHAP_ZCODE_CREATE_MODEL"]
+    models = [value for value in (native.get("model"), (native.get("meta") or {}).get("model")) if value is not None]
+    check(models and all(value == configured for value in models), "native_model_not_exactly_pinned")
+    return native
+
+
+def native_baseline(client, state):
+    assert_native_idle(client, state["session_ref"])
+    page, rows = messages(client, state["session_ref"])
+    return {"ids": [row["id"] for row in rows], "assistant_ids": [row["id"] for row in rows if row["role"] == "assistant"],
+            "history_complete": True, "history": page, "idle": True}
+
+
+def verify_reply_rows(rows, baseline_ids, receipt_id, marker, expected_assistant_ids):
+    check(isinstance(baseline_ids, list) and len(set(baseline_ids)) == len(baseline_ids), "invalid native baseline")
+    check(set(baseline_ids).issubset({row["id"] for row in rows}), "native_history_lost_baseline_messages")
+    added = [row for row in rows if row["id"] not in baseline_ids]
+    users = [row for row in added if row["role"] == "user"]
+    assistants = [row for row in added if row["role"] == "assistant"]
+    check(len(users) == 1 and users[0]["id"] == receipt_id, "unexpected_native_input_count_or_binding")
+    check(len(assistants) == 1 and [assistants[0]["id"]] == expected_assistant_ids
+          and assistants[0]["text"].strip() == marker, "unexpected_native_assistant_turns")
+    check(len(added) == 2 and assistants[0].get("parentMessageId") == users[0]["id"], "native_reply_parent_mismatch")
+    check(all(set(row["part_types"]) <= QA_REPLY_PARTS for row in added), "unexpected_native_tool_or_attachment")
+    return {"native_user_ids": [users[0]["id"]], "native_assistant_ids": [assistants[0]["id"]],
+            "native_parent_message_id": assistants[0]["parentMessageId"],
+            "native_part_types": {row["id"]: row["part_types"] for row in added}}
 
 
 def wait_marker(client, session, marker, timeout=120):
     deadline = time.monotonic()+timeout
-    idle_since = None
+    idle_since = None; previous = None; samples = []
     while time.monotonic()<deadline:
         page, rows = messages(client, session)
         found = [x for x in rows if x.get("role") == "assistant" and x.get("text", "").strip() == marker]
+        check(len(found) <= 1, "multiple native assistant replies for one expected continuation")
         if found:
             # A first streamed answer can precede another native turn promoted
             # from the same inbox item. Wait for stable native idle, then inspect
             # the history again before claiming a single continuation.
-            check(len(found)==1, "multiple native assistant replies for one expected continuation")
             listing = client.call("sessions", {"action":"list"})
             selected = [row for row in listing.get("sessions", []) if row.get("session_ref")==session]
             native = selected[0].get("native") if len(selected)==1 else None
             idle = (listing.get("native_coverage_complete") is True and isinstance(native,dict)
-                    and native.get("status")=="idle" and native.get("needsPermission") is not True)
+                    and native.get("id") == client.state["native_session_id"] and native.get("harness") == client.state["kind"]
+                    and native.get("status")=="idle" and native.get("needsPermission") is not True and page.get("complete") is True)
             if idle:
-                if idle_since is None: idle_since = time.monotonic()
-                elif time.monotonic()-idle_since >= 3:
-                    check(page.get("complete") is True, "native history incomplete; one observed reply does not prove a single continuation")
+                now = time.monotonic(); wall = int(time.time() * 1000)
+                if idle_since is None or (previous is not None and now - previous > 5):
+                    idle_since = now; samples = []
+                previous = now; samples.append({"monotonic": now, "observed_at_unix_ms": wall})
+                if now - idle_since >= 15:
                     return {"count":len(found), "ids":[x.get("id") for x in found],
                             "text":[x.get("text") for x in found], "history_complete":page.get("complete"),
-                            "native_idle_confirmed":True}
-            else: idle_since = None
-        else: idle_since = None
-        time.sleep(3)
+                            "native_idle_confirmed":True, "history": page, "idle_window_ms": int((now-idle_since)*1000),
+                            "idle_observed_from_unix_ms": samples[0]["observed_at_unix_ms"], "idle_observed_until_unix_ms": wall,
+                            "idle_observation_count": len(samples), "max_observation_gap_ms": max(
+                                (int((b["monotonic"]-a["monotonic"])*1000) for a,b in zip(samples,samples[1:])), default=0)}
+            else: idle_since = None; previous = None; samples = []
+        else: idle_since = None; previous = None; samples = []
+        time.sleep(2)
     raise TimeoutError("native assistant marker and stable idle missing; no resend")
+
+
+def verify_reply(client, state, baseline, request_key, marker, timeout=120):
+    stable = wait_marker(client, state["session_ref"], marker, timeout)
+    receipt = exact_message_receipt(state, request_key)
+    page, rows = messages(client, state["session_ref"])
+    check(page.get("complete") is True, "final_history_incomplete")
+    proof = verify_reply_rows(rows, baseline["ids"], receipt["message_id"], marker, stable["ids"])
+    assert_native_idle(client, state["session_ref"])
+    require_history_reader(state)
+    return {**stable, **proof, "marker": stable, "receipt": receipt, "complete_history": True, "final_history": page,
+            "final_idle_observed_at_unix_ms": int(time.time()*1000)}
 
 
 def prepare(args):
@@ -235,17 +506,13 @@ def prepare(args):
             base = candidate.read_json(migration_profile["payload"])
     kind = base["owner"]["kind"]
     check(kind in ("codex", "opencode", "zcode", "chatgpt", "zai", "hermes"), "unsupported explicit harness")
+    proof_path = getattr(args, "native_history_proof", None)
+    history = {"contract": NATIVE_HISTORY_CONTRACT, "path": str(proof_path) if proof_path else None,
+               "sha256": getattr(args, "native_history_proof_sha256", None)}
+    validate_history_proof(kind, manifest["source_commit"], base["owner"], history)
     remote = base["owner"]["ahap_script"] != manifest["adapters"][kind]
-    if remote:
-        matches = [w for w in manifest.get("remote_ahap_wrappers", []) if
-            (w["node"], w["instance"], w["kind"], w["script"]) ==
-            (base["owner"]["node"], base["owner"]["instance"], kind, base["owner"]["ahap_script"])]
-        check(len(matches) == 1, "exact pinned remote wrapper required")
-        check(sha(base["owner"]["ahap_script"]) == matches[0]["script_sha256"] and
-              sha(base["owner"]["ahap_script"] + ".json") == matches[0]["config_sha256"],
-              "remote wrapper/config digest mismatch")
-    else:
-        check(sha(base["owner"]["ahap_script"]) == manifest["sha256"]["adapters"][kind], "adapter digest mismatch")
+    check(not remote, "unsupported_native_acceptance: no reviewed remote complete reader")
+    check(sha(base["owner"]["ahap_script"]) == manifest["sha256"]["adapters"][kind], "adapter digest mismatch")
     protected = root/"herder-owner-home"
     protected.mkdir(mode=0o700)
     out = subprocess.run([manifest["bootstrap"], str(protected)], check=True, capture_output=True, text=True, timeout=30)
@@ -291,7 +558,8 @@ print('PROCESS_BUILD_FINISHED',flush=True)
     state = {"version":1,"status":"prepared","run":root.name,"effects":{},
              "source_commit":manifest["source_commit"],"base_manifest":str(manifest_path),"base_manifest_sha256":sha(manifest_path),
              "base_profile":str(args.profile),"base_profile_sha256":sha(args.profile),
-             "profile":str(profile),"database":seed["database"],"generation":seed["generation"],
+             "profile":str(profile),"profile_sha256":sha(profile),"database":seed["database"],"generation":seed["generation"],
+             "native_history":history,
              "instance_ref":owner["instance"],"kind":kind,"work":str(work),
              "launcher":str(manifest_path.parent/"fixture/launch-v1-core.py"),
              "resource_ref":"qa:process-build:"+root.name,"storage_id":config["resources"]["storage_id"]}
@@ -304,6 +572,7 @@ print('PROCESS_BUILD_FINISHED',flush=True)
 
 
 def session_start(client, root, state):
+    require_history_reader(state)
     marker = "READY_"+MARKER
     prompt = ("This is a disposable test session for Agent Herder. Do not use tools, inspect files, contact anyone, or start work. "
               "Reply exactly "+marker+" and end this turn. When a later process completion receipt arrives, "
@@ -315,16 +584,23 @@ def session_start(client, root, state):
     session = completed.get("create", {}).get("session_ref") or completed.get("session_ref")
     check(session, "native create receipt has no session reference")
     state["session_ref"] = session;save(root/"checkpoint.json",state)
-    state["initial_reply"] = wait_marker(client,session,marker)
     with sqlite3.connect("file:"+state["database"]+"?mode=ro", uri=True) as db:
         rows=db.execute("SELECT native_session_id,node_ref,instance_id FROM session_bindings WHERE session_ref=?",(session,)).fetchall()
     check(len(rows)==1, "exact native session binding missing")
     state["native_session_id"],state["native_node_ref"],state["native_instance_id"]=rows[0]
+    # This was a newly created native session. Its original create-prompt ACK
+    # must account for exactly one user and one assistant, with no prior IDs.
+    state["initial_reply"] = verify_reply(client,state,{"ids":[]},initial_prompt_key(state),marker)
     state["status"]="session_ready";save(root/"checkpoint.json",state)
 
 
 def run_process(client,root,state):
+    require_history_reader(state)
     check(state.get("status")=="session_ready", "exact initial assistant reply required")
+    check(not {"resource_register", "resource_claim", "process_wait"}.intersection(state["effects"]),
+          "process was already attempted; preserve the original baseline and inspect receipts, no replay")
+    state["before_wait_native"] = native_baseline(client,state)
+    save(root/"checkpoint.json",state)
     resource=state["resource_ref"]
     descriptor=effect(client,root,state,"resource_register","resource",{"action":"register","resource_ref":resource,
         "scope":{"type":"global"},"kind":{"type":"other","name":"build"},"external_ref":"fixture:"+state["run"],
@@ -381,7 +657,10 @@ def observe(client,root,state):
         time.sleep(3)
     else:raise TimeoutError("automatic wake receipt not confirmed")
     state["wait_state"]=states[0]
-    state["wake_reply"]=wait_marker(client,state["session_ref"],"RESUMED_"+MARKER+" exit=0")
+    baseline = state.get("before_wait_native")
+    check(isinstance(baseline,dict) and baseline.get("history_complete") is True,
+          "original pre-effect native baseline missing; cannot infer continuation count")
+    state["wake_reply"]=verify_reply(client,state,baseline,"process-wake:"+state["rule_ref"],"RESUMED_"+MARKER+" exit=0")
     state["terminal_resource"]=client.call("resource",{"action":"get","resource_ref":state["resource_ref"]})
     check(state["terminal_resource"].get("claim") is None,"claim not released after complete process tree")
     check(state["wake_reply"]["count"]==1,"unexpected multiple native assistant wake replies")
@@ -400,6 +679,10 @@ def main():
     parser.add_argument("--action",choices=["prepare","preflight","start-session","reconcile-session","run-process","observe","archive"],required=True)
     parser.add_argument("--manifest",type=Path)
     parser.add_argument("--profile",type=Path)
+    parser.add_argument("--native-history-proof",type=Path,
+                        help="Private reviewed complete-reader source proof, required when preparing native acceptance")
+    parser.add_argument("--native-history-proof-sha256",
+                        help="Explicit SHA256 of the reviewed native history proof")
     args=parser.parse_args();root=args.root;client=None
     state=None
     try:
@@ -408,6 +691,9 @@ def main():
             state=prepare(args)
         else:
             state=json.loads((root/"checkpoint.json").read_text())
+            # Every action starts a runtime that can drive existing admitted
+            # work. Even preflight/archive must not bypass reader admission.
+            require_history_reader(state)
             client=MCP(root,state)
             if args.action=="preflight":
                 state["preflight"]={"tools":[x["name"] for x in client.tools],
@@ -415,10 +701,11 @@ def main():
                 save(root/"checkpoint.json",state)
             elif args.action=="start-session":session_start(client,root,state)
             elif args.action=="reconcile-session":
-                # Reads the original task only. Never repeats create or prompt.
+                # Reconcile the original operation, without a second create or
+                # prompt key. Runtime startup can advance existing admitted work.
                 completed = observe_task(client,root,state,"create_session",timeout=30)
                 check(state.get("session_ref"), "create identity remains unknown")
-                state["initial_reply"] = wait_marker(client,state["session_ref"],"READY_"+MARKER,timeout=30)
+                state["initial_reply"] = verify_reply(client,state,{"ids":[]},initial_prompt_key(state),"READY_"+MARKER,timeout=30)
                 state["status"]="session_ready";save(root/"checkpoint.json",state)
             elif args.action=="run-process":
                 client=run_process(client,root,state);observe(client,root,state)
