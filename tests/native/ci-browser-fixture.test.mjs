@@ -1,4 +1,7 @@
 import test from 'node:test';
+import {execFileSync, spawn} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {validateConfig, parseProcStat, assertProcessBindings, deriveGeneration, findAnchor,
   browserArguments, browserEnvironment, browserExtensionPaths, assertManagedState, inspectAnchorScript, BrowserFixtureManager, assertRecoveryReady} from '../../deploy/fleet/ci-browser-fixture.mjs';
@@ -348,4 +351,57 @@ test('failed recovery cannot reach a browser launch or erase the prior state', a
   manager.cli = async args => {calls.push(args); return {};};
   await assert.rejects(manager.start(), /old browser is still live/);
   assert.deepEqual(calls, ['recovery-check']);
+});
+
+const pythonLauncher = new URL('../../deploy/fleet/ci-browser-launcher.py', import.meta.url).pathname;
+const loadPythonLauncher = "import importlib.util,json,sys; spec=importlib.util.spec_from_file_location('launcher',sys.argv[1]); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); ";
+
+test('CI Chrome wrapper removes only the exact allowlist switch and preserves commas and every other argument', () => {
+  const input = ['--user-data-dir=/owned/ci-profile', '--disable-extensions-except=/owned/vibe,/owned/bez',
+    '--load-extension=/owned/vibe,/owned/bez', '--disable-extensions-except-more=keep',
+    '--enable-features=NetworkService,CDPScreenshotNewSurface', '--disable-extensions-except', '/owned/vibe,/owned/bez', 'about:blank'];
+  const result = execFileSync('/usr/bin/python3', ['-c', loadPythonLauncher +
+    'print(json.dumps(module.without_extension_allowlist(json.load(sys.stdin))))', pythonLauncher],
+    {input: JSON.stringify(input), encoding: 'utf8'});
+  assert.deepEqual(JSON.parse(result), [input[0], input[2], input[3], input[4], input[7]]);
+  assert.throws(() => execFileSync('/usr/bin/python3', ['-c', loadPythonLauncher +
+    "module.without_extension_allowlist(['--disable-extensions-except', '--load-extension=/owned/vibe'])", pythonLauncher],
+    {stdio: 'pipe'}));
+});
+
+test('new CLI launches pin the wrapper and preserve actual Chrome executable/parent attestation', () => {
+  const c = config(); c.browser.extra_extension_paths = ['/owned/bezbrowser']; c.browser.cdp_screenshot_new_surface = true;
+  assert.equal(browserEnvironment(c).AGENT_BROWSER_EXECUTABLE_PATH, '/opt/agent-herder-ci-smoke/ci-browser-launcher.py');
+  const p = processes(c); p.daemon.env.AGENT_BROWSER_EXECUTABLE_PATH = browserEnvironment(c).AGENT_BROWSER_EXECUTABLE_PATH;
+  assert.doesNotThrow(() => assertProcessBindings(c, p));
+  for (const mutate of [
+    p => {p.browser.ppid = 999;}, p => {p.browser.executable_sha256 = 'b'.repeat(64);},
+    p => {p.browser.argv.push('--disable-extensions-except=/owned/vibe-extension');},
+    p => {p.daemon.env.AGENT_BROWSER_EXECUTABLE_PATH = '/foreign/wrapper';},
+  ]) {
+    const changed = structuredClone(p); mutate(changed); assert.throws(() => assertProcessBindings(c, changed));
+  }
+  const legacy = processes(c); legacy.browser.argv.push('--disable-extensions-except=' + browserExtensionPaths(c).join(','));
+  assert.doesNotThrow(() => assertProcessBindings(c, legacy));
+});
+
+test('wrapper exec preserves PID, parent and literal arguments using a pinned real executable', async () => {
+  const c = config(); c.runtime_uid = process.getuid(); c.browser.chrome_executable = process.execPath;
+  c.browser.chrome_sha256 = createHash('sha256').update(readFileSync(process.execPath)).digest('hex');
+  c.browser.extra_extension_paths = ['/owned/bezbrowser'];
+  const original = ['--eval', 'process.stdout.write(JSON.stringify({pid:process.pid,ppid:process.ppid,args:process.argv.slice(1)}))', '--',
+    '--user-data-dir=' + c.browser.profile_path, '--load-extension=' + browserExtensionPaths(c).join(','),
+    '--disable-extensions-except=' + browserExtensionPaths(c).join(','),
+    '--enable-features=NetworkService,NetworkServiceInProcess,CDPScreenshotNewSurface'];
+  const child = spawn('/usr/bin/python3', ['-c', loadPythonLauncher +
+    "payload=json.load(sys.stdin); module.exec_browser(payload['config'],payload['argv'])", pythonLauncher],
+    {stdio: ['pipe', 'pipe', 'pipe']});
+  let stdout = '', stderr = '';
+  child.stdout.on('data', chunk => {stdout += chunk;}); child.stderr.on('data', chunk => {stderr += chunk;});
+  const done = new Promise((resolve, reject) => {
+    child.on('error', reject); child.on('close', code => code === 0 ? resolve() : reject(Error(stderr)));
+  });
+  child.stdin.end(JSON.stringify({config: c, argv: original}));
+  await done;
+  assert.deepEqual(JSON.parse(stdout), {pid: child.pid, ppid: process.pid, args: [original[3], original[4], original[6]]});
 });

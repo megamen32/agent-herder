@@ -18,7 +18,7 @@ CONFIG = Path('/etc/agent-herder-ci-smoke')
 STATE = Path('/var/lib/agent-herder-ci-smoke')
 HELPER = Path('/usr/local/libexec/agent-herder-ci-smoke')
 REQUEST_MAX = 4096
-FILES = ('collector.cjs', 'bindings.cjs', 'candidate_release_gate.py', 'installed-public-core.py', 'public-rust-consumer.py', 'ci-browser-fixture.mjs')
+FILES = ('collector.cjs', 'bindings.cjs', 'candidate_release_gate.py', 'installed-public-core.py', 'public-rust-consumer.py', 'ci-browser-fixture.mjs', 'ci-browser-launcher.py')
 SAFE_ENV = ('AGENT_BROWSER_PROFILE', 'AGENT_BROWSER_EXTENSIONS',
             'AGENT_BROWSER_SESSION', 'AGENT_BROWSER_IDLE_TIMEOUT_MS')
 
