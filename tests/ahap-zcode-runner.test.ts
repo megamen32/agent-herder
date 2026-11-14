@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { expect, it, vi } from "vitest";
 import { ZcodeAdapter } from "../src/adapters/zcode.js";
+import { ZcodeTranscriptReadError } from "../src/adapters/zcode-native-transcript.js";
 import { makeConfiguredAdapter, serveZcodeAhap } from "../src/ahap-zcode-runner.js";
 
 async function run(adapter: Partial<ZcodeAdapter>, requests: unknown[]) {
@@ -275,4 +276,22 @@ it("preserves explicitly configured custom stdio without pretending it is offici
     vi.stubEnv("AHAP_ZCODE_TRANSPORT","guess");
     expect(()=>makeConfiguredAdapter()).toThrow("must be official-server or custom-stdio");
   } finally {vi.unstubAllEnvs();}
+});
+
+it("preserves closed read diagnostics without leaking native exception text", async () => {
+  const failure = new ZcodeTranscriptReadError({
+    source: "zcode-native-transcript", native: "runtime_not_ready", persisted: "native_source_missing",
+  });
+  const replies = await run({ getRawTranscript: async () => { throw failure; } }, [initialize,
+    { jsonrpc: "2.0", id: 2, method: "getRawTranscript", params: { id: "cold-exact" } },
+  ]);
+  expect(replies[1].error.data).toMatchObject({
+    outcome: "read_failed",
+    diagnostic: { source: "zcode-native-transcript", native: "runtime_not_ready", persisted: "native_source_missing" },
+  });
+  const privateFailure = await run({ getRawTranscript: async () => { throw new Error("secret-prompt-token"); } }, [initialize,
+    { jsonrpc: "2.0", id: 2, method: "getRawTranscript", params: { id: "cold-exact" } },
+  ]);
+  expect(JSON.stringify(privateFailure)).not.toContain("secret-prompt-token");
+  expect(privateFailure[1].error.data.diagnostic).toBeUndefined();
 });

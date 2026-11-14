@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import type { CreateSessionOptions, SendMessageOptions, SendMessageResult } from "./types/common.js";
 import { ZcodeAdapter } from "./adapters/zcode.js";
+import { ZcodeTranscriptReadError } from "./adapters/zcode-native-transcript.js";
 
 type RpcId = string | number;
 interface RpcRequest { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
@@ -135,7 +136,8 @@ export async function serveZcodeAhap(
         continue;
       }
       const mutation = request.method === "createSession" || request.method === "sendMessage" || request.method === "archiveSession";
-      error(id, -32000, "ZCode adapter call failed", adapterFailureContext(request.method, mutation));
+      error(id, -32000, "ZCode adapter call failed", { ...adapterFailureContext(request.method, mutation),
+        ...(!mutation && cause instanceof ZcodeTranscriptReadError ? { diagnostic: cause.diagnostic } : {}) });
     }
   }
 }

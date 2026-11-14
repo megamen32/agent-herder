@@ -10,6 +10,18 @@ it("does not report a one-message fallback as a complete native transcript", asy
   });
   const client = { start: vi.fn(), call } as unknown as ZcodeClientLike;
   const adapter = new ZcodeAdapter({ client });
-  expect(await adapter.getRawTranscript("session-1")).toBeNull();
+  await expect(adapter.getRawTranscript("session-1")).rejects.toMatchObject({
+    code: "ZCODE_TRANSCRIPT_SOURCE_UNAVAILABLE",
+    diagnostic: { native: "native_schema_rejected", persisted: "native_source_disabled" },
+  });
+  expect(call).toHaveBeenCalledTimes(1);
+});
+
+it("retains a safe cold-runtime diagnosis without reading an ambient store for injected clients", async () => {
+  const call = vi.fn(async () => { throw Object.assign(new Error("Session runtime is not ready"), { code: "runtimeNotReady" }); });
+  const adapter = new ZcodeAdapter({ client: { start: vi.fn(), call } as unknown as ZcodeClientLike });
+  await expect(adapter.getRawTranscript("session-1")).rejects.toMatchObject({
+    diagnostic: { native: "runtime_not_ready", persisted: "native_source_disabled" },
+  });
   expect(call).toHaveBeenCalledTimes(1);
 });

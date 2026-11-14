@@ -30,6 +30,7 @@ import { openZcodeQueueSnapshot, queueProcessingState, type ZcodeQueueProcessing
 import { readZcodeActiveCandidates, zcodeStoredTailCanBeActive } from "./zcode-active.js";
 import {readZcodeOfficialRunning,connectZcodeOfficialWebSocket,type ZcodeOfficialRunning} from "./zcode-server-control.js";
 import { readExistingZcodeRuntimeObservation } from "./zcode-runtime-observation.js";
+import { readZcodeNativeTranscript, zcodeTranscriptFailure, ZcodeNativeTranscriptError, ZcodeTranscriptReadError, type ZcodeTranscriptFailureCode } from "./zcode-native-transcript.js";
 import { lifecycleEntryFor, lifecycleStateFor, type SessionLifecycleSnapshot } from "../session-lifecycle.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { ownedShutdownMatches, ownedZcodeActiveInput, zcodeRecoveryBoundaryCurrent, zcodeNativeAdmission } from "./zcode-recovery-boundary.js";
@@ -2996,19 +2997,30 @@ export class ZcodeAdapter implements HarnessAdapter {
   async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
     try {
       const workspace = this.sessionWorkspaces.get(id) || this.workspace();
-      // A current-state fallback may contain just one message and cannot be
-      // presented as a complete transcript. Fail closed on native errors.
+      // Never substitute a bounded current-state snapshot for full history.
       const snapshot = await this.callAgent("readSession", {
         ...workspace, runtimePolicy: "existing-only", sessionId: id,
-      });
+      }) as ZcodeSnapshot;
+      if (snapshot?.session?.sessionId !== id || !Array.isArray(snapshot.messages)) {
+        throw new ZcodeNativeTranscriptError("native_identity_mismatch");
+      }
       return {
         bytes: Buffer.from(JSON.stringify(snapshot, null, 2), "utf8"),
         complete: true,
         source: { kind: "native-api", location: "zcode app-server session/read", format: "json" },
         timestampCoverage: "native",
       };
-    } catch {
-      return null;
+    } catch (nativeError) {
+      let persisted: ZcodeTranscriptFailureCode = "native_source_disabled";
+      // An injected client never gains ambient native DB access. A configured
+      // local store is already the adapter's canonical message-history seam.
+      if (this.allowLocalSessionHistory) {
+        try { return await readZcodeNativeTranscript(this.localDbPath, id); }
+        catch (error) { persisted = zcodeTranscriptFailure(error); }
+      }
+      throw new ZcodeTranscriptReadError({
+        source: "zcode-native-transcript", native: zcodeTranscriptFailure(nativeError), persisted,
+      });
     }
   }
 
@@ -3332,6 +3344,11 @@ export class ZcodeAdapter implements HarnessAdapter {
       return snapshot;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (!allowResume && zcodeTranscriptFailure(error) === "runtime_not_ready") {
+        throw Object.assign(new Error("Существующая ZCode-сессия не загружена; требуется отдельная проверенная lifecycle-операция, сообщение не отправлено."), {
+          code: "ZCODE_SESSION_LOAD_REQUIRES_CAS",
+        });
+      }
       // Only explicit absence can permit a prompt-free same-ID load for
       // read-only callers. Delivery opts out because session/resume has no
       // queue CAS; timeout/disconnect is unknown and never triggers replay.

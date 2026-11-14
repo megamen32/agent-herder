@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import { ZCODE_SQLITE_TRANSCRIPT_SCHEMA } from "./adapters/zcode-native-transcript.js";
 import type { RawTranscriptExport } from "./types/index.js";
 import type { NativeTranscriptEvent, NativeTranscriptPageReader, TranscriptSessionScope } from "./integrator-transcript.js";
 
 type Cursor = { offset: number; total: number; hash: string; expiresAt: number };
 
-/** Pages the unbounded native session/read messages snapshot for one exact session. */
+/** Pages a complete native API or transactional persisted snapshot for one exact session. */
 export function createZcodeTranscriptReader(input: {
   scope: TranscriptSessionScope;
   getRawTranscript: (id: string) => Promise<RawTranscriptExport | null>;
@@ -17,12 +18,22 @@ export function createZcodeTranscriptReader(input: {
     const state = cursor ? cursors.get(cursor) : undefined;
     if (cursor && (!state || state.expiresAt <= Date.now())) return fail("unknown or expired cursor");
     const raw = await input.getRawTranscript(scope.nativeSessionId);
-    if (!raw || raw.complete !== true || raw.source?.kind !== "native-api" || raw.source.format !== "json"
+    if (!raw || raw.complete !== true || !(raw.source?.kind === "native-api" || raw.source?.kind === "native-file") || raw.source.format !== "json"
       || !(raw.bytes instanceof Uint8Array) || raw.bytes.byteLength > 16 * 1024 * 1024) return fail("complete native JSON required");
     let snapshot: any;
     try { snapshot = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw.bytes)); }
     catch { return fail("invalid native JSON"); }
     if (!snapshot || snapshot.session?.sessionId !== scope.nativeSessionId || !Array.isArray(snapshot.messages)) return fail("native session or messages mismatch");
+    if (raw.source.kind === "native-file") {
+      if (snapshot.schema !== ZCODE_SQLITE_TRANSCRIPT_SCHEMA
+        || snapshot.snapshot?.consistency !== "sqlite-read-transaction" || snapshot.snapshot.currentConversation !== true
+        || snapshot.session.id !== scope.nativeSessionId || snapshot.session.revert !== null || snapshot.session.time_deleted !== null
+        || snapshot.snapshot.messageCount !== snapshot.messages.length
+        || !snapshot.messages.every((message: any) => message && Array.isArray(message.parts))
+        || snapshot.snapshot.partCount !== snapshot.messages.reduce((total: number, message: any) => total + message.parts.length, 0)) {
+        return fail("native SQLite provenance or completeness mismatch");
+      }
+    }
     const messages: unknown[] = snapshot.messages;
     const total = state?.total ?? messages.length;
     if (messages.length < total || (state && digest(messages.slice(0, total)) !== state.hash)) return fail("snapshot prefix changed");

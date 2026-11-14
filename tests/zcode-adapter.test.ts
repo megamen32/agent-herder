@@ -2195,6 +2195,50 @@ describe("ZCode adapter", () => {
     } finally { await adapter.dispose(); vi.useRealTimers(); }
   });
 
+
+  it("refuses a cold runtime before submission with an explicit zero-effect receipt", async () => {
+    class ColdClient extends FakeClient {
+      override async call(channel: string, method: string, args: unknown[]) {
+        if (method === "readSession") {
+          this.calls.push({ channel, method, args });
+          throw Object.assign(new Error("Session runtime is not ready"), { data: { code: "runtimeNotReady" } });
+        }
+        return super.call(channel, method, args);
+      }
+    }
+    const client = new ColdClient();
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "fresh linked input", queue: true, origin: "human", inputId: "fresh-after-terminal-error",
+      });
+      expect(result).toMatchObject({ ok: false, admitted: false, notSubmitted: true,
+        nonRetryable: true, inputId: "fresh-after-terminal-error" });
+      expect(client.calls.filter(call => call.method === "readSession")).toHaveLength(1);
+      expect(client.calls.some(call => ["sendConversationCommandV4", "sendPrompt", "resumeSession", "ensureSessionReady"].includes(call.method))).toBe(false);
+    } finally { await adapter.dispose(); }
+  });
+
+  it("admits a fresh queued input after a loaded terminal error without replaying its earlier command", async () => {
+    const client = new FakeClient();
+    client.currentSnapshot = {
+      ...snapshot, session: { ...session, status: "error" },
+      runtime: { eventSeq: 5, stateRevision: 6, pendingRequestIds: [] },
+    };
+    const adapter = new ZcodeAdapter({ cwd: "/workspace", client });
+    try {
+      const result = await adapter.sendMessage("session-1", {
+        message: "fresh linked input", queue: true, origin: "human", inputId: "new-command-after-error",
+      });
+      expect(result).toMatchObject({ ok: true, admitted: true, pending: true, inputId: "new-command-after-error" });
+      const commands = client.calls.filter(call => call.method === "sendConversationCommandV4");
+      expect(commands).toHaveLength(1);
+      expect(commands[0].args[0]).toMatchObject({ envelope: { commandId: "new-command-after-error", type: "sendText", payload: { requestedDelivery: "queue" } } });
+      expect(client.calls.some(call => ["resumeSession", "ensureSessionReady", "sendPrompt"].includes(call.method))).toBe(false);
+      expect(client.currentSnapshot.session.status).toBe("error");
+    } finally { await adapter.dispose(); }
+  });
+
   it("queues a fresh idle input without implicitly enabling queue processing", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-idle-start-now-"));
     const path = join(root, "native.sqlite");
