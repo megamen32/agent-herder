@@ -1,5 +1,6 @@
 //! Explicit, candidate-only settlement of an interrupted release guard.
 //! This operator never creates a guard, changes a claim, or runs an effect.
+pub mod repair;
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -2,11 +2,13 @@
 """Exact original-outcome preservation and canonical reconciliation boundaries."""
 import argparse
 import copy
+import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -243,6 +245,208 @@ class Contracts(unittest.TestCase):
                 new=copy.deepcopy(old);new['files'][0]['sha256']=after
                 approved=[{'path':str(p),'before_sha256':'c'*64,'after_sha256':after}]
                 with self.assertRaises(ValueError):r.service_delta(old,new,approved)
+
+
+class TSRepairContracts(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name);os.chmod(self.root,0o700)
+        self.output=self.root/'repair';self.output.mkdir(mode=0o700)
+        self.job=self.root/'job';self.job.mkdir(mode=0o700)
+        self.selector=self.root/'selector.json';c.create(self.selector,b'{}\n')
+        self.boot='a'*8+'-aaaa-aaaa-aaaa-'+'a'*12
+        self.old={'process':{'pid':328,'boot_id':self.boot,'start_ticks':'129720220','entry':'/fixture/dist/index.js',
+                    'entry_sha256':'a'*64,'node_binary':'/fixture/node','node_sha256':'b'*64},
+            'runtime':{'source_commit':'a'*40},'canonical':{'config':'/fixture/canonical.json'},'tree':{'sha':'c'*64},
+            'service':{'unit':'agent-herder.service','files':[],'canonical_environment_sha256':'d'*64},'listener':{'port':18787}}
+        self.pair={'compat':{'pid':401,'start_ticks':100},'core':{'pid':402,'start_ticks':101}}
+        self.state={'job_id':'rollout-'+'1'*32,'job_dir':str(self.job),'phase':'unknown','error_type':'TimeoutError',
+            'selector':str(self.selector),'selector_after_sha256':'a'*64,'launcher_after_sha256':'b'*64,
+            'coordinator':{'pid':222,'boot_id':self.boot,'start_ticks':200},'deployment_target':{'unit':'agent-herder.service','fleetDir':'/fixture'},
+            'release_identity':{'project':'/fixture/.git','owner':{'harness':'chatgpt','nativeSessionId':'fixture'},'fence':122}}
+        self.state_pin=r.publish(self.job/'state.json',self.state)
+        self.snapshot=r.publish(self.root/'original.json',self.state)
+        self.proof=r.publish(self.root/'proof.json',{**self.state['release_identity'],'token':'private-fixture'})
+        self.guard=r.publish(self.root/'guard.intent.json',{'guard_id':'guard-fixture','execution_ref':'release-guard-fixture'})
+        self.base={'version':1,'kind':r.KIND,'outcome':'candidate','job_id':self.state['job_id'],'job_dir':str(self.job),
+            'state':self.state_pin,'original_state_snapshot':self.snapshot,'proof':self.proof,
+            'successor_scheduler_identity':self.old,'native_runtime':self.pair,'occupancy':{'path':'/fixture/occupancy','sha256':'e'*64},
+            'bridge':{'guard_intent':self.guard,'binding':{'path':'/fixture/binding','sha256':'f'*64},
+                'config':{'path':'/fixture/config','sha256':'a'*64},'ledger':{'path':'/fixture/ledger','sha256':'b'*64},
+                'process_config':{'path':'/fixture/process','sha256':'c'*64},'sealed_bridge':{'path':'/fixture/bridge','sha256':'d'*64}}}
+        self.base_pin=r.publish(self.root/'base-plan.json',self.base)
+        self.operator=self.root/'native-repair';c.create(self.operator,b'fixture native operator\n',0o500)
+        self.operator_pin=r.pin(self.operator,policy='unit')
+        self.plan={'version':1,'kind':r.REPAIR_KIND,'operation':'restart_ts','request_key':'fixture-original-ts-repair',
+            'job_id':self.state['job_id'],'job_dir':str(self.job),'original_plan':self.base_pin,
+            'old_scheduler_identity':self.old,'native_runtime':self.pair,'systemctl':{'path':'/usr/bin/systemctl','sha256':'e'*64},
+            'selector_sha256':'a'*64,'launcher_sha256':'b'*64,'native_operator':self.operator_pin,
+            'validator_sources':[],'created_at_unix_ms':1}
+        self.plan_pin=r.publish(self.output/'plan.json',self.plan)
+        self.args=argparse.Namespace(plan=Path(self.plan_pin['path']),plan_sha256=self.plan_pin['sha256'])
+        self.evidence={'version':1,'kind':r.REPAIR_EVIDENCE_KIND,'request_key':self.plan['request_key'],
+            'job_id':self.state['job_id'],'job_dir':str(self.job),'state':self.state_pin,
+            'repair_plan':self.plan_pin,'validated_at_unix_ms':1}
+        self.intent_path=self.root/'guard.ts-repair.intent.json'
+
+    def response(self,recorded=True):
+        evidence=r.publish(self.output/'evidence.json',self.evidence)
+        intent=r.publish(self.intent_path,{'version':1,'kind':'herder-project-release-ts-repair-intent-v1',
+            'job_id':self.state['job_id'],'request_key':self.plan['request_key'],
+            'evidence':evidence,'repair_id':'repair-fixture','repair_plan':self.plan_pin,
+            'operator':self.operator_pin,'old_process':r.identity(self.old['process'])})
+        response={'repairId':'repair-fixture','requestKey':self.plan['request_key'],'jobId':self.state['job_id'],
+            'evidenceSha256':evidence['sha256'],'intentPath':intent['path'],'intentSha256':intent['sha256'],
+            'status':'recorded' if recorded else 'unknown','restartAttempted':False,
+            'bindingResolved':False,'requiresReconciliation':True}
+        if recorded:
+            receipt=r.publish(self.root/'guard.ts-repair.receipt.json',{'version':1,'kind':'herder-project-release-ts-repair-receipt-v1',
+                'job_id':self.state['job_id'],'request_key':self.plan['request_key'],'repair_id':'repair-fixture','evidence':evidence,'intent':intent,
+                'operator':self.operator_pin,'old_process':r.identity(self.old['process']),
+                'systemctl':{'spawned':True,'exit_code':0,'signal':None,'timed_out':False,'stdout_sha256':'a'*64,'stderr_sha256':'b'*64},
+                'started_at_unix_ms':1,'finished_at_unix_ms':2})
+            response.update(receiptPath=receipt['path'],receiptSha256=receipt['sha256'])
+        return evidence,response
+
+    def test_prepare_requires_exact_current_state_without_http(self):
+        out=self.root/'new-plan'
+        args=argparse.Namespace(plan=Path(self.base_pin['path']),plan_sha256=self.base_pin['sha256'],
+            repair_native_operator=self.operator,repair_native_operator_sha256=self.operator_pin['sha256'],
+            request_key=self.plan['request_key'],output_directory=out)
+        real_pin=r.pin
+        def fixed_systemctl_pin(path,policy='private'):
+            return self.plan['systemctl'] if str(path)=='/usr/bin/systemctl' else real_pin(path,policy)
+        with patch.object(r,'load_plan',return_value=self.base),patch.object(r,'verify_current',return_value=self.state) as verify, \
+                patch.object(r,'source_pins',return_value=[]),patch.object(r,'observe',side_effect=AssertionError('HTTP is unavailable')), \
+                patch.object(r,'pin',side_effect=fixed_systemctl_pin), \
+                patch.object(r.subprocess,'run',side_effect=AssertionError('preparation cannot run native/systemctl')):
+            prepared=r.prepare_ts_repair(args)
+        self.assertEqual(verify.call_count,2)
+        value=r.read_pin(prepared['plan'])
+        self.assertEqual(value['old_scheduler_identity'],self.old)
+        self.assertEqual(value['native_runtime'],self.pair)
+        self.assertEqual(value['request_key'],self.plan['request_key'])
+        self.assertEqual(prepared['effects'],'private_evidence_only')
+        self.assertEqual(r.read_pin(self.state_pin),self.state)
+
+    def test_changed_current_identity_refuses_before_intent_or_native(self):
+        for reason in ('TS birth changed','native pair changed','live original coordinator','service file changed'):
+            with self.subTest(reason=reason),patch.object(r,'verify_current',side_effect=ValueError(reason)), \
+                    patch.object(r,'invoke_ts_repair',side_effect=AssertionError('unadmitted effect')):
+                with self.assertRaisesRegex(ValueError,reason):r.ts_repair_evidence(self.plan,self.base,self.args)
+            self.assertFalse((self.output/'evidence.json').exists())
+
+    def test_existing_intent_requires_original_evidence_without_restart(self):
+        r.publish(self.intent_path,{'opaque_original':True})
+        with patch.object(r,'verify_current',side_effect=AssertionError('may not readmit old intent')):
+            with self.assertRaisesRegex(ValueError,'original evidence; never restart'):
+                r.ts_repair_evidence(self.plan,self.base,self.args)
+
+    def test_pending_intent_reuses_original_digest_without_requiring_old_ts_alive(self):
+        evidence,response=self.response(recorded=False)
+        with patch.object(r,'verify_ts_repair_unchanged',return_value=self.state) as guard, \
+                patch.object(r,'verify_current',side_effect=AssertionError('old TS may already be dead')):
+            self.assertEqual(r.ts_repair_evidence(self.plan,self.base,self.args),evidence)
+        guard.assert_called_once_with(self.base)
+        self.assertEqual(r.read_pin(evidence)['validated_at_unix_ms'],1)
+        self.assertFalse(response['restartAttempted'])
+
+    def test_native_invocation_is_fixed_typed_action_and_checks_actual_receipt(self):
+        evidence,response=self.response()
+        def invoke(argv,**kwargs):
+            self.assertEqual(argv,[str(self.operator),'--config','/fixture/config'])
+            request=json.loads(kwargs['input'])
+            self.assertEqual(set(request),{'version','action','proof','evidence'})
+            self.assertEqual(request['action'],'repair_ts')
+            self.assertEqual(request['evidence'],evidence)
+            self.assertEqual(request['proof']['deploymentTarget'],self.state['deployment_target'])
+            self.assertNotIn('systemctl',argv)
+            return subprocess.CompletedProcess(argv,0,json.dumps({'ok':True,'result':response}),'')
+        with patch.object(r.subprocess,'run',side_effect=invoke) as call:
+            self.assertEqual(r.invoke_ts_repair(self.plan,self.base,evidence),response)
+        self.assertEqual(call.call_count,1)
+        self.assertEqual(r.read_pin(self.state_pin)['phase'],'unknown')
+
+    def test_ack_cannot_resolve_original_binding_or_borrow_another_request(self):
+        evidence,response=self.response()
+        for key,value in [('bindingResolved',True),('requiresReconciliation',False),('requestKey','another-request'),
+                          ('jobId','other-job'),('evidenceSha256','0'*64)]:
+            bad={**response,key:value}
+            with self.subTest(key=key),patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps({'ok':True,'result':bad}),'')):
+                with self.assertRaisesRegex(ValueError,'original unresolved job'):
+                    r.invoke_ts_repair(self.plan,self.base,evidence)
+
+    def test_unknown_native_intent_stays_unknown_without_a_terminal_receipt(self):
+        evidence,response=self.response(recorded=False)
+        with patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps({'ok':True,'result':response}),'')):
+            result=r.invoke_ts_repair(self.plan,self.base,evidence)
+        self.assertEqual(result['status'],'unknown');self.assertNotIn('receiptPath',result)
+        self.assertFalse((self.root/'guard.ts-repair.receipt.json').exists())
+
+    def test_native_refusal_is_archived_before_validation_without_capability_text(self):
+        evidence=r.publish(self.output/'evidence.json',self.evidence)
+        stdout='{"ok":false,"error":"repair_evidence_invalid"}'
+        stderr='private-fixture '+'x'*70000
+        with patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],1,stdout,stderr)) as call:
+            with self.assertRaisesRegex(RuntimeError,'acknowledgement unavailable'):
+                r.invoke_ts_repair(self.plan,self.base,evidence)
+        self.assertEqual(call.call_count,1)
+        files=list(self.output.glob('native-invocation-*.json'));self.assertEqual(len(files),1)
+        value=json.loads(files[0].read_text())
+        self.assertEqual(value['returncode'],1);self.assertFalse(value['timed_out'])
+        self.assertEqual(value['stdout']['text'],stdout)
+        self.assertEqual(value['stderr']['sha256'],hashlib.sha256(stderr.encode()).hexdigest())
+        self.assertNotIn('private-fixture',value['stderr']['text'])
+        self.assertIn('[redacted]',value['stderr']['text']);self.assertTrue(value['stderr']['truncated'])
+        self.assertLessEqual(len(value['stderr']['text'].encode()),65536)
+        self.assertEqual(value['evidence'],evidence)
+        self.assertEqual(files[0].stat().st_mode & 0o777,0o400)
+
+    def test_native_timeout_preserves_partial_output_without_a_second_invocation(self):
+        evidence=r.publish(self.output/'evidence.json',self.evidence)
+        error=subprocess.TimeoutExpired(['fixture'],180,output=b'{"partial":true}',stderr=b'private-fixture')
+        with patch.object(r.subprocess,'run',side_effect=error) as call:
+            with self.assertRaisesRegex(RuntimeError,'archived original invocation'):
+                r.invoke_ts_repair(self.plan,self.base,evidence)
+        self.assertEqual(call.call_count,1)
+        value=json.loads(next(self.output.glob('native-invocation-*.json')).read_text())
+        self.assertIsNone(value['returncode']);self.assertTrue(value['timed_out'])
+        self.assertEqual(value['error_type'],'TimeoutExpired')
+        self.assertEqual(value['stdout']['text'],'{"partial":true}')
+        self.assertEqual(value['stderr']['sha256'],hashlib.sha256(b'private-fixture').hexdigest())
+        self.assertEqual(value['stderr']['text'],'[redacted]')
+        self.assertFalse(self.intent_path.exists())
+
+    def test_successor_observation_requires_old_death_and_exact_service(self):
+        new=copy.deepcopy(self.old);new['process'].update(pid=329,start_ticks='129720230')
+        with patch.object(r.rollout,'identity_state',return_value='live'):
+            with self.assertRaisesRegex(ValueError,'proven replacement'):r.observe_ts_repair_successor(self.plan)
+        with patch.object(r.rollout,'identity_state',return_value='dead'), \
+                patch.object(r.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'329\n','')), \
+                patch.object(r.readiness,'birth',return_value={k:new['process'][k] for k in ('pid','boot_id','start_ticks')}), \
+                patch.object(r.readiness,'observe',return_value=new):
+            self.assertEqual(r.observe_ts_repair_successor(self.plan),new)
+            changed=copy.deepcopy(new);changed['service']['files']=[{'path':'/unreviewed','sha256':'a'*64}]
+            with patch.object(r.readiness,'observe',return_value=changed):
+                with self.assertRaisesRegex(ValueError,'immutable service'):r.observe_ts_repair_successor(self.plan)
+
+    def test_repair_observation_does_not_resolve_or_rewrite_original_unknown(self):
+        evidence,response=self.response(recorded=False)
+        new=copy.deepcopy(self.old);new['process'].update(pid=329,start_ticks='129720230')
+        before=(self.job/'state.json').read_bytes()
+        with patch.object(r,'load_ts_repair_plan',return_value=(self.plan,self.base)), \
+                patch.object(r,'ts_repair_evidence',return_value=evidence), \
+                patch.object(r,'invoke_ts_repair',return_value=response), \
+                patch.object(r,'verify_ts_repair_unchanged',return_value=self.state), \
+                patch.object(r,'observe_ts_repair_successor',return_value=new), \
+                patch.object(r.rollout,'resolve_occupancy',side_effect=AssertionError('repair never resolves occupancy')):
+            result,code=r.repair_ts(self.args)
+        observation=r.read_pin(result['observation'])
+        self.assertEqual(code,0);self.assertEqual(result['status'],'unknown')
+        self.assertEqual(observation['original_outcome'],'unknown')
+        self.assertFalse(observation['binding_resolved']);self.assertFalse(observation['operational_readiness'])
+        self.assertTrue(observation['requires_reconciliation']);self.assertIsNone(observation['native_receipt'])
+        self.assertEqual((self.job/'state.json').read_bytes(),before)
 
 
 if __name__=='__main__':unittest.main()

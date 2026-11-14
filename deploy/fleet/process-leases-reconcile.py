@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Reconcile one completed canonical rollout after an observed TS successor.
 
-This operator never installs, restarts, acquires a claim, or changes a selector.
-It retains the original UNKNOWN checkpoint and resolves only its exact native
-execution binding after fresh operational consumer evidence.
+Reconciliation retains the original UNKNOWN checkpoint and resolves only its
+exact native binding after fresh operational consumer evidence. The separate
+TS repair commands authorize one fixed native-guarded restart and leave that
+binding unresolved. Neither path installs, acquires a claim or changes a selector.
 """
 import argparse
 import copy
@@ -21,6 +22,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import uuid
 
@@ -33,6 +35,8 @@ _spec.loader.exec_module(rollout)
 candidate, readiness = rollout.candidate, rollout.scheduler
 HASH = re.compile(r"[0-9a-f]{64}")
 KIND = "herder-canonical-rollout-reconciliation-plan-v1"
+REPAIR_KIND = "herder-canonical-ts-repair-plan-v1"
+REPAIR_EVIDENCE_KIND = "herder-project-release-ts-repair-v1"
 SOURCE_FILES = ("process-leases-reconcile.py", "process-leases-rollout.py",
                 "process-leases-scheduler-readiness.py", "process-leases-candidate.py",
                 "launch-v1-core.py", "release_gate.py", "main_guard.py")
@@ -626,6 +630,263 @@ def apply(args):
     return rollout.status(argparse.Namespace(job_dir=Path(plan["job_dir"])))
 
 
+def repair_request_key(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_:/.-]{8,200}", value):
+        raise ValueError("TS repair requires one explicit stable request key")
+    return value
+
+
+def prepare_ts_repair(args):
+    """Prepare a reviewable repair without requiring the failing HTTP consumer."""
+    base = load_plan(args)
+    state = verify_current(base)
+    request_key = repair_request_key(args.request_key)
+    operator = {"path": str(args.repair_native_operator), "sha256": args.repair_native_operator_sha256}
+    read_pin(operator, policy="unit", json_value=False)
+    systemctl = pin("/usr/bin/systemctl", policy="unit")
+    original_pin = {"path": str(args.plan), "sha256": args.plan_sha256}
+    plan = {"version": 1, "kind": REPAIR_KIND, "operation": "restart_ts", "request_key": request_key,
+            "job_id": state["job_id"], "job_dir": state["job_dir"], "original_plan": original_pin,
+            "old_scheduler_identity": base["successor_scheduler_identity"],
+            "native_runtime": base["native_runtime"], "systemctl": systemctl,
+            "selector_sha256": state["selector_after_sha256"], "launcher_sha256": state["launcher_after_sha256"],
+            "native_operator": operator, "validator_sources": source_pins(),
+            "created_at_unix_ms": readiness.now_ms()}
+    out = Path(args.output_directory)
+    candidate.private_directory(out.parent)
+    out.mkdir(mode=0o700)
+    # No call to the HTTP endpoint or to a native effect is part of preparation.
+    verify_current(base)
+    return {"plan": publish(out / "plan.json", plan), "effects": "private_evidence_only"}
+
+
+def load_ts_repair_plan(args):
+    plan = read_pin({"path": str(args.plan), "sha256": args.plan_sha256})
+    readiness.fields(plan, ("version", "kind", "operation", "request_key", "job_id", "job_dir", "original_plan",
+        "old_scheduler_identity", "native_runtime", "systemctl", "selector_sha256", "launcher_sha256",
+        "native_operator", "validator_sources", "created_at_unix_ms"))
+    if plan["version"] != 1 or plan["kind"] != REPAIR_KIND or plan["operation"] != "restart_ts":
+        raise ValueError("invalid TS repair plan")
+    repair_request_key(plan["request_key"])
+    if plan["systemctl"]["path"] != "/usr/bin/systemctl":
+        raise ValueError("TS repair has no arbitrary command capability")
+    if plan["validator_sources"] != source_pins():
+        raise ValueError("TS repair validator source set changed")
+    for value in [*plan["validator_sources"], plan["native_operator"], plan["systemctl"]]:
+        read_pin(value, policy="unit", json_value=False)
+    base = read_pin(plan["original_plan"])
+    if base.get("version") != 1 or base.get("kind") != KIND or base.get("outcome") != "candidate":
+        raise ValueError("TS repair requires the exact original reconciliation plan")
+    verify_sources(base)
+    state = read_pin(base["original_state_snapshot"])
+    if (plan["job_id"] != state["job_id"] or plan["job_dir"] != state["job_dir"]
+            or plan["old_scheduler_identity"] != base["successor_scheduler_identity"]
+            or plan["native_runtime"] != base["native_runtime"]
+            or plan["selector_sha256"] != state["selector_after_sha256"]
+            or plan["launcher_sha256"] != state["launcher_after_sha256"]):
+        raise ValueError("TS repair changed the original job or observed runtime")
+    return plan, base
+
+
+def verify_ts_repair_unchanged(base):
+    """Repeat durable and native fences without requiring the old TS to be live."""
+    original = read_pin(base["original_state_snapshot"])
+    if rollout.read_state(base["job_dir"]) != original:
+        raise ValueError("original UNKNOWN checkpoint changed during TS repair")
+    check_original(original)
+    read_pin(base["state"])
+    read_pin(base["occupancy"])
+    original_install(base["install_plan"], base["install_receipt"], original)
+    for key, value in base["bridge"].items():
+        read_pin(value, policy="unit" if key == "sealed_bridge" else "private", json_value=False)
+    pair = rollout.runtime_pair(Path(original["selector"]), Path(original["launcher"]),
+        base["native_runtime"]["compat"]["pid"], base["native_runtime"]["core"]["pid"],
+        expected_cwd=original["baseline_runtime"]["core"]["cwd"])
+    if pair != base["native_runtime"]:
+        raise ValueError("native runtime changed during TS-only repair")
+    original_pair, observed = native_provenance(original, pair, base["native_restart_binding"],
+        base.get("native_successor_status"), base.get("native_successor_parser"))
+    if original_pair != base["original_native_runtime"] or observed != base["observed_native_successor"]:
+        raise ValueError("native provenance changed during TS-only repair")
+    for file_pin in base["successor_scheduler_identity"]["service"]["files"]:
+        read_pin(file_pin, policy="unit", json_value=False)
+    return original
+
+
+def ts_repair_evidence(plan, base, args):
+    root = Path(args.plan).parent
+    output = root / "evidence.json"
+    intent_path = Path(base["bridge"]["guard_intent"]["path"].removesuffix(".intent.json") + ".ts-repair.intent.json")
+    plan_pin = {"path": str(args.plan), "sha256": args.plan_sha256}
+    if output.exists():
+        evidence_pin = pin(output)
+        evidence = read_pin(evidence_pin)
+        if (evidence.get("kind") != REPAIR_EVIDENCE_KIND or evidence.get("repair_plan") != plan_pin
+                or evidence.get("request_key") != plan["request_key"] or evidence.get("state") != base["state"]):
+            raise ValueError("existing TS repair evidence belongs to another request")
+        verify_ts_repair_unchanged(base)
+        if not intent_path.exists():
+            # An unadmitted stale plan cannot be restamped into a fresh action.
+            verify_current(base)
+        return evidence_pin
+    if intent_path.exists():
+        raise ValueError("original TS repair intent requires its original evidence; never restart")
+    state = verify_current(base)
+    bridge = base["bridge"]
+    evidence = {"version": 1, "kind": REPAIR_EVIDENCE_KIND, "request_key": plan["request_key"],
+        "job_id": state["job_id"], "job_dir": state["job_dir"], "state": base["state"], "occupancy": base["occupancy"],
+        "guard_intent": bridge["guard_intent"], "binding_sha256": bridge["binding"]["sha256"],
+        "sealed_bridge": bridge["sealed_bridge"], "config_sha256": bridge["config"]["sha256"],
+        "ledger_sha256": bridge["ledger"]["sha256"], "process_config_sha256": bridge["process_config"]["sha256"],
+        "coordinator": state["coordinator"], "validated_at_unix_ms": readiness.now_ms(), "repair_plan": plan_pin}
+    return publish(output, evidence)
+
+
+def invoke_ts_repair(plan, base, evidence_pin):
+    proof = owner_proof(read_pin(base["proof"]), read_pin(base["original_state_snapshot"]))
+    request = {"version": 1, "action": "repair_ts", "proof": proof, "evidence": evidence_pin}
+    read_pin(plan["native_operator"], policy="unit", json_value=False)
+    # The native process owns the target lock for the complete fixed systemctl
+    # operation. Python never executes a restart between check-only messages.
+    started = readiness.now_ms()
+    result, failure = None, None
+    try:
+        result = subprocess.run([plan["native_operator"]["path"], "--config", base["bridge"]["config"]["path"]],
+            input=json.dumps(request), capture_output=True, text=True, timeout=180)
+        stdout, stderr = result.stdout, result.stderr
+    except subprocess.TimeoutExpired as error:
+        failure, stdout, stderr = error, error.stdout, error.stderr
+    except OSError as error:
+        failure, stdout, stderr = error, b"", b""
+
+    def captured(value):
+        raw = value if isinstance(value, bytes) else (value or "").encode()
+        # The capability is supplied only on stdin. Redact an accidental echo
+        # before retaining bounded text; the digest still binds actual output.
+        safe = raw.decode("utf-8", errors="replace").replace(proof["token"], "[redacted]").encode()
+        limit = 64 * 1024
+        return {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
+            "text": safe[:limit].decode("utf-8", errors="ignore"), "truncated": len(safe) > limit}
+
+    invocation = {"version": 1, "kind": "herder-native-ts-repair-invocation-v1",
+        "job_id": plan["job_id"], "request_key": plan["request_key"], "evidence": evidence_pin,
+        "operator": plan["native_operator"], "started_at_unix_ms": started, "finished_at_unix_ms": readiness.now_ms(),
+        "returncode": None if result is None else result.returncode,
+        "timed_out": isinstance(failure, subprocess.TimeoutExpired),
+        "error_type": None if failure is None else type(failure).__name__,
+        "stdout": captured(stdout), "stderr": captured(stderr)}
+    publish(Path(evidence_pin["path"]).parent / ("native-invocation-" + uuid.uuid4().hex + ".json"), invocation)
+    if failure is not None:
+        raise RuntimeError("TS repair acknowledgement unavailable; inspect the archived original invocation and intent without replay") from None
+    if result.returncode or len(result.stdout) > 65536:
+        raise RuntimeError("TS repair acknowledgement unavailable; inspect the same intent without restart replay")
+    envelope = json.loads(result.stdout)
+    if envelope.get("ok") is not True or not isinstance(envelope.get("result"), dict):
+        raise ValueError("native TS repair returned no typed acknowledgement")
+    response = envelope["result"]
+    intent_path = base["bridge"]["guard_intent"]["path"].removesuffix(".intent.json") + ".ts-repair.intent.json"
+    if (response.get("requestKey") != plan["request_key"] or response.get("jobId") != plan["job_id"]
+            or response.get("evidenceSha256") != evidence_pin["sha256"] or response.get("intentPath") != intent_path
+            or not readiness.exact(response.get("repairId"), 200)
+            or response.get("status") not in ("unknown", "recorded")
+            or type(response.get("restartAttempted")) is not bool
+            or response.get("bindingResolved") is not False or response.get("requiresReconciliation") is not True):
+        raise ValueError("native TS repair acknowledgement does not bind the original unresolved job")
+    intent_pin = {"path": response["intentPath"], "sha256": response["intentSha256"]}
+    intent = read_pin(intent_pin)
+    if (intent.get("version") != 1 or intent.get("kind") != "herder-project-release-ts-repair-intent-v1"
+            or intent.get("evidence") != evidence_pin or intent.get("request_key") != plan["request_key"]
+            or intent.get("job_id") != plan["job_id"] or intent.get("repair_id") != response["repairId"]
+            or intent.get("repair_plan") != read_pin(evidence_pin)["repair_plan"]
+            or intent.get("operator") != plan["native_operator"]
+            or intent.get("old_process") != identity(plan["old_scheduler_identity"]["process"])):
+        raise ValueError("TS repair intent does not bind the exact original request")
+    receipt_path = intent_path.removesuffix(".intent.json") + ".receipt.json"
+    if response["status"] == "recorded":
+        if response.get("receiptPath") != receipt_path:
+            raise ValueError("TS repair receipt is outside the original guard")
+        receipt = read_pin({"path": receipt_path, "sha256": response["receiptSha256"]})
+        result = receipt.get("systemctl", {})
+        if (receipt.get("version") != 1 or receipt.get("kind") != "herder-project-release-ts-repair-receipt-v1"
+                or receipt.get("job_id") != plan["job_id"] or receipt.get("request_key") != plan["request_key"]
+                or receipt.get("repair_id") != response["repairId"]
+                or receipt.get("evidence") != evidence_pin or receipt.get("intent") != intent_pin
+                or receipt.get("operator") != plan["native_operator"]
+                or receipt.get("old_process") != identity(plan["old_scheduler_identity"]["process"])
+                or type(result.get("spawned")) is not bool or type(result.get("timed_out")) is not bool
+                or (result.get("exit_code") is not None and type(result.get("exit_code")) is not int)
+                or (result.get("signal") is not None and type(result.get("signal")) is not int)
+                or not all(isinstance(result.get(key), str) and HASH.fullmatch(result[key])
+                           for key in ("stdout_sha256", "stderr_sha256"))
+                or type(receipt.get("started_at_unix_ms")) is not int
+                or type(receipt.get("finished_at_unix_ms")) is not int
+                or receipt["finished_at_unix_ms"] < receipt["started_at_unix_ms"]):
+            raise ValueError("TS repair receipt is not the actual result of the pinned operation")
+    elif "receiptPath" in response or "receiptSha256" in response:
+        raise ValueError("unknown TS repair cannot claim a terminal receipt")
+    return response
+
+
+def observe_ts_repair_successor(plan):
+    """A local observation is not a successful operational HTTP proof."""
+    old = plan["old_scheduler_identity"]
+    if rollout.identity_state(identity(old["process"])) != "dead":
+        raise ValueError("TS repair has no proven replacement of its original process")
+    environment = {**os.environ, "XDG_RUNTIME_DIR": "/run/user/" + str(os.getuid()),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/" + str(os.getuid()) + "/bus",
+        "SYSTEMD_PAGER": "cat", "SYSTEMD_COLORS": "0"}
+    result = subprocess.run(["/usr/bin/systemctl", "--user", "show", readiness.UNIT, "--property=MainPID", "--value"],
+        env=environment, capture_output=True, text=True, timeout=5)
+    if result.returncode or not re.fullmatch(r"[1-9][0-9]*\n?", result.stdout):
+        raise ValueError("TS repair successor MainPID is unavailable")
+    expected = {key: copy.deepcopy(old[key]) for key in ("process", "runtime", "canonical")}
+    expected["process"].update(readiness.birth(int(result.stdout)))
+    observed = readiness.observe(expected)
+    if (identity(observed["process"]) == identity(old["process"]) or observed["tree"] != old["tree"]
+            or observed["service"]["files"] != old["service"]["files"]
+            or observed["service"]["canonical_environment_sha256"] != old["service"]["canonical_environment_sha256"]):
+        raise ValueError("TS repair changed the immutable service or runtime")
+    return observed
+
+
+def repair_ts(args):
+    plan, base = load_ts_repair_plan(args)
+    original = read_pin(base["original_state_snapshot"])
+    with candidate.selector_lock(Path(original["selector"])):
+        evidence_pin = ts_repair_evidence(plan, base, args)
+        response = invoke_ts_repair(plan, base, evidence_pin)
+        # The receipt records the actual command result, including failures.
+        # Neither a returned acknowledgement nor a new PID resolves occupancy.
+        verify_ts_repair_unchanged(base)
+        observed, observation_error = None, None
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                observed = observe_ts_repair_successor(plan)
+                observation_error = None
+                break
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                observation_error = {"type": type(error).__name__, "message_sha256": hashlib.sha256(str(error).encode()).hexdigest()}
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
+        verify_ts_repair_unchanged(base)
+        receipt = None if response["status"] == "unknown" else {"path": response["receiptPath"], "sha256": response["receiptSha256"]}
+        observation = {"version": 1, "kind": "herder-canonical-ts-repair-observation-v1", "request_key": plan["request_key"],
+            "job_id": plan["job_id"], "plan": {"path": str(args.plan), "sha256": args.plan_sha256}, "evidence": evidence_pin,
+            "native_acknowledgement": response, "native_receipt": receipt,
+            "old_scheduler_identity": plan["old_scheduler_identity"], "observed_successor": observed,
+            "observation_error": observation_error, "native_runtime": plan["native_runtime"],
+            "original_state": base["original_state_snapshot"], "original_outcome": "unknown",
+            "binding_resolved": False, "requires_reconciliation": True, "operational_readiness": False,
+            "observed_at_unix_ms": readiness.now_ms()}
+        # Each invocation preserves its own factual observation; a repeated
+        # invocation can only inspect the native one-shot request above.
+        output = Path(args.plan).parent / ("observation-" + uuid.uuid4().hex + ".json")
+        return {"observation": publish(output, observation), "status": response["status"],
+                "successor_observed": observed is not None, "requires_reconciliation": True}, (0 if observed else 1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -656,8 +917,17 @@ def main():
     for sub in (o, f, a):
         sub.add_argument("--plan", type=Path, required=True)
         sub.add_argument("--plan-sha256", required=True)
+    prep = commands.add_parser("prepare-ts-repair")
+    prep.add_argument("--repair-native-operator", type=Path, required=True)
+    prep.add_argument("--repair-native-operator-sha256", required=True)
+    prep.add_argument("--request-key", required=True)
+    prep.add_argument("--output-directory", type=Path, required=True)
+    repair = commands.add_parser("repair-ts")
+    for sub in (prep, repair):
+        sub.add_argument("--plan", type=Path, required=True)
+        sub.add_argument("--plan-sha256", required=True)
     args = parser.parse_args()
-    value = globals()[args.command](args)
+    value = globals()[args.command.replace("-", "_")](args)
     result, code = value if isinstance(value, tuple) else (value, 0)
     print(json.dumps(result, sort_keys=True))
     return code
