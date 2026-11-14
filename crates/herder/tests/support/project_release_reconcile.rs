@@ -193,10 +193,11 @@ impl Recovery {
             fs::read_dir(self.f.resource_dir().join("compat-guards"))
                 .unwrap()
                 .filter_map(Result::ok)
-                .filter(|p| p
-                    .file_name()
-                    .to_string_lossy()
-                    .ends_with(".reconciliation.json"))
+                .filter(|p| {
+                    let name = p.file_name();
+                    let name = name.to_string_lossy();
+                    name.ends_with(".reconciliation.json") || name.ends_with(".failed-reconciliation.json")
+                })
                 .count(),
             0
         );
@@ -420,4 +421,357 @@ fn canonical_reconcile_preserves_an_exact_unknown_migration_hold() {
     assert_eq!(f.call()["error"], "migration_hold");
     assert_eq!(fs::read(&hold).unwrap(), before);
     f.assert_unresolved();
+}
+
+
+struct FailedRecovery {
+    inner: Recovery,
+    failure: Value,
+    effects: Value,
+    failure_path: PathBuf,
+    observation_path: PathBuf,
+    effects_path: PathBuf,
+}
+impl FailedRecovery {
+    fn new() -> Self {
+        let mut inner = Recovery::new();
+        let root = inner.state_path.parent().unwrap().to_path_buf();
+        let stamp = inner.evidence["validated_at_unix_ms"].as_u64().unwrap();
+        let successor = inner.paired["successor_scheduler_identity"].clone();
+        let request = json!({"endpoint":"http://127.0.0.1:18787/api/canonical-runtime-status",
+            "challenge":"f".repeat(64),"probe":{"harness":"zcode","native_session_id":"fixture-session"}});
+        let plan_path = root.join("reconciliation-plan.json");
+        write_private(&plan_path, &json!({"version":1,
+            "kind":"herder-canonical-rollout-reconciliation-plan-v1",
+            "job_id":"rollout-fixture","challenge":request["challenge"],
+            "successor_scheduler_identity":successor}));
+        let failed_plan = root.join("failed-plan.json");
+        write_private(&failed_plan, &json!({"version":1,"outcome":"failed"}));
+        let request_path = root.join("http-request.json");
+        write_private(&request_path, &json!({"version":1,"kind":"herder-reconciliation-http-request",
+            "plan":pin(&plan_path),"request":request,"before":successor,
+            "created_at_unix_ms":stamp,"provider_operation_id":null}));
+        let body_path = root.join("http-body.json");
+        write_private(&body_path, &json!({"error":"canonical_runtime_unavailable"}));
+        let provider = root.join("http-provider.json");
+        write_private(&provider, &json!({"status":"completed","fixture":"raw-provider"}));
+        let observation_path = root.join("http-observation.json");
+        let observation = json!({"version":1,"kind":"herder-canonical-http-observation",
+            "request":request,"request_receipt":pin(&request_path),
+            "reconciliation_plan":pin(&plan_path),"before":successor,"after":successor,
+            "body":pin(&body_path),"http_body_sha256":digest(&body_path),
+            "http_status":503,"http_body_complete":true,
+            "response":{"error":"canonical_runtime_unavailable"},
+            "started_at_unix_ms":stamp,"observed_at_unix_ms":stamp});
+        write_private(&observation_path, &observation);
+        let mut failure = observation.clone();
+        failure["kind"] = json!("herder-canonical-runtime-failure-v1");
+        failure["outcome"] = json!("failed");
+        failure["operational_readiness"] = json!(false);
+        failure["job_id"] = json!("rollout-fixture");
+        failure["authenticated_request"] = json!(true);
+        failure["provider_operation_id"] = json!("http-fixture-operation");
+        failure["provider_result"] = pin(&provider);
+        failure["observation"] = pin(&observation_path);
+        let failure_path = root.join("http-failure.json");
+        write_private(&failure_path, &failure);
+        let install_plan = root.join("install-plan.json");
+        let install_recipe = root.join("install-recipe.json");
+        let install_receipt = root.join("install-receipt.json");
+        let install_driver = root.join("install-driver.json");
+        let driver_source = root.join("install-driver.py");
+        let install_intent = root.join("install-intent.json");
+        let start_intent = root.join("start-intent.json");
+        for path in [&install_plan,&install_recipe,&driver_source,&install_intent,&start_intent] {
+            write_private(path, &json!({"fixture":"pinned-install-provenance"}));
+        }
+        let old = &inner.state["scheduler_identity"];
+        write_private(&install_receipt, &json!({"version":1,"kind":"canonical-ts-installed",
+            "state":"started_pending_paired_readiness","source_commit":old["runtime"]["source_commit"],
+            "pid":old["process"]["pid"],"start_ticks":old["process"]["start_ticks"],
+            "entry":old["process"]["entry"],"node_binary":old["process"]["node_binary"],
+            "plan_sha256":digest(&install_plan)}));
+        write_private(&install_driver, &json!({"returncode":0,"stdout":json!({
+            "status":"installed_listener_ready","source_commit":old["runtime"]["source_commit"],
+            "pid":old["process"]["pid"],"start_ticks":old["process"]["start_ticks"]}).to_string()}));
+        let restart_binding = root.join("restart-binding.json");
+        let restart_provider = root.join("restart-provider.json");
+        let coordinator_provider = root.join("coordinator-provider.json");
+        for path in [&restart_binding,&restart_provider,&coordinator_provider] {
+            write_private(path, &json!({"fixture":"terminal-original-provider"}));
+        }
+        let coordinator_driver = root.join("coordinator-driver.json");
+        write_private(&coordinator_driver, &json!({"phase":"unknown","returncode":1,
+            "state":inner.state_path,"state_sha256":digest(&inner.state_path)}));
+        let effects = json!({"version":1,"kind":"herder-controlled-rollout-effects-terminal-v1",
+            "job_id":"rollout-fixture","complete":true,
+            "original_state_snapshot":inner.paired["original_state_snapshot"],
+            "install":{"receipt":pin(&install_receipt),"plan":pin(&install_plan),
+                "recipe":pin(&install_recipe),"driver":pin(&install_driver),
+                "driver_source":pin(&driver_source),"intent":pin(&install_intent),
+                "start_intent":pin(&start_intent)},
+            "native_restart":{"binding":pin(&restart_binding),"provider_result":pin(&restart_provider)},
+            "coordinator":{"provider_result":pin(&coordinator_provider),
+                "driver":pin(&coordinator_driver),"provider_operation_id":"coordinator-fixture-operation"},
+            "repair":null});
+        let effects_path = root.join("effect-completion.json");
+        write_private(&effects_path, &effects);
+        inner.request["action"] = json!("reconcile_failed");
+        inner.evidence["outcome"] = json!("failed");
+        inner.paired["kind"] = json!("herder-paired-rollout-failed-reconciliation-v1");
+        inner.paired["outcome"] = json!("failed");
+        inner.paired["operational_readiness"] = json!(false);
+        inner.paired.as_object_mut().unwrap().remove("scheduler_consumer");
+        inner.paired["scheduler_failure"] = pin(&failure_path);
+        inner.paired["effect_completion"] = pin(&effects_path);
+        inner.paired["plan"] = pin(&plan_path);
+        inner.paired["failed_plan"] = pin(&failed_plan);
+        inner.save_paired();
+        Self { inner, failure, effects, failure_path, observation_path, effects_path }
+    }
+    fn save_failure(&mut self) {
+        let mut observation: Value = serde_json::from_slice(&fs::read(&self.observation_path).unwrap()).unwrap();
+        for key in ["request","before","after","body","response","http_status","http_body_complete",
+            "http_body_sha256","started_at_unix_ms","observed_at_unix_ms","request_receipt","reconciliation_plan"] {
+            observation[key] = self.failure[key].clone();
+        }
+        write_private(&self.observation_path, &observation);
+        self.failure["observation"] = pin(&self.observation_path);
+        write_private(&self.failure_path, &self.failure);
+        self.inner.paired["scheduler_failure"] = pin(&self.failure_path);
+        self.inner.save_paired();
+    }
+    fn save_effects(&mut self) {
+        write_private(&self.effects_path, &self.effects);
+        self.inner.paired["effect_completion"] = pin(&self.effects_path);
+        self.inner.save_paired();
+    }
+    fn repair_paths(&self) -> (PathBuf, PathBuf) {
+        let intent: Value = serde_json::from_slice(&fs::read(&self.inner.intent_path).unwrap()).unwrap();
+        let directory = self.inner.intent_path.parent().unwrap();
+        let guard = intent["guard_id"].as_str().unwrap();
+        (directory.join(format!("{guard}.ts-repair.intent.json")),
+            directory.join(format!("{guard}.ts-repair.receipt.json")))
+    }
+    fn add_terminal_repair(&mut self) {
+        let root = self.inner.state_path.parent().unwrap();
+        let (intent_path, receipt_path) = self.repair_paths();
+        let guard: Value = serde_json::from_slice(&fs::read(&self.inner.intent_path).unwrap()).unwrap();
+        let repair_plan = root.join("repair-plan.json");
+        write_private(&repair_plan, &json!({"fixture":"immutable-repair-plan"}));
+        let evidence_path = root.join("repair-evidence.json");
+        write_private(&evidence_path, &json!({"version":1,"kind":"herder-project-release-ts-repair-v1",
+            "job_id":"rollout-fixture","guard_intent":self.inner.evidence["guard_intent"],
+            "binding_sha256":self.inner.evidence["binding_sha256"],"state":pin(&self.inner.state_path),
+            "repair_plan":pin(&repair_plan)}));
+        let started = instant_ms();
+        let intent = json!({"version":1,"kind":"herder-project-release-ts-repair-intent-v1",
+            "repair_id":format!("{}:ts-repair",guard["guard_id"].as_str().unwrap()),
+            "request_key":"one-repair-fixture","job_id":"rollout-fixture","guard":guard,
+            "evidence":pin(&evidence_path),"repair_plan":pin(&repair_plan),
+            "operator":pin(&self.inner.f.executable),"old_process":self.inner.evidence["coordinator"],
+            "started_at_unix_ms":started});
+        write_private(&intent_path, &intent);
+        let receipt = json!({"version":1,"kind":"herder-project-release-ts-repair-receipt-v1",
+            "repair_id":intent["repair_id"],"request_key":intent["request_key"],
+            "job_id":"rollout-fixture","evidence":intent["evidence"],"intent":pin(&intent_path),
+            "operator":intent["operator"],"old_process":intent["old_process"],
+            "started_at_unix_ms":started,"finished_at_unix_ms":started,
+            "systemctl":{"spawned":true,"exit_code":0,"signal":null,"timed_out":false,
+                "stdout_sha256":"a".repeat(64),"stderr_sha256":"b".repeat(64),
+                "stdout_bytes":0,"stderr_bytes":0,"error_code":null}});
+        write_private(&receipt_path, &receipt);
+        let observation_path = root.join("repair-observation.json");
+        write_private(&observation_path, &json!({"version":1,
+            "kind":"herder-canonical-ts-repair-observation-v1","job_id":"rollout-fixture",
+            "original_outcome":"unknown","binding_resolved":false,"requires_reconciliation":true,
+            "operational_readiness":false,"native_receipt":pin(&receipt_path),
+            "original_state":self.inner.paired["original_state_snapshot"]}));
+        self.effects["repair"] = json!({"intent":pin(&intent_path),
+            "receipt":pin(&receipt_path),"observation":pin(&observation_path)});
+        self.save_effects();
+    }
+    fn change_repair_receipt(&mut self, pointer: &str, value: Value) {
+        let (_, receipt_path) = self.repair_paths();
+        let mut receipt: Value = serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+        *receipt.pointer_mut(pointer).unwrap() = value;
+        write_private(&receipt_path, &receipt);
+        self.effects["repair"]["receipt"] = pin(&receipt_path);
+        let observation_path = PathBuf::from(self.effects["repair"]["observation"]["path"].as_str().unwrap());
+        let mut observation: Value = serde_json::from_slice(&fs::read(&observation_path).unwrap()).unwrap();
+        observation["native_receipt"] = pin(&receipt_path);
+        write_private(&observation_path, &observation);
+        self.effects["repair"]["observation"] = pin(&observation_path);
+        self.save_effects();
+    }
+}
+#[test]
+fn canonical_failed_reconcile_preserves_unknown_and_is_separate_from_positive_success() {
+    let mut f = FailedRecovery::new();
+    let state = fs::read(&f.inner.state_path).unwrap();
+    let intent = fs::read(&f.inner.intent_path).unwrap();
+    let owner = fs::read(f.inner.f.resource_dir().join("owner.json")).unwrap();
+    let ledger = fs::read(&f.inner.f.ledger).unwrap();
+    let first = f.inner.call();
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["result"]["outcome"], "failed");
+    assert_eq!(first["result"]["operationalReadiness"], false);
+    assert!(first["result"]["receiptPath"].as_str().unwrap().ends_with(".failed-reconciliation.json"));
+    assert!(first["result"]["receiptRef"].as_str().unwrap().contains(":failed-reconciled:"));
+    assert_eq!(fs::read(&f.inner.state_path).unwrap(), state);
+    assert_eq!(fs::read(&f.inner.intent_path).unwrap(), intent);
+    assert_eq!(fs::read(f.inner.f.resource_dir().join("owner.json")).unwrap(), owner);
+    assert_eq!(fs::read(&f.inner.f.ledger).unwrap(), ledger);
+    assert_eq!(f.inner.call(), first);
+    f.inner.request["action"] = json!("reconcile_finished");
+    f.inner.evidence["outcome"] = json!("candidate");
+    f.inner.save_evidence();
+    assert_eq!(f.inner.call()["error"], "different_terminal_receipt");
+}
+#[test]
+fn canonical_failed_reconcile_requires_live_claim_but_repairs_same_durable_ack_after_expiry() {
+    let f = FailedRecovery::new();
+    f.inner.f.force_expired();
+    assert_eq!(f.inner.call()["error"], "lease_expired");
+    f.inner.assert_unresolved();
+    let mut f = FailedRecovery::new();
+    let first = f.inner.call();
+    assert_eq!(first["ok"], true, "{first}");
+    fs::write(f.inner.f.resource_dir().join("execution-binding.json"), &f.inner.original_binding).unwrap();
+    f.inner.f.force_expired();
+    assert_eq!(f.inner.call(), first, "durable decision must repair its ACK without a new effect");
+    f.inner.evidence["validated_at_unix_ms"] = json!(instant_ms()+1);
+    f.inner.save_evidence();
+    assert_eq!(f.inner.call()["error"], "reconciliation_conflict");
+}
+#[test]
+fn canonical_failed_reconcile_cross_refuses_ordinary_positive_and_mismatched_action() {
+    for suffix in ["receipt.json","reconciliation.json"] {
+        let f = FailedRecovery::new();
+        let guard: Value = serde_json::from_slice(&fs::read(&f.inner.intent_path).unwrap()).unwrap();
+        let path = f.inner.intent_path.parent().unwrap()
+            .join(format!("{}.{suffix}",guard["guard_id"].as_str().unwrap()));
+        write_private(&path, &json!({"preserved":"foreign-terminal"}));
+        let before = fs::read(&path).unwrap();
+        assert_eq!(f.inner.call()["error"], "different_terminal_receipt");
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read(f.inner.f.resource_dir().join("execution-binding.json")).unwrap(), f.inner.original_binding);
+    }
+    let mut f = FailedRecovery::new();
+    f.inner.request["action"] = json!("reconcile_finished");
+    assert_eq!(f.inner.call()["ok"], false);
+    f.inner.assert_unresolved();
+    let mut positive = Recovery::new();
+    positive.request["action"] = json!("reconcile_failed");
+    assert_eq!(positive.call()["ok"], false);
+    positive.assert_unresolved();
+}
+#[test]
+fn canonical_failed_reconcile_rejects_nondefinitive_http_and_identity_changes() {
+    for (pointer,value) in [
+        ("/http_status",json!(401)),("/http_status",json!(200)),
+        ("/http_body_complete",json!(false)),("/authenticated_request",json!(false)),
+        ("/operational_readiness",json!(true)),("/observed_at_unix_ms",json!(1)),
+        ("/after/process/pid",json!(2_000_000_000u32)),
+        ("/request/challenge",json!("foreign-challenge")),
+        ("/response/error",json!("different_error")),
+        ("/http_body_sha256",json!("0".repeat(64))),
+    ] {
+        let mut f = FailedRecovery::new();
+        *f.failure.pointer_mut(pointer).unwrap()=value;
+        f.save_failure();
+        assert_eq!(f.inner.call()["ok"], false, "must reject {pointer}");
+        f.inner.assert_unresolved();
+    }
+}
+#[test]
+fn canonical_failed_reconcile_requires_all_terminal_effect_evidence() {
+    for field in ["complete","install-provider","source","coordinator","snapshot","missing-native"] {
+        let mut f = FailedRecovery::new();
+        match field {
+            "complete" => f.effects["complete"]=json!(false),
+            "install-provider" => {
+                let path=PathBuf::from(f.effects["install"]["driver"]["path"].as_str().unwrap());
+                let mut driver:Value=serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                driver["returncode"]=json!(1);
+                write_private(&path,&driver); f.effects["install"]["driver"]=pin(&path);
+            },
+            "source" => {
+                let path=PathBuf::from(f.effects["install"]["receipt"]["path"].as_str().unwrap());
+                let mut receipt:Value=serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                receipt["source_commit"]=json!("f".repeat(40));
+                write_private(&path,&receipt); f.effects["install"]["receipt"]=pin(&path);
+            },
+            "coordinator" => {
+                let path=PathBuf::from(f.effects["coordinator"]["driver"]["path"].as_str().unwrap());
+                let mut driver:Value=serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                driver["phase"]=json!("awaiting_consumer");
+                write_private(&path,&driver); f.effects["coordinator"]["driver"]=pin(&path);
+            },
+            "snapshot" => f.effects["original_state_snapshot"]["sha256"]=json!("0".repeat(64)),
+            _ => { f.effects["native_restart"].as_object_mut().unwrap().remove("provider_result"); },
+        }
+        f.save_effects();
+        assert_eq!(f.inner.call()["ok"],false,"must reject {field}");
+        f.inner.assert_unresolved();
+    }
+}
+#[test]
+fn canonical_failed_reconcile_requires_exact_terminal_repair_and_preserves_attempt() {
+    let mut f=FailedRecovery::new();
+    f.add_terminal_repair();
+    let (intent_path,receipt_path)=f.repair_paths();
+    let intent=fs::read(&intent_path).unwrap();
+    let receipt=fs::read(&receipt_path).unwrap();
+    let first=f.inner.call();
+    assert_eq!(first["ok"],true,"{first}");
+    assert_eq!(f.inner.call(),first);
+    assert_eq!(fs::read(&intent_path).unwrap(),intent);
+    assert_eq!(fs::read(&receipt_path).unwrap(),receipt);
+}
+#[test]
+fn canonical_failed_reconcile_refuses_unknown_timed_out_or_nonzero_repairs() {
+    for (pointer,value) in [
+        ("/systemctl/spawned",json!(false)),("/systemctl/exit_code",Value::Null),
+        ("/systemctl/exit_code",json!(1)),("/systemctl/signal",json!(9)),
+        ("/systemctl/timed_out",json!(true)),("/systemctl/error_code",json!("wait_failed")),
+        ("/request_key",json!("another-request")),
+    ] {
+        let mut f=FailedRecovery::new();
+        f.add_terminal_repair();
+        f.change_repair_receipt(pointer,value);
+        assert_eq!(f.inner.call()["ok"],false,"must reject {pointer}");
+        f.inner.assert_unresolved();
+    }
+    for missing in ["receipt","intent","declaration"] {
+        let mut f=FailedRecovery::new();
+        f.add_terminal_repair();
+        let (intent,receipt)=f.repair_paths();
+        match missing {
+            "receipt"=>fs::remove_file(receipt).unwrap(),
+            "intent"=>fs::remove_file(intent).unwrap(),
+            _=>{ f.effects["repair"]=Value::Null; f.save_effects(); },
+        }
+        assert_eq!(f.inner.call()["ok"],false,"must reject missing {missing}");
+        f.inner.assert_unresolved();
+    }
+}
+#[test]
+fn canonical_failed_reconcile_preserves_exact_owner_and_execution_lock_boundaries() {
+    for field in ["owner","token","fence","target","live-coordinator","lock","binding"] {
+        let mut f=FailedRecovery::new();
+        let mut held=None;
+        match field {
+            "owner"=>f.inner.request["proof"]["owner"]["nativeSessionId"]=json!("foreign"),
+            "token"=>f.inner.request["proof"]["token"]=json!("d".repeat(64)),
+            "fence"=>f.inner.request["proof"]["fence"]=json!(43),
+            "target"=>f.inner.request["proof"]["deploymentTarget"]["unit"]=json!("foreign.service"),
+            "live-coordinator"=>{ f.inner.evidence["coordinator"]=birth(std::process::id());f.inner.save_evidence(); },
+            "lock"=>held=Some(TargetExecutionLock::try_acquire(&f.inner.f.authority,&f.inner.f.resource,Authorization::Authorized).unwrap()),
+            _=>{ f.inner.evidence["binding_sha256"]=json!("0".repeat(64));f.inner.save_evidence(); },
+        }
+        assert_eq!(f.inner.call()["ok"],false,"must reject {field}");
+        f.inner.assert_unresolved();
+        drop(held);
+    }
 }

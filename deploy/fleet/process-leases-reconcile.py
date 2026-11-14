@@ -37,6 +37,10 @@ HASH = re.compile(r"[0-9a-f]{64}")
 KIND = "herder-canonical-rollout-reconciliation-plan-v1"
 REPAIR_KIND = "herder-canonical-ts-repair-plan-v1"
 REPAIR_EVIDENCE_KIND = "herder-project-release-ts-repair-v1"
+FAILED_PROOF_KIND = "herder-canonical-runtime-failure-v1"
+FAILED_PAIRED_KIND = "herder-paired-rollout-failed-reconciliation-v1"
+EFFECTS_KIND = "herder-controlled-rollout-effects-terminal-v1"
+FAILED_PLAN_KIND = "herder-canonical-failed-reconciliation-plan-v1"
 SOURCE_FILES = ("process-leases-reconcile.py", "process-leases-rollout.py",
                 "process-leases-scheduler-readiness.py", "process-leases-candidate.py",
                 "launch-v1-core.py", "release_gate.py", "main_guard.py")
@@ -630,6 +634,401 @@ def apply(args):
     return rollout.status(argparse.Namespace(job_dir=Path(plan["job_dir"])))
 
 
+def completed_provider(plan, value):
+    """Use the already reviewed parser, including actual target/task identities."""
+    parser_pin = plan.get("native_successor_parser")
+    if parser_pin is None:
+        raise ValueError("failed settlement requires the pinned original provider parser")
+    read_pin(value, json_value=False)
+    result = load_http_helper(parser_pin).provider(Path(value["path"]), value["sha256"])
+    if result[2] != value:
+        raise ValueError("provider result pin changed")
+    return result
+
+
+def provider_stdout(payload, returncode):
+    if (type(payload.get("returncode")) is not int or payload["returncode"] != returncode
+            or not isinstance(payload.get("stdout"), str) or len(payload["stdout"]) > 8 * 1024 * 1024
+            or not isinstance(payload.get("stderr"), str)):
+        raise ValueError("definitive completed original shell operation required")
+    value = json.loads(payload["stdout"])
+    # The reviewed orchestration wrapper retains the reaped subprocess result
+    # as exactly this object. Its exit status must agree with the outer task.
+    if isinstance(value, dict) and set(value) == {"returncode", "stdout", "stderr"}:
+        if (type(value["returncode"]) is not int or value["returncode"] != returncode
+                or not isinstance(value["stdout"], str) or not isinstance(value["stderr"], str)):
+            raise ValueError("original subprocess wrapper has a contradictory terminal result")
+        value = json.loads(value["stdout"])
+    if not isinstance(value, dict):
+        raise ValueError("original operation has no typed terminal result")
+    return value
+
+
+def failure_from_observation(plan, plan_pin, observation_pin, provider_pin):
+    """A complete authenticated 503 is a failed acceptance, never healthy readiness."""
+    observation = read_pin(observation_pin)
+    expected = plan["successor_scheduler_identity"]
+    request = observation.get("request")
+    readiness.fields(request, ("endpoint", "challenge", "probe"))
+    readiness.fields(request["probe"], ("harness", "native_session_id"), ("node_ref",))
+    if (request["endpoint"] != readiness.ENDPOINT or request["challenge"] != plan["challenge"]
+            or not all(readiness.exact(value) for value in request["probe"].values())):
+        raise ValueError("failed acceptance request is not the exact operational probe")
+    if (observation.get("version") != 1 or observation.get("kind") != "herder-canonical-http-observation"
+            or observation.get("stage") != "consumer" or observation.get("http_status") != 503
+            or observation.get("http_body_complete") is not True
+            or observation.get("response") != {"error": "canonical_runtime_unavailable"}
+            or observation.get("error") != "observation_failed_ValueError"
+            or observation.get("reconciliation_plan") != plan_pin
+            or observation.get("before") != expected or observation.get("after") != expected
+            or observation.get("rollout") != {"job_id": plan["job_id"], "challenge": plan["challenge"]}
+            or observation.get("provider_operation_id") is not None):
+        raise ValueError("only the complete exact authenticated 503 may settle failed acceptance")
+    raw = read_pin(observation["body"], json_value=False)
+    if (hashlib.sha256(raw).hexdigest() != observation["http_body_sha256"]
+            or json.loads(raw) != observation["response"]):
+        raise ValueError("failed HTTP response bytes changed")
+    request_receipt = read_pin(observation["request_receipt"])
+    if (request_receipt.get("version") != 1
+            or request_receipt.get("kind") != "herder-reconciliation-http-request"
+            or request_receipt.get("plan") != plan_pin or request_receipt.get("request") != request
+            or request_receipt.get("before") != expected or request_receipt.get("provider_operation_id") is not None):
+        raise ValueError("failed HTTP request was not the pinned authenticated observer request")
+    operation, payload, _, completed = completed_provider(plan, provider_pin)
+    output = provider_stdout(payload, 1)
+    if (output.get("observation") != observation_pin or output.get("http_status") != 503
+            or output.get("observation_complete") is not False
+            or output.get("provider_operation_id") is not None):
+        raise ValueError("actual provider result does not bind this failed observation")
+    start, stamp = observation.get("started_at_unix_ms"), observation.get("observed_at_unix_ms")
+    created = request_receipt.get("created_at_unix_ms")
+    current = readiness.now_ms()
+    if (any(type(value) is not int for value in (start, stamp, created, completed))
+            or not plan["created_at_unix_ms"] <= created <= start <= stamp <= completed
+            or stamp < current - 60000 or completed > current + 5000 or completed - stamp > 60000):
+        raise ValueError("failed acceptance is stale or has contradictory operation timestamps")
+    return {"version": 1, "kind": FAILED_PROOF_KIND, "outcome": "failed", "operational_readiness": False,
+        "job_id": plan["job_id"], "request": request, "provider_operation_id": operation, "provider_result": provider_pin,
+        "http_status": 503, "http_body_complete": True, "body": observation["body"],
+        "http_body_sha256": observation["http_body_sha256"], "response": observation["response"],
+        "before": expected, "after": expected, "started_at_unix_ms": start, "observed_at_unix_ms": stamp,
+        "provider_completed_at_unix_ms": completed, "observation": observation_pin,
+        "request_receipt": observation["request_receipt"], "reconciliation_plan": plan_pin,
+        "authenticated_request": True}
+
+
+def finalize_failed(args):
+    plan = load_plan(args)
+    verify_current(plan)
+    plan_pin = {"path": str(args.plan), "sha256": args.plan_sha256}
+    proof = failure_from_observation(plan, plan_pin,
+        {"path": str(args.observation), "sha256": args.observation_sha256},
+        {"path": str(args.provider_result), "sha256": args.provider_result_sha256})
+    value = publish(args.output, proof)
+    return {"failure_proof": value, "outcome": "failed", "operational_readiness": False,
+            "provider_operation_id": proof["provider_operation_id"]}
+
+
+def validate_failure(plan, plan_pin, failure_pin):
+    failure = read_pin(failure_pin)
+    expected = failure_from_observation(plan, plan_pin, failure["observation"], failure["provider_result"])
+    if failure != expected:
+        raise ValueError("failed acceptance proof differs from its actual provider observation")
+    return failure
+
+
+def terminal_repair(plan, item):
+    """An ambiguous repair intent cannot be converted into a failed settlement."""
+    stem = plan["bridge"]["guard_intent"]["path"].removesuffix(".intent.json")
+    intent_path, receipt_path = Path(stem + ".ts-repair.intent.json"), Path(stem + ".ts-repair.receipt.json")
+    if not intent_path.exists() and not receipt_path.exists():
+        if item is not None:
+            raise ValueError("repair evidence was supplied without an actual guard-specific repair")
+        return None
+    if item is None or not intent_path.exists() or not receipt_path.exists():
+        raise ValueError("original TS repair intent has no definitive terminal receipt")
+    readiness.fields(item, ("intent", "receipt", "observation"))
+    if item["intent"]["path"] != str(intent_path) or item["receipt"]["path"] != str(receipt_path):
+        raise ValueError("repair receipt belongs to another guard")
+    intent, receipt, observed = (read_pin(item[key]) for key in ("intent", "receipt", "observation"))
+    result = receipt.get("systemctl", {})
+    if (intent.get("version") != 1 or intent.get("kind") != "herder-project-release-ts-repair-intent-v1"
+            or intent.get("job_id") != plan["job_id"] or intent.get("guard") != read_pin(plan["bridge"]["guard_intent"])
+            or receipt.get("version") != 1 or receipt.get("kind") != "herder-project-release-ts-repair-receipt-v1"
+            or receipt.get("job_id") != plan["job_id"] or receipt.get("intent") != item["intent"]
+            or any(receipt.get(key) != intent.get(key) for key in ("repair_id", "request_key", "evidence", "operator", "old_process"))
+            or result.get("spawned") is not True or type(result.get("exit_code")) is not int or result["exit_code"] != 0
+            or result.get("signal") is not None or result.get("timed_out") is not False or result.get("error_code") is not None
+            or type(receipt.get("started_at_unix_ms")) is not int or type(receipt.get("finished_at_unix_ms")) is not int
+            or receipt["finished_at_unix_ms"] < receipt["started_at_unix_ms"]):
+        raise ValueError("original TS repair result is not definitively complete")
+    acknowledgement = observed.get("native_acknowledgement", {})
+    if (observed.get("kind") != "herder-canonical-ts-repair-observation-v1"
+            or observed.get("job_id") != plan["job_id"] or observed.get("native_receipt") != item["receipt"]
+            or observed.get("original_state", {}).get("sha256") != plan["original_state_snapshot"]["sha256"]
+            or observed.get("original_outcome") != "unknown" or observed.get("binding_resolved") is not False
+            or observed.get("observation_error") is not None
+            or observed.get("observed_successor") != plan["successor_scheduler_identity"]
+            or observed.get("native_runtime") != plan["native_runtime"]
+            or acknowledgement.get("status") != "recorded" or acknowledgement.get("bindingResolved") is not False
+            or acknowledgement.get("receiptPath") != item["receipt"]["path"]
+            or acknowledgement.get("receiptSha256") != item["receipt"]["sha256"]):
+        raise ValueError("repair acknowledgement does not bind the exact current successor")
+    if read_pin(observed["original_state"]) != read_pin(plan["original_state_snapshot"]):
+        raise ValueError("repair changed the original rollout outcome")
+    if rollout.identity_state(identity(intent["old_process"])) != "dead":
+        raise ValueError("the original repair process has not definitively ended")
+    read_pin(intent["evidence"])
+    read_pin(intent["repair_plan"])
+    read_pin(intent["operator"], policy="unit", json_value=False)
+    return item
+
+
+def validate_effect_completion(plan, inputs):
+    """Validate actual terminal effects without inventing a missing Hub receipt."""
+    readiness.fields(inputs, ("install", "native_restart", "coordinator", "repair"))
+    state = read_pin(plan["original_state_snapshot"])
+    install = readiness.fields(inputs["install"], ("receipt", "plan", "recipe", "driver", "driver_source", "intent", "start_intent"))
+    if install["receipt"] != plan["install_receipt"] or install["plan"] != plan["install_plan"]:
+        raise ValueError("terminal installation evidence selects another admission")
+    original_install(install["plan"], install["receipt"], state)
+    recipe, driver, intent, start = (read_pin(install[key]) for key in ("recipe", "driver", "intent", "start_intent"))
+    # The reviewed immutable driver source is provenance, not a fabricated
+    # provider receipt or a substitute for its actual reaped result.
+    read_pin(install["driver_source"], json_value=False)
+    output = provider_stdout(driver, 0)
+    old = state["scheduler_identity"]
+    if (recipe.get("kind") != "prepared_ts_install_recipe" or recipe.get("version") != 1
+            or recipe.get("plan") != install["plan"]["path"] or recipe.get("plan_sha256") != install["plan"]["sha256"]
+            or recipe.get("source_commit") != old["runtime"]["source_commit"]
+            or install["receipt"]["path"] != str(Path(recipe["journal"]) / "result.json")
+            or install["intent"]["path"] != str(Path(recipe["journal"]) / "intent.json")
+            or install["start_intent"]["path"] != str(Path(recipe["journal"]) / "start-intent.json")
+            or intent.get("kind") != "canonical-ts-install-intent" or intent.get("plan") != install["plan"]["path"]
+            or intent.get("plan_sha256") != install["plan"]["sha256"] or intent.get("target") != state["deployment_target"]
+            or start.get("unit") != readiness.UNIT
+            or any(value.get("source_commit") != old["runtime"]["source_commit"] for value in (intent, start, output))
+            or output.get("status") != "installed_listener_ready" or output.get("pid") != old["process"]["pid"]
+            or str(output.get("start_ticks")) != str(old["process"]["start_ticks"])):
+        raise ValueError("installation completion does not bind the exact original installed TS")
+    read_pin(output["listener_receipt"])
+    installed = read_pin(install["receipt"])
+    times = [intent.get("created_at_unix_ms"), start.get("at_unix_ms"),
+             installed.get("at_unix_ms"), driver.get("at_unix_ms"), state["created_at_unix_ms"]]
+    if any(type(value) is not int for value in times) or times != sorted(times):
+        raise ValueError("installation effect completion timestamps are contradictory")
+    restart = readiness.fields(inputs["native_restart"], ("binding", "provider_result"))
+    if restart["binding"] != plan["native_restart_binding"]:
+        raise ValueError("native effect completion has another original restart binding")
+    binding = native_restart_binding(restart["binding"], state, plan["original_native_runtime"])
+    if restart["provider_result"] != binding["provider_result"]:
+        raise ValueError("native restart provider differs from its original audit")
+    operation, payload, _, stamp = completed_provider(plan, restart["provider_result"])
+    ack = read_pin(binding["receipt"])
+    if (operation != ack["provider_operation_id"] or stamp != ack["observed_at_unix_ms"]
+            or payload.get("ref") != rollout.CHILD or payload.get("action") != ack["action"]):
+        raise ValueError("original native restart has no exact terminal controller acknowledgement")
+    coordinator = readiness.fields(inputs["coordinator"], ("provider_result", "driver", "provider_operation_id"))
+    operation, payload, _, completed = completed_provider(plan, coordinator["provider_result"])
+    driver = read_pin(coordinator["driver"])
+    if (operation != coordinator["provider_operation_id"] or provider_stdout(payload, 1) != driver
+            or driver.get("returncode") != 1 or driver.get("phase") != "unknown"
+            or driver.get("state") != plan["state"]["path"] or driver.get("state_sha256") != plan["state"]["sha256"]
+            or type(driver.get("at_unix_ms")) is not int or driver["at_unix_ms"] > completed
+            or driver["at_unix_ms"] < state["created_at_unix_ms"]):
+        raise ValueError("original coordinator has no exact terminal UNKNOWN receipt")
+    read_pin({"path": driver["log"], "sha256": driver["log_sha256"]}, json_value=False)
+    if rollout.identity_state(identity(state["coordinator"])) != "dead":
+        raise ValueError("original coordinator is not dead")
+    repair = terminal_repair(plan, inputs["repair"])
+    return {"version": 1, "kind": EFFECTS_KIND, "job_id": plan["job_id"], "complete": True,
+            "original_state_snapshot": plan["original_state_snapshot"], **inputs, "repair": repair}
+
+
+def failed_native_consumer(plan, provider_pin):
+    operation, payload, _, stamp = completed_provider(plan, provider_pin)
+    if payload.get("ref", rollout.CHILD) != rollout.CHILD or not isinstance(payload.get("tools"), list):
+        raise ValueError("failed settlement requires an actual typed native tools/list")
+    for process in plan["native_runtime"].values():
+        started_before_controller_observation(process, stamp)
+    receipt = {"schema": 1, "kind": "consumer", "job_id": plan["job_id"], "challenge": plan["challenge"],
+        "observed_at_unix_ms": stamp, "provider_operation_id": operation, "target": rollout.CONTROLLER,
+        "ref": rollout.CHILD, "method": "mcp_tools", "tools": payload["tools"],
+        "schema_sha256": rollout.json_hash(payload["tools"])}
+    state = {**read_pin(plan["original_state_snapshot"]), "challenge": plan["challenge"]}
+    rollout.validate_consumer(state, receipt, max(plan["created_at_unix_ms"], readiness.now_ms() - 60000))
+    return receipt
+
+
+def prepare_failed(args):
+    plan = load_plan(args)
+    verify_current(plan)
+    operator = {"path": str(args.failed_native_operator), "sha256": args.failed_native_operator_sha256}
+    read_pin(operator, policy="unit", json_value=False)
+    inputs = {"path": str(args.effect_input), "sha256": args.effect_input_sha256}
+    effects = validate_effect_completion(plan, read_pin(inputs))
+    root = Path(args.output_directory)
+    candidate.private_directory(root.parent)
+    root.mkdir(mode=0o700)
+    effects_pin = publish(root / "effect-completion.json", effects)
+    prepared = {"version": 1, "kind": FAILED_PLAN_KIND, "outcome": "failed",
+        "job_id": plan["job_id"], "original_plan": {"path": str(args.plan), "sha256": args.plan_sha256},
+        "native_operator": operator, "effect_input": inputs, "effect_completion": effects_pin,
+        "validator_sources": source_pins(), "created_at_unix_ms": readiness.now_ms()}
+    verify_current(plan)
+    return {"plan": publish(root / "plan.json", prepared), "effects": "private_evidence_only"}
+
+
+def load_failed_plan(args):
+    prepared = read_pin({"path": str(args.plan), "sha256": args.plan_sha256})
+    if (prepared.get("version") != 1 or prepared.get("kind") != FAILED_PLAN_KIND
+            or prepared.get("outcome") != "failed"):
+        raise ValueError("explicit failed reconciliation plan required")
+    for value in prepared["validator_sources"]:
+        read_pin(value, policy="unit", json_value=False)
+    read_pin(prepared["native_operator"], policy="unit", json_value=False)
+    base_pin = prepared["original_plan"]
+    plan = load_plan(argparse.Namespace(plan=Path(base_pin["path"]), plan_sha256=base_pin["sha256"]))
+    if prepared.get("job_id") != plan["job_id"]:
+        raise ValueError("failed plan names another original rollout")
+    read_pin(prepared["effect_completion"])
+    return prepared, plan
+
+
+def failed_evidence_files(plan, args, prepared):
+    state = verify_current(plan)
+    root = Path(args.plan).parent
+    candidate.private_directory(root)
+    plan_pin = prepared["original_plan"]
+    failure_pin = {"path": str(args.failure_proof), "sha256": args.failure_proof_sha256}
+    failure = validate_failure(plan, plan_pin, failure_pin)
+    input_pin = prepared["effect_input"]
+    effects = validate_effect_completion(plan, read_pin(input_pin))
+    if effects != read_pin(prepared["effect_completion"]):
+        raise ValueError("terminal effect evidence changed after failed preparation")
+    native_provider = {"path": str(args.native_provider_result), "sha256": args.native_provider_result_sha256}
+    native = failed_native_consumer(plan, native_provider)
+    if native["observed_at_unix_ms"] < failure["observed_at_unix_ms"]:
+        raise ValueError("native consumer predates the failed HTTP observation")
+    effects_pin = prepared["effect_completion"]
+    native_pin = publish(root / "native-consumer.json", native)
+    stamp = readiness.now_ms()
+    paired = {"version": 1, "kind": FAILED_PAIRED_KIND, "outcome": "failed", "complete": True,
+        "operational_readiness": False, "job_id": plan["job_id"], "original_state_sha256": plan["state"]["sha256"],
+        "original_state_snapshot": plan["original_state_snapshot"], "old_scheduler_identity": plan["old_scheduler_identity"],
+        "successor_scheduler_identity": plan["successor_scheduler_identity"], "native_runtime": plan["native_runtime"],
+        "original_native_runtime": plan["original_native_runtime"], "observed_native_successor": plan["observed_native_successor"],
+        "native_restart_binding": plan["native_restart_binding"], "native_consumer": native_pin,
+        "native_provider_result": native_provider, "scheduler_failure": failure_pin, "effect_completion": effects_pin,
+        "effect_input": input_pin, "selector_sha256": state["selector_after_sha256"],
+        "launcher_sha256": state["launcher_after_sha256"], "validated_at_unix_ms": stamp,
+        "validator_sources": prepared["validator_sources"], "native_operator": prepared["native_operator"],
+        "failed_plan": {"path": str(args.plan), "sha256": args.plan_sha256},
+        "service_delta": plan["service_delta"], "plan": plan_pin}
+    paired_pin = publish(root / "failed-paired-proof.json", paired)
+    bridge = plan["bridge"]
+    evidence = {"version": 1, "kind": "herder-project-release-reconciliation-v1", "outcome": "failed",
+        "job_id": state["job_id"], "job_dir": state["job_dir"], "state": plan["state"], "occupancy": plan["occupancy"],
+        "guard_intent": bridge["guard_intent"], "binding_sha256": bridge["binding"]["sha256"],
+        "sealed_bridge": bridge["sealed_bridge"], "config_sha256": bridge["config"]["sha256"],
+        "ledger_sha256": bridge["ledger"]["sha256"], "process_config_sha256": bridge["process_config"]["sha256"],
+        "coordinator": state["coordinator"], "validated_at_unix_ms": stamp, "paired_proof": paired_pin}
+    return publish(root / "failed-evidence.json", evidence)
+
+
+def invoke_failed_native(plan, evidence_pin, operator):
+    proof = owner_proof(read_pin(plan["proof"]), read_pin(plan["original_state_snapshot"]))
+    request = {"version": 1, "action": "reconcile_failed", "proof": proof, "evidence": evidence_pin}
+    read_pin(operator, policy="unit", json_value=False)
+    started = readiness.now_ms()
+    result, failure, stdout, stderr = None, None, b"", b""
+    try:
+        result = subprocess.run([operator["path"], "--config", plan["bridge"]["config"]["path"]],
+            input=json.dumps(request), capture_output=True, text=True, timeout=30)
+        stdout, stderr = result.stdout, result.stderr
+    except subprocess.TimeoutExpired as error:
+        failure, stdout, stderr = error, error.stdout, error.stderr
+    except OSError as error:
+        failure = error
+    def captured(value):
+        raw = value if isinstance(value, bytes) else (value or "").encode()
+        safe = raw.decode("utf8", errors="replace").replace(proof["token"], "[redacted]").encode()
+        return {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
+                "text": safe[:65536].decode("utf8", errors="ignore"), "truncated": len(safe) > 65536}
+    publish(Path(evidence_pin["path"]).parent / ("native-failed-invocation-" + uuid.uuid4().hex + ".json"),
+        {"version": 1, "kind": "herder-native-failed-reconciliation-invocation-v1", "evidence": evidence_pin,
+         "operator": operator, "started_at_unix_ms": started, "finished_at_unix_ms": readiness.now_ms(),
+         "returncode": None if result is None else result.returncode,
+         "timed_out": isinstance(failure, subprocess.TimeoutExpired), "error_type": None if failure is None else type(failure).__name__,
+         "stdout": captured(stdout), "stderr": captured(stderr)})
+    if failure is not None or result.returncode or len(result.stdout) > 65536:
+        raise RuntimeError("failed reconciliation acknowledgement unavailable; inspect original durable receipt")
+    envelope = json.loads(result.stdout)
+    response = envelope.get("result", {})
+    path = plan["bridge"]["guard_intent"]["path"].removesuffix(".intent.json") + ".failed-reconciliation.json"
+    if (envelope.get("ok") is not True or response.get("finished") is not True or response.get("reconciled") is not True
+            or response.get("outcome") != "failed" or response.get("operationalReadiness") is not False
+            or response.get("jobId") != plan["job_id"] or response.get("evidenceSha256") != evidence_pin["sha256"]
+            or response.get("receiptPath") != path):
+        raise ValueError("failed reconciliation has no exact typed negative acknowledgement")
+    read_pin({"path": path, "sha256": response["receiptSha256"]})
+    return response
+
+
+def apply_failed(args):
+    prepared, plan = load_failed_plan(args)
+    operator = prepared["native_operator"]
+    read_pin(operator, policy="unit", json_value=False)
+    original = read_pin(plan["original_state_snapshot"])
+    root = candidate.private_directory(Path(args.plan).parent)
+    with candidate.selector_lock(Path(original["selector"])):
+        current = rollout.read_state(plan["job_dir"])
+        if not same_original_state(current, original):
+            raise ValueError("original checkpoint fields changed")
+        if current.get("canonical_reconciliation"):
+            if (current["canonical_reconciliation"].get("outcome") != "failed"
+                    or not rollout.canonical_reconciliation_valid(current)):
+                raise ValueError("another or invalid reconciliation already exists")
+        else:
+            pending = root / "failed-evidence.json"
+            if pending.exists():
+                evidence_pin = pin(pending)
+                evidence = read_pin(evidence_pin)
+                paired = read_pin(evidence["paired_proof"])
+                if (evidence.get("outcome") != "failed" or evidence.get("state") != plan["state"]
+                        or paired.get("kind") != FAILED_PAIRED_KIND or paired.get("native_operator") != operator
+                        or paired.get("plan") != prepared["original_plan"]
+                        or paired.get("failed_plan") != {"path": str(args.plan), "sha256": args.plan_sha256}):
+                    raise ValueError("pending failed settlement belongs to another original decision")
+                native_path = Path(plan["bridge"]["guard_intent"]["path"].removesuffix(".intent.json") + ".failed-reconciliation.json")
+                if not native_path.exists():
+                    verify_current(plan)
+                    validate_failure(plan, paired["plan"], paired["scheduler_failure"])
+                    if validate_effect_completion(plan, read_pin(paired["effect_input"])) != read_pin(paired["effect_completion"]):
+                        raise ValueError("terminal effects changed before failed settlement")
+                    if failed_native_consumer(plan, paired["native_provider_result"]) != read_pin(paired["native_consumer"]):
+                        raise ValueError("native consumer changed before failed settlement")
+            else:
+                evidence_pin = failed_evidence_files(plan, args, prepared)
+            response = invoke_failed_native(plan, evidence_pin, operator)
+            result = {"version": 1, "kind": "herder-paired-rollout-reconciled-v1", "outcome": "failed", "complete": True,
+                "operational_readiness": False, "job_id": plan["job_id"], "original_state": plan["original_state_snapshot"],
+                "evidence": evidence_pin, "native_receipt": {"path": response["receiptPath"], "sha256": response["receiptSha256"]},
+                "native_acknowledgement": response, "validated_at_unix_ms": read_pin(evidence_pin)["validated_at_unix_ms"]}
+            result_pin = publish(root / "failed-reconciliation-receipt.json", result)
+            annotation = {"version": 1, "outcome": "failed", "receipt": result_pin, "original_state": plan["original_state_snapshot"]}
+            if rollout.read_state(plan["job_dir"]) != original:
+                raise ValueError("checkpoint changed after failed native acknowledgement")
+            current = {**original, "canonical_reconciliation": annotation}
+            if not rollout.canonical_reconciliation_valid(current):
+                raise ValueError("failed receipt chain is invalid; preserve original UNKNOWN")
+            candidate.replace(Path(plan["job_dir"]) / "state.json", candidate.encoded(current), plan["state"]["sha256"], 0o600)
+    pointer = rollout.read_occupancy(Path(current["selector"]))
+    if pointer["phase"] == "active":
+        rollout.resolve_occupancy(current)
+    return {**rollout.status(argparse.Namespace(job_dir=Path(plan["job_dir"]))), "operational_readiness": False}
+
+
 def repair_request_key(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_:/.-]{8,200}", value):
         raise ValueError("TS repair requires one explicit stable request key")
@@ -924,6 +1323,23 @@ def main():
     prep.add_argument("--output-directory", type=Path, required=True)
     repair = commands.add_parser("repair-ts")
     for sub in (prep, repair):
+        sub.add_argument("--plan", type=Path, required=True)
+        sub.add_argument("--plan-sha256", required=True)
+    failed_prepare = commands.add_parser("prepare-failed")
+    for key in ("failed-native-operator", "effect-input", "output-directory"):
+        failed_prepare.add_argument("--" + key, type=Path, required=True)
+    for key in ("failed-native-operator-sha256", "effect-input-sha256"):
+        failed_prepare.add_argument("--" + key, required=True)
+    failed_finalize = commands.add_parser("finalize-failed")
+    for key in ("observation", "provider-result", "output"):
+        failed_finalize.add_argument("--" + key, type=Path, required=True)
+    for key in ("observation-sha256", "provider-result-sha256"):
+        failed_finalize.add_argument("--" + key, required=True)
+    failed_apply = commands.add_parser("apply-failed")
+    for key in ("failure-proof", "native-provider-result"):
+        failed_apply.add_argument("--" + key, type=Path, required=True)
+        failed_apply.add_argument("--" + key + "-sha256", required=True)
+    for sub in (failed_prepare, failed_finalize, failed_apply):
         sub.add_argument("--plan", type=Path, required=True)
         sub.add_argument("--plan-sha256", required=True)
     args = parser.parse_args()

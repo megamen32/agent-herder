@@ -449,4 +449,220 @@ class TSRepairContracts(unittest.TestCase):
         self.assertEqual((self.job/'state.json').read_bytes(),before)
 
 
+class FailedReconciliationContracts(unittest.TestCase):
+    def setUp(self):
+        self.fixture=Contracts();self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
+        self.root,self.output,self.job=self.fixture.root,self.fixture.output,self.fixture.job
+        self.state,self.original=self.fixture.state,self.fixture.original
+        self.plan=copy.deepcopy(self.fixture.plan);self.plan['created_at_unix_ms']=40000
+        self.plan['old_scheduler_identity']=self.state['scheduler_identity']
+        self.plan_pin=r.publish(self.output/'negative-base-plan.json',self.plan)
+        self.now=100000
+        request={'endpoint':r.readiness.ENDPOINT,'challenge':self.plan['challenge'],
+                 'probe':{'harness':'zcode','native_session_id':'fixture-private-session','node_ref':'fixture-node'}}
+        before=self.plan['successor_scheduler_identity']
+        self.request=r.publish(self.output/'http-request.json',{'version':1,'kind':'herder-reconciliation-http-request',
+            'plan':self.plan_pin,'request':request,'before':before,'created_at_unix_ms':97000,'provider_operation_id':None})
+        self.body=r.publish(self.output/'response.body',b'{"error":"canonical_runtime_unavailable"}',raw=True)
+        self.observation={'version':1,'kind':'herder-canonical-http-observation','stage':'consumer','request':request,
+            'request_receipt':self.request,'before':before,'after':copy.deepcopy(before),'response':{'error':'canonical_runtime_unavailable'},
+            'body':self.body,'http_status':503,'http_body_complete':True,'http_body_sha256':self.body['sha256'],
+            'error':'observation_failed_ValueError','started_at_unix_ms':98000,'observed_at_unix_ms':99000,
+            'reconciliation_plan':self.plan_pin,'rollout':{'job_id':self.plan['job_id'],'challenge':self.plan['challenge']},
+            'provider_operation_id':None}
+        self.observation_pin=r.publish(self.output/'http-observation.json',self.observation)
+        self.provider_pin=r.publish(self.output/'http-provider.json',{'taskId':'fixture-actual-http','status':'completed'})
+        self.provider_output={'observation':self.observation_pin,'http_status':503,'observation_complete':False,'provider_operation_id':None}
+
+    def provider(self,plan,value):
+        self.assertEqual(value,self.provider_pin)
+        return 'fixture-actual-http',{'returncode':1,'stdout':json.dumps(self.provider_output),'stderr':''},value,99500
+
+    def failure(self,observation_pin=None):
+        with patch.object(r,'completed_provider',side_effect=self.provider),patch.object(r.readiness,'now_ms',return_value=self.now):
+            return r.failure_from_observation(self.plan,self.plan_pin,observation_pin or self.observation_pin,self.provider_pin)
+
+    def test_complete_authenticated_503_retains_actual_failed_provider_and_false_health(self):
+        failure=self.failure()
+        self.assertEqual(failure['http_status'],503)
+        self.assertEqual(failure['provider_operation_id'],'fixture-actual-http')
+        self.assertEqual(failure['outcome'],'failed');self.assertFalse(failure['operational_readiness'])
+        self.assertEqual(r.read_pin(failure['body'],json_value=False),b'{"error":"canonical_runtime_unavailable"}')
+        self.assertEqual(failure['before'],failure['after'])
+        self.assertNotIn('migration_ready',failure)
+
+    def test_timeout_auth_refusal_truncation_identity_drift_and_other_503_are_not_terminal_proofs(self):
+        cases=[('http_status',None),('http_status',401),('http_status',403),('http_body_complete',False),
+               ('after',{}),('response',{'error':'different_failure'}),('error','observation_failed_TimeoutError')]
+        for i,(field,value) in enumerate(cases):
+            changed=copy.deepcopy(self.observation);changed[field]=value
+            item=r.publish(self.output/('wrong-http-'+str(i)+'.json'),changed)
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):
+                self.failure(item)
+
+    def test_negative_observation_cannot_borrow_another_provider_or_restamp_stale_http(self):
+        self.provider_output['observation']={'path':'/another/observation.json','sha256':'a'*64}
+        with self.assertRaisesRegex(ValueError,'actual provider'):self.failure()
+        self.provider_output['observation']=self.observation_pin
+        self.now=160001
+        with self.assertRaisesRegex(ValueError,'stale'):self.failure()
+
+    def test_actual_reaped_subprocess_wrapper_preserves_both_exit_codes(self):
+        wrapped={'returncode':1,'stdout':json.dumps(self.provider_output),'stderr':''}
+        outer={'returncode':1,'stdout':json.dumps(wrapped),'stderr':''}
+        self.assertEqual(r.provider_stdout(outer,1),self.provider_output)
+        wrapped['returncode']=0;outer['stdout']=json.dumps(wrapped)
+        with self.assertRaisesRegex(ValueError,'contradictory'):r.provider_stdout(outer,1)
+
+    def test_missing_terminal_repair_receipt_refuses_without_a_native_invocation(self):
+        stem=self.plan['bridge']['guard_intent']['path'].removesuffix('.intent.json')
+        r.publish(Path(stem+'.ts-repair.intent.json'),{'job_id':self.plan['job_id']})
+        with patch.object(r,'invoke_failed_native',side_effect=AssertionError('must not resolve an uncertain repair')):
+            with self.assertRaisesRegex(ValueError,'definitive terminal'):
+                r.terminal_repair(self.plan,None)
+
+    def test_terminal_effects_accept_reaped_local_install_without_inventing_a_provider(self):
+        state=copy.deepcopy(self.state)
+        state.update(created_at_unix_ms=60000,awaiting_restart_at_unix_ms=65000,
+            deployment_target={'unit':'agent-herder.service','fleetDir':str(self.root)})
+        old=state['scheduler_identity'];old['process'].update(start_ticks='123',entry='/fixture/dist/index.js',node_binary='/fixture/node')
+        plan=copy.deepcopy(self.plan);plan['original_state_snapshot']=r.publish(self.output/'effects-original.json',state)
+        plan['state']=plan['original_state_snapshot'];plan['original_native_runtime']={'compat':{'pid':201},'core':{'pid':202}}
+        journal=self.output/'install-journal';journal.mkdir(mode=0o700)
+        install_plan=r.publish(self.output/'install-plan.json',{'version':1,'kind':'herder-canonical-ts-install',
+            'source_commit':old['runtime']['source_commit'],'runtime':old['runtime'],'canonical':old['canonical']})
+        installed=r.publish(journal/'result.json',{'version':1,'kind':'canonical-ts-installed','state':'started_pending_paired_readiness',
+            'plan_sha256':install_plan['sha256'],'source_commit':old['runtime']['source_commit'],'pid':111,'start_ticks':'123',
+            'entry':old['process']['entry'],'node_binary':old['process']['node_binary'],'at_unix_ms':300})
+        plan.update(install_plan=install_plan,install_receipt=installed)
+        listener=r.publish(self.output/'original-listener.json',{'actual_original_listener':True})
+        driver={'returncode':0,'stdout':json.dumps({'status':'installed_listener_ready','pid':111,'start_ticks':'123',
+            'source_commit':old['runtime']['source_commit'],'listener_receipt':listener}),'stderr':'','at_unix_ms':400}
+        recipe=r.publish(self.output/'install-recipe.json',{'version':1,'kind':'prepared_ts_install_recipe',
+            'source_commit':old['runtime']['source_commit'],'plan':install_plan['path'],'plan_sha256':install_plan['sha256'],'journal':str(journal)})
+        install={'receipt':installed,'plan':install_plan,'recipe':recipe,'driver':r.publish(self.output/'install-driver.json',driver),
+            'driver_source':r.publish(self.output/'install-driver.py',b'# exact reviewed fixture driver\n',raw=True),
+            'intent':r.publish(journal/'intent.json',{'version':1,'kind':'canonical-ts-install-intent','plan':install_plan['path'],
+                'plan_sha256':install_plan['sha256'],'source_commit':old['runtime']['source_commit'],
+                'target':state['deployment_target'],'created_at_unix_ms':100}),
+            'start_intent':r.publish(journal/'start-intent.json',{'version':1,'unit':r.readiness.UNIT,
+                'source_commit':old['runtime']['source_commit'],'at_unix_ms':200})}
+        restart_provider=r.publish(self.output/'original-native-provider.json',{'taskId':'fixture-restart','status':'completed'})
+        restart_ack=r.publish(self.output/'restart-ack.json',{'provider_operation_id':'fixture-restart','observed_at_unix_ms':70000,'action':'restart'})
+        binding={'provider_result':restart_provider,'receipt':restart_ack}
+        restart_binding=r.publish(self.output/'original-native-binding.json',binding);plan['native_restart_binding']=restart_binding
+        coordinator_provider=r.publish(self.output/'coordinator-provider.json',{'taskId':'fixture-coordinator','status':'completed'})
+        log=r.publish(self.output/'original-coordinator.log',b'original timeout\n',raw=True)
+        coordinator_driver={'returncode':1,'phase':'unknown','state':plan['state']['path'],'state_sha256':plan['state']['sha256'],
+            'log':log['path'],'log_sha256':log['sha256'],'at_unix_ms':90000}
+        inputs={'install':install,'native_restart':{'binding':restart_binding,'provider_result':restart_provider},
+            'coordinator':{'provider_result':coordinator_provider,'driver':r.publish(self.output/'coordinator-driver.json',coordinator_driver),
+                'provider_operation_id':'fixture-coordinator'},'repair':None}
+        def provider(plan,pin):
+            if pin==restart_provider:
+                return 'fixture-restart',{'ref':r.rollout.CHILD,'action':'restart'},pin,70000
+            self.assertEqual(pin,coordinator_provider)
+            return 'fixture-coordinator',{'returncode':1,'stdout':json.dumps(coordinator_driver),'stderr':''},pin,90001
+        with patch.object(r,'native_restart_binding',return_value=binding), \
+                patch.object(r,'completed_provider',side_effect=provider),patch.object(r.rollout,'identity_state',return_value='dead'):
+            value=r.validate_effect_completion(plan,inputs)
+            self.assertTrue(value['complete']);self.assertEqual(value['install']['driver'],install['driver'])
+            self.assertNotIn('provider_operation_id',value['install'])
+            bad=copy.deepcopy(inputs);bad_driver={**driver,'returncode':1}
+            bad['install']['driver']=r.publish(self.output/'failed-install-driver.json',bad_driver)
+            with self.assertRaisesRegex(ValueError,'definitive completed'):r.validate_effect_completion(plan,bad)
+            bad=copy.deepcopy(inputs)
+            bad_output=json.loads(driver['stdout']);bad_output['pid']=999
+            bad['install']['driver']=r.publish(self.output/'other-install-driver.json',{**driver,'stdout':json.dumps(bad_output)})
+            with self.assertRaisesRegex(ValueError,'exact original'):r.validate_effect_completion(plan,bad)
+
+    def build_receipt_chain(self):
+        failure_pin=r.publish(self.output/'failure.json',self.failure())
+        opaque=r.publish(self.output/'retained-original.json',{'actual_fixture_receipt':True})
+        driver_source=r.publish(self.output/'driver.py',b'# retained fixture driver\n',raw=True)
+        effects={'version':1,'kind':r.EFFECTS_KIND,'complete':True,'job_id':self.plan['job_id'],
+            'original_state_snapshot':self.original,
+            'install':{key:opaque for key in ('receipt','plan','recipe','driver','intent','start_intent')},
+            'native_restart':{'binding':opaque,'provider_result':opaque},
+            'coordinator':{'provider_result':opaque,'driver':opaque,'provider_operation_id':'fixture-coordinator'},'repair':None}
+        effects['install']['driver_source']=driver_source
+        effects_pin=r.publish(self.output/'effects.json',effects)
+        tools=[{'name':'automation','inputSchema':{'enum':['process_completion','reconcile_process','cancel_execution','timer','session_completion','wait_status']}},
+               {'name':'resource','inputSchema':{'const':'bind'}},{'name':'session','inputSchema':{'const':'resolve'}},
+               {'name':'deliver','inputSchema':{'const':'receipt'}}]
+        consumer={'schema':1,'kind':'consumer','job_id':self.plan['job_id'],'challenge':self.plan['challenge'],
+            'target':r.rollout.CONTROLLER,'ref':r.rollout.CHILD,'method':'mcp_tools','observed_at_unix_ms':99500,
+            'provider_operation_id':'fixture-actual-native','tools':tools,'schema_sha256':r.rollout.json_hash(tools)}
+        consumer_pin=r.publish(self.output/'failed-native-consumer.json',consumer)
+        operator=self.output/'failed-operator';c.create(operator,b'fixture native failed settlement\n',0o500)
+        self.operator=r.pin(operator,policy='unit')
+        self.prepared={'version':1,'kind':r.FAILED_PLAN_KIND,'outcome':'failed','original_plan':self.plan_pin,
+            'job_id':self.plan['job_id'],'native_operator':self.operator,'effect_completion':effects_pin,'validator_sources':[]}
+        self.prepared_pin=r.publish(self.output/'failed-plan.json',self.prepared)
+        paired={'version':1,'kind':r.FAILED_PAIRED_KIND,'outcome':'failed','complete':True,'operational_readiness':False,
+            'job_id':self.plan['job_id'],'old_scheduler_identity':self.state['scheduler_identity'],
+            'successor_scheduler_identity':self.plan['successor_scheduler_identity'],'original_state_snapshot':self.original,
+            'plan':self.plan_pin,'failed_plan':self.prepared_pin,'native_operator':self.operator,
+            'scheduler_failure':failure_pin,'effect_completion':effects_pin,'native_consumer':consumer_pin,
+            'native_provider_result':opaque,'validated_at_unix_ms':100000}
+        paired_pin=r.publish(self.output/'failed-paired-proof.json',paired)
+        evidence={**self.fixture.evidence,'outcome':'failed','paired_proof':paired_pin,'validated_at_unix_ms':100000}
+        self.evidence_pin=r.publish(self.output/'failed-evidence.json',evidence)
+        native={'version':1,'kind':'herder-project-release-failed-reconciliation-receipt-v1','outcome':'failed',
+            'job_id':self.plan['job_id'],'guard':self.fixture.guard,'evidence':self.evidence_pin,'paired_proof':paired_pin,
+            'original_binding_sha256':evidence['binding_sha256']}
+        native_path=Path(self.fixture.guard_pin['path'].removesuffix('.intent.json')+'.failed-reconciliation.json')
+        native_pin=r.publish(native_path,native)
+        self.response={'finished':True,'reconciled':True,'outcome':'failed','operationalReadiness':False,
+            'jobId':self.plan['job_id'],'guardId':self.fixture.guard['guard_id'],'receiptPath':native_pin['path'],
+            'receiptSha256':native_pin['sha256'],'evidenceSha256':self.evidence_pin['sha256'],
+            'receiptRef':self.fixture.guard['execution_ref']+':failed-reconciled:'+native_pin['sha256']}
+        receipt={'version':1,'kind':'herder-paired-rollout-reconciled-v1','outcome':'failed','complete':True,
+            'operational_readiness':False,'job_id':self.plan['job_id'],'original_state':self.original,
+            'evidence':self.evidence_pin,'native_receipt':native_pin,'native_acknowledgement':self.response,
+            'validated_at_unix_ms':100000}
+        receipt_pin=r.publish(self.output/'expected-failed-receipt.json',receipt)
+        self.annotated={**self.state,'canonical_reconciliation':{'version':1,'outcome':'failed',
+            'receipt':receipt_pin,'original_state':self.original}}
+        return self.annotated
+
+    def test_failed_receipt_resolves_only_occupancy_and_keeps_every_original_unknown_field(self):
+        state=self.build_receipt_chain()
+        self.assertTrue(r.rollout.canonical_reconciliation_valid(state))
+        c.replace(self.job/'state.json',c.encoded(state),c.digest(self.job/'state.json'),0o600)
+        r.rollout.resolve_occupancy(state)
+        with patch.object(r.rollout,'identity_state',return_value='dead'):
+            result=r.rollout.status(argparse.Namespace(job_dir=self.job))
+        self.assertEqual(result['status'],'unknown');self.assertEqual(result['occupancy'],'resolved')
+        self.assertFalse(result['requires_reconciliation'])
+        self.assertEqual({k:v for k,v in state.items() if k!='canonical_reconciliation'},self.state)
+        self.assertNotIn('failed',r.rollout.TERMINAL)
+
+    def test_failed_receipt_cannot_masquerade_as_positive_or_assert_operational_readiness(self):
+        good=self.build_receipt_chain()
+        changed=copy.deepcopy(good);changed['canonical_reconciliation']['outcome']='candidate'
+        self.assertFalse(r.rollout.canonical_reconciliation_valid(changed))
+        receipt=r.read_pin(good['canonical_reconciliation']['receipt'])
+        for i,key in enumerate(('operational_readiness','complete')):
+            wrong=copy.deepcopy(receipt);wrong[key]=not wrong[key]
+            altered=copy.deepcopy(good)
+            altered['canonical_reconciliation']['receipt']=r.publish(self.output/('wrong-negative-receipt-'+str(i)+'.json'),wrong)
+            self.assertFalse(r.rollout.canonical_reconciliation_valid(altered))
+
+    def test_same_digest_ack_repair_and_metadata_retry_never_repeat_deployment_or_decision(self):
+        self.build_receipt_chain()
+        args=argparse.Namespace(plan=Path(self.prepared_pin['path']),plan_sha256=self.prepared_pin['sha256'])
+        with patch.object(r,'load_failed_plan',return_value=(self.prepared,self.plan)), \
+                patch.object(r,'verify_current',side_effect=AssertionError('durable ACK repair uses original decision')), \
+                patch.object(r,'invoke_failed_native',return_value=self.response) as native, \
+                patch.object(r.rollout,'identity_state',return_value='dead'):
+            first=r.apply_failed(args)
+            self.assertEqual(native.call_count,1)
+            second=r.apply_failed(args)
+            self.assertEqual(native.call_count,1)
+        self.assertEqual(first['status'],'unknown');self.assertFalse(first['operational_readiness'])
+        self.assertEqual(second['occupancy'],'resolved')
+        self.assertEqual({k:v for k,v in r.rollout.read_state(self.job).items() if k!='canonical_reconciliation'},self.state)
+
+
 if __name__=='__main__':unittest.main()

@@ -2992,7 +2992,9 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         if (!canonicalRuntimeStatus) throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable");
         return sendJson(response, 200, await canonicalRuntimeStatus.observe(query));
       } catch (error) {
-        if (error instanceof CanonicalRuntimeStatusError) return sendJson(response, error.status, { error: error.code });
+        if (error instanceof CanonicalRuntimeStatusError) return sendJson(response, error.status, {
+          error: error.code, ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}),
+        });
         return sendJson(response, 503, { error: "canonical_runtime_unavailable" });
       }
     }

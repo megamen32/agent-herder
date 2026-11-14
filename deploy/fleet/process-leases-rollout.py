@@ -337,23 +337,24 @@ def canonical_reconciliation_valid(state):
         return False
     try:
         if (set(annotation) != {"version", "outcome", "receipt", "original_state"}
-                or annotation["version"] != 1 or annotation["outcome"] != "candidate"):
+                or annotation["version"] != 1 or annotation["outcome"] not in ("candidate", "failed")):
             return False
+        outcome = annotation["outcome"]
 
-        def read_pin(pin):
+        def read_pin(pin, raw_bytes=False):
             if not isinstance(pin, dict) or set(pin) != {"path", "sha256"}:
                 raise ValueError("invalid reconciliation pin")
             raw = candidate.private_file(pin["path"]).read_bytes()
             if hashlib.sha256(raw).hexdigest() != pin["sha256"]:
                 raise ValueError("reconciliation pin changed")
-            return json.loads(raw)
+            return raw if raw_bytes else json.loads(raw)
 
         original = read_pin(annotation["original_state"])
         if original != {key: value for key, value in state.items() if key != "canonical_reconciliation"}:
             return False
         receipt = read_pin(annotation["receipt"])
         if (receipt.get("version") != 1 or receipt.get("kind") != "herder-paired-rollout-reconciled-v1"
-                or receipt.get("outcome") != "candidate" or receipt.get("complete") is not True
+                or receipt.get("outcome") != outcome or receipt.get("complete") is not True
                 or receipt.get("job_id") != state["job_id"] or receipt.get("original_state") != annotation["original_state"]):
             return False
         evidence = read_pin(receipt["evidence"])
@@ -361,17 +362,22 @@ def canonical_reconciliation_valid(state):
         native = read_pin(receipt["native_receipt"])
         guard = read_pin(evidence["guard_intent"])
         acknowledgement = receipt["native_acknowledgement"]
+        if outcome == "failed" and not failed_reconciliation_evidence_valid(
+                state, receipt, evidence, paired, native, acknowledgement, read_pin):
+            return False
         return (evidence.get("kind") == "herder-project-release-reconciliation-v1"
-            and evidence.get("outcome") == "candidate" and evidence.get("job_id") == state["job_id"]
+            and evidence.get("outcome") == outcome and evidence.get("job_id") == state["job_id"]
             and evidence.get("job_dir") == state["job_dir"]
             and evidence.get("state") == {"path": str(Path(state["job_dir"]) / "state.json"), "sha256": annotation["original_state"]["sha256"]}
-            and paired.get("kind") == "herder-paired-rollout-reconciliation-v1"
-            and paired.get("outcome") == "candidate" and paired.get("complete") is True
+            and paired.get("kind") == ("herder-paired-rollout-reconciliation-v1" if outcome == "candidate"
+                                      else "herder-paired-rollout-failed-reconciliation-v1")
+            and paired.get("outcome") == outcome and paired.get("complete") is True
             and paired.get("job_id") == state["job_id"]
             and paired.get("original_state_snapshot") == annotation["original_state"]
             and paired.get("old_scheduler_identity") == state["scheduler_identity"]
-            and native.get("kind") == "herder-project-release-reconciliation-receipt-v1"
-            and native.get("outcome") == "candidate" and native.get("job_id") == state["job_id"]
+            and native.get("kind") == ("herder-project-release-reconciliation-receipt-v1" if outcome == "candidate"
+                                      else "herder-project-release-failed-reconciliation-receipt-v1")
+            and native.get("outcome") == outcome and native.get("job_id") == state["job_id"]
             and native.get("evidence") == receipt["evidence"] and native.get("paired_proof") == evidence["paired_proof"]
             and native.get("guard") == guard and guard.get("fence") == state["release_identity"]["fence"]
             and native.get("original_binding_sha256") == evidence.get("binding_sha256")
@@ -381,9 +387,73 @@ def canonical_reconciliation_valid(state):
             and acknowledgement.get("evidenceSha256") == receipt["evidence"]["sha256"]
             and acknowledgement.get("receiptPath") == receipt["native_receipt"]["path"]
             and acknowledgement.get("receiptSha256") == receipt["native_receipt"]["sha256"]
-            and acknowledgement.get("receiptRef") == guard["execution_ref"] + ":reconciled:" + receipt["native_receipt"]["sha256"])
+            and acknowledgement.get("receiptRef") == guard["execution_ref"]
+                + (":reconciled:" if outcome == "candidate" else ":failed-reconciled:") + receipt["native_receipt"]["sha256"])
     except (OSError, ValueError, KeyError, TypeError):
         return False
+
+
+def failed_reconciliation_evidence_valid(state, receipt, evidence, paired, native, acknowledgement, read_pin):
+    """A terminal failed acceptance settles occupancy without asserting health."""
+    if (receipt.get("operational_readiness") is not False or paired.get("operational_readiness") is not False
+            or acknowledgement.get("outcome") != "failed" or acknowledgement.get("operationalReadiness") is not False
+            or "scheduler_consumer" in paired
+            or receipt["native_receipt"]["path"] != evidence["guard_intent"]["path"].removesuffix(".intent.json") + ".failed-reconciliation.json"):
+        return False
+    failure = read_pin(paired["scheduler_failure"])
+    observation = read_pin(failure["observation"])
+    request = read_pin(failure["request_receipt"])
+    effects = read_pin(paired["effect_completion"])
+    body = read_pin(failure["body"], raw_bytes=True)
+    before = paired["successor_scheduler_identity"]
+    if (failure.get("version") != 1 or failure.get("kind") != "herder-canonical-runtime-failure-v1"
+            or failure.get("outcome") != "failed" or failure.get("operational_readiness") is not False
+            or failure.get("authenticated_request") is not True or failure.get("job_id") != state["job_id"]
+            or failure.get("http_status") != 503 or failure.get("http_body_complete") is not True
+            or failure.get("response") != {"error": "canonical_runtime_unavailable"}
+            or hashlib.sha256(body).hexdigest() != failure.get("http_body_sha256")
+            or json.loads(body) != failure["response"]
+            or failure.get("before") != before or failure.get("after") != before
+            or failure.get("reconciliation_plan") != paired["plan"]
+            or failure.get("request", {}).get("endpoint") != scheduler.ENDPOINT
+            or not re.fullmatch(r"[a-f0-9]{64}", failure.get("request", {}).get("challenge", ""))
+            or request.get("plan") != paired["plan"] or request.get("request") != failure["request"]
+            or request.get("before") != before or observation.get("request_receipt") != failure["request_receipt"]
+            or observation.get("before") != before or observation.get("after") != before
+            or observation.get("reconciliation_plan") != paired["plan"]
+            or observation.get("http_status") != 503 or observation.get("http_body_complete") is not True
+            or observation.get("body") != failure["body"] or observation.get("response") != failure["response"]
+            or observation.get("error") != "observation_failed_ValueError"
+            or effects.get("version") != 1 or effects.get("kind") != "herder-controlled-rollout-effects-terminal-v1"
+            or effects.get("complete") is not True or effects.get("job_id") != state["job_id"]
+            or effects.get("original_state_snapshot") != paired["original_state_snapshot"]):
+        return False
+    stamp, decided = failure.get("observed_at_unix_ms"), paired.get("validated_at_unix_ms")
+    if (type(stamp) is not int or type(decided) is not int or not stamp <= decided <= stamp + 60000
+            or evidence.get("validated_at_unix_ms") != decided
+            or observation.get("observed_at_unix_ms") != stamp):
+        return False
+    # These private immutable pins retain the actual operation history, including
+    # the local reaped install driver when provider retention has expired.
+    for value in (failure["provider_result"], paired["native_provider_result"],
+                  effects["native_restart"]["binding"], effects["native_restart"]["provider_result"],
+                  effects["coordinator"]["provider_result"], effects["coordinator"]["driver"]):
+        read_pin(value)
+    for key, value in effects["install"].items():
+        read_pin(value, raw_bytes=key == "driver_source")
+    repair = effects.get("repair")
+    if repair is not None:
+        for value in repair.values():
+            read_pin(value)
+        terminal = read_pin(repair["receipt"])
+        result = terminal.get("systemctl", {})
+        if (terminal.get("job_id") != state["job_id"] or terminal.get("intent") != repair["intent"]
+                or result.get("spawned") is not True or result.get("exit_code") != 0
+                or result.get("signal") is not None or result.get("timed_out") is not False or result.get("error_code") is not None):
+            return False
+    consumer = read_pin(paired["native_consumer"])
+    validate_consumer({**state, "challenge": failure["request"]["challenge"]}, consumer, stamp)
+    return True
 
 
 def save_state(state, **changes):

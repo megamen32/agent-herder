@@ -25,8 +25,44 @@ export type RuntimeStatusRequest = { challenge: string; probe?: ProcessWaitTarge
 export type RuntimeProcessIdentity = { pid: number; boot_id: string; start_ticks: string; entry: string;
   node_binary: string; node_device: number; node_inode: number; module_path: string };
 export interface CanonicalRuntimeStatusSource { observe(request: RuntimeStatusRequest): Promise<Record<string, unknown>> }
+const diagnosticStages = ["runtime_proof", "backend_before", "gate", "backend_after", "runtime_recheck"] as const;
+type DiagnosticStage = typeof diagnosticStages[number];
+const diagnosticCauses = [
+  "unknown", "gptadmin_deadline", "gptadmin_http_401", "gptadmin_http_403", "gptadmin_http_404",
+  "gptadmin_http_409", "gptadmin_http_429", "gptadmin_http_500", "gptadmin_http_502", "gptadmin_http_503",
+  "gptadmin_http_504", "gptadmin_empty_response", "gptadmin_response_limit", "gptadmin_missing_rpc_response",
+  "gptadmin_rpc_identity_mismatch", "gptadmin_rpc_failed", "gptadmin_job_identity_missing",
+  "gptadmin_job_incomplete", "gptadmin_job_read_limit", "canonical_transport_failed", "canonical_response_invalid",
+  "canonical_configuration_changed", "canonical_authority_credential_unavailable", "canonical_authority_unavailable",
+  "canonical_quarantine_native_unverified", "process_wait_authority_deadline",
+  "canonical_wait_authority_mismatch", "canonical_wait_node_mismatch", "canonical_wait_backend_required",
+  "canonical_wait_backend_unavailable", "canonical_wait_binding_unavailable", "canonical_client_binding_unavailable",
+  "canonical_response_depth_limit",
+  "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET",
+  "ENOENT", "EACCES", "EIO", "EMFILE", "ENFILE",
+] as const;
+type DiagnosticCause = typeof diagnosticCauses[number];
+type RuntimeDiagnostic = Readonly<{ stage: DiagnosticStage; cause: DiagnosticCause }>;
+
+/** Return only fixed codes, never upstream messages, paths, credentials or nested payloads. */
+function diagnosticCause(error: unknown): DiagnosticCause {
+  if (!(error instanceof Error)) return "unknown";
+  const code = Object.getOwnPropertyDescriptor(error, "code")?.value;
+  const cause = Object.getOwnPropertyDescriptor(error, "cause")?.value;
+  const nestedCode = cause && typeof cause === "object" ? Object.getOwnPropertyDescriptor(cause, "code")?.value : undefined;
+  const message = Object.getOwnPropertyDescriptor(error, "message")?.value;
+  return diagnosticCauses.find(allowed => [code, nestedCode, message].includes(allowed)) ?? "unknown";
+}
+
 export class CanonicalRuntimeStatusError extends Error {
-  constructor(readonly code: string, readonly status = 503) { super(code); }
+  readonly diagnostic?: RuntimeDiagnostic;
+  constructor(readonly code: string, readonly status = 503, diagnostic?: RuntimeDiagnostic) {
+    super(code);
+    if (diagnostic && diagnosticStages.includes(diagnostic.stage) && diagnosticCauses.includes(diagnostic.cause)) {
+      this.diagnostic = Object.freeze({ stage: diagnostic.stage, cause: diagnostic.cause });
+    }
+  }
 }
 type Options = { env?: NodeJS.ProcessEnv; now?: () => number;
   /** Isolated proof fixtures only; production always observes its own Linux process. */
@@ -151,6 +187,7 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
     if (canonicalMode(env) !== "canonical") return fail("canonical_backend_not_active");
     if (!absolute(selected) || typeof selectedHash !== "string" || !HASH.test(selectedHash)
       || env.AGENT_HERDER_TS_RUNTIME_MANIFEST !== selected || env.AGENT_HERDER_TS_RUNTIME_MANIFEST_SHA256 !== selectedHash) return fail("runtime_manifest_unconfigured");
+    let stage: DiagnosticStage = "runtime_proof";
     try {
       const manifestMeta = await fs.lstat(selected);
       if ((manifestMeta.mode & 0o7777) !== 0o400) return fail("runtime_manifest_untrusted");
@@ -164,11 +201,13 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
       await treeProof(value);
       const node = await fileProof(value.node_binary, 256 * MiB, true);
       if (node.sha256 !== value.node_sha256 || node.stat.dev !== actual.node_device || node.stat.ino !== actual.node_inode) return fail("runtime_node_binding_mismatch");
+      stage = "backend_before";
       const backend = await (service as ObservableBackend).canonicalReadiness!(request.probe ? "operational" : "preflight");
       if (backend.config !== env.AGENT_HERDER_CANONICAL_CONFIG || backend.config_sha256 !== env.AGENT_HERDER_CANONICAL_CONFIG_SHA256
         || !absolute(backend.config) || !HASH.test(backend.config_sha256) || !HASH.test(backend.writer_drain_sha256)) return fail("canonical_backend_binding_mismatch");
       let probe: Record<string, unknown> | null = null;
       if (request.probe) {
+        stage = "gate";
         const observed = await observeGate(request.probe);
         if (observed.config !== backend.config || observed.config_sha256 !== backend.config_sha256
           || observed.epoch !== backend.epoch || observed.authority !== backend.authority
@@ -177,10 +216,12 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
           || (request.probe.nodeRef !== undefined && observed.request.node_ref !== request.probe.nodeRef)) return fail("canonical_gate_binding_mismatch");
         probe = { request: observed.request, decision: observed.decision, gateBlocked: observed.gateBlocked };
       }
+      stage = "backend_after";
       const currentBackend = await (service as ObservableBackend).canonicalReadiness!(request.probe ? "operational" : "preflight");
       if (JSON.stringify(currentBackend) !== JSON.stringify(backend)
         || backend.config !== env.AGENT_HERDER_CANONICAL_CONFIG || backend.config_sha256 !== env.AGENT_HERDER_CANONICAL_CONFIG_SHA256
         || canonicalMode(env) !== "canonical") return fail("canonical_backend_binding_mismatch");
+      stage = "runtime_recheck";
       const after = await identity();
       if (JSON.stringify(after) !== JSON.stringify(actual) || !unchanged(manifestMeta, await fs.lstat(selected))
         || env.AGENT_HERDER_TS_RUNTIME_MANIFEST !== selected || env.AGENT_HERDER_TS_RUNTIME_MANIFEST_SHA256 !== selectedHash) return fail("runtime_process_changed");
@@ -195,7 +236,7 @@ export function createCanonicalRuntimeStatus(service: ResumeAfterBackend, option
         ...(backend.quarantine ? { quarantine: backend.quarantine } : {}), probe };
     } catch (error) {
       if (error instanceof CanonicalRuntimeStatusError) throw error;
-      throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable");
+      throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable", 503, { stage, cause: diagnosticCause(error) });
     }
   } };
 }

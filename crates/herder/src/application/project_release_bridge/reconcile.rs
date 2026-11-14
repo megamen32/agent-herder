@@ -1,4 +1,4 @@
-//! Explicit, candidate-only settlement of an interrupted release guard.
+//! Explicit success or failed-acceptance settlement of an interrupted release guard.
 //! This operator never creates a guard, changes a claim, or runs an effect.
 pub mod repair;
 use super::*;
@@ -67,6 +67,57 @@ struct ReconciliationReceipt {
     original_binding_sha256: String,
     operator: FilePin,
     reconciled_at_unix_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Decision { Candidate, Failed }
+impl Decision {
+    fn from_action(action: &str) -> Result<Self> {
+        match action {
+            "reconcile_finished" => Ok(Self::Candidate),
+            "reconcile_failed" => Ok(Self::Failed),
+            _ => Err(invalid()),
+        }
+    }
+    fn outcome(self) -> &'static str {
+        match self { Self::Candidate => "candidate", Self::Failed => "failed" }
+    }
+    fn paired_kind(self) -> &'static str {
+        match self {
+            Self::Candidate => "herder-paired-rollout-reconciliation-v1",
+            Self::Failed => "herder-paired-rollout-failed-reconciliation-v1",
+        }
+    }
+    fn receipt_kind(self) -> &'static str {
+        match self {
+            Self::Candidate => "herder-project-release-reconciliation-receipt-v1",
+            Self::Failed => "herder-project-release-failed-reconciliation-receipt-v1",
+        }
+    }
+    fn suffix(self) -> &'static str {
+        match self { Self::Candidate => "reconciliation.json", Self::Failed => "failed-reconciliation.json" }
+    }
+    fn opposite(self) -> Self {
+        match self { Self::Candidate => Self::Failed, Self::Failed => Self::Candidate }
+    }
+    fn reference(self) -> &'static str {
+        match self { Self::Candidate => "reconciled", Self::Failed => "failed-reconciled" }
+    }
+    fn scheduler_field(self) -> &'static str {
+        match self { Self::Candidate => "scheduler_consumer", Self::Failed => "scheduler_failure" }
+    }
+}
+fn receipt_present(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(unavailable(error)),
+    }
+}
+fn verify_live_decision(bridge: &Bridge, guard: &GuardEvidence, lock: &TargetExecutionLock) -> Result<()> {
+    lock.verify_owned_claim(&bridge.authority, AUTH, &guard.claim_id,
+        &guard.principal_ref, guard.revision).map_err(claim_error)?;
+    Ok(())
 }
 
 fn fail(code: &'static str) -> BridgeError {
@@ -297,16 +348,19 @@ fn verify_original(
     }
     Ok(())
 }
-fn verify_candidate(
+fn verify_decision(
     evidence: &Evidence,
     request: &ReconcileRequest,
-    config: &BridgeConfig,
+    bridge: &Bridge,
+    mapping: &ProjectMapping,
     guard: &GuardEvidence,
+    decision: Decision,
 ) -> Result<()> {
+    let config = &bridge.config;
     let current = now_ms()?;
     if evidence.version != 1
         || evidence.kind != "herder-project-release-reconciliation-v1"
-        || evidence.outcome != "candidate"
+        || evidence.outcome != decision.outcome()
         || evidence.job_id.is_empty()
         || evidence.job_id.len() > 256
         || evidence.validated_at_unix_ms > current + 5000
@@ -353,6 +407,10 @@ fn verify_candidate(
     {
         return Err(fail("job_state_mismatch"));
     }
+    if decision == Decision::Failed {
+        equal(&state, "/phase", json!("unknown"))?;
+        if state.get("canonical_reconciliation").is_some() { return Err(fail("different_terminal_receipt")); }
+    }
     require_dead(&evidence.coordinator)?;
     let selector = PathBuf::from(text_at(&state, "/selector")?);
     let launcher = PathBuf::from(text_at(&state, "/launcher")?);
@@ -376,9 +434,9 @@ fn verify_candidate(
     equal(
         &paired,
         "/kind",
-        json!("herder-paired-rollout-reconciliation-v1"),
+        json!(decision.paired_kind()),
     )?;
-    equal(&paired, "/outcome", json!("candidate"))?;
+    equal(&paired, "/outcome", json!(decision.outcome()))?;
     equal(&paired, "/complete", json!(true))?;
     equal(&paired, "/job_id", json!(evidence.job_id))?;
     equal(
@@ -432,7 +490,7 @@ fn verify_candidate(
     // Native settlement additionally requires both pinned actual receipts here.
     for key in [
         "native_consumer",
-        "scheduler_consumer",
+        decision.scheduler_field(),
         "original_state_snapshot",
     ] {
         let pin: FilePin = serde_json::from_value(
@@ -447,8 +505,237 @@ fn verify_candidate(
             return Err(fail("job_state_mismatch"));
         }
     }
+    if decision == Decision::Failed {
+        verify_failed_details(bridge, mapping, evidence, &state, &paired, guard)?;
+    }
     Ok(())
 }
+
+fn value_pin(value: &Value, pointer: &str) -> Result<FilePin> {
+    serde_json::from_value(value.pointer(pointer).cloned().ok_or_else(|| fail("evidence_invalid"))?)
+        .map_err(|_| fail("evidence_invalid"))
+}
+fn pinned_value(value: &Value, pointer: &str) -> Result<Value> {
+    json_pin(&value_pin(value, pointer)?)
+}
+fn unsigned_at(value: &Value, pointer: &str) -> Result<u64> {
+    value.pointer(pointer).and_then(Value::as_u64).ok_or_else(|| fail("evidence_invalid"))
+}
+fn bounded_id(value: &Value, pointer: &str) -> Result<()> {
+    let text = text_at(value, pointer)?;
+    if text.is_empty() || text.len() > 256 || text.chars().any(char::is_control) {
+        return Err(fail("evidence_invalid"));
+    }
+    Ok(())
+}
+fn verify_failed_http(evidence: &Evidence, paired: &Value) -> Result<()> {
+    equal(paired, "/operational_readiness", json!(false))?;
+    let failure = pinned_value(paired, "/scheduler_failure")?;
+    for (key, value) in [
+        ("/version", json!(1)),
+        ("/kind", json!("herder-canonical-runtime-failure-v1")),
+        ("/outcome", json!("failed")),
+        ("/operational_readiness", json!(false)),
+        ("/job_id", json!(evidence.job_id)),
+        ("/http_status", json!(503)),
+        ("/http_body_complete", json!(true)),
+        ("/authenticated_request", json!(true)),
+        ("/response/error", json!("canonical_runtime_unavailable")),
+        ("/request/endpoint", json!("http://127.0.0.1:18787/api/canonical-runtime-status")),
+    ] { equal(&failure, key, value)?; }
+    bounded_id(&failure, "/provider_operation_id")?;
+    bounded_id(&failure, "/request/challenge")?;
+    bounded_id(&failure, "/request/probe/harness")?;
+    bounded_id(&failure, "/request/probe/native_session_id")?;
+    if failure.pointer("/request/probe/node_ref").is_some() {
+        bounded_id(&failure, "/request/probe/node_ref")?;
+    }
+    let successor = paired.get("successor_scheduler_identity").ok_or_else(invalid)?;
+    equal(&failure, "/before", successor.clone())?;
+    equal(&failure, "/after", successor.clone())?;
+    let observed = unsigned_at(&failure, "/observed_at_unix_ms")?;
+    let started = unsigned_at(&failure, "/started_at_unix_ms")?;
+    let now = now_ms()?;
+    if started > observed || observed > now + 5000 || now.saturating_sub(observed) > 60000 {
+        return Err(fail("failure_evidence_invalid_or_stale"));
+    }
+    let body_pin = value_pin(&failure, "/body")?;
+    equal(&failure, "/http_body_sha256", json!(body_pin.sha256))?;
+    let body: Value = json_pin(&body_pin)?;
+    equal(&failure, "/response", body)?;
+    // Full provider provenance is validated by the pinned Python operator. Native
+    // settlement also requires the immutable raw provider and observation bytes.
+    let _: Value = pinned_value(&failure, "/provider_result")?;
+    let observation = pinned_value(&failure, "/observation")?;
+    equal(&observation, "/version", json!(1))?;
+    equal(&observation, "/kind", json!("herder-canonical-http-observation"))?;
+    for key in ["request", "before", "after", "body", "response", "http_status",
+        "http_body_complete", "http_body_sha256", "started_at_unix_ms", "observed_at_unix_ms",
+        "request_receipt", "reconciliation_plan"] {
+        equal(&observation, &format!("/{key}"),
+            failure.get(key).cloned().ok_or_else(invalid)?)?;
+    }
+    let request_receipt = pinned_value(&failure, "/request_receipt")?;
+    equal(&request_receipt, "/version", json!(1))?;
+    equal(&request_receipt, "/kind", json!("herder-reconciliation-http-request"))?;
+    equal(&request_receipt, "/request", failure["request"].clone())?;
+    equal(&request_receipt, "/before", successor.clone())?;
+    equal(&request_receipt, "/plan", failure["reconciliation_plan"].clone())?;
+    if unsigned_at(&request_receipt, "/created_at_unix_ms")? > started {
+        return Err(fail("failure_request_mismatch"));
+    }
+    let plan_pin = value_pin(&failure, "/reconciliation_plan")?;
+    if plan_pin != value_pin(paired, "/plan")? {
+        return Err(fail("failure_request_mismatch"));
+    }
+    let plan: Value = json_pin(&plan_pin)?;
+    equal(&plan, "/version", json!(1))?;
+    equal(&plan, "/kind", json!("herder-canonical-rollout-reconciliation-plan-v1"))?;
+    equal(&plan, "/job_id", json!(evidence.job_id))?;
+    equal(&plan, "/challenge", failure["request"]["challenge"].clone())?;
+    equal(&plan, "/successor_scheduler_identity", successor.clone())?;
+    let _: Value = pinned_value(paired, "/failed_plan")?;
+    Ok(())
+}
+fn verify_terminal_repair(
+    bridge: &Bridge, mapping: &ProjectMapping, evidence: &Evidence, state: &Value,
+    effects: &Value, guard: &GuardEvidence,
+) -> Result<()> {
+    let directory = bridge.resource_dir(mapping)?.join("compat-guards");
+    let intent_path = directory.join(format!("{}.ts-repair.intent.json", guard.guard_id));
+    let receipt_path = directory.join(format!("{}.ts-repair.receipt.json", guard.guard_id));
+    let intent_exists = receipt_present(&intent_path)?;
+    let receipt_exists = receipt_present(&receipt_path)?;
+    if !intent_exists && !receipt_exists {
+        return equal(effects, "/repair", Value::Null);
+    }
+    if !intent_exists || !receipt_exists {
+        return Err(fail("repair_effect_not_terminal"));
+    }
+    let repair = effects.get("repair").ok_or_else(invalid)?;
+    let intent_pin = value_pin(repair, "/intent")?;
+    let receipt_pin = value_pin(repair, "/receipt")?;
+    if intent_pin.path != intent_path || receipt_pin.path != receipt_path {
+        return Err(fail("repair_effect_not_terminal"));
+    }
+    let intent: Value = json_pin(&intent_pin)?;
+    let receipt: Value = json_pin(&receipt_pin)?;
+    equal(&intent, "/version", json!(1))?;
+    equal(&receipt, "/version", json!(1))?;
+    equal(&intent, "/kind", json!("herder-project-release-ts-repair-intent-v1"))?;
+    equal(&receipt, "/kind", json!("herder-project-release-ts-repair-receipt-v1"))?;
+    equal(&intent, "/guard", json!(guard))?;
+    equal(&intent, "/repair_id", json!(format!("{}:ts-repair", guard.guard_id)))?;
+    equal(&intent, "/job_id", json!(evidence.job_id))?;
+    bounded_id(&intent, "/request_key")?;
+    equal(&receipt, "/intent", json!(intent_pin))?;
+    for key in ["repair_id", "request_key", "job_id", "evidence", "operator",
+        "old_process", "started_at_unix_ms"] {
+        equal(&receipt, &format!("/{key}"), intent.get(key).cloned().ok_or_else(invalid)?)?;
+    }
+    let result: repair::SystemctlResult = serde_json::from_value(
+        receipt.get("systemctl").cloned().ok_or_else(invalid)?).map_err(|_| invalid())?;
+    if !result.spawned || result.exit_code != Some(0) || result.signal.is_some()
+        || result.timed_out || result.error_code.is_some()
+        || !valid_hash(&result.stdout_sha256) || !valid_hash(&result.stderr_sha256) {
+        return Err(fail("repair_effect_not_terminal"));
+    }
+    let started = unsigned_at(&intent, "/started_at_unix_ms")?;
+    let finished = unsigned_at(&receipt, "/finished_at_unix_ms")?;
+    if started < guard.started_at_seconds.saturating_mul(1000)
+        || finished < started || finished > now_ms()? + 5000 {
+        return Err(fail("repair_effect_not_terminal"));
+    }
+    let old = process_from_value(intent.get("old_process").ok_or_else(invalid)?)?;
+    require_dead(&old)?;
+    artifact_pin(&value_pin(&intent, "/operator")?)?;
+    let repair_evidence = pinned_value(&intent, "/evidence")?;
+    equal(&repair_evidence, "/version", json!(1))?;
+    equal(&repair_evidence, "/kind", json!("herder-project-release-ts-repair-v1"))?;
+    equal(&repair_evidence, "/job_id", json!(evidence.job_id))?;
+    equal(&repair_evidence, "/guard_intent", json!(evidence.guard_intent))?;
+    equal(&repair_evidence, "/binding_sha256", json!(evidence.binding_sha256))?;
+    equal(&repair_evidence, "/repair_plan", intent["repair_plan"].clone())?;
+    let repair_state_pin = value_pin(&repair_evidence, "/state")?;
+    if repair_state_pin.sha256 != evidence.state.sha256 {
+        return Err(fail("job_state_mismatch"));
+    }
+    let repair_state: Value = json_pin(&repair_state_pin)?;
+    if &repair_state != state { return Err(fail("job_state_mismatch")); }
+    let _: Value = pinned_value(&intent, "/repair_plan")?;
+    let observation = pinned_value(repair, "/observation")?;
+    for (key, value) in [
+        ("/version", json!(1)),
+        ("/kind", json!("herder-canonical-ts-repair-observation-v1")),
+        ("/job_id", json!(evidence.job_id)),
+        ("/original_outcome", json!("unknown")),
+        ("/binding_resolved", json!(false)),
+        ("/requires_reconciliation", json!(true)),
+        ("/operational_readiness", json!(false)),
+        ("/native_receipt", json!(receipt_pin)),
+    ] { equal(&observation, key, value)?; }
+    let original = value_pin(&observation, "/original_state")?;
+    if original.sha256 != evidence.state.sha256 {
+        return Err(fail("job_state_mismatch"));
+    }
+    let _: Value = json_pin(&original)?;
+    Ok(())
+}
+fn verify_failed_details(
+    bridge: &Bridge, mapping: &ProjectMapping, evidence: &Evidence, state: &Value,
+    paired: &Value, guard: &GuardEvidence,
+) -> Result<()> {
+    verify_failed_http(evidence, paired)?;
+    let effects = pinned_value(paired, "/effect_completion")?;
+    for (key, value) in [
+        ("/version", json!(1)),
+        ("/kind", json!("herder-controlled-rollout-effects-terminal-v1")),
+        ("/job_id", json!(evidence.job_id)),
+        ("/complete", json!(true)),
+    ] { equal(&effects, key, value)?; }
+    let original = value_pin(&effects, "/original_state_snapshot")?;
+    if original.sha256 != evidence.state.sha256 {
+        return Err(fail("job_state_mismatch"));
+    }
+    let original_state: Value = json_pin(&original)?;
+    if &original_state != state { return Err(fail("job_state_mismatch")); }
+    // All effects need durable terminal evidence. Loss of a remote task archive
+    // does not erase a source-pinned local driver that reaped the installer.
+    for pointer in ["/install/receipt", "/install/plan", "/install/recipe",
+        "/install/driver", "/install/intent", "/install/start_intent",
+        "/native_restart/binding", "/native_restart/provider_result",
+        "/coordinator/provider_result", "/coordinator/driver"] {
+        let _: Value = pinned_value(&effects, pointer)?;
+    }
+    file_bytes(&value_pin(&effects, "/install/driver_source")?, true, MAX_FILE)?;
+    bounded_id(&effects, "/coordinator/provider_operation_id")?;
+    let install = pinned_value(&effects, "/install/receipt")?;
+    equal(&install, "/version", json!(1))?;
+    equal(&install, "/kind", json!("canonical-ts-installed"))?;
+    equal(&install, "/state", json!("started_pending_paired_readiness"))?;
+    let old = state.get("scheduler_identity").ok_or_else(invalid)?;
+    for (to, from) in [
+        ("/source_commit", "/runtime/source_commit"), ("/pid", "/process/pid"),
+        ("/start_ticks", "/process/start_ticks"), ("/entry", "/process/entry"),
+        ("/node_binary", "/process/node_binary"),
+    ] { equal(&install, to, old.pointer(from).cloned().ok_or_else(invalid)?)?; }
+    equal(&install, "/plan_sha256", json!(value_pin(&effects, "/install/plan")?.sha256))?;
+    let driver = pinned_value(&effects, "/install/driver")?;
+    equal(&driver, "/returncode", json!(0))?;
+    let stdout: Value = serde_json::from_str(text_at(&driver, "/stdout")?)
+        .map_err(|_| fail("effect_completion_invalid"))?;
+    equal(&stdout, "/status", json!("installed_listener_ready"))?;
+    for key in ["source_commit", "pid", "start_ticks"] {
+        equal(&stdout, &format!("/{key}"), install.get(key).cloned().ok_or_else(invalid)?)?;
+    }
+    let coordinator = pinned_value(&effects, "/coordinator/driver")?;
+    equal(&coordinator, "/phase", json!("unknown"))?;
+    equal(&coordinator, "/returncode", json!(1))?;
+    equal(&coordinator, "/state", json!(evidence.state.path))?;
+    equal(&coordinator, "/state_sha256", json!(evidence.state.sha256))?;
+    verify_terminal_repair(bridge, mapping, evidence, state, &effects, guard)
+}
+
 fn operator_pin() -> Result<FilePin> {
     let path = std::env::current_exe()
         .and_then(|p| p.canonicalize())
@@ -468,17 +755,22 @@ fn operator_pin() -> Result<FilePin> {
         sha256: hex(&digest.finalize()),
     })
 }
-fn response(path: &Path, receipt: &ReconciliationReceipt, bytes: &[u8]) -> Value {
+fn response(path: &Path, receipt: &ReconciliationReceipt, bytes: &[u8], decision: Decision) -> Value {
     let sha = hex(&Sha256::digest(bytes));
-    json!({"finished":true,"reconciled":true,"guardId":receipt.guard.guard_id,
-        "receiptRef":format!("{}:reconciled:{sha}",receipt.guard.execution_ref),
-        "receiptPath":path,"receiptSha256":sha,"evidenceSha256":receipt.evidence.sha256,"jobId":receipt.job_id})
+    let mut value = json!({"finished":true,"reconciled":true,"guardId":receipt.guard.guard_id,
+        "receiptRef":format!("{}:{}:{sha}",receipt.guard.execution_ref,decision.reference()),
+        "receiptPath":path,"receiptSha256":sha,"evidenceSha256":receipt.evidence.sha256,"jobId":receipt.job_id});
+    if decision == Decision::Failed {
+        value["outcome"] = json!("failed");
+        value["operationalReadiness"] = json!(false);
+    }
+    value
 }
 pub fn reconcile(config_path: &Path, request: ReconcileRequest) -> Result<Value> {
-    if request.version != 1 || request.action != "reconcile_finished" {
-        return Err(invalid());
-    }
+    if request.version != 1 { return Err(invalid()); }
+    let decision = Decision::from_action(&request.action)?;
     let evidence: Evidence = json_pin(&request.evidence)?;
+    if evidence.outcome != decision.outcome() { return Err(invalid()); }
     artifact_pin(&evidence.sealed_bridge)?;
     // This separate operator authenticates the pinned sealed bridge as provenance.
     // Bridge::open still accepts only its own registered executable.
@@ -503,9 +795,10 @@ pub fn reconcile(config_path: &Path, request: ReconcileRequest) -> Result<Value>
         .map_err(claim_error)?;
     verify_original(&bridge, &mapping, &request, &evidence, &guard)?;
     let directory = bridge.resource_dir(&mapping)?.join("compat-guards");
-    let path = directory.join(format!("{}.reconciliation.json", guard.guard_id));
+    let path = directory.join(format!("{}.{}", guard.guard_id, decision.suffix()));
     let ordinary = directory.join(format!("{}.receipt.json", guard.guard_id));
-    if ordinary.exists() {
+    let opposite = directory.join(format!("{}.{}", guard.guard_id, decision.opposite().suffix()));
+    if receipt_present(&ordinary)? || receipt_present(&opposite)? {
         return Err(fail("different_terminal_receipt"));
     }
     let binding = claim::read_execution_binding(&bridge.authority, &mapping.resource_ref, AUTH)
@@ -514,8 +807,8 @@ pub fn reconcile(config_path: &Path, request: ReconcileRequest) -> Result<Value>
     let receipt = match read_private::<ReconciliationReceipt>(&path, true) {
         Ok(existing) => {
             if existing.version != 1
-                || existing.kind != "herder-project-release-reconciliation-receipt-v1"
-                || existing.outcome != "candidate"
+                || existing.kind != decision.receipt_kind()
+                || existing.outcome != decision.outcome()
                 || existing.guard != guard
                 || existing.evidence != request.evidence
                 || existing.paired_proof != evidence.paired_proof
@@ -530,21 +823,22 @@ pub fn reconcile(config_path: &Path, request: ReconcileRequest) -> Result<Value>
             if binding.resolved_receipt.is_some() {
                 return Err(fail("different_terminal_receipt"));
             }
+            if decision == Decision::Failed { verify_live_decision(&bridge, &guard, &_lock)?; }
             expected_file(
                 &bridge
                     .resource_dir(&mapping)?
                     .join("execution-binding.json"),
                 &evidence.binding_sha256,
             )?;
-            verify_candidate(&evidence, &request, &bridge.config, &guard)?;
+            verify_decision(&evidence, &request, &bridge, &mapping, &guard, decision)?;
             verify_sealed_files(config_path, &bridge, &evidence)?;
             verify_original(&bridge, &mapping, &request, &evidence, &guard)?;
             // Repeat exact mutable evidence and liveness immediately before journaling.
-            verify_candidate(&evidence, &request, &bridge.config, &guard)?;
+            verify_decision(&evidence, &request, &bridge, &mapping, &guard, decision)?;
             let receipt = ReconciliationReceipt {
                 version: 1,
-                kind: "herder-project-release-reconciliation-receipt-v1".into(),
-                outcome: "candidate".into(),
+                kind: decision.receipt_kind().into(),
+                outcome: decision.outcome().into(),
                 job_id: evidence.job_id.clone(),
                 guard: guard.clone(),
                 evidence: request.evidence.clone(),
@@ -558,13 +852,14 @@ pub fn reconcile(config_path: &Path, request: ReconcileRequest) -> Result<Value>
             if now_ms()?.saturating_sub(evidence.validated_at_unix_ms) > 60000 {
                 return Err(fail("candidate_evidence_invalid_or_stale"));
             }
+            if decision == Decision::Failed { verify_live_decision(&bridge, &guard, &_lock)?; }
             atomic_json(&path, &receipt).map_err(unavailable)?;
             receipt
         }
         Err(_) => return Err(fail("reconciliation_receipt_invalid")),
     };
     let bytes = fs::read(&path).map_err(unavailable)?;
-    let reply = response(&path, &receipt, &bytes);
+    let reply = response(&path, &receipt, &bytes, decision);
     let receipt_ref = reply["receiptRef"].as_str().ok_or_else(invalid)?;
     if binding
         .resolved_receipt

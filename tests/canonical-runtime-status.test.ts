@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCanonicalAutomationClient, type CanonicalAutomationClient } from "../src/canonical-herder.js";
 import { createCanonicalRuntimeStatus, CanonicalRuntimeStatusError, parseCanonicalRuntimeStatusRequest,
   type RuntimeProcessIdentity } from "../src/canonical-runtime-status.js";
-import { createProcessWaitGate } from "../src/process-wait-gate.js";
+import { createProcessWaitGate, type ProcessWaitTarget } from "../src/process-wait-gate.js";
 import { CanonicalResumeAfterService } from "../src/resume-after-canonical.js";
 import type { ResumeAfterBackend } from "../src/resume-after.js";
 import { createWebServer } from "../src/web/server.js";
@@ -118,6 +118,7 @@ describe("actual canonical runtime proof", () => {
     expect(f.call.mock.calls).toEqual([[f.canonical.config.authority, "automation", {
       action: "wait_status", harness: "codex", native_session_id: "fixture-native", node_ref: "server-100" }]]);
     expect(f.fallback).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty("diagnostic");
     expect(await f.gate.blocks("codex", "fixture-native")).toBe(false);
     expect(f.call).toHaveBeenCalledTimes(2);
     expect(f.call.mock.calls.every(([, tool, args]) => tool === "automation" && args.action === "wait_status")).toBe(true);
@@ -150,6 +151,45 @@ describe("actual canonical runtime proof", () => {
     f.reply({ observedAt: new Date(f.now - 6000).toISOString() });
     await expect(f.status().observe({ challenge, probe })).rejects.toMatchObject({ code: "canonical_runtime_unavailable" });
     expect(f.fallback).not.toHaveBeenCalled();
+  });
+
+  it.each(["runtime_proof", "backend_before", "gate", "backend_after", "runtime_recheck"] as const)(
+    "reports only the fixed %s stage and safe cause without retrying", async stage => {
+      const f = await fixture();
+      const secret = "fixture-secret-never-public";
+      const failure = Object.assign(new Error(`Authorization: Bearer ${secret}; /private/runtime.json`), { code: "gptadmin_deadline" });
+      const identity = vi.fn(async () => ({ ...f.identity }));
+      const gate = vi.fn(async (target: ProcessWaitTarget) => f.gate.observeCanonical!(target));
+      const originalReadiness = f.service.canonicalReadiness.bind(f.service);
+      const readiness = vi.spyOn(f.service, "canonicalReadiness");
+      if (stage === "runtime_proof") identity.mockRejectedValueOnce(failure);
+      if (stage === "backend_before") readiness.mockRejectedValueOnce(failure);
+      if (stage === "gate") gate.mockRejectedValueOnce(failure);
+      if (stage === "backend_after") readiness.mockImplementationOnce(originalReadiness).mockRejectedValueOnce(failure);
+      if (stage === "runtime_recheck") identity.mockResolvedValueOnce({ ...f.identity }).mockRejectedValueOnce(failure);
+      const error = await f.status({ processIdentity: identity, observeGate: gate }).observe({ challenge, probe }).catch(error => error);
+      expect(error).toMatchObject({ code: "canonical_runtime_unavailable", status: 503,
+        diagnostic: { stage, cause: "gptadmin_deadline" } });
+      expect(JSON.stringify(error)).not.toContain(secret);
+      expect(JSON.stringify(error)).not.toContain("/private/");
+      expect(identity).toHaveBeenCalledTimes(stage === "runtime_recheck" ? 2 : 1);
+      expect(readiness).toHaveBeenCalledTimes(stage === "runtime_proof" ? 0 : ["backend_after", "runtime_recheck"].includes(stage) ? 2 : 1);
+      expect(gate).toHaveBeenCalledTimes(["runtime_proof", "backend_before"].includes(stage) ? 0 : 1);
+      expect(f.call).toHaveBeenCalledTimes(["backend_after", "runtime_recheck"].includes(stage) ? 1 : 0);
+      expect(f.fallback).not.toHaveBeenCalled();
+    });
+
+  it.each([
+    { error: new Error("canonical_wait_authority_mismatch"), cause: "canonical_wait_authority_mismatch" },
+    { error: new Error("gptadmin_deadline Authorization: Bearer fixture-secret"), cause: "unknown" },
+    { error: Object.assign(new Error("/private/credential.json"), { code: "secret-code", detail: "fixture-secret" }), cause: "unknown" },
+    { error: new Error("fetch failed", { cause: { code: "UND_ERR_CONNECT_TIMEOUT", message: "fixture-secret", path: "/private/key" } }), cause: "UND_ERR_CONNECT_TIMEOUT" },
+    { error: { message: "gptadmin_deadline", code: "fixture-secret" }, cause: "unknown" },
+  ])("redacts arbitrary upstream payloads while retaining allowlisted cause $cause", async ({ error, cause }) => {
+    const f = await fixture();
+    const result = await f.status({ observeGate: async () => { throw error; } }).observe({ challenge, probe }).catch(error => error);
+    expect(result.diagnostic).toEqual({ stage: "gate", cause });
+    expect(JSON.stringify(result)).not.toMatch(/fixture-secret|private|credential|secret-code/);
   });
 
   it("refuses a probe that selects a different node before any native read", async () => {
@@ -306,6 +346,31 @@ describe("authenticated runtime proof HTTP route", () => {
     expect((await fetch(`${url}?challenge=${challenge}`, { method: "POST", headers, body: "{}" })).status).toBe(405);
     expect((await fetch(`${url}?challenge=${challenge}&config=/tmp/override`, { headers })).status).toBe(400);
     expect(observe).not.toHaveBeenCalled();
+  });
+
+  it("exposes only structured allowlisted diagnostics on the authenticated existing route", async () => {
+    const f = await fixture();
+    const source = f.status({ observeGate: async () => { throw new Error("canonical_transport_failed"); } });
+    const observe = vi.fn(async () => source.observe({ challenge, probe }));
+    const url = await httpServer(observe);
+    expect((await fetch(`${url}?challenge=${challenge}`)).status).toBe(401);
+    expect(observe).not.toHaveBeenCalled();
+    const response = await fetch(`${url}?challenge=${challenge}`, { headers: { authorization: "Bearer fixture-runtime-token" } });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "canonical_runtime_unavailable",
+      diagnostic: { stage: "gate", cause: "canonical_transport_failed" } });
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(f.call).not.toHaveBeenCalled();
+  });
+
+  it("rejects injected diagnostic fields and keeps ordinary typed errors unchanged", async () => {
+    const malformed = new CanonicalRuntimeStatusError("canonical_runtime_unavailable", 503,
+      { stage: "/private/fixture-secret", cause: "fixture-secret" } as never);
+    expect(malformed.diagnostic).toBeUndefined();
+    const url = await httpServer(async () => { throw new CanonicalRuntimeStatusError("runtime_process_changed"); });
+    const response = await fetch(`${url}?challenge=${challenge}`, { headers: { authorization: "Bearer fixture-runtime-token" } });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "runtime_process_changed" });
   });
 
   it("returns a bounded unavailable error for missing backend and raw transport failure", async () => {
