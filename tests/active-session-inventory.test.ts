@@ -1,6 +1,11 @@
 import {describe,it,expect} from 'vitest';
 import {filterActiveInventory} from '../src/active-session-inventory.js';
 describe('active inventory',()=>{
+ it('bounds the current active response by bytes even with a large requested limit',()=>{
+  const sessions=Array.from({length:100},(_,i)=>({id:String(i),harness:'zcode',title:'x'.repeat(20000),runtimeHostId:'m1',activity:{state:'active',observedAt:'2026-10-23T18:00:00Z',evidence:'native'},workspaces:[]}));
+  const out=filterActiveInventory({sessions,hosts:[],partial:false},{limit:10000});
+  expect(out.total).toBe(100);expect(out.sessions.length).toBeLessThan(100);expect(out.limited).toBe(true);
+ });
  it('filters by work host before pagination, runtime remains separate',()=>{
   const sessions=Array.from({length:150},(_,i)=>({id:String(i),harness:'minimax-code',title:'task',runtimeHostId:'m1',activity:{state:'active',observedAt:'2026-10-23T18:00:00Z',evidence:'native'},workspaces:i<149?[]:[{hostId:'server100',absolutePath:'/code'}]}));
   const out=filterActiveInventory({sessions,hosts:[],partial:false},{hostId:'server100',limit:1});

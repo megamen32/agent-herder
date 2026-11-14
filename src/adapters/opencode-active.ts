@@ -9,9 +9,9 @@ function httpStatus(error: unknown): number | undefined {
 }
 
 /** Native active identities first, metadata second: no historical list window. */
-export async function readOpenCodeActiveSessions(options:{v2:boolean;read:(path:string)=>Promise<unknown>;hostId:string}){
- const root=options.v2?'/api':'';
- const raw=await options.read(`${root}/session/${options.v2?'active':'status'}`);
+export async function readOpenCodeActiveSessions(options:{v2:true;read:(path:string)=>Promise<unknown>;hostId:string}){
+ const root='/api';
+ const raw=await options.read(`${root}/session/active`);
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('opencode_active_status_invalid');
  const active=new Map<string,string>();
  for(const [id,value] of Object.entries(raw)){
@@ -39,7 +39,6 @@ export async function readOpenCodeActiveSessions(options:{v2:boolean;read:(path:
  for(const permission of globalPermissions){const rows=globalBySession.get(permission.sessionID!)??[];rows.push(permission);globalBySession.set(permission.sessionID!,rows);}
 
  const readSessionPermissions=async(sessionId:string):Promise<Permission[]>=>{
-  if(!options.v2)return [];
   try{
    const value=await options.read(`${root}/session/${encodeURIComponent(sessionId)}/permission`);
    if(!Array.isArray(value)||value.some((permission)=>!permission||typeof permission!=='object'||permission.sessionID!==sessionId||typeof permission.id!=='string'))throw new Error('opencode_active_session_permissions_invalid');

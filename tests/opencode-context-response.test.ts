@@ -58,10 +58,10 @@ it('three delayed native reads fit the unchanged 1200ms plugin body deadline', a
   const native = createServer((req, res) => {
     if (req.method !== 'GET') mutations.push(req.url || '');
     const path = new URL(req.url || '', 'http://local').pathname;
-    const body = path === '/session/status' ? {[id]:{type:'busy'}} : path.endsWith('/message') ? [{info:{id:root, sessionID:id, role:'user'}, parts:[{type:'text', text:'initial'}]}] : {id, directory:'/workspace'};
+    const body = path === '/api/config' ? {data:{}} : path === '/api/session/active' ? {data:{[id]:{type:'busy'}}} : path.endsWith('/permission') ? {data:[]} : path.endsWith('/message') ? {data:[{type:'user',id:root,sessionID:id,role:'user', parts:[{type:'text', text:'initial'}]}]} : {data:{id, location:{directory:'/workspace'}}};
     setTimeout(() => { res.setHeader('content-type','application/json'); res.end(JSON.stringify(body)); }, delay);
   });
-  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
+  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v2"});
   await adapter.getSession(id); // Existing admission warms the exact native directory.
   const server = createWebServer({adapters:new Map([['opencode',adapter]]), converter:{} as any, supervisor:{isAutomationHeld:async()=>false} as any});
   const endpoint = await listen(server), old = process.env.AGENT_HERDER_URL;
@@ -127,12 +127,13 @@ it.each(['foreign-session','foreign-user-session','missing-user-identity','permi
   const id = 'opencode-'+randomUUID(); let changed = false;
   const native = createServer((req,res)=>{
     const path = new URL(req.url||'','http://local').pathname;
-    const body = path === '/session/status' ? {[id]:{type:'busy',needsPermission:changed&&mismatch==='permission'}}
-      : path.endsWith('/message') ? [{info:{id:changed&&mismatch==='missing-user-identity'?undefined:'user',sessionID:changed&&mismatch==='foreign-user-session'?'other':id,role:'user'}}]
-      : {id:changed&&mismatch==='foreign-session'?'other':id,directory:changed&&mismatch==='directory-rebound'?'/other':'/workspace'};
+    const body = path === '/api/config' ? {data:{}} : path === '/api/session/active' ? {data:{[id]:{type:'busy',needsPermission:changed&&mismatch==='permission'}}}
+      : path.endsWith('/permission') ? {data:changed&&mismatch==='permission'?[{id:'permission-1',sessionID:id,action:'shell'}]:[]}
+      : path.endsWith('/message') ? {data:[{type:'user',id:changed&&mismatch==='missing-user-identity'?undefined:'user',sessionID:changed&&mismatch==='foreign-user-session'?'other':id,role:'user'}]}
+      : {data:{id:changed&&mismatch==='foreign-session'?'other':id,location:{directory:changed&&mismatch==='directory-rebound'?'/other':'/workspace'}}};
     res.setHeader('content-type','application/json');res.end(JSON.stringify(body));
   });
-  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
+  const adapter = new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v2"});
   try { expect(await adapter.getCoordinationActiveTurnId(id)).toBe('user'); changed=true; expect(await adapter.getCoordinationActiveTurnId(id)).toBeNull(); }
   finally { await close(native); }
 });

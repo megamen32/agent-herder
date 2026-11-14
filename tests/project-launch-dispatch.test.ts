@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,9 +50,24 @@ const policy = validateAutomationLaunchPolicy({
   models: { codex: "gpt-6.1-sol", zcode: "account:zai-individual-coding-plan/GLM-5.3-Flash$high", opencode: "minimax-coding-plan/MiniMax-M3.1-Flash" },
   projectRoutes: {
     "/home/roomhacker/PycharmProjects/TelegramAuto": { harnesses: ["opencode", "zcode"], aliases: ["tg-commentator", "autotelegramviews"] },
-    "/home/roomhacker/PycharmProjects/AutoFindClient": { harnesses: ["codex", "zcode", "opencode"] },
   },
 });
+
+/** Keep route tests on a real local root instead of a machine-specific checkout. */
+async function autoFindClientFixture(): Promise<{ project: string; policy: AutomationLaunchPolicy }> {
+  const project = join(await workspace(), "AutoFindClient");
+  await mkdir(project);
+  return {
+    project,
+    policy: validateAutomationLaunchPolicy({
+      ...policy,
+      projectRoutes: {
+        ...policy.projectRoutes,
+        [project]: { harnesses: ["codex", "zcode", "opencode"] },
+      },
+    }),
+  };
+}
 
 type Outcome = "accepted" | "quota" | "unavailable" | "unknown";
 type Delivery = { harness: string; inputId?: string };
@@ -221,6 +236,7 @@ describe("project launch dispatch", () => {
   it("stops on an unknown admission and never starts a second executor", async () => {
     const dir = await root();
     const cwd = await workspace();
+    const fixture = await autoFindClientFixture();
     const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
     const attempts: Array<{ harness: string; inputId?: string }> = [];
     const adapters = new Map<string, HarnessAdapter>([
@@ -230,8 +246,8 @@ describe("project launch dispatch", () => {
     ]);
 
     const result = await dispatchProjectLaunch({
-      policy,
-      project: "/home/roomhacker/PycharmProjects/AutoFindClient",
+      policy: fixture.policy,
+      project: fixture.project,
       cwd,
       message: "Исправить инцидент",
       operationId: "op-unknown",
@@ -243,8 +259,8 @@ describe("project launch dispatch", () => {
 
     // A repeated callback for the same operation reports the same stop.
     const repeated = await dispatchProjectLaunch({
-      policy,
-      project: "/home/roomhacker/PycharmProjects/AutoFindClient",
+      policy: fixture.policy,
+      project: fixture.project,
       cwd,
       message: "Исправить инцидент",
       operationId: "op-unknown",
@@ -307,6 +323,7 @@ describe("project launch dispatch", () => {
   it("reports a handoff request instead of cloning a live session of another harness", async () => {
     const dir = await root();
     const cwd = await workspace();
+    const fixture = await autoFindClientFixture();
     const log = new ProjectLaunchAttemptLog(join(dir, "attempts.json"));
     const attempts: Array<{ harness: string; inputId?: string }> = [];
     const adapters = new Map<string, HarnessAdapter>([
@@ -315,8 +332,8 @@ describe("project launch dispatch", () => {
     ]);
 
     const result = await dispatchProjectLaunch({
-      policy,
-      project: "/home/roomhacker/PycharmProjects/AutoFindClient",
+      policy: fixture.policy,
+      project: fixture.project,
       cwd,
       message: "Исправить инцидент",
       operationId: "op-handoff",
@@ -326,8 +343,8 @@ describe("project launch dispatch", () => {
     // caller must use the existing handoff, not a silent clone.
     expect(result).toMatchObject({ outcome: "accepted", selectedHarness: "zcode", sessionId: "zcode-1" });
     expect(result.mode).toBe("create");
-    const resolution = await import("../src/automation-launch-policy.js").then((module) => module.resolveProjectLaunch(policy, {
-      project: "/home/roomhacker/PycharmProjects/AutoFindClient",
+    const resolution = await import("../src/automation-launch-policy.js").then((module) => module.resolveProjectLaunch(fixture.policy, {
+      project: fixture.project,
       attempted: ["codex"],
       outcome: "pre_admission_rejected",
       activeSession: { harness: "codex", sessionId: "codex-7" },

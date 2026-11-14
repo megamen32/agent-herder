@@ -590,7 +590,7 @@ async function invoke($, payload) {
   return JSON.parse(result.text())
 }
 
-async function createV1Hooks({ directory, $, client }, options = {}) {
+async function createHooks({ directory, $, client }, options = {}) {
   const contextFetch = (path, fetchOptions) => coordinationFetch(path, fetchOptions, options.observeContextFetch)
   const enabled = new Set()
   const controlTurns = new Set()
@@ -681,6 +681,6 @@ export default {
     }
   },
   async server(input, options = {}) {
-    return createV1Hooks(input, options)
+    return createHooks(input, options)
   },
 }

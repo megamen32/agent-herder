@@ -124,6 +124,30 @@ impl OpenCodeConnection {
         profile: &Profile,
         auth: Option<OpenCodeAuth>,
     ) -> Result<Self, OpenCodeConnectionError> {
+        Self::open_with_requirements(instance, profile, auth, true).await
+    }
+
+    /// Open an explicitly selected instance for read-only session inspection.
+    ///
+    /// This variant deliberately requires only the v2 session-list route. It
+    /// does not require a create route or an event stream because a read-only
+    /// external adapter must remain usable against a server that exposes no
+    /// mutation capability. All subsequent requests still pass through the
+    /// request builder, which rejects every path outside /api/.
+    pub async fn open_read_only(
+        instance: InstanceRef,
+        profile: &Profile,
+        auth: Option<OpenCodeAuth>,
+    ) -> Result<Self, OpenCodeConnectionError> {
+        Self::open_with_requirements(instance, profile, auth, false).await
+    }
+
+    async fn open_with_requirements(
+        instance: InstanceRef,
+        profile: &Profile,
+        auth: Option<OpenCodeAuth>,
+        require_mutation_routes: bool,
+    ) -> Result<Self, OpenCodeConnectionError> {
         let raw_endpoint = profile
             .endpoint
             .as_deref()
@@ -196,7 +220,9 @@ impl OpenCodeConnection {
             has_session_create: has_route("/api/session", "post"),
             has_event_stream: has_route("/api/event", "get"),
         };
-        if !api.has_session_list || !api.has_session_create || !api.has_event_stream {
+        if !api.has_session_list
+            || require_mutation_routes && (!api.has_session_create || !api.has_event_stream)
+        {
             return Err(OpenCodeConnectionError::IncompatibleApi);
         }
 

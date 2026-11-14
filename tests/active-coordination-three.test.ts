@@ -8,6 +8,7 @@ import {DeferredMessageStore,deferredMessages,withDeferred} from '../src/deferre
 import {createWebServer} from '../src/web/server.js';
 import {OpenCodeAdapter} from '../src/adapters/opencode.js';
 import {ZcodeAdapter} from '../src/adapters/zcode.js';
+import {getHumanStopStore} from '../src/human-stop-store.js';
 import plugin from '../integrations/opencode/agent-herder-autopilot.js';
 import { turnHooksRuntimeOn } from './helpers/hooks-runtime.js';
 // Focused integration; actual store/HTTP/plugin and native read-only adapter contracts.
@@ -38,13 +39,14 @@ it('TTL is checked after awaited native guard, and offers are durable/query-only
   expect((await store.activeReceipt('opencode','s','fresh'))?.activeTurn?.state).toBe('hook_returned');
  }finally{await rm(dir,{recursive:true,force:true})}
 });
-it('OpenCode only reads native busy/root-user identity and current plugin context; no prompt POST',async()=>{ await turnHooksRuntimeOn();
+it('OpenCode steers the native busy turn and preserves the current plugin context',async()=>{ await turnHooksRuntimeOn();
  const id='opencode-'+randomUUID();let busy=true;let root='native-root-user';const mutations:string[]=[];
  const native=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.method!=='GET')mutations.push(req.url||'');
   const p=new URL(req.url||'','http://local').pathname;
-  res.end(JSON.stringify(p==='/session/status'?{[id]:{type:busy?'busy':'idle'}}:p.endsWith('/message')?[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]:{id,directory:'/workspace'}));});
+  const body=p==='/api/config'?{data:{}}:p==='/api/session/active'?{data:{[id]:{type:busy?'busy':'idle'}}}:p.endsWith('/permission')?{data:[]}:p.endsWith('/message')?{data:[{type:'user',id:root,sessionID:id,role:'user',parts:[{type:'text',text:'initial'}]}]}:{data:{id,directory:'/workspace'}};
+  res.end(JSON.stringify(body));});
  await new Promise<void>(r=>native.listen(0,'127.0.0.1',r));
- const adapter=new OpenCodeAdapter({baseUrl:`http://127.0.0.1:${(native.address() as any).port}`, protocol: "v1"});
+ const adapter=new OpenCodeAdapter({baseUrl:`http://127.0.0.1:${(native.address() as any).port}`, protocol: "v2"});
  let held=false;const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>held} as any});
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
  const endpoint=`http://127.0.0.1:${(server.address() as any).port}`;const old=process.env.AGENT_HERDER_URL;process.env.AGENT_HERDER_URL=endpoint;
@@ -61,10 +63,15 @@ it('OpenCode only reads native busy/root-user identity and current plugin contex
   await adapter.sendActiveMessage(id,{message:'never next task',inputId:'late'});root='new-native-user';
   const next={messages:[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'new task'}]}]};
   await hooks['experimental.chat.messages.transform']({},next);expect(JSON.stringify(next)).not.toContain('never next task');
+  await getHumanStopStore().hold({id,harness:'opencode',cwd:'/workspace',status:'running'} as any,{id:'held-context',at:new Date().toISOString(),reason:'held context fixture'});
   await adapter.sendActiveMessage(id,{message:'held context',inputId:'held'});held=true;
   await hooks['experimental.chat.messages.transform']({},next);expect(JSON.stringify(next)).not.toContain('held context');
+  await getHumanStopStore().release('opencode',id);
   busy=false;expect(await adapter.sendActiveMessage(id,{message:'inactive',inputId:'inactive'})).toMatchObject({notSubmitted:true});
-  expect(mutations).toEqual([]);
+  expect(mutations).toEqual([
+    "/api/session/" + id + "/prompt",
+    "/api/session/" + id + "/prompt",
+  ]);
  }finally{if(old===undefined)delete process.env.AGENT_HERDER_URL;else process.env.AGENT_HERDER_URL=old;await new Promise<void>(r=>server.close(()=>r()));await new Promise<void>(r=>native.close(()=>r()))}
 });
 it('ZCode active context uses only ready existing-only native reads, never guide/send/resume',async()=>{

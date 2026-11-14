@@ -27,9 +27,9 @@ async function fixture() {
     if(req.method!=='GET')mutations.push(req.url||'');
     const path=new URL(req.url||'','http://local').pathname;
     res.setHeader('content-type','application/json');
-    res.end(JSON.stringify(path==='/session/status'?{[id]:{type:busy?'busy':'idle'}}:path.endsWith('/message')?[{info:{id:root,sessionID:id,role:'user'},parts:[{type:'text',text:'initial'}]}]:{id,directory}));
+    res.end(JSON.stringify(path==='/api/config'?{data:{}}:path==='/api/session/active'?{data:{[id]:{type:busy?'busy':'idle'}}}:path.endsWith('/permission')?{data:[]}:path.endsWith('/message')?{data:[{type:'user',id:root,sessionID:id,role:'user',parts:[{type:'text',text:'initial'}]}]}:{data:{id,location:{directory}}}));
   });
-  const adapter=new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v1"});
+  const adapter=new OpenCodeAdapter({baseUrl:await listen(native), protocol: "v2"});
   const server=createWebServer({adapters:new Map([['opencode',adapter]]),converter:{} as any,supervisor:{isAutomationHeld:async()=>false} as any});
   const endpoint=await listen(server);
   const physical=join(directory,'agent-herder-current-context-'+randomUUID()+'.mjs');
@@ -62,7 +62,7 @@ it('fresh physical messages-only bridge coexists with a cached passive plugin an
     expect(output.messages[0].parts[0].text.split(nonce)).toHaveLength(2);
     expect(Object.values(f.module)).toHaveLength(1);
     expect(Object.keys(f.hooks)).toEqual(['experimental.chat.messages.transform']);
-    expect(f.mutations).toEqual([]);
+    expect(f.mutations).toEqual([`/api/session/${f.id}/prompt`]);
   }finally{await f.done();}
 });
 
@@ -77,7 +77,7 @@ it.each(['stop','idle','new-user'] as const)('global bridge refuses %s and never
     expect((await deferredMessages.list(f.id)).map(m=>m.id)).toEqual([prior.id]);
     f.changeUser();await getHumanStopStore().release('opencode',f.id);
     const next=f.output();await f.hooks['experimental.chat.messages.transform']?.({},next);
-    expect(JSON.stringify(next)).not.toContain('forbidden context');expect(f.mutations).toEqual([]);
+    expect(JSON.stringify(next)).not.toContain('forbidden context');expect(f.mutations).toEqual([`/api/session/${f.id}/prompt`]);
   }finally{await f.done();}
 });
 
@@ -88,7 +88,7 @@ it('two current bridge factories share the existing durable once-offer instead o
     const output=f.output();await Promise.all([f.hooks['experimental.chat.messages.transform']?.({},output),second['experimental.chat.messages.transform']?.({},output)]);
     expect(output.messages[0].parts[0].text.split(nonce)).toHaveLength(2);
     expect((await deferredMessages.activeReceipt('opencode',f.id,'once'))?.activeTurn?.state).toBe('hook_returned');
-    expect(f.mutations).toEqual([]);
+    expect(f.mutations).toEqual([`/api/session/${f.id}/prompt`]);
   }finally{await f.done();}
 });
 
@@ -104,7 +104,7 @@ it('an offered context with a lost ACK is receipt-only, never fetched again as a
     expect(JSON.stringify(output)).toContain(nonce);
     expect((await deferredMessages.activeReceipt('opencode',f.id,'once'))?.activeTurn?.state).toBe('offered');
     const next=f.output();await f.hooks['experimental.chat.messages.transform']({},next);
-    expect(JSON.stringify(next)).not.toContain(nonce);expect(f.mutations).toEqual([]);
+    expect(JSON.stringify(next)).not.toContain(nonce);expect(f.mutations).toEqual([`/api/session/${f.id}/prompt`]);
   }finally{fetching.mockRestore();await f.done();}
 });
 
@@ -123,6 +123,6 @@ it('a changed output root during the context await refuses the old offer without
     expect(JSON.stringify(output)).not.toContain(nonce);
     expect((await deferredMessages.activeReceipt('opencode',f.id,'once'))?.activeTurn?.state).toBe('offered');
     fetching.mockRestore();const next=f.output();await f.hooks['experimental.chat.messages.transform']({},next);
-    expect(JSON.stringify(next)).not.toContain(nonce);expect(f.mutations).toEqual([]);
+    expect(JSON.stringify(next)).not.toContain(nonce);expect(f.mutations).toEqual([`/api/session/${f.id}/prompt`]);
   }finally{fetching.mockRestore();await f.done();}
 });

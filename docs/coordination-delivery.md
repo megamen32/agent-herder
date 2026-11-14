@@ -28,7 +28,7 @@ supported current-turn admission instead of using their ordinary queue/start
 API. Codex uses its native steer CAS. ZCode and OpenCode use supported current-context
 hooks, not their ordinary input APIs. An exact native identity is established
 before reservation: ZCode's `runtime.activeTurnId` from an existing-only read;
-OpenCode V1's verified last root user message ID, used by its native loop across
+OpenCode v2's verified last root user message ID, used by its native loop across
 model/tool steps. A new user message invalidates that context identity.
 
 Records reuse the existing private DeferredMessageStore with an explicit active

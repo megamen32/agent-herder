@@ -6,6 +6,37 @@ import {join} from "node:path";
 
 afterEach(()=>vi.unstubAllGlobals());
 
+it("rejects an unsupported OpenCode V1 protocol pin",()=>{
+ expect(()=>{
+  // @ts-expect-error OpenCode V1 is no longer a supported client protocol.
+  new OpenCodeClient({protocol:"v1"});
+ }).toThrow("Unsupported OpenCode protocol: v1");
+});
+
+it("does not fall back from the v2 probe to the legacy global health endpoint",async()=>{
+ const calls:string[]=[];
+ vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL)=>{
+  const url=String(input);calls.push(url);
+  if(url.endsWith("/api/config"))return new Response("missing",{status:404});
+  if(url.endsWith("/global/health"))return new Response("legacy",{status:404});
+  return new Response("unexpected",{status:404});
+ }));
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test"});
+ await expect(client.init()).rejects.toThrow();
+ expect(calls).toEqual(["http://opencode.test/api/config"]);
+});
+
+it("keeps the explicit v2.2 health probe on the unprefixed API",async()=>{
+ const calls:string[]=[];
+ vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL)=>{
+  const url=String(input);calls.push(url);
+  return Response.json({healthy:true});
+ }));
+ const client=new OpenCodeClient({baseUrl:"http://opencode.test",protocol:"v22"});
+ await client.init();
+ expect(calls).toEqual(["http://opencode.test/global/health"]);
+});
+
 it("rejects an unauthenticated API and HTML health before any session POST",async()=>{
  const calls:{url:string;method:string}[]=[];
  vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -120,7 +151,7 @@ it("projects the exact native session permission into the session read",async()=
  });
 });
 
-it("uses the global permission list only when the session endpoint is unsupported and filters by session id",async()=>{
+it("does not fall back to a global permission list when the session endpoint is unsupported",async()=>{
  const calls:string[]=[];
  const fetch=vi.fn(async(input:RequestInfo|URL)=>{
   const url=String(input); calls.push(url);
@@ -136,8 +167,8 @@ it("uses the global permission list only when the session endpoint is unsupporte
 
  const state=await client.getPermissionState(sessionId);
 
- expect(state?.pendingRequests.map(({id})=>id)).toEqual(["per_exact"]);
- expect(calls).toContain("http://opencode.test/api/permission/request");
+ expect(state?.pendingRequests).toEqual([]);
+ expect(calls).not.toContain("http://opencode.test/api/permission/request");
 });
 
 it("fails closed when a session-scoped permission read returns a request for another session",async()=>{

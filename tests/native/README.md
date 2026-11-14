@@ -98,3 +98,27 @@ Both the `/api/session` interface and the `/provider` + `/session` interface
 are supported; the receipt names the detected interface and the binary version.
 This does not exercise Herder, prove complete paginated transcripts, or satisfy
 the release gate.
+
+For the real Agent Herder Codex adapter consumer proof, build the current
+checkout first and run:
+
+~~~sh
+npm run build
+NODE_REAL=$(readlink -f "$(command -v node)")
+CODEX_REAL=$(readlink -f "$(command -v codex)")
+python3 tests/native/launch.py \
+  --ro-bind "$NODE_REAL" \
+  --ro-bind "$PWD/dist" \
+  --ro-bind "$PWD/package.json" \
+  --ro-bind "$PWD/node_modules" \
+  --ro-bind "$CODEX_REAL" \
+  -- /usr/bin/python3 "$PWD/tests/native/codex_ahap_receipt.py" \
+  "$NODE_REAL" "$PWD/dist/ahap-codex-runner.js" "$CODEX_REAL"
+~~~
+
+This starts the compiled AHAP consumer over CodexAppServerAdapter, verifies
+the advertised readiness methods, reads the session list, creates one
+disposable native session, sends one message with a stable inputId, and reads
+the exact native session and durable user/assistant messages back. The isolated
+fake model must observe exactly one request. An uncertain delivery outcome
+terminates the disposable child without replaying the message.

@@ -1,5 +1,5 @@
 import {readOpenCodeActiveSessions} from "./opencode-active.js";
-import { currentTurnContextReceipt, previousCoordinationReceipt, reserveCurrentTurnContext } from "../coordination-active-delivery.js";
+import { currentTurnContextReceipt, previousCoordinationReceipt } from "../coordination-active-delivery.js";
 import { deferredMessages } from "../deferred-messages.js";
 import { getHumanStopStore } from "../human-stop-store.js";
 import {
@@ -369,7 +369,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   /** Explicit credentials for the read-only OmniRoute route proof. */
   private readonly modelProviderResolverConfig: OpenCodeModelProviderResolverConfig;
 
-  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v1" | "v2" | "v22";
+  constructor(config: { baseUrl?: string; password?: string; protocol?: "auto" | "v2" | "v22";
     /** Explicit, separately scoped credentials for read-only OmniRoute route resolution. */
     modelProviderResolver?: OpenCodeModelProviderResolverConfig;
     /** Durable integrator journal of the reserved operation, when this adapter serves one. */
@@ -396,8 +396,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
         modelSwitch: true,
         subagents: true,
         events: true,
-        // Native v2 supports steering a running turn (sendActiveMessage); a v1
-        // server degrades to a durable current-turn context reservation.
+        // Native v2 supports steering a running turn (sendActiveMessage).
+        // OpenCode 2.2 uses its narrower initial-start contract below.
         steer: true,
       };
     this.archiveV2Configured = config.protocol === "v2";
@@ -437,12 +437,16 @@ export class OpenCodeAdapter implements HarnessAdapter {
     await this.client.init();
   }
 
-  private activeSnapshotReceipt: {exhaustive:boolean;observedAt:string;source:string}|null = null;
+  private activeSnapshotReceipt: {exhaustive:boolean;observedAt:string;source:string;reason?:string}|null = null;
   getActiveSessionSnapshotReceipt() {return this.activeSnapshotReceipt;}
   async listActiveSessions():Promise<AgentSession[]> {
     this.activeSnapshotReceipt=null;
     await this.client.init();
-    const result=await readOpenCodeActiveSessions({v2:this.client.isV2,hostId:localSessionHostId(),read:async path=>{
+    if (this.client.isV22) {
+      this.activeSnapshotReceipt={exhaustive:false,observedAt:new Date().toISOString(),source:'opencode-v22-active-status',reason:'unsupported'};
+      return [];
+    }
+    const result=await readOpenCodeActiveSessions({v2:true,hostId:localSessionHostId(),read:async path=>{
       const response=await fetch(`${this.baseUrl}${path}`,{headers:this.authorization?{Authorization:this.authorization}:{},signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw new Error(`opencode_active_native_http_${response.status}`);
       return unwrapEnvelope(await response.json());
@@ -514,8 +518,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     const response = await fetch(`${this.baseUrl}/api/session?${params.toString()}`, {
       headers: this.authorization ? { Authorization: this.authorization } : {},
     });
-    // An OpenCode 1 server has no /api prefix; the caller falls back to the
-    // listing, which is exhaustive there.
+    // Native search is authoritative for the supported OpenCode 2 API.
     if (!response.ok) throw new Error(`OpenCode named session search failed: HTTP ${response.status}`);
     const payload = unwrapEnvelope<unknown>(await response.json());
     if (!Array.isArray(payload)) throw new Error("OpenCode named session search returned an unexpected payload");
@@ -724,9 +727,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   /**
-   * Tell one session its own identity. Best effort by design: an OpenCode 1
-   * server has no instruction entries, and a failed announcement must never
-   * block the session itself.
+   * Tell one session its own identity. Best effort by design: a failed
+   * announcement must never block the session itself.
    */
   async announceIdentity(input: { name?: string; sessionId: string; cwd?: string; parentSessionId?: string }): Promise<boolean> {
     const cwd = input.cwd ?? (await this.client.resolveDirectory(input.sessionId)) ?? process.cwd();
@@ -768,9 +770,8 @@ export class OpenCodeAdapter implements HarnessAdapter {
    * older servers run.
    */
   async sendActiveMessage(id: string, options: SendMessageOptions): Promise<ControlResult> {
+    await this.client.init();
     if (this.client.isV22) return { ok: false, notSubmitted: true, nonRetryable: true, inputId: options.inputId, error: "OpenCode 2.2.4 supports initial Start only" };
-    // Legacy servers have no native steer; they keep the durable hook offer.
-    if (!this.client.isV2) return reserveCurrentTurnContext(this, id, options);
     const prior = await previousCoordinationReceipt(this, id, options.inputId);
     if (prior) {
       const parsed = JSON.parse(prior) as {
@@ -808,15 +809,20 @@ export class OpenCodeAdapter implements HarnessAdapter {
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     if (options.origin === "automation") {
-      // Only the automatic composition chooses this route. Manual queue/steer
-      // retain their user prompt semantics, including the native prompt hook.
-      if (options.queue !== true || options.steer === true || options.start === true) {
+      // Synthetic inputs are the v2 background-continuation route. Ordinary
+      // sync deliveries retain the native v2 prompt semantics.
+      if (options.steer === true || options.start === true) {
         return { ok: false, notSubmitted: true, admission: "not_submitted",
-          inputId: options.inputId, error: "Automatic OpenCode continuation requires Queue" };
+          inputId: options.inputId, error: "Automatic OpenCode continuation does not support explicit steer or start" };
       }
-      return { ...normalizeSendAdmission(await this.client.sendAutomaticContinuation(id, {
-        message: options.message, delivery: "queue", inputId: options.inputId,
-      })), inputId: options.inputId };
+      if (options.queue === true) {
+        await this.client.init();
+        if (this.client.isV2) {
+          return { ...normalizeSendAdmission(await this.client.sendAutomaticContinuation(id, {
+            message: options.message, delivery: "queue", inputId: options.inputId,
+          })), inputId: options.inputId };
+        }
+      }
     }
     if (this.client.isV22) {
       if (options.start !== true || options.queue === true || options.steer === true

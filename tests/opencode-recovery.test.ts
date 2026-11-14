@@ -25,7 +25,7 @@ describe("OpenCode native recovery controls", () => {
 
   it("normalizes native OpenCode SSE events", async () => {
     server = createServer((request, response) => {
-      if (request.url === "/event") {
+      if (request.url === "/api/event") {
         response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         response.write(`data: ${JSON.stringify({ type: "message.updated", properties: { sessionID: "sess-live", messageID: "msg-1" } })}\n\n`);
         return;
@@ -34,7 +34,7 @@ describe("OpenCode native recovery controls", () => {
     }).listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const events: Array<{ kind: string; sessionId?: string; messageId?: string }> = [];
     const stop = adapter.subscribeEvents((event) => events.push(event));
     for (let i = 0; i < 20 && !events.some((event) => event.kind === "message.updated"); i++) await new Promise((resolve) => setTimeout(resolve, 10));
@@ -53,13 +53,12 @@ describe("OpenCode native recovery controls", () => {
   it("lists every live model from connected OpenCode providers", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/provider") {
+      if (request.url === "/api/model") {
         return response.end(JSON.stringify({
-          connected: ["omniroute", "minimax-coding-plan"],
-          all: [
-            { id: "omniroute", models: { "zc/glm-5.3-flash": {}, "gpt-5.6-sol": {} } },
-            { id: "minimax-coding-plan", models: { "MiniMax-M3.1-Flash": {} } },
-            { id: "disconnected", models: { hidden: {} } },
+          data: [
+            { id: "zc/glm-5.3-flash", modelID: "zc/glm-5.3-flash", providerID: "omniroute" },
+            { id: "gpt-5.6-sol", modelID: "gpt-5.6-sol", providerID: "omniroute" },
+            { id: "MiniMax-M3.1-Flash", modelID: "MiniMax-M3.1-Flash", providerID: "minimax-coding-plan" },
           ],
         }));
       }
@@ -69,7 +68,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
 
     expect(await adapter.listModels()).toEqual([
       "omniroute/zc/glm-5.3-flash",
@@ -89,21 +88,25 @@ describe("OpenCode native recovery controls", () => {
     let recoveryPrompts = 0;
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if (request.url === "/session" && request.method === "GET") {
-        return response.end(JSON.stringify([{ id: "parent", title: "Parent", path: "/tmp/project", createdAt: "2026-07-19T00:00:00Z", updatedAt: "2026-07-19T00:01:00Z" }]));
-      }
-      if (request.url === "/session/status") return response.end(JSON.stringify({ parent: { status: "idle" } }));
-      if (request.url === "/session/parent/message?limit=1") return response.end(JSON.stringify([]));
-      if ((request.url === "/session/parent/children" || request.url === "/session/parent/children?directory=%2Ftmp%2Fproject")) {
+      if (request.url === "/api/config") return response.end(JSON.stringify({ healthy: true }));
+      if ((request.url ?? "").startsWith("/api/session?parentID=parent")) {
         return response.end(JSON.stringify([{ id: "child", title: "Child", path: "/tmp/project" }]));
       }
-      if (request.url === "/session/parent/fork" && request.method === "POST") {
-        return response.end(JSON.stringify({ id: "forked", title: "Forked", path: "/tmp/project" }));
+      if (request.url === "/api/session" && request.method === "GET") {
+        return response.end(JSON.stringify([{ id: "parent", title: "Parent", path: "/tmp/project", createdAt: "2026-07-19T00:00:00Z", updatedAt: "2026-07-19T00:01:00Z" }]));
       }
-      if (request.url === "/session/parent/prompt_async" && request.method === "POST") {
+      if (request.url === "/api/session/active") return response.end(JSON.stringify({ data: {} }));
+      if (request.url === "/api/session/parent/permission") return response.end(JSON.stringify({ data: [] }));
+      if ((request.url ?? "").startsWith("/api/session/parent/message?")) return response.end(JSON.stringify({ data: [] }));
+      if ((request.url === "/api/session/parent/children" || request.url === "/api/session/parent/children?directory=%2Ftmp%2Fproject")) {
+        return response.end(JSON.stringify({ data: [{ id: "child", title: "Child", location: { directory: "/tmp/project" }, parentID: "parent" }] }));
+      }
+      if (request.url === "/api/session/parent/fork" && request.method === "POST") {
+        return response.end(JSON.stringify({ data: { id: "forked", title: "Forked", location: { directory: "/tmp/project" } } }));
+      }
+      if (request.url === "/api/session/parent/prompt" && request.method === "POST") {
         recoveryPrompts += 1;
-        return response.end(JSON.stringify({ accepted: true }));
+        return response.end(JSON.stringify({ data: { id: "msg_recovery", admitted: true } }));
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "not found" }));
@@ -111,11 +114,11 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     await adapter.init();
     expect(await adapter.listChildren("parent")).toHaveLength(1);
     expect(await adapter.forkSession("parent")).toEqual({ ok: true, sessionId: "forked" });
-    expect(await adapter.recover("parent", "please continue after the error")).toEqual({ ok: true, admitted: true, admission: "accepted" });
+    expect(await adapter.recover("parent", "please continue after the error")).toMatchObject({ ok: true, admitted: true, admission: "accepted" });
     expect(recoveryPrompts).toBe(1);
   });
 
@@ -124,15 +127,26 @@ describe("OpenCode native recovery controls", () => {
     server = createServer((request, response) => {
       const path = (request.url ?? "").split("?")[0];
       response.setHeader("content-type", "application/json");
-      if (path === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if (path === "/session" && request.method === "GET") return response.end(JSON.stringify([]));
-      if (path === "/session/direct-parent" && request.method === "GET") {
-        return response.end(JSON.stringify({ id: "direct-parent", title: "Parent", path: "/tmp/project" }));
+      if (path === "/api/config") return response.end(JSON.stringify({ healthy: true }));
+      if (path === "/api/session" && request.method === "GET") return response.end(JSON.stringify([]));
+      if (path === "/api/session/direct-parent" && request.method === "GET") {
+        return response.end(JSON.stringify({ data: { id: "direct-parent", title: "Parent", location: { directory: "/tmp/project" } } }));
       }
-      if (path === "/session/direct-parent/prompt_async" && request.method === "POST") {
+      if (path === "/api/session/active" && request.method === "GET") return response.end(JSON.stringify({ data: { "direct-parent": { type: "running" } } }));
+      if (path === "/api/session/direct-parent/permission" && request.method === "GET") return response.end(JSON.stringify({ data: [] }));
+      if (path === "/api/session/direct-parent/prompt" && request.method === "POST") {
         request.setEncoding("utf8");
         request.on("data", (chunk) => { sentBody += chunk; });
         request.on("end", () => response.end(JSON.stringify({ accepted: true })));
+        return;
+      }
+      if (path === "/api/session/direct-parent/synthetic" && request.method === "POST") {
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => { sentBody += chunk; });
+        request.on("end", () => {
+          const body = JSON.parse(sentBody) as Record<string, unknown>;
+          response.end(JSON.stringify({ data: { id: body.id, sessionID: "direct-parent", type: "synthetic", delivery: "queue", payload: body } }));
+        });
         return;
       }
       response.statusCode = 404;
@@ -141,7 +155,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     await adapter.init();
     const adapters = new Map([["opencode", adapter]]);
 
@@ -166,35 +180,32 @@ describe("OpenCode native recovery controls", () => {
       sessionId: "direct-parent",
       harness: "opencode",
       message: "reply to parent",
-      mode: "queue",
+      mode: "sync",
       activation: "always",
     });
     expect(JSON.parse(delivered)).toMatchObject({
       ok: true,
       sessionId: "direct-parent",
       harness: "opencode",
-      delivery: "accepted",
+      delivery: "completed",
       activated: true,
     });
     // Human deliveries carry the payload as-is; no synthetic provenance header.
-    expect(JSON.parse(sentBody)).toEqual({ parts: [{
-      type: "text",
-      text: "reply to parent",
-    }] });
+    expect(JSON.parse(sentBody)).toMatchObject({ text: expect.stringContaining("reply to parent"), delivery: "steer" });
   });
 
   it("creates a named session with the requested directory", async () => {
     let createBody = "";
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if (request.url === "/session?directory=%2Ftmp%2Frepair" && request.method === "POST") {
+      if (request.url === "/api/config") return response.end(JSON.stringify({ healthy: true }));
+      if (request.url === "/api/session" && request.method === "POST") {
         request.setEncoding("utf8");
         request.on("data", (chunk) => { createBody += chunk; });
         request.on("end", () => response.end(JSON.stringify({
           id: "created-session",
           title: "repair_100",
-          directory: "/tmp/repair",
+          location: { directory: "/tmp/repair" },
           time: { created: 1, updated: 1 },
         })));
         return;
@@ -205,26 +216,26 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     await adapter.init();
     const created = await adapter.createSession({ name: "repair_100", cwd: "/tmp/repair" });
 
     expect(created).toMatchObject({ id: "created-session", title: "repair_100", cwd: "/tmp/repair", harness: "opencode" });
-    expect(JSON.parse(createBody)).toEqual({ title: "repair_100" });
+    expect(JSON.parse(createBody)).toEqual({ title: "repair_100", location: { directory: "/tmp/repair" } });
   });
 
   it("stores full access as a session-scoped OpenCode permission rule", async () => {
     let createBody = "";
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/session?directory=%2Ftmp%2Fautomated" && request.method === "POST") {
+      if (request.url === "/api/session" && request.method === "POST") {
         request.setEncoding("utf8");
         request.on("data", (chunk) => { createBody += chunk; });
         request.on("end", () => response.end(JSON.stringify({
           id: "created-full-access",
           title: "unattended task",
-          directory: "/tmp/automated",
-          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          location: { directory: "/tmp/automated" },
+          permissions: [{ action: "*", resource: "*", effect: "allow" }],
           time: { created: 1, updated: 1 },
         })));
         return;
@@ -235,13 +246,14 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const created = await adapter.createSession({ name: "unattended task", cwd: "/tmp/automated", fullAccess: true });
 
     expect(created.id).toBe("created-full-access");
     expect(JSON.parse(createBody)).toEqual({
       title: "unattended task",
-      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      location: { directory: "/tmp/automated" },
+      permissions: [{ action: "*", resource: "*", effect: "allow" }],
     });
   });
 
@@ -264,7 +276,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const result = await adapter.changeModel("selected-session", "openrouter/openai/gpt-4.1");
 
     expect(result).toEqual({ ok: true });
@@ -276,30 +288,40 @@ describe("OpenCode native recovery controls", () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
       // Automatic delivery now rechecks native identity for the durable Stop fence.
-      if (request.url === "/session/health-session?directory=%2Ftmp" && request.method === "GET") {
+      if (request.url === "/api/session/health-session?directory=%2Ftmp" && request.method === "GET") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp", model: "omniroute/subagent" }));
       }
-      if (request.url?.startsWith("/session/health-session/message?") && request.method === "GET") return response.end(JSON.stringify([]));
-      if (request.url === "/provider" && request.method === "GET") return response.end(JSON.stringify({ connected: ["omniroute"], all: [{ id: "omniroute", models: { subagent: {} } }] }));
-      if (request.url === "/session?directory=%2Ftmp" && request.method === "GET") {
+      if (request.url?.startsWith("/api/session/health-session/message?") && request.method === "GET") return response.end(JSON.stringify([]));
+      if (request.url === "/api/model" && request.method === "GET") return response.end(JSON.stringify({ data: [{ providerID: "omniroute", id: "subagent", modelID: "subagent" }] }));
+      if (request.url?.startsWith("/api/session?directory=%2Ftmp") && request.method === "GET") {
         return response.end(JSON.stringify([]));
       }
-      if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
-      if ((request.url ?? "").split("?")[0] === "/session/health-session" && request.method === "GET") {
+      if (request.url === "/api/session/active" && request.method === "GET") return response.end(JSON.stringify({ data: {} }));
+      if ((request.url ?? "").split("?")[0] === "/api/session/health-session" && request.method === "GET") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
       }
-      if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session" && request.method === "POST") {
         return response.end(JSON.stringify({ id: "health-session", title: "health", directory: "/tmp" }));
       }
-      if (request.url === "/api/session/health-session/model?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
         order.push("model");
         response.statusCode = 204;
         response.end();
         return;
       }
-      if (request.url === "/session/health-session/prompt_async?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/prompt" && request.method === "POST") {
         order.push("prompt");
-        return response.end(JSON.stringify({ accepted: true }));
+        return response.end(JSON.stringify({ data: { id: "msg_prompt", admitted: true } }));
+      }
+      if (request.url === "/api/session/health-session/synthetic" && request.method === "POST") {
+        order.push("prompt");
+        let body = "";
+        request.on("data", (chunk) => { body += chunk; });
+        request.on("end", () => {
+          const parsed = JSON.parse(body) as Record<string, unknown>;
+          return response.end(JSON.stringify({ data: { id: parsed.id, sessionID: "health-session", type: "synthetic", delivery: "queue", payload: parsed } }));
+        });
+        return;
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "not found" }));
@@ -307,7 +329,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
       harness: "opencode",
       name: "health",
@@ -315,6 +337,8 @@ describe("OpenCode native recovery controls", () => {
       message: "diagnose bounded telemetry",
       mode: "queue",
       model: "omniroute/subagent",
+      inputId: "recovery-once",
+      humanRequested: true,
     });
 
     expect(result).toMatchObject({ ok: true, delivery: "accepted", sessionId: "health-session" });
@@ -325,28 +349,29 @@ describe("OpenCode native recovery controls", () => {
     let promptCount = 0;
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/session?directory=%2Ftmp" && request.method === "GET") {
+      if (request.url?.startsWith("/api/session?directory=%2Ftmp") && request.method === "GET") {
         return response.end(JSON.stringify([]));
       }
-      if (request.url === "/session/status" && request.method === "GET") return response.end(JSON.stringify({}));
-      if (request.url === "/session?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session/active" && request.method === "GET") return response.end(JSON.stringify({}));
+      if (request.url === "/api/session" && request.method === "POST") {
         return response.end(JSON.stringify({ id: "health-session", title: "health-model-failure", directory: "/tmp" }));
       }
-      if (request.url === "/api/session/health-session/model?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/model" && request.method === "POST") {
         response.statusCode = 503;
         return response.end(JSON.stringify({ error: "model unavailable" }));
       }
-      if (request.url === "/session/health-session/prompt_async?directory=%2Ftmp" && request.method === "POST") {
+      if (request.url === "/api/session/health-session/prompt" && request.method === "POST") {
         promptCount += 1;
         return response.end(JSON.stringify({ accepted: true }));
       }
+      if (request.url === "/api/session/health-session/permission" && request.method === "GET") return response.end(JSON.stringify({ data: [] }));
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "not found" }));
     }).listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const result = await newOrResumeNamedSession(new Map([["opencode", adapter]]), {
       harness: "opencode",
       name: "health-model-failure",
@@ -364,23 +389,24 @@ describe("OpenCode native recovery controls", () => {
   it("lists sessions within the requested directory", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/session?directory=%2Ftmp%2Frepair" && request.method === "GET") {
-        return response.end(JSON.stringify([{
+      if (request.url?.startsWith("/api/session?directory=%2Ftmp%2Frepair") && request.method === "GET") {
+        return response.end(JSON.stringify({ data: [{
           id: "existing-session",
           title: "repair_100",
-          directory: "/tmp/repair",
+          location: { directory: "/tmp/repair" },
           time: { created: 1, updated: 1 },
-        }]));
+        }], cursor: { next: null } }));
       }
-      if (request.url === "/session/status") return response.end(JSON.stringify({}));
-      if (request.url === "/session/existing-session/message?limit=1") return response.end(JSON.stringify([]));
+      if (request.url === "/api/session/active") return response.end(JSON.stringify({ data: {} }));
+      if (request.url === "/api/session/existing-session/permission") return response.end(JSON.stringify({ data: [] }));
+      if (request.url?.startsWith("/api/session/existing-session/message?")) return response.end(JSON.stringify({ data: [] }));
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "not found" }));
     }).listen(0);
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     expect(await adapter.listSessions({ cwd: "/tmp/repair" })).toMatchObject([
       { id: "existing-session", title: "repair_100", cwd: "/tmp/repair" },
     ]);
@@ -390,14 +416,14 @@ describe("OpenCode native recovery controls", () => {
     const plans = JSON.stringify({ plans: [{ plan_id: "observe" }, { plan_id: "repair" }, { plan_id: "verify" }] });
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/session/health/message?limit=3" && request.method === "GET") {
-        return response.end(JSON.stringify([
-          { info: { id: "user-1", role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "bounded telemetry" }] },
-          { info: { id: "assistant-1", role: "assistant", time: { created: 2 } }, parts: [
+      if (request.url?.startsWith("/api/session/health/message?") && request.method === "GET") {
+        return response.end(JSON.stringify({ data: [
+          { type: "assistant", id: "assistant-1", time: { created: 2 }, parts: [
             { type: "tool", tool: "shell", state: { input: { command: "inspect" }, output: "x".repeat(10000) } },
             { type: "text", text: plans },
           ] },
-        ]));
+          { type: "user", id: "user-1", time: { created: 1 }, parts: [{ type: "text", text: "bounded telemetry" }] },
+        ] }));
       }
       response.statusCode = 404;
       response.end(JSON.stringify({ error: "not found" }));
@@ -405,7 +431,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     const messages = await adapter.getSessionMessages("health", 3);
 
     expect(messages).toHaveLength(2);
@@ -416,17 +442,23 @@ describe("OpenCode native recovery controls", () => {
   it("finds a session parent and lists its children through MCP handlers", async () => {
     server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
-      if (request.url === "/global/health") return response.end(JSON.stringify({ healthy: true }));
-      if ((request.url === "/session/child" || request.url === "/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
+      if (request.url === "/api/config") return response.end(JSON.stringify({ healthy: true }));
+      if (request.url === "/api/session/active") return response.end(JSON.stringify({ data: {} }));
+      if ((request.url ?? "").endsWith("/permission")) return response.end(JSON.stringify({ data: [] }));
+      if ((request.url ?? "").startsWith("/api/session?parentID=parent")) return response.end(JSON.stringify({ data: [
+        { id: "child", title: "Child", location: { directory: "/tmp/project" }, parentID: "parent" },
+        { id: "child-2", title: "Second child", location: { directory: "/tmp/project" }, parentID: "parent" },
+      ] }));
+      if ((request.url === "/api/session/child" || request.url === "/api/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
       }
-      if ((request.url === "/session/parent" || request.url === "/session/parent?directory=%2Ftmp%2Fproject") && request.method === "GET") {
+      if ((request.url === "/api/session/parent" || request.url === "/api/session/parent?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "parent", title: "Parent", path: "/tmp/project" }));
       }
-      if ((request.url === "/session/child" || request.url === "/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
+      if ((request.url === "/api/session/child" || request.url === "/api/session/child?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify({ id: "child", title: "Child", path: "/tmp/project", parentID: "parent" }));
       }
-      if ((request.url === "/session/parent/children" || request.url === "/session/parent/children?directory=%2Ftmp%2Fproject") && request.method === "GET") {
+      if ((request.url === "/api/session/parent/children" || request.url === "/api/session/parent/children?directory=%2Ftmp%2Fproject") && request.method === "GET") {
         return response.end(JSON.stringify([
           { id: "child", title: "Child", path: "/tmp/project", parentID: "parent" },
           { id: "child-2", title: "Second child", path: "/tmp/project", parentID: "parent" },
@@ -438,7 +470,7 @@ describe("OpenCode native recovery controls", () => {
     await new Promise<void>((resolve) => server!.once("listening", () => resolve()));
     port = (server.address() as { port: number }).port;
 
-    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v1" });
+    const adapter = new OpenCodeAdapter({ baseUrl: `http://127.0.0.1:${port}`, protocol: "v2" });
     await adapter.init();
     const adapters = new Map([["opencode", adapter]]);
 
