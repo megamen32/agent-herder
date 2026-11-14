@@ -23,10 +23,10 @@ it("delivers an OpenCode goal through the native inbox, not a CLI process", asyn
   expect(resume).not.toHaveBeenCalled();
 });
 
-it("falls back to the durable transport when the native inbox refuses the goal", async () => {
+it("falls back only after an explicit native no-admission receipt", async () => {
   const resume = vi.fn(async () => ({ status: "accepted" }));
   const result = await deliverAutopilotGoal(input("opencode"), "goal", "input-2", {
-    adapter: { sendMessage: async () => ({ ok: false, error: "HTTP 409" }) } as never,
+    adapter: { sendMessage: async () => ({ ok: false, notSubmitted: true, admission: "not_submitted", error: "HTTP 409" }) } as never,
     resume: resume as never,
   });
   expect(result.transport).toBe("agent-resume");
@@ -56,4 +56,44 @@ it("reports a failed continuation instead of pretending it was delivered", async
     resume: (async () => ({ status: "rejected", reason: "no route" })) as never,
   });
   expect(failed).toMatchObject({ status: "failed", transport: "agent-resume", error: "no route" });
+});
+
+it.each([
+  { ok: false, error: "HTTP 409" },
+  { ok: false, admission: "unknown", admissionUnknown: true },
+  { ok: false, notSubmitted: true, admissionUnknown: true },
+  { ok: true, admission: "unknown", admissionUnknown: true },
+])("does not resend an uncertain native admission through another transport: %j", async receipt => {
+  const resume = vi.fn();
+  const sendMessage = vi.fn(async () => receipt);
+  const result = await deliverAutopilotGoal(input("opencode"), "goal", "unknown-key", {
+    adapter: { sendMessage } as never, resume: resume as never,
+  });
+  expect(result).toMatchObject({ status: "failed", transport: "opencode-inbox", receipt: { admission: "unknown" } });
+  expect(sendMessage).toHaveBeenCalledTimes(1);
+  expect(resume).not.toHaveBeenCalled();
+});
+
+it.each([
+  { ok: false, admitted: true, notSubmitted: true },
+  { ok: false, pending: true },
+  { ok: false, nativeInputMessageId: "msg_exact", notSubmitted: true },
+])("keeps admitted or pending native outcomes on their original transport: %j", async receipt => {
+  const resume = vi.fn();
+  const result = await deliverAutopilotGoal(input("opencode"), "goal", "admitted-key", {
+    adapter: { sendMessage: async () => receipt } as never, resume: resume as never,
+  });
+  expect(result).toMatchObject({ status: "accepted", transport: "opencode-inbox" });
+  expect(resume).not.toHaveBeenCalled();
+});
+
+it("does not invoke another transport after a thrown native admission", async () => {
+  const resume = vi.fn();
+  const result = await deliverAutopilotGoal(input("opencode"), "goal", "thrown-key", {
+    adapter: { sendMessage: async () => { throw Error("ACK lost"); } } as never,
+    resume: resume as never,
+  });
+  expect(result).toMatchObject({ status: "failed", transport: "opencode-inbox",
+    receipt: { admission: "unknown", admissionUnknown: true } });
+  expect(resume).not.toHaveBeenCalled();
 });

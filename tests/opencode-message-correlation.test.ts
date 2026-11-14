@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { openCodeAutomaticInputId } from "../packages/agent-resume/src/harness/opencode/client.js";
 import { makeConfiguredAdapter, serveOpenCodeAhap } from "../src/ahap-opencode-runner.js";
 
 async function read(messages: unknown[], family: "v2" | "v22" = "v2") {
@@ -117,4 +118,24 @@ describe("OpenCode exact native message correlation", () => {
     }], "v22");
     expect(message.nativeMessageId).toBeUndefined();
   });
+});
+
+
+it("recognizes only exact native synthetic completion metadata and id", async () => {
+  const key = "process-wake:exact-key";
+  const native = { id: openCodeAutomaticInputId("requested-session", key), type: "synthetic",
+    text: "receipt", metadata: { agentHerderInputId: key, agentHerderSessionId: "requested-session",
+      agentHerderContinuation: "synthetic-queue-v1" } };
+  expect((await read([native]))[0]).toMatchObject({
+    id: native.id, nativeMessageId: native.id, nativeInputType: "synthetic", role: "system", inputId: key,
+  });
+  for (const row of [
+    { ...native, id: "msg_unrelated" },
+    { ...native, metadata: { ...native.metadata, agentHerderSessionId: "other-session" } },
+    { ...native, metadata: { agentHerderInputId: key } },
+    { ...native, type: "assistant" },
+    { ...native, info: {} },
+  ]) {
+    expect((await read([row]))[0].nativeInputType).toBeUndefined();
+  }
 });

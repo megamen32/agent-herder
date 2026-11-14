@@ -554,6 +554,27 @@ pub fn build_with_registry(
         ));
     }
     let deliver = Arc::new(deliver);
+    // The exposed delivery application remains a user prompt. Only background
+    // process/wait/child completions use the adapter's typed automatic seam.
+    let mut automatic_deliver = ScopedDeliverApplication::new(
+        authority.clone(),
+        instance.clone(),
+        grants.clone(),
+        adapter.clone(),
+        Arc::new(adapter.for_automatic_continuation()),
+        "9999-12-31T23:59:59Z".into(),
+    )
+    .map_err(|_| "invalid automatic delivery policy")?
+    .with_delivery_mode(delivery_mode)
+    .map_err(|_| "unsupported automatic delivery mode")?
+    .with_policy(policy.clone())
+    .with_automatic_continuation(automatic_continuation);
+    if let Some(config) = &config {
+        automatic_deliver = automatic_deliver.with_delivery_keys(Arc::new(
+            herder::application::delivery_keys::DeliveryKeyRegistry::new(config.resources.clone())?,
+        ));
+    }
+    let automatic_deliver = Arc::new(automatic_deliver);
     let automation = Arc::new(
         ScopedAutomationApplication::new(
             authority.clone(),
@@ -561,7 +582,7 @@ pub fn build_with_registry(
             grants.clone(),
             policy.clone(),
             adapter.clone(),
-            deliver.clone(),
+            automatic_deliver.clone(),
             match delivery_mode {
                 SendMode::Queue => catalog::DeliveryMode::Queue,
                 _ => catalog::DeliveryMode::Start,
@@ -589,7 +610,7 @@ pub fn build_with_registry(
                     instance.clone(),
                     grants.clone(),
                     policy.clone(),
-                    deliver.clone(),
+                    automatic_deliver.clone(),
                     match delivery_mode {
                         SendMode::Queue => catalog::DeliveryMode::Queue,
                         _ => catalog::DeliveryMode::Start,
@@ -616,7 +637,7 @@ pub fn build_with_registry(
         WaitAutomationApplication::new(
             source.clone(),
             registry,
-            deliver.clone(),
+            automatic_deliver.clone(),
             match delivery_mode {
                 SendMode::Queue => catalog::DeliveryMode::Queue,
                 _ => catalog::DeliveryMode::Start,

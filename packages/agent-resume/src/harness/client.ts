@@ -33,6 +33,8 @@ export interface HarnessMessage {
   id: string;
   /** Exact native record identity; absent for synthesized display ids. */
   nativeMessageId?: string;
+  /** Verified native synthetic input, distinct from a human user message. */
+  nativeInputType?: "synthetic";
   /** Native session identity observed in the record, never inferred from the query. */
   sessionId?: string;
   role: "user" | "assistant" | "system" | "tool";

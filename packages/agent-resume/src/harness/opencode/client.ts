@@ -27,6 +27,12 @@ import {
  * its orchestration on top of this client and must not learn the protocol again.
  */
 
+/** Stable native inbox identity; the scoped Herder ledger binds this key to its payload. */
+export function openCodeAutomaticInputId(sessionId: string, inputId: string): string {
+  return "msg_herderauto" + createHash("sha256")
+    .update(JSON.stringify(["herder-opencode-synthetic-queue-v1", sessionId, inputId])).digest("hex");
+}
+
 interface OpenCodeSessionPayload {
   id: string;
   title?: string;
@@ -283,7 +289,7 @@ function isHtmlResponse(response: Response): boolean {
  * conversation messages: mapping them as-role-less records turned Herder's
  * session views into empty assistant bubbles. Conversation record types only.
  */
-const openCodeConversationTypes = new Set(["user", "assistant", "system", "tool"]);
+const openCodeConversationTypes = new Set(["user", "assistant", "system", "synthetic", "tool"]);
 
 function isOpenCodeTurnStatusFrame(message: OpenCodeMessagePayload): boolean {
   if (typeof message.role === "string" || typeof message.info?.role === "string" || typeof message.metadata?.role === "string") return false;
@@ -739,6 +745,7 @@ export class OpenCodeClient implements HarnessClient {
         const nativeRole = message.role || info.role || message.type;
         const role = nativeRole === "user" || nativeRole === "system"
           ? nativeRole
+          : nativeRole === "synthetic" ? "system"
           : nativeRole === "tool" || (parts.length > 0 && parts.every((part) => part.type === "tool_result")) ? "tool" : "assistant";
         const text = parts.filter((part) => part.type === "text" || part.type === "thinking").map((part) => part.text || "").join("\n").trim() || undefined;
         // A failed v2 assistant turn persists as an empty assistant record with
@@ -759,9 +766,15 @@ export class OpenCodeClient implements HarnessClient {
         // Verified v2 returns native user records at the top level. This
         // branch reads only this exact session's addressed message endpoint;
         // its native id is independent of the display fallback below.
-        const v2InputId = this.isV2 && message.info === undefined && message.type === "user"
-          && typeof message.id === "string" && /^msg_[A-Za-z0-9]+$/.test(message.id)
-          ? stringValue(message.metadata?.agentHerderInputId) : undefined;
+        const syntheticKey = stringValue(message.metadata?.agentHerderInputId);
+        const verifiedSynthetic = this.isV2 && message.info === undefined && message.type === "synthetic"
+          && message.metadata?.agentHerderContinuation === "synthetic-queue-v1"
+          && message.metadata?.agentHerderSessionId === id && Boolean(syntheticKey)
+          && message.id === openCodeAutomaticInputId(id, syntheticKey!);
+        const v2InputId = verifiedSynthetic ? syntheticKey
+          : this.isV2 && message.info === undefined && message.type === "user"
+            && typeof message.id === "string" && /^msg_[A-Za-z0-9]+$/.test(message.id)
+            ? stringValue(message.metadata?.agentHerderInputId) : undefined;
         const nativeMessageId = stringValue(info.id) ?? (v2InputId ? message.id : undefined);
         const sessionId = stringValue(info.sessionID);
         // The correlation must come from the same native record as its id.
@@ -772,6 +785,7 @@ export class OpenCodeClient implements HarnessClient {
         return {
           id: message.id || info.id || `${id}:message-${index + 1}`,
           ...(nativeMessageId ? { nativeMessageId } : {}),
+          ...(verifiedSynthetic ? { nativeInputType: "synthetic" as const } : {}),
           ...(sessionId ? { sessionId } : {}),
           role,
           ...(turnId ? { turnId } : {}),
@@ -1264,6 +1278,54 @@ export class OpenCodeClient implements HarnessClient {
           : { admissionUnknown: true, admission: "unknown" as const }) };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * Native background completion input. Synthetic queue admission bypasses the
+   * user prompt hook, whose own synthetic steer could otherwise create a second
+   * model turn. The native coordinator wakes idle sessions and drains a busy
+   * session at its next queue boundary; there is no interrupt or second PATCH.
+   */
+  async sendAutomaticContinuation(id: string, request: HarnessSendRequest): Promise<HarnessSendResult & {
+    admission?: "not_submitted" | "accepted" | "unknown";
+    notSubmitted?: boolean; admissionUnknown?: boolean;
+  }> {
+    await this.probeProtocol();
+    if (!this.isV2 || request.delivery !== "queue" || !/^ses_[A-Za-z0-9]+$/.test(id)
+      || !request.inputId || request.inputId.length > 4096 || !request.message) {
+      return { ok: false, notSubmitted: true, admission: "not_submitted",
+        error: "Automatic OpenCode continuation requires v2 synthetic queue and an exact input identity" };
+    }
+    const nativeInputMessageId = openCodeAutomaticInputId(id, request.inputId);
+    const metadata = { agentHerderInputId: request.inputId, agentHerderSessionId: id,
+      agentHerderContinuation: "synthetic-queue-v1" };
+    try {
+      const res = await this.fetch(this.api(`/session/${encodeURIComponent(id)}/synthetic`), {
+        method: "POST",
+        body: JSON.stringify({ id: nativeInputMessageId, text: request.message,
+          description: "Agent Herder completion", metadata, delivery: "queue", resume: true }),
+      });
+      const raw = unwrapEnvelope<Record<string, unknown>>(await res.json().catch(() => undefined));
+      const payload = raw?.payload && typeof raw.payload === "object"
+        ? raw.payload as Record<string, unknown> : undefined;
+      const admittedMetadata = payload?.metadata && typeof payload.metadata === "object"
+        ? payload.metadata as Record<string, unknown> : undefined;
+      // Native deduplication is first-wins. Verify the exact stored payload too,
+      // so a conflicting same-id result never confirms this Herder operation.
+      if (res.ok && raw?.id === nativeInputMessageId && raw.sessionID === id
+        && raw.type === "synthetic" && raw.delivery === "queue"
+        && payload?.text === request.message
+        && Object.entries(metadata).every(([key, value]) => admittedMetadata?.[key] === value)) {
+        return { ok: true, admitted: true, admission: "accepted", nativeInputMessageId };
+      }
+      // An HTTP failure, malformed ACK or lost response does not establish
+      // absence of admission. Recovery reads the stable id; it never resends.
+      return { ok: false, admissionUnknown: true, admission: "unknown",
+        error: res.ok ? "Native synthetic admission receipt does not match the exact input" : `HTTP ${res.status}` };
+    } catch (error) {
+      return { ok: false, admissionUnknown: true, admission: "unknown",
+        error: error instanceof Error ? error.message : String(error) };
     }
   }
 

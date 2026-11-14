@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { OpenCodeAdapter } from "../adapters/opencode.js";
+import { normalizeSendAdmission } from "../adapters/quota-failure.js";
 import { AgentResumeClient } from "../resume-transport.js";
 import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 
@@ -10,7 +11,7 @@ export interface AutopilotDeliveryResult {
   goal: string;
   sessionId: string;
   harness: string;
-  /** Present when the durable fallback transport was used. */
+  /** Exact native admission evidence or durable fallback transport receipt. */
   receipt?: Record<string, unknown>;
   error?: string;
 }
@@ -22,8 +23,8 @@ export interface AutopilotDeliveryResult {
  * `opencode --session …` CLI cannot resolve (`Session not found`), so the
  * continuation goes through the harness' own inbox, which is the same native
  * admission Herder uses everywhere else. Harnesses that are CLI-only keep the
- * durable agent-resume transport, and any OpenCode failure falls back to it so
- * a continuation is never silently dropped.
+ * durable agent-resume transport. OpenCode may fall back only after proof that
+ * no input was admitted; unknown native outcomes require read-only reconciliation.
  */
 export async function deliverAutopilotGoal(
   input: AutopilotRunnerInput,
@@ -47,20 +48,26 @@ export async function deliverAutopilotGoal(
       ?? (env.OPENCODE_URL ? new OpenCodeAdapter({ baseUrl: env.OPENCODE_URL, password: env.OPENCODE_SERVER_PASSWORD }) : undefined);
     if (adapter) {
       try {
-        const delivered = await adapter.sendMessage(input.sessionId, {
+        const delivered = normalizeSendAdmission(await adapter.sendMessage(input.sessionId, {
           message: goal,
           queue: true,
           origin: "automation",
           inputId,
-        });
-        if (delivered.ok) {
-          return { status: "delivered", transport: "opencode-inbox", ...base };
+        }));
+        if (delivered.admission === "accepted" || delivered.admission === "pending") {
+          return { status: delivered.ok ? "delivered" : "accepted", transport: "opencode-inbox",
+            ...base, receipt: { ...delivered } };
+        }
+        if (delivered.admission !== "not_submitted") {
+          return { status: "failed", transport: "opencode-inbox", ...base, receipt: { ...delivered },
+            error: `OpenCode native admission is unknown; reconcile before retry (${delivered.error ?? "receipt unavailable"})` };
         }
         const fallback = await deliverThroughResume(input, goal, inputId, options);
-        return { ...fallback, error: `OpenCode inbox refused the goal (${delivered.error ?? "unknown"}); resumed through agent-resume` };
+        return { ...fallback, error: `OpenCode proves no admission (${delivered.error ?? "not submitted"}); fallback transport returned ${fallback.status}` };
       } catch (error) {
-        const fallback = await deliverThroughResume(input, goal, inputId, options);
-        return { ...fallback, error: `OpenCode inbox delivery failed (${error instanceof Error ? error.message : String(error)}); resumed through agent-resume` };
+        return { status: "failed", transport: "opencode-inbox", ...base,
+          receipt: { admission: "unknown", admissionUnknown: true },
+          error: `OpenCode native admission is unknown; reconcile before retry (${error instanceof Error ? error.message : String(error)})` };
       }
     }
   }

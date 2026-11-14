@@ -807,6 +807,17 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
+    if (options.origin === "automation") {
+      // Only the automatic composition chooses this route. Manual queue/steer
+      // retain their user prompt semantics, including the native prompt hook.
+      if (options.queue !== true || options.steer === true || options.start === true) {
+        return { ok: false, notSubmitted: true, admission: "not_submitted",
+          inputId: options.inputId, error: "Automatic OpenCode continuation requires Queue" };
+      }
+      return { ...normalizeSendAdmission(await this.client.sendAutomaticContinuation(id, {
+        message: options.message, delivery: "queue", inputId: options.inputId,
+      })), inputId: options.inputId };
+    }
     if (this.client.isV22) {
       if (options.start !== true || options.queue === true || options.steer === true
         || !this.v22CreatedSessions.has(id) || this.v22StartAttempts.has(id)) {
@@ -1183,6 +1194,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         id: message.id,
         role: message.role,
         ...(message.nativeMessageId ? { nativeMessageId: message.nativeMessageId } : {}),
+        ...(message.nativeInputType ? { nativeInputType: message.nativeInputType } : {}),
         ...(message.sessionId ? { sessionId: message.sessionId } : {}),
         ...(message.turnId ? { turnId: message.turnId } : {}),
         ...(message.phase ? { phase: message.phase } : {}),

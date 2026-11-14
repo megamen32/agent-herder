@@ -148,7 +148,7 @@ it("v2 forwards a second delivery to an existing session with exact mode and cal
   expect(replies[1].result).toMatchObject({inputId:"caller-second",nativeInputMessageId:"msg_real17"});
   expect(replies[0].result.capabilities.deliveryModes).toEqual(["queue","steer","start"]);
   expect(replies[0].result.capabilities.nativeStartAdmission).toBe("steer-before-turn-v1");
-  expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBe("unsupported-no-idle-admission-v1");
+  expect(replies[0].result.capabilities.nativeAutomaticContinuation).toBe("synthetic-queue-v1");
 });
 
 it("v2 exposes same-session resume and recover without selecting a model", async () => {
@@ -233,4 +233,31 @@ it("v2 ordinary Queue and Steer retain their exact native delivery options", asy
   expect(calls).toEqual([["existing", queue], ["existing", steer]]);
   expect(replies[1].result.nativeInputMessageId).toBe("msg_native123");
   expect(replies[2].result.nativeInputMessageId).toBe("msg_native123");
+});
+
+it("v2 preserves the typed automatic Queue route and refuses incompatible modes before native I/O", async () => {
+  const calls: unknown[] = [];
+  const adapter = { async sendMessage(id: string, options: any) {
+    calls.push([id, options]);
+    return { ok: true, admitted: true, nativeInputMessageId: "msg_automatic" };
+  } };
+  const automatic = { message: "Build completed", queue: true, inputId: "wake-key", origin: "automation" };
+  const replies = await run(adapter, [
+    initialize,
+    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "ses_exact", options: automatic } },
+    { jsonrpc: "2.0", id: 3, method: "sendMessage", params: { id: "ses_exact",
+      options: { ...automatic, queue: false, steer: true } } },
+    { jsonrpc: "2.0", id: 4, method: "sendMessage", params: { id: "ses_exact",
+      options: { ...automatic, origin: "untyped" } } },
+  ], "v2");
+  expect(calls).toEqual([["ses_exact", automatic]]);
+  expect(replies[1].result.nativeInputMessageId).toBe("msg_automatic");
+  expect(replies[2].error.code).toBe(-32602);
+  expect(replies[3].error.code).toBe(-32602);
+  const unsupported = await run(adapter, [
+    initialize,
+    { jsonrpc: "2.0", id: 2, method: "sendMessage", params: { id: "ses_exact", options: automatic } },
+  ], "v22");
+  expect(unsupported[1].error.code).toBe(-32602);
+  expect(calls).toHaveLength(1);
 });

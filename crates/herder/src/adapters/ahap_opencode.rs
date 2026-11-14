@@ -18,14 +18,17 @@ use crate::{
     },
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{path::PathBuf, sync::Arc};
 
+#[derive(Clone)]
 pub struct AhapOpenCode {
     client: Arc<AhapClient>,
     instance: InstanceRef,
     cwd: PathBuf,
     name: String,
     policy: AhapPortPolicy,
+    automatic_delivery: bool,
 }
 
 /// Trusted per-instance configuration for the shared AHAP port.
@@ -95,6 +98,7 @@ impl AhapOpenCode {
             cwd,
             name,
             policy,
+            automatic_delivery: false,
         })
     }
     /// Unmodified initialize capabilities from this exact configured instance.
@@ -152,8 +156,15 @@ impl AhapOpenCode {
         ))
     }
 
-    /// Current OpenCode v2 has no native idle/turn admission CAS; v22 exposes
-    /// initial-only start. Neither a missing marker nor Queue is positive proof.
+    /// Automatic delivery requires the explicit, verified synthetic queue seam.
+    /// The manual adapter keeps its existing prompt/queue/steer contract.
+    pub fn for_automatic_continuation(&self) -> Self {
+        let mut adapter = self.clone();
+        adapter.automatic_delivery = self.policy.harness == "opencode";
+        adapter
+    }
+
+    /// A missing marker or an ordinary Queue mode is not positive proof.
     pub fn automatic_continuation_supported(&self) -> bool {
         automatic_continuation_supported(&self.policy.harness, self.capabilities())
     }
@@ -395,6 +406,26 @@ fn valid_native_id(v: &str) -> bool {
     !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control)
 }
 
+/// Only the verified native synthetic projection can confirm automatic input.
+fn is_opencode_synthetic_input(row: &Value, session: &str) -> bool {
+    if row.get("role").and_then(Value::as_str) != Some("system")
+        || row.get("nativeInputType").and_then(Value::as_str) != Some("synthetic")
+        || row.get("sessionId").is_some_and(|id| id.as_str() != Some(session))
+    {
+        return false;
+    }
+    let Some(key) = row.get("inputId").and_then(Value::as_str).filter(|key| !key.is_empty()) else {
+        return false;
+    };
+    let binding = serde_json::to_vec(&("herder-opencode-synthetic-queue-v1", session, key))
+        .expect("string binding");
+    let digest = Sha256::digest(binding).iter()
+        .map(|byte| format!("{byte:02x}")).collect::<String>();
+    let expected = format!("msg_herderauto{digest}");
+    row.get("id").and_then(Value::as_str) == Some(expected.as_str())
+        && row.get("nativeMessageId").and_then(Value::as_str) == Some(expected.as_str())
+}
+
 /// Positive evidence comes from native message fields, never a synthesized
 /// display ID or prompt text. Prefixes are the exact ZCode automation mapping;
 /// they are compared to observed native anchors, not stripped from caller IDs.
@@ -441,7 +472,8 @@ fn recovered_message_id(
         return None;
     }
     let row = candidates[0];
-    if row.get("role").and_then(Value::as_str) != Some("user")
+    if !(row.get("role").and_then(Value::as_str) == Some("user")
+        || harness == "opencode" && is_opencode_synthetic_input(row, session))
         || row
             .get("sessionId")
             .is_some_and(|id| id.as_str() != Some(session))
@@ -576,6 +608,13 @@ impl BoundedNativeHandoff for AhapOpenCode {
                 reason: "invalid AHAP delivery request".into(),
             });
         }
+        if self.automatic_delivery
+            && (plan.mode != SendMode::Queue || !self.automatic_continuation_supported())
+        {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "verified OpenCode automatic queue admission unavailable".into(),
+            });
+        }
         // Recheck native status and declared modes; the scoped core owns the
         // durable HumanStop/intent ledger, and the TS port owns native admission.
         let snapshot =
@@ -613,6 +652,9 @@ impl BoundedNativeHandoff for AhapOpenCode {
         };
         if let Some(turn) = &plan.expected_turn {
             options["expectedTurnId"] = json!(turn);
+        }
+        if self.automatic_delivery {
+            options["origin"] = json!("automation");
         }
         let result = self
             .client
@@ -767,7 +809,10 @@ impl NativeSessionReader for AhapOpenCode {
             .filter(|m| m.get("id").and_then(Value::as_str) == Some(message_id.as_str()))
             .collect();
         Ok(
-            if matches.len() == 1 && matches[0].get("role").and_then(Value::as_str) == Some("user")
+            if matches.len() == 1
+                && (matches[0].get("role").and_then(Value::as_str) == Some("user")
+                    || self.policy.harness == "opencode"
+                        && is_opencode_synthetic_input(matches[0], &receipt.target.native_session_id))
             {
                 Observation::Confirmed {
                     receipt: receipt.clone(),
@@ -879,8 +924,10 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         let script = dir.join("adapter");
         fs::write(&script,r##"#!/usr/bin/python3
-import json,os,sys
+import hashlib,json,os,sys
 harness=os.environ['AHAP_HARNESS'];session=os.environ['SESSION_ID'];native_id=os.environ['NATIVE_ID']
+automatic=os.environ['MODE']=='automatic'
+if automatic:native_id='msg_herderauto'+hashlib.sha256(json.dumps(['herder-opencode-synthetic-queue-v1',session,'key'],separators=(',',':')).encode()).hexdigest()
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
  with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
@@ -890,7 +937,8 @@ for line in sys.stdin:
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
  elif m=='sendMessage':
   assert p['id']==session and p['options']['activeTurnOnly'] is False and p['options']['inputId']=='key'
-  if harness=='opencode':assert p['options']['start'] and p['options']['queue'] is False
+  with open(os.environ['TRACE']+'.wire','a') as f:f.write(json.dumps(p)+'\n')
+  if harness=='opencode' and not automatic:assert p['options']['start'] and p['options']['queue'] is False
   else:assert p['options']['queue'] is True and 'start' not in p['options']
   if os.environ['MODE']=='runner_receipt':v={'ok':True,'admitted':True,'pending':True,'inputId':'agent-herder:auto:key'}
   elif os.environ['MODE']=='missing':v={'ok':True,'admitted':True}
@@ -899,7 +947,9 @@ for line in sys.stdin:
   v=[{'id':native_id,'role':'user','text':'hi','inputId':'key'}]
   if os.environ['MODE']=='recovery':v=[{'id':native_id,'nativeMessageId':native_id,'role':'user','sourceCommandId':'queue_agent-herder:auto:key','sessionId':session}]
   if os.environ['MODE']=='duplicate':v.append({'id':native_id,'role':'assistant','text':'ambiguous'})
+  if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key'}]
  else:raise Exception(m)
+ if m=='initialize' and automatic:v['capabilities'].update({'nativeProtocol':'v2','deliveryModes':['queue','start'],'nativeAutomaticContinuation':'synthetic-queue-v1'})
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
@@ -945,6 +995,39 @@ for line in sys.stdin:
         );
         b.map(|port| (Temp(dir), port))
     }
+    #[tokio::test]
+    async fn automatic_composition_sets_typed_origin_and_confirms_exact_synthetic_receipt() {
+        for automatic in [false, true] {
+            let (fixture, adapter) = setup_with_policy("automatic", "opencode", SendMode::Queue, "ses_ABC").unwrap();
+            assert!(adapter.automatic_continuation_supported());
+            let control = if automatic { adapter.for_automatic_continuation() } else { adapter.clone() };
+            let address = SessionAddress { instance: adapter.instance.clone(), native_session_id: "ses_ABC".into() };
+            let snapshot = adapter.snapshot(&address).await.unwrap();
+            let plan = crate::domain::adapter::decide_send(&snapshot, &crate::domain::adapter::SendCommand { mode: SendMode::Queue }).unwrap();
+            let admission = control.submit_bounded(plan, "hi", &RequestKey("key".into())).unwrap();
+            assert!(matches!(adapter.reconcile(&admission.receipt).await.unwrap(), Observation::Confirmed { .. }));
+            let wire = fs::read_to_string(fixture.0.join("trace.wire")).unwrap();
+            let rows: Vec<Value> = wire.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].pointer("/options/origin").and_then(Value::as_str), automatic.then_some("automation"));
+            assert_eq!(rows[0].pointer("/options/queue"), Some(&json!(true)));
+        }
+    }
+
+    #[test]
+    fn automatic_clone_refuses_without_the_explicit_native_capability() {
+        let (fixture, adapter) = setup("success");
+        let plan = DispatchPlan {
+            target: SessionAddress { instance: adapter.instance.clone(), native_session_id: "sesABC".into() },
+            mode: SendMode::Queue, expected_turn: None,
+        };
+        assert!(matches!(
+            adapter.for_automatic_continuation().submit_bounded(plan, "hi", &RequestKey("key".into())),
+            Err(SubmitError::DefinitelyNotSent { .. })
+        ));
+        assert!(!fs::read_to_string(fixture.0.join("trace")).unwrap().lines().any(|line| line == "sendMessage"));
+    }
+
     #[tokio::test]
     async fn existing_session_send_does_not_require_create_capability() {
         let (f, b) = setup("no_create");
@@ -1328,11 +1411,15 @@ for line in sys.stdin:
 }
 
 fn automatic_continuation_supported(harness: &str, capabilities: &Value) -> bool {
-    harness != "opencode"
-        && capabilities
-            .get("nativeAutomaticContinuation")
-            .and_then(Value::as_str)
-            != Some("unsupported-no-idle-admission-v1")
+    let admission = capabilities.get("nativeAutomaticContinuation").and_then(Value::as_str);
+    if harness == "opencode" {
+        capabilities.get("nativeProtocol").and_then(Value::as_str) == Some("v2")
+            && admission == Some("synthetic-queue-v1")
+            && capabilities.get("deliveryModes").and_then(Value::as_array)
+                .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("queue")))
+    } else {
+        admission != Some("unsupported-no-idle-admission-v1")
+    }
 }
 
 #[cfg(test)]
@@ -1353,12 +1440,49 @@ mod canonical_wait_turn_tests {
         ] {
             assert!(!automatic_continuation_supported("opencode", &capabilities));
         }
+        assert!(automatic_continuation_supported("opencode", &json!({
+            "nativeProtocol":"v2", "deliveryModes":["queue"],
+            "nativeAutomaticContinuation":"synthetic-queue-v1"
+        })));
+        for unsupported in [
+            json!({"nativeProtocol":"v22","deliveryModes":["queue"],"nativeAutomaticContinuation":"synthetic-queue-v1"}),
+            json!({"nativeProtocol":"v2","deliveryModes":["start"],"nativeAutomaticContinuation":"synthetic-queue-v1"}),
+            json!({"deliveryModes":["queue"],"nativeAutomaticContinuation":"synthetic-queue-v1"}),
+        ] {
+            assert!(!automatic_continuation_supported("opencode", &unsupported));
+        }
         assert!(automatic_continuation_supported("codex", &json!({})));
         assert!(!automatic_continuation_supported(
             "codex",
             &json!({"nativeAutomaticContinuation":"unsupported-no-idle-admission-v1"})
         ));
     }
+    #[test]
+    fn synthetic_receipt_requires_exact_native_type_session_key_and_digest() {
+        let key = "process-wake:exact-key";
+        let session = "ses_exact";
+        let binding = serde_json::to_vec(&("herder-opencode-synthetic-queue-v1", session, key)).unwrap();
+        let id = format!("msg_herderauto{}", Sha256::digest(binding).iter().map(|byte| format!("{byte:02x}")).collect::<String>());
+        let row = json!({"id":id,"nativeMessageId":id,"role":"system",
+            "nativeInputType":"synthetic","inputId":key});
+        assert!(is_opencode_synthetic_input(&row, session));
+        assert_eq!(recovered_message_id(&json!([row.clone()]), session, key, "opencode"), Some(id));
+        assert_eq!(recovered_message_id(&json!([row.clone()]), session, key, "codex"), None);
+        for (field, value) in [
+            ("nativeInputType", json!("other")),
+            ("id", json!("msg_other")),
+            ("nativeMessageId", json!("msg_other")),
+            ("inputId", json!("different-key")),
+            ("sessionId", json!("ses_other")),
+            ("role", json!("assistant")),
+        ] {
+            let mut invalid = row.clone();
+            invalid[field] = value;
+            assert!(!is_opencode_synthetic_input(&invalid, session));
+            assert_eq!(recovered_message_id(&json!([invalid]), session, key, "opencode"), None);
+        }
+    }
+
     #[test]
     fn native_turn_requires_exact_identity_and_explicit_status() {
         let base = json!({"id":"child","harness":"codex","status":"idle",

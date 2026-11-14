@@ -54,6 +54,8 @@ export interface SessionMessageView {
   id: string;
   /** Actual native message ID; absent for a synthetic display ID. */
   nativeMessageId?: string;
+  /** Verified native synthetic input, distinct from a human user message. */
+  nativeInputType?: "synthetic";
   /** Exact native command anchor, preserved without deriving a request key. */
   sourceCommandId?: string;
   /** Exact session identity when present in the native message itself. */

@@ -90,9 +90,9 @@ export async function serveOpenCodeAhap(
           nativeProtocol: family,
           ...(family === "v2" ? {
             nativeStartAdmission: "steer-before-turn-v1",
-            // A queued wake can execute hook synthetic input before the original
-            // user input. This native API has no atomic idle admission contract.
-            nativeAutomaticContinuation: "unsupported-no-idle-admission-v1",
+            // Automatic input uses the durable native synthetic queue, bypassing
+            // the user prompt hook and leaving a concurrent turn uninterrupted.
+            nativeAutomaticContinuation: "synthetic-queue-v1",
           } : {}),
           controlCapabilities: { ...CONTROL_CAPABILITIES, resume: canResume, recover: canRecover },
         },
@@ -141,6 +141,11 @@ export async function serveOpenCodeAhap(
           }
           if (instanceModel && options.model !== undefined && options.model !== instanceModel) {
             error(id, -32602, "model conflicts with protected instance route");
+            continue;
+          }
+          if (options.origin === "automation" && (family !== "v2"
+            || options.queue !== true || options.steer === true || options.start === true)) {
+            error(id, -32602, "Automatic OpenCode continuation requires v2 synthetic Queue");
             continue;
           }
           let delivery: SendMessageOptions = { ...options, ...(instanceModel ? { model: instanceModel } : {}) };
@@ -240,6 +245,7 @@ function isDeliveryInput(value: unknown): value is SendMessageOptions & { inputI
   return typeof options.queue === "boolean"
     && (options.steer === undefined || typeof options.steer === "boolean")
     && (options.start === undefined || typeof options.start === "boolean")
+    && (options.origin === undefined || options.origin === "human" || options.origin === "automation")
     && !(options.queue === true && options.steer === true)
     && !(options.start === true && options.steer === true)
     && typeof options.message === "string" && options.message.length > 0
