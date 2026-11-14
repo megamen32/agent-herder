@@ -5,7 +5,7 @@ A partial import is safe to reconcile by running the same exact plan; differing
 settings or source bytes refuse. Only the cutover owner should invoke --apply.
 """
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -19,6 +19,45 @@ import urllib.parse
 
 from prepare_resume_quarantine import private, digest, encoded, directory, validate_snapshot
 from quarantine_io import publish_exclusive
+
+# Match store::Writer::validate_schema/open_file/configure. These are the
+# supported scoped schemas, not permission to follow an arbitrary user_version.
+SCOPED_WRITER_VERSIONS = (3, 4)
+STORE_SCHEMA = Path(__file__).resolve().parents[2] / "crates/herder/src/store"
+SCHEMA_OBJECTS = ("SELECT type,name,sql FROM sqlite_schema "
+                  "WHERE type IN ('table','index','trigger','view') "
+                  "AND name NOT LIKE 'sqlite_%' ORDER BY type,name")
+
+def validate_scoped_writer_schema(connection):
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version not in SCOPED_WRITER_VERSIONS:
+        raise ValueError("unsupported_scoped_writer_schema:" + str(version))
+    # The reference is private memory. No schema script runs on authority state.
+    with closing(sqlite3.connect(":memory:")) as reference:
+        reference.execute("PRAGMA foreign_keys=ON")
+        reference.create_function("herder_writer_version", 0, lambda: 1, deterministic=True)
+        for name in ("schema.sql", "migration_v1_v2.sql", "migration_v2_v3.sql"):
+            reference.executescript((STORE_SCHEMA / name).read_text())
+        if version == 4:
+            reference.executescript((STORE_SCHEMA / "migration_v3_v4.sql").read_text())
+        expected = reference.execute(SCHEMA_OBJECTS).fetchall()
+        actual = connection.execute(SCHEMA_OBJECTS).fetchall()
+        if actual != expected:
+            raise ValueError("scoped_writer_schema_identity_mismatch")
+    return version
+
+def configure_scoped_writer(connection):
+    # foreign_keys cannot be enabled after BEGIN. The gate is already held;
+    # the write transaction pins schema identity until this import commits.
+    connection.execute("PRAGMA foreign_keys=ON")
+    if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        raise ValueError("scoped_writer_foreign_keys_required")
+    connection.execute("BEGIN IMMEDIATE")
+    version = validate_scoped_writer_schema(connection)
+    # Fixed validated version, exactly as Rust Writer::configure. A subsequent
+    # version change remains fenced; the callback never reads live user_version.
+    connection.create_function("herder_writer_version", 0,
+                               lambda: version, deterministic=True)
 
 def process_birth(pid):
     try:
@@ -143,8 +182,8 @@ def apply(plan_path, expected_sha256, receipt_path):
             gm = os.fstat(fds[item["gate"]])
             db = sqlite3.connect("file:" + urllib.parse.quote(item["database"], safe="/") + "?mode=rw", uri=True, timeout=0)
             stack.callback(db.close)
-            db.execute("BEGIN IMMEDIATE")
             stack.callback(lambda connection=db: connection.rollback() if connection.in_transaction else None)
+            configure_scoped_writer(db)
             binding = db.execute("SELECT generation,gate_device,gate_inode,database_device,database_inode FROM humanstop_authority WHERE singleton=1").fetchone()
             if binding != (item["authority_generation"], gm.st_dev, gm.st_ino, dbmeta.st_dev, dbmeta.st_ino):
                 raise ValueError("authority_inode_generation_mismatch")

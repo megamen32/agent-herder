@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "deploy/fleet"))
 from prepare_resume_quarantine import stage, digest, encoded, job_settled
-from apply_resume_quarantine import apply, process_birth
+from apply_resume_quarantine import apply, process_birth, validate_scoped_writer_schema, SCHEMA_OBJECTS
 
 class QuarantineImportTests(unittest.TestCase):
     def setUp(self):
@@ -41,13 +41,7 @@ class QuarantineImportTests(unittest.TestCase):
         self.db = self.root / "owner.db"
         self.gate = self.root / "owner.gate"
         self.gate.touch(mode=0o600)
-        connection = sqlite3.connect(self.db)
-        connection.executescript("CREATE TABLE settings(scope TEXT,setting_key TEXT,value_json TEXT,revision INTEGER,updated_at TEXT,PRIMARY KEY(scope,setting_key));"
-                                 "CREATE TABLE humanstop_authority(singleton INTEGER PRIMARY KEY,generation TEXT,gate_device INTEGER,gate_inode INTEGER,database_device INTEGER,database_inode INTEGER);")
-        os.chmod(self.db, 0o600)
-        dm, gm = self.db.stat(), self.gate.stat()
-        connection.execute("INSERT INTO humanstop_authority VALUES(1,?,?,?,?,?)", ("generation", gm.st_dev, gm.st_ino, dm.st_dev, dm.st_ino))
-        connection.commit(); connection.close()
+        self.create_authority_database(4)
         child = subprocess.run([sys.executable, "-c", "from pathlib import Path;print(Path('/proc/self/stat').read_text())"], check=True, capture_output=True, text=True)
         raw = child.stdout.strip()
         pid = int(raw.split(" ", 1)[0]); ticks = raw[raw.rfind(")") + 2:].split()[19]
@@ -67,6 +61,23 @@ class QuarantineImportTests(unittest.TestCase):
                        "profiles": [{"harness": "codex", "node_ref": "node", "instance_ref": "profile",
                                      "authority_generation": "generation", "database": str(self.db), "gate": str(self.gate)}]}
 
+    def create_authority_database(self, version):
+        # Exercise the real Rust schema and all writer/immutability triggers.
+        connection = sqlite3.connect(self.db)
+        connection.execute("PRAGMA foreign_keys=ON")
+        store = ROOT / "crates/herder/src/store"
+        for name in ("schema.sql", "migration_v1_v2.sql", "migration_v2_v3.sql"):
+            connection.executescript((store / name).read_text())
+        if version == 4:
+            connection.executescript((store / "migration_v3_v4.sql").read_text())
+        connection.create_function("herder_writer_version", 0, lambda: version, deterministic=True)
+        os.chmod(self.db, 0o600)
+        dm, gm = self.db.stat(), self.gate.stat()
+        connection.execute("INSERT INTO humanstop_authority VALUES(1,?,?,?,?,?,?)",
+                           ("generation", gm.st_dev, gm.st_ino, dm.st_dev, dm.st_ino, "fixture"))
+        connection.commit()
+        connection.close()
+
     def tearDown(self):
         for p in self.root.rglob("*"):
             if p.is_dir(): os.chmod(p, 0o700)
@@ -82,6 +93,70 @@ class QuarantineImportTests(unittest.TestCase):
     def rows(self):
         with sqlite3.connect(self.db) as c:
             return c.execute("SELECT scope,setting_key,value_json FROM settings").fetchall()
+
+    def test_real_v3_authority_import_preserves_schema(self):
+        self.db.unlink()
+        self.create_authority_database(3)
+        with sqlite3.connect(self.db) as c:
+            before = c.execute(SCHEMA_OBJECTS).fetchall()
+        pin, plan = self.staged()
+        result = apply(pin["path"], pin["sha256"], self.root / "receipt.json")
+        self.assertEqual(result["installed"][0]["admission"], "stored")
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(c.execute(SCHEMA_OBJECTS).fetchall(), before)
+        self.assertEqual(digest(self.rows()[0][2].encode()), plan["imports"][0]["sha256"])
+
+    def test_actual_missing_writer_function_failure_recovers_sealed_plan(self):
+        from unittest.mock import patch
+        pin, plan = self.staged()
+        receipt = self.root / "receipt.json"
+        def unfenced_old_connection(c):
+            c.execute("PRAGMA foreign_keys=ON")
+            c.execute("BEGIN IMMEDIATE")
+            validate_scoped_writer_schema(c)
+        with sqlite3.connect(self.db) as c:
+            schema_before = c.execute(SCHEMA_OBJECTS).fetchall()
+        with patch("apply_resume_quarantine.configure_scoped_writer", side_effect=unfenced_old_connection):
+            with self.assertRaisesRegex(sqlite3.OperationalError, "no such function: herder_writer_version"):
+                apply(pin["path"], pin["sha256"], receipt)
+        self.assertEqual(self.rows(), [])
+        self.assertFalse(receipt.exists())
+        self.assertEqual(self.wait.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(self.waits.stat().st_mode & 0o777, 0o500)
+        result = apply(pin["path"], pin["sha256"], receipt)
+        self.assertEqual(result["installed"][0]["admission"], "stored")
+        self.assertEqual(digest(self.rows()[0][2].encode()), plan["imports"][0]["sha256"])
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(c.execute(SCHEMA_OBJECTS).fetchall(), schema_before)
+
+    def test_schema_drift_is_rejected_before_source_sealing(self):
+        pin, _ = self.staged()
+        with sqlite3.connect(self.db) as c:
+            trigger = c.execute("SELECT sql FROM sqlite_schema WHERE name='v1_guard_settings_insert'").fetchone()[0]
+        for change, restore in (
+            ("DROP TRIGGER v1_guard_settings_insert", trigger),
+            ("CREATE VIEW unreviewed AS SELECT 1", "DROP VIEW unreviewed"),
+            ("PRAGMA user_version=5", "PRAGMA user_version=4"),
+        ):
+            with self.subTest(change=change):
+                with sqlite3.connect(self.db) as c:
+                    c.execute(change)
+                with self.assertRaisesRegex(ValueError, "scoped_writer_schema"):
+                    apply(pin["path"], pin["sha256"], self.root / "receipt.json")
+                self.assertEqual(self.rows(), [])
+                self.assertEqual(self.wait.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(self.waits.stat().st_mode & 0o777, 0o700)
+                with sqlite3.connect(self.db) as c:
+                    c.execute(restore)
+
+    def test_stale_fixed_writer_version_remains_fenced(self):
+        with sqlite3.connect(self.db) as c:
+            c.create_function("herder_writer_version", 0, lambda: 3, deterministic=True)
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "unsupported schema version for writer"):
+                c.execute("INSERT INTO settings VALUES('fixture','stale','{}',1,'now')")
+        self.assertEqual(self.rows(), [])
 
     def test_invalid_wildcard_hold_is_rejected_before_publish(self):
         self.config["scope_overrides"] = {"resume-after:" + self.wait_id: [{"node_ref":"node", "instance_ref":"profile", "native_session_id":"*"}]}
@@ -189,6 +264,7 @@ class QuarantineImportTests(unittest.TestCase):
     def test_foreign_setting_and_authority_generation_are_never_replaced(self):
         pin, _ = self.staged()
         with sqlite3.connect(self.db) as c:
+            c.create_function("herder_writer_version", 0, lambda: 4, deterministic=True)
             c.execute("INSERT INTO settings VALUES('migration:legacy','quarantine:v1','foreign',1,'now')")
         with self.assertRaisesRegex(ValueError, "existing_epoch_conflict"):
             apply(pin["path"], pin["sha256"], self.root / "receipt.json")
