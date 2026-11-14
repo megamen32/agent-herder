@@ -176,6 +176,23 @@ describe("Codex app-server adapter", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+  it("bounds the persisted state index page by the requested limit when no native controller is ready", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-state-index-page-"));
+    const adapter = new CodexAppServerAdapter({ codexBin: process.execPath, cwd: root });
+    const { internals } = stubScopedCollectionReads(adapter, { root, ready: false });
+    internals.rawTranscriptAdapter.listSessions = async () => [
+      { id: "index-a", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-31T00:00:00.000Z" },
+      { id: "index-b", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-30T00:00:00.000Z" },
+      { id: "index-c", harness: "codex", status: "idle", cwd: root, lastActivity: "2026-10-29T00:00:00.000Z" },
+    ];
+    try {
+      await expect(adapter.listSessions({ limit: 2 })).resolves.toMatchObject([{ id: "index-a" }, { id: "index-b" }]);
+      expect(adapter.getSessionSnapshotReceipt()).toMatchObject({ exhaustive: false, reason: "bounded_state_index_page" });
+    } finally {
+      await adapter.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("aborts a project factory during deferred discovery init and awaits every registered adapter disposal", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-codex-abort-factory-"));
     const policy = await createCodexProjectRuntimePolicy({ projectId: "abort-factory", projectRoot: root });

@@ -668,6 +668,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     return this.toSession(thread);
   }
 
+  /** One bounded page size for every native listing path of this adapter. */
+  private boundedPageLimit(limit: number): number {
+    return Math.max(1, Math.min(Math.floor(limit), 100));
+  }
+
   async listSessions(options: {limit?: number} = {}): Promise<AgentSession[]> {
     if (this.projectRuntimePolicy) {
       if (!(await this.hasCurrentProjectRoot())) {
@@ -686,7 +691,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         Date.parse(threadTimestamp(b.updatedAt) || threadTimestamp(b.createdAt) || new Date(0).toISOString())
         - Date.parse(threadTimestamp(a.updatedAt) || threadTimestamp(a.createdAt) || new Date(0).toISOString())
         || a.id.localeCompare(b.id));
-      const limit = options.limit ? Math.max(1, Math.min(Math.floor(options.limit), 100)) : undefined;
+      const limit = options.limit ? this.boundedPageLimit(options.limit) : undefined;
       const bounded = limit !== undefined && ownedThreads.length > limit;
       this.sessionSnapshotReceipt = {
         exhaustive: !bounded,
@@ -704,8 +709,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     };
     if (!this.isReady() && !this.socketPath) {
       const sessions = await this.rawTranscriptAdapter.listSessions();
-      this.sessionSnapshotReceipt = this.rawTranscriptAdapter.getSessionSnapshotReceipt();
-      return sessions;
+      const receipt = this.rawTranscriptAdapter.getSessionSnapshotReceipt();
+      const limit = options.limit ? this.boundedPageLimit(options.limit) : undefined;
+      if (limit === undefined) {
+        this.sessionSnapshotReceipt = receipt;
+        return sessions;
+      }
+      // The persisted native index holds every historical thread. An
+      // unbounded page cannot fit the AHAP frame and hides the requested
+      // bound, so a limited read answers with the newest bounded page and
+      // says that the enumeration is incomplete.
+      this.sessionSnapshotReceipt = { ...receipt, exhaustive: false, reason: "bounded_state_index_page" };
+      return sessions.slice(0, limit);
     }
     try {
       await this.ensureReady();
@@ -713,7 +728,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       let candidatePartial: string | undefined;
       let sessions: CodexThread[];
       if (options.limit) {
-        const limit = Math.max(1, Math.min(Math.floor(options.limit), 100));
+        const limit = this.boundedPageLimit(options.limit);
         // A daemon that is inside one giant rollout answers its control RPC
         // only after the turn. The persisted state index serves the same
         // bounded page without the native controller, and the receipt says so.

@@ -105,3 +105,27 @@ Plan state для chatgpt/z.ai lane (`.agents/tasks/20261107-herder-native-mcp-b
 - (2) Ветку `feat/herder-process-leases-20261113` (активный соседний агент, push в 00:27) не трогал: она не слита и не моя.
 - (3) Два теста (`active-fleet-materialized`, `zcode-workspace-lifecycle`) падают только в полном параллельном прогоне и проходят по отдельности — таймин-флаки под нагрузкой, к этой правке отношения не имеют.
 - (4) Старые рабочие деревья (`herder-baseline-20261114`, `herder-green-20261114`, десятки `herder-artifacts/worktrees/*`) остались как есть: это чужая и историческая работа, чистить без владельца не стал.
+
+## Локальный узел больше не отдаёт `source_unavailable` на чтение сессий (14 ноября 2026, сессия Herder ses_e26d3e2a)
+
+Задача: зарегистрированный дефект `LOCAL_NODE_MCP_READ_20261114` (owner=current, «Ближайшее действие: снять capabilities и диагностику локального TS-адаптера и сравнить с работающим реестровым путём чтения»). Симптом, воспроизведённый в этой сессии: MCP `sessions list` по локальному узлу отдаёт `code=source_unavailable` («Адаптер не вернул проверяемый результат чтения»), тогда как тот же демон по HTTP отдаёт `/api/sessions -> 200` со 100 сессиями, а удалённый узел читается (но только из реестра: `native=null, source=registered`).
+
+Причина найдена измерением, а не догадкой:
+- Локальный узел — единственный, у кого непустой зарегистрированный корпус (5 сессий `codex-local`), поэтому только он доходит до нативного вызова: `owner_reads.rs::observe()` просит AHAP `listSessions {"options":{"limit":256}}` и любую нативную ошибку переводит в `source_unavailable`. Удалённый узел корпуса не имеет — `observe()` выходит раньше (`owner_reads.rs:548`), нативный путь не трогается, поэтому «рабочее» чтение удалёнки было лишь реестровым.
+- Адаптер codex этот запрошенный предел игнорировал: ветка «нет готового нативного контроллера» (`src/adapters/codex-app-server.ts`, `!isReady() && !socketPath`) возвращала полный сохранённый индекс — в `~/.codex/state_5.sqlite` 8 666 тредов, `sum(length(preview)) = 8 221 373` символа, кадр ≈ 10,8 МБ. AHAP-кадр ограничен 4 МБ, поэтому раннер отвечал `-32001` («AHAP response exceeds 4 MiB frame limit»), а фасад Rust превращал это в `source_unavailable`. Воспроизведено с `limit` = 1, 3, 10, 50, 256 — предел не доходил до перечисления.
+
+Сделано (2 файла исходников + 2 теста):
+- `src/adapters/codex-app-server.ts`: один размер страницы для всех путей перечисления (`boundedPageLimit`); ветка сохранённого индекса теперь уважает запрошенный предел и честно пишет `exhaustive:false, reason:"bounded_state_index_page"`.
+- `src/ahap-legacy-read.ts`: `boundSessionRows()` держит запрошенное число строк и бюджет кадра 4 МБ; строка, которая не помещается, сводится к полям идентичности вместо отказа всего чтения.
+- Тесты: `tests/codex-app-server.test.ts` («bounds the persisted state index page by the requested limit when no native controller is ready») и `tests/ahap-legacy-read-runner.test.ts` («a native adapter that ignores the requested page limit still answers inside the AHAP frame budget»). Оба падают на исходном коде (RED) и проходят на исправленном (GREEN).
+
+Доказательства (`.agents/tasks/20261107-herder-v1-core/evidence/local-node-read-20261114/READ.md`):
+- RED: бандл, который реально обслуживает MCP-край (`herder-v1-userio-lazy-cebecc13/fixture/ahap-codex-runner.mjs`), на том же запросе отдаёт `-32001`.
+- GREEN: пересобранный из исправленного исходника раннер на том же запросе отдаёт кадр 241 994 байта (100 строк) за 0,4 с; все пять зарегистрированных `codex-local` сессий в странице.
+- GREEN на уровне MCP: `herder_native_stdio` с тем же владельческим профилем и исправленным раннером за профилем — `tools/call sessions {"action":"list","node_ref":"roomhacker-server-100"}` отвечает `complete=true, native_coverage_complete=true, scope=authorized_registered_sessions` с пятью сессиями и их нативными метаданными. До правки тот же вызов давал `{"code":"source_unavailable","effect":"none"}`.
+
+Честная запись:
+- (1) **Живой симптом ещё не закрыт.** Обслуживающий MCP-край — дочерний MCP GPTAdmin над фикстурными бандлами `herder-v1-userio-lazy-cebecc13` → `herder-v1-browser-diagnostics-a7fbc548` (процесс `herder-compat`, PID 1724193), а не установленный релиз `80420046`. То есть работающий MCP-сервис отдаёт до-фиксовый код, пока не собран релиз с правкой и край не переключён. Деплой-гейт в этом репозитории закрыт до живых профилей ChatGPT/Z.ai/ZCode, поэтому выкатка — отдельное решение владельца.
+- (2) Ветку `feat/herder-process-leases-20261113` (7 коммитов, последний пуш 05:31, активного процесса агента нет) не трогал: она не содержит ни `codex-app-server.ts`, ни `ahap-legacy-read.ts`, ни `owner_reads.rs`, и правка к её контракту не относится. Правка сделана в `main` — целевая ветка по политике репозитория; пересечения с незавершённой lane-работой нет.
+- (3) Временные артефакты доказательства удалены: каталог `/home/roomhacker/herder-artifacts/readproof-temp` и временный профиль `profile-readproof-temp.json` в authority-каталоге удалены после прогона.
+- (4) `npm test` (полный прогон) — результат в журнале этой сессии; `tsc` без ошибок.
