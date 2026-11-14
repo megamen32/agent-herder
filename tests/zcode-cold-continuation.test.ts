@@ -121,14 +121,53 @@ describe("ZCode cold continuation eligibility and final native proof", () => {
     const before = native.read();
     expect(before.lastTurnId).toBe("turn-1");
     const live = prepared(before);
-    live.queue.control.phase = "completed";
+    // Official V4 distinguishes a successful completed conversation from runtime idle.
+    live.queue.control.phase = "completedSuccess";
+    live.queue.control.sessionEnded = true;
     expect(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue)).not.toThrow();
     native.change("UPDATE turn_usage SET completed_at=?", null);
     rejects(native.read, "unfinished_native_turn");
   });
 
-  it("accepts an exactly empty cold conversation with persisted model and permission", () => {
-    expect(fixture(true).read()).toMatchObject({ lastTurnId: null, messageCount: 0, modelSelection: MODEL, permission: PERMISSION });
+  it("accepts an exactly empty cold conversation with the official draft phase", () => {
+    const before = fixture(true).read();
+    expect(before).toMatchObject({ lastTurnId: null, messageCount: 0, modelSelection: MODEL, permission: PERMISSION });
+    const live = prepared(before);
+    live.queue.control.phase = "draft";
+    expect(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue)).not.toThrow();
+  });
+
+  it("rejects interrupted, active, unknown and contradictory native phase/end pairs", () => {
+    const before = fixture().read();
+    const refused = [
+      ["draft", true], ["error", true], ["completedSuccess", false],
+      ["completedInterrupted", true], ["completedInterrupted", false],
+      ["running", false], ["prewarming", false],
+      ["idle", false], ["completed", false], ["unknown", false],
+    ] as const;
+    for (const [phase, sessionEnded] of refused) {
+      const live = prepared(before);
+      Object.assign(live.queue.control, { phase, sessionEnded });
+      rejects(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue), "queue_not_empty");
+    }
+  });
+
+  it("keeps stop and active-work guards for a successful native terminal phase", () => {
+    const before = fixture().read();
+    const mutations = [
+      (value: ReturnType<typeof prepared>) => { value.queue.control.stopState = "stopping"; },
+      (value: ReturnType<typeof prepared>) => { value.queue.control.stopState = "stoppable"; },
+      (value: ReturnType<typeof prepared>) => { value.queue.control.canStop = true; },
+      (value: ReturnType<typeof prepared>) => { value.queue.control.activeWorks.push({ kind: "primaryTurn" }); },
+      (value: ReturnType<typeof prepared>) => { value.queue.control.apiRetry = { attempt: 1 }; },
+      (value: ReturnType<typeof prepared>) => { value.queue.queue.items.push({ queueItemId: "new-input" }); },
+    ];
+    for (const mutate of mutations) {
+      const live = prepared(before);
+      Object.assign(live.queue.control, { phase: "completedSuccess", sessionEnded: true });
+      mutate(live);
+      rejects(() => assertZcodePreparedContinuation(before, live.snapshot, live.queue), "queue_not_empty");
+    }
   });
 
   it("rejects pending, admitted or unknown input admission", () => {

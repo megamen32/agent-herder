@@ -128,7 +128,8 @@ export function assertZcodePreparedContinuation(before: ZcodeColdPreflight, valu
     && Array.isArray(queue.items) && queue.items.length === 0 && typeof queue.autoDrain === "boolean"
     && Array.isArray(control.activeWorks) && control.activeWorks.length === 0
     && control.apiRetry === null && control.stopState === "idle" && control.canStop === false
-    && control.sessionEnded === false && ["idle", "error", "completed"].includes(String(control.phase)), "queue_not_empty");
+    && ((["draft", "error"].includes(String(control.phase)) && control.sessionEnded === false)
+      || (control.phase === "completedSuccess" && control.sessionEnded === true)), "queue_not_empty");
   requireProof(digest(record(settings.model).current) === digest(before.modelSelection), "model_changed");
   // Runtime may add a rules revision; every persisted permission field must agree.
   const permission = record(settings.permission);
