@@ -1,0 +1,13 @@
+{
+  "source_commit": "1e9a7a5d8f9f1f58e3e31da4b95f0e0d8ba880ad",
+  "version": "0.9.34",
+  "zip_sha256": "67375e43fd2a9d3bba8aa204227fb88e9f6073133dd44e2ee7ba98d01f5818be",
+  "archives": [
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension.zip",
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension-mv3.zip"
+  ],
+  "tests": "138 extension tests and four package checks PASS",
+  "evidence": "real page-function fake DOM without message IDs; scoped native history exact match, duplicate/wrong account denied; second-message baseline and new native ID",
+  "limitations": "live first and second send with 0.9.34 not yet checked; old UNKNOWN remains unchanged",
+  "installed": false
+}

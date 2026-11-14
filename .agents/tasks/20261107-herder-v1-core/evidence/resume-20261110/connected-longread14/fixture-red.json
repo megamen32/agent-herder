@@ -1,0 +1,8 @@
+{
+  "result": "RED",
+  "test": "TestChildOnlyProfileCanReadItsOwnReceipt",
+  "observed": "same client cannot read own child receipt: target=shell:fixture",
+  "worktree": "/home/roomhacker/herder-artifacts/worktrees/gptadmin-receipt14",
+  "qualification": "reproduces child-only profile failure in local fixture; not proof same predicate caused original live 403",
+  "handoff": "separate CONNECTED15 owner; no source fix made"
+}

@@ -1,0 +1,24 @@
+{
+  "original_command": "vk-browser:195736f26bba4f61baac2d72bb7e9801",
+  "identity": "exact profile agent, instance, principal and connection matched",
+  "command_queued_at": 1794345952.7015,
+  "command_received_at": 1794345971.2027216,
+  "elapsed_seconds": 18.501,
+  "result": "first_send_outcome_unknown",
+  "native_chat": "6af38bef-b9d8-83ea-9c40-97947037a928",
+  "native_user_id": "0ae5172f-7e6d-41fc-9feb-e33103ecbc0d",
+  "native_user_timestamp": "2026-11-10T21:26:07.920Z",
+  "native_assistant_id": "2332d710-3abf-49de-9280-a51972f71906",
+  "native_assistant_end_turn": true,
+  "prompt_sha256": "5053264dd68c9bcbca00f284f24152b73750ff58b37cecb76c4cf43beca0a9d6",
+  "evidence": "original-command-result.json, recipient-proof.json, native-first-recipient.json; command ledger exact id and scope verified",
+  "reason": "post-click early failure/exception or process timing; exact branch not recorded in 0.9.34; 60 second loop expiry not supported by elapsed time",
+  "possible_branches": [
+    "transient non-home path or non-UUID route",
+    "owned-tab URL changed byte-for-byte during native read",
+    "multiple matching native user messages",
+    "exception in tab lookup/native read/other post-click flow"
+  ],
+  "not_proven": "No evidence to select one branch, or show cached empty snapshot caused failure.",
+  "unknown_policy": "original command and core UNKNOWN retained; no replay or additional provider write"
+}

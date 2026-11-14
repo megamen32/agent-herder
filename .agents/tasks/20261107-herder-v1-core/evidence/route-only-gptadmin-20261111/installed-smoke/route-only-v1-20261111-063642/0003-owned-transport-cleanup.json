@@ -1,0 +1,48 @@
+{
+  "browser": "CLOSED",
+  "transports": [
+    {
+      "name": "chatgpt",
+      "closed": true,
+      "receipt": {
+        "closed": true
+      }
+    },
+    {
+      "name": "zai",
+      "closed": true,
+      "receipt": {
+        "closed": true
+      }
+    },
+    {
+      "name": "opencode",
+      "closed": true,
+      "receipt": {
+        "closed": true
+      }
+    },
+    {
+      "name": "codex",
+      "closed": true,
+      "receipt": {
+        "closed": true
+      }
+    },
+    {
+      "name": "zcode",
+      "closed": true,
+      "receipt": {
+        "closed": true
+      }
+    },
+    {
+      "name": "core",
+      "closed": true
+    },
+    {
+      "name": "vibe",
+      "closed": true
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "bind_conflict_events": 10,
+  "cause": "Two supervisor failures followed five WhatsApp bind conflicts each; Docker restart policy restarted after exit code 1.",
+  "container_id": "583573467c52d19724b030efdfbfcae75ded68a03adaf96a0fc12db6ed7e2e48",
+  "created_at": "2026-11-10T21:05:39.888655154Z",
+  "current_whatsapp": {
+    "listener": "127.0.0.1:18096",
+    "listener_owner_confirmed_same_container_and_whatsapp": true,
+    "running": true,
+    "starts_in_current_supervisor": 1
+  },
+  "docker_exit_code_one_events": 2,
+  "finished_at": "2026-11-10T21:06:41.75455982Z",
+  "health_exit": 0,
+  "least_change_route": "Read-only identify port owner at release handover or add bounded pre-start port-release verification to release path; confirm ownership and actual collision before changing shutdown or startup behavior.",
+  "limitation": "Historical holder of loopback port 18096 is not established; current owner is the WhatsApp process in this container.",
+  "oom_killed": false,
+  "restart_count": 2,
+  "restart_performed": false,
+  "retry_limit_events": 2,
+  "running": true,
+  "started_at": "2026-11-10T21:06:42.538246363Z",
+  "timeline_utc": [
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:05:41.136996239Z",
+      "worker": "core"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:05:42.73326432Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:05:43.45342713Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:05:46.739591566Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:05:47.1895561Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:05:53.750423188Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:05:54.146637224Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:05:57.756865021Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:05:58.192102122Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:01.763597374Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:02.194397925Z"
+    },
+    {
+      "kind": "supervisor_retry_limit",
+      "time": "2026-11-10T21:06:11.152888557Z",
+      "worker": "whatsapp"
+    },
+    {
+      "exit_code": 1,
+      "kind": "docker_restart_manager_exit_code",
+      "time": "2026-11-10T21:06:13.163301+00:00"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:13.59649682Z",
+      "worker": "core"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:13.906859503Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:14.328918661Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:17.914874811Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:18.330718807Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:21.918590549Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:22.783860303Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:25.923049012Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:26.370621734Z"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:29.92733639Z",
+      "worker": "whatsapp"
+    },
+    {
+      "kind": "loopback_bind_address_in_use",
+      "port": 18096,
+      "time": "2026-11-10T21:06:30.378208927Z"
+    },
+    {
+      "kind": "supervisor_retry_limit",
+      "time": "2026-11-10T21:06:41.72386544Z",
+      "worker": "whatsapp"
+    },
+    {
+      "exit_code": 1,
+      "kind": "docker_restart_manager_exit_code",
+      "time": "2026-11-10T21:06:42.444554+00:00"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:42.853158652Z",
+      "worker": "core"
+    },
+    {
+      "kind": "worker_started",
+      "time": "2026-11-10T21:06:43.397594147Z",
+      "worker": "whatsapp"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "commit": "0298419d7a5af4565f9fa3d877cbed9fb2120dc4",
+  "committed_paths": [
+    "scripts/container_release.py",
+    "tests/test_container_release_revision.py"
+  ],
+  "next_image": "await exact 0.9.35 worker receipt",
+  "parent": "1e9a7a5d8f9f1f58e3e31da4b95f0e0d8ba880ad",
+  "remote_main": "0298419d7a5af4565f9fa3d877cbed9fb2120dc4",
+  "review": "parent approved actual-baseline RED and GREEN",
+  "runtime_mutated": false,
+  "status": "source_published",
+  "tests": {
+    "baseline": "FAIL as expected: old replacement deletes and creates despite busy listener",
+    "details": {
+      "actual-baseline-red.log": {
+        "path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/userio-release-port-handover/actual-baseline-red.log",
+        "sha256": "1d9e7c4d6b6cb24b9c4a0df1913e8573c4e9ac8af524451def82496b3d31a48b"
+      },
+      "actual-green.log": {
+        "path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/userio-release-port-handover/actual-green.log",
+        "sha256": "8281c4b225a929cc3dbb83b8c483104c2a471dc2fcc01be0bc050f564cefd886"
+      },
+      "review.diff": {
+        "path": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/userio-release-port-handover/review.diff",
+        "sha256": "bfa15e316ab8836158a1a1fb5ed86d328fb875531650a29f8b898a62d01009d5"
+      }
+    },
+    "fixed": "33 passed, 1 warning"
+  },
+  "tree": "f2911b08409549b705266fa6bdb28a196cee649a",
+  "worktree_status": ""
+}

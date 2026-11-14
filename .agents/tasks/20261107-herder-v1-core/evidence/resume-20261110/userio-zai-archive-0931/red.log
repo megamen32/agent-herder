@@ -1,0 +1,57 @@
+TAP version 13
+# Subtest: raw preserves exact native response bodies and refuses wrong scope
+ok 1 - raw preserves exact native response bodies and refuses wrong scope
+  ---
+  duration_ms: 9.058139
+  type: 'test'
+  ...
+# Subtest: archive checks scope and readback and does not toggle twice
+not ok 2 - archive checks scope and readback and does not toggle twice
+  ---
+  duration_ms: 3.497939
+  type: 'test'
+  location: '/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai-lifecycle.test.mjs:32:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - '11111111-1111-4111-8111-111111111111'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '11111111-1111-4111-8111-111111111111'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/extensions/vk-inbox/tests/zai-lifecycle.test.mjs:37:38)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: archive returns no confirmation for changed identity or unconfirmed readback
+ok 3 - archive returns no confirmation for changed identity or unconfirmed readback
+  ---
+  duration_ms: 8.869162
+  type: 'test'
+  ...
+# Subtest: first send confirms native identities once and refuses replay after uncertain click
+ok 4 - first send confirms native identities once and refuses replay after uncertain click
+  ---
+  duration_ms: 2.705559
+  type: 'test'
+  ...
+# Subtest: first send executes the page function against a fake DOM and verifies native admission
+ok 5 - first send executes the page function against a fake DOM and verifies native admission
+  ---
+  duration_ms: 173.577206
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 4
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 279.777759

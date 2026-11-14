@@ -43,6 +43,12 @@ describe('model actually submitted to native Codex inference',()=>{
   const request=vi.spyOn(adapter as any,'request').mockResolvedValue({turn:{id:'new-turn',status:'inProgress'}});
   const result=await adapter.sendMessage('turn-model-proof',{message:'test only',model:'selected-sol',origin:'human',queue:true} as any);
   expect(result.ok).toBe(true);
-  expect(request).toHaveBeenCalledWith('turn/start',expect.objectContaining({model:'selected-sol'}));
+  // The request helper carries its own timeout arguments, so the contract is
+  // read from the method and the parameters of the first call.
+  expect(request).toHaveBeenCalled();
+  const [method, params] = request.mock.calls[0]!;
+  expect(method).toBe('turn/start');
+  expect(params).toMatchObject({model:'selected-sol'});
+  expect(params).not.toMatchObject({model:'prior-luna'});
  });
 });

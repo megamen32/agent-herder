@@ -1,0 +1,80 @@
+{
+  "mode": "installed-browser",
+  "stage": "installed",
+  "run_id": "route-only-v1-20261111-063642",
+  "source_sha": "bba8b81e433853d1d8dc843646000c6f4cfa4b64",
+  "status": "FAIL",
+  "identity": "PASS",
+  "model_effects": "NOT_SUBMITTED",
+  "functional_status": "FAIL",
+  "global_inventory_status": "UNVERIFIED",
+  "browser_cleanup": "NOT_CREATED",
+  "lanes": {
+    "chatgpt": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "zai": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "opencode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "codex": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    },
+    "zcode": {
+      "checks": {
+        "create": "UNKNOWN",
+        "reply": "UNKNOWN",
+        "continue_same_session": "UNKNOWN",
+        "read_both": "UNKNOWN",
+        "vibe_session_visibility": "UNKNOWN",
+        "open_details": "UNKNOWN",
+        "owned_cleanup": "UNKNOWN"
+      },
+      "effects": []
+    }
+  },
+  "artifact_sha256": "befe2237bb51b60a97162bfe02616752994c0aade83d6c8522ee2ca4f99acd6a",
+  "identity_receipt_ref": "/var/lib/agent-herder-ci-smoke/runs/route-only-v1-20261111-063642/0001-installed-identity.json",
+  "error_code": "transport_or_provider_failure",
+  "error_receipt_ref": "/var/lib/agent-herder-ci-smoke/runs/route-only-v1-20261111-063642/0002-preflight-original-error.json",
+  "transport_cleanup_ref": "/var/lib/agent-herder-ci-smoke/runs/route-only-v1-20261111-063642/0003-owned-transport-cleanup.json",
+  "transport_cleanup": "PASS"
+}

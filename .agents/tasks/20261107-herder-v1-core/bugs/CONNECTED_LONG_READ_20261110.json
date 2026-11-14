@@ -12,13 +12,47 @@
         "status": "open",
         "title": "Подключённый клиент не получает результат длинного чтения Herder"
       }
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T21:58:29+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/connected-longread14/consumer-green.log",
+            "red_proof_path": "evidence/resume-20261110/connected-longread14/consumer-red.log",
+            "red_result": "FAIL: same-client Herder session/messages cannot obtain its submitted native task: task_receipt_unavailable",
+            "red_sha256": "2880654225a65130592826c258c6282bcade1f535160cc3e1026616e8ade75a1",
+            "result": "PASS: same-client Herder session/messages completed; four exact native IDs and two terminal replies",
+            "sha256": "60322987d8f9ce1529d1545055cc252833765ff32480f1068742115a6b7eb8c4",
+            "test_command": "Connected gptadmin exec mcp.tasks.start AgentHerder session/messages; mcp.tasks.wait original taskId; verified Hub1135 failure vs1137 same-client consumer read"
+          },
+          "kind": "fixed",
+          "reason": "Live1135 exactstoredCaller absent; installed1137 includes request context fix by independent GPTAdmin owner. Fresh same-client readonly job completed. Old identityless receipts retained, not reattributed."
+        },
+        "status": "fixed"
+      }
     }
   ],
   "id": "CONNECTED_LONG_READ_20261110",
   "owner": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
   "reporter": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/connected-longread14/consumer-green.log",
+      "red_proof_path": "evidence/resume-20261110/connected-longread14/consumer-red.log",
+      "red_result": "FAIL: same-client Herder session/messages cannot obtain its submitted native task: task_receipt_unavailable",
+      "red_sha256": "2880654225a65130592826c258c6282bcade1f535160cc3e1026616e8ade75a1",
+      "result": "PASS: same-client Herder session/messages completed; four exact native IDs and two terminal replies",
+      "sha256": "60322987d8f9ce1529d1545055cc252833765ff32480f1068742115a6b7eb8c4",
+      "test_command": "Connected gptadmin exec mcp.tasks.start AgentHerder session/messages; mcp.tasks.wait original taskId; verified Hub1135 failure vs1137 same-client consumer read"
+    },
+    "kind": "fixed",
+    "reason": "Live1135 exactstoredCaller absent; installed1137 includes request context fix by independent GPTAdmin owner. Fresh same-client readonly job completed. Old identityless receipts retained, not reattributed."
+  },
   "source": "evidence/resume-20261110/final-verification/public-browser-read-proof.json; installed-startup13",
-  "status": "open",
+  "status": "fixed",
   "title": "Подключённый клиент не получает результат длинного чтения Herder",
-  "updated_at": "2026-11-10T19:14:13+00:00"
+  "updated_at": "2026-11-10T21:58:29+00:00"
 }

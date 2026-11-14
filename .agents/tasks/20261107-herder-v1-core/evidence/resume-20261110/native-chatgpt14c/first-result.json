@@ -1,0 +1,17 @@
+{
+  "create": {
+    "effect": "confirmed",
+    "session_ref": "session:5df8ea91b56dd0c0730b44f6eef826b3"
+  },
+  "prompt": {
+    "code": "outcome_unknown",
+    "diagnostic_ref": null,
+    "effect": "unknown",
+    "expected": null,
+    "field": null,
+    "fix": null,
+    "receipt_ref": null,
+    "received": null,
+    "retry": "forbidden"
+  }
+}

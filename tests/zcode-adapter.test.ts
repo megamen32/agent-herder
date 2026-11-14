@@ -188,11 +188,13 @@ describe("ZCode terminal quota evidence", () => {
     expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, failedTurn, {
       ...event, data: { turnId: "turn-native-1", inputId: "native-input-1", nativeErrorStatus: 429 },
     } as any)).toMatchObject({ classification: "quota_exhausted", nativeTurnId: "turn-native-1" });
+    // A bare rate limit is a transient provider failure: it may fall back to
+    // the next model, and it is never an exhausted quota.
     expect(zcodeQuotaFailureFromSnapshot("session-1", quotaSnapshot, {
       ...failedTurn, errorMessage: "Too many requests",
     }, {
       ...event, data: { turnId: "turn-native-1", inputId: "native-input-1", nativeErrorStatus: 429 },
-    } as any)).toBeUndefined();
+    } as any)).toMatchObject({ classification: "provider_unavailable", nativeTurnId: "turn-native-1" });
   });
 
   it("exposes the same proof on getSession for startup reconciliation", async () => {

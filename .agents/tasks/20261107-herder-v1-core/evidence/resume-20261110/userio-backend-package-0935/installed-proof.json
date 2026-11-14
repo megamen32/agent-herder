@@ -1,0 +1,90 @@
+{
+  "accounts": {
+    "count": 19,
+    "equal_pre_035_baseline": true,
+    "equal_tail_baseline": true,
+    "http": 200
+  },
+  "backend_hashes_match_release_and_base": true,
+  "backend_source_count": 31,
+  "backend_source_hashes": {
+    "/opt/universal-userio/src/universal_userio/adapters.py": "255abe9a5ef09ce79bb3739602ef6c29a3f08b58b644d84456a40a1ec6830612",
+    "/opt/universal-userio/src/universal_userio/agent_channel.py": "e981d6a3c9f86a8dba1cc4bff3c9086240b8da732a4a56998921fbda8c16a2e6",
+    "/opt/universal-userio/src/universal_userio/channels/max_client.py": "508672275a79276b92cddab2c7422ffba975d82fa0cb98a67e972051a575585e",
+    "/opt/universal-userio/src/universal_userio/channels/sms_gateway.py": "26abdb0a15ab1a6a1aad1716171b68edc027cc25f668916569102f920178bc9c",
+    "/opt/universal-userio/src/universal_userio/channels/whatsapp.py": "a135a322c524f7c0b403ac06c864d7bf9b4da05a29a1fb47d88674f9cb647d19",
+    "/opt/universal-userio/src/universal_userio/contact_start.py": "3c200b5bc5b06457828f6dd8ea2c5155f123d14235b15b41479852177588b3de",
+    "/opt/universal-userio/src/universal_userio/delivery_reconciliation.py": "c666b0297a682ab1448d36724f01a9ff3cf682e19d7518512a82d6b0622b8d65",
+    "/opt/universal-userio/src/universal_userio/gmail_sent_reconciliation.py": "b74e697496c526f84a28165c32e60034e36e581a4adba700d75ef3afa674573e",
+    "/opt/universal-userio/src/universal_userio/http_api.py": "7a642fc1e9d37af0020fa9e2c11accbfd42cfbdff6b8e1ff52ac05e5eb45a03b",
+    "/opt/universal-userio/src/universal_userio/matrix_calls.py": "07c872d21ecf9f844d8349ccec9fdbe8becae7d44c1fee9f870c2bd2dbdea28e",
+    "/opt/universal-userio/src/universal_userio/mcp_catalog.py": "f621842be43da2c2e2fa97f18bfeebdb4b8c3c75aa33487ab14880ed3a009e72",
+    "/opt/universal-userio/src/universal_userio/mcp_dispatch.py": "6fac5f7a45ae26f366b8b4b1846f801870bc99fa8764ac94e07b9af62beea9b2",
+    "/opt/universal-userio/src/universal_userio/mcp_surface.py": "14df28209ca9120789a5c8884befb3496c5f1fb781efb1fc6ec9f15b332185d9",
+    "/opt/universal-userio/src/universal_userio/messenger.py": "5550245394ba6a94a2134ece4901df269acc7ef5ce694c2e1c7e12aceff278a4",
+    "/opt/universal-userio/src/universal_userio/messenger_max.py": "30aa8671033719a12d93d8ab4e556e4e59aedeaaa2d11b2d199bae311f5412b9",
+    "/opt/universal-userio/src/universal_userio/messenger_telegram_mirror.py": "533f089e7c82b0e34c2c193b1f7cfd6c2c61337cbf29d262158440d86041b577",
+    "/opt/universal-userio/src/universal_userio/messenger_vk.py": "74bc95e99d37afd884b697c2742e2d89ac3395186d199f40fbf1ad9e2e955490",
+    "/opt/universal-userio/src/universal_userio/noticeplace_calls.py": "8c0d5722823d1592a3fe55d0bd3c6f3dd771073848f74b16386afb6d3266c704",
+    "/opt/universal-userio/src/universal_userio/provider_readback.py": "033990f3dddd6e39c4178f741735a48d48dfb1db95be2793dc18c3ab6437931f",
+    "/opt/universal-userio/src/universal_userio/relay_account_bridge.py": "c9dc2cf45596d58cb684f98f57594000092dd18d00bab7ba2f564d931b01bead",
+    "/opt/universal-userio/src/universal_userio/runtime.py": "7fb9b02eeb3853db2f4960138bae20a810322df0cbfff3ee6b7ba06225c59617",
+    "/opt/universal-userio/src/universal_userio/scoped_permissions.py": "6a78b83264bb8f8420986c3267082daecc3b3e7fe784dc10767f19c85afb7761",
+    "/opt/universal-userio/src/universal_userio/service.py": "fe34c17403e8a308192ac6fc31dc4b2b5a068fb9b0abc5280bee66b73130396f",
+    "/opt/universal-userio/src/universal_userio/static/telemost.html": "2f7e2f4b4f8df648d1fbf4fdf6e4ea6a0890f7595707969b36808ebe46470892",
+    "/opt/universal-userio/src/universal_userio/store.py": "194c45ef0dc6693cf6435d5351cc16ee43a44648db01866fbcd7adf5308eedea",
+    "/opt/universal-userio/src/universal_userio/telemost/meetings.py": "00e2d79dd3c5e0f35e208e9ed8e5e4fd2c9fb1271fece9cd8be992659136d924",
+    "/opt/universal-userio/src/universal_userio/voice/agentcall_phone_tts.py": "5ecdcb63fce01fcc738db4b2be7e6b91982d6ac4260dd29e108f88173060ae86",
+    "/opt/userio-telegram-qr/account-card.mjs": "866d4e4faa220afb948282328de42a5cff761230eb17e7e520fff3681796060e",
+    "/opt/userio-telegram-qr/server.mjs": "ee019e1ef4829df4259ad228cac61f6b1e41e9d9c67aea51f50b759a69478ea1",
+    "/opt/userio-whatsapp-qr/server.mjs": "bcc4c2de626502b9812d0447da8893a6d254e5e33e5576234ed79a78d4a4ff05",
+    "/opt/userio-whatsapp-qr/whatsapp-send-recovery.mjs": "4ccc07a26a8cf0ade211c9e4c0809a794b1e4d366ab7b56b6fae9cd244edad94"
+  },
+  "container_id": "7bd5c7d19bdd54e554fd242504356c286518a8751a2e08c2a5cd5ffb50ecab2e",
+  "health_exit": 0,
+  "image_id": "sha256:dd286390d90a66843cb8171ef1e932cad0251cf53164a57e758a38c3414f3647",
+  "matches_install_receipt": true,
+  "no_mutations": true,
+  "observed_utc": "2026-11-10T22:01:04.582483+00:00",
+  "other_containers": {
+    "userio-frontend": {
+      "pre_035_baseline": true,
+      "tail_baseline": true
+    },
+    "userio-voice": {
+      "pre_035_baseline": true,
+      "tail_baseline": true
+    }
+  },
+  "public_zips": {
+    "vk-userio-extension-mv3.zip": {
+      "http": 200,
+      "sha256": "a6e23473ace4cc683827d28be739fec37674e7a7485e0c798e5159ce7424bf56",
+      "version": "0.9.35"
+    },
+    "vk-userio-extension.zip": {
+      "http": 200,
+      "sha256": "a6e23473ace4cc683827d28be739fec37674e7a7485e0c798e5159ce7424bf56",
+      "version": "0.9.35"
+    }
+  },
+  "restart": {
+    "attribution": "none",
+    "candidate_restart_count_before_start": 0,
+    "count": 0,
+    "error_present": false,
+    "finished_at": "0001-01-01T00:00:00Z",
+    "historical_docker_event_actions": [],
+    "historical_events_available": false,
+    "last_exit_code": 0,
+    "oom_killed": false,
+    "release_script_planned_starts": 1,
+    "restart_policy": {
+      "MaximumRetryCount": 0,
+      "Name": "unless-stopped"
+    },
+    "running": true,
+    "started_at": "2026-11-10T21:59:52.819326366Z",
+    "status": "running"
+  }
+}

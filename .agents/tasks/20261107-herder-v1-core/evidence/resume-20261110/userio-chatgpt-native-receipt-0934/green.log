@@ -1,0 +1,142 @@
+TAP version 13
+# Subtest: real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+ok 1 - real agent code blocks wrong account and arbitrary eval, and fences replay across restart
+  ---
+  duration_ms: 6.107811
+  type: 'test'
+  ...
+# Subtest: existing chat UI send returns the new native user receipt only
+ok 2 - existing chat UI send returns the new native user receipt only
+  ---
+  duration_ms: 9.64852
+  type: 'test'
+  ...
+# Subtest: scoped first send is fenced and never replayed
+ok 3 - scoped first send is fenced and never replayed
+  ---
+  duration_ms: 1.404595
+  type: 'test'
+  ...
+# Subtest: command with mismatched connection or principal never executes or posts
+ok 4 - command with mismatched connection or principal never executes or posts
+  ---
+  duration_ms: 1.468819
+  type: 'test'
+  ...
+# Subtest: Z.ai lifecycle commands require a bound destination and dispatch to exact handlers
+ok 5 - Z.ai lifecycle commands require a bound destination and dispatch to exact handlers
+  ---
+  duration_ms: 2.496392
+  type: 'test'
+  ...
+# Subtest: rejects untrusted references and never navigates on invalid input
+ok 6 - rejects untrusted references and never navigates on invalid input
+  ---
+  duration_ms: 4.407813
+  type: 'test'
+  ...
+# Subtest: first send rejects missing scope or empty text before opening a tab
+ok 7 - first send rejects missing scope or empty text before opening a tab
+  ---
+  duration_ms: 1.650102
+  type: 'test'
+  ...
+# Subtest: archive rejects untrusted target before opening a tab
+ok 8 - archive rejects untrusted target before opening a tab
+  ---
+  duration_ms: 2.041739
+  type: 'test'
+  ...
+# Subtest: first send checks an empty owned tab and returns exact route and user message
+ok 9 - first send checks an empty owned tab and returns exact route and user message
+  ---
+  duration_ms: 412.886093
+  type: 'test'
+  ...
+# Subtest: first send never overwrites a foreign draft or existing conversation
+ok 10 - first send never overwrites a foreign draft or existing conversation
+  ---
+  duration_ms: 5.045881
+  type: 'test'
+  ...
+# Subtest: first send uses unique visible ProseMirror without an id
+ok 11 - first send uses unique visible ProseMirror without an id
+  ---
+  duration_ms: 2.796208
+  type: 'test'
+  ...
+# Subtest: ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+ok 12 - ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+  ---
+  duration_ms: 102.63902
+  type: 'test'
+  ...
+# Subtest: first send refuses an account switch immediately before click
+ok 13 - first send refuses an account switch immediately before click
+  ---
+  duration_ms: 2.696208
+  type: 'test'
+  ...
+# Subtest: archive uses exact scope and confirms the same conversation after PATCH
+ok 14 - archive uses exact scope and confirms the same conversation after PATCH
+  ---
+  duration_ms: 2.987431
+  type: 'test'
+  ...
+# Subtest: matches a full exact ChatGPT route, never a colliding prefix
+ok 15 - matches a full exact ChatGPT route, never a colliding prefix
+  ---
+  duration_ms: 1.859356
+  type: 'test'
+  ...
+# Subtest: latest complete final assistant skips analysis and empty nodes
+ok 16 - latest complete final assistant skips analysis and empty nodes
+  ---
+  duration_ms: 5.451177
+  type: 'test'
+  ...
+# Subtest: in-progress assistant after final fails closed
+ok 17 - in-progress assistant after final fails closed
+  ---
+  duration_ms: 3.415306
+  type: 'test'
+  ...
+# Subtest: provider pagination and absent terminal proof never claim full history
+ok 18 - provider pagination and absent terminal proof never claim full history
+  ---
+  duration_ms: 16.250171
+  type: 'test'
+  ...
+# Subtest: legacy branch must reach an explicit root; missing parents and cycles stay partial
+ok 19 - legacy branch must reach an explicit root; missing parents and cycles stay partial
+  ---
+  duration_ms: 5.208032
+  type: 'test'
+  ...
+# Subtest: falls back to legacy mapping only on 404
+ok 20 - falls back to legacy mapping only on 404
+  ---
+  duration_ms: 2.641597
+  type: 'test'
+  ...
+# Subtest: 429 is surfaced with Retry-After and no fallback
+ok 21 - 429 is surfaced with Retry-After and no fallback
+  ---
+  duration_ms: 1.379985
+  type: 'test'
+  ...
+# Subtest: list with no configured scope passes serializable arguments
+ok 22 - list with no configured scope passes serializable arguments
+  ---
+  duration_ms: 2.250239
+  type: 'test'
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 670.727148

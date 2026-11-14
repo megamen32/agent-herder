@@ -1,0 +1,48 @@
+{
+  "credential_ref": "/etc/userio-containers/processes.json:telegram.environment.USERIO_API_TOKEN",
+  "requests": {
+    "/v1/agent/status": {
+      "data": {
+        "agents": [
+          {
+            "active_instances": 0,
+            "agent_id": "browser-96b804d9-4ac5-4bdd-920b-54363f85bdd3",
+            "identity_conflict": false,
+            "instances": [],
+            "known_instances": [],
+            "legacy_seen": true,
+            "legacy_unaddressable": false,
+            "owner_instance": "",
+            "pending": 0
+          },
+          {
+            "active_instances": 1,
+            "agent_id": "vk-browser",
+            "identity_conflict": true,
+            "instances": [
+              "browser-ad06f696-052a-42c8-98dc-22d11113a420"
+            ],
+            "known_instances": [
+              "browser-ad06f696-052a-42c8-98dc-22d11113a420"
+            ],
+            "last_poll_at": 1794342934.4307175,
+            "legacy_seen": true,
+            "legacy_unaddressable": false,
+            "owner_instance": "",
+            "pending": 0,
+            "seconds_since_poll": 3.3
+          }
+        ]
+      },
+      "http": 200
+    },
+    "/v1/connection-principal": {
+      "data": {
+        "can_manage": false,
+        "user_id": "user_owner",
+        "username": "roomhacker"
+      },
+      "http": 200
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-11-13T23:32:44+00:00",
+  "details": "MCP-чтение локального узла не возвращает проверяемый результат: sessions list с node_ref=roomhacker-server-100 отдаёт code=source_unavailable («Адаптер не вернул проверяемый результат чтения»), а чтение конкретной сессии — code=session_unavailable. Тот же демон в HTTP отвечает: GET http://127.0.0.1:18787/api/sessions -> 200, 100 сессий. Удалённый узел читается: sessions list с node_ref=server-44 -> 5 сессий (native=null, source=registered, то есть из реестра, без нативного чтения). Расхождение локализовано: нативное чтение локальных сессий через MCP-край не даёт проверяемого ответа, тогда как чтение из реестра работает. Воспроизведено 3 раза 2026-11-13/14 (MCP: sessions list без node_ref, sessions list node_ref=roomhacker-server-100, session recent для ses_e292a613effejd6UJoQlYnwMiG). Установленный релиз 80420046; деплой-гейт закрыт до живых профилей. Ближайшее действие: снять capabilities и диагностику локального TS-адаптера (src/ahap-opencode-runner.ts, объявленные read-методы) в установленном релизе и сравнить с работающим реестровым путём чтения; правку вести в ветке lane process-leases, а не в установленном рантайме.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "current",
+      "at": "2026-11-13T23:32:44+00:00",
+      "changes": {
+        "details": "MCP-чтение локального узла не возвращает проверяемый результат: sessions list с node_ref=roomhacker-server-100 отдаёт code=source_unavailable («Адаптер не вернул проверяемый результат чтения»), а чтение конкретной сессии — code=session_unavailable. Тот же демон в HTTP отвечает: GET http://127.0.0.1:18787/api/sessions -> 200, 100 сессий. Удалённый узел читается: sessions list с node_ref=server-44 -> 5 сессий (native=null, source=registered, то есть из реестра, без нативного чтения). Расхождение локализовано: нативное чтение локальных сессий через MCP-край не даёт проверяемого ответа, тогда как чтение из реестра работает. Воспроизведено 3 раза 2026-11-13/14 (MCP: sessions list без node_ref, sessions list node_ref=roomhacker-server-100, session recent для ses_e292a613effejd6UJoQlYnwMiG). Установленный релиз 80420046; деплой-гейт закрыт до живых профилей. Ближайшее действие: снять capabilities и диагностику локального TS-адаптера (src/ahap-opencode-runner.ts, объявленные read-методы) в установленном релизе и сравнить с работающим реестровым путём чтения; правку вести в ветке lane process-leases, а не в установленном рантайме.",
+        "source": "MCP agent-herder sessions list/recent на локальном узле + GET /api/sessions того же демона (релиз 80420046)",
+        "status": "open",
+        "title": "Локальный узел не отдаёт проверяемое чтение сессий через MCP Herder"
+      }
+    }
+  ],
+  "id": "LOCAL_NODE_MCP_READ_20261114",
+  "owner": "current",
+  "reporter": "current",
+  "source": "MCP agent-herder sessions list/recent на локальном узле + GET /api/sessions того же демона (релиз 80420046)",
+  "status": "open",
+  "title": "Локальный узел не отдаёт проверяемое чтение сессий через MCP Herder",
+  "updated_at": "2026-11-13T23:32:44+00:00"
+}

@@ -1,31 +1,31 @@
 Граф задач: Herder V1: новое ядро с готовыми адаптерами
-Ревизия плана: 59f37042a5df
+Ревизия плана: b98cf72f1868
 Это снимок плана, а не панель управления: фактическое состояние работы приходит из API владельцев, а не из пересказа агента в графе.
 Цель: Завершить V1 и единый browser extension core: Rust core + TS/AHAP; UserIO extension по умолчанию с несколькими независимо авторизованными подключениями, выбором provider/account→destinations и typed Herder consumer. VK/ChatGPT/Z.ai явно видимы. CDP/Vibe сохранены как experimental/unmaintained, без silent fallback.
 Бизнес-результат: Обычный MCP Herder работает в пяти средах. Одно расширение UserIO обслуживает рабочее и личное подключения с выбором получателей для каждого аккаунта. VK, ChatGPT и Z.ai доступны через него; подтверждены нативные квитанции, изоляция, чтение после перезапуска, поиск, проекты и полный экспорт по контракту.
 Как проверим: Одно расширение, два независимо авторизованных подключения: аккаунт A идёт в Рабочий и Личный UserIO, B — только в Личный; команды и квитанции изолированы, выбор сохраняется после reload, VK виден и читается, UserIO и Herder читают один нативный снимок ChatGPT. В установленном пути подтверждаются первая квитанция ChatGPT, полный цикл Z.ai, connected MCP, restart/no-replay/HumanStop и архив своих canaries. Полный многостраничный нативный экспорт с доказанной полнотой и происхождение проектов обязательны по CONTRACT.md. Partial, UNKNOWN и обязательное unsupported не считаются PASS.
-Декомпозиция: 127 листьев · 4 параллельно · 6 волн · слотов: 4
-Прогресс (по листьям графа): 90/127 готово (70.9%) · в работе 2 · заблокировано 1 · ждёт листа 1 · ждёт исполнителя 1 · осталось 6
+Декомпозиция: 132 листа · 4 параллельно · 6 волн · слотов: 4
+Прогресс (по листьям графа): 96/132 готово (72.7%) · в работе 2 · заблокировано 1 · ждёт листа 1 · ждёт исполнителя 0 · осталось 5
 Кандидаты по зависимостям и вместимости: EXTRELEASE10
 Подтверждённый допуск к запуску: нет
-Смета плана: $9.75 (provisional) за 96 из 127 листьев
-frontier $9.75 (provisional) — 100.0% всех долларов плана
-остатку к запуску $1.34 (provisional)
+Смета плана: $10.19 (provisional) за 101 из 132 листьев
+frontier $10.19 (provisional) — 100.0% всех долларов плана
+остатку к запуску $1.02 (provisional)
 бюджет не задан
-снимок 013d89f1c939 от 2026-11-10T18:27:53Z · возраст 4 ч 29 мин · скорость токенов: frontier provisional
+снимок 013d89f1c939 от 2026-11-10T18:27:53Z · возраст 7 ч · скорость токенов: frontier provisional
 ПРЕВЫШЕН ПРЕДЕЛ ОЦЕНКИ ЛИСТА (15 мин): длинную работу надо разбить на два листа, либо записать в листе estimate_over_limit_reason, почему он сознательно больше:
   - лист SESSIONREPLIES13: оценка 45 мин при пределе 15 мин — чего не хватает: разбиения или причины превышения
-Листьев в графе: 127 · слотов: 4 · волн: 6
-Параллельность: сейчас 2 из 4 слотов, пик по плану 4
-Исполнители: занято 2 из 4 слотов · ждёт листа: 1 (DELIVER10) · ждёт исполнителя: 1 (ZAITOKEN15) · готово к запуску: 1 (EXTRELEASE10)
-Прогноз: известная активная часть 45 мин (от 45 мин), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-11T01:54+03:00 · простой 2 мин · неточно: срок внешнего ожидания не подтверждён
-Критический путь: Контракт Rust core → AHAP → TypeScript adapters → Rust client: raw transcript и inventory через AHAP → Rust client: modes/capabilities/receipts обычной отправки → Общий launcher без новых native протоколов → Публикация согласованного candidate manifest → Показывать стадию отказа AHAP initialize/init и способ исправления
+Листьев в графе: 132 · слотов: 4 · волн: 6
+Параллельность: сейчас 2 из 4 слотов, пик по плану неизвестен
+Исполнители: занято 2 из 4 слотов · ждёт листа: 1 (DELIVER10) · ждёт исполнителя: 0 · кандидаты по зависимостям и вместимости: 1 (EXTRELEASE10)
+Прогноз: известная активная часть 30 мин (от 30 мин), финиш неизвестен из-за внешнего ожидания. отсчёт от последнего события 2026-11-11T04:28+03:00 · простой 0 мин · неточно: срок внешнего ожидания не подтверждён
+Критический путь: неизвестен — оценки длительности не заданы
 Блокеры:
-  - Почему ждём: Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.
+  - Почему ждём: Файлы UserIO 0.9.36 на Mac обновлены. Последние пинги Carevio и Default вернули 0.9.35; адресное чтение Default подтвердило 0.9.35. Семантическое нажатие не поддерживается; координатная проверка не подтвердила цель Chrome, нажатия не было.
     Кто делает: Lead + Terra Archimedes
     Следующий шаг: Следующий шаг не указан.
     Нужен ли человек: Пока неизвестно. Действие человека не уточнено.
-Листья плана (127):
+Листья плана (132):
   - BACKENDCONTRACT11 · ✅ Готово · (Сверить живой backend UserIO с контрактом расширения) · оценка 15 мин · усилие 1 ч 52 мин по часам · по часам 1 ч 52 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Read-only exact sourcehash/provenance comparison; prepare minimal replace-backend with preserved accounts/config/overlays. No runtime mutation delegated.
       Результат: Canonical lease/CAS replace-backend installed published e840c9fa UserIO0.9.28 on c25eb766/imagecb56ddf6. 31/31 source hashes, supervisor healthy, same19 accounts, unchanged frontend/voice; public MV3 ZIP sha692e1e8c and manifest0.9.28. Evidence /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract/receipt-028.md; install-028.log. Chrome reload/provider consumption separately CAREVIOLIVE12.
@@ -81,25 +81,10 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Описание задачи: Reuse existing scoped draft store and extension composer flow for new chat first send/native admission; add exact scoped archive and truthful capabilities. Pure state plus effects. No live mutations in worker source slice.
       Приёмка: Опубликованный source ChatGPT draft/create/firstsend receipt recovery и scoped archive; focused RED/GREEN per layer. Сквозной Rust→extension fixture и реальная установка выделены отдельно, а общий lifecycle остаётся незавершённым до них.
       Результат: PublishedHerder c56aaa3c/UserIOe37cda11;136Herder+9Rust+18extension+tscPASS. Scoped discard и accepted command receipt persisted, digest recovery, firstsend native IDs, confirmedarchive before aliasremoval; unknownPOSTack fenced. Три слоя проверены раздельно; сквознойfixture продолжается CHATLIFEFIXTURE13, install/provider не выполнены.
-  - CHATNATIVE14 · 🔄 В работе · (Проверить новый ChatGPT чат через установленный Herder) · оценка 15 мин · усилие не измерено · прошло 2 ч 26 мин на момент сборки · отстаём: прошло 2 ч 26 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - CHATNATIVE14 · ✅ Готово · (Принять реальный ChatGPT цикл двух сообщений и archive) · оценка 15 мин · усилие 54 мин по часам · по часам 54 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Singlefreshnativecanary stablekeys. OriginalfirsttaskUNKNOWN reconciledsourcecommand37e… resultpreclickcomposer_not_empty_or_ready; no secondsend. Sourcefixfirstcomposerinprogress.
-      Приёмка: Afterfixedextension firstnativeinput+assistant,secondinput+assistant,restart/messages/raw,exactownarchive. Originalreceipts retained; no replays ofuncertainmutation.
-      Сохранённый статус: running
-      Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=native_environment; at=2026-11-10T23:31:33+03:00
-      Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
-      Прежняя привязка leaf.session: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6
-      Плановая модель: gpt-6-astra
-      Наблюдаемая модель: неизвестно
-      Наблюдаемый runtime: неизвестно; source=неизвестно; at=неизвестно
-      Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
-      Наблюдаемый turn: неизвестно; worktree=неизвестно
-      Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
-      Незавершённые зависимости: нет
-      Причина ожидания / доставки: не записана
+      Приёмка: 14c exactproviderfirsteffectreadback,second034confirmed,restartreadобаответа,raw/searchhonestpartial,context,ownarchiveverifiedbyprovider. Новыйfirst034receiptотдельныйRECEIPTNATIVE14.
+      Результат: 14cfirstuser21658394/assistant1b54bb83;second034confirmeduser57e82db3/assistant99634f50,обаterminal,endTurntrue. НовыйSDKprocessпрочитал4IDs;raw/searchpartial,context,exactownarchiveconfirmedпослеproviderGET. OriginalfirstUNKNOWNсверенreadback,resend0. ART/native-chatgpt14c; новыйfirst034receiptостаётсяRECEIPTNATIVE14,неPASS.
   - CHROMEPROFILE10 · ⏸ Отложено владельцем · (Зафиксировать контрольный контракт Chrome profile MCP) · оценка 15 мин · усилие не измерено · вне остатка · зависит: — · стоимость — вне сметы · отложено владельцем
       Описание задачи: Сформулировать и проверить минимальный cross-platform контракт без DevTools consent: режимы policy/managed, controlled, helper, unmanaged; безопасные profile paths и невыдача browser secrets.
       Приёмка: Документированный контракт и read-only path projection tests покрывают Linux/macOS/Windows; unmanaged status и отсутствие cookie/storage/page-content fields доказаны.
@@ -167,6 +152,10 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Описание задачи: Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.
       Приёмка: Use maintained supervisor plus complete existing-only native transcript; validate exact session/workspace/process generation, canonical completed canary messages and explicit global UNVERIFIED. Preserve original failed real-run evidence; no full-global gate relaxation.
       Затрагиваемые файлы: `tests/native/installed-browser-bindings.ts`, `tests/native/installed-browser-smoke.ts`, `tests/native/candidate_release_gate.py`
+  - CONNECTED15 · ✅ Готово · (Получить длинное чтение Herder через подключённый GPTAdmin) · оценка 15 мин · усилие 29 мин по часам · по часам 29 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Послеfence104childrestart ordinarymessages14c SDKworks,Hubjobcdc33191sameclientreceiptrejected. tasks.start9a648c13receiptunavailable. Isolatedsameclientfixture/authnegatives; exactfailedpredicatebeforefix.
+      Приёмка: ExactHubRED/fix/GREENifconfirmed; reviewedscopedpublication/installonlyauthorizedroute; actualconnectedmessagesreturns4nativeIDs withsameclient. Noauthbypass/generalhubrepair.
+      Результат: LIVEPASS: Hub1137 installedbyotherowner includes7d2c715requestcontextfix. Freshmcp.tasks.start/read task06d8bebb completed21466ms,4expectednativeIDs+2terminalreplies,completefalse. Old1135records exactcdc33191+9a648c13 lackCaller,notrewritten; authbypass0. ART/connected-longread14/terra-live-predicate.json,live-readback.json. Child-onlyprofilefixturecandidate separatescope/sourcepending,notneededwildcardconsumer.
   - COREWAIT · ✅ Готово · (Разобрать зависание native browser Tasks) · оценка 15 мин · усилие 7 мин по часам · по часам 7 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Точный rootcause и время150s; при доказанном Rustbug RED/fix/GREEN без browser mutations.
       Результат: Sol native01a1bbb7-ea1f: Rustbug не подтверждён,4isolatedtestsPASS. Account0 promptadmitted exactmessage180f55b3-134e-4367-8a2e-5d09136095a8; account1reconcile95s completed. Root discrepancy: getSessionMessages(limit200) вTSChatGPT вызывает полныйexport/chunktransfer, аadmission—обычныеmessages/DOM. Исправление TS делегировано CHATDELTA; таймаутнеувеличен.
@@ -199,6 +188,10 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Описание задачи: Проверить опубликованный пакет0.9.30exactSHA/ZIP и доставить package-only backend derivative штатным lease/CASreplace-backend; сохранять31sourcehash/19accounts/frontendvoice. Mac reload иliveprovider выполняетLead отдельно.
       Приёмка: ОбаpublicZIP возвращают ожидаемыйhash/version, backendsource31/31иaccounts19preserved, rollback+leaseCAS+release. Ниcustomerconversation/providerturn/Chrome/storage не изменены; source/package/serverinstall различены.
       Результат: Package-only UserIO 0.9.30 installed and independently verified. Published source 480146dfba5847c213fb98af00f316ece6aac6c7; both ZIPs SHA256 c21b8909771650f4fa0f00cb86078303d962d864d885071fd0fecdccce466e16, HTTP 200/version 0.9.30/MV3. Local derivative image sha256:dbf36a79f5be11b4915c4f6d968d239fb50482aa65591731d97763a5a5a9f201; current backend bd6eca19fcb90aa977c360f2221f8654f7e9fa4049a883d1e70843a893ac5e70 running, restart 0, supervisor PASS. Candidate and installed runtime source hashes 31/31 match; 19 account identities unchanged; frontend/voice container IDs and running state unchanged. Canonical replace-backend receipt and rollback baseline at /var/backups/universal-userio/20261110-backend-extension-030-01a1c551; lease fence 53 checked and released. Evidence: /home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/backend-contract-030/result.md. Parent Mac/browser/consumer readback remains separate.
+  - EXTINSTALL14 · ✅ Готово · (Установить UserIO 0.9.34 на сервере и в двух профилях Chrome) · оценка 15 мин · усилие 34 мин по часам · по часам 34 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Backend034 штатно установлен: imagefa960b7f, container58357346, fence61 released. Native AX после reload подтверждает loaded0.9.34 Carevio и Default; fence62 released. Независимая проверка публичных ZIP,31hashes,19accounts и сохранённых настроек выполняется.
+      Приёмка: Both profiles loaded034; publicZIP67375e43;31backendhashes,19accounts/frontendvoice preserved. Native lifecycle отдельно CHATNATIVE14.
+      Результат: UserIO0.9.34 установлен штатно подfence61: imagefa960b7f/container58357346. Независимыйinstalled-proof31hashes и19accountIDs совпали,frontend/voiceсохранены,обаpublicZIP67375e43/version034. NativeAX loaded034 Carevio+Default, reloadfence62released. RestartCount2исследуется отдельно; это proof установки,живойlifecycle CHATNATIVE14. ART/userio-backend-package-0934/installed-proof.json,mac-carevio-loaded034.log,mac-default-loaded034.log.
   - EXTPOLL10 · ✅ Готово · (Изолировать OAuth и команды по подключениям) · оценка 15 мин · усилие 1 ч 01 мин по часам · по часам 1 ч 01 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Perconnection refresh/poll/result context explicit; logoutone preservesother; commands act only onsubscribedaccount; overlappingreceipts cannot reexecute.
       Результат: Per-connection OAuth refresh fences, independent polling loops, principal/agent-instance/command receipt isolation и no arbitrary eval path доставлены в UserIO commit 3a72b85; backend preserves connection/principal/instance receipt context. Extension 96/96 and backend 32/32 PASS.
@@ -214,12 +207,12 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - FINALMATRIX · ✅ Готово · (Сверить конечную матрицу и exact reuse) · оценка 10 мин · усилие 24 мин по часам · по часам 24 мин · волна 1 · зависит: — · стоимость $0.02 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 12 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Таблица5harness+2ChatGPTaccounts с source/candidate/installed, hashes и честными gaps; дваowned evidenceфайла.
       Результат: Terra matrix and exact bytes reuse published-ready; package82bPASS. ExactNEG3dPASS samecore82b. Browser and installed remainINCOMPLETE. ZCode archive exposed unsupported, leafNZCODE reopened. evidence terra-final-matrix.md/json,neg-3d*,reuse-82b91db9.json,package-82b*.
-  - FIRSTRECEIPT15 · ⛔ Заблокировано · (Подтвердить загрузку расширения и первую квитанцию ChatGPT) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.
+  - FIRSTRECEIPT15 · ⛔ Заблокировано · (Подтвердить загрузку расширения и первую квитанцию ChatGPT) · оценка 15 мин · усилие не измерено · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional · блокер: Файлы UserIO 0.9.36 на Mac обновлены. Последние пинги Carevio и Default вернули 0.9.35; адресное чтение Default подтвердило 0.9.35. Семантическое нажатие не поддерживается; координатная проверка не подтвердила цель Chrome, нажатия не было.
       Описание задачи: UserIO 0.9.36 опубликован и установлен на сервере; файлы расширения на Mac Mini обновлены. Последние адресные пинги Carevio и Default вернули 0.9.35. Один reload Carevio уже инициирован; читать его фактический эффект, прежний клик вслепую не повторять. ChatGPT 15b доставлен, исходная квитанция UNKNOWN сохраняется.
       Приёмка: Нативный пинг 0.9.36 в точных профилях; один новый собственный ChatGPT canary после проверки пустого composer; confirmed с native user ID первой отправки, завершённый ответ из нового процесса SDK и архив собственного чата. Старые UNKNOWN не повторять, чужие черновики сохранить.
       Сохранённый статус: blocked
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=native_environment; at=2026-11-11T01:47:57+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=native_environment; at=2026-11-11T03:45:56+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -232,7 +225,7 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
       Допуск к запуску: нет; записан блокер (external_blocked)
       Незавершённые зависимости: нет
-      Причина ожидания / доставки: leaf: Работающий Chrome пока отвечает версией 0.9.35; после клика reload интерфейс Accessibility вернул ноль окон. Нужен точный readback загруженной версии и штатный reload только там, где версия ещё старая.
+      Причина ожидания / доставки: leaf: Файлы UserIO 0.9.36 на Mac обновлены. Последние пинги Carevio и Default вернули 0.9.35; адресное чтение Default подтвердило 0.9.35. Семантическое нажатие не поддерживается; координатная проверка не подтвердила цель Chrome, нажатия не было.
   - FIXBI · ⏸ Отложено владельцем · (Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN) · оценка 10 мин · усилие не измерено · вне остатка · зависит: — · стоимость — вне сметы · отложено владельцем
       Приёмка: Verify pinned account before passive init; sanitized exact init stage, no raw secrets; RED→GREEN
       Результат: Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел. Прежний результат: Source88f81409:30/30browser runner testsPASS; verifier beforepassive init, sanitized initstage. CI driver cache fix separate dependency. LHC cannotaccept assigned native dispatch; source result ready, native/installed notPASS.
@@ -380,6 +373,10 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - QUIET429 · ⏸ Отложено владельцем · (Пять минут тишины браузера и один диагностический read) · оценка 15 мин · усилие не измерено · вне остатка · зависит: — · стоимость — вне сметы · отложено владельцем
       Приёмка: Pause exact browser processes and background polling, >=300s, resume own pids, inspect requests and single read withoutsend.
       Результат: Отложено ИИ: прежняя постановка снята; обязательный остаток в FIRSTRECEIPT15. Вернуться, если финальная сверка выявит пробел. Прежний результат: All9ownpausedChromePIDs SIGCONT16:08:20.525Z. AppleScript0windows/tabs afterresume. User-requested5min quiet achieved; postpause providercheck notperformed,429cleared notclaimed. evidence owner-browser-quiet-receipt.json. No suspendedPIDs left.
+  - RECEIPTNATIVE14 · ✅ Готово · (Подтвердить secondsend и восстановить исход первой отправки) · оценка 15 мин · усилие 57 мин по часам · по часам 57 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Real033firstclickсоздалnativechat6af3844e;DOMreceiptнеузналnewUI,coreUNKNOWNretained. OrdinarySDKnativeuser21658394+assistant1b54bb83,endTurntrue confirmed. Reusecanonicalreadreceiptfirst/secondoneclick.
+      Приёмка: 034sourceRED/GREEN,secondnativeconfirmed; originalfirst033/034providerreadback withoutresend. Новыйfirstreceipt035отдельныйFIRSTRECEIPT15.
+      Результат: Published1e9a7a5,034installed,second14cconfirmed57e82db3. First14c и14e delivered+terminalreply readback proven,originalUNKNOWNretained,resend0. Source141extensiontests; frameexception/queryvariationcandidate035reviewedneedsinstall/liveFIRSTRECEIPT15. ART/native-chatgpt14c,native-chatgpt14e,userio-chatgpt-native-receipt-0934.
   - RECEIPTTAIL14 · ✅ Готово · (Ускорить чтение квитанций UserIO без полного сканирования журнала) · оценка 15 мин · усилие 31 мин по часам · по часам 31 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Live result limit1=11319ms при status273ms. read_results разбирает369MiB целиком каждыйpoll. Reverse-tail на том же canonical JSONL сохраняет ID/изоляцию.
       Приёмка: RED/GREEN largejournal readbudget, latestfirst/filter/UTF8/partialline; exact ownedmain, immutablebackend derivative с0.9.30ZIPs, supportedleaseCAS install иlatency/readback.
@@ -390,6 +387,10 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - REGRESS10 · ✅ Готово · (Проверить текущую Rust и AHAP основу и закрыть ошибки тестов) · оценка 15 мин · усилие 12 мин по часам · по часам 12 мин · волна 1 · зависит: — · стоимость $0.0032 · модель 302ai/gpt-6-luna · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Focused core/AHAP и contract suite проходит на текущем main; failures исправлены или exact evidence передано Lead; итог не выдаётся за live proof.
       Результат: Current main source regression: Rust lib 203 passed, wake 1, authority 1, compat 5 (1 explicit ignored), AHAP 105, release gate 37 PASS. No provider actions. ETXTBSY did not reproduce; open bug retained. Old RED plus fresh focused GREEN evidence prepared for CIVIBE_REQUIRED_EVIDENCE; no bug resolve performed.
+  - RELEASEPORT15 · ✅ Готово · (Исправить передачу порта при штатном обновлении UserIO) · оценка 15 мин · усилие 12 мин по часам · по часам 12 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Подтверждённый034handover2restarts/10bindconflicts18096. Smallboundedguard штатногоcontainer_release.py, busydoesnotkill/continue,rollbackpreserved.
+      Приёмка: Meaningful actualbaselineRED/fix/GREEN; exactownedsourcepublished afterreview. Healthy034непереустанавливать; publiccontentsalreadyverified.
+      Результат: Publishedoriginmain0298419d exact2ownedpaths scripts/container_release.py+tests/test_container_release_revision.py. ActualbaselineRED existingreplacementdeletes/createswhileoldendpointbusy;GREEN33checks verifywait/refusal,oldrestartrollback,unhealthyrollbacknotclaimed. Nohealthy034runtimemutation. ART/userio-release-port-handover/final-receipt.json; guardusednextneededinstall.
   - RESTORECONTRACTS · ⏸ Отложено владельцем · (Проверить контракты трёх потребителей и собрать acceptance tests) · оценка 15 мин · усилие не измерено · вне остатка · зависит: — · стоимость — вне сметы · отложено владельцем
       Приёмка: Exact existing APIs и executable RED acceptance для трёх путей; fake-only checks не выдавать за livePASS.
       Затрагиваемые файлы: `tests/v1-restored-workflows/**`, `evidence/finish-20261108/restore-contracts-terra.md`
@@ -469,12 +470,16 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Описание задачи: ZaiUserIoDriver firstsend возвращает nativeID, но не включает supportsFirstSendReceipt; BrowserChatAdapter требует несуществующую draft baseline. Минимальный фикс в общем реальном adapter path.
       Приёмка: RED/GREEN через BrowserChatAdapter+реальный ZaiUserIoDriver: pending draft firstsend admitted nativeID, нет zai_read до admission, один firstsend, secondread alias. Scoped negative/UNKNOWN preserved. Published main exact owned source.
       Результат: Published main8199024f118fbbd15ca5b419bf16c1c064013e88. Actual BrowserChatAdapter+ZaiUserIoDriver RED3 -> GREEN18, tsc PASS. First draft returns native message receipt; UNKNOWN never re-enqueues firstsend; archive requires exact native chat_ref and archived:true. Source proof only; final package and live Z.ai acceptance separate. Evidence ART/zai-admission13/RED.log,GREEN.log; owned2files.
-  - ZAIARCHAUTH14 · 🔄 В работе · (Исправить проверку входа Z.ai и точную квитанцию archive) · оценка 15 мин · усилие не измерено · прошло 2 ч 38 мин на момент сборки · отстаём: прошло 2 ч 38 мин при оценке 15 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - ZAIARCHAUTH14 · ✅ Готово · (Отклонять гостевой Z.ai и подтверждать точный archive) · оценка 15 мин · усилие 1 ч 12 мин по часам · по часам 1 ч 12 мин · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Guestidentity falsely succeeded whilepage/auth. Nativefetch lackedsiteAuthorization. Archivepage returns ok only although driver needs exactid+archived. Repairexistingextension source andpackage0.9.31; no newstore.
-      Приёмка: RED/GREEN realpagefunctions rejectunauth/guestscope; token stayspage; exact archiveconfirmation andwrongusernegative. Mainpublish+ZIPprovenance, nativeChromeinstall/readback andhonestloginlimit.
+      Приёмка: Auth/archive sourceRED/GREEN,package034installedbothprofiles,guestrefusal+authenticatedDefaultscope. ПолныйличныйZailifecycle/tokenотдельныйZAITOKEN15blocked.
+      Результат: Source0.9.31–034 опубликован/установлен:guest/authrejected,tokenstaypage,exactchat_ref+archivedafterGET/PATCH/GET. TestsвART/userio-zai-archive-0931/auth-red.log,auth-green.log,auth-full.log;Defaultnativeauthenticatedscope1aa02989 иcheckedbindingfence59. Carevioguestbindingснятfence55;providerwrites0. ПолныйZailifecycleнеPASS,personalUserIOlogin/token403ожидаетZAITOKEN15.
+  - ZAIAUTO18 · 🔄 В работе · (Автопилот продолжает задачу в чате Z.ai) · оценка 15 мин · усилие не измерено · прошло 0 мин на момент сборки · волна 1 · зависит: — · стоимость $0.03 · модель aimlapi/openai/gpt-6.1-terra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Описание задачи: Приоритет владельца: только Z.ai. Расширить существующий V1 browser autopilot на Z.ai UserIO как цель; использовать уже авторизованный точный профиль Default, один свежий собственный тестовый чат, тот же V1 MCP и существующего судью UserIO. Другие адаптеры, глобальные настройки и прежние UNKNOWN не трогать.
+      Приёмка: На загруженном исправленном расширении обычный Herder создаёт свой Z.ai чат, видит завершённый ответ и сохраняет точный нативный ID. Тот же worker сам принимает решение и выполняет ровно одно следующее сообщение в этом чате, с отдельным terminal ответом; независимый readback и остановка/уборка своего теста. HumanStop и запрет повтора сохраняются. Подключение Z.ai в роли только судьи за PASS не считать.
       Сохранённый статус: running
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=native_environment; at=2026-11-10T23:19:00+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-11T04:28:01+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -499,13 +504,13 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - ZAISTATE · ✅ Готово · (Z.ai: обновлять foreground состояние после ответа) · оценка 15 мин · усилие 8 мин по часам · по часам 8 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Paused background untouched, exact draft native state updated, RED/GREEN, no foreign scope.
       Результат: Foreground admitted draft exactroute snapshot refresh and in-memory/durable state corrected, background pause preserved. Worker111PASS, lead54PASS including new profile negatives. Source integration underway; native full deferred until owner browser quiet interval ends.
-  - ZAITOKEN15 · ⋯ В очереди · (Завершить установленный Z.ai через личное подключение) · оценка 15 мин · усилие не измерено · ждёт: причина не названа · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - ZAITOKEN15 · 🔄 В работе · (Завершить установленный Z.ai через личное подключение) · оценка 15 мин · усилие не измерено · прошло 3 ч на момент сборки · отстаём: прошло 3 ч при оценке 15 мин · волна 1 · зависит: — · стоимость $0.32 · модель 302ai/gpt-6-astra · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Описание задачи: Штатный вход UserIO, именованный токен и точный профиль Default подключены к обоим установленным входам. Исходная команда подтверждает zai_first_preflight_failed / not_submitted до первой отправки. Локализовать и устранить причину; исходную UNKNOWN квитанцию core сохранять.
       Приёмка: После устранения preflight: две подтверждённые доставки в одной собственной нативной сессии, оба завершённых ответа из нового процесса, поиск, проекты и нативный экспорт по CONTRACT.md, чтение через подключённый MCP и архив своей сессии.
       Результат: Владелец передал пароль через защищённую форму. Штатный вход roomhacker, отдельный токен и exact Chrome Default readback подтверждены; профиль добавлен в оба selector под lease/CAS. Остались native lifecycle и connected consumer.
-      Сохранённый статус: queued
+      Сохранённый статус: running
       Назначение: неизвестно; тип=неизвестно; attempt=неизвестно
-      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=native_environment; at=2026-11-11T01:47:57+03:00
+      Автор последнего события: host_id=неизвестно · harness=codex · session_id=01a1c551-1737-7bb0-9b52-e25e4b8436c6; source=mcp_metadata; at=2026-11-11T04:28:02+03:00
       Lead (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Native parent (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
       Исполнитель (заявлен): host_id=неизвестно · harness=неизвестно · session_id=неизвестно
@@ -516,7 +521,7 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Turn назначения: неизвестно; request=неизвестно; delivery=неизвестно
       Наблюдаемый turn: неизвестно; worktree=неизвестно
       Пробуждение Lead: неизвестно; wait=неизвестно; captured_turn=неизвестно; next=неизвестно
-      Допуск к запуску: нет; исполнитель занят (owner_busy)
+      Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
   - ZARCHPROOF · ✅ Готово · (Сохранить настоящую ZCode archive квитанцию в CI отчёте) · оценка 15 мин · усилие 26 мин по часам · по часам 26 мин · волна 1 · зависит: — · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -597,9 +602,6 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - REMOTEFULL · ✅ Готово · (Проверить удалённую отправку, ответ и архивирование) · оценка 15 мин · усилие 20 мин по часам · по часам 20 мин · волна 2 · зависит: RESTOREREMOTE · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: InstalledordinaryMCPexact44instance→ownedtestcreate/deliver→readreceipt/message→archive. ExplicitLuna/Terra model; requestsboundandnotreplayed. Profile/authorityactualnode.
       Результат: Installed manifest203decf5/coreb51e550e: remote44 Codex gpt-6.1-terra two prompts/two native replies confirmed, archive confirmed, restart readonlyPASS and shared GPTAdmin same2markersPASS. Exact session_ref session:252919efe23cabd6148929f0b9a3c808; evidence finish-20261108/remote44-full-canary-metadata.json, retained hashesverifiedparent. Bounded message page completefalse explicit; no claim fullhistory.
-  - RESTOREPROOF · ✅ Готово · (Установить и проверить три сценария обычным клиентом) · оценка 15 мин · усилие не измерено · волна 1 · зависит: RESTORECORE, RESTORECONTRACTS · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
-      Приёмка: Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.
-      Результат: Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.
   - A11 · ✅ Готово · (Rust client: modes/capabilities/receipts обычной отправки) · оценка 15 мин · усилие 8 мин · по часам 10 мин · волна 3 · зависит: A10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
   - B11 · ✅ Готово · (Thin TS runner: прежний CodexAppServerAdapter) · оценка 15 мин · усилие 2 мин по часам · по часам 2 мин · волна 3 · зависит: B10 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
@@ -661,6 +663,9 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
   - R3 · ⏸ Отложено владельцем · (Публикация приёмки либо невыполненных критериев) · оценка 3 мин · усилие не измерено · вне остатка · зависит: READBACK · стоимость — вне сметы · отложено владельцем
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: Отложено ИИ: прежняя постановка снята; обязательный остаток в DELIVER10. Вернуться, если финальная сверка выявит пробел.
+  - RESTOREPROOF · ✅ Готово · (Установить и проверить три сценария обычным клиентом) · оценка 15 мин · усилие не измерено · волна 3 · зависит: COREWAKE, REMOTEFULL, NPLIVEFINAL · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+      Приёмка: Точная immutable installed версия, crosshost/wake/NoticePlace receipts отдельно; stop preservation; только принятый scope.
+      Результат: Three existing accepted real-surface receipts reconciled without replay: remote44 manifest203decf5/coreb51e550e, wake d4add781, NoticePlace abd9a50. See evidence/resume-20261110/plan-reconcile-final.md and referenced evidence/finish-20261108 receipts. Current default installed CLI manifest e34aa2b9 read-only SDK/discovery separately proven; no claim historic mutations rerun on new bundle.
   - B12 · ✅ Готово · (Thin TS runner: обычная отправка и понятные ошибки) · оценка 15 мин · усилие 8 мин по часам · по часам 8 мин · волна 4 · зависит: B11 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: B10/B11/B12 source ready in shared cwd, uncommitted per owner integration instruction. OpenCode v2 existing-session queue/steer exact options/inputId; v2 fresh Start compatibility retained; v22 native fresh Start only unchanged. ZCode queue/sync/steer exact options; Codex legacy native receipts unchanged. Exceptions sanitized with method/expected/correctiveAction and mutation UNKNOWN/nonretryable. 4MiB request/response frame enforced incl newline, oversized export fails visibly without truncation; stream continues. Final 49/49 targeted tests across 6 files, tsc --noEmit exit0, diff --check exit0. Codex real legacy Unix WebSocket fixture proves one native steer for repeated stable inputId. Source/fixture proof only, no runtime/deploy/credentials/CI adapters touched. Owned 9 paths: src/ahap-{opencode,zcode,browser,codex}-runner.ts, src/ahap-legacy-read.ts, tests/ahap-{opencode,zcode,codex,legacy-read}-runner.test.ts. Env AHAP_CODEX_SOCKET xor AHAP_CODEX_BIN, AHAP_CODEX_CWD absolute, HOME from owner code_home, optional CODEX_HOME absolute. Remaining gap: full public installed consumer acceptance belongs to integration/CI; optional legacy projects only when available; exports >4MiB explicit unsupported. CI-reported OpenCode v2.2.4 family-v2 proof is separate external evidence.
@@ -716,7 +721,7 @@ frontier $9.75 (provisional) — 100.0% всех долларов плана
       Допуск к запуску: нет; сохранённый статус не в очереди (not_queued)
       Незавершённые зависимости: нет
       Причина ожидания / доставки: не записана
-  - R1 · ✅ Готово · (Публикация согласованного candidate manifest) · оценка 15 мин · усилие 10 мин · по часам 13 мин · волна 5 · зависит: C12, A11, B12, D12, C13, C14 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
+  - R1 · ✅ Готово · (Публикация согласованного candidate manifest) · оценка 15 мин · усилие 10 мин · по часам 13 мин · волна 5 · зависит: C12, A11, B12, D12 · стоимость $0.07 · модель 302ai/gpt-6.1-sol · класс frontier · токенов 18 000 · цена provisional · скорость 1 200 ток/мин provisional
       Приёмка: Результат по CONTRACT.md; source/tests/candidate/installed различены; unsupported обязательной операции не PASS.
       Результат: Immutable source-built candidate d66c9c0729fea2a18038fe6569625a14177a7adc ready: /home/roomhacker/herder-artifacts/releases/herder-v1-d66c9c0729fe/manifest.json SHA2562db3cc41b3411e1028ba641e1d3812369d054f01ab43cda135dd9c6ad5f454e4. Seven pinned binaries/bundles, initialize5typesPASS, duplicate packaging refuses. Publishedsource includes264eb01c browserpinfix and76ec55f3 CIreport. CI handoff accepted astra-v1-candidate-d66c9c07-20261107T2011; native/installed not proven. CANDIDATE.md contains exact contract.
   - FIXC · ⏸ Отложено владельцем · (Сверить create контракт Codex с native schema без повторной отправки) · оценка 15 мин · усилие не измерено · вне остатка · зависит: R1 · стоимость — вне сметы · отложено владельцем

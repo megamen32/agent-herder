@@ -1,0 +1,31 @@
+(Linux uses --headless by default. To override, use --headed / --gui. For Xvfb mode instead, use --xvfb. Or you can hide this info by using --headless / --headless2 / --uc.)
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_replacement_busy_listener_restores_old_without_deleting_or_creating ___
+
+tmp_path = PosixPath('/tmp/pytest-of-roomhacker/pytest-102314/test_replacement_busy_listener0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a06ca856740>
+
+    def test_replacement_busy_listener_restores_old_without_deleting_or_creating(tmp_path, monkeypatch):
+        release, state, holder, config, original = _replacement_fixture(tmp_path, monkeypatch, busy=True)
+        try:
+            failure = None
+            try:
+                release._replace_backend_locked(image='new', revision='revision', expected_container='old-id',
+                                                receipt_directory=tmp_path / 'receipt')
+            except RuntimeError as error:
+                failure = error
+            destructive = [(m, r) for m, r in state['operations']
+                           if m == 'DELETE' or r.startswith('containers/create')]
+>           assert destructive == []
+E           AssertionError: assert [('DELETE', '...rio-backend')] == []
+E             
+E             Left contains 2 more items, first extra item: ('DELETE', 'containers/userio-backend')
+E             Use -v to get more diff
+
+/tmp/userio-port-baseline.ea9aL5/tests/test_container_release_revision.py:187: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"status": "installed", "revision": "revision", "image": "new", "image_id": "new-image", "container_id": "new-id", "previous_image_id": "old-image", "compose_sha256": "9a7f0efa7e2c609b1d59f160b4bf66c3b34803a254444010ab3872ea07fa9a73", "supervisor_healthy": true, "account_ids_unchanged": true, "frontend_voice_configuration_unchanged": true, "backup": "/tmp/pytest-of-roomhacker/pytest-102314/test_replacement_busy_listener0/receipt"}
+=========================== short test summary info ============================
+FAILED ../../../../../tmp/userio-port-baseline.ea9aL5/tests/test_container_release_revision.py::test_replacement_busy_listener_restores_old_without_deleting_or_creating
+1 failed in 0.31s

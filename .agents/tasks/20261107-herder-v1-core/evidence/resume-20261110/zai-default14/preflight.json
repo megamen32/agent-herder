@@ -1,0 +1,14 @@
+{
+  "operator_credential_ref": "/etc/userio-containers/processes.json:telegram.environment.USERIO_API_TOKEN",
+  "connection_principal_http": 200,
+  "principal": {
+    "username": "roomhacker",
+    "user_id": "user_owner",
+    "can_manage": false
+  },
+  "personal_tokens_list_http": 403,
+  "create_post_sent": false,
+  "token_file_created": false,
+  "agent_status_with_new_token": "not performed: credential not created",
+  "next_action": "Use an authorized personal login credential that can access GET /v1/personal-tokens; do not bypass 403."
+}

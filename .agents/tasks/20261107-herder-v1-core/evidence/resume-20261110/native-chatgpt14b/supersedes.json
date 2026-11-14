@@ -1,0 +1,8 @@
+{
+  "original_task": "create-operation:c4119a4f9c0d34780ac89ede25f22819",
+  "original_command": "vk-browser:37e074fdc866411ea235c185073c2e52",
+  "original_result": "composer_not_empty_or_ready",
+  "classification": "preclick source branch; no input and no send.click executed",
+  "new_version": "0.9.32",
+  "reason": "fixed delayed send button, new distinct canary keys; old core UNKNOWN retained"
+}

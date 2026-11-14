@@ -1,0 +1,94 @@
+EXACT_OPTIONS_WINDOW "ChatGPT" – элемент группы "UserIO · ChatGPT" - Google Chrome (Carevio)
+BUTTON Home dom_id 
+BUTTON Space dom_id 
+BUTTON Scheduled dom_id 
+BUTTON Plugins dom_id 
+BUTTON Sites dom_id 
+BUTTON Toggle sidebar dom_id 
+BUTTON New chat dom_id 
+BUTTON Projects dom_id 
+BUTTON Add new project dom_id 
+BUTTON knjiga dom_id 
+BUTTON New chat in knjiga dom_id 
+BUTTON Insight dom_id 
+BUTTON New chat in Insight dom_id 
+BUTTON Servers dom_id 
+BUTTON New chat in Servers dom_id 
+BUTTON oleg dom_id 
+BUTTON New chat in oleg dom_id 
+BUTTON Recents dom_id 
+BUTTON New chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Pin chat dom_id 
+BUTTON Temporary chat dom_id 
+BUTTON Add files and more dom_id 
+EDITOR AXTextArea title Ask ChatGPT description Ask ChatGPT value HERDER_OWN_COMPOSER_INSPECT_14 placeholder  dom_id  classes (
+    ProseMirror,
+    "ProseMirror-focused"
+) role_desc область ввода текста
+BUTTON Dictate dom_id 
+BUTTON Send dom_id 
+BUTTON Назад dom_id view_1001
+BUTTON Вперед dom_id view_1002
+BUTTON Перезагрузить dom_id view_1003
+BUTTON Открыть вкладку для параллельного просмотра dom_id 
+EDITOR AXTextField title Адресная строка и строка поиска description Адресная строка и строка поиска value chatgpt.com placeholder Спросите Google или введите URL dom_id view_1012 classes (
+    OmniboxViewViews
+) role_desc текстовое поле
+BUTTON Перевести dom_id 
+BUTTON Добавить страницу в закладки dom_id 
+BUTTON Carevio dom_id view_1018
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Новая вкладка dom_id 
+BUTTON Открыть Gemini в Chrome dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Новая вкладка dom_id 
+BUTTON Открыть Gemini в Chrome dom_id 
+BUTTON Назад dom_id view_1001
+BUTTON Вперед dom_id view_1002
+BUTTON Перезагрузить dom_id view_1003
+BUTTON Открыть вкладку для параллельного просмотра dom_id 
+EDITOR AXTextField title Адресная строка и строка поиска description Адресная строка и строка поиска value chatgpt.com placeholder Спросите Google или введите URL dom_id view_1012 classes (
+    OmniboxViewViews
+) role_desc текстовое поле
+BUTTON Перевести dom_id 
+BUTTON Добавить страницу в закладки dom_id 
+BUTTON Carevio dom_id view_1018
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Новая вкладка dom_id 
+BUTTON Открыть Gemini в Chrome dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Закрыть dom_id 
+BUTTON Новая вкладка dom_id 
+BUTTON Открыть Gemini в Chrome dom_id 
+BUTTON  dom_id 
+BUTTON  dom_id 

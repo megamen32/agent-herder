@@ -1,0 +1,16 @@
+{
+  "original_task": "create-operation:aefb183be92ea69720bc319b70c8848b",
+  "original_core_session": "session:5295ecaae2e4f5ae9352391b3ecf4c79",
+  "original_core_outcome": "unknown; retry forbidden; not overwritten",
+  "command_id": "vk-browser:0c4b6a94e59c4e11bfb9b7b18defa67b",
+  "correlation": "SHA-256 of exact first-intent prompt matches existing scoped draft inputDigest; draft records this exact command ID",
+  "draft_created_at": "2026-11-10T21:17:58.612Z",
+  "matching_results": 1,
+  "agent_instance_principal_connection": "matched configured owner profile",
+  "command_outcome": "preclick not_submitted effect none",
+  "error": "composer_not_empty_or_ready",
+  "observed": "home route, one visible identified div editor, editorEmpty false, send enabled, zero messages",
+  "cause_status": "exact branch is nonempty editor before insertion; reason for nonempty content is unproven and may be a real draft or UI placeholder representation. Do not erase or retry.",
+  "evidence": "original-command-result.json",
+  "provider_writes_or_retries": 0
+}

@@ -1,0 +1,56 @@
+{
+  "parent": "MRESUME10",
+  "label": "Исправить передачу порта при штатном обновлении UserIO",
+  "status": "done",
+  "owner": "Terra Sagan",
+  "model": "gpt-6.1-terra",
+  "estimate_minutes": 15,
+  "description": "Подтверждённый034handover2restarts/10bindconflicts18096. Smallboundedguard штатногоcontainer_release.py, busydoesnotkill/continue,rollbackpreserved.",
+  "acceptance": "Meaningful actualbaselineRED/fix/GREEN; exactownedsourcepublished afterreview. Healthy034непереустанавливать; publiccontentsalreadyverified.",
+  "id": "RELEASEPORT15",
+  "created_at": "2026-11-11T00:26:51+03:00",
+  "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+  "harness": "codex",
+  "updated_at": "2026-11-11T00:39:10+03:00",
+  "progress_events": [
+    {
+      "at": "2026-11-11T00:26:51+03:00",
+      "note": "",
+      "changes": {
+        "parent": "MRESUME10",
+        "label": "Исправить передачу порта при штатном обновлении UserIO",
+        "status": "running",
+        "owner": "Terra Sagan",
+        "model": "gpt-6.1-terra",
+        "estimate_minutes": 15,
+        "description": "Подтверждённый034handover2restarts/10bindconflicts18096. Smallboundedguard штатногоcontainer_release.py, busydoesnotkill/continue,rollbackpreserved.",
+        "acceptance": "Meaningful actualbaselineRED/fix/GREEN; exactownedsourcepublished afterreview. Healthy034непереустанавливать; publiccontentsalreadyverified."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    },
+    {
+      "at": "2026-11-11T00:39:10+03:00",
+      "note": "",
+      "changes": {
+        "status": "done",
+        "result": "Publishedoriginmain0298419d exact2ownedpaths scripts/container_release.py+tests/test_container_release_revision.py. ActualbaselineRED existingreplacementdeletes/createswhileoldendpointbusy;GREEN33checks verifywait/refusal,oldrestartrollback,unhealthyrollbacknotclaimed. Nohealthy034runtimemutation. ART/userio-release-port-handover/final-receipt.json; guardusednextneededinstall."
+      },
+      "actor": {
+        "host_id": null,
+        "harness": "codex",
+        "session_id": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+        "source": "native_environment"
+      },
+      "session": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "harness": "codex"
+    }
+  ],
+  "result": "Publishedoriginmain0298419d exact2ownedpaths scripts/container_release.py+tests/test_container_release_revision.py. ActualbaselineRED existingreplacementdeletes/createswhileoldendpointbusy;GREEN33checks verifywait/refusal,oldrestartrollback,unhealthyrollbacknotclaimed. Nohealthy034runtimemutation. ART/userio-release-port-handover/final-receipt.json; guardusednextneededinstall."
+}

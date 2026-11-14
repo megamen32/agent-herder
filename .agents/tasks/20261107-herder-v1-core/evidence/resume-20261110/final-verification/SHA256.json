@@ -1,162 +1,53 @@
-[
-  {
-    "file": "bootstrap-final.log",
-    "sha256": "8655a3f68c53055c5654247fbf71101bec1027f490d8b48fb9a46612763471e6"
-  },
-  {
-    "file": "browser-core-installed-read.json",
-    "sha256": "dd0fcdfce098e71ecc4cbc9b0291812318f5224058079acdbf294b4f84225636"
-  },
-  {
-    "file": "browser-core-installed-read.log",
-    "sha256": "e3745f871b997130e914ebe9701996bb7de9ebc4ab86d9cf29d819136b4a5efc"
-  },
-  {
-    "file": "browser-core-read-029.json",
-    "sha256": "66108cc20ad141591708e87230ae54eee89188b7dadb531bfdb9013be266e2b3"
-  },
-  {
-    "file": "browser-selector-installed.json",
-    "sha256": "7ffaf7c33cabc0b9de39ecb6c0835211b5cc6aaedb1f610e491916a6d7738d48"
-  },
-  {
-    "file": "extension-node.log",
-    "sha256": "0cad656080f9c2773aaa6f110f0e0b7b62ba21e6418a13f5177aab3c61c88021"
-  },
-  {
-    "file": "extension-package.log",
-    "sha256": "44f65ce75346ef55db6a71768ef373ab5f637feabd02451e56c499842321732d"
-  },
-  {
-    "file": "extension-real-summary.json",
-    "sha256": "7304cd4502882dbab58438a7be336069786ac7600dabcf2db552ed59662fd896"
-  },
-  {
-    "file": "herder-installed.log",
-    "sha256": "e1da071743d2ad200bde38882cbda8d6849d71f6cc9229648cb6a4fd03b51239"
-  },
-  {
-    "file": "identity-green.log",
-    "sha256": "0d7e4ad9ac67f015e4ebc588e548ca4b3a935e07284f19413f3e7ffeda5b7f66"
-  },
-  {
-    "file": "identity-red.log",
-    "sha256": "9af5081e170cf3dab61378f5fee1e686289e0b46fdd67058998eff242890aa42"
-  },
-  {
-    "file": "mac-carevio-loaded029.log",
-    "sha256": "aea1ebda0123a88c72279ab83a4a4d39afa6fabb60b89b91a329dd15a1e53678"
-  },
-  {
-    "file": "mac-default-loaded029.log",
-    "sha256": "f69563927fdcdd7a27796287c651cb94d5c000c4740079ed7e79b9d1f1ef99f4"
-  },
-  {
-    "file": "mac-install.log",
-    "sha256": "c95408fd37285ceb8e0a2f9c835f3c39b121a0b8c81da7f2cd47f3337e9b9757"
-  },
-  {
-    "file": "options-before.png",
-    "sha256": "37e780fa67643a6125e7601c28f2f24b4a362275be76dde9881e43dc91d9684c"
-  },
-  {
-    "file": "options-fixture-375.png",
-    "sha256": "e47da8c81cd09567a26103f302c21336a65c68aa9d86c90685b25f627e2f2843"
-  },
-  {
-    "file": "options-fixture-800.png",
-    "sha256": "63d1490876785faf6eacbbaaaf97a0f441fdd7ecd4ab6fc08bf508aec6113fb6"
-  },
-  {
-    "file": "profile-green.log",
-    "sha256": "4c6ffc9fe0cac058a3ba5da879c573094efb60dbd00543f0980905b5dbdf5791"
-  },
-  {
-    "file": "profile-red.log",
-    "sha256": "45e926b7f8384dc45ad1908ee88faf0035552e719b53092f965fcf3a34439ae1"
-  },
-  {
-    "file": "public-browser-read-proof.json",
-    "sha256": "153d36f669b28f841bf2274e32efef754442c1b14b0b26a3107f4dccdfd40280"
-  },
-  {
-    "file": "release-gate.log",
-    "sha256": "50b76b41ae0c921ceadd06d3ab9896dd3ac6bff1ae58836b475f3c3697bce1ca"
-  },
-  {
-    "file": "rust-lib-green.log",
-    "sha256": "dc3a32f59c02c91c3f8a131c6153ee0b0608171f09b3e230fd6859f59953c3d3"
-  },
-  {
-    "file": "rust-lib-red.log",
-    "sha256": "b1d75093a56b76d8ce648387905fd91831facb07d78ada062faf7c4ab355a2ae"
-  },
-  {
-    "file": "sdk-green.log",
-    "sha256": "063b671c26fcf42e66104d651d0c74a0ca4b5be1fcbb6e096366267a8f2f3b22"
-  },
-  {
-    "file": "sdk-proof.md",
-    "sha256": "afa64af5227b8599d4895923c5278ac4e5c052bde530f658ccd0c0fa781f0401"
-  },
-  {
-    "file": "sdk-red.log",
-    "sha256": "d3343e6ca1656f759d44dfa32585b8f54587198a38b6409c64b52fb4f0a47e95"
-  },
-  {
-    "file": "ts-full.log",
-    "sha256": "6bfe1a9641ac8e816af6353ef3ed3a888b71ec2547bc94ee11afe314c22eca4b"
-  },
-  {
-    "file": "userio-029-install-sanitized.log",
-    "sha256": "0517ad9d0949f036d438c4c1b4e670acc91d5c8175dc4535053f13cc5dadcb50"
-  },
-  {
-    "file": "userio-029-live-acceptance.json",
-    "sha256": "47b391bb2b6f84012aa822fae760d61c3a26134d3fd9d7ed87ab9f0df40bd2b1"
-  },
-  {
-    "file": "userio-029-node-118.log",
-    "sha256": "02bfca9cb65f9c09a0c1decd7ffac4791f831e8bcf56a968f9e770ab6a122a0a"
-  },
-  {
-    "file": "userio-029-python-49.log",
-    "sha256": "62cbf30938c72fdd49d2bad222f6b801aa2e0f330038b0b49b031e51d4acc9af"
-  },
-  {
-    "file": "userio-029-receipt.md",
-    "sha256": "001bcc0402f1deafa98fdfc4a09bc06c21861c70cf3d7d14664c1c3c252c862d"
-  },
-  {
-    "file": "userio-account-discovery-acceptance.md",
-    "sha256": "16b262f317aad205ade2e3044514560ac0cd8dfd358dfec645672afe1915e99f"
-  },
-  {
-    "file": "userio-account-discovery-green.log",
-    "sha256": "216e3b0ffcee39e5f34bbf0887e8121997f11bea1e9befd5044a8eb6c1cc0aeb"
-  },
-  {
-    "file": "userio-account-discovery-red.log",
-    "sha256": "093e5f31c0bbc4f31955c19307c993aef3d66a0d8a019819253806c210b36ba3"
-  },
-  {
-    "file": "userio-install.log",
-    "sha256": "cd1d76af791708288a4d63d7be93c2f2725aaf83dc859b221fa759f7eb5c4d47"
-  },
-  {
-    "file": "userio-native-readback-029.json",
-    "sha256": "5d87e977f90b78e0554fea20c2044fe4369de4f02e3939b84d5c509a323feae6"
-  },
-  {
-    "file": "userio-provenance.md",
-    "sha256": "6b49f8b93db486c0eb8d99d64cd16f06fe59145686b0b2f19053413ce6149ac9"
-  },
-  {
-    "file": "zcode-installed-preflight.json",
-    "sha256": "bcb37a3a2efadde6c5b27b16af02a1e3b03ccdf844934ae9d67e9055adbf86fe"
-  },
-  {
-    "file": "zcode-preflight-acceptance.log",
-    "sha256": "ca1a7aa9a5ce50e2deae61b942611cfb5188428e2fe758849f8609d283275167"
-  }
-]
+{
+  "mac-install-032.log": "f01d8b588be2577efeb55b90d383cee4dcf0c87e86ca970296c6bbb772eace80",
+  "mac-chatgpt-send-inspect.log": "a6244b25594249df800f8a123dd4eda1810128b51d5a9911c67f2ae7be3d5c86",
+  "mac-install.log": "c95408fd37285ceb8e0a2f9c835f3c39b121a0b8c81da7f2cd47f3337e9b9757",
+  "options-fixture-800.png": "63d1490876785faf6eacbbaaaf97a0f441fdd7ecd4ab6fc08bf508aec6113fb6",
+  "options-fixture-375.png": "e47da8c81cd09567a26103f302c21336a65c68aa9d86c90685b25f627e2f2843",
+  "userio-account-discovery-green.log": "216e3b0ffcee39e5f34bbf0887e8121997f11bea1e9befd5044a8eb6c1cc0aeb",
+  "mac-carevio-loaded030.log": "fc7e740406be9c423b0c4bcaa7ab40119ebb2b75d7d86d96b5ce58e177587a9a",
+  "userio-029-receipt.md": "001bcc0402f1deafa98fdfc4a09bc06c21861c70cf3d7d14664c1c3c252c862d",
+  "browser-core-installed-read.json": "dd0fcdfce098e71ecc4cbc9b0291812318f5224058079acdbf294b4f84225636",
+  "mac-default-loaded029.log": "f69563927fdcdd7a27796287c651cb94d5c000c4740079ed7e79b9d1f1ef99f4",
+  "herder-installed.log": "e1da071743d2ad200bde38882cbda8d6849d71f6cc9229648cb6a4fd03b51239",
+  "mac-carevio-loaded029.log": "aea1ebda0123a88c72279ab83a4a4d39afa6fabb60b89b91a329dd15a1e53678",
+  "profile-red.log": "45e926b7f8384dc45ad1908ee88faf0035552e719b53092f965fcf3a34439ae1",
+  "extension-node.log": "0cad656080f9c2773aaa6f110f0e0b7b62ba21e6418a13f5177aab3c61c88021",
+  "userio-029-live-acceptance.json": "47b391bb2b6f84012aa822fae760d61c3a26134d3fd9d7ed87ab9f0df40bd2b1",
+  "sdk-green.log": "063b671c26fcf42e66104d651d0c74a0ca4b5be1fcbb6e096366267a8f2f3b22",
+  "userio-provenance.md": "6b49f8b93db486c0eb8d99d64cd16f06fe59145686b0b2f19053413ce6149ac9",
+  "userio-029-install-sanitized.log": "0517ad9d0949f036d438c4c1b4e670acc91d5c8175dc4535053f13cc5dadcb50",
+  "browser-selector-installed.json": "7ffaf7c33cabc0b9de39ecb6c0835211b5cc6aaedb1f610e491916a6d7738d48",
+  "zcode-preflight-acceptance.log": "ca1a7aa9a5ce50e2deae61b942611cfb5188428e2fe758849f8609d283275167",
+  "mac-carevio-loaded033.log": "aa0424b39a4bf00ad7a28fffa8a4bffcc3670304a1fd1dc36a979113ecea0404",
+  "public-browser-read-proof.json": "153d36f669b28f841bf2274e32efef754442c1b14b0b26a3107f4dccdfd40280",
+  "mac-carevio-loaded032.log": "c71dd8057cff5d94e9b999e59c80e0d7bd2d894d901f3677c51c02fbea07395f",
+  "userio-native-readback-029.json": "5d87e977f90b78e0554fea20c2044fe4369de4f02e3939b84d5c509a323feae6",
+  "mac-default-loaded030.log": "90113dfadd5bb2eb0bc0736496b336ff623374c3ca7ee318d5b1ede5b0cd4d7e",
+  "userio-029-node-118.log": "02bfca9cb65f9c09a0c1decd7ffac4791f831e8bcf56a968f9e770ab6a122a0a",
+  "identity-green.log": "0d7e4ad9ac67f015e4ebc588e548ca4b3a935e07284f19413f3e7ffeda5b7f66",
+  "browser-core-installed-read.log": "e3745f871b997130e914ebe9701996bb7de9ebc4ab86d9cf29d819136b4a5efc",
+  "bootstrap-final.log": "8655a3f68c53055c5654247fbf71101bec1027f490d8b48fb9a46612763471e6",
+  "identity-red.log": "9af5081e170cf3dab61378f5fee1e686289e0b46fdd67058998eff242890aa42",
+  "mac-install-033.log": "af1c43d7ac29f5448dec3478c202707d84f85f64f1dd7fbf16f07a2f2eee19d7",
+  "zcode-installed-preflight.json": "bcb37a3a2efadde6c5b27b16af02a1e3b03ccdf844934ae9d67e9055adbf86fe",
+  "mac-install-030.log": "aef67e5754dc9a02a7a77833ac61540d973f72215f9bf771926063773e3bd701",
+  "userio-029-python-49.log": "62cbf30938c72fdd49d2bad222f6b801aa2e0f330038b0b49b031e51d4acc9af",
+  "sdk-proof.md": "afa64af5227b8599d4895923c5278ac4e5c052bde530f658ccd0c0fa781f0401",
+  "mac-zai-auth-read.log": "14208e753d166fab5c5ee9ea60291b53a6bba9d5065fa850c16104d61d96c79f",
+  "mac-chatgpt-editor-inspect.log": "cc7c8ba1b03ea2643dd06d2e4609a8aade9608886daaedf5352064102ccbb226",
+  "browser-core-read-029.json": "66108cc20ad141591708e87230ae54eee89188b7dadb531bfdb9013be266e2b3",
+  "profile-green.log": "4c6ffc9fe0cac058a3ba5da879c573094efb60dbd00543f0980905b5dbdf5791",
+  "rust-lib-green.log": "dc3a32f59c02c91c3f8a131c6153ee0b0608171f09b3e230fd6859f59953c3d3",
+  "extension-real-summary.json": "7304cd4502882dbab58438a7be336069786ac7600dabcf2db552ed59662fd896",
+  "ts-full.log": "6bfe1a9641ac8e816af6353ef3ed3a888b71ec2547bc94ee11afe314c22eca4b",
+  "options-before.png": "37e780fa67643a6125e7601c28f2f24b4a362275be76dde9881e43dc91d9684c",
+  "release-gate.log": "50b76b41ae0c921ceadd06d3ab9896dd3ac6bff1ae58836b475f3c3697bce1ca",
+  "extension-package.log": "44f65ce75346ef55db6a71768ef373ab5f637feabd02451e56c499842321732d",
+  "userio-install.log": "cd1d76af791708288a4d63d7be93c2f2725aaf83dc859b221fa759f7eb5c4d47",
+  "userio-account-discovery-red.log": "093e5f31c0bbc4f31955c19307c993aef3d66a0d8a019819253806c210b36ba3",
+  "userio-account-discovery-acceptance.md": "16b262f317aad205ade2e3044514560ac0cd8dfd358dfec645672afe1915e99f",
+  "sdk-red.log": "d3343e6ca1656f759d44dfa32585b8f54587198a38b6409c64b52fb4f0a47e95",
+  "rust-lib-red.log": "b1d75093a56b76d8ce648387905fd91831facb07d78ada062faf7c4ab355a2ae",
+  "mac-default-loaded032.log": "5fcd7fb72ce4b3b52ae5ab0a9ea57431e455f032f39a83ba1a2cff23929936ea"
+}

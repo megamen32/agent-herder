@@ -1,0 +1,112 @@
+TAP version 13
+# Subtest: rejects untrusted references and never navigates on invalid input
+ok 1 - rejects untrusted references and never navigates on invalid input
+  ---
+  duration_ms: 4.404358
+  type: 'test'
+  ...
+# Subtest: first send rejects missing scope or empty text before opening a tab
+ok 2 - first send rejects missing scope or empty text before opening a tab
+  ---
+  duration_ms: 1.652589
+  type: 'test'
+  ...
+# Subtest: archive rejects untrusted target before opening a tab
+ok 3 - archive rejects untrusted target before opening a tab
+  ---
+  duration_ms: 2.601142
+  type: 'test'
+  ...
+# Subtest: first send checks an empty owned tab and returns exact route and user message
+ok 4 - first send checks an empty owned tab and returns exact route and user message
+  ---
+  duration_ms: 411.178641
+  type: 'test'
+  ...
+# Subtest: first send never overwrites a foreign draft or existing conversation
+ok 5 - first send never overwrites a foreign draft or existing conversation
+  ---
+  duration_ms: 7.532606
+  type: 'test'
+  ...
+# Subtest: first send uses unique visible ProseMirror without an id
+ok 6 - first send uses unique visible ProseMirror without an id
+  ---
+  duration_ms: 2.854919
+  type: 'test'
+  ...
+# Subtest: ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+ok 7 - ambiguous ProseMirror returns bounded no-effect diagnostics and never writes
+  ---
+  duration_ms: 102.644433
+  type: 'test'
+  ...
+# Subtest: first send refuses an account switch immediately before click
+ok 8 - first send refuses an account switch immediately before click
+  ---
+  duration_ms: 3.039013
+  type: 'test'
+  ...
+# Subtest: archive uses exact scope and confirms the same conversation after PATCH
+ok 9 - archive uses exact scope and confirms the same conversation after PATCH
+  ---
+  duration_ms: 3.291649
+  type: 'test'
+  ...
+# Subtest: matches a full exact ChatGPT route, never a colliding prefix
+ok 10 - matches a full exact ChatGPT route, never a colliding prefix
+  ---
+  duration_ms: 2.149452
+  type: 'test'
+  ...
+# Subtest: latest complete final assistant skips analysis and empty nodes
+ok 11 - latest complete final assistant skips analysis and empty nodes
+  ---
+  duration_ms: 5.220615
+  type: 'test'
+  ...
+# Subtest: in-progress assistant after final fails closed
+ok 12 - in-progress assistant after final fails closed
+  ---
+  duration_ms: 2.729935
+  type: 'test'
+  ...
+# Subtest: provider pagination and absent terminal proof never claim full history
+ok 13 - provider pagination and absent terminal proof never claim full history
+  ---
+  duration_ms: 13.936843
+  type: 'test'
+  ...
+# Subtest: legacy branch must reach an explicit root; missing parents and cycles stay partial
+ok 14 - legacy branch must reach an explicit root; missing parents and cycles stay partial
+  ---
+  duration_ms: 4.187249
+  type: 'test'
+  ...
+# Subtest: falls back to legacy mapping only on 404
+ok 15 - falls back to legacy mapping only on 404
+  ---
+  duration_ms: 3.591589
+  type: 'test'
+  ...
+# Subtest: 429 is surfaced with Retry-After and no fallback
+ok 16 - 429 is surfaced with Retry-After and no fallback
+  ---
+  duration_ms: 1.524467
+  type: 'test'
+  ...
+# Subtest: list with no configured scope passes serializable arguments
+ok 17 - list with no configured scope passes serializable arguments
+  ---
+  duration_ms: 2.071562
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 660.247004

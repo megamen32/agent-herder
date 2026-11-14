@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-11-10T21:16:21+00:00",
+  "details": "Подтверждены 10 конфликтов bind18096 и два рестарта supervisor/container, затем healthy. Исторический владелец порта не установлен. Evidence ART/userio-backend-package-0934/restarts-proof.json; bounded release handover fix; работающий034 не переустанавливать.",
+  "events": [
+    {
+      "action": "register",
+      "actor": "Lead",
+      "at": "2026-11-10T21:16:21+00:00",
+      "changes": {
+        "details": "Подтверждено Docker/supervisor timeline: 10bindconflicts18096,2supervisorfatal,2containerrestarts,затемhealthy. Историческийдержательпортаunknown. ART/userio-backend-package-0934/restarts-proof.json. Worker bounded source handover repair; runtime не перезапускать.",
+        "source": "native034installedreadback",
+        "status": "open",
+        "title": "При замене backend старый процесс удерживал порт WhatsApp и вызвал два рестарта"
+      }
+    },
+    {
+      "action": "update",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T21:22:39+00:00",
+      "changes": {
+        "details": "Подтверждены 10 конфликтов bind18096 и два рестарта supervisor/container, затем healthy. Исторический владелец порта не установлен. Evidence ART/userio-backend-package-0934/restarts-proof.json; bounded release handover fix; работающий034 не переустанавливать.",
+        "title": "Передача порта WhatsApp при замене backend вызвала два рестарта"
+      },
+      "reason": ""
+    },
+    {
+      "action": "resolve",
+      "actor": "01a1c551-1737-7bb0-9b52-e25e4b8436c6",
+      "at": "2026-11-10T21:38:57+00:00",
+      "changes": {
+        "resolution": {
+          "evidence": {
+            "proof_path": "evidence/resume-20261110/userio-release-port-handover/actual-green.log",
+            "red_proof_path": "evidence/resume-20261110/userio-release-port-handover/actual-baseline-red.log",
+            "red_result": "FAILED ../../../../../tmp/userio-port-baseline.ea9aL5/tests/test_container_release_revision.py::test_replacement_busy_listener_restores_old_without_deleting_or_creating",
+            "red_sha256": "1d9e7c4d6b6cb24b9c4a0df1913e8573c4e9ac8af524451def82496b3d31a48b",
+            "result": "33 passed, 1 warning in 2.29s",
+            "sha256": "8281c4b225a929cc3dbb83b8c483104c2a471dc2fcc01be0bc050f564cefd886",
+            "test_command": "PYTHONPATH=. pytest -q tests/test_container_release_revision.py tests/test_container_reconcile.py"
+          },
+          "kind": "fixed",
+          "reason": "Published0298419d; realbaseline routine deletes/creates despitebusy; fixed routine waits/refuses, restoresold and verifieshealth. No live replacement replay."
+        },
+        "status": "fixed"
+      }
+    }
+  ],
+  "id": "USERIO_RELEASE_PORT_HANDOVER_20261111",
+  "owner": "Lead",
+  "reporter": "Lead",
+  "resolution": {
+    "evidence": {
+      "proof_path": "evidence/resume-20261110/userio-release-port-handover/actual-green.log",
+      "red_proof_path": "evidence/resume-20261110/userio-release-port-handover/actual-baseline-red.log",
+      "red_result": "FAILED ../../../../../tmp/userio-port-baseline.ea9aL5/tests/test_container_release_revision.py::test_replacement_busy_listener_restores_old_without_deleting_or_creating",
+      "red_sha256": "1d9e7c4d6b6cb24b9c4a0df1913e8573c4e9ac8af524451def82496b3d31a48b",
+      "result": "33 passed, 1 warning in 2.29s",
+      "sha256": "8281c4b225a929cc3dbb83b8c483104c2a471dc2fcc01be0bc050f564cefd886",
+      "test_command": "PYTHONPATH=. pytest -q tests/test_container_release_revision.py tests/test_container_reconcile.py"
+    },
+    "kind": "fixed",
+    "reason": "Published0298419d; realbaseline routine deletes/creates despitebusy; fixed routine waits/refuses, restoresold and verifieshealth. No live replacement replay."
+  },
+  "source": "native034installedreadback",
+  "status": "fixed",
+  "title": "Передача порта WhatsApp при замене backend вызвала два рестарта",
+  "updated_at": "2026-11-10T21:38:57+00:00"
+}

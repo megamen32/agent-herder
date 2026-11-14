@@ -1,0 +1,18 @@
+{
+  "status": "published_not_installed",
+  "source_base": "1e9a7a5d8f9f1f58e3e31da4b95f0e0d8ba880ad",
+  "remote_main_observed": "0298419d7a5af4565f9fa3d877cbed9fb2120dc4",
+  "version": "0.9.35",
+  "patch_sha256": "b8d8ea22eb5a5818ba37fcfd542db61d9515cf9d80fdcbf449bd128d048889f6",
+  "archives": {
+    "vk-userio-extension.zip": "a6e23473ace4cc683827d28be739fec37674e7a7485e0c798e5159ce7424bf56",
+    "vk-userio-extension-mv3.zip": "a6e23473ace4cc683827d28be739fec37674e7a7485e0c798e5159ce7424bf56"
+  },
+  "tests": "frame-baseline-red.log: expected failure on 0.9.34; extension-suite.log: 141 passed; package-checks.log: 6 passed",
+  "limitations": "Actual cause of 14e UNKNOWN remains unproven; live verification pending. No provider action or installation.",
+  "review_gate": "parent reviewed and approved publication",
+  "source_commit": "b243ac3dc8abef7789f60f6eb4a8d06399876ee7",
+  "source_parent": "0298419d7a5af4565f9fa3d877cbed9fb2120dc4",
+  "remote_main_verified": "b243ac3dc8abef7789f60f6eb4a8d06399876ee7",
+  "package_source_verified": true
+}

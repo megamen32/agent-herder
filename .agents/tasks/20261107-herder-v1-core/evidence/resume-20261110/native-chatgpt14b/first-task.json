@@ -1,0 +1,35 @@
+{
+  "createdAt": "2026-11-10T20:39:19Z",
+  "lastUpdatedAt": "2026-11-10T20:39:19Z",
+  "result": {
+    "content": [
+      {
+        "text": "{\"create\":{\"effect\":\"confirmed\",\"session_ref\":\"session:9fde102d4a69f45d36e9a4a93e7436e4\"},\"prompt\":{\"code\":\"outcome_unknown\",\"diagnostic_ref\":null,\"effect\":\"unknown\",\"expected\":null,\"field\":null,\"fix\":null,\"receipt_ref\":null,\"received\":null,\"retry\":\"forbidden\"}}",
+        "type": "text"
+      }
+    ],
+    "isError": true,
+    "resultType": "complete",
+    "structuredContent": {
+      "create": {
+        "effect": "confirmed",
+        "session_ref": "session:9fde102d4a69f45d36e9a4a93e7436e4"
+      },
+      "prompt": {
+        "code": "outcome_unknown",
+        "diagnostic_ref": null,
+        "effect": "unknown",
+        "expected": null,
+        "field": null,
+        "fix": null,
+        "receipt_ref": null,
+        "received": null,
+        "retry": "forbidden"
+      }
+    }
+  },
+  "resultType": "complete",
+  "status": "completed",
+  "taskId": "create-operation:c83c86322656720406a95aa90122b525",
+  "ttlMs": null
+}

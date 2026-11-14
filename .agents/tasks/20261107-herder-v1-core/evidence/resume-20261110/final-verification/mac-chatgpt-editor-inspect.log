@@ -1,0 +1,13 @@
+EXACT_OPTIONS_WINDOW "ChatGPT" – элемент группы "UserIO · ChatGPT" - Google Chrome (Carevio)
+BUTTON New chat dom_id 
+BUTTON New chat dom_id 
+EDITOR AXTextArea title Ask ChatGPT description Ask ChatGPT value_length 12 dom_id  classes (
+    ProseMirror,
+    "ProseMirror-focused"
+) role_desc область ввода текста
+EDITOR AXTextField title Адресная строка и строка поиска description Адресная строка и строка поиска value_length 11 dom_id view_1012 classes (
+    OmniboxViewViews
+) role_desc текстовое поле
+EDITOR AXTextField title Адресная строка и строка поиска description Адресная строка и строка поиска value_length 11 dom_id view_1012 classes (
+    OmniboxViewViews
+) role_desc текстовое поле

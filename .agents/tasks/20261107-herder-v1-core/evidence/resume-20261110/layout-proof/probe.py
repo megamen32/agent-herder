@@ -49,3 +49,4 @@ def run(rev):
     finally:
         p.terminate();p.wait(timeout=5)
 before=run('beee53a');after=run('e840c9fa'); result={'before':before,'after':after};(BASE/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result));sys.exit(0 if any(x['status']=='FAIL' for x in before) and all(x['status']=='PASS' for x in after) else 1)
+

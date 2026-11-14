@@ -1,0 +1,15 @@
+{
+  "source_commit": "607d35ecee1181eace2432c7809212b75f83a571",
+  "version": "0.9.31",
+  "zip_sha256": "f27d08a74f5e62b7aaeaf2fd73766ad0aa71171d0a43f73c88735afd54b7d6fc",
+  "supersedes_same_version_archive_sha256": "630c337a4fff62e66c56a66be04429c13ffc7c3ee77fcc30d2d9dc1ced2cee86",
+  "archives": [
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension.zip",
+    "/home/roomhacker/herder-artifacts/worktrees/userio-zai-archive-0931/src/universal_userio/static/vk-userio-extension-mv3.zip"
+  ],
+  "tests": "134 extension tests PASS; four package checks PASS; additional real-page-function first-click negatives PASS",
+  "failure_evidence": "/home/roomhacker/herder-artifacts/ci-runs/resume-browser-20261110-01a1c551/userio-zai-archive-0931/auth-red.log",
+  "guard": "reject /auth, missing token, guest identity or denied auth before account observation; bearer used in page only",
+  "compatibility": "requires bearer token; cookie_v2-only session fails closed",
+  "deployment": "not installed"
+}

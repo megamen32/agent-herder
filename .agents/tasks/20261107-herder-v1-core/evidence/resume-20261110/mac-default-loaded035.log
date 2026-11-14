@@ -1,0 +1,5 @@
+window_count 3 profile Default
+window_filter false false length 0
+window_filter false false length 0
+window_filter true false length 60
+profile Default versions ["0.9.35", "~/Загрузки/Universal-UserIO-Agent-0.9.11"]
