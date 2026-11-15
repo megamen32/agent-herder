@@ -162,6 +162,89 @@ impl ApplicationPort for App {
             {
                 return Some(result);
             }
+            if let catalog::Request::Deliver(catalog::Deliver::Envelope {
+                target,
+                input_id,
+                message,
+                ..
+            }) = &request
+            {
+                // The envelope target selects this owner, but sender is only
+                // attribution. Trust still comes from the configured owner,
+                // native resolver and the existing delivery ACL/ledger.
+                if target.host_id != self.instance.node.0 || target.harness != self.harness {
+                    return Some(rmcp::model::CallToolResult::structured_error(
+                        serde_json::json!({
+                            "code":"owner_profile_mismatch",
+                            "effect":"none",
+                            "message":"delivery envelope target does not match the configured owner"
+                        }),
+                    ));
+                }
+                let resolved = self
+                    .waits
+                    .call(
+                        identity,
+                        catalog::Request::Session(catalog::Session::Resolve {
+                            harness: target.harness.clone(),
+                            native_session_id: target.native_session_id.clone(),
+                            node_ref: Some(target.host_id.clone()),
+                        }),
+                    )
+                    .await;
+                let Some(resolved) = resolved else {
+                    return Some(rmcp::model::CallToolResult::structured_error(
+                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
+                    ));
+                };
+                if resolved.is_error == Some(true) {
+                    return Some(resolved);
+                }
+                let Some(session_ref) = resolved
+                    .structured_content
+                    .as_ref()
+                    .and_then(|value| value.get("session_ref"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                else {
+                    return Some(rmcp::model::CallToolResult::structured_error(
+                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
+                    ));
+                };
+                let mode = if self
+                    .adapter
+                    .capabilities()
+                    .get("deliveryModes")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("start")))
+                {
+                    catalog::DeliveryMode::Start
+                } else if self
+                    .adapter
+                    .capabilities()
+                    .get("deliveryModes")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("queue")))
+                {
+                    catalog::DeliveryMode::Queue
+                } else {
+                    return Some(rmcp::model::CallToolResult::structured_error(
+                        serde_json::json!({"code":"unsupported_delivery_mode","effect":"none"}),
+                    ));
+                };
+                return self
+                    .deliver
+                    .call(
+                        identity,
+                        catalog::Request::Deliver(catalog::Deliver::Session {
+                            session_ref,
+                            message: message.clone(),
+                            mode,
+                            request_key: input_id.clone(),
+                        }),
+                    )
+                    .await;
+            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }

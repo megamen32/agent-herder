@@ -3,6 +3,37 @@ use crate::domain::resource::{Attachment, ResourceKind, ResourceRef, ResourceSco
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// The public cross-host delivery identity. The sender is attribution only;
+/// the owner path rechecks the target against its trusted profile and ACL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeliveryPeer {
+    pub host_id: String,
+    pub harness: String,
+    pub native_session_id: String,
+}
+
+/// Exact public delivery envelope. input_id is the durable idempotency key
+/// when this envelope is mapped to the existing action-based delivery path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeliveryEnvelope {
+    pub target: DeliveryPeer,
+    pub sender: DeliveryPeer,
+    pub input_id: String,
+    pub message: String,
+}
+
+fn delivery_schema(mut schema: serde_json::Value) -> serde_json::Value {
+    if let Some(branches) = schema.get_mut("oneOf").and_then(serde_json::Value::as_array_mut) {
+        branches.retain(|branch| {
+            branch["properties"]["action"]["const"] != serde_json::Value::String("envelope".into())
+        });
+        branches.push(serde_json::to_value(schemars::schema_for!(DeliveryEnvelope)).expect("schema serializes"));
+    }
+    schema
+}
+
 // Discovery and input dispatch both come from this declaration. Dispatch only
 // parses and classifies requests; it never executes an operation.
 macro_rules! catalog {
@@ -11,9 +42,28 @@ macro_rules! catalog {
         #[derive(Debug, Clone, PartialEq)]
         pub enum Request { $($variant($ty)),* }
         pub fn discovery() -> Vec<ToolDefinition> {
-            vec![$(ToolDefinition { name: $name, input_schema: serde_json::to_value(schemars::schema_for!($ty)).expect("schema serializes") }),*]
+            vec![$(ToolDefinition { name: $name, input_schema: {
+                let schema = serde_json::to_value(schemars::schema_for!($ty)).expect("schema serializes");
+                if $name == "deliver" { delivery_schema(schema) } else { schema }
+            } }),*]
         }
         pub fn dispatch(name: &str, input: serde_json::Value) -> Result<Dispatched, DispatchError> {
+            if name == "deliver"
+                && input.get("action").is_none()
+                && ["target", "sender", "inputId", "message"].iter().any(|key| input.get(*key).is_some())
+            {
+                let envelope = serde_json::from_value::<DeliveryEnvelope>(input)
+                    .map_err(DispatchError::InvalidInput)?;
+                return Ok(Dispatched {
+                    request: Request::Deliver(Deliver::Envelope {
+                        target: envelope.target,
+                        sender: envelope.sender,
+                        input_id: envelope.input_id,
+                        message: envelope.message,
+                    }),
+                    access: Access::Mutate,
+                });
+            }
             let action = input.get("action").and_then(|v| v.as_str()).map(str::to_owned);
             match name {
                 $($name => {
@@ -180,6 +230,7 @@ actions!(Deliver {
     Receipt { session_ref: String, request_key: String },
     Session { session_ref: String, message: String, mode: DeliveryMode, request_key: String },
     ReplyTo { reply_to: String, message: String, mode: DeliveryMode, request_key: String },
+    Envelope { target: DeliveryPeer, sender: DeliveryPeer, input_id: String, message: String },
 });
 actions!(Resume { Resume { session_ref: String, request_key: String } });
 actions!(Stop { Stop { session_ref: String, request_key: String } });
@@ -538,12 +589,30 @@ mod tests {
         for tool in &tools {
             let branches = tool.input_schema["oneOf"].as_array().expect(tool.name);
             let mut advertised = std::collections::BTreeSet::new();
+            let mut envelope_branches = 0;
             for branch in branches {
                 assert_eq!(
                     branch["additionalProperties"], false,
                     "{}: {branch}",
                     tool.name
                 );
+                if branch["properties"].get("action").is_none() {
+                    assert_eq!(tool.name, "deliver", "unexpected non-action branch: {branch}");
+                    let required: std::collections::BTreeSet<_> = branch["required"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|value| value.as_str().unwrap())
+                        .collect();
+                    assert_eq!(
+                        required,
+                        ["target", "sender", "inputId", "message"]
+                            .into_iter()
+                            .collect()
+                    );
+                    envelope_branches += 1;
+                    continue;
+                }
                 assert!(
                     branch["required"]
                         .as_array()
@@ -557,6 +626,7 @@ mod tests {
                         .to_owned(),
                 );
             }
+            assert_eq!(envelope_branches, usize::from(tool.name == "deliver"));
             let expected: std::collections::BTreeSet<_> = cases
                 .iter()
                 .filter(|(name, _, _)| *name == tool.name)
@@ -753,6 +823,36 @@ mod tests {
         ));
         assert!(!parses::<Configure>(
             json!({"action":"set","target":{"type":"node","node_ref":"n"},"key":"k","value":true})
+        ));
+    }
+
+    #[test]
+    fn exact_delivery_envelope_is_typed_and_uses_input_id_as_request_key() {
+        let input = json!({
+            "target": {"hostId":"roomhacker-server-100","harness":"opencode","nativeSessionId":"native-target"},
+            "sender": {"hostId":"server-44","harness":"codex","nativeSessionId":"native-sender"},
+            "inputId":"stable-input-1",
+            "message":"bounded work delta"
+        });
+        let parsed = dispatch("deliver", input.clone()).expect("exact envelope dispatches");
+        assert_eq!(parsed.access, Access::Mutate);
+        match parsed.request {
+            Request::Deliver(Deliver::Envelope { target, sender, input_id, message }) => {
+                assert_eq!(target.host_id, "roomhacker-server-100");
+                assert_eq!(target.harness, "opencode");
+                assert_eq!(target.native_session_id, "native-target");
+                assert_eq!(sender.host_id, "server-44");
+                assert_eq!(input_id, "stable-input-1");
+                assert_eq!(message, "bounded work delta");
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+
+        let schema = &discovery().into_iter().find(|tool| tool.name == "deliver").unwrap().input_schema;
+        assert!(jsonschema::validator_for(schema).unwrap().is_valid(&input));
+        assert!(matches!(
+            dispatch("deliver", json!({"target": input["target"], "sender": input["sender"], "inputId":"stable-input-1"})),
+            Err(DispatchError::InvalidInput(_))
         ));
     }
 }
