@@ -90,19 +90,47 @@ impl ServerHandler for MultiOwner {
             let Some(harness) = target.get("harness").and_then(Value::as_str) else {
                 return Ok(denied("invalid_target"));
             };
-            let mut selected = None;
+            let Some(native_session_id) = target.get("nativeSessionId").and_then(Value::as_str) else {
+                return Ok(denied("invalid_target"));
+            };
             let host = canonical_host_id(host);
-            for binding in &self.bindings {
-                if canonical_host_id(&binding.instance.node.0) == host && binding.harness == harness {
+            let candidates: Vec<_> = self.bindings.iter().filter(|binding|
+                canonical_host_id(&binding.instance.node.0) == host && binding.harness == harness
+            ).collect();
+            if candidates.is_empty() {
+                return Ok(denied("owner_profile_mismatch"));
+            }
+            if candidates.len() == 1 {
+                return candidates[0].server.call_tool(request, ctx).await;
+            }
+
+            // Host+harness is not unique when two independent sessions share
+            // one machine. Resolve the exact native ID in each candidate first;
+            // only the unique owner receives the mutating envelope.
+            let mut resolve_args = serde_json::Map::new();
+            resolve_args.insert("action".into(), json!("resolve"));
+            resolve_args.insert("harness".into(), json!(harness));
+            resolve_args.insert("native_session_id".into(), json!(native_session_id));
+            resolve_args.insert("node_ref".into(), json!(host));
+            let resolve = CallToolRequestParams::new("session")
+                .with_arguments(resolve_args);
+            let mut selected = None;
+            for binding in candidates {
+                let response = binding.server.call_tool(resolve.clone(), ctx.clone()).await?;
+                let successful = matches!(
+                    &response,
+                    CallToolResponse::Complete(result) if result.is_error != Some(true)
+                );
+                if successful {
                     if selected.is_some() {
-                        return Ok(denied("owner_profile_mismatch"));
+                        return Ok(denied("ambiguous_native_identity"));
                     }
                     selected = Some(binding);
                 }
             }
             return match selected {
                 Some(binding) => binding.server.call_tool(request, ctx).await,
-                None => Ok(denied("owner_profile_mismatch")),
+                None => Ok(denied("native_session_not_registered")),
             };
         }
         if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
