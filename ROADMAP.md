@@ -1,5 +1,15 @@
 # Roadmap
 
+## Active P0 — Process-bound lease renewal and agentflow resume (2026-11-15)
+
+- [ ] **Довести до production единый Herder-контур: resource claim → supervised build/job → bounded auto-renew → terminal receipt → `resume_after` → продолжение исходного agentflow.** Из переписки 13–14 ноября: реализация велась в `feat/herder-process-leases-20261113`, коммит `2c4c585d` уже является предком текущего `main` на server-100 (проверено 15.11). Это **не подтверждает работающий установленный runtime**; закрывать пункт только после production-приёмки. [Подробный технический план в Extodo](https://chatgpt.com/space/page_f2b8f0954b1c81918ae0fd048c129aaa), [исходный план Herder](https://chatgpt.com/space/page_835ee164266081918e5e4297ac92a2a3).
+  - [ ] **P0 / Audit:** сопоставить `main` и установленные SHA/handlers Herder на активных хостах, проверив конкретные process bindings, resource claims, renewers, Agent Resume consumers и pending waits. Записать evidence и пробелы, не дублировать уже реализованное.
+  - [ ] **P0 / Unified contract:** один Herder authority для generic resource claims и ожиданий; `prepare/spawn-and-bind` или безопасный `attach` связывает `lease_id + fencing epoch` с устойчивым `job_id`, supervisor identity (host/boot ID, PID+start marker, process group/cgroup). Агент завершает ход; `resume_after` сохраняет checkpoint без LLM polling.
+  - [ ] **P0 / Safety & recovery:** делегированное продление ограничено TTL, hard deadline, CAS/fencing, revocation и состоянием job. Durable terminal receipt + transactional outbox + dedup `wake_id` обеспечивают однократное логическое продолжение. Перезапуски, PID reuse, ошибки и сетевые разрывы ведут к reconcile/`SUSPECT`/`UNKNOWN`, **без повторного spawn при неясном исходе**; после завершения — bounded handoff для verify/deploy или release.
+  - [ ] **P0 / Acceptance:** fault-injection и E2E OpenCode, ZCode, Codex; повторить сценарий ~40 с build / 15 с lease TTL / 18 с недоступности Herder; доказать не только один resume, но и сохранённую эксклюзивность ресурса либо безопасное fencing при истечении lease. Проверить гонки terminal/renew/release, падения до/после spawn/bind/outbox/ACK, hard deadline и отсутствие двойных эффектов.
+  - [ ] **P1 / Rollout:** feature-flag canary → миграция/карантин старых waits и receipts → отключение независимого effectful Agent Resume **без двух writers** → поэтапный default-on. Нужны продовые метрики, логи, commit/CI evidence, runbook и проверенный rollback без дублирования запуска.
+  - **Definition of Done:** установленный и проверенный единый Herder runtime, работающая цепочка в каждом используемом harness, соблюдение bounded lease/fencing и exactly-once logical wake; все спорные/UNKNOWN jobs разобраны без повтора, нет второго отправителя wake. До этого статус: **implementation reported/merged, production not verified**.
+
 ## Proposed
 
 - [x] Context-mode-backed transcript retrieval — completed 2026-07-30; Agent Herder now uses bounded Context Mode-style local ranking for `query` or lead `need`.
