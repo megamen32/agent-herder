@@ -1562,6 +1562,7 @@ async fn delivery_requires_authority_exact_instance_and_snapshot_before_fake_sub
         task_id: "task-i",
         request_key: "k",
         message: "message",
+        sender: None,
         command: SendCommand {
             mode: SendMode::Start,
         },
@@ -4766,6 +4767,7 @@ async fn direct_queue_delivery_requires_trusted_composition_and_deduplicates() {
             message: "hi".into(),
             mode: catalog::DeliveryMode::Queue,
             request_key: "queue-key".into(),
+            sender: None,
         })
     };
     let denied = app.call(&identity(), req()).await.unwrap();

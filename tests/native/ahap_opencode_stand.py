@@ -173,9 +173,36 @@ def validate_v1_public_contract(tools):
             schema_audit[name][field] = sorted(actual) if actual else "not-enumerated"
             if actual and not expected <= actual:
                 missing.append(f"{name}.{field}={sorted(expected)} (advertised {sorted(actual)})")
+    deliver = by_name.get("deliver")
+    deliver_schema = deliver.get("inputSchema") if isinstance(deliver, dict) else None
+    branches = deliver_schema.get("oneOf") if isinstance(deliver_schema, dict) else None
+    if isinstance(branches, list) and any(isinstance(branch, dict) and
+                                          (branch.get("required") or branch.get("properties"))
+                                          for branch in branches):
+        envelope = next((branch for branch in branches
+                          if isinstance(branch, dict)
+                          and "action" not in (branch.get("properties") or {})), None)
+        required_envelope = {"target", "sender", "inputId", "message"}
+        advertised = set(envelope.get("required") or []) if isinstance(envelope, dict) else set()
+        schema_audit.setdefault("deliver", {})["envelope"] = sorted(advertised) if advertised else "not-advertised"
+        if not required_envelope <= advertised:
+            missing.append("deliver.envelope requires target/sender/inputId/message")
+    else:
+        schema_audit.setdefault("deliver", {})["envelope"] = "not-enumerated"
     if missing:
         raise RuntimeError("V1 public MCP contract missing before mutation: " + "; ".join(missing))
     return schema_audit
+
+
+def delivery_envelope(target_host, harness, native_session_id, sender, input_id, message):
+    """Build the action-less universal delivery contract for the Rust core."""
+    return {
+        "target": {"hostId": target_host, "harness": harness,
+                    "nativeSessionId": native_session_id},
+        "sender": sender,
+        "inputId": input_id,
+        "message": message,
+    }
 
 
 def _structured_content(result):
@@ -1006,8 +1033,12 @@ def run_case(args):
         completion_one = wait_for_native_completion(opencode_url, session_one, marker_one,
                                                     receipt_one["native_receipt_id"], env)
 
-        delivered = rpc_tool(core, "deliver", {"action": "session", "session_ref": session,
-                              "message": marker_two, "mode": "queue", "request_key": request_two})
+        target_host = profile["owner"]["node"]
+        sender = {"hostId": "isolated-sender-node", "harness": "codex",
+                  "nativeSessionId": "isolated-sender-session"}
+        envelope_two = delivery_envelope(target_host, "opencode", session_one, sender,
+                                         request_two, marker_two)
+        delivered = rpc_tool(core, "deliver", envelope_two)
         task_id_two = delivered.get("taskId") if isinstance(delivered, dict) else None
         if not isinstance(task_id_two, str) or delivered.get("resultType") != "task":
             raise RuntimeError(f"second same-session deliver did not return a Task: {delivered}")
@@ -1022,6 +1053,43 @@ def run_case(args):
                                                     receipt_two["native_receipt_id"], env)
         if receipt_one["native_receipt_id"] == receipt_two["native_receipt_id"]:
             raise RuntimeError("separate same-session deliveries reused a native user message id")
+        receipt_read = rpc_tool(core, "deliver", {"action": "receipt", "session_ref": session,
+                                                   "request_key": request_two})
+        receipt_payload = _structured_content(receipt_read)
+        stored_sender = ((receipt_payload or {}).get("native_receipt") or {}).get("sender") \
+            if isinstance(receipt_payload, dict) else None
+        if stored_sender != sender:
+            raise RuntimeError(f"envelope sender was not preserved in durable receipt: {receipt_read}")
+        evidence["envelope"] = {"request": envelope_two, "receipt_read": receipt_read,
+                                 "sender": stored_sender}
+
+        stats_url = model_origin + "/_stats"
+        with urllib.request.urlopen(stats_url, timeout=3) as response:
+            requests_after_first_envelope = json.loads(response.read(4096)).get("requests") - model_requests_before
+        if requests_after_first_envelope != 2:
+            raise RuntimeError(f"expected two model requests after create plus envelope, got {requests_after_first_envelope}")
+        replay_wire = rpc_tool(core, "deliver", envelope_two)
+        replay_task_id = replay_wire.get("taskId") if isinstance(replay_wire, dict) else None
+        if replay_task_id != task_id_two:
+            raise RuntimeError(f"same-key replay did not return the original task: {replay_wire}")
+        replay_task = wait_task(core, replay_task_id)
+        replay_receipt = task_delivery_receipt(replay_task)
+        if replay_receipt != receipt_two:
+            raise RuntimeError("same-key replay returned a different durable receipt")
+        conflict_envelope = dict(envelope_two)
+        conflict_envelope["message"] = marker_two + "_changed_payload"
+        conflict_wire = rpc_tool(core, "deliver", conflict_envelope)
+        conflict_payload = _structured_content(conflict_wire)
+        if not isinstance(conflict_payload, dict) or conflict_payload.get("code") != "idempotency_conflict":
+            raise RuntimeError(f"changed envelope payload was not rejected before admission: {conflict_wire}")
+        with urllib.request.urlopen(stats_url, timeout=3) as response:
+            requests_after_negative = json.loads(response.read(4096)).get("requests") - model_requests_before
+        if requests_after_negative != requests_after_first_envelope:
+            raise RuntimeError("same-key replay or changed-payload conflict caused a new model request")
+        evidence["scenarios"]["same_key_replay"] = "PASS"
+        evidence["scenarios"]["changed_payload_conflict"] = "PASS"
+        evidence["negative_delivery"] = {"replay": replay_wire, "conflict": conflict_wire,
+                                          "model_requests": requests_after_negative}
 
         native_read = rpc_tool(core, "session", {"action": "messages", "session_ref": session})
         native_rows = [row for row in message_records(native_read)
@@ -1105,7 +1173,6 @@ def run_case(args):
                          "search": search_result, "native_session_id": session_one})
         persist_evidence(evidence_path, evidence)
 
-        stats_url = model_origin + "/_stats"
         with urllib.request.urlopen(stats_url, timeout=3) as response:
             requests_before_restart = json.loads(response.read(4096)).get("requests") - model_requests_before
         if requests_before_restart != 2:
@@ -1149,14 +1216,63 @@ def run_case(args):
         if requests_after_restart != requests_before_restart:
             raise RuntimeError("core restart caused a replayed model send")
         evidence["scenarios"]["restart_no_resend"] = "PASS"
+
+        # Archive before installing the durable HumanStop hold; the hold is
+        # deliberately tested on the already verified session and must not be
+        # cleared as a cleanup side effect.
+        archive = rpc_tool(reopened, "session", {"action": "archive", "session_ref": session,
+                                                  "request_key": run_id + "-archive"})
+        evidence["cleanup"] = {"archive": archive}
+        archive_payload = _structured_content(archive)
+        if not isinstance(archive_payload, dict) or archive_payload.get("archived") is not True:
+            raise RuntimeError("test chat archive not confirmed before HumanStop proof")
+
+        stop_wire = rpc_tool(reopened, "stop", {"action": "stop", "session_ref": session,
+                                                "request_key": run_id + "-human-stop"})
+        stop_payload = _structured_content(stop_wire)
+        if not isinstance(stop_payload, dict) or stop_payload.get("hold") != "active":
+            raise RuntimeError(f"HumanStop was not durably installed: {stop_wire}")
+        held_input_id = run_id + "-held-delivery"
+        held_envelope = delivery_envelope(target_host, "opencode", session_one, sender,
+                                          held_input_id, "must-not-be-sent")
+        requests_before_hold = requests_after_restart
+        blocked_wire = rpc_tool(reopened, "deliver", held_envelope)
+        blocked_payload = _structured_content(blocked_wire)
+        if not isinstance(blocked_payload, dict) or blocked_payload.get("effect") != "none":
+            raise RuntimeError(f"HumanStop did not block delivery before admission: {blocked_wire}")
+        with urllib.request.urlopen(stats_url, timeout=3) as response:
+            requests_after_hold = json.loads(response.read(4096)).get("requests") - model_requests_before
+        if requests_after_hold != requests_before_hold:
+            raise RuntimeError("HumanStop-blocked delivery reached the fake model")
+
+        reopened.close()
+        reopened = None
+        reopened = RpcProcess(args.core, profile_path, env)
+        reopened.preflight()
+        validate_v1_public_contract(reopened.native_tool_catalog)
+        held_after_restart = dict(held_envelope)
+        held_after_restart["inputId"] = run_id + "-held-delivery-after-restart"
+        blocked_after_restart_wire = rpc_tool(reopened, "deliver", held_after_restart)
+        blocked_after_restart = _structured_content(blocked_after_restart_wire)
+        if not isinstance(blocked_after_restart, dict) or blocked_after_restart.get("effect") != "none":
+            raise RuntimeError(f"HumanStop hold did not survive core restart: {blocked_after_restart_wire}")
+        with urllib.request.urlopen(stats_url, timeout=3) as response:
+            requests_after_hold_restart = json.loads(response.read(4096)).get("requests") - model_requests_before
+        if requests_after_hold_restart != requests_before_hold:
+            raise RuntimeError("restart HumanStop probe changed fake-model request count")
+        evidence["scenarios"]["human_stop"] = "PASS"
+        evidence["human_stop"] = {"stop": stop_wire, "blocked": blocked_wire,
+                                   "blocked_after_restart": blocked_after_restart_wire,
+                                   "resend_count": 0}
         case_status = "PASS" if projects_check["status"] == "confirmed" else "PARTIAL"
         evidence.update({"phase": "completed", "result": case_status,
                          "report_schema": "ahap-opencode-v1",
                          "run_id": run_id, "stage": identity["stage"], "artifact": identity,
                          "scenarios": {"projects": projects_check["status"].upper(), "create_deliver_read": "PASS",
-                             "second_same_session_deliver": "PASS", "export_native": "PASS",
-                             "export_common": "UNSUPPORTED", "search_marker_coverage": "PASS",
-                             "restart_no_resend": "PASS"},
+                             "second_same_session_deliver": "PASS", "same_key_replay": "PASS",
+                             "changed_payload_conflict": "PASS", "human_stop": "PASS",
+                             "export_native": "PASS", "export_common": "UNSUPPORTED",
+                             "search_marker_coverage": "PASS", "restart_no_resend": "PASS"},
                          "task_ids": [task_id_one, task_id_two], "session_ref": session,
                          "native_pairs": native_pairs, "public_export": export_check,
                          "common_export": common_result, "search": search_result,
@@ -1176,12 +1292,6 @@ def run_case(args):
                          "cleanup": {"opencode_server_shutdown": "finally",
                                      "disposable_fixture_cleanup_owner": "launcher"}})
         persist_evidence(evidence_path, evidence)
-        archive = rpc_tool(reopened, "session", {"action":"archive", "session_ref":session,
-                           "request_key":run_id+"-archive"})
-        evidence["cleanup"]["archive"] = archive
-        persist_evidence(evidence_path, evidence)
-        if archive.get("structuredContent", {}).get("archived") is not True:
-            raise RuntimeError("test chat archive not confirmed; transcript evidence preserved")
         print(json.dumps({"status": case_status, "harness": "opencode", "native_tools": available_tools,
             "report_schema": "ahap-opencode-v1",
             "api_family": api_family, "runner_protocol": runner_protocol,
@@ -1189,6 +1299,8 @@ def run_case(args):
             "task_ids": [task_id_one, task_id_two], "session_ref": session,
             "inputs": [marker_one, marker_two], "request_keys": [request_one, request_two],
             "receipts": [receipt_one, receipt_two], "native_pairs": native_pairs,
+            "envelope": evidence.get("envelope"), "negative_delivery": evidence.get("negative_delivery"),
+            "human_stop": evidence.get("human_stop"),
             "native_completion": [completion_one, completion_two],
             "native_readback": native_rows, "reopened_readback": reopened_rows,
             "reopened_task_statuses": [task.get("status") for task in reopened_tasks],

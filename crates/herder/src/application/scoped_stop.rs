@@ -29,8 +29,8 @@ use crate::domain::address::SessionRef;
 use crate::{
     application::{
         reconcile::{
-            DurableDispatch, ReceiptBinding, StoreReceipt, dispatch_payload_binding,
-            store_native_receipt,
+            DurableDispatch, ReceiptBinding, StoreReceipt, dispatch_payload_binding_with_sender,
+            store_native_receipt_with_sender,
         },
         target_gate::{PinnedTargetGateGuard, acquire_pinned, acquire_pinned_wait},
     },
@@ -460,6 +460,33 @@ impl ScopedAuthority {
         now: &str,
         retain_until: &str,
     ) -> Result<Option<String>, GateError> {
+        self.prepare_with_sender(
+            identity,
+            grants,
+            b,
+            scope_generation,
+            plan,
+            message,
+            task_id,
+            now,
+            retain_until,
+            None,
+        )
+    }
+
+    pub fn prepare_with_sender(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        b: &ReceiptBinding<'_>,
+        scope_generation: &str,
+        plan: &DispatchPlan,
+        message: &str,
+        task_id: &str,
+        now: &str,
+        retain_until: &str,
+        sender: Option<&crate::mcp::catalog::DeliveryPeer>,
+    ) -> Result<Option<String>, GateError> {
         use crate::store::intents::{NewIntent, PrepareResult};
         authorize_session(identity, grants, b)?;
         let (_gate, mut writer) = self.lock()?;
@@ -468,7 +495,7 @@ impl ScopedAuthority {
         {
             return Ok(None);
         }
-        let payload = dispatch_payload_binding(plan, message);
+        let payload = dispatch_payload_binding_with_sender(plan, message, sender);
         match writer
             .prepare_intent(&NewIntent {
                 intent_id: b.intent_id,
@@ -500,6 +527,20 @@ impl ScopedAuthority {
         message: &str,
         now: &str,
     ) -> Result<bool, GateError> {
+        self.claim_with_sender(identity, grants, b, generation, plan, message, now, None)
+    }
+
+    pub fn claim_with_sender(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        b: &ReceiptBinding<'_>,
+        generation: &str,
+        plan: &DispatchPlan,
+        message: &str,
+        now: &str,
+        sender: Option<&crate::mcp::catalog::DeliveryPeer>,
+    ) -> Result<bool, GateError> {
         authorize_session(identity, grants, b)?;
         let (_gate, mut writer) = self.lock()?;
         let tx = writer
@@ -509,7 +550,7 @@ impl ScopedAuthority {
         if !scope_allowed(&tx, b, generation, &self.generation)? || plan.target != *b.address {
             return Ok(false);
         }
-        let n = tx.execute("UPDATE intents SET state='dispatching',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='prepared' AND native_receipt IS NULL", params![b.intent_id,b.principal,b.target_ref,b.request_key,dispatch_payload_binding(plan,message),now]).map_err(|_|GateError::Store)?;
+        let n = tx.execute("UPDATE intents SET state='dispatching',updated_at=?6 WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='prepared' AND native_receipt IS NULL", params![b.intent_id,b.principal,b.target_ref,b.request_key,dispatch_payload_binding_with_sender(plan,message,sender),now]).map_err(|_|GateError::Store)?;
         if n == 1 {
             tx.execute("INSERT INTO humanstop_dispatches(intent_id,scope_generation,phase,updated_at) VALUES (?1,?2,'claimed',?3)",params![b.intent_id,generation,now]).map_err(|_|GateError::Store)?;
         }
@@ -529,6 +570,21 @@ impl ScopedAuthority {
         now: &str,
         control: &C,
     ) -> Result<DurableDispatch, GateError> {
+        self.handoff_with_sender(identity, grants, b, generation, plan, message, now, None, control)
+    }
+
+    pub fn handoff_with_sender<C: BoundedNativeHandoff>(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        b: &ReceiptBinding<'_>,
+        generation: &str,
+        plan: DispatchPlan,
+        message: &str,
+        now: &str,
+        sender: Option<&crate::mcp::catalog::DeliveryPeer>,
+        control: &C,
+    ) -> Result<DurableDispatch, GateError> {
         authorize_session(identity, grants, b)?;
         let (_gate, mut writer) = self.lock()?;
         {
@@ -536,7 +592,7 @@ impl ScopedAuthority {
                 .connection_mut()
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|_| GateError::Store)?;
-            let valid_intent: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL)", params![b.intent_id,b.principal,b.target_ref,b.request_key,dispatch_payload_binding(&plan,message)], |r|r.get(0)).map_err(|_|GateError::Store)?;
+            let valid_intent: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND payload_hash=?5 AND state='dispatching' AND native_receipt IS NULL)", params![b.intent_id,b.principal,b.target_ref,b.request_key,dispatch_payload_binding_with_sender(&plan,message,sender)], |r|r.get(0)).map_err(|_|GateError::Store)?;
             if !valid_intent || plan.target != *b.address {
                 return Ok(DurableDispatch::NotClaimed);
             }
@@ -628,7 +684,7 @@ impl ScopedAuthority {
             _ => None,
         };
         if let Some(receipt) = receipt {
-            let stored = store_native_receipt(writer.connection_mut(), b, &receipt, now)
+            let stored = store_native_receipt_with_sender(writer.connection_mut(), b, &receipt, now, sender)
                 .map_err(|_| GateError::Store)?;
             if matches!(stored, StoreReceipt::Stored | StoreReceipt::AlreadyStored) {
                 let n=writer.connection().execute("UPDATE intents SET state='admitted',updated_at=?2 WHERE intent_id=?1 AND state='dispatching' AND native_receipt IS NOT NULL", params![b.intent_id,now]).map_err(|_|GateError::Store)?;

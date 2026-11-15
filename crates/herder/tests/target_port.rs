@@ -91,6 +91,7 @@ fn request(session: &SessionRef) -> DeliverRequest<'_> {
         task_id: "t",
         request_key: "key",
         message: "fixture",
+        sender: None,
         command: SendCommand {
             mode: SendMode::Start,
         },

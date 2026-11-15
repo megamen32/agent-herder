@@ -376,6 +376,7 @@ where
             task_id: &task_id,
             request_key: &delivery_key,
             message: request.specification,
+            sender: None,
             command: SendCommand {
                 mode: delivery_mode,
             },

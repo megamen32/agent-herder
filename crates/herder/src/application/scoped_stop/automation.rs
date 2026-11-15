@@ -462,6 +462,7 @@ impl<R: CompletedTurnReader> ApplicationPort for ScopedAutomationApplication<R> 
                         message,
                         mode: self.delivery_mode.clone(),
                         request_key,
+                        sender: None,
                     });
                     let Some(delivery) = self.deliver.call(identity, deliver_request).await else {
                         return Some(error("delivery_unavailable"));

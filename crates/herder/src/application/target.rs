@@ -272,6 +272,9 @@ pub struct DeliverRequest<'a> {
     pub task_id: &'a str,
     pub request_key: &'a str,
     pub message: &'a str,
+    /// Attribution from the action-less universal envelope. It is persisted
+    /// in the native receipt but never used as authorization evidence.
+    pub sender: Option<&'a crate::mcp::catalog::DeliveryPeer>,
     pub command: SendCommand,
     pub now: &'a str,
     pub retain_until: &'a str,
@@ -383,7 +386,7 @@ pub async fn deliver_scoped<
         address: &address,
     };
     let Some(intent_id) = authority
-        .prepare(
+        .prepare_with_sender(
             identity,
             grants,
             &initial,
@@ -393,6 +396,7 @@ pub async fn deliver_scoped<
             request.task_id,
             request.now,
             request.retain_until,
+            request.sender,
         )
         .map_err(|_| TargetError::Store)?
     else {
@@ -403,7 +407,7 @@ pub async fn deliver_scoped<
         ..initial
     };
     if !authority
-        .claim(
+        .claim_with_sender(
             identity,
             grants,
             &binding,
@@ -411,13 +415,14 @@ pub async fn deliver_scoped<
             &plan,
             request.message,
             request.now,
+            request.sender,
         )
         .map_err(|_| TargetError::Store)?
     {
         return Ok(DurableDispatch::NotClaimed);
     }
     authority
-        .handoff(
+        .handoff_with_sender(
             identity,
             grants,
             &binding,
@@ -425,6 +430,7 @@ pub async fn deliver_scoped<
             plan,
             request.message,
             request.now,
+            request.sender,
             control,
         )
         .map_err(|_| TargetError::Store)

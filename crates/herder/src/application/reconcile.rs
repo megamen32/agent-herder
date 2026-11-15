@@ -1,6 +1,7 @@
 //! Readback of a dispatching intent never grants permission to submit again.
 use crate::domain::adapter::{NativeReceipt, NativeSessionReader, Observation};
 use crate::domain::address::SessionAddress;
+use crate::mcp::catalog::DeliveryPeer;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,18 @@ pub fn dispatch_payload_binding(
         write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
     }
     out
+}
+
+/// Sender is durable attribution, not effect identity or authorization. Keep
+/// it out of the payload hash so a repeated envelope from another attributed
+/// peer returns the original receipt without changing the native effect.
+pub fn dispatch_payload_binding_with_sender(
+    plan: &crate::domain::adapter::DispatchPlan,
+    message: &str,
+    sender: Option<&DeliveryPeer>,
+) -> String {
+    let _ = sender;
+    dispatch_payload_binding(plan, message)
 }
 
 fn sha256(data: &[u8]) -> [u8; 32] {
@@ -119,6 +132,10 @@ struct ReceiptEnvelope {
     request_key: String,
     address: SessionAddress,
     native_id: String,
+    /// Optional attribution from the action-less universal envelope. Older
+    /// receipts omit this field and remain readable.
+    #[serde(default)]
+    sender: Option<DeliveryPeer>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -148,11 +165,24 @@ fn valid_binding(b: &ReceiptBinding<'_>) -> bool {
     .all(|v| !v.is_empty() && v.len() <= 4096)
 }
 
-fn envelope(b: &ReceiptBinding<'_>, receipt: &NativeReceipt) -> Option<ReceiptEnvelope> {
+fn valid_peer(peer: &DeliveryPeer) -> bool {
+    [&peer.host_id, &peer.harness, &peer.native_session_id]
+        .iter()
+        .all(|value| {
+            !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
+        })
+}
+
+fn envelope(
+    b: &ReceiptBinding<'_>,
+    receipt: &NativeReceipt,
+    sender: Option<&DeliveryPeer>,
+) -> Option<ReceiptEnvelope> {
     if !valid_binding(b)
         || receipt.target != *b.address
         || receipt.native_id.is_empty()
         || receipt.native_id.len() > 4096
+        || sender.is_some_and(|peer| !valid_peer(peer))
     {
         return None;
     }
@@ -164,10 +194,11 @@ fn envelope(b: &ReceiptBinding<'_>, receipt: &NativeReceipt) -> Option<ReceiptEn
         request_key: b.request_key.into(),
         address: b.address.clone(),
         native_id: receipt.native_id.clone(),
+        sender: sender.cloned(),
     })
 }
 
-fn decode_receipt(raw: &str, b: &ReceiptBinding<'_>) -> Option<NativeReceipt> {
+fn decode_receipt_envelope(raw: &str, b: &ReceiptBinding<'_>) -> Option<ReceiptEnvelope> {
     if raw.len() > 65536 || !valid_binding(b) {
         return None;
     }
@@ -180,9 +211,15 @@ fn decode_receipt(raw: &str, b: &ReceiptBinding<'_>) -> Option<NativeReceipt> {
         || value.address != *b.address
         || value.native_id.is_empty()
         || value.native_id.len() > 4096
+        || value.sender.as_ref().is_some_and(|peer| !valid_peer(peer))
     {
         return None;
     }
+    Some(value)
+}
+
+fn decode_receipt(raw: &str, b: &ReceiptBinding<'_>) -> Option<NativeReceipt> {
+    let value = decode_receipt_envelope(raw, b)?;
     Some(NativeReceipt {
         target: value.address,
         native_id: value.native_id,
@@ -195,7 +232,7 @@ pub(crate) fn encode_native_receipt(
     binding: &ReceiptBinding<'_>,
     receipt: &NativeReceipt,
 ) -> Option<String> {
-    let raw = serde_json::to_string(&envelope(binding, receipt)?).ok()?;
+    let raw = serde_json::to_string(&envelope(binding, receipt, None)?).ok()?;
     (raw.len() <= 65536).then_some(raw)
 }
 
@@ -209,7 +246,19 @@ pub fn store_native_receipt(
     receipt: &NativeReceipt,
     now: &str,
 ) -> rusqlite::Result<StoreReceipt> {
-    let Some(expected) = envelope(b, receipt) else {
+    store_native_receipt_with_sender(connection, b, receipt, now, None)
+}
+
+/// Save a native receipt with optional envelope attribution. The sender is
+/// durable receipt metadata and never participates in authorization.
+pub fn store_native_receipt_with_sender(
+    connection: &mut Connection,
+    b: &ReceiptBinding<'_>,
+    receipt: &NativeReceipt,
+    now: &str,
+    sender: Option<&DeliveryPeer>,
+) -> rusqlite::Result<StoreReceipt> {
+    let Some(expected) = envelope(b, receipt, sender) else {
         return Ok(StoreReceipt::Mismatch);
     };
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -219,7 +268,10 @@ pub fn store_native_receipt(
     let result = match row {
         None => StoreReceipt::Mismatch,
         Some(Some(raw)) => {
-            if decode_receipt(&raw, b).as_ref() == Some(receipt) {
+            if decode_receipt(&raw, b).as_ref() == Some(receipt)
+                && decode_receipt_envelope(&raw, b)
+                    .is_some_and(|stored| stored.sender == sender.cloned())
+            {
                 StoreReceipt::AlreadyStored
             } else {
                 StoreReceipt::Mismatch
@@ -238,6 +290,24 @@ pub fn store_native_receipt(
     };
     tx.commit()?;
     Ok(result)
+}
+
+/// Read only the sender attribution stored in the exact durable receipt.
+/// A missing sender is valid for the legacy action-based delivery path.
+pub fn load_receipt_sender(
+    connection: &Connection,
+    b: &ReceiptBinding<'_>,
+) -> rusqlite::Result<Option<DeliveryPeer>> {
+    if !valid_binding(b) {
+        return Ok(None);
+    }
+    let raw: Option<Option<String>> = connection.query_row(
+        "SELECT native_receipt FROM intents WHERE intent_id=?1 AND principal=?2 AND target=?3 AND request_key=?4 AND state IN ('dispatching','admitted','unknown','confirmed','rejected')",
+        params![b.intent_id, b.principal, b.target_ref, b.request_key], |row| row.get(0)).optional()?;
+    Ok(raw
+        .flatten()
+        .and_then(|raw| decode_receipt_envelope(&raw, b))
+        .and_then(|receipt| receipt.sender))
 }
 
 /// A missing, invalid or differently bound receipt is UNKNOWN, never evidence to resend.
@@ -368,6 +438,7 @@ mod tests {
     use super::*;
     use crate::domain::adapter::{ReadError, SessionSnapshot};
     use crate::domain::address::{InstanceRef, NodeRef, SessionAddress};
+    use crate::mcp::catalog::DeliveryPeer;
     use std::cell::Cell;
 
     // The three dispatch/restart cases now run under scoped authority in
@@ -408,6 +479,11 @@ mod tests {
         c.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at) VALUES ('t','p','prepared','a','a')", []).unwrap();
         c.execute("INSERT INTO intents(intent_id,task_id,principal,target,request_key,payload_hash,state,created_at,updated_at,retain_until) VALUES ('i','t','p','target','key','hash','dispatching','a','a','later')", []).unwrap();
         let r = receipt();
+        let sender = DeliveryPeer {
+            host_id: "server-44".into(),
+            harness: "codex".into(),
+            native_session_id: "sender-session".into(),
+        };
         let binding = ReceiptBinding {
             intent_id: "i",
             principal: "p",
@@ -416,16 +492,20 @@ mod tests {
             address: &r.target,
         };
         assert_eq!(
-            store_native_receipt(&mut c, &binding, &r, "now").unwrap(),
+            store_native_receipt_with_sender(&mut c, &binding, &r, "now", Some(&sender)).unwrap(),
             StoreReceipt::Stored
         );
         assert_eq!(
-            store_native_receipt(&mut c, &binding, &r, "later").unwrap(),
+            store_native_receipt_with_sender(&mut c, &binding, &r, "later", Some(&sender)).unwrap(),
             StoreReceipt::AlreadyStored
         );
         assert_eq!(
             load_native_receipt(&c, &binding).unwrap(),
             StoredReceipt::Found(r.clone())
+        );
+        assert_eq!(
+            load_receipt_sender(&c, &binding).unwrap(),
+            Some(sender.clone())
         );
         let mut foreign = r.clone();
         foreign.target.instance.node.0 = "other".into();
@@ -503,6 +583,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(persisted, "{bad");
+    }
+
+    #[test]
+    fn sender_is_durable_attribution_but_not_effect_identity_or_caller_authority() {
+        use crate::domain::adapter::{DispatchPlan, SendMode};
+        let plan = DispatchPlan {
+            target: receipt().target,
+            mode: SendMode::Start,
+            expected_turn: None,
+        };
+        let first = DeliveryPeer {
+            host_id: "server-44".into(),
+            harness: "codex".into(),
+            native_session_id: "sender-a".into(),
+        };
+        let second = DeliveryPeer {
+            native_session_id: "sender-b".into(),
+            ..first.clone()
+        };
+        assert_eq!(
+            dispatch_payload_binding_with_sender(&plan, "message", Some(&first)),
+            dispatch_payload_binding_with_sender(&plan, "message", Some(&second))
+        );
+        assert_eq!(
+            dispatch_payload_binding(&plan, "message"),
+            dispatch_payload_binding_with_sender(&plan, "message", None)
+        );
     }
 
     fn receipt() -> NativeReceipt {

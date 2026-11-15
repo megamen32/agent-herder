@@ -15,6 +15,15 @@ fn unavailable() -> ErrorData { ErrorData::invalid_params("unknown or ambiguous 
 fn denied(code: &str) -> CallToolResponse {
     CallToolResult::structured_error(json!({"code":code,"effect":"none"})).into()
 }
+fn canonical_host_id(value: &str) -> &str {
+    match value {
+        "104.bezrabotnyi.com" | "remote-ssh-discovered:104.bezrabotnyi.com" => {
+            "roomhacker-server-100"
+        }
+        "44.bezrabotnyi.com" | "remote-ssh-discovered:44.bezrabotnyi.com" => "server-44",
+        other => other,
+    }
+}
 impl MultiOwner {
     fn by_instance(&self, instance: &str) -> Result<&BoundOwner, ErrorData> {
         self.bindings.iter().find(|binding| binding.instance.instance_id == instance).ok_or_else(unavailable)
@@ -42,6 +51,31 @@ impl ServerHandler for MultiOwner {
     }
     async fn call_tool(&self, request: CallToolRequestParams, ctx: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
         let args = request.arguments.as_ref();
+        if request.name.as_ref() == "deliver"
+            && args.and_then(|a| a.get("action")).is_none()
+            && let Some(target) = args.and_then(|a| a.get("target"))
+        {
+            let Some(host) = target.get("hostId").and_then(Value::as_str) else {
+                return Ok(denied("invalid_target"));
+            };
+            let Some(harness) = target.get("harness").and_then(Value::as_str) else {
+                return Ok(denied("invalid_target"));
+            };
+            let mut selected = None;
+            let host = canonical_host_id(host);
+            for binding in &self.bindings {
+                if canonical_host_id(&binding.instance.node.0) == host && binding.harness == harness {
+                    if selected.is_some() {
+                        return Ok(denied("owner_profile_mismatch"));
+                    }
+                    selected = Some(binding);
+                }
+            }
+            return match selected {
+                Some(binding) => binding.server.call_tool(request, ctx).await,
+                None => Ok(denied("owner_profile_mismatch")),
+            };
+        }
         if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
             // The shared registry resolves exact canonical metadata with fresh ACLs.
             return self.bindings[0].server.call_tool(request,ctx).await;

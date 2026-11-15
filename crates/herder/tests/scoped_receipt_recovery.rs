@@ -728,7 +728,7 @@ fn global_keys(fixture:&Fixture)->Arc<herder::application::delivery_keys::Delive
 }
 fn key_send(session:&str,key:&str)->herder::mcp::catalog::Request{
     use herder::mcp::catalog::{Request,Deliver,DeliveryMode};
-    Request::Deliver(Deliver::Session{session_ref:session.into(),request_key:key.into(),message:"one selected payload".into(),mode:DeliveryMode::Start})
+    Request::Deliver(Deliver::Session{session_ref:session.into(),request_key:key.into(),message:"one selected payload".into(),mode:DeliveryMode::Start,sender:None})
 }
 #[tokio::test]
 async fn compatibility_key_target_switch_is_rejected_before_a_second_native_submission() {

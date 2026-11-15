@@ -97,7 +97,7 @@ impl<R, C> ScopedDeliverApplication<R, C> {
     /// HumanStop blocks effects, not the caller's authorized receipt history.
     fn read_receipt(&self, identity: &ConnectionIdentity, session_ref: String,
         request_key: String) -> Result<serde_json::Value, &'static str> {
-        use crate::application::reconcile::{ReceiptBinding, StoredReceipt, load_native_receipt};
+        use crate::application::reconcile::{ReceiptBinding, StoredReceipt, load_native_receipt, load_receipt_sender};
         use rusqlite::{OptionalExtension, params};
         let Caller::Principal(principal) = identity.caller() else { return Err("unauthorized") };
         if session_ref.is_empty() || request_key.is_empty() || request_key.len() > 4096
@@ -156,8 +156,9 @@ impl<R, C> ScopedDeliverApplication<R, C> {
         }
         let binding = ReceiptBinding { intent_id:&intent_ref,principal:&principal.id.0,
             target_ref:&session.0,request_key:&request_key,address:&address };
+        let sender = load_receipt_sender(writer.connection(), &binding).map_err(|_|"store_unavailable")?;
         let receipt = match load_native_receipt(writer.connection(), &binding).map_err(|_|"store_unavailable")? {
-            StoredReceipt::Found(receipt) => Some(json!({"native_id":receipt.native_id,"target":receipt.target})),
+            StoredReceipt::Found(receipt) => Some(json!({"native_id":receipt.native_id,"target":receipt.target,"sender":sender})),
             StoredReceipt::Unknown => None,
         };
         if state=="confirmed" && receipt.is_none() { return Err("delivery_receipt_unavailable") }
@@ -182,15 +183,16 @@ struct KeyBoundHandoff<'a,C> {
     principal:&'a str,
     session:&'a str,
     request_key:&'a str,
+    sender: Option<&'a catalog::DeliveryPeer>,
 }
 impl<C:BoundedNativeHandoff> BoundedNativeHandoff for KeyBoundHandoff<'_,C> {
     fn submit_bounded(&self,plan:crate::domain::adapter::DispatchPlan,message:&str,
         key:&crate::domain::adapter::RequestKey)->Result<crate::domain::adapter::Admission,crate::domain::adapter::SubmitError> {
-        use crate::{application::reconcile::dispatch_payload_binding,domain::adapter::SubmitError};
+        use crate::{application::reconcile::dispatch_payload_binding_with_sender,domain::adapter::SubmitError};
         if DeliveryKeyRegistry::applies(self.request_key) {
             let valid=key.0==self.request_key && self.registry.and_then(|registry|
                 registry.lookup(self.principal,self.session,&plan.target,self.request_key).ok().flatten())
-                .is_some_and(|binding|binding.payload_hash==dispatch_payload_binding(&plan,message));
+                .is_some_and(|binding|binding.payload_hash==dispatch_payload_binding_with_sender(&plan,message,self.sender));
             if !valid {return Err(SubmitError::DefinitelyNotSent{reason:"canonical delivery key binding changed before native admission".into()})}
         }
         self.inner.submit_bounded(plan,message,key)
@@ -263,6 +265,7 @@ where
                 message,
                 mode,
                 request_key,
+                sender,
             }) = request
             else {
                 return None;
@@ -368,13 +371,14 @@ where
             let retain = self.retain_until.clone();
             let identity = identity.clone();
             let delivery_keys = self.delivery_keys.clone();
+            let sender = sender.clone();
             let task_lookup = task_id.clone();
             let lookup_inside = task_lookup.clone();
             let run = tokio::task::spawn_blocking(move || {
                 use rusqlite::OptionalExtension;
-                use crate::application::reconcile::dispatch_payload_binding;
+                use crate::application::reconcile::dispatch_payload_binding_with_sender;
                 let (address,_) = authority.resolve_session(&identity,&grants,&session,&instance).map_err(|_|())?;
-                let expected=dispatch_payload_binding(&crate::domain::adapter::DispatchPlan{target:address.clone(),mode,expected_turn:None},&message);
+                let expected=dispatch_payload_binding_with_sender(&crate::domain::adapter::DispatchPlan{target:address.clone(),mode,expected_turn:None},&message,sender.as_ref());
                 if DeliveryKeyRegistry::applies(&request_key) {
                     let Some(registry)=delivery_keys.as_ref() else {return Ok::<_,()>("registry_unavailable")};
                     if let Err(error)=registry.reserve(&principal_id,&session.0,&address,&request_key,&expected) {
@@ -399,8 +403,8 @@ where
                 if migration.blocked { return Ok("migration_quarantined"); }
                 let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|())?;
                 let restricted = IdleQueueReader { inner: reader.as_ref(), mode };
-                let fenced=KeyBoundHandoff {inner:control.as_ref(),registry:delivery_keys.as_deref(),principal:&principal_id,session:&session.0,request_key:&request_key};
-                let result=runtime.block_on(deliver_scoped(&authority,&instance,&identity,&grants,&restricted,&fenced,DeliverRequest{session:&session,intent_id:&intent_id,task_id:&task_id,request_key:&request_key,message:&message,command:SendCommand{mode},now:&now,retain_until:&retain}));
+                let fenced=KeyBoundHandoff {inner:control.as_ref(),registry:delivery_keys.as_deref(),principal:&principal_id,session:&session.0,request_key:&request_key,sender:sender.as_ref()};
+                let result=runtime.block_on(deliver_scoped(&authority,&instance,&identity,&grants,&restricted,&fenced,DeliverRequest{session:&session,intent_id:&intent_id,task_id:&task_id,request_key:&request_key,message:&message,sender:sender.as_ref(),command:SendCommand{mode},now:&now,retain_until:&retain}));
                 match lookup()? {
                     Some(hash) if hash!=expected=>Ok("conflict"),
                     Some(_)=>Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside).map_err(|_|())?.is_some(){"task"}else{"unknown"}),

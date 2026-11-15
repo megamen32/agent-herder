@@ -228,7 +228,7 @@ pub enum DeliveryMode {
 }
 actions!(Deliver {
     Receipt { session_ref: String, request_key: String },
-    Session { session_ref: String, message: String, mode: DeliveryMode, request_key: String },
+    Session { session_ref: String, message: String, mode: DeliveryMode, request_key: String, sender: Option<DeliveryPeer> },
     ReplyTo { reply_to: String, message: String, mode: DeliveryMode, request_key: String },
     Envelope { target: DeliveryPeer, sender: DeliveryPeer, input_id: String, message: String },
 });

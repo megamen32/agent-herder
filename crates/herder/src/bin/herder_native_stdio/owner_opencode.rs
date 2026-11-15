@@ -45,6 +45,17 @@ impl ScopedMessageReader for Messages {
         Ok(serde_json::json!({"messages":messages,"next_cursor":null,"complete":false}))
     }
 }
+
+fn canonical_host_id(value: &str) -> &str {
+    match value {
+        "104.bezrabotnyi.com" | "remote-ssh-discovered:104.bezrabotnyi.com" => {
+            "roomhacker-server-100"
+        }
+        "44.bezrabotnyi.com" | "remote-ssh-discovered:44.bezrabotnyi.com" => "server-44",
+        other => other,
+    }
+}
+
 struct App {
     authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
@@ -164,15 +175,17 @@ impl ApplicationPort for App {
             }
             if let catalog::Request::Deliver(catalog::Deliver::Envelope {
                 target,
+                sender,
                 input_id,
                 message,
-                ..
             }) = &request
             {
                 // The envelope target selects this owner, but sender is only
                 // attribution. Trust still comes from the configured owner,
                 // native resolver and the existing delivery ACL/ledger.
-                if target.host_id != self.instance.node.0 || target.harness != self.harness {
+                if canonical_host_id(&target.host_id) != canonical_host_id(&self.instance.node.0)
+                    || target.harness != self.harness
+                {
                     return Some(rmcp::model::CallToolResult::structured_error(
                         serde_json::json!({
                             "code":"owner_profile_mismatch",
@@ -181,6 +194,7 @@ impl ApplicationPort for App {
                         }),
                     ));
                 }
+                let target_host = canonical_host_id(&target.host_id).to_owned();
                 let resolved = self
                     .waits
                     .call(
@@ -188,7 +202,7 @@ impl ApplicationPort for App {
                         catalog::Request::Session(catalog::Session::Resolve {
                             harness: target.harness.clone(),
                             native_session_id: target.native_session_id.clone(),
-                            node_ref: Some(target.host_id.clone()),
+                            node_ref: Some(target_host),
                         }),
                     )
                     .await;
@@ -241,6 +255,7 @@ impl ApplicationPort for App {
                             message: message.clone(),
                             mode,
                             request_key: input_id.clone(),
+                            sender: Some(sender.clone()),
                         }),
                     )
                     .await;

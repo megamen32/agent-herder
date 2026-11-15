@@ -801,6 +801,7 @@ impl WaitAutomationApplication {
                     message,
                     mode: self.delivery_mode.clone(),
                     request_key: Self::task_key(rule),
+                    sender: None,
                 }),
             )
             .await;
