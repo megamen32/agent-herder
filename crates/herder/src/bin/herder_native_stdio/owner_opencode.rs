@@ -63,6 +63,7 @@ struct App {
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
     adapter: Arc<AhapOpenCode>,
+    delivery_mode: SendMode,
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
     automation: Arc<dyn ApplicationPort>,
@@ -225,26 +226,14 @@ impl ApplicationPort for App {
                         serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
                     ));
                 };
-                let mode = if self
-                    .adapter
-                    .capabilities()
-                    .get("deliveryModes")
-                    .and_then(serde_json::Value::as_array)
-                    .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("start")))
-                {
-                    catalog::DeliveryMode::Start
-                } else if self
-                    .adapter
-                    .capabilities()
-                    .get("deliveryModes")
-                    .and_then(serde_json::Value::as_array)
-                    .is_some_and(|modes| modes.iter().any(|mode| mode.as_str() == Some("queue")))
-                {
-                    catalog::DeliveryMode::Queue
-                } else {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"unsupported_delivery_mode","effect":"none"}),
-                    ));
+                let mode = match self.delivery_mode {
+                    SendMode::Queue => catalog::DeliveryMode::Queue,
+                    SendMode::Start => catalog::DeliveryMode::Start,
+                    SendMode::Current => {
+                        return Some(rmcp::model::CallToolResult::structured_error(
+                            serde_json::json!({"code":"unsupported_delivery_mode","effect":"none"}),
+                        ));
+                    }
                 };
                 return self
                     .deliver
@@ -752,6 +741,7 @@ pub fn build_with_registry(
         grants: grants.clone(),
         policy: policy.clone(),
         adapter: adapter.clone(),
+        delivery_mode,
         create,
         deliver,
         automation,
