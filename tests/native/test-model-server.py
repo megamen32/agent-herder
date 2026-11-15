@@ -6,6 +6,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ANSWER = "HERDER_TEST_MODEL_OK"
+CREATE_INSTANCE = "opencode-mcp-fixture"
+CREATE_PROMPT = "OPENCODE_MCP_CREATE_FIXTURE"
+CREATE_REQUEST_KEY = "opencode-mcp-create-once"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -25,7 +28,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/_stats":
-            self.reply(200, "application/json", json.dumps({"requests": self.count}).encode())
+            self.reply(200, "application/json", json.dumps({
+                "requests": self.count,
+                "tool_request_tools": getattr(self.server, "tool_request_tools", []),
+                "tool_calls": getattr(self.server, "tool_calls", []),
+            }).encode())
         elif self.path == "/v1/models":
             self.reply(200, "application/json", json.dumps({"object": "list", "data": [{"id": "herder-test", "object": "model", "owned_by": "test"}]}).encode())
         else:
@@ -44,15 +51,19 @@ class Handler(BaseHTTPRequestHandler):
         with self.lock:
             type(self).count += 1
             sequence = type(self).count
+        if self.server.scenario == "opencode-create":
+            self.server.tool_request_tools.append(tool_names(request))
         if self.path == "/v1/responses":
             return self.send_responses(request, sequence)
         return self.chat(request, sequence)
 
     def send_responses(self, request, sequence):
         response_id, item_id = f"resp_test_{sequence}", f"msg_test_{sequence}"
-        if self.server.scenario == 'tool-call' and sequence == 1:
+        if self.server.scenario in ("tool-call", "opencode-create") and sequence == 1:
+            name, arguments = fixture_tool_call(request, self.server.scenario)
+            self.server.tool_calls.append({"name": name, "arguments": arguments})
             item = {'id': 'fc_test_1', 'type': 'function_call', 'call_id': 'call_test_1',
-                    'name': 'herder_test_tool', 'arguments': '{"value":"fixture"}', 'status': 'completed'}
+                    'name': name, 'arguments': arguments, 'status': 'completed'}
             response = {'id': response_id, 'object': 'response', 'created_at': 0,
                         'status': 'completed', 'model': request.get('model', 'herder-test'),
                         'output': [item], 'usage': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}}
@@ -90,8 +101,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def chat(self, request, sequence):
         base = {"id": f"chatcmpl-test-{sequence}", "object": "chat.completion", "created": 0, "model": request.get("model", "herder-test")}
-        if self.server.scenario == 'tool-call' and sequence == 1:
-            call = {'id': 'call_test_1', 'type': 'function', 'function': {'name': 'herder_test_tool', 'arguments': '{"value":"fixture"}'}}
+        if self.server.scenario in ("tool-call", "opencode-create") and sequence == 1:
+            name, arguments = fixture_tool_call(request, self.server.scenario)
+            self.server.tool_calls.append({"name": name, "arguments": arguments})
+            call = {'id': 'call_test_1', 'type': 'function', 'function': {'name': name, 'arguments': arguments}}
             if not request.get('stream'):
                 base['choices'] = [{'index': 0, 'message': {'role': 'assistant', 'content': None, 'tool_calls': [call]}, 'finish_reason': 'tool_calls'}]
                 return self.reply(200, 'application/json', json.dumps(base).encode())
@@ -112,12 +125,43 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=0)
-    parser.add_argument('--scenario', choices=('text', 'tool-call'), default='text')
+    parser.add_argument('--scenario', choices=('text', 'tool-call', 'opencode-create'), default='text')
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.scenario = args.scenario
+    server.tool_request_tools = []
+    server.tool_calls = []
     print(server.server_port, flush=True)
     server.serve_forever()
+
+
+def tool_names(request):
+    names = []
+    for tool in request.get("tools", []):
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function")
+        name = tool.get("name")
+        if not isinstance(name, str) and isinstance(function, dict):
+            name = function.get("name")
+        if isinstance(name, str) and name:
+            names.append(name)
+    return names
+
+
+def fixture_tool_call(request, scenario):
+    if scenario == "tool-call":
+        return "herder_test_tool", '{"value":"fixture"}'
+    name = next((value for value in tool_names(request)
+                 if value == "create" or value.endswith("_create")),
+                "herder_native_stdio_create")
+    arguments = json.dumps({
+        "action": "create",
+        "instance_ref": CREATE_INSTANCE,
+        "prompt": CREATE_PROMPT,
+        "request_key": CREATE_REQUEST_KEY,
+    }, separators=(",", ":"))
+    return name, arguments
 
 
 if __name__ == "__main__":

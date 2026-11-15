@@ -11,6 +11,7 @@ use rmcp::model::{CallToolResult, DetailedTask, GetTaskResult, Task, TaskPayload
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::Digest;
 use std::io::Read;
 
 #[derive(Serialize, Deserialize)]
@@ -21,6 +22,10 @@ struct Record {
     session_ref: Option<String>,
     delivery_task: Option<String>,
     result: Option<Value>,
+    #[serde(default)]
+    root_intent_id: Option<String>,
+    #[serde(default)]
+    payload_hash: Option<String>,
 }
 fn result(value: Value, is_error: bool) -> Result<Value, GateError> {
     serde_json::to_value(if is_error {
@@ -135,6 +140,8 @@ impl ScopedAuthority {
         grants: &[Grant],
         instance: &InstanceRef,
         delivery_task: &str,
+        root_intent_id: &str,
+        specification: &str,
         outcome: CreatePromptOutcome,
     ) -> Result<String, GateError> {
         let Caller::Principal(principal) = identity.caller() else {
@@ -148,6 +155,31 @@ impl ScopedAuthority {
                 Action::Write,
             )
             .map_err(|_| GateError::Invalid)?;
+        let payload_hash = format!(
+            "create-v1:{}",
+            sha2::Sha256::digest(
+                serde_json::to_vec(&(1u8, instance, specification))
+                    .map_err(|_| GateError::Invalid)?,
+            )
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+        );
+        {
+            let (_gate, writer) = self.lock()?;
+            let existing: Option<String> = writer
+                .connection()
+                .query_row(
+                    "SELECT task_id FROM tasks WHERE principal=?1 AND result_json IS NOT NULL AND json_extract(result_json,'$.kind')='fresh_create_prompt_v1' AND json_extract(result_json,'$.root_intent_id')=?2 AND json_extract(result_json,'$.payload_hash')=?3 ORDER BY rowid DESC LIMIT 1",
+                    params![principal.id.0, root_intent_id, payload_hash],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|_| GateError::Store)?;
+            if let Some(task_id) = existing {
+                return Ok(task_id);
+            }
+        }
         let (status, session, child, body) = match outcome {
             CreatePromptOutcome::CreateUnknown | CreatePromptOutcome::CreatePending => (
                 "completed",
@@ -252,6 +284,8 @@ impl ScopedAuthority {
             session_ref: session,
             delivery_task: child,
             result: body,
+            root_intent_id: Some(root_intent_id.into()),
+            payload_hash: Some(payload_hash),
         };
         let raw = serde_json::to_string(&record).map_err(|_| GateError::Store)?;
         let now = super::mcp_deliver::utc_now().map_err(|_| GateError::Unavailable)?;

@@ -3523,13 +3523,21 @@ async fn scoped_delivery_application_wire_dedup_tasks_and_readback() {
         let call = |id, msg: &str| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":msg,"mode":"start","request_key":"key"}}});
         let no_tasks_meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"unsupported","version":"1"}});
         let unsupported=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"_meta":no_tasks_meta,"name":"deliver","arguments":{"action":"session","session_ref":"issued","message":"message","mode":"start","request_key":"key"}}})).await;
-        assert!(unsupported.get("error").is_some(), "{unsupported}");
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(unsupported.get("error").is_none(), "{unsupported}");
+        assert_eq!(unsupported["result"]["resultType"], "complete", "{unsupported}");
+        assert!(unsupported["result"]["taskId"].is_null(), "{unsupported}");
+        let ordinary = &unsupported["result"]["structuredContent"];
+        match outcome {
+            "not_sent" => assert_eq!(ordinary["code"], "adapter_refused"),
+            "unknown" => assert_eq!(ordinary["effect"], "unknown"),
+            _ => assert_eq!(ordinary["outcome"], "confirmed"),
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
         let first = request(&mut w, &mut lines, call(1, "message")).await;
         assert_eq!(first["result"]["resultType"], "task", "{first}");
         let task_id = first["result"]["taskId"].as_str().unwrap().to_owned();
         if outcome == "confirmed" {
-            assert_eq!(first["result"]["status"], "working");
+            assert_eq!(first["result"]["status"], "completed");
         }
         let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task_id}})).await;
         assert_eq!(poll["result"]["status"], "completed", "{poll}");
@@ -3815,13 +3823,16 @@ async fn scoped_create_application_wire_preserves_session_and_deduplicates_promp
             let create = |id| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"_meta":meta,"name":"create","arguments":{"action":"create","instance_ref":"profile-ref","prompt":"prompt","request_key":"key"}}});
             let no_tasks_meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"unsupported","version":"1"}});
             let no_tasks=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":90,"method":"tools/call","params":{"_meta":no_tasks_meta,"name":"create","arguments":{"action":"create","instance_ref":"profile-ref","prompt":"prompt","request_key":"key"}}})).await;
-            assert!(no_tasks.get("error").is_some());
-            assert_eq!(creator.calls.load(Ordering::SeqCst), 0);
+            assert!(no_tasks.get("error").is_none(), "{no_tasks}");
+            assert_eq!(no_tasks["result"]["resultType"], "complete", "{no_tasks}");
+            assert!(no_tasks["result"]["taskId"].is_null(), "{no_tasks}");
+            assert!(no_tasks["result"]["structuredContent"].is_object(), "{no_tasks}");
+            assert_eq!(creator.calls.load(Ordering::SeqCst), 1);
             let first = request(&mut w, &mut lines, create(1)).await;
             assert_eq!(first["result"]["resultType"], "task", "{first}");
             let task = first["result"]["taskId"].as_str().unwrap().to_owned();
             if scenario == "confirmed" {
-                assert_eq!(first["result"]["status"], "working");
+                assert_eq!(first["result"]["status"], "completed");
             }
             let poll=request(&mut w,&mut lines,json!({"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"_meta":meta,"taskId":task}})).await;
             assert_eq!(poll["result"]["status"], "completed", "{poll}");

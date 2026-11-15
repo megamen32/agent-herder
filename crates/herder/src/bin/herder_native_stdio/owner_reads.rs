@@ -77,7 +77,7 @@ fn error(code: &str) -> CallToolResult {
         "unauthorized" => (
             "Нет доступа к этой сессии или экземпляру.",
             "Проверенный principal и зарегистрированная привязка сессии.",
-            "Выберите session_ref из разрешённого списка sessions; native ID не является session_ref.",
+            "Укажите session_ref из разрешённого списка или точный native session ID из того же owner scope.",
         ),
         "unsupported_format" => (
             "Нормализованный Common export пока не реализован.",
@@ -158,19 +158,19 @@ fn handle(
             session_ref,
             format,
         }) => {
-            let address = authorize(identity, policy, instance, &SessionRef(session_ref.clone()))?;
+            let (canonical, address, _) = authorize_reference(identity, policy, instance, session_ref)?;
             if *format == ExportFormat::Common {
                 // A raw native blob is not a normalized, provenance-bearing transcript.
                 return Err("unsupported_format");
             }
             let raw = native("getRawTranscript", json!({"id":address.native_session_id}))
                 .map_err(|_| "source_unavailable")?;
-            let mut exported = native_export(session_ref, raw.clone())?;
+            let mut exported = native_export(&canonical.0, raw.clone())?;
             exported["indexing"] = match ingest(
                 identity,
                 policy,
                 instance,
-                &SessionRef(session_ref.clone()),
+                &canonical,
                 &raw,
             ) {
                 Ok(truncated) => json!({"status":"indexed","content_truncated":truncated}),
@@ -188,7 +188,8 @@ fn handle(
                 cursor,
             },
         ) => {
-            let address = authorize(identity, policy, instance, &SessionRef(session_ref.clone()))?;
+            let (canonical, address, native_reference) =
+                authorize_reference(identity, policy, instance, session_ref)?;
             if cursor.is_some() {
                 return Err("unsupported_cursor");
             }
@@ -201,16 +202,22 @@ fn handle(
                 return Err("invalid_source_response");
             }
             Ok(
-                json!({"session_ref":session_ref,"page":{"messages":messages,"next_cursor":null,
+                json!({"session_ref":canonical.0,"requested_reference":session_ref,
+                    "reference_kind":if native_reference{"native_session_id"}else{"session_ref"},
+                    "native_session_id":address.native_session_id,
+                    "page":{"messages":messages,"next_cursor":null,
                     "complete":false,"limitations":["Показаны последние сообщения. Прежний API не предоставляет курсор для проверки полноты истории."]}}),
             )
         }
         Request::Session(Session::Context { session_ref }) => {
-            let session = match session_ref {
-                Some(reference) => SessionRef(reference.clone()),
-                None => identity.require_self(None).map_err(|_| "self_binding_required")?.clone(),
+            let (session, address, native_reference) = match session_ref {
+                Some(reference) => authorize_reference(identity, policy, instance, reference)?,
+                None => {
+                    let session = identity.require_self(None).map_err(|_| "self_binding_required")?.clone();
+                    let address = authorize(identity, policy, instance, &session)?;
+                    (session, address, false)
+                }
             };
-            let address = authorize(identity, policy, instance, &session)?;
             let db = read_store(policy)?;
             let source = policy.membership_source(&db, &session)
                 .map_err(|_| "scope_unavailable")?.ok_or("unauthorized")?;
@@ -222,6 +229,8 @@ fn handle(
             let held = authority.human_stop_held(identity, &[grant], &session, instance)
                 .map_err(|_| "scope_unavailable")?;
             Ok(json!({"session_ref":session.0,"address":address,
+                "requested_reference":session_ref,
+                "reference_kind":if native_reference{"native_session_id"}else{"session_ref"},
                 "instance_ref":instance.instance_id,"node_ref":instance.node.0,
                 "principal_ref":principal.id.0,"is_self":is_self,
                 "identity_source":if is_self {"verified_connection_binding"} else {"authorized_explicit_session_ref"},
@@ -439,6 +448,72 @@ fn authorize(
         .resolve_session_read(identity, &[grant], session, instance)
         .map(|(address, _)| address)
         .map_err(|_| "scope_unavailable")
+}
+
+/// Resolve either the durable Herder reference or the exact native session ID
+/// that is already bound to it. Native IDs are never adopted from adapter
+/// discovery: the lookup is restricted to this owner principal, instance and
+/// authority generation, then the normal session grant is applied to the
+/// resulting durable reference.
+fn authorize_reference(
+    identity: &ConnectionIdentity,
+    policy: &OwnerPolicy,
+    instance: &InstanceRef,
+    supplied: &str,
+) -> ReadResult<(SessionRef, SessionAddress, bool)> {
+    let direct = SessionRef(supplied.to_owned());
+    let direct_error = match authorize(identity, policy, instance, &direct) {
+        Ok(address) => return Ok((direct, address, false)),
+        Err(error) => error,
+    };
+    // This owner is the OpenCode adapter. Its native session namespace is
+    // explicit and stable; arbitrary opaque strings remain canonical Herder
+    // references and must not trigger native discovery-style lookup.
+    if !supplied.starts_with("ses_")
+        || supplied.len() > 4096
+        || supplied.chars().any(char::is_control)
+    {
+        return Err(direct_error);
+    }
+    let db = match read_store(policy) {
+        Ok(db) => db,
+        Err(_) => return Err(direct_error),
+    };
+    let mut statement = db
+        .prepare(
+            "SELECT b.session_ref FROM session_bindings b JOIN lineage l ON l.session_ref=b.session_ref JOIN humanstop_sessions h ON h.session_ref=b.session_ref WHERE b.native_session_id=?1 AND b.node_ref=?2 AND b.instance_id=?3 AND l.creator_ref=?4 AND h.authority_generation=?5 ORDER BY b.session_ref LIMIT 2",
+        )
+        .map_err(|_| direct_error)?;
+    let matches = statement
+        .query_map(
+            params![
+                supplied,
+                instance.node.0,
+                instance.instance_id,
+                policy.principal.0,
+                policy.generation,
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|_| direct_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|_| direct_error)?;
+    if matches.len() != 1 {
+        return Err(if matches.len() > 1 {
+            "ambiguous_native_identity"
+        } else {
+            // Preserve the canonical session_ref error for foreign or unknown
+            // references; the native-ID fallback must not turn unauthorized
+            // input into a different disclosure.
+            direct_error
+        });
+    }
+    let session = SessionRef(matches.into_iter().next().expect("one native match"));
+    let address = authorize(identity, policy, instance, &session)?;
+    if address.native_session_id != supplied {
+        return Err("scope_unavailable");
+    }
+    Ok((session, address, true))
 }
 
 fn session_read_grant(
@@ -1563,6 +1638,31 @@ for line in sys.stdin:
             payload(handle(&who, &request, &f.policy, &f.policy.instance, &never).unwrap());
         assert_eq!(result["session_ref"], "owned");
         assert_eq!(result["lineage"]["parent_ref"], Value::Null);
+    }
+    #[test]
+    fn messages_resolve_an_exact_registered_native_session_id_without_adoption() {
+        let f = Fixture::new();
+        f.own();
+        f.create(
+            "alice",
+            "owned-ses",
+            &f.policy.instance,
+            "ses_e24e15569ffeFe7Jwln5mtFqu3",
+        );
+        let request = catalog::Request::Session(catalog::Session::Messages {
+            session_ref: "ses_e24e15569ffeFe7Jwln5mtFqu3".into(),
+            cursor: None,
+        });
+        let result = payload(f.invoke(request, |method, params| {
+            assert_eq!(method, "getSessionMessages");
+            assert_eq!(params, json!({"id": "ses_e24e15569ffeFe7Jwln5mtFqu3", "limit": 200}));
+            Ok(json!([{"id":"message-1","role":"user","text":"native read"}]))
+        }));
+        assert_eq!(result["session_ref"], "owned-ses");
+        assert_eq!(result["requested_reference"], "ses_e24e15569ffeFe7Jwln5mtFqu3");
+        assert_eq!(result["reference_kind"], "native_session_id");
+        assert_eq!(result["native_session_id"], "ses_e24e15569ffeFe7Jwln5mtFqu3");
+        assert_eq!(result["page"]["messages"][0]["text"], "native read");
     }
     #[test]
     fn incomplete_or_malformed_export_is_not_silently_repaired() {

@@ -138,7 +138,7 @@ def main():
         command = command[2:]
     scenario = 'text'
     if command[:1] == ['--scenario']:
-        if len(command) < 3 or command[1] not in ('text', 'tool-call'):
+        if len(command) < 3 or command[1] not in ('text', 'tool-call', 'opencode-create'):
             print('invalid fixture scenario', file=sys.stderr)
             return 2
         scenario, command = command[1], command[2:]

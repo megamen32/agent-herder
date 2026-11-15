@@ -246,7 +246,15 @@ where
                     ))
                     .map_err(|_| ())?;
                 authority
-                    .record_create_task(&identity, &grants, &instance, &child, outcome)
+                    .record_create_task(
+                        &identity,
+                        &grants,
+                        &instance,
+                        &child,
+                        &intent,
+                        &prompt,
+                        outcome,
+                    )
                     .map_err(|_| ())
             })
             .await;

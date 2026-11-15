@@ -7,12 +7,13 @@ use crate::{
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResponse, CreateTaskResult, GetTaskParams, GetTaskResult,
-        ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig,
-        Tool,
+        CallToolRequestParams, CallToolResponse, CallToolResult, CreateTaskResult, GetTaskParams,
+        GetTaskResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+        ServerCapabilities, ServerConfig, TaskPayload, Tool,
     },
     service::RequestContext,
 };
+use serde_json::{Value, json};
 use std::{borrow::Cow, sync::Arc};
 
 pub struct ScopedTaskServer {
@@ -69,6 +70,67 @@ impl ScopedTaskServer {
         self.create_policy = Some(policy);
         self
     }
+
+    fn task_id(content: &Value) -> Option<(&str, bool)> {
+        if let Some(id) = content
+            .get("_herder_delivery_task")
+            .and_then(Value::as_str)
+        {
+            Some((id, false))
+        } else {
+            content
+                .get("_herder_create_task")
+                .and_then(Value::as_str)
+                .map(|id| (id, true))
+        }
+    }
+
+    fn task_result(
+        &self,
+        id: &str,
+        is_create: bool,
+    ) -> Result<Option<GetTaskResult>, ()> {
+        let lookup = if is_create {
+            self.authority.get_create_task_with_policy(
+                &self.identity,
+                &self.grants,
+                id,
+                self.create_policy.as_deref(),
+            )
+        } else {
+            match self.authority.current_task_read_grants(
+                &self.identity,
+                &self.grants,
+                id,
+                self.create_policy.as_deref(),
+            ) {
+                Ok(Some(grants)) => self
+                    .authority
+                    .get_delivery_task(&self.identity, &grants, id),
+                Ok(None) => Ok(None),
+                Err(error) => Err(error),
+            }
+        };
+        lookup.map_err(|_| ())
+    }
+
+    fn ordinary_result(task: Option<GetTaskResult>, task_id: &str) -> CallToolResponse {
+        if let Some(task) = task {
+            if let TaskPayload::Completed { result } = task.task.payload {
+                if let Ok(result) = serde_json::from_value::<CallToolResult>(Value::Object(result))
+                {
+                    return result.into();
+                }
+            }
+        }
+        let mut diagnostic = serde_json::to_value(crate::error::Diagnostic::outcome_unknown(None))
+            .expect("static diagnostic");
+        diagnostic["task_ref"] = json!(task_id);
+        diagnostic["message"] = json!(
+            "durable mutation was admitted but its native receipt is not yet confirmed; inspect the stored task before retrying"
+        );
+        CallToolResult::structured_error(diagnostic).into()
+    }
 }
 impl ServerHandler for ScopedTaskServer {
     fn get_info(&self) -> ServerConfig {
@@ -98,16 +160,9 @@ impl ServerHandler for ScopedTaskServer {
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let task_eligible = matches!(request.name.as_ref(), "create" | "deliver");
-        if task_eligible
-            && !ctx
-                .client_capabilities()
-                .is_some_and(|c| c.supports_tasks())
-        {
-            return Err(ErrorData::invalid_params(
-                "tasks capability required before mutation",
-                None,
-            ));
-        }
+        let task_capable = ctx
+            .client_capabilities()
+            .is_some_and(|capabilities| capabilities.supports_tasks());
         let response = self.inner.call_tool(request, ctx).await?;
         let CallToolResponse::Complete(result) = &response else {
             return Ok(response);
@@ -118,48 +173,43 @@ impl ServerHandler for ScopedTaskServer {
         let Some(content) = result.structured_content.as_ref() else {
             return Ok(response);
         };
-        let (id, is_create) = if let Some(id) = content
-            .get("_herder_delivery_task")
-            .and_then(|v| v.as_str())
-        {
-            (id, false)
-        } else if let Some(id) = content.get("_herder_create_task").and_then(|v| v.as_str()) {
-            (id, true)
-        } else {
+        let Some((id, is_create)) = Self::task_id(content) else {
             return Ok(response);
         };
-        let lookup = if is_create {
-            self.authority.get_create_task_with_policy(
-                &self.identity,
-                &self.grants,
-                id,
-                self.create_policy.as_deref(),
-            )
-        } else {
-            match self.authority.current_task_read_grants(
-                &self.identity,
-                &self.grants,
-                id,
-                self.create_policy.as_deref(),
-            ) {
-                Ok(Some(grants)) => self
-                    .authority
-                    .get_delivery_task(&self.identity, &grants, id),
-                Ok(None) => Ok(None),
-                Err(e) => Err(e),
-            }
-        };
-        let task = match lookup {
-            Ok(Some(task)) => task,
-            _ => {
-                return Ok(rmcp::model::CallToolResult::structured_error(
-                    serde_json::to_value(crate::error::Diagnostic::outcome_unknown(None))
-                        .expect("static diagnostic"),
-                )
-                .into());
-            }
-        };
-        Ok(CreateTaskResult::new(task.task.task).into())
+        if task_capable {
+            let task = match self.task_result(id, is_create) {
+                Ok(Some(task)) => task,
+                _ => {
+                    let mut diagnostic = serde_json::to_value(
+                        crate::error::Diagnostic::outcome_unknown(None),
+                    )
+                    .expect("static diagnostic");
+                    diagnostic["task_ref"] = json!(id);
+                    return Ok(rmcp::model::CallToolResult::structured_error(diagnostic).into());
+                }
+            };
+            return Ok(CreateTaskResult::new(task.task.task).into());
+        }
+
+        // Ordinary MCP clients do not poll `tasks/get`. Reconcile the same
+        // durable task before returning, then project its completed tool
+        // result into the normal `tools/call` envelope. The reconciler only
+        // reads native evidence and never submits a second mutation.
+        if let Some(reconciler) = &self.reconciler {
+            let reconciler = reconciler.clone();
+            let identity = self.identity.clone();
+            let grants = self.grants.clone();
+            let task_id = id.to_owned();
+            let policy = self.create_policy.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                reconciler.reconcile(identity, grants, task_id, policy)
+            })
+            .await;
+        }
+        Ok(Self::ordinary_result(
+            self.task_result(id, is_create).ok().flatten(),
+            id,
+        ))
     }
     async fn get_task(
         &self,

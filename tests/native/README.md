@@ -1,11 +1,10 @@
 # Native test model fixture
 
-`test-model-server.py` is a byte-for-byte copy of the local, uncommitted
-`/home/roomhacker/agents-projects/agent-herder/scripts/test-model-server.py`
-read for V051A on 2026-11-07. Source SHA256:
-`42415b4ad6a027a750da8d0f1179c120c7971adc2ea9d9ceffb419b7feefdef6`.
-The source is another owner's work in progress and is left unchanged; this copy
-is maintained with the native test fixture.
+`test-model-server.py` and `scripts/test-model-server.py` are kept
+byte-identical. Both provide the deterministic `text`, `tool-call`, and
+`opencode-create` scenarios; the last one chooses the namespaced OpenCode MCP
+create tool from the tools actually sent by OpenCode and records that choice in
+`/_stats`.
 
 Run `python3 tests/native/launch.py -- COMMAND [ARGS...]`. The command receives
 a fresh temporary HOME, XDG directories, TMPDIR, a minimal PATH and
@@ -24,6 +23,16 @@ For a tool-calling fixture, pass `--scenario tool-call` before `-- COMMAND`.
 The first model request returns `herder_test_tool` with call ID `call_test_1`
 and arguments `{"value":"fixture"}`; later requests return the normal text.
 The client must register that tool. This fixture does not execute the tool.
+
+For the real OpenCode consumer path, use --scenario opencode-create with
+tests/native/opencode_mcp_create_stand.py. Its project config registers the
+Rust herder_native_stdio server with codemode:false, so the fake model must
+receive and call herder_native_stdio_create. The stand then proves the
+durable create receipt, native prompt readback after restarting the owner
+process, exact native ses_ session readback, same-key no-replay, and changed-payload conflict. The fake model must
+receive the namespaced Herder tool and emit exactly one such call; OpenCode may
+make additional harmless model rounds after the tool result, so the stand
+requires at least the tool round plus one final model round.
 To exercise that exchange with a real Codex app-server:
 
 ```sh

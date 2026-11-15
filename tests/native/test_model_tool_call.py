@@ -35,6 +35,30 @@ class ToolCallTest(unittest.TestCase):
                         proc.wait(timeout=5)
                         proc.stdout.close()
 
+    def test_opencode_create_scenario_selects_the_namespaced_mcp_tool(self):
+        proc = subprocess.Popen([sys.executable, str(SERVER), '--scenario', 'opencode-create'],
+                                stdout=subprocess.PIPE, text=True)
+        try:
+            port = int(proc.stdout.readline())
+            request = urllib.request.Request(
+                f'http://127.0.0.1:{port}/v1/chat/completions',
+                json.dumps({'model': 'herder-test', 'stream': False,
+                            'tools': [{'type': 'function', 'function': {
+                                'name': 'herder_native_stdio_create'}}]}).encode(),
+                {'Content-Type': 'application/json'})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                body = response.read().decode()
+            self.assertIn('herder_native_stdio_create', body)
+            self.assertIn('OPENCODE_MCP_CREATE_FIXTURE', body)
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/_stats', timeout=5) as response:
+                stats = json.loads(response.read().decode())
+            self.assertEqual(stats['tool_request_tools'], [['herder_native_stdio_create']])
+            self.assertEqual(stats['tool_calls'][0]['name'], 'herder_native_stdio_create')
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+            proc.stdout.close()
+
 
 if __name__ == '__main__':
     unittest.main()
