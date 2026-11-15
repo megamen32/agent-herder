@@ -86,4 +86,33 @@ describe("scheduled task web surface", () => {
     expect(await cancelled.json()).toMatchObject({ task: { id: waitRow.id, state: "cancelled", actions: [] } });
     expect(resumeAfter.cancel).toHaveBeenCalledWith(waitRow.id, waitRow.owner);
   });
+
+  it("projects legacy cadence rows without a stored harness as Codex", async () => {
+    const legacyRow = {
+      id: "cadence_abcdefabcdefabcdefabcdefabcdefab",
+      sessionId: "legacy-codex-session",
+      requestId: "legacy-cadence-request",
+      message: "continue legacy cadence",
+      activatedAt: "2026-11-15T10:00:00.000Z",
+      nextAt: "2026-11-15T11:00:00.000Z",
+      state: "paused",
+      sequence: 0,
+    } as unknown as CadenceSchedule;
+    const cadence = { list: vi.fn(async () => [legacyRow]) } as unknown as CadenceScheduler;
+    const supervisor = {
+      getSession: vi.fn(async (harness: string, sessionId: string) => ({ id: sessionId, harness, title: "Legacy", cwd: "/tmp/project" })),
+    } as any;
+    const base = await listen(createWebServer({
+      adapters: new Map(), converter: {} as never, supervisor,
+      sessionObservationManagedExternally: true, cadence,
+    }));
+
+    const response = await fetch(base + "/api/scheduled-tasks");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      tasks: [expect.objectContaining({ id: legacyRow.id, harness: "codex", sessionId: legacyRow.sessionId })],
+      errors: [],
+    });
+    expect(supervisor.getSession).toHaveBeenCalledWith("codex", legacyRow.sessionId);
+  });
 });

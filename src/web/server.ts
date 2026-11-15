@@ -269,7 +269,11 @@ async function scheduledTaskView(
 ): Promise<ScheduledTaskView> {
   const cadenceRow = kind === "cadence" ? row as CadenceSchedule : undefined;
   const resumeRow = kind === "resume-after" ? row as ResumeAfterWait : undefined;
-  const harness = cadenceRow?.harness ?? resumeRow!.owner.harness;
+  // Cadence rows created before the harness field was introduced are Codex
+  // rows. Do not fall through to the resume-after owner when projecting one
+  // of those legacy cadence records: that hides the whole source behind an
+  // unrelated undefined-owner error.
+  const harness = kind === "cadence" ? (cadenceRow?.harness || "codex") : resumeRow!.owner.harness;
   const sessionId = cadenceRow?.sessionId ?? resumeRow!.owner.sessionId;
   const session = await supervisor.getSession(harness, sessionId).catch(() => null);
   const dueAt = cadenceRow?.nextAt ?? resumeRow?.scheduledAt ?? null;
