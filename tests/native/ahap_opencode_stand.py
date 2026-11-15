@@ -699,7 +699,7 @@ def write_opencode_fixture(project, model_url):
     (project / "opencode.json").write_text(json.dumps(config))
 
 
-def write_owner_profile(path, seed, *, instance, executable, runner_script, opencode_url, project):
+def write_owner_profile(path, seed, *, instance, host_id, executable, runner_script, opencode_url, project):
     if set(seed) != {"database", "gate", "generation", "profile_seed"}:
         raise ValueError("profile seed must contain only database, gate, generation, profile_seed")
     root = path.parent
@@ -715,7 +715,7 @@ def write_owner_profile(path, seed, *, instance, executable, runner_script, open
     profile = {
         "database": seed["database"], "gate": seed["gate"], "generation": seed["generation"],
         "owner": {"kind": "opencode", "principal": "isolated-opencode-owner",
-                  "node": "isolated-native-node", "instance": instance,
+                  "node": host_id, "instance": instance,
                   "executable": str(executable), "ahap_script": str(runner_script),
                   "ahap_base_url": opencode_url, "code_home": str(project), "cwd": str(project)},
     }
@@ -900,7 +900,7 @@ def run_case(args):
     if authority_home.stat().st_mode & 0o077:
         raise ValueError("fresh authority directory must be owner-only")
     profile_path = authority_home / "profile.json"
-    profile = write_owner_profile(profile_path, seed, instance=args.instance,
+    profile = write_owner_profile(profile_path, seed, instance=args.instance, host_id=args.host_id,
         executable=args.node, runner_script=args.runner, opencode_url=opencode_url, project=project)
     evidence_path = protected / "ahap-opencode-evidence.json"
     evidence = {"phase": "isolated-preflight", "result": "not_started", "no_replay": True,
@@ -1036,7 +1036,7 @@ def run_case(args):
                                                     receipt_one["native_receipt_id"], env)
 
         target_host = profile["owner"]["node"]
-        sender = {"hostId": "isolated-sender-node", "harness": "codex",
+        sender = {"hostId": args.sender_host, "harness": "codex",
                   "nativeSessionId": "isolated-sender-session"}
         envelope_two = delivery_envelope(target_host, "opencode", session_one, sender,
                                          request_two, marker_two)
@@ -1353,6 +1353,10 @@ def main(argv=None):
     parser.add_argument("--preflight-only", action="store_true",
                         help="stop after read-only inline MCP tools/list; do not call create or send")
     parser.add_argument("--instance", default="opencode-fixture")
+    parser.add_argument("--host-id", default="isolated-native-node",
+                        help="trusted owner host id used in the target envelope")
+    parser.add_argument("--sender-host", default="isolated-sender-node",
+                        help="attribution-only sender host id in the envelope")
     args = parser.parse_args(argv)
     for name in ("core", "runner", "opencode", "node", "bootstrap"):
         path = Path(getattr(args, name))
