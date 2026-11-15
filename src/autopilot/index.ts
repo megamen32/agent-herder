@@ -551,10 +551,13 @@ export function createAutopilotCore(options: {
 
       if (await processWaitBlocks(options.processWaits, options.harness ?? input.harness ?? "codex", input.session_id, input.cwd)) return {};
 
-      const budgetKey = `${input.session_id}:${input.turn_id}`;
+      // The continuation budget is session-wide. A synthetic continuation
+      // creates a new native turn_id, so including turn_id here resets the
+      // counter on every automatic wake and defeats maxContinuationsPerSession.
+      const budgetKey = input.session_id;
       const currentCount =
         continuationCounts.get(budgetKey) ??
-        countPersistedContinuations(options.receiptStore, input.session_id, input.turn_id);
+        countPersistedContinuations(options.receiptStore, input.session_id);
       const remainingContinuations = Math.max(0, maxContinuations - currentCount);
 
       activeTurnKeys.add(turnPrefix);
@@ -1127,8 +1130,10 @@ function normalizeDecision(value: unknown): AutopilotDecision {
   throw new Error("Malformed judge decision");
 }
 
-function countPersistedContinuations(store: ReceiptStore, sessionId: string, turnId: string): number {
-  const prefix = `${encodeURIComponent(sessionId)}:${encodeURIComponent(turnId)}:`;
+function countPersistedContinuations(store: ReceiptStore, sessionId: string): number {
+  // Receipt keys are session:turn:evidence. Count every continuation receipt
+  // for this session so a new native turn cannot reset the session budget.
+  const prefix = `${encodeURIComponent(sessionId)}:`;
   let count = 0;
   for (const [key, receipt] of store) {
     if (key.startsWith(prefix) && receipt.kind === "continue") count += 1;

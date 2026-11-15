@@ -507,7 +507,7 @@ describe("autopilot core", () => {
     expect(receipts).toEqual(new Map([["receipt", { kind: "done" }]]));
   });
 
-  it("counts persisted continue receipts only toward the current Codex turn budget", async () => {
+  it("counts persisted continue receipts toward the session budget", async () => {
     const judge = { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "should not run" } satisfies AutopilotDecision)) };
     const sink = { send: vi.fn(async () => undefined) };
     const core = createAutopilotCore({
@@ -545,7 +545,7 @@ describe("autopilot core", () => {
     expect(judge.decide).toHaveBeenCalledTimes(2);
   });
 
-  it("starts a fresh continuation budget for the next user turn", async () => {
+  it("does not reset the continuation budget for a new native turn", async () => {
     const judge = { decide: vi.fn(async () => ({ kind: "continue", nextGoal: "Continue the current user turn" } satisfies AutopilotDecision)) };
     const core = createAutopilotCore({
       judge,
@@ -556,7 +556,7 @@ describe("autopilot core", () => {
     });
 
     await expect(core.handleStop(baseInput)).resolves.toEqual({ decision: "block", reason: "Continue the current user turn" });
-    await expect(core.handleStop({ ...baseInput, turn_id: "turn-8", last_assistant_message: "A new user turn is incomplete." })).resolves.toEqual({ decision: "block", reason: "Continue the current user turn" });
+    await expect(core.handleStop({ ...baseInput, turn_id: "turn-8", last_assistant_message: "A new user turn is incomplete." })).resolves.toEqual({});
     expect(judge.decide).toHaveBeenCalledTimes(2);
   });
 
