@@ -40,6 +40,35 @@ impl MultiOwner {
         }
         found.ok_or_else(unavailable)
     }
+
+    async fn route_native_reference(
+        &self,
+        request: CallToolRequestParams,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        // A native ID is scoped to one owner profile. Probe only read paths;
+        // every owner still applies its own exact ACL and authority checks.
+        let mut winner = None;
+        let mut first_error = None;
+        for binding in &self.bindings {
+            let response = binding.server.call_tool(request.clone(), ctx.clone()).await?;
+            let successful = matches!(
+                &response,
+                CallToolResponse::Complete(result) if result.is_error != Some(true)
+            );
+            if successful {
+                if winner.is_some() {
+                    return Ok(denied("ambiguous_native_identity"));
+                }
+                winner = Some(response);
+            } else if first_error.is_none() {
+                first_error = Some(response);
+            }
+        }
+        Ok(winner
+            .or(first_error)
+            .unwrap_or_else(|| denied("session_unavailable")))
+    }
 }
 impl ServerHandler for MultiOwner {
     fn get_info(&self) -> ServerConfig { self.bindings[0].server.get_info() }
@@ -77,6 +106,10 @@ impl ServerHandler for MultiOwner {
             };
         }
         if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
+            if args.and_then(|a|a.get("native_session_id")).and_then(Value::as_str)
+                .is_some_and(|native| native.starts_with("ses_")) {
+                return self.route_native_reference(request, ctx).await;
+            }
             // The shared registry resolves exact canonical metadata with fresh ACLs.
             return self.bindings[0].server.call_tool(request,ctx).await;
         }
@@ -85,6 +118,16 @@ impl ServerHandler for MultiOwner {
             return binding.server.call_tool(request, ctx).await;
         }
         if let Some(session) = args.and_then(|a| a.get("session_ref")).and_then(Value::as_str) {
+            if session.starts_with("ses_")
+                && ((request.name.as_ref() == "export")
+                    || (request.name.as_ref() == "session"
+                        && matches!(
+                            args.and_then(|a| a.get("action")).and_then(Value::as_str),
+                            Some("recent") | Some("context") | Some("messages")
+                        )))
+            {
+                return self.route_native_reference(request, ctx).await;
+            }
             let Ok(binding) = self.by_session(session) else { return Ok(denied("session_unavailable")); };
             return binding.server.call_tool(request, ctx).await;
         }

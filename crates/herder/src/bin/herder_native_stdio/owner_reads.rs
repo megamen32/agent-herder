@@ -23,7 +23,11 @@ use super::owner_policy::OwnerPolicy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use herder::{
     adapters::ahap_opencode::AhapOpenCode,
-    application::scoped_stop::{ScopedAuthority, create_prompt::FreshSessionGrantPolicy, registration},
+    application::scoped_stop::{
+        ScopedAuthority,
+        create_prompt::FreshSessionGrantPolicy,
+        registration,
+    },
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::{
         adapter::ReadError,
@@ -37,7 +41,12 @@ use rmcp::model::CallToolResult;
 use rusqlite::{Connection, OpenFlags, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, num::NonZeroUsize, os::unix::fs::MetadataExt, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    num::NonZeroUsize,
+    os::unix::fs::MetadataExt,
+    sync::Arc,
+};
 
 const CORPUS_LIMIT: usize = 256;
 const PAGE_SIZE: usize = 50;
@@ -267,8 +276,9 @@ fn handle(
             for (reference, address) in &corpus.sessions {
                 let metadata = observed.get(&address.native_session_id);
                 let workspace = registration::read_workspace(&db, reference).map_err(|_| "scope_unavailable")?;
-                if project_ref.as_deref().is_some_and(|p| metadata.and_then(project) != Some(p)
-                    && !workspace.workspace.as_ref().is_some_and(|w| w.project_ref.as_deref() == Some(p) || w.path == p)) {
+                if project_ref.as_deref().is_some_and(|p| {
+                    !session_matches_project(metadata, workspace.workspace.as_ref(), p)
+                }) {
                     continue;
                 }
                 let grant = session_read_grant(identity, policy, instance, reference)?;
@@ -306,16 +316,21 @@ fn handle(
             } else {
                 BTreeMap::new()
             };
+            let db = read_store(policy)?;
             let allowed_rows: Vec<_> = corpus
                 .sessions
                 .iter()
-                .filter(|(_, a)| {
+                .filter(|(session, a)| {
                     project_ref.as_deref().is_none_or(|p| {
-                        observed.get(&a.native_session_id).and_then(project) == Some(p)
+                        let workspace = registration::read_workspace(&db, session).ok();
+                        registration::nested_project_matches(
+                            p,
+                            workspace.as_ref().and_then(|workspace| workspace.workspace.as_ref()),
+                            observed.get(&a.native_session_id).and_then(project),
+                        )
                     })
                 })
                 .collect();
-            let db = read_store(policy)?;
             // No implicit migration or claim that the index is a fresh native snapshot.
             let version: i64 = db
                 .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -408,8 +423,15 @@ fn handle(
             }
             let corpus = registered(identity, policy, instance)?;
             let observed = observe(&corpus, native)?;
-            let paths: std::collections::BTreeSet<_> =
-                observed.values().filter_map(project).collect();
+            let mut paths = Vec::new();
+            for path in observed.values().filter_map(project) {
+                if let Some(path) = registration::canonical_nested_workspace_path(path) {
+                    if !paths.contains(&path) {
+                        paths.push(path);
+                    }
+                }
+            }
+            paths.sort();
             if paths.is_empty() {
                 return Ok(
                     json!({"projects":[],"complete":false,"scope":"authorized_registered_sessions",
@@ -652,15 +674,27 @@ fn project(metadata: &Value) -> Option<&str> {
         .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
 }
 
+/// Project visibility follows the working-path hierarchy, not a synthetic
+/// session lineage: two independent sessions in /repo and /repo/sub are
+/// related, while /repo-other is not. Exact non-path project identifiers
+/// retain their old equality semantics.
+fn session_matches_project(
+    metadata: Option<&Value>,
+    workspace: Option<&catalog::SessionWorkspace>,
+    requested: &str,
+) -> bool {
+    registration::nested_project_matches(requested, workspace, metadata.and_then(project))
+}
+
 fn observed_projects(
-    paths: &std::collections::BTreeSet<&str>,
+    paths: &[String],
     inventory: Option<&Value>,
 ) -> Vec<Value> {
     paths.iter().map(|path| {
         // Preserve only an exact native project match. The authorized session's
         // observed cwd remains useful when the adapter has no project inventory.
         let native = inventory.and_then(Value::as_array).and_then(|rows| rows.iter().find(|row|
-            ["cwd", "path", "worktree"].iter().any(|key| row.get(*key).and_then(Value::as_str)==Some(*path))));
+            ["cwd", "path", "worktree"].iter().any(|key| row.get(*key).and_then(Value::as_str)==Some(path))));
         json!({"project_ref":path,"source":if native.is_some(){"native_project_inventory"}else{"authorized_native_session"},"native":native})
     }).collect()
 }
@@ -1616,6 +1650,72 @@ for line in sys.stdin:
                 v.as_str()
                     .is_some_and(|s| s.contains("not globally exhaustive"))
             }));
+        }
+    }
+
+    #[test]
+    fn discover_projects_preserves_root_and_nested_observed_paths() {
+        let f = Fixture::new();
+        f.own();
+        f.create("alice", "nested", &f.policy.instance, "native-nested");
+        let result = payload(f.invoke(
+            catalog::Request::Discover(catalog::Discover::Projects { instance_ref: None }),
+            |method, _| match method {
+                "listSessions" => Ok(json!([
+                    {"id":"native-owned","cwd":"/repo"},
+                    {"id":"native-nested","cwd":"/repo/sub"}
+                ])),
+                "listProjects" => Ok(json!([])),
+                _ => panic!("unexpected native operation: {method}"),
+            },
+        ));
+        let refs: Vec<_> = result["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["project_ref"].as_str().unwrap())
+            .collect();
+        assert_eq!(refs, vec!["/repo", "/repo/sub"]);
+    }
+
+    #[test]
+    fn nested_project_filter_is_symmetric_but_respects_component_boundary() {
+        let workspace = catalog::SessionWorkspace {
+            node_ref: "node".into(),
+            path: "/repo/sub".into(),
+            project_ref: None,
+            purpose: None,
+        };
+        assert!(session_matches_project(None, Some(&workspace), "/repo"));
+        assert!(session_matches_project(None, Some(&workspace), "/repo/sub"));
+        assert!(!session_matches_project(None, Some(&workspace), "/repo-other"));
+    }
+
+    #[test]
+    fn sessions_list_exposes_independent_root_and_nested_workspace_peers() {
+        let f = Fixture::new();
+        f.own();
+        f.create("alice", "nested", &f.policy.instance, "native-nested");
+        let request = |project_ref: &str| {
+            catalog::Request::Sessions(catalog::Sessions::List {
+                project_ref: Some(project_ref.into()),
+                node_ref: None,
+                instance_ref: None,
+                cursor: None,
+            })
+        };
+        let native = |method: &str, _: Value| {
+            assert_eq!(method, "listSessions");
+            Ok(json!([
+                {"id":"native-owned","cwd":"/repo"},
+                {"id":"native-nested","cwd":"/repo/sub"}
+            ]))
+        };
+        for project in ["/repo", "/repo/sub"] {
+            let result = payload(f.invoke(request(project), native));
+            let sessions = result["sessions"].as_array().unwrap();
+            assert_eq!(sessions.len(), 2, "{result}");
+            assert_eq!(result["complete"], true);
         }
     }
     #[test]

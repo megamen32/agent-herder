@@ -346,6 +346,83 @@ fn validate_workspace(workspace: Option<&WorkspaceDeclaration>) -> Result<(), Re
     Ok(())
 }
 
+/// Return the stable lexical form used for workspace/project path identity.
+/// Workspace paths are observations, not filesystem ownership claims, so this
+/// deliberately does not call canonicalize. It still rejects parent
+/// traversal and normalizes repeated separators and dot components before a
+/// containment decision is made.
+pub fn canonical_nested_workspace_path(path: &str) -> Option<String> {
+    if !valid(path) || !path.starts_with('/') {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for component in std::path::Path::new(path).components() {
+        match component {
+            std::path::Component::RootDir => {}
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(part) => {
+                let part = part.to_str()?;
+                if part.is_empty() || part == "." || part == ".." {
+                    return None;
+                }
+                parts.push(part.to_owned());
+            }
+            std::path::Component::ParentDir | std::path::Component::Prefix(_) => return None,
+        }
+    }
+    if parts.is_empty() {
+        Some("/".to_owned())
+    } else {
+        Some(format!("/{}", parts.join("/")))
+    }
+}
+
+/// Component-aware, symmetric containment for two nested workspace paths.
+/// Symmetry is intentional: a session in A can see B and a session in B can
+/// see A when both are in the same observed project hierarchy.
+pub fn nested_workspace_path_matches(left: &str, right: &str) -> bool {
+    let Some(left) = canonical_nested_workspace_path(left) else {
+        return false;
+    };
+    let Some(right) = canonical_nested_workspace_path(right) else {
+        return false;
+    };
+    fn contains(parent: &str, child: &str) -> bool {
+        parent == child
+            || parent == "/"
+            || (child.starts_with(parent)
+                && child.as_bytes().get(parent.len()) == Some(&b'/'))
+    }
+    contains(&left, &right) || contains(&right, &left)
+}
+
+/// Match a requested project identity against one authorized session's
+/// workspace declaration and observed native cwd. A shared non-path
+/// project_ref is an explicit identity; absolute refs additionally match by
+/// symmetric path containment so A and nested B share visibility.
+pub fn nested_project_matches(
+    requested_project_ref: &str,
+    workspace: Option<&WorkspaceDeclaration>,
+    observed_path: Option<&str>,
+) -> bool {
+    if !valid(requested_project_ref) {
+        return false;
+    }
+    if workspace
+        .and_then(|workspace| workspace.project_ref.as_deref())
+        .is_some_and(|project_ref| project_ref == requested_project_ref)
+    {
+        return true;
+    }
+    let candidates = workspace
+        .into_iter()
+        .flat_map(|workspace| [Some(workspace.path.as_str()), workspace.project_ref.as_deref()])
+        .chain(std::iter::once(observed_path));
+    candidates
+        .flatten()
+        .any(|candidate| nested_workspace_path_matches(requested_project_ref, candidate))
+}
+
 fn digest<T: Serialize>(value: &T) -> Result<String, RegistrationError> {
     let bytes = serde_json::to_vec(value).map_err(|_| RegistrationError::InvalidInput)?;
     Ok(Sha256::digest(bytes)
@@ -1427,5 +1504,51 @@ mod tests {
             Err(RegistrationError::UnverifiedExistingSession)
         );
         assert_eq!(f.count("session_bindings"), 1);
+    }
+
+    #[test]
+    fn nested_project_visibility_is_symmetric_and_component_bound() {
+        let root = WorkspaceDeclaration {
+            node_ref: "node".into(),
+            path: "/workspace/A".into(),
+            project_ref: Some("/workspace/A".into()),
+            purpose: None,
+        };
+        let nested = WorkspaceDeclaration {
+            node_ref: "node".into(),
+            path: "/workspace/A/B".into(),
+            project_ref: Some("/workspace/A/B".into()),
+            purpose: None,
+        };
+        assert!(nested_project_matches("/workspace/A", Some(&root), Some("/workspace/A")));
+        assert!(nested_project_matches("/workspace/A", Some(&nested), Some("/workspace/A/B")));
+        assert!(nested_project_matches("/workspace/A/B", Some(&root), Some("/workspace/A")));
+        assert!(!nested_project_matches("/workspace/AB", Some(&root), Some("/workspace/A")));
+        assert!(!nested_workspace_path_matches("/workspace/A", "/workspace/AB"));
+        assert!(!nested_workspace_path_matches("/workspace/A/../secret", "/workspace/A"));
+    }
+
+    #[test]
+    fn common_project_identity_and_canonical_paths_preserve_nested_projects() {
+        let a = WorkspaceDeclaration {
+            node_ref: "node".into(),
+            path: "/workspace/A".into(),
+            project_ref: Some("shared-project".into()),
+            purpose: None,
+        };
+        let b = WorkspaceDeclaration {
+            node_ref: "node".into(),
+            path: "/workspace/A/B/./".into(),
+            project_ref: Some("shared-project".into()),
+            purpose: None,
+        };
+        assert!(nested_project_matches("shared-project", Some(&a), None));
+        assert!(nested_project_matches("shared-project", Some(&b), None));
+        assert_eq!(
+            canonical_nested_workspace_path("/workspace//A/B/./"),
+            Some("/workspace/A/B".into())
+        );
+        assert!(nested_workspace_path_matches("/workspace/A", "/workspace/A/B"));
+        assert!(!nested_workspace_path_matches("/workspace/A", "/workspace/AB"));
     }
 }
