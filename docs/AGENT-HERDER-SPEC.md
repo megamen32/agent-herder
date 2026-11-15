@@ -20,8 +20,23 @@ Agent Herder — единый MCP/application control plane для незави�
 - Старый LHC plan, его граф и leaves — архив решений и исторических обязательств. Они не назначают работу и не являются критерием текущего vertical slice.
 - OpenCode V1 не поддерживается.
 - Незавершённые Go adapters не входят в active registry.
-- ChatGPT, Z.ai и browser lanes подключаются после доказанного общего пути; наличие в каталоге не считается доказательством готовности.
+- ChatGPT, Z.ai и browser lanes не считаются готовыми по наличию в каталоге. После закрытого общего Rust-контракта их реальные adapter lanes являются P0: каждый должен получить отдельный capability и consumer proof.
 - Agent Herder не зависит от UserIO. Browser automation использует отдельный bezbrowser/direct-CDP core и браузерные extensions по соответствующей конфигурации.
+
+## Текущий приоритет исполнения
+
+Этот порядок заменяет старые LHC waves, leaves и исторические acceptance-матрицы. Он выбирается по бизнес-результату: реальные Codex, ChatGPT и Z.ai должны видеть друг друга через Herder и обмениваться сообщениями между нодами и независимыми workspace.
+
+Уже закрыто и не переоткрывается без новой причины: OpenCode fake-model slice VS01–VS07. Его ordinary-MCP receipts уже подтверждают exact native session, native messages, export, restart/readback без resend, same-key replay, changed-payload conflict, HumanStop и candidate cross-host stand на server-44. Этот slice теперь является regression gate, а не очередной волной разработки. Common export остаётся явно unsupported.
+
+P0 состоит из двух параллельных результатов:
+
+1. Реальная capability matrix и consumer proof для Codex, ChatGPT и Z.ai: readiness, list/discover, exact resolve, read messages, create если native harness это поддерживает, deliver/send, durable receipt, independent readback после restart без повторной отправки. Stop/permission фиксируются как available или explicit unsupported; наличие исходного модуля или tools/list не считается готовностью.
+2. Настоящий cross-host обычный `deliver`: 100→44 и 44→100, точные host/harness/native session identities, sender attribution в durable receipt, отсутствие двойного эффекта, remote readback и peer visibility. Сессии в A и A/B — независимые сессии во вложенных workspace; они должны видеть и уведомлять друг друга в обе стороны. Это не parent/child lineage.
+
+GPTAdmin modern stdio — отдельная consumer/infrastructure lane. Она нужна для одной проверки обычным потребителем, но не является причиной задерживать adapter readiness или Rust mesh. `automation` — один typed инструмент для будущих durable timer/schedule/autopilot/process waits; он не является механизмом общения между агентами.
+
+После P0 идут resources/offline claims, cleanup после смерти owner, recovery receipts и проверяемая transcript/file projection. Затем закрывается modern automation control surface и выключаются/мигрируют старые cadence/resume-after записи. Незавершённые Go adapters остаются выключенными, а OpenCode V1 не поддерживается.
 
 ## Архитектура
 
@@ -182,14 +197,14 @@ Unit tests и source fixtures нужны для RED/GREEN, но не являю�
 
 Текущий порядок работы, независимый от LHC:
 
-1. OpenCode fake-model vertical slice: Rust core, AHAP adapter, public MCP, receipts, readback, restart/no-replay.
-2. Rust-owned cross-host envelope/ingress и remote consumer readback.
-3. Resources/offline claims, global/project/node coordination и recovery projection.
-4. Один следующий adapter port по той же capability matrix.
-5. Browser/CDP lanes и остальные adapters только после общего contract.
-6. Immutable install matrix, migration/rollback и legacy removal после consumer evidence.
+1. Сохранять закрытый OpenCode VS01–VS07 как regression gate; не повторять его build/readback без нового source change или отдельного решения о promotion.
+2. Параллельно закрыть реальные Codex, ChatGPT и Z.ai adapter lanes по capability matrix и Rust-owned cross-host ordinary `deliver` с remote readback и A↔A/B peer visibility.
+3. Один раз проверить новый Rust child через GPTAdmin modern stdio как обычного MCP consumer; исправление GPTAdmin не смешивать с Herder adapter design.
+4. Закрыть resources/offline claims, global/project/node coordination, owner cleanup, recovery receipts и transcript/file projection.
+5. Довести typed `automation` list/get/delete и безопасно отключить или мигрировать старые cadence/resume-after authorities.
+6. После consumer evidence расширять остальные Rust adapters, browser extension lanes и immutable install matrix; Go adapters держать выключенными, OpenCode V1 не поддерживать.
 
-Не начинать с массового Rust rewrite, нового orchestrator, Go adapters, ChatGPT/Z.ai profiles или удаления compatibility layer. Каждый шаг сначала закрывает observable consumer path, затем расширяет поддержку.
+Не начинать с массового Rust rewrite, нового orchestrator, повторной сборки уже принятого candidate, GPTAdmin housekeeping или automation cleanup вместо P0. Каждый новый шаг сначала закрывает observable consumer path, затем расширяет поддержку.
 
 ## Источники извлечённой спецификации
 
