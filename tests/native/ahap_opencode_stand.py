@@ -32,7 +32,9 @@ ANSWER = "HERDER_TEST_MODEL_OK"
 RPC_TIMEOUT = 15
 TASK_TIMEOUT = 75
 MCP_PROTOCOL_VERSION = "2026-07-28"
-PINNED_NATIVE_OPENCODE_SHA256 = "25facd7099c19018e83dce858f3ab922cd2d49ad29b144bc36968418ca6eb5aa"
+# The installed official OpenCode v2.3.0 binary used by this live fixture.
+# The consumer refuses any other executable before creating a session.
+PINNED_NATIVE_OPENCODE_SHA256 = "2e0e4656521ca56e5ba16a00d48429958b8105b3fa6466710a4350e68759381f"
 
 
 def inline_client_meta():
