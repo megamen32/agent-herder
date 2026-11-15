@@ -185,7 +185,7 @@ export function buildAutopilotJudgeContext(
   for (let index = source.length - 1; index >= scanStart; index--) {
     const item = source[index];
     if (!item || typeof item !== "object" || Array.isArray(item)
-      || (item.role !== "user" && item.role !== "assistant")) {
+      || (item.role !== "user" && item.role !== "assistant" && item.role !== "tool")) {
       unsupportedMessagesOmitted++;
       continue;
     }
@@ -203,7 +203,11 @@ export function buildAutopilotJudgeContext(
       ? redactSecrets(nativeId) : undefined;
     entries.push({
       sourceIndex: index, nativeId,
-      message: { role: item.role, content: text.text, ...(id ? { id } : {}) },
+      message: {
+        role: item.role === "user" ? "user" : "assistant",
+        content: item.role === "tool" ? "[Инструментальный результат]\n" + text.text : text.text,
+        ...(id ? { id } : {}),
+      },
     });
   }
 
@@ -248,7 +252,7 @@ export function buildAutopilotJudgeContext(
       hasUser = true;
       if (entry) current.push(entry);
       else invalidTurn = true;
-    } else if (item.role === "assistant") {
+    } else if (item.role === "assistant" || item.role === "tool") {
       if (!hasUser) {
         if (entry) incompleteMessagesOmitted++;
       } else {
