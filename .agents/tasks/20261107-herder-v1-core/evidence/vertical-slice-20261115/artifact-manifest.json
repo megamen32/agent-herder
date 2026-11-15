@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "source_commit": "f5e30722",
+  "artifact_root": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858",
+  "core": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/bin/herder_native_stdio",
+  "adapter": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/dist/ahap-opencode-runner.js",
+  "opencode": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/opencode",
+  "node": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/node",
+  "bootstrap": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/bootstrap",
+  "sha256": {
+    "core": "93e32ec0ee987433e09c6484bd49e8c88953aa5a83234b3751fe0da382332251",
+    "adapter": "1694df321c7258d690f62312dc420b0d7659506b3bceb06fe107d691820b7e3f",
+    "opencode": "2e0e4656521ca56e5ba16a00d48429958b8105b3fa6466710a4350e68759381f",
+    "node": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "bootstrap": "77da09a312945a22a1d3dc4ec42bdb4478eb88560764a4ae24461168b42ecc55"
+  }
+}

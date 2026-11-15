@@ -1,0 +1,645 @@
+{
+  "api_family": "v2",
+  "artifact": {
+    "bootstrap_sha256": "77da09a312945a22a1d3dc4ec42bdb4478eb88560764a4ae24461168b42ecc55",
+    "core_sha256": "93e32ec0ee987433e09c6484bd49e8c88953aa5a83234b3751fe0da382332251",
+    "identity_status": "complete",
+    "manifest_path": "/home/roomhacker/herder-artifacts/vertical-slice-cb6e4858/releases/cb6e4858/manifest.json",
+    "manifest_sha256": "89738d73951358f73363434ebc7f9f26def3aa88c592dabbb761d35e340bcad4",
+    "manifest_visible": true,
+    "node_sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+    "node_version": "v22.22.2",
+    "opencode_sha256": "2e0e4656521ca56e5ba16a00d48429958b8105b3fa6466710a4350e68759381f",
+    "opencode_version": "opencode v2.3.0",
+    "runner_sha256": "1694df321c7258d690f62312dc420b0d7659506b3bceb06fe107d691820b7e3f",
+    "source_commit": "f5e30722",
+    "stage": "candidate"
+  },
+  "cleanup": {
+    "disposable_fixture_cleanup_owner": "launcher",
+    "opencode_server_shutdown": "finally"
+  },
+  "common_export": {
+    "expected": true,
+    "receipt": {
+      "code": "unsupported_format",
+      "correction": "Повторите чтение с format=native; сырой transcript не является Common export.",
+      "effect": "none",
+      "expected": "Для V1 поддержан format=native с исходными байтами и provenance.",
+      "message": "Нормализованный Common export пока не реализован."
+    },
+    "request": {
+      "action": "export",
+      "format": "common",
+      "session_ref": "session:bbc97d68539a436c08d32a470037ea27"
+    },
+    "status": "unsupported"
+  },
+  "envelope": {
+    "receipt_read": {
+      "content": [
+        {
+          "text": "{\"automatic_continuation\":true,\"complete\":true,\"delivery_mode\":\"queue\",\"found\":true,\"native_receipt\":{\"native_id\":\"ahap-receipt:v1:{\\\"kind\\\":\\\"message\\\",\\\"native_id\\\":\\\"msg_1dd09cca3001wSf4plHDMSr20R\\\"}\",\"sender\":{\"harness\":\"codex\",\"hostId\":\"roomhacker-server-100\",\"nativeSessionId\":\"isolated-sender-session\"},\"target\":{\"instance\":{\"instance_id\":\"opencode-remote-vs07\",\"node\":\"server-44\"},\"native_session_id\":\"ses_e22f635d0ffePICR0NYOcJJ6en\"}},\"payload_hash\":\"sha256-dispatch-v1:633744277afa4277d8636c99896233fbf6cfcb858f7e4c85fd822bd0967ea148\",\"request_key\":\"ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258\",\"reserved_payload_hash\":null,\"session_ref\":\"session:bbc97d68539a436c08d32a470037ea27\",\"state\":\"confirmed\",\"target\":{\"instance_ref\":\"opencode-remote-vs07\",\"native_session_id\":\"ses_e22f635d0ffePICR0NYOcJJ6en\",\"node_ref\":\"server-44\"},\"task_ref\":\"mcp-delivery-task:91bcd32fac96cab0263fc8267b56e5e6e83ea930f4865e61561259243e24716e\",\"task_result\":{\"content\":[{\"text\":\"{\\\"native_receipt_id\\\":\\\"ahap-receipt:v1:{\\\\\\\"kind\\\\\\\":\\\\\\\"message\\\\\\\",\\\\\\\"native_id\\\\\\\":\\\\\\\"msg_1dd09cca3001wSf4plHDMSr20R\\\\\\\"}\\\",\\\"outcome\\\":\\\"confirmed\\\",\\\"reconciliation\\\":{\\\"ack_recovered\\\":false,\\\"dispatch_scope_generation\\\":\\\"db66fa8f18b86b15c9e4c3a3891418c4\\\",\\\"kind\\\":\\\"native_admission\\\",\\\"observed_at\\\":\\\"2026-11-15T02:29:29Z\\\",\\\"original_dispatch_phase\\\":\\\"finished\\\",\\\"original_intent_state\\\":\\\"admitted\\\",\\\"original_result_json\\\":null,\\\"original_task_status\\\":\\\"prepared\\\"}}\",\"type\":\"text\"}],\"isError\":false,\"resultType\":\"complete\",\"structuredContent\":{\"native_receipt_id\":\"ahap-receipt:v1:{\\\"kind\\\":\\\"message\\\",\\\"native_id\\\":\\\"msg_1dd09cca3001wSf4plHDMSr20R\\\"}\",\"outcome\":\"confirmed\",\"reconciliation\":{\"ack_recovered\":false,\"dispatch_scope_generation\":\"db66fa8f18b86b15c9e4c3a3891418c4\",\"kind\":\"native_admission\",\"observed_at\":\"2026-11-15T02:29:29Z\",\"original_dispatch_phase\":\"finished\",\"original_intent_state\":\"admitted\",\"original_result_json\":null,\"original_task_status\":\"prepared\"}}},\"task_status\":\"completed\",\"version\":1}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "resultType": "complete",
+      "structuredContent": {
+        "automatic_continuation": true,
+        "complete": true,
+        "delivery_mode": "queue",
+        "found": true,
+        "native_receipt": {
+          "native_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1dd09cca3001wSf4plHDMSr20R\"}",
+          "sender": {
+            "harness": "codex",
+            "hostId": "roomhacker-server-100",
+            "nativeSessionId": "isolated-sender-session"
+          },
+          "target": {
+            "instance": {
+              "instance_id": "opencode-remote-vs07",
+              "node": "server-44"
+            },
+            "native_session_id": "ses_e22f635d0ffePICR0NYOcJJ6en"
+          }
+        },
+        "payload_hash": "sha256-dispatch-v1:633744277afa4277d8636c99896233fbf6cfcb858f7e4c85fd822bd0967ea148",
+        "request_key": "ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258",
+        "reserved_payload_hash": null,
+        "session_ref": "session:bbc97d68539a436c08d32a470037ea27",
+        "state": "confirmed",
+        "target": {
+          "instance_ref": "opencode-remote-vs07",
+          "native_session_id": "ses_e22f635d0ffePICR0NYOcJJ6en",
+          "node_ref": "server-44"
+        },
+        "task_ref": "mcp-delivery-task:91bcd32fac96cab0263fc8267b56e5e6e83ea930f4865e61561259243e24716e",
+        "task_result": {
+          "content": [
+            {
+              "text": "{\"native_receipt_id\":\"ahap-receipt:v1:{\\\"kind\\\":\\\"message\\\",\\\"native_id\\\":\\\"msg_1dd09cca3001wSf4plHDMSr20R\\\"}\",\"outcome\":\"confirmed\",\"reconciliation\":{\"ack_recovered\":false,\"dispatch_scope_generation\":\"db66fa8f18b86b15c9e4c3a3891418c4\",\"kind\":\"native_admission\",\"observed_at\":\"2026-11-15T02:29:29Z\",\"original_dispatch_phase\":\"finished\",\"original_intent_state\":\"admitted\",\"original_result_json\":null,\"original_task_status\":\"prepared\"}}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "resultType": "complete",
+          "structuredContent": {
+            "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1dd09cca3001wSf4plHDMSr20R\"}",
+            "outcome": "confirmed",
+            "reconciliation": {
+              "ack_recovered": false,
+              "dispatch_scope_generation": "db66fa8f18b86b15c9e4c3a3891418c4",
+              "kind": "native_admission",
+              "observed_at": "2026-11-15T02:29:29Z",
+              "original_dispatch_phase": "finished",
+              "original_intent_state": "admitted",
+              "original_result_json": null,
+              "original_task_status": "prepared"
+            }
+          }
+        },
+        "task_status": "completed",
+        "version": 1
+      }
+    },
+    "request": {
+      "inputId": "ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258",
+      "message": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb",
+      "sender": {
+        "harness": "codex",
+        "hostId": "roomhacker-server-100",
+        "nativeSessionId": "isolated-sender-session"
+      },
+      "target": {
+        "harness": "opencode",
+        "hostId": "server-44",
+        "nativeSessionId": "ses_e22f635d0ffePICR0NYOcJJ6en"
+      }
+    },
+    "sender": {
+      "harness": "codex",
+      "hostId": "roomhacker-server-100",
+      "nativeSessionId": "isolated-sender-session"
+    }
+  },
+  "evidence_path": "/herder-owner-home/ahap-opencode-evidence.json",
+  "harness": "opencode",
+  "human_stop": {
+    "blocked": {
+      "content": [
+        {
+          "text": "{\"code\":\"delivery_blocked\",\"effect\":\"none\"}",
+          "type": "text"
+        }
+      ],
+      "isError": true,
+      "resultType": "complete",
+      "structuredContent": {
+        "code": "delivery_blocked",
+        "effect": "none"
+      }
+    },
+    "blocked_after_restart": {
+      "content": [
+        {
+          "text": "{\"code\":\"delivery_blocked\",\"effect\":\"none\"}",
+          "type": "text"
+        }
+      ],
+      "isError": true,
+      "resultType": "complete",
+      "structuredContent": {
+        "code": "delivery_blocked",
+        "effect": "none"
+      }
+    },
+    "resend_count": 0,
+    "stop": {
+      "content": [
+        {
+          "text": "{\"hold\":\"active\",\"native_interrupt\":\"required_or_reconcile\",\"session_ref\":\"session:bbc97d68539a436c08d32a470037ea27\"}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "resultType": "complete",
+      "structuredContent": {
+        "hold": "active",
+        "native_interrupt": "required_or_reconcile",
+        "session_ref": "session:bbc97d68539a436c08d32a470037ea27"
+      }
+    }
+  },
+  "inputs": [
+    "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b",
+    "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb"
+  ],
+  "instance_ref": "opencode-remote-vs07",
+  "model_requests": 2,
+  "model_requests_delta": 2,
+  "native_completion": [
+    {
+      "api_family": "v2",
+      "assistant_completed_at": 1794709769035,
+      "assistant_finish": "stop",
+      "assistant_message_id": "msg_1dd09cb22001W82a4KICAXcqQf",
+      "assistant_parent_id": null,
+      "messages": [
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09caef001EEo5T1i9TjAAqW",
+          "role": "user"
+        },
+        {
+          "completed": 1794709769035,
+          "error": false,
+          "finish": "stop",
+          "id": "msg_1dd09cb22001W82a4KICAXcqQf",
+          "role": "assistant"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09cb5100187PRYY3IVkKMkk",
+          "role": "idle"
+        }
+      ],
+      "session_id": "ses_e22f635d0ffePICR0NYOcJJ6en",
+      "status": "confirmed",
+      "user_message_id": "msg_1dd09caef001EEo5T1i9TjAAqW"
+    },
+    {
+      "api_family": "v2",
+      "assistant_completed_at": 1794709769436,
+      "assistant_finish": "stop",
+      "assistant_message_id": "msg_1dd09ccbb001QT3qsiWgiqEZl2",
+      "assistant_parent_id": null,
+      "messages": [
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09caef001EEo5T1i9TjAAqW",
+          "role": "user"
+        },
+        {
+          "completed": 1794709769035,
+          "error": false,
+          "finish": "stop",
+          "id": "msg_1dd09cb22001W82a4KICAXcqQf",
+          "role": "assistant"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09cb5100187PRYY3IVkKMkk",
+          "role": "idle"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09cca3001wSf4plHDMSr20R",
+          "role": "user"
+        },
+        {
+          "completed": 1794709769436,
+          "error": false,
+          "finish": "stop",
+          "id": "msg_1dd09ccbb001QT3qsiWgiqEZl2",
+          "role": "assistant"
+        },
+        {
+          "completed": null,
+          "error": false,
+          "finish": null,
+          "id": "msg_1dd09cce1001IKjx82fqtYD2zg",
+          "role": "idle"
+        }
+      ],
+      "session_id": "ses_e22f635d0ffePICR0NYOcJJ6en",
+      "status": "confirmed",
+      "user_message_id": "msg_1dd09cca3001wSf4plHDMSr20R"
+    }
+  ],
+  "native_pairs": [
+    {
+      "assistant_message_id": "msg_1dd09cb22001W82a4KICAXcqQf",
+      "input": "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b",
+      "reply": "HERDER_TEST_MODEL_OK",
+      "user_message_id": "msg_1dd09caef001EEo5T1i9TjAAqW"
+    },
+    {
+      "assistant_message_id": "msg_1dd09ccbb001QT3qsiWgiqEZl2",
+      "input": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb",
+      "reply": "HERDER_TEST_MODEL_OK",
+      "user_message_id": "msg_1dd09cca3001wSf4plHDMSr20R"
+    }
+  ],
+  "native_readback": [
+    {
+      "id": "msg_1dd09caef001EEo5T1i9TjAAqW",
+      "inputId": "create-prompt:19fe30c03d5907562adea335d64b4ccb91a78cce9e0293a7e5b05436e54a3bd2",
+      "nativeMessageId": "msg_1dd09caef001EEo5T1i9TjAAqW",
+      "parts": [
+        {
+          "text": "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b",
+          "type": "text"
+        }
+      ],
+      "role": "user",
+      "text": "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b"
+    },
+    {
+      "id": "msg_1dd09cb22001W82a4KICAXcqQf",
+      "model": "fixture/herder-test",
+      "parts": [
+        {
+          "text": "HERDER_TEST_MODEL_OK",
+          "type": "text"
+        }
+      ],
+      "phase": "stop",
+      "role": "assistant",
+      "text": "HERDER_TEST_MODEL_OK"
+    },
+    {
+      "id": "msg_1dd09cca3001wSf4plHDMSr20R",
+      "inputId": "ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258",
+      "nativeMessageId": "msg_1dd09cca3001wSf4plHDMSr20R",
+      "parts": [
+        {
+          "text": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb",
+          "type": "text"
+        }
+      ],
+      "role": "user",
+      "text": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb"
+    },
+    {
+      "id": "msg_1dd09ccbb001QT3qsiWgiqEZl2",
+      "model": "fixture/herder-test",
+      "parts": [
+        {
+          "text": "HERDER_TEST_MODEL_OK",
+          "type": "text"
+        }
+      ],
+      "phase": "stop",
+      "role": "assistant",
+      "text": "HERDER_TEST_MODEL_OK"
+    }
+  ],
+  "native_tools": [
+    "discover",
+    "sessions",
+    "session",
+    "create",
+    "deliver",
+    "resume",
+    "stop",
+    "search",
+    "export",
+    "automation",
+    "resource",
+    "configure",
+    "permission",
+    "human_request"
+  ],
+  "negative_delivery": {
+    "conflict": {
+      "content": [
+        {
+          "text": "{\"code\":\"idempotency_conflict\",\"effect\":\"unknown\",\"retry\":\"forbidden\"}",
+          "type": "text"
+        }
+      ],
+      "isError": true,
+      "resultType": "complete",
+      "structuredContent": {
+        "code": "idempotency_conflict",
+        "effect": "unknown",
+        "retry": "forbidden"
+      }
+    },
+    "model_requests": 2,
+    "replay": {
+      "createdAt": "2026-11-15T02:29:29Z",
+      "lastUpdatedAt": "2026-11-15T02:29:29Z",
+      "resultType": "task",
+      "status": "completed",
+      "taskId": "mcp-delivery-task:91bcd32fac96cab0263fc8267b56e5e6e83ea930f4865e61561259243e24716e",
+      "ttlMs": null
+    }
+  },
+  "opencode_url": "http://127.0.0.1:36837",
+  "profile": "/herder-owner-home/authority/profile.json",
+  "projects": {
+    "complete": false,
+    "limitations": [
+      "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+    ],
+    "projects_count": 1,
+    "provenance": "authorized_registered_sessions",
+    "request": {
+      "action": "projects",
+      "instance_ref": "opencode-remote-vs07"
+    },
+    "status": "confirmed",
+    "wire": {
+      "content": [
+        {
+          "text": "{\"complete\":false,\"limitations\":[\"Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive.\"],\"projects\":[{\"native\":null,\"project_ref\":\"/herder-owner-home/work\",\"source\":\"authorized_native_session\"}],\"scope\":\"authorized_registered_sessions\"}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "resultType": "complete",
+      "structuredContent": {
+        "complete": false,
+        "limitations": [
+          "Only projects observed in authorized registered sessions are exposed; inventory is not globally exhaustive."
+        ],
+        "projects": [
+          {
+            "native": null,
+            "project_ref": "/herder-owner-home/work",
+            "source": "authorized_native_session"
+          }
+        ],
+        "scope": "authorized_registered_sessions"
+      }
+    }
+  },
+  "public_export": {
+    "bytes_base64": "W3siaWQiOiJtc2dfMWRkMDljYWVmMDAxRUVvNVQxaTlUakFBcVciLCJtZXRhZGF0YSI6eyJhZ2VudEhlcmRlcklucHV0SWQiOiJjcmVhdGUtcHJvbXB0OjE5ZmUzMGMwM2Q1OTA3NTYyYWRlYTMzNWQ2NGI0Y2NiOTFhNzhjY2U5ZTAyOTNhN2U1YjA1NDM2ZTU0YTNiZDIifSwidGltZSI6eyJjcmVhdGVkIjoxNzk0NzA5NzY4OTc2fSwidGV4dCI6IkFIQVBfT1BFTkNPREVfRklYVFVSRV8xX2Y1Njc1ODY3OTFjMjQyMmFiOWNjODlmM2FiYzc4YzFiIiwidHlwZSI6InVzZXIifSx7ImlkIjoibXNnXzFkZDA5Y2IyMjAwMVc4MmE0S0lDQVhjcVFmIiwidGltZSI6eyJjcmVhdGVkIjoxNzk0NzA5NzY5MDA1LCJmaXJzdFRva2VuIjoxNzk0NzA5NzY5MDIxLCJzdHJlYW1lZCI6MTc5NDcwOTc2OTAzMiwiY29tcGxldGVkIjoxNzk0NzA5NzY5MDM1fSwidHlwZSI6ImFzc2lzdGFudCIsImFnZW50IjoiYnVpbGQiLCJtb2RlbCI6eyJpZCI6ImhlcmRlci10ZXN0IiwicHJvdmlkZXJJRCI6ImZpeHR1cmUifSwiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0IjoiSEVSREVSX1RFU1RfTU9ERUxfT0sifV0sImZpbmlzaCI6InN0b3AiLCJyYXdGaW5pc2giOiJzdG9wIiwiY29zdCI6MCwidG9rZW5zIjp7ImlucHV0IjowLCJvdXRwdXQiOjAsInJlYXNvbmluZyI6MCwiY2FjaGUiOnsicmVhZCI6MCwid3JpdGUiOjB9fX0seyJpZCI6Im1zZ18xZGQwOWNiNTEwMDE4N1BSWVkzSVZrS01rayIsInRpbWUiOnsiY3JlYXRlZCI6MTc5NDcwOTc2OTA0MX0sInR5cGUiOiJpZGxlIiwib3V0Y29tZSI6InN1Y2NlZWRlZCJ9LHsiaWQiOiJtc2dfMWRkMDljY2EzMDAxd1NmNHBsSERNU3IyMFIiLCJtZXRhZGF0YSI6eyJhZ2VudEhlcmRlcklucHV0SWQiOiJhaGFwLW9wZW5jb2RlLWRlbGl2ZXItMDk2NWI5YTQxMzUwNGRlOTg4MTJmNmU0NzFhM2MyNTgifSwidGltZSI6eyJjcmVhdGVkIjoxNzk0NzA5NzY5Mzk0fSwidGV4dCI6IkFIQVBfT1BFTkNPREVfRklYVFVSRV8yXzliNWQ4NDRiZmQwYjQwODk5YjhjYTA4NjBlNjM4N2ViIiwidHlwZSI6InVzZXIifSx7ImlkIjoibXNnXzFkZDA5Y2NiYjAwMVFUM3FzaVdnaXFFWmwyIiwidGltZSI6eyJjcmVhdGVkIjoxNzk0NzA5NzY5NDEyLCJmaXJzdFRva2VuIjoxNzk0NzA5NzY5NDI2LCJzdHJlYW1lZCI6MTc5NDcwOTc2OTQzNCwiY29tcGxldGVkIjoxNzk0NzA5NzY5NDM2fSwidHlwZSI6ImFzc2lzdGFudCIsImFnZW50IjoiYnVpbGQiLCJtb2RlbCI6eyJpZCI6ImhlcmRlci10ZXN0IiwicHJvdmlkZXJJRCI6ImZpeHR1cmUifSwiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0IjoiSEVSREVSX1RFU1RfTU9ERUxfT0sifV0sImZpbmlzaCI6InN0b3AiLCJyYXdGaW5pc2giOiJzdG9wIiwiY29zdCI6MCwidG9rZW5zIjp7ImlucHV0IjowLCJvdXRwdXQiOjAsInJlYXNvbmluZyI6MCwiY2FjaGUiOnsicmVhZCI6MCwid3JpdGUiOjB9fX0seyJpZCI6Im1zZ18xZGQwOWNjZTEwMDFJS2p4ODJmcXRZRDJ6ZyIsInRpbWUiOnsiY3JlYXRlZCI6MTc5NDcwOTc2OTQ0MX0sInR5cGUiOiJpZGxlIiwib3V0Y29tZSI6InN1Y2NlZWRlZCJ9XQ==",
+    "complete": true,
+    "format": "native",
+    "payload_length_bytes": 1561,
+    "payload_sha256": "6e39d282f125231267463ff744df90164b4661e20b21c79d62be4dfd77222f13",
+    "request": {
+      "action": "export",
+      "format": "native",
+      "session_ref": "session:bbc97d68539a436c08d32a470037ea27"
+    },
+    "source": {
+      "format": "json",
+      "kind": "native-api",
+      "location": "http://127.0.0.1:36837/api/session/ses_e22f635d0ffePICR0NYOcJJ6en/message"
+    },
+    "status": "confirmed",
+    "transcript_correlated": true
+  },
+  "receipts": [
+    {
+      "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1dd09caef001EEo5T1i9TjAAqW\"}",
+      "outcome": "confirmed",
+      "reconciliation": {
+        "ack_recovered": false,
+        "dispatch_scope_generation": "db66fa8f18b86b15c9e4c3a3891418c4",
+        "kind": "native_admission",
+        "observed_at": "2026-11-15T02:29:29Z",
+        "original_dispatch_phase": "finished",
+        "original_intent_state": "admitted",
+        "original_result_json": null,
+        "original_task_status": "prepared"
+      }
+    },
+    {
+      "native_receipt_id": "ahap-receipt:v1:{\"kind\":\"message\",\"native_id\":\"msg_1dd09cca3001wSf4plHDMSr20R\"}",
+      "outcome": "confirmed",
+      "reconciliation": {
+        "ack_recovered": false,
+        "dispatch_scope_generation": "db66fa8f18b86b15c9e4c3a3891418c4",
+        "kind": "native_admission",
+        "observed_at": "2026-11-15T02:29:29Z",
+        "original_dispatch_phase": "finished",
+        "original_intent_state": "admitted",
+        "original_result_json": null,
+        "original_task_status": "prepared"
+      }
+    }
+  ],
+  "reopened_readback": [
+    {
+      "id": "msg_1dd09caef001EEo5T1i9TjAAqW",
+      "inputId": "create-prompt:19fe30c03d5907562adea335d64b4ccb91a78cce9e0293a7e5b05436e54a3bd2",
+      "nativeMessageId": "msg_1dd09caef001EEo5T1i9TjAAqW",
+      "parts": [
+        {
+          "text": "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b",
+          "type": "text"
+        }
+      ],
+      "role": "user",
+      "text": "AHAP_OPENCODE_FIXTURE_1_f567586791c2422ab9cc89f3abc78c1b"
+    },
+    {
+      "id": "msg_1dd09cb22001W82a4KICAXcqQf",
+      "model": "fixture/herder-test",
+      "parts": [
+        {
+          "text": "HERDER_TEST_MODEL_OK",
+          "type": "text"
+        }
+      ],
+      "phase": "stop",
+      "role": "assistant",
+      "text": "HERDER_TEST_MODEL_OK"
+    },
+    {
+      "id": "msg_1dd09cca3001wSf4plHDMSr20R",
+      "inputId": "ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258",
+      "nativeMessageId": "msg_1dd09cca3001wSf4plHDMSr20R",
+      "parts": [
+        {
+          "text": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb",
+          "type": "text"
+        }
+      ],
+      "role": "user",
+      "text": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb"
+    },
+    {
+      "id": "msg_1dd09ccbb001QT3qsiWgiqEZl2",
+      "model": "fixture/herder-test",
+      "parts": [
+        {
+          "text": "HERDER_TEST_MODEL_OK",
+          "type": "text"
+        }
+      ],
+      "phase": "stop",
+      "role": "assistant",
+      "text": "HERDER_TEST_MODEL_OK"
+    }
+  ],
+  "reopened_task_statuses": [
+    "completed",
+    "completed"
+  ],
+  "report_schema": "ahap-opencode-v1",
+  "request_keys": [
+    "ahap-opencode-create-83a00e4f1616478ca2e2a225d68cd177",
+    "ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258"
+  ],
+  "restart": {
+    "core_reopened": true,
+    "model_requests_after": 2,
+    "model_requests_before": 2,
+    "native_export_sha256_unchanged": true,
+    "resend_count": 0,
+    "search_coverage_preserved": true,
+    "tasks_completed": true
+  },
+  "run_id": "e599a20e-13a7-43ba-a3e2-2fdb179f4559",
+  "runner_protocol": "v2",
+  "scenarios": {
+    "changed_payload_conflict": "PASS",
+    "create_deliver_read": "PASS",
+    "export_common": "UNSUPPORTED",
+    "export_native": "PASS",
+    "human_stop": "PASS",
+    "projects": "CONFIRMED",
+    "restart_no_resend": "PASS",
+    "same_key_replay": "PASS",
+    "search_marker_coverage": "PASS",
+    "second_same_session_deliver": "PASS"
+  },
+  "search": {
+    "coverage": "complete",
+    "marker_found": true,
+    "request": {
+      "action": "search",
+      "query": "AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb"
+    },
+    "status": "confirmed",
+    "wire": {
+      "content": [
+        {
+          "text": "{\"authorized_sessions\":1,\"complete\":true,\"coverage\":\"complete\",\"has_more\":false,\"hits\":[{\"excerpt\":\"…msg_1dd09cca3001wSf4plHDMSr20R\\\",\\\"metadata\\\":{\\\"agentHerderInputId\\\":\\\"ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258\\\"},\\\"text\\\":\\\"‹AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb›\\\",\\\"time\\\":{\\\"created\\\":1794709769394},\\\"type\\\":\\\"user\\\"},{\\\"agent\\\":\\\"build\\\",\\\"content\\\":[{\\\"text\\\":\\\"HERDER…\",\"session_ref\":\"session:bbc97d68539a436c08d32a470037ea27\"}],\"limitations\":[\"At most four authorized raw snapshots are refreshed; failed, truncated or remaining snapshots make coverage partial.\",\"Only the first 50 matches are returned; snapshot-bound pagination is not available.\"],\"next_cursor\":null,\"refresh\":{\"failures\":[],\"indexed\":1,\"limit\":4},\"registry_truncated\":false,\"source\":\"existing_session_search_index\",\"total_hits\":1}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "resultType": "complete",
+      "structuredContent": {
+        "authorized_sessions": 1,
+        "complete": true,
+        "coverage": "complete",
+        "has_more": false,
+        "hits": [
+          {
+            "excerpt": "…msg_1dd09cca3001wSf4plHDMSr20R\",\"metadata\":{\"agentHerderInputId\":\"ahap-opencode-deliver-0965b9a413504de98812f6e471a3c258\"},\"text\":\"‹AHAP_OPENCODE_FIXTURE_2_9b5d844bfd0b40899b8ca0860e6387eb›\",\"time\":{\"created\":1794709769394},\"type\":\"user\"},{\"agent\":\"build\",\"content\":[{\"text\":\"HERDER…",
+            "session_ref": "session:bbc97d68539a436c08d32a470037ea27"
+          }
+        ],
+        "limitations": [
+          "At most four authorized raw snapshots are refreshed; failed, truncated or remaining snapshots make coverage partial.",
+          "Only the first 50 matches are returned; snapshot-bound pagination is not available."
+        ],
+        "next_cursor": null,
+        "refresh": {
+          "failures": [],
+          "indexed": 1,
+          "limit": 4
+        },
+        "registry_truncated": false,
+        "source": "existing_session_search_index",
+        "total_hits": 1
+      }
+    }
+  },
+  "search_after_restart": {
+    "coverage": "complete",
+    "marker_found": true,
+    "status": "confirmed"
+  },
+  "session_ref": "session:bbc97d68539a436c08d32a470037ea27",
+  "stage": "candidate",
+  "status": "PASS",
+  "task_ids": [
+    "create-operation:abb3e2d70d73a8bcf255c2aed53820cc",
+    "mcp-delivery-task:91bcd32fac96cab0263fc8267b56e5e6e83ea930f4865e61561259243e24716e"
+  ],
+  "v1_schema_audit": {
+    "deliver": {
+      "action": [
+        "receipt",
+        "reply_to",
+        "session"
+      ],
+      "envelope": [
+        "inputId",
+        "message",
+        "sender",
+        "target"
+      ]
+    },
+    "discover": {
+      "action": [
+        "instances",
+        "models",
+        "nodes",
+        "projects"
+      ]
+    },
+    "export": {
+      "action": [
+        "export"
+      ],
+      "format": "not-enumerated"
+    },
+    "search": {
+      "action": [
+        "search"
+      ]
+    }
+  }
+}

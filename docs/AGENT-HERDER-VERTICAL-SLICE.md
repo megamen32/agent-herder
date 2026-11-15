@@ -24,29 +24,36 @@
 - src/mcp/session-tools.ts и src/mesh/ — публичный TypeScript exact delivery envelope и alias routing;
 - crates/herder/src/mcp/catalog.rs — Rust typed catalog и durable action-based delivery/read contracts.
 
+- .agents/tasks/20261107-herder-v1-core/evidence/vertical-slice-20261115/summary.json — текущая receipt-сводка VS01–VS07;
+- .agents/tasks/20261107-herder-v1-core/evidence/vertical-slice-20261115/local-mcp-consumer.json — local ordinary MCP consumer;
+- .agents/tasks/20261107-herder-v1-core/evidence/vertical-slice-20261115/remote-server44-mcp-consumer.json — live server-44 ordinary MCP consumer.
+
 Исторический receipt переиспользуется как доказательство fixture-сценария. Перед финальным PASS его нужно связать с новым source SHA, artifact digest, installed runtime и independent consumer readback.
+
+## Текущий acceptance receipt
+
+15 ноября 2026 года новый receipt закрывает VS01–VS07. Source identity — f5e30722; Rust core был собран из 7633fafa, а изменение f5e30722 добавляет только host/sender параметры fixture. Manifest SHA-256: 89738d73951358f73363434ebc7f9f26def3aa88c592dabbb761d35e340bcad4. Core SHA-256: 93e32ec0ee987433e09c6484bd49e8c88953aa5a83234b3751fe0da382332251.
+
+Local и server-44 receipts подтверждают action-less deliver envelope, sender в durable native receipt, same-key replay без нового fake-model request, changed-payload conflict с effect=none, HumanStop до admission и после core restart, native user/assistant readback, native export, search, project provenance и resend_count=0. В remote receipt target имеет hostId=server-44, sender имеет hostId=roomhacker-server-100, а hostname remote probe равен server-44.
 
 ## Gates
 
 | ID | Gate | Состояние | Следующий результат |
 | --- | --- | --- | --- |
-| VS01 | Rust-owned delivery envelope/ingress | открыто | Rust принимает target/sender/inputId/message или доказанный typed mapping; ACL и owner identity проверены. |
-| VS02 | Same-key replay | открыто | Повтор того же key возвращает прежний receipt и не делает новый native effect. |
-| VS03 | Changed payload | открыто | Тот же key с другим payload даёт idempotency conflict до admission. |
-| VS04 | HumanStop | открыто | Hold до admission блокирует отправку и переживает restart. |
-| VS05 | Immutable installed consumer | открыто | Точный artifact/source/runtime identity связан с обычным MCP consumer. |
-| VS06 | Independent readback | открыто | После restart читаются обе роли, export, search и projects без resend. |
-| VS07 | Cross-host consumer | открыто | Remote target на server-44 или roomhacker-server-100 получает native receipt через обычный deliver. |
+| VS01 | Rust-owned delivery envelope/ingress | закрыто | Action-less envelope принят обычным Rust MCP consumer; target owner/ACL проверены, sender сохранён как attribution. |
+| VS02 | Same-key replay | закрыто | Повтор того же key вернул прежний Task/receipt; fake model request count не изменился. |
+| VS03 | Changed payload | закрыто | Тот же key с другим message вернул idempotency_conflict до admission; native effect отсутствует. |
+| VS04 | HumanStop | закрыто | Hold до admission заблокировал обе попытки и сохранился после restart. |
+| VS05 | Immutable installed consumer | закрыто | Обычный MCP consumer прошёл против manifest-pinned artifact/source/runtime identity. |
+| VS06 | Independent readback | закрыто | После restart прочитаны обе роли, native export, search и projects; resend_count=0. |
+| VS07 | Cross-host consumer | закрыто | Live server-44 consumer получил native receipt с target server-44 и sender roomhacker-server-100. |
 | VS08 | Common export | явно unsupported | Не считать ошибкой vertical slice; native export остаётся обязательным, common нужен отдельный normalized contract. |
 
 ## Порядок работы
 
-1. Закрыть VS01 в Rust catalog/owner path и добавить focused Rust RED/GREEN.
-2. Закрыть VS02–VS04 на том же durable intent store и fake native port.
-3. Собрать один immutable artifact и выполнить VS05.
-4. Запустить существующий OpenCode fake-model stand через обычный MCP и выполнить VS06.
-5. Подключить второй node route и выполнить VS07.
-6. Только после этого расширять capability matrix на следующий adapter.
+1. VS01–VS07 закрыты receipt-backed acceptance; не переоткрывать их историческим LHC plan.
+2. VS08 остаётся отдельным контрактом: Common export сейчас возвращает explicit unsupported_format с effect=none.
+3. Следующий adapter можно подключать только отдельным срезом после сохранения этого consumer proof.
 
 ## Время
 
