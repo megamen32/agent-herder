@@ -43,6 +43,7 @@ struct Fixture {
     config: PathBuf,
     ledger: PathBuf,
     process_config: PathBuf,
+    runtime_settings: PathBuf,
     projects: [PathBuf; 2],
     fleet: PathBuf,
     authority: StorageAuthority,
@@ -122,13 +123,19 @@ impl Fixture {
             "execution_root":root.join("executions"),"resources":authority,"administrators":["bridge-admin"]}),
         );
         let config = root.join("bridge-config.json");
+        let runtime_settings = root.join("harness-runtime-settings.json");
         let ledger = root.join("legacy-ledger.json");
+        write_private(
+            &runtime_settings,
+            &json!({"version":1,"releaseOccupancyEnabled":true}),
+        );
         let f = Self {
             root,
             executable,
             config,
             ledger,
             process_config,
+            runtime_settings,
             projects,
             fleet,
             authority,
@@ -142,7 +149,8 @@ impl Fixture {
         write_private(
             &self.config,
             &json!({"version":1,"process_config":self.process_config,"ledger":self.ledger,
-            "seal_id":"fixture-seal","principal_ref":"bridge-admin","mappings":[
+            "seal_id":"fixture-seal","principal_ref":"bridge-admin",
+            "runtime_settings_path":self.runtime_settings,"mappings":[
                 {"project":self.projects[0],"resource_ref":self.resource,"revision":1,"previous_fence":7,
                  "deployment_target":{"fleetDir":self.fleet,"unit":"fixture.service"}},
                 {"project":self.projects[1],"resource_ref":self.resource,"revision":1,"previous_fence":41,
@@ -158,7 +166,9 @@ impl Fixture {
         );
     }
     fn owner() -> Value {
-        json!({"hostId":"fixture-host","harness":"fixture-harness","nativeSessionId":"fixture-session"})
+        let process = herder::process::capture_process(std::process::id(), "node-fixture").unwrap();
+        json!({"hostId":"fixture-host","harness":"fixture-harness","nativeSessionId":"fixture-session",
+            "process":{"pid":process.pid,"bootId":process.boot_id,"startTicks":process.start_ticks}})
     }
     fn request(&self, action: &str, project: usize) -> Value {
         json!({"action":action,"project":self.projects[project]})
@@ -189,6 +199,15 @@ impl Fixture {
         owner["claim"]["expires_at"] = json!("unix-seconds:1");
         write_private(&path, &owner);
     }
+    fn set_occupancy_enabled(&self, enabled: bool) {
+        write_private(
+            &self.runtime_settings,
+            &json!({"version":1,"releaseOccupancyEnabled":enabled}),
+        );
+    }
+    fn set_runtime_settings(&self, value: Value) {
+        write_private(&self.runtime_settings, &value);
+    }
     fn guard(&self, token: &str, fence: u64) -> GuardProcess {
         let mut p = GuardProcess::start(&self.executable, &self.config);
         let result = p.send(self.proof_request("guard", 0, token, fence));
@@ -196,6 +215,35 @@ impl Fixture {
         assert_eq!(result["result"]["guarded"], true);
         p
     }
+}
+
+#[test]
+fn disabled_runtime_occupancy_bypasses_guard_without_writing_binding() {
+    let f = Fixture::new();
+    let token = "a".repeat(64);
+    let acquired = f.call(f.acquire_request(0, &token));
+    assert_eq!(acquired["ok"], true);
+    let fence = acquired["result"]["lease"]["fence"].as_u64().unwrap();
+    f.set_occupancy_enabled(false);
+
+    let mut guard = GuardProcess::start(&f.executable, &f.config);
+    let admitted = guard.send(f.proof_request("guard", 0, &token, fence));
+    assert_eq!(admitted["ok"], true, "disabled guard failed: {admitted}");
+    assert_eq!(admitted["result"]["guarded"], true);
+    assert_eq!(admitted["result"]["bypassed"], true);
+    assert!(!f.resource_dir().join("execution-binding.json").exists());
+    assert_eq!(guard.send(json!({"action":"check"}))["result"]["bypassed"], true);
+    assert_eq!(guard.send(json!({"action":"finished"}))["result"]["finished"], true);
+}
+
+#[test]
+fn legacy_runtime_settings_cannot_enable_release_occupancy() {
+    let f = Fixture::new();
+    f.set_runtime_settings(json!({"version":2,"releaseOccupancyEnabled":true}));
+    let result = f.call(f.acquire_request(0, &"a".repeat(64)));
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["result"]["disabled"], true);
+    assert_eq!(result["result"]["lease"], Value::Null);
 }
 impl Drop for Fixture {
     fn drop(&mut self) {

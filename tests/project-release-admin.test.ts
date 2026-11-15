@@ -1,14 +1,27 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import { mkdtemp, readFile, writeFile, rm, stat, realpath, symlink, rename, open } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ProjectReleaseLeaseStore } from "../src/project-release-lease.js";
 import { runReleaseAdmin } from "../src/project-release-admin.js";
+import { emptyHarnessRuntimeSettings, setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return { ...actual, open: vi.fn(actual.open) };
+});
+
+let runtimeSettingsDir: string;
+beforeAll(async () => {
+  runtimeSettingsDir = await mkdtemp(join(tmpdir(), "release-admin-settings-"));
+  const settingsPath = join(runtimeSettingsDir, "harness-runtime-settings.json");
+  await writeFile(settingsPath, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }), { mode: 0o600 });
+  setHarnessRuntimeSettingsPathForTests(settingsPath);
+});
+afterAll(async () => {
+  setHarnessRuntimeSettingsPathForTests(undefined);
+  await rm(runtimeSettingsDir, { recursive: true, force: true });
 });
 
 describe("offline release authority route", () => {

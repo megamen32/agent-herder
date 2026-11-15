@@ -55,6 +55,13 @@ export interface HarnessRuntimeSettingsDocument {
   version: 1;
   /** The master switch of the browser polling: false pauses every harness. */
   pollingEnabled: boolean;
+  /**
+   * Whether process release occupancy may claim resources and bind effects.
+   *
+   * An absent or unreadable value keeps this optional coordination capability
+   * off, so ordinary work continues without a second blocking authority.
+   */
+  releaseOccupancyEnabled: boolean;
   /** The per-harness overrides. A harness that is not named inherits. */
   harnesses: Record<string, HarnessRuntimeHarnessEntry>;
   changedAt?: string;
@@ -65,6 +72,7 @@ export interface HarnessRuntimeSettingsDocument {
 /** The change a caller asks for: present fields move, absent fields stay. */
 export interface HarnessRuntimeSettingsChange {
   pollingEnabled?: boolean;
+  releaseOccupancyEnabled?: boolean;
   harnesses?: Record<string, HarnessRuntimeHarnessEntryPatch>;
 }
 
@@ -89,7 +97,7 @@ export class HarnessRuntimeSettingsError extends Error {
 
 /** The document every harness starts from: everything runs. */
 export function emptyHarnessRuntimeSettings(): HarnessRuntimeSettingsDocument {
-  return { version: 1, pollingEnabled: true, harnesses: {} };
+  return { version: 1, pollingEnabled: true, releaseOccupancyEnabled: false, harnesses: {} };
 }
 
 function parseEntry(value: unknown, where: string): HarnessRuntimeHarnessEntry {
@@ -142,6 +150,12 @@ export function parseHarnessRuntimeSettings(raw: string): HarnessRuntimeSettings
       throw new HarnessRuntimeSettingsError("invalid_switch", "pollingEnabled: ожидалось true или false");
     }
     document.pollingEnabled = record.pollingEnabled;
+  }
+  if (record.releaseOccupancyEnabled !== undefined) {
+    if (typeof record.releaseOccupancyEnabled !== "boolean") {
+      throw new HarnessRuntimeSettingsError("invalid_switch", "releaseOccupancyEnabled: ожидалось true или false");
+    }
+    document.releaseOccupancyEnabled = record.releaseOccupancyEnabled;
   }
   if (record.harnesses !== undefined) {
     if (!record.harnesses || typeof record.harnesses !== "object" || Array.isArray(record.harnesses)) {
@@ -275,6 +289,11 @@ export function liveHarnessHooksEnabled(harness: string): boolean {
   return harnessHooksEnabled(readHarnessRuntimeSettingsLive(), harness);
 }
 
+/** Whether new process release occupancy may claim or bind a resource. */
+export function liveReleaseOccupancyEnabled(): boolean {
+  return readHarnessRuntimeSettingsLive().releaseOccupancyEnabled;
+}
+
 // ---------------------------------------------------------------------------
 // The store: what the owner's panel writes.
 // ---------------------------------------------------------------------------
@@ -330,10 +349,14 @@ export class HarnessRuntimeSettingsStore {
     if (change.pollingEnabled !== undefined && typeof change.pollingEnabled !== "boolean") {
       throw new HarnessRuntimeSettingsError("invalid_switch", "pollingEnabled: ожидалось true или false");
     }
+    if (change.releaseOccupancyEnabled !== undefined && typeof change.releaseOccupancyEnabled !== "boolean") {
+      throw new HarnessRuntimeSettingsError("invalid_switch", "releaseOccupancyEnabled: ожидалось true или false");
+    }
     const before = await this.read();
     const after: HarnessRuntimeSettingsDocument = {
       version: 1,
       pollingEnabled: change.pollingEnabled ?? before.pollingEnabled,
+      releaseOccupancyEnabled: change.releaseOccupancyEnabled ?? before.releaseOccupancyEnabled,
       harnesses: { ...before.harnesses },
       changedAt: new Date().toISOString(),
       changedBy: meta.by,
@@ -418,6 +441,7 @@ export interface HarnessRuntimeHarnessView {
 export interface HarnessRuntimeView {
   ok: true;
   pollingEnabled: boolean;
+  releaseOccupancyEnabled: boolean;
   changedAt?: string;
   changedBy?: string;
   reason?: string;
@@ -447,6 +471,7 @@ export function harnessRuntimeView(
   return {
     ok: true,
     pollingEnabled: document.pollingEnabled,
+    releaseOccupancyEnabled: document.releaseOccupancyEnabled,
     ...(document.changedAt ? { changedAt: document.changedAt } : {}),
     ...(document.changedBy ? { changedBy: document.changedBy } : {}),
     ...(document.reason ? { reason: document.reason } : {}),

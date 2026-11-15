@@ -4,6 +4,23 @@ Agent Herder owns supervised execution, generic resource claims, completion rece
 
 This runbook covers the native public MCP, the TypeScript automatic continuation gates, and the release coordinator. The user workflow is documented separately in [supervised-jobs.md](supervised-jobs.md).
 
+## Optional release occupancy capability
+
+The process release guard is an optional coordination layer. Its live switch is
+`releaseOccupancyEnabled` in
+`~/.local/state/agent-herder/autopilot-live/harness-runtime-settings.json`.
+The owner can change it through the harness runtime settings API and panel.
+
+The switch is deliberately off until the owner identity contract is proven. A
+missing, old or unreadable settings document means **occupancy is bypassed**:
+ordinary work continues and no new process claim or execution binding is
+created. The setting does not turn an unknown state into a blocking error.
+When it is explicitly enabled, a new release owner may include
+`process: {pid, bootId, startTicks}` alongside `hostId`, `harness` and
+`nativeSessionId`; the bridge verifies that identity before admitting a guard.
+Existing unresolved bindings remain durable evidence for later review, but do
+not block the normal path while the capability is off.
+
 ## Installed surfaces and reviewed baseline
 
 The following observations were made on server-100 on 2026-11-13. Re-read the selected configuration and process identity before any release.

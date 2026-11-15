@@ -2,15 +2,19 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectReleaseLeaseStore, terminalReleaseAt } from "../src/project-release-lease.js";
+import { emptyHarnessRuntimeSettings, setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 const dirs: string[] = [];
-afterEach(async () => { await Promise.all(dirs.splice(0).map(p => rm(p, {recursive:true,force:true}))); });
+afterEach(async () => { setHarnessRuntimeSettingsPathForTests(undefined); await Promise.all(dirs.splice(0).map(p => rm(p, {recursive:true,force:true}))); });
 const owner = { hostId: "host", harness: "test", nativeSessionId: "session-a" };
 async function setup() {
  const dir=await mkdtemp(join(tmpdir(),"release-lease-")); dirs.push(dir); let now=1000;
+ const settingsPath = join(dir, "harness-runtime-settings.json");
+ await writeFile(settingsPath, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }), "utf8");
+ setHarnessRuntimeSettingsPathForTests(settingsPath);
  const store=new ProjectReleaseLeaseStore(join(dir,"leases.json"),()=>now);
  return {store, advance:(ms:number)=>now+=ms};
 }
@@ -61,6 +65,16 @@ describe("project release lease",()=>{
  it("rejects unreasonable TTL rather than permanent reservations",async()=>{
   const {store}=await setup();await expect(store.acquire("p",owner,0)).rejects.toThrow();await expect(store.acquire("p",owner,1801)).rejects.toThrow();
  });
+});
+
+it("bypasses release occupancy without blocking ordinary work when disabled", async () => {
+ const dir=await mkdtemp(join(tmpdir(),"release-lease-disabled-")); dirs.push(dir);
+ const settingsPath = join(dir, "harness-runtime-settings.json");
+ await writeFile(settingsPath, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: false }), "utf8");
+ setHarnessRuntimeSettingsPathForTests(settingsPath);
+ const store = new ProjectReleaseLeaseStore(join(dir, "leases.json"));
+ await expect(store.acquire("p", owner)).resolves.toMatchObject({ acquired: false, bypassed: true, disabled: true });
+ await expect(store.status("p")).resolves.toMatchObject({ deploymentInProgress: false, disabled: true, releaseOccupancyEnabled: false });
 });
 
 it("terminal event timestamp validation never substitutes delivery time",()=>{

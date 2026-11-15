@@ -7,15 +7,42 @@ import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
 import time
 import subprocess
 import re
 import sys
 import select
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import main_guard  # noqa: E402
+
+
+def release_occupancy_enabled():
+    """Read the owner-controlled runtime circuit breaker.
+
+    The capability is intentionally off while the native owner identity
+    contract is incomplete. A missing, malformed or legacy document bypasses
+    this optional coordination layer so ordinary work keeps running.
+    """
+    configured = os.environ.get("AGENT_HERDER_RUNTIME_SETTINGS_PATH", "").strip()
+    if configured:
+        path = Path(configured)
+    else:
+        state_dir = os.environ.get("AGENT_HERDER_AUTOPILOT_STATE_DIR", "").strip()
+        if state_dir:
+            path = Path(state_dir) / "harness-runtime-settings.json"
+        else:
+            path = Path.home() / ".local/state/agent-herder/autopilot-live/harness-runtime-settings.json"
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError, TypeError):
+        return False
+    return (
+        isinstance(value, dict)
+        and value.get("version") == 1
+        and value.get("releaseOccupancyEnabled") is True
+    )
 
 
 class ReleaseGate:
@@ -32,6 +59,7 @@ class ReleaseGate:
         self._bridge_buffer = b""
         self._canonical = None
         self._legacy_admitted = False
+        self._occupancy_disabled = False
 
     @staticmethod
     def _contains_lease(value):
@@ -130,6 +158,8 @@ class ReleaseGate:
             bridge.stdout.close()
 
     def check(self, cleanup=False):
+        if self._occupancy_disabled:
+            return {"releaseOccupancyEnabled": False, "disabled": True}
         state = json.loads(self.state_path.read_text())
         marker = self._canonical_authority(state)
         if marker is not None:
@@ -158,6 +188,9 @@ class ReleaseGate:
         return lease
 
     def __enter__(self):
+        if not release_occupancy_enabled():
+            self._occupancy_disabled = True
+            return self
         marker = self._canonical_authority(json.loads(self.state_path.read_text()))
         if marker is not None:
             self._start_bridge(marker)
@@ -201,6 +234,8 @@ class ReleaseGate:
         return self
 
     def __exit__(self, *args):
+        if self._occupancy_disabled:
+            return
         if self._bridge is not None:
             try:
                 # Only a completed effect declares terminal evidence. On an

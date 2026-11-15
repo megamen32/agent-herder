@@ -1547,6 +1547,8 @@ async function main() {
       sessionAutostartStore,
       autoCompactService,
       autoCompactStore,
+      resumeAfter: resumeAfterRuntime.service,
+      cadence,
       automationLaunchPolicyStore,
       autopilotSweepIntervalMs: Number(process.env.AGENT_HERDER_AUTOPILOT_SWEEP_INTERVAL_MS || 30_000),
     });

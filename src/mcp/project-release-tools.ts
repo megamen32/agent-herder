@@ -21,7 +21,16 @@ export async function releaseProject(cwd: string): Promise<string> {
   const { stdout } = await run("git", ["-C", path, "rev-parse", "--git-common-dir"], options);
   return realpath(resolve(path, stdout.trim()));
 }
-const ownerSchema = z.object({ hostId: z.string().min(1).max(256), harness: z.string().min(1).max(64), nativeSessionId: z.string().min(1).max(256) }).strict();
+const ownerSchema = z.object({
+  hostId: z.string().min(1).max(256),
+  harness: z.string().min(1).max(64),
+  nativeSessionId: z.string().min(1).max(256),
+  process: z.object({
+    pid: z.number().int().gt(1),
+    bootId: z.string().min(1).max(256),
+    startTicks: z.number().int().positive(),
+  }).strict().optional(),
+}).strict();
 const schema = z.object({
   action: z.enum(["acquire", "renew", "release", "status", "check"]),
   cwd: z.string().min(1).max(4096),
@@ -55,7 +64,7 @@ export async function executeProjectRelease(input: unknown, store: ProjectReleas
 
 export function registerProjectReleaseTools(server: McpServer, store: ProjectReleaseLeaseStore = projectReleaseLeases) {
   server.registerTool("project_release_lease", {
-    description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. Acquisition returns a private capability once; status never reveals it. Use token+fence through the deployment guard at the final effect boundary. A lease grants no command, merge or deployment authorization.",
+    description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. New owner records may include process:{pid,bootId,startTicks} alongside the native session; when release occupancy is explicitly enabled that identity is required and checked. When the runtime capability is off or unknown, acquisition and guard are bypassed so ordinary work continues without a blocking lease. A lease grants no command, merge or deployment authorization.",
     inputSchema: schema,
   }, async args => {
     const result = await executeProjectRelease(args, store);

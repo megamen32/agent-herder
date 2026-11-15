@@ -66,15 +66,34 @@ fn claim_error(error: io::Error) -> BridgeError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnerProcessIdentity {
+    pub pid: u32,
+    pub boot_id: String,
+    pub start_ticks: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseOwner {
     pub host_id: String,
     pub harness: String,
     pub native_session_id: String,
+    #[serde(default)]
+    pub process: Option<OwnerProcessIdentity>,
 }
 impl ReleaseOwner {
     fn validate(&self) -> Result<()> {
         for value in [&self.host_id, &self.harness, &self.native_session_id] {
             if value.is_empty() || value.len() > 4096 || value.chars().any(char::is_control) {
+                return Err(invalid());
+            }
+        }
+        if let Some(process) = &self.process {
+            if process.pid <= 1
+                || process.boot_id.is_empty()
+                || process.boot_id.len() > 256
+                || process.boot_id.chars().any(char::is_control)
+                || process.start_ticks == 0
+            {
                 return Err(invalid());
             }
         }
@@ -105,6 +124,11 @@ pub struct BridgeConfig {
     pub seal_id: String,
     pub principal_ref: String,
     pub mappings: Vec<ProjectMapping>,
+    /// Optional live runtime-settings file. When absent, the standard
+    /// Agent Herder state path is used; an unreadable or missing file keeps
+    /// this optional coordination capability disabled and bypassed.
+    #[serde(default)]
+    pub runtime_settings_path: Option<PathBuf>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -213,6 +237,7 @@ pub struct Bridge {
     config: BridgeConfig,
     authority: StorageAuthority,
     guard: Option<HeldGuard>,
+    disabled_guard: bool,
 }
 impl Bridge {
     pub fn open(config_path: &Path) -> Result<Self> {
@@ -306,14 +331,78 @@ impl Bridge {
             config,
             authority: runtime.resources,
             guard: None,
+            disabled_guard: false,
         })
     }
     pub fn guarded(&self) -> bool {
-        self.guard.is_some()
+        self.guard.is_some() || self.disabled_guard
+    }
+    fn runtime_settings_path(&self) -> Option<PathBuf> {
+        if let Some(path) = &self.config.runtime_settings_path {
+            return Some(path.clone());
+        }
+        if let Some(path) = std::env::var_os("AGENT_HERDER_RUNTIME_SETTINGS_PATH") {
+            return Some(PathBuf::from(path));
+        }
+        let state = std::env::var_os("AGENT_HERDER_AUTOPILOT_STATE_DIR")
+            .or_else(|| std::env::var_os("HOME").map(|home| {
+                PathBuf::from(home)
+                    .join(".local")
+                    .join("state")
+                    .join("agent-herder")
+                    .join("autopilot-live")
+                    .into_os_string()
+            }))?;
+        Some(PathBuf::from(state).join("harness-runtime-settings.json"))
+    }
+    fn release_occupancy_enabled(&self) -> bool {
+        let Some(path) = self.runtime_settings_path() else {
+            return false;
+        };
+        read_private::<Value>(&path, false)
+            .ok()
+            .filter(|value| value.get("version").and_then(Value::as_u64) == Some(1))
+            .and_then(|value| value.get("releaseOccupancyEnabled").and_then(Value::as_bool))
+            .unwrap_or(false)
+    }
+    fn require_live_owner_process(&self, owner: &ReleaseOwner) -> Result<()> {
+        let process = owner
+            .process
+            .as_ref()
+            .ok_or(BridgeError("owner_process_identity_required"))?;
+        let actual = crate::process::capture_process(
+            process.pid,
+            &self.authority.authority_node.0,
+        )
+        .map_err(|_| BridgeError("owner_process_identity_unavailable"))?;
+        if actual.boot_id != process.boot_id || actual.start_ticks != process.start_ticks {
+            return Err(BridgeError("owner_process_identity_mismatch"));
+        }
+        Ok(())
     }
     pub fn handle(&mut self, request: BridgeRequest) -> Result<Value> {
         if self.guard.is_some() {
             return self.guard_request(request);
+        }
+        if self.disabled_guard {
+            if request.project.is_some()
+                || request.owner.is_some()
+                || request.token.is_some()
+                || request.fence.is_some()
+                || request.deployment_target.is_some()
+                || request.ttl_seconds.is_some()
+                || request.cleanup
+            {
+                return Err(invalid());
+            }
+            return match request.action {
+                BridgeAction::Check => Ok(json!({"bypassed":true,"releaseOccupancyEnabled":false})),
+                BridgeAction::Finished => {
+                    self.disabled_guard = false;
+                    Ok(json!({"finished":true,"bypassed":true,"releaseOccupancyEnabled":false}))
+                }
+                _ => Err(invalid()),
+            };
         }
         if request.cleanup || request.action == BridgeAction::Finished {
             return Err(invalid());
@@ -321,6 +410,37 @@ impl Bridge {
         let mapping = self.mapping(&request)?.clone();
         self.validate_target_request(&mapping, request.deployment_target.as_ref())?;
         self.validate_revision(&mapping)?;
+        if !self.release_occupancy_enabled() {
+            return match request.action {
+                BridgeAction::Status => Ok(json!({
+                    "releaseOccupancyEnabled": false,
+                    "disabled": true,
+                    "reason": "release_occupancy_disabled",
+                    "resourceRef": mapping.resource_ref,
+                    "revision": mapping.revision,
+                    "deploymentInProgress": false,
+                    "lease": Value::Null,
+                    "remainingSeconds": 0,
+                    "nextFence": 0,
+                    "contact": Value::Null,
+                })),
+                BridgeAction::Acquire => Ok(json!({
+                    "acquired": false,
+                    "disabled": true,
+                    "reason": "release_occupancy_disabled",
+                    "lease": Value::Null,
+                    "remainingSeconds": 0,
+                })),
+                BridgeAction::Guard => {
+                    self.disabled_guard = true;
+                    Ok(json!({"guarded":true,"bypassed":true,"releaseOccupancyEnabled":false}))
+                }
+                BridgeAction::Check | BridgeAction::Renew | BridgeAction::Release => {
+                    Ok(json!({"bypassed":true,"releaseOccupancyEnabled":false}))
+                }
+                BridgeAction::Finished => Err(invalid()),
+            };
+        }
         match request.action {
             BridgeAction::Acquire => self.acquire(&mapping, &request),
             BridgeAction::Status => self.status(&mapping),
@@ -561,6 +681,7 @@ impl Bridge {
     fn acquire(&self, mapping: &ProjectMapping, request: &BridgeRequest) -> Result<Value> {
         let owner = request.owner.clone().ok_or_else(invalid)?;
         owner.validate()?;
+        self.require_live_owner_process(&owner)?;
         let duration = ttl(request.ttl_seconds)?;
         let token = match &request.token {
             Some(v) => checked_token(v)?,
@@ -708,6 +829,7 @@ impl Bridge {
         let lock = TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH)
             .map_err(claim_error)?;
         let (current, purpose) = self.verify(&mapping, request, true)?;
+        self.require_live_owner_process(&purpose.owner)?;
         lock.verify_owned_claim(
             &self.authority,
             AUTH,

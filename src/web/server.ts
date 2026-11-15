@@ -60,6 +60,8 @@ import { createMiniMaxQuotaPreflight } from "../automation/minimax-quota-preflig
 import { healthModelForHarness, normalizeHealthExecution } from "../health-remediation.js";
 import { convertHermesExport } from "../hermes-conversion.js";
 import { AgentResumeClient, type ResumeReceipt, type ResumeTransportRequest } from "../resume-transport.js";
+import type { ResumeAfterBackend, ResumeAfterWait } from "../resume-after.js";
+import type { CadenceSchedule, CadenceScheduler } from "../cadence-scheduler.js";
 import { ChoiceRegistry, ChoiceRegistryLockUnavailableError, type PendingChoice } from "../autopilot/choice-registry.js";
 import { AutopilotPolicyRevisionConflictError, AutopilotPolicyStore } from "../autopilot/policy-store.js";
 import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, isHealthPlanId, HEALTH_PLAN_IDS, type HealthPlanId } from "../autopilot/notice-incident.js";
@@ -201,6 +203,10 @@ export interface WebDependencies {
   sessionVisualizer?: (details: SessionDetails) => Promise<string>;
   sessionObservationIntervalMs?: number;
   jobs?: HerderJobRegistry;
+  /** Read/control the process-owned one-shot scheduled wakes. */
+  resumeAfter?: ResumeAfterBackend;
+  /** Read/control the process-owned repeating exact-session cadence. */
+  cadence?: CadenceScheduler;
   /** Reuse the process-owned canonical delivery core across HTTP and MCP ingress. */
   userMessageDelivery?: UserMessageDelivery;
   /** Reuse the same native-owner queue control as MCP. */
@@ -229,6 +235,99 @@ export type AutopilotSweepOutcome = {
   status: "resumed" | "failed" | "human-required";
   reason?: string;
 };
+
+type ScheduledTaskKind = "cadence" | "resume-after";
+type ScheduledTaskAction = "pause" | "disable" | "cancel";
+type ScheduledTaskView = {
+  id: string;
+  kind: ScheduledTaskKind;
+  state: string;
+  harness: string;
+  sessionId: string;
+  sessionTitle: string | null;
+  project: string | null;
+  requestId: string | null;
+  message: string;
+  createdAt: string | null;
+  dueAt: string | null;
+  lastWakeAt: string | null;
+  sequence: number | null;
+  reason: string | null;
+  overdue: boolean;
+  actions: ScheduledTaskAction[];
+};
+
+function scheduledTaskMessage(message: string): string {
+  const compact = message.replace(/\s+/gu, " ").trim();
+  return compact.length > 240 ? compact.slice(0, 237) + "…" : compact;
+}
+
+async function scheduledTaskView(
+  kind: ScheduledTaskKind,
+  row: CadenceSchedule | ResumeAfterWait,
+  supervisor: SessionSupervisor,
+): Promise<ScheduledTaskView> {
+  const cadenceRow = kind === "cadence" ? row as CadenceSchedule : undefined;
+  const resumeRow = kind === "resume-after" ? row as ResumeAfterWait : undefined;
+  const harness = cadenceRow?.harness ?? resumeRow!.owner.harness;
+  const sessionId = cadenceRow?.sessionId ?? resumeRow!.owner.sessionId;
+  const session = await supervisor.getSession(harness, sessionId).catch(() => null);
+  const dueAt = cadenceRow?.nextAt ?? resumeRow?.scheduledAt ?? null;
+  const active = kind === "cadence"
+    ? !["paused", "complete"].includes(row.state)
+    : !["resumed", "cancelled", "delivery_failed", "delivery_blocked"].includes(row.state);
+  const overdue = active && Boolean(dueAt && Number.isFinite(Date.parse(dueAt)) && Date.parse(dueAt) <= Date.now());
+  const actions: ScheduledTaskAction[] = kind === "cadence"
+    ? active ? ["pause", "disable"] : []
+    : active ? ["cancel"] : [];
+  return {
+    id: row.id,
+    kind,
+    state: row.state,
+    harness,
+    sessionId,
+    sessionTitle: session?.title ?? null,
+    project: session?.cwd ?? null,
+    requestId: cadenceRow?.requestId ?? resumeRow?.canonical?.requestKey ?? null,
+    message: scheduledTaskMessage(row.message),
+    createdAt: cadenceRow?.activatedAt ?? resumeRow?.createdAt ?? null,
+    dueAt,
+    lastWakeAt: cadenceRow?.lastWakeAt ?? null,
+    sequence: cadenceRow?.sequence ?? null,
+    reason: row.reason ?? null,
+    overdue,
+    actions,
+  };
+}
+
+async function readScheduledTaskViews(
+  cadence: CadenceScheduler | undefined,
+  resumeAfter: ResumeAfterBackend | undefined,
+  supervisor: SessionSupervisor,
+): Promise<{ tasks: ScheduledTaskView[]; errors: Array<{ source: ScheduledTaskKind; error: string }> }> {
+  const tasks: ScheduledTaskView[] = [];
+  const errors: Array<{ source: ScheduledTaskKind; error: string }> = [];
+  if (cadence) {
+    try {
+      for (const row of await cadence.list()) tasks.push(await scheduledTaskView("cadence", row, supervisor));
+    } catch (error) {
+      errors.push({ source: "cadence", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (resumeAfter) {
+    try {
+      for (const row of await resumeAfter.list()) tasks.push(await scheduledTaskView("resume-after", row, supervisor));
+    } catch (error) {
+      errors.push({ source: "resume-after", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  tasks.sort((left, right) => {
+    const leftAt = Date.parse(left.dueAt ?? left.createdAt ?? "") || Number.MAX_SAFE_INTEGER;
+    const rightAt = Date.parse(right.dueAt ?? right.createdAt ?? "") || Number.MAX_SAFE_INTEGER;
+    return leftAt - rightAt || left.id.localeCompare(right.id);
+  });
+  return { tasks, errors };
+}
 
 /**
  * The selected health plan of a launch, remembered between the launch call
@@ -1127,7 +1226,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus, dependencies.resumeAfter, dependencies.cadence);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1584,7 +1683,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource, resumeAfter?: ResumeAfterBackend, cadence?: CadenceScheduler): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (await handleMcpOAuthRequest(request, response, { store: mcpOAuthTokenStore })) return;
   if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
@@ -2124,6 +2223,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     try {
       const updated = await store.update({
         ...(typeof body.pollingEnabled === "boolean" ? { pollingEnabled: body.pollingEnabled } : {}),
+        ...(typeof body.releaseOccupancyEnabled === "boolean" ? { releaseOccupancyEnabled: body.releaseOccupancyEnabled } : {}),
         ...(body.harnesses && typeof body.harnesses === "object" && !Array.isArray(body.harnesses)
           ? { harnesses: body.harnesses as Record<string, never> }
           : {}),
@@ -3354,6 +3454,49 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (!jobs) return sendJson(response, 503, { error: "Job registry is disabled" });
     const job = jobs.cancel(decodeURIComponent(jobCancelMatch[1]));
     return job ? sendJson(response, 200, { job }) : sendJson(response, 404, { error: "Job not found" });
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/scheduled-tasks") {
+    if (!cadence && !resumeAfter) return sendJson(response, 503, { error: "Scheduled task authorities are disabled" });
+    const projection = await readScheduledTaskViews(cadence, resumeAfter, supervisor);
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, {
+      tasks: projection.tasks,
+      errors: projection.errors,
+      sources: { cadence: Boolean(cadence), resumeAfter: Boolean(resumeAfter) },
+      generatedAt: new Date().toISOString(),
+    });
+  }
+  const scheduledTaskMatch = url.pathname.match(new RegExp("^/api/scheduled-tasks/(cadence|resume-after)/([^/]+)$"));
+  if (scheduledTaskMatch && request.method === "POST") {
+    const kind = scheduledTaskMatch[1] as ScheduledTaskKind;
+    const id = decodeURIComponent(scheduledTaskMatch[2]!);
+    const body = await readJson(request);
+    const action = body.action;
+    if (kind === "cadence") {
+      if (!cadence) return sendJson(response, 503, { error: "Cadence authority is disabled" });
+      if (action !== "pause" && action !== "disable") return sendJson(response, 400, { error: "Cadence action must be pause or disable" });
+      try {
+        const row = (await cadence.list()).find(candidate => candidate.id === id);
+        if (!row) return sendJson(response, 404, { error: "Scheduled cadence not found" });
+        const updated = await cadence.control(id, row.sessionId, action === "pause" ? "pause" : "complete");
+        return sendJson(response, 200, { task: await scheduledTaskView("cadence", updated, supervisor) });
+      } catch (error) {
+        return sendJson(response, 409, { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (!resumeAfter) return sendJson(response, 503, { error: "Resume-after authority is disabled" });
+    if (action !== "cancel") return sendJson(response, 400, { error: "Resume-after action must be cancel" });
+    try {
+      const row = await resumeAfter.get(id);
+      if (!row) return sendJson(response, 404, { error: "Scheduled wake not found" });
+      const updated = await resumeAfter.cancel(id, row.owner);
+      return updated
+        ? sendJson(response, 200, { task: await scheduledTaskView("resume-after", updated, supervisor) })
+        : sendJson(response, 404, { error: "Scheduled wake not found" });
+    } catch (error) {
+      return sendJson(response, 409, { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   if (url.pathname === "/api/session-target" && (request.method === "GET" || request.method === "POST")) {

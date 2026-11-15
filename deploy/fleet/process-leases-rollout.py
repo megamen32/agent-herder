@@ -502,7 +502,7 @@ class MutationGuard:
         if (not pointer or pointer["phase"] != "active" or pointer["job_id"] != state["job_id"]
                 or state["selector"] != str(selector)):
             raise RuntimeError("rollout mutation has no durable occupancy")
-        if self.gate.fd is None and self.gate._bridge is None:
+        if self.gate.fd is None and self.gate._bridge is None and not getattr(self.gate, "_occupancy_disabled", False):
             raise RuntimeError("release execution guard is not continuously held")
         if operation == "install" and (
                 candidate.digest(candidate.private_file(state["candidate"])) != state["selector_after_sha256"]

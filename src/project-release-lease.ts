@@ -5,8 +5,10 @@ import { createHash, randomBytes } from "node:crypto";
 import lockfile from "proper-lockfile";
 import { execFileSync } from "node:child_process";
 import { canonicalAuthority, canonicalCall, readCanonicalAuthority, withCanonicalGuard } from "./project-release-canonical.js";
+import { liveReleaseOccupancyEnabled } from "./harness-runtime-settings.js";
 
-export interface ReleaseOwner { hostId: string; harness: string; nativeSessionId: string }
+export interface ReleaseProcessIdentity { pid: number; bootId: string; startTicks: number }
+export interface ReleaseOwner { hostId: string; harness: string; nativeSessionId: string; process?: ReleaseProcessIdentity }
 export interface ReleaseLease {
   project: string; deploymentTarget?: { fleetDir: string; unit: string }; owner: ReleaseOwner; fence: number; acquiredAt: number; expiresAt: number;
 }
@@ -23,12 +25,20 @@ export interface ReleaseStatus {
   deploymentInProgress: boolean; lease: ReleaseLease | null; remainingSeconds: number; nextFence: number;
   contact: { tool: string; hostId: string; harness: string; sessionId: string } | null;
   resourceRef?: string; revision?: number; canonicalBusy?: boolean; currentClaim?: unknown;
+  releaseOccupancyEnabled?: boolean; disabled?: boolean; reason?: string;
 }
 export type ReleaseAcquisition = { acquired: true; lease: ReleaseLease; token: string }
-  | { acquired: false; lease: ReleaseLease | null; remainingSeconds: number; canonicalBusy?: boolean; currentClaim?: unknown };
-const ownerKey = (owner: ReleaseOwner) => JSON.stringify([owner.hostId, owner.harness, owner.nativeSessionId]);
+  | { acquired: false; lease: ReleaseLease | null; remainingSeconds: number; canonicalBusy?: boolean; currentClaim?: unknown;
+      disabled?: boolean; bypassed?: boolean; reason?: string };
+const processKey = (process?: ReleaseProcessIdentity) => process
+  ? [process.pid, process.bootId, process.startTicks]
+  : null;
+const ownerKey = (owner: ReleaseOwner) => JSON.stringify([owner.hostId, owner.harness, owner.nativeSessionId, processKey(owner.process)]);
 export interface ReleaseProof { owner: ReleaseOwner; fence: number; token: string }
-const sameOwner = (a: ReleaseOwner, b: ReleaseOwner) => a.hostId === b.hostId && a.harness === b.harness && a.nativeSessionId === b.nativeSessionId;
+const sameOwner = (a: ReleaseOwner, b: ReleaseOwner) => a.hostId === b.hostId
+  && a.harness === b.harness
+  && a.nativeSessionId === b.nativeSessionId
+  && JSON.stringify(processKey(a.process)) === JSON.stringify(processKey(b.process));
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const publicLease = (lease: StoredLease): ReleaseLease => {
   const { tokenHash: _, ...safe } = lease; return safe;
@@ -99,11 +109,15 @@ export class ProjectReleaseLeaseStore {
     if (!lease || lease.fence !== proof.fence || !sameOwner(lease.owner, proof.owner) || lease.tokenHash !== hash(proof.token)) throw new Error("release_lease_not_owned_or_expired");
     return lease;
   }
-  private async requireForState(state: State, project: string, proof: ReleaseProof): Promise<ReleaseLease> {
+  private async requireForState(state: State, project: string, proof: ReleaseProof): Promise<ReleaseLease | null> {
+    if (!liveReleaseOccupancyEnabled()) return null;
     const authority = canonicalAuthority(state);
     return authority ? canonicalCall<ReleaseLease>(authority, { action: "check", project, ...proof }) : this.require(state, project, proof);
   }
   async acquire(project: string, owner: ReleaseOwner, ttlSeconds = 300, deploymentTarget?: { fleetDir: string; unit: string }): Promise<ReleaseAcquisition> {
+    if (!liveReleaseOccupancyEnabled()) {
+      return { acquired: false, lease: null, remainingSeconds: 0, disabled: true, bypassed: true, reason: "release_occupancy_disabled" };
+    }
     const ttl = this.ttl(ttlSeconds);
     const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<ReleaseAcquisition>(authority, {
@@ -124,6 +138,10 @@ export class ProjectReleaseLeaseStore {
     }, false);
   }
   async status(project: string): Promise<ReleaseStatus> {
+    if (!liveReleaseOccupancyEnabled()) {
+      return { deploymentInProgress: false, lease: null, remainingSeconds: 0, nextFence: 0,
+        contact: null, releaseOccupancyEnabled: false, disabled: true, reason: "release_occupancy_disabled" };
+    }
     const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<ReleaseStatus>(authority, { action: "status", project });
     return this.transaction(state => {
@@ -136,17 +154,20 @@ export class ProjectReleaseLeaseStore {
     }, false);
   }
   async renew(project: string, proof: ReleaseProof, ttlSeconds = 300) {
+    if (!liveReleaseOccupancyEnabled()) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     const ttl = this.ttl(ttlSeconds);
     const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<ReleaseLease>(authority, { action: "renew", project, ...proof, ttlSeconds });
     return this.transaction(state => { const lease = this.require(state, project, proof); lease.expiresAt = this.now() + ttl; return publicLease(lease); }, false);
   }
   async release(project: string, proof: ReleaseProof) {
+    if (!liveReleaseOccupancyEnabled()) return { released: false, bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<{ released: boolean }>(authority, { action: "release", project, ...proof });
     return this.transaction(state => { this.require(state, project, proof); this.retire(state.projects[project]!); return { released: true }; }, false);
   }
   async check(project: string, proof: ReleaseProof) {
+    if (!liveReleaseOccupancyEnabled()) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<ReleaseLease>(authority, { action: "check", project, ...proof });
     return this.transaction(state => publicLease(this.require(state, project, proof)), false);
@@ -228,8 +249,10 @@ export class ProjectReleaseLeaseStore {
   /** Hold the same ledger transaction through recheck+cleanup. Another cooperating
    * worker's start cannot race an admitted cleanup; unknown worktrees stay held. */
   async withIntegrationCleanup<T>(project: string, proof: ReleaseProof, id: string, cwd: string, cleanup: () => Promise<T>, target = "main") {
+    if (!liveReleaseOccupancyEnabled()) return cleanup();
     return this.transaction(async state => {
       const ownedLease = await this.requireForState(state, project, proof);
+      if (!ownedLease) return cleanup();
       const value = state.projects[project]!, item = value.integration;
       if (!item || item.id !== id || item.state !== "claimed" || item.claimFence !== proof.fence || !sameOwner(item.owner, proof.owner))
         throw new Error("project_integration_claim_changed");

@@ -322,7 +322,7 @@ describe("agent-herder web API", () => {
     expect(missingDetails.status).toBe(404);
     expect(await missingDetails.json()).toEqual({ error: "Session not found" });
 
-    const resume = await fetch(`${base}/api/sessions/claude/session-1/resume`, { method: "POST", body: JSON.stringify({ message: "continue" }) });
+    const resume = await fetch(`${base}/api/sessions/claude/session-1/resume`, { method: "POST", body: JSON.stringify({ message: "continue", humanRequested: true }) });
     expect(resume.status).toBe(200);
     expect(await resume.json()).toEqual({ ok: true });
 

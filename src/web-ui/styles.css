@@ -468,6 +468,30 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
 .jobs-summary b { color: var(--text); font-weight: 600; }
 .jobs-summary .jobs-failed-count { border-color: color-mix(in srgb, var(--status-error) 40%, var(--border)); color: color-mix(in srgb, var(--status-error) 78%, var(--on-accent)); }
 .jobs-list { display: grid; gap: 10px; }
+.scheduled-tasks-panel { display: grid; gap: 14px; margin: 0 0 20px; padding: 16px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius: var(--radius-m); background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 7%, var(--surface-2)), var(--surface-1)); }
+.scheduled-tasks-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.scheduled-tasks-heading h3 { margin: 4px 0 5px; color: var(--text); font-size: var(--text-lg); }
+.scheduled-tasks-heading p { max-width: 650px; margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
+.scheduled-tasks-list { display: grid; gap: 9px; }
+.scheduled-task-card { display: grid; gap: 9px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); }
+.scheduled-task-overdue { border-color: color-mix(in srgb, var(--status-error) 55%, var(--border)); }
+.scheduled-task-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.scheduled-task-head > div { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.scheduled-task-head strong { color: var(--text); font-size: var(--text-sm); }
+.scheduled-task-harness { color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.scheduled-task-message { margin: 0; color: var(--text-2); font-size: var(--text-sm); line-height: 1.45; }
+.scheduled-task-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
+.scheduled-task-facts > div { min-width: 0; }
+.scheduled-task-facts dt { color: var(--muted); font-size: 10px; }
+.scheduled-task-facts dd { margin: 2px 0 0; overflow: hidden; color: var(--text-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.scheduled-task-due-overdue { color: var(--status-error) !important; }
+.scheduled-task-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--muted); font-size: 10px; }
+.scheduled-task-meta code { color: var(--text-2); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.scheduled-task-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.scheduled-tasks-error, .scheduled-tasks-warning { padding: 9px 10px; border-radius: var(--radius-s); font-size: var(--text-xs); line-height: 1.4; }
+.scheduled-tasks-error { border: 1px solid color-mix(in srgb, var(--status-error) 40%, var(--border)); background: color-mix(in srgb, var(--status-error) 10%, var(--surface-1)); color: var(--status-error); }
+.scheduled-tasks-warning { border: 1px solid color-mix(in srgb, var(--status-waiting) 40%, var(--border)); background: color-mix(in srgb, var(--status-waiting) 10%, var(--surface-1)); color: var(--status-waiting); }
+.scheduled-tasks-empty { padding: 15px; border: 1px dashed var(--border-2); border-radius: var(--radius-s); color: var(--muted); font-size: var(--text-xs); text-align: center; }
 .jobs-empty { padding: 60px 20px; border: 1px dashed var(--border-2); border-radius: var(--radius-m); color: var(--muted); font-size: var(--text-sm); text-align: center; }
 .job-card { display: grid; gap: 10px; padding: 15px var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-m); background: linear-gradient(145deg, var(--surface-2), var(--surface-1)); box-shadow: inset 0 1px color-mix(in srgb, var(--text) 4%, transparent); }
 .job-card.job-running, .job-card.job-waiting, .job-card.job-queued, .job-card.job-cancelling { border-color: color-mix(in srgb, var(--status-running) 30%, var(--border)); }
@@ -555,7 +579,7 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
   .runtime-settings-grid label:not(.runtime-toggle-setting) input { width: 100%; }
   .technical-note { color: var(--text-2); font-size: var(--text-sm); }
   .statistics-page { padding: 20px var(--space-3) 50px; }.statistics-hero { display: grid; gap: 15px; }.statistics-controls { justify-content: space-between; }.statistics-cards { grid-template-columns: 1fr 1fr; }.statistics-cards strong { font-size: var(--text-xl); }.statistics-panel { padding: 13px; }.statistics-panel-head { display: grid; gap: var(--space-2); }.statistics-panel-head > small { text-align: left; }.histogram { gap: var(--space-1); overflow-x: auto; }.coverage-row { grid-template-columns: 36px minmax(0, 1fr); }.header-actions .quiet-button.selected-icon:not(.automation-setting-button) { display: inline-block; }
-  .jobs-page { padding: 20px var(--space-3) 50px; }.jobs-hero { display: grid; gap: 14px; }.jobs-summary { justify-content: flex-start; }.job-head > div { align-items: flex-start; flex-direction: column; gap: var(--space-2); }.job-actions { align-items: flex-start; flex-direction: column; }.job-actions .danger-button { align-self: flex-end; }
+  .jobs-page { padding: 20px var(--space-3) 50px; }.jobs-hero { display: grid; gap: 14px; }.jobs-summary { justify-content: flex-start; }.scheduled-tasks-heading { display: grid; gap: 10px; }.scheduled-task-facts { grid-template-columns: 1fr 1fr; }.scheduled-task-head > div { align-items: flex-start; flex-direction: column; gap: 5px; }.scheduled-task-actions { justify-content: flex-start; }.job-head > div { align-items: flex-start; flex-direction: column; gap: var(--space-2); }.job-actions { align-items: flex-start; flex-direction: column; }.job-actions .danger-button { align-self: flex-end; }
 }
 @media (max-width: 900px) { .composer-create-row, .composer-create-row[data-codex="true"] { grid-template-columns: 1fr 1fr; }.composer-create-row label:nth-child(2) { grid-column: 1 / -1; }.composer-create-submit { width: 100%; } }
 .oc-app.no-inspector { grid-template-columns: 280px minmax(0, 1fr); }

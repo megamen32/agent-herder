@@ -45,7 +45,7 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "projects", label: "Проекты", action: props.onProjects, href: pageHref("projects") },
     { id: "machines", label: "Машины", action: props.onMachines, href: pageHref("machines") },
     { id: "search", label: "Поиск", action: props.onSearch, href: pageHref("search") },
-    { id: "jobs", label: "Операции", action: props.onJobs, href: pageHref("jobs") },
+    { id: "jobs", label: "Запланированные задачи", action: props.onJobs, href: pageHref("jobs") },
     { id: "statistics", label: "Статистика", action: props.onStatistics, href: pageHref("statistics") },
     { id: "logs", label: "Логи", action: props.onLogs, href: pageHref("logs") },
     { id: "settings", label: "Настройки", action: props.onSettings, href: pageHref("settings") },

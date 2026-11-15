@@ -1,12 +1,24 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectReleaseLeaseStore } from "../src/project-release-lease.js";
 import { canonicalAuthority, withCanonicalGuard } from "../src/project-release-canonical.js";
+import { emptyHarnessRuntimeSettings, setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
+let runtimeSettingsDir: string;
+beforeAll(async () => {
+  runtimeSettingsDir = await mkdtemp(join(tmpdir(), "herder-canonical-settings-"));
+  const settingsPath = join(runtimeSettingsDir, "harness-runtime-settings.json");
+  await writeFile(settingsPath, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }), { mode: 0o600 });
+  setHarnessRuntimeSettingsPathForTests(settingsPath);
+});
+afterAll(async () => {
+  setHarnessRuntimeSettingsPathForTests(undefined);
+  await rm(runtimeSettingsDir, { recursive: true, force: true });
+});
 const owner = { hostId: "fixture", harness: "test", nativeSessionId: "session-a" };
 
 async function fixture() {

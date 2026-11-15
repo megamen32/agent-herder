@@ -44,6 +44,7 @@ export interface HarnessRuntimeHarnessView {
 export interface HarnessRuntimeView {
   ok: true;
   pollingEnabled: boolean;
+  releaseOccupancyEnabled: boolean;
   changedAt?: string;
   changedBy?: string;
   reason?: string;
@@ -227,6 +228,16 @@ function HarnessHub(): React.ReactElement {
     );
   };
 
+  const toggleReleaseOccupancy = async (): Promise<void> => {
+    if (!view) return;
+    await apply(
+      { releaseOccupancyEnabled: !view.releaseOccupancyEnabled },
+      view.releaseOccupancyEnabled
+        ? "Захват release-ресурсов выключен. Новые сессии больше не блокируются незавершёнными guard-записями."
+        : "Захват release-ресурсов включён. Включайте его только после проверки owner PID и native session.",
+    );
+  };
+
   const changeHarness = async (harness: string, field: string, value: boolean | number, note: string): Promise<void> => {
     await apply({ harnesses: { [harness]: { [field]: value } } }, note);
   };
@@ -271,6 +282,30 @@ function HarnessHub(): React.ReactElement {
             Последнее изменение: {view.changedAt}{view.changedBy ? ` · ${view.changedBy}` : ""}{view.reason ? ` · ${view.reason}` : ""}
           </p>
         ) : null}
+      </section>
+
+      <section className="herder-settings-block" aria-label="Захват release-ресурсов">
+        <h2>Захват release-ресурсов</h2>
+        <p className="herder-settings-state-line" role="status">
+          {view?.releaseOccupancyEnabled
+            ? "Включён: deployment guard и durable occupancy участвуют в захвате ресурса."
+            : "Выключен: незавершённые process occupancy не блокируют новые сессии."}
+        </p>
+        <p className="herder-settings-hint">
+          По умолчанию выключен до завершения проверки владельца. При включении новая запись
+          владельца должна содержать native session и проверяемую пару PID, boot ID и start ticks.
+          Старые незавершённые записи сохраняются для отдельного разбора и не переиспользуются.
+        </p>
+        <div className="herder-settings-actions">
+          <button
+            type="button"
+            className={view?.releaseOccupancyEnabled ? "herder-settings-button herder-settings-button-danger" : "herder-settings-button"}
+            disabled={busy || !view}
+            onClick={() => { void toggleReleaseOccupancy(); }}
+          >
+            {view?.releaseOccupancyEnabled ? "Выключить захват ресурсов" : "Включить захват ресурсов"}
+          </button>
+        </div>
       </section>
 
       <section className="herder-settings-block" aria-label="Харнессы">
