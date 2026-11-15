@@ -34,7 +34,7 @@
 
 15 ноября 2026 года новый receipt закрывает VS01–VS07. Source identity — f5e30722; Rust core был собран из 7633fafa, а изменение f5e30722 добавляет только host/sender параметры fixture. Manifest SHA-256: 89738d73951358f73363434ebc7f9f26def3aa88c592dabbb761d35e340bcad4. Core SHA-256: 93e32ec0ee987433e09c6484bd49e8c88953aa5a83234b3751fe0da382332251.
 
-Local и server-44 receipts подтверждают action-less deliver envelope, sender в durable native receipt, same-key replay без нового fake-model request, changed-payload conflict с effect=none, HumanStop до admission и после core restart, native user/assistant readback, native export, search, project provenance и resend_count=0. В remote receipt target имеет hostId=server-44, sender имеет hostId=roomhacker-server-100, а hostname remote probe равен server-44.
+Local и server-44 receipts подтверждают action-less deliver envelope, sender в durable native receipt, same-key replay без нового fake-model request, changed-payload conflict с effect=none, HumanStop до admission и после core restart, native user/assistant readback, native export, search, project provenance и resend_count=0. В remote receipt target имеет hostId=server-44, sender имеет hostId=roomhacker-server-100, а hostname remote probe равен server-44. Это candidate artifact acceptance; production rollout в этот срез не входит.
 
 ## Gates
 
@@ -44,7 +44,7 @@ Local и server-44 receipts подтверждают action-less deliver envelop
 | VS02 | Same-key replay | закрыто | Повтор того же key вернул прежний Task/receipt; fake model request count не изменился. |
 | VS03 | Changed payload | закрыто | Тот же key с другим message вернул idempotency_conflict до admission; native effect отсутствует. |
 | VS04 | HumanStop | закрыто | Hold до admission заблокировал обе попытки и сохранился после restart. |
-| VS05 | Immutable installed consumer | закрыто | Обычный MCP consumer прошёл против manifest-pinned artifact/source/runtime identity. |
+| VS05 | Immutable artifact consumer | закрыто | Обычный MCP consumer прошёл против manifest-pinned candidate artifact/source/runtime identity. |
 | VS06 | Independent readback | закрыто | После restart прочитаны обе роли, native export, search и projects; resend_count=0. |
 | VS07 | Cross-host consumer | закрыто | Live server-44 consumer получил native receipt с target server-44 и sender roomhacker-server-100. |
 | VS08 | Common export | явно unsupported | Не считать ошибкой vertical slice; native export остаётся обязательным, common нужен отдельный normalized contract. |
@@ -61,7 +61,7 @@ Local и server-44 receipts подтверждают action-less deliver envelop
 
 ## Definition of done
 
-Срез закрыт только когда один receipt содержит source SHA, artifact digest, installed runtime identity, native user/assistant IDs, request keys, resend_count=0, restart readback и independent consumer proof. Unit tests, tools/list, HTTP 200, исторический receipt или здоровый процесс сами по себе срез не закрывают.
+Срез закрыт только когда receipt содержит source SHA, artifact digest, candidate runtime identity, native user/assistant IDs, request keys, resend_count=0, restart readback и independent consumer proof. Unit tests, tools/list, HTTP 200, исторический receipt или здоровый процесс сами по себе срез не закрывают.
 
 ## Не входит в этот срез
 
