@@ -42,17 +42,17 @@ export async function selfJudgeEvaluate(input: AutopilotRunnerInput & { messages
   const text = input.lastAssistantMessage ?? "";
   const match = markerRegex.exec(text);
 
-  if (state.stage === "review" && match && match[1].toLowerCase() === MARKER_REVIEW && match[2] === state.uid) {
+  if (state.stage === "work" && match && match[1].toLowerCase() === MARKER_REVIEW && match[2] === state.uid) {
     const newUid = nextUid();
-    stateMap.set(key, { stage: "complete", uid: newUid });
+    stateMap.set(key, { stage: "review", uid: newUid });
     return { decision: "continue", next_goal: reviewPrompt(newUid, userTexts(input)), self_judge: true };
   }
-  if (state.stage === "complete" && match && match[1].toLowerCase() === MARKER_COMPLETE && match[2] === state.uid) {
+  if (state.stage === "review" && match && match[1].toLowerCase() === MARKER_COMPLETE && match[2] === state.uid) {
     const newUid = nextUid();
-    stateMap.set(key, { stage: "closed", uid: newUid });
+    stateMap.set(key, { stage: "complete", uid: newUid });
     return { decision: "continue", next_goal: closePrompt(newUid), self_judge: true };
   }
-  if (state.stage === "closed" && match && match[1].toLowerCase() === MARKER_CLOSED && match[2] === state.uid) {
+  if (state.stage === "complete" && match && match[1].toLowerCase() === MARKER_CLOSED && match[2] === state.uid) {
     stateMap.delete(key);
     return { decision: "terminal", terminalKind: "completed", self_judge: true };
   }
