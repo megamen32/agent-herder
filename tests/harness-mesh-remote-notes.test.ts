@@ -57,7 +57,7 @@ describe("the notes of the hub in a delivery to another machine",()=>{
    const h=hub({launchCwd:root,currentCwd:null});
    const mesh=new GptAdminMesh(h as never);
    await mesh.discover();
-   await mesh.deliver({target:{...address,harness:"codex"},sender:{...address,nativeSessionId:"source"},inputId:"notes-3",message:"work"});
+   await mesh.deliver({target:address,sender:{...address,nativeSessionId:"source"},inputId:"notes-3",message:"work"});
    const sent=h.call.mock.calls.find(call=>call[1]==="mesh_deliver");
    expect(String((sent?.[2] as {message?:string}).message??"")).toBe("work");
   }finally{await rm(root,{recursive:true,force:true});}

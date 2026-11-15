@@ -62,4 +62,18 @@ describe('actual host workspace MCP',()=>{
   await expect(local.call('workspace_declare',{sessionId:'s',harness:'codex',hostId:'host100',cwd:join(root,'absent')})).rejects.toThrow();
   await expect(local.call('workspace_activity',{sessionId:'s',harness:'codex',paths:['x']})).rejects.toThrow('workspace_declaration_required');
  });
+ it('shares conflicts between independent sessions in workspace A and nested workspace A/B',async()=>{
+  root=await mkdtemp(join(tmpdir(),'herder-nested-workspace-'));const project=join(root,'A');const nested=join(project,'B');await mkdir(nested,{recursive:true});
+  const remote=await node('host88',{call:()=>{throw new Error('unexpected onward route');}});
+  const local=await node('host100',{call:async(_target:string,name:string,args:any)=>remote.call(name,args)});
+  const outer={sessionId:'session-A',harness:'codex'};
+  const inner={sessionId:'session-A-B',harness:'opencode'};
+  await local.call('workspace_declare',{...outer,hostId:'host88',cwd:project});
+  await remote.call('workspace_declare',{...inner,hostId:'host88',cwd:nested});
+  await remote.store.create({authorSessionId:inner.sessionId,kind:'working',cwd:nested,hostId:'host88',message:'nested owner',paths:['src/a.ts']});
+  const activity=await local.call('workspace_activity',{...outer,paths:['B/src/a.ts']});
+  expect((activity.conflicts as any[]).map(conflict=>conflict.note.authorSessionId)).toContain(inner.sessionId);
+  const owners=await remote.call('workspace_owners',{cwd:project});
+  expect((owners.owners as any[]).some(owner=>owner.authorSessionId===inner.sessionId)).toBe(true);
+ });
 });

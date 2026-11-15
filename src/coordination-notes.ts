@@ -177,7 +177,8 @@ export class CoordinationNoteStore {
         .filter((note) => filters.includeClosed || note.kind !== "question" || note.status !== "closed")
         .filter((note) => !filters.authorSessionId || note.authorSessionId === filters.authorSessionId)
         .filter((note) => scope === "global" || !cwd || (note.cwd !== undefined && sameWorkspace(note.cwd, cwd)))
-        .filter((note) => !path || note.paths.length === 0 || note.paths.some((candidate) => pathMatches(candidate, path)))
+        .filter((note) => !path || note.paths.length === 0 || note.paths.some((candidate) =>
+          cwd && note.cwd ? pathMatchesAcrossWorkspaces(candidate, note.cwd, path, cwd) : pathMatches(candidate, path)))
         .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
     });
   }
@@ -292,7 +293,7 @@ export class CoordinationNoteStore {
       for (const path of paths) {
         for (const note of file.notes) {
           if (note.scope !== "workspace" || note.authorSessionId === input.sessionId || note.hostId !== hostId || !note.cwd || !sameWorkspace(note.cwd, cwd)) continue;
-          if (note.paths.some((candidate) => pathMatches(candidate, path))) conflicts.push({ path, note });
+          if (note.paths.some((candidate) => pathMatchesAcrossWorkspaces(candidate, note.cwd!, path, cwd))) conflicts.push({ path, note });
         }
         const activityKey = `hook:${JSON.stringify([hostId, input.sessionId, cwd, path])}`;
         let note = file.notes.find((candidate) => candidate.activityKey === activityKey);
@@ -355,7 +356,7 @@ export class CoordinationNoteStore {
     const conflicts: CoordinationConflict[] = [];
     for (const path of paths) for (const note of notes) {
       if (note.authorSessionId === input.sessionId) continue;
-      if (note.paths.some((candidate) => pathMatches(candidate, path))) conflicts.push({ path, note });
+      if (note.paths.some((candidate) => pathMatchesAcrossWorkspaces(candidate, note.cwd!, path, cwd))) conflicts.push({ path, note });
     }
     return dedupeConflicts(conflicts);
   }
@@ -827,8 +828,14 @@ function normalizePathsForCwd(paths: string[], cwd: string, remotePosix = false)
   });
 }
 function sameWorkspace(a: string, b: string): boolean {
-  if (posix.isAbsolute(a) && posix.isAbsolute(b)) return posix.normalize(a) === posix.normalize(b);
-  return resolve(a) === resolve(b);
+  if (posix.isAbsolute(a) && posix.isAbsolute(b)) {
+    const left = posix.normalize(a);
+    const right = posix.normalize(b);
+    return left === right || left.startsWith(right + "/") || right.startsWith(left + "/");
+  }
+  const left = resolve(a);
+  const right = resolve(b);
+  return left === right || left.startsWith(right + sep) || right.startsWith(left + sep);
 }
 function workspaceKey(hostId: string, cwd: string): string { return JSON.stringify([hostId, cwd]); }
 function workspaceResourcePath(hostId: string, cwd: string, localHostId: string): string { return hostId === localHostId ? cwd : workspaceKey(hostId, cwd); }
@@ -842,6 +849,15 @@ function displayWorkspace(board: { scope?: CoordinationScope; hostId: string; cw
 function pathMatches(candidate: string, target: string): boolean {
   const c = candidate.replace(/^\.\//, ""); const t = target.replace(/^\.\//, "");
   return t === c || t.startsWith(`${c}/`) || c.startsWith(`${t}/`);
+}
+/** Compare paths stored relative to different nested workspace roots. */
+function pathMatchesAcrossWorkspaces(candidate: string, candidateCwd: string, target: string, targetCwd: string): boolean {
+  if (!sameWorkspace(candidateCwd, targetCwd)) return false;
+  const absolute = (cwd: string, path: string): string => {
+    if (posix.isAbsolute(path)) return posix.normalize(path);
+    return posix.normalize(posix.join(cwd, path.replace(/^\.\//, "")));
+  };
+  return pathMatches(absolute(candidateCwd, candidate), absolute(targetCwd, target));
 }
 function assertOwner(note: CoordinationNote, authorSessionId: string): void {
   if (note.authorSessionId !== authorSessionId.trim()) throw new Error(`Coordination note '${note.id}' belongs to another session`);
