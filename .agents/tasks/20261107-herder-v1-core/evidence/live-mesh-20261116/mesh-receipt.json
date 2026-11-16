@@ -1,0 +1,55 @@
+{
+  "kind": "agent-herder-live-cross-host-mesh",
+  "observedAt": "2026-11-16T14:09:57Z",
+  "runtime": {
+    "sourceSha": "d19105d0278c546cc4a4b8bb39becd3d0f56664e",
+    "service": "agent-herder.service",
+    "hostId": "roomhacker-server-100"
+  },
+  "directions": {
+    "100_to_44": {
+      "target": {
+        "hostId": "server-44",
+        "harness": "codex",
+        "nativeSessionId": "01a1e23d-f42f-73c0-a89e-ca02f75f2c6a"
+      },
+      "sender": {
+        "hostId": "roomhacker-server-100",
+        "harness": "codex",
+        "nativeSessionId": "01a1da17-2637-7563-8a9d-b50ded35db6c"
+      },
+      "inputId": "mesh-live-100-to-44-20261116-01",
+      "firstReceipt": {
+        "state": "queued",
+        "jobId": "job_835a1dada1bcd9fef6c1155f4a86581b867c461406dec99da252f0235a4dd941"
+      },
+      "readback": "HERDER_MESH_100_TO_44_OK",
+      "sameKeyReplay": "same_job_and_one_marker"
+    },
+    "44_to_100": {
+      "target": {
+        "hostId": "roomhacker-server-100",
+        "harness": "codex",
+        "nativeSessionId": "01a1e23d-e24f-7af3-9fdf-06aaf19f7446"
+      },
+      "sender": {
+        "hostId": "server-44",
+        "harness": "codex",
+        "nativeSessionId": "01a1e23d-f42f-73c0-a89e-ca02f75f2c6a"
+      },
+      "inputId": "mesh-live-44-to-100-20261116-01",
+      "receipt": {
+        "state": "admitted",
+        "turnId": "01a1e4ac-af27-7233-a181-e52030b10d83"
+      },
+      "readback": "HERDER_MESH_44_TO_100_OK"
+    }
+  },
+  "nestedWorkspaceVisibility": {
+    "A_to_A_B": "NOTE-AB-VISIBLE",
+    "A_B_to_A": "NOTE-A-VISIBLE",
+    "semantics": "independent sessions in nested paths, not parent/child lineage"
+  },
+  "result": "cross_host_mesh_green",
+  "scopeNote": "This closes the live 100↔44 delivery/readback and A/A-B visibility canary. It does not claim the adapter matrix or the release blue/green wrapper complete."
+}
