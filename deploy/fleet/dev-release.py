@@ -209,10 +209,10 @@ def parser() -> argparse.ArgumentParser:
     sub = root.add_subparsers(dest="action", required=True)
     sub.add_parser("status")
     build = sub.add_parser("build"); build.add_argument("--sha"); build.add_argument("--skip-build", action="store_true")
-    green = sub.add_parser("green"); green.add_argument("--sha", required=True)
-    promote = sub.add_parser("promote"); promote.add_argument("--sha", required=True)
-    sub.add_parser("rollback")
-    sub.add_parser("stop")
+    green = sub.add_parser("green"); green.add_argument("--sha", required=True); green.add_argument("--apply", action="store_true", default=argparse.SUPPRESS)
+    promote = sub.add_parser("promote"); promote.add_argument("--sha", required=True); promote.add_argument("--apply", action="store_true", default=argparse.SUPPRESS)
+    rollback = sub.add_parser("rollback"); rollback.add_argument("--apply", action="store_true", default=argparse.SUPPRESS)
+    stop = sub.add_parser("stop"); stop.add_argument("--apply", action="store_true", default=argparse.SUPPRESS)
     return root
 
 
