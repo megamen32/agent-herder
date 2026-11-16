@@ -3,7 +3,7 @@
 Короткие команды поверх существующего guarded rollout:
 
     python3 deploy/fleet/dev-release.py build --sha origin/main
-    python3 deploy/fleet/dev-release.py green --sha <sha>
+    python3 deploy/fleet/dev-release.py green --sha <sha> --apply
     python3 deploy/fleet/dev-release.py promote --sha <sha> --release-proof <proof> --apply
     python3 deploy/fleet/dev-release.py rollback --release-proof <proof> --apply
     python3 deploy/fleet/dev-release.py stop --apply
