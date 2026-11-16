@@ -9,11 +9,11 @@ import { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldEventLoop } from "node:timers/promises";
 import { backgroundIndexingSettings, type BackgroundIndexingSettings } from "./indexing-settings.js";
 
-const COLLECTION = "agent_herder_sessions_v1";
-const VECTOR_SIZE = 2048;
-const MODEL = "qwen3-embedding:4b";
+const COLLECTION = "agent_herder_sessions_v1_kalm3840_v2";
+const VECTOR_SIZE = 3840;
+const MODEL = "kalm-embedding-gemma3-12b-q6";
 const QDRANT = process.env.AGENT_HERDER_QDRANT_URL || "http://127.0.0.1:6333";
-const EMBEDDINGS = process.env.AGENT_HERDER_EMBEDDING_URL || "http://192.168.2.75:11440/v1/embeddings";
+const EMBEDDINGS = process.env.AGENT_HERDER_EMBEDDING_URL || "https://embeddings.bezrabotnyi.com/v1/embeddings";
 const STATE_PATH = process.env.AGENT_HERDER_RAG_STATE || join(homedir(), ".local/state/agent-herder/rag.json");
 const TOKEN_PATH = process.env.AGENT_HERDER_EMBEDDING_TOKEN_FILE || join(homedir(), ".config/agent-herder/qwen-embedding.env");
 const HARNESS_LABELS = { codex: "Codex", zcode: "ZCode", opencode: "OpenCode" } as const;

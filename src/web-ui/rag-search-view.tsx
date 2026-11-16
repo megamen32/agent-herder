@@ -203,6 +203,6 @@ export function RagSearchView({ initialQuery, onInitialQueryApplied, onOpenSessi
       {!timings && !busy && <p className="rag-empty">Введите запрос, чтобы отдельно найти совпадения в тексте и похожие темы.</p>}
     </>}
     {error && <p className="rag-index-error" role="alert">{error}</p>}
-    <footer className="rag-search-footer">Векторная модель {settings?.model || "qwen3-embedding:4b"} · {settings?.dimensions || 2048} измерения · отдельная коллекция Qdrant.</footer>
+    <footer className="rag-search-footer">Векторная модель {settings?.model || "kalm-embedding-gemma3-12b-q6"} · {settings?.dimensions || 3840} измерения · отдельная коллекция Qdrant.</footer>
   </section>;
 }
