@@ -49,8 +49,9 @@ describe("declared mesh sender API (focused integration; expected 3s, maximum 30
   registerSessionTools(server,{adapters:f.adapters,events,jobs:f.jobs,userMessageDelivery:f.delivery});
   const client=new Client({name:"mesh-sender-consumer",version:"1"});const [ct,st]=InMemoryTransport.createLinkedPair();
   try{await server.connect(st);await client.connect(ct);
-   const schema=(await client.listTools()).tools.find(t=>t.name==="send_message")!.inputSchema;
-   expect((schema.properties as any).meshSender.properties.nativeSessionId.maxLength).toBe(512);
+   const schema=(await client.listTools()).tools.find(t=>t.name==="send_message")!.inputSchema as any;
+   const properties={...(schema.properties??{}),...(schema.anyOf??[]).reduce((all:any,branch:any)=>({...all,...(branch?.properties??{})}),{})};
+   expect(properties.meshSender.properties.nativeSessionId.maxLength).toBe(512);
    const denied=await client.callTool({name:"send_message",arguments:f.request});
    expect(JSON.stringify(denied.content)).toContain("Authenticated Agent Herder MCP ingress is required");
    expect(f.sendMessage).not.toHaveBeenCalled();

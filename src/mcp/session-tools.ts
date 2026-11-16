@@ -13,7 +13,7 @@ import type { SessionSupervisor } from "../session-supervisor.js";
 import { captureDeliveryResponseBaseline, nativeDeliveryResponseComplete, nativeDeliveryResponseCompleteByInput, waitForDeliveryResponse, type DeliveryResponseBaseline, type DeliveryResponseResult, type DeliveryResponseTarget } from "../session-delivery-response.js";
 import { callerSessionFromMcpContext } from "./caller-session.js";
 import type { SendMessageResult } from "../types/index.js";
-import { trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
+import { trustedMeshIngressForOwnerStdio, trustedMeshIngressFromMcpAuthInfo } from "../mesh/authenticated-ingress.js";
 import {
   SendMessageSchema,
   CreateSessionSchema,
@@ -174,7 +174,17 @@ export function registerSessionTools(server: McpServer, deps: {
     const http = ctx && typeof ctx === "object" && "http" in ctx
       ? (ctx as { http?: { authInfo?: unknown } }).http
       : undefined;
-    const ingress = trustedMeshIngressFromMcpAuthInfo(http?.authInfo);
+    // Owner-launched stdio is the authenticated local boundary. An HTTP
+    // request must carry the verified owner MCP auth metadata before it can
+    // cross the host boundary; caller-supplied sender fields remain attribution.
+    const ingress = http
+      ? trustedMeshIngressFromMcpAuthInfo(http.authInfo)
+      : trustedMeshIngressForOwnerStdio();
+    if (normalizedRequest.target.hostId.toLowerCase() !== hostname().toLowerCase() && !ingress) {
+      const receipt = { state: "not_attempted" as const, inputId: normalizedRequest.inputId,
+        retryable: false, reason: "authenticated_mesh_ingress_required" };
+      return { content: [{ type: "text" as const, text: JSON.stringify(receipt) }], structuredContent: receipt };
+    }
     const receipt = normalizedRequest.target.hostId.toLowerCase() === hostname().toLowerCase()
       ? await localDeliveryMesh.deliver(normalizedRequest, ingress)
       : await remoteDeliveryMesh.deliver(normalizedRequest);
