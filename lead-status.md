@@ -129,3 +129,9 @@ Plan state для chatgpt/z.ai lane (`.agents/tasks/20261107-herder-native-mcp-b
 - (2) Ветку `feat/herder-process-leases-20261113` (7 коммитов, последний пуш 05:31, активного процесса агента нет) не трогал: она не содержит ни `codex-app-server.ts`, ни `ahap-legacy-read.ts`, ни `owner_reads.rs`, и правка к её контракту не относится. Правка сделана в `main` — целевая ветка по политике репозитория; пересечения с незавершённой lane-работой нет.
 - (3) Временные артефакты доказательства удалены: каталог `/home/roomhacker/herder-artifacts/readproof-temp` и временный профиль `profile-readproof-temp.json` в authority-каталоге удалены после прогона.
 - (4) `npm test` (полный прогон) — результат в журнале этой сессии; `tsc` без ошибок.
+# Live cross-host acceptance update — 2026-11-16 00:52 UTC
+
+- Published roadmap item: file editor attribution is planned for 2027-01-16; implementation is intentionally out of the current cycle.
+- Installed `f6a84db02e595d41125357f08811861a996327d1` remains live on server-100. A disposable Codex session was created on server-44 through the exact `AgentHerder` child MCP: native session `01a1e1d4-c074-77d1-868b-ea9160f36817`, cwd `/home/roomhacker`.
+- Two ordinary cross-host `deliver` attempts were made with distinct input IDs. Both returned durable `UNKNOWN`; direct owner `session_info` on server-44 confirmed the exact session stayed idle with `messageCount=0` and an empty transcript. No further replay is allowed. The canary session received a HumanStop hold; there was no active turn to interrupt.
+- **Remaining blocker:** server-44 owner transport/receipt reconciliation does not expose a confirmed native admission or a readable transcript for the cross-host delivery. Next action is to inspect that owner path and its durable receipt before another authorized canary; do not resend the existing input IDs.
