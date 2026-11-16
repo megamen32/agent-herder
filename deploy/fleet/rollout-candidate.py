@@ -229,6 +229,48 @@ def remote_live_sha(node: dict) -> str:
     return os.path.basename(result.stdout.strip())
 
 
+def validate_release_manifest(release: Path, expected_sha: str, kind: str) -> dict:
+    """Validate the immutable source payload for the selected node kind.
+
+    Owner releases retain the complete host package farm, so their whole-bundle
+    fingerprint is stable and is part of acceptance. Fleet releases rebuild
+    that host-specific package farm on the target during rollout; only the
+    portable payload can be compared before transfer.
+    """
+    manifest_path = release / "build-manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"the release carries no bundle manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    entries = release_rules.bundle_entries(release, exclude=("build-manifest.json",))
+    fingerprint = release_rules.bundle_fingerprint(entries)
+    portable = release_rules.payload_entries(release, exclude=("build-manifest.json",))
+    portable_fingerprint = release_rules.payload_fingerprint(portable)
+    if manifest.get("sourceSha") != expected_sha:
+        raise RuntimeError(
+            f"the release manifest source SHA does not match the requested release: "
+            f"manifest={manifest.get('sourceSha')} requested={expected_sha}"
+        )
+    if kind == "fleet":
+        if (manifest.get("payloadFingerprint") != portable_fingerprint
+                or manifest.get("payloadFiles") != len(portable)):
+            raise RuntimeError(
+                "the portable payload manifest does not describe this fleet release: "
+                f"manifest={manifest.get('payloadFingerprint')} actual={portable_fingerprint}"
+            )
+    elif manifest.get("bundleFingerprint") != fingerprint:
+        raise RuntimeError(
+            "the bundle manifest does not describe this owner release: "
+            f"manifest={manifest.get('bundleFingerprint')} actual={fingerprint}"
+        )
+    return {
+        "manifest": manifest,
+        "bundle_fingerprint": fingerprint,
+        "bundle_files": len(entries),
+        "payload_fingerprint": portable_fingerprint,
+        "payload_files": len(portable),
+    }
+
+
 def add_own_bytes(archive: tarfile.TarFile, source: Path, arcname: str) -> None:
     """The path goes into the archive as bytes of its own.
 
@@ -761,18 +803,13 @@ def main() -> int:
         print(f"the release is not built: {release}")
         print("build it first: python3 deploy/fleet/build-release-candidate.py --sha " + arguments.sha)
         return 1
-    manifest_path = release / "build-manifest.json"
-    if not manifest_path.is_file():
-        print(f"the release carries no bundle manifest: {manifest_path}")
+    try:
+        manifest_result = validate_release_manifest(release, arguments.sha, node["kind"])
+    except (OSError, ValueError, RuntimeError) as error:
+        print(error)
         return 1
-    manifest = json.loads(manifest_path.read_text())
-    entries = release_rules.bundle_entries(release, exclude=("build-manifest.json",))
-    fingerprint = release_rules.bundle_fingerprint(entries)
-    if manifest.get("sourceSha") != arguments.sha or manifest.get("bundleFingerprint") != fingerprint:
-        print("the bundle manifest does not describe this release")
-        print(f"  manifest sha={manifest.get('sourceSha')} fingerprint={manifest.get('bundleFingerprint')}")
-        print(f"  release  fingerprint={fingerprint}")
-        return 1
+    manifest = manifest_result["manifest"]
+    fingerprint = manifest_result["bundle_fingerprint"]
 
     live_sha = ""
     if node["kind"] == "owner":
@@ -808,7 +845,7 @@ def main() -> int:
         print("== rollout plan ==")
         print(f"node          : {node['id']} ({node['kind']}, {node['address']})")
         print(f"release       : {release}")
-        print(f"bundle        : {fingerprint} files={len(entries)}")
+        print(f"bundle        : {fingerprint} files={manifest_result['bundle_files']}")
         print(f"package size  : {size_mib} MiB")
         print(f"live before   : {live_sha or 'unknown'}")
         print(f"restart       : {node['restartCmd']}")
