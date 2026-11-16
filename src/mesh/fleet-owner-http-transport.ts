@@ -164,7 +164,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
    await this.connect(state,signal);if(tool==='fleet_node_info')return this.info(state,signal);
    if(tool==='create_session'||tool==='fleet_session_page')await this.info(state,signal);
    await assertRemoteCodexAdmission(tool,captured,()=>this.rpc(state,signal,'tools/call',{name:'model_quotas',arguments:{}}));
-   const result=await this.rpc(state,signal,'tools/call',{name:tool==='create_session'?'fleet_create_session':tool,arguments:tool==='create_session'?{...captured,inputId:idempotencyKey}:captured});
+   const result=await this.rpc(state,signal,'tools/call',{name:tool,arguments:tool==='create_session'?{...captured,variant:'fleet',inputId:idempotencyKey}:captured});
    if(['mesh_snapshot','fleet_session_page','session_search_local'].includes(tool)&&unwrapResult(result).hostId!==state.peer.hostId)throw new Error('owner_http_native_identity_mismatch');return result;
   });
  }

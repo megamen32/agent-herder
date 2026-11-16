@@ -427,14 +427,14 @@ export class FleetDirectTransport implements GptAdminTransport {
    await assertRemoteCodexAdmission(tool,args,()=>mesh.call(meshTarget,'model_quotas',{}));
    if(tool==='create_session'){
     if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
-    return mesh.call(meshTarget,'fleet_create_session',{...args,inputId:idempotencyKey});
+    return mesh.call(meshTarget,'create_session',{...args,variant:'fleet',inputId:idempotencyKey});
    }
    return mesh.call(meshTarget,tool,args);
   }
   await assertRemoteCodexAdmission(tool,args,()=>this.rpc(peer,'tools/call',{name:'model_quotas',arguments:{}},this.deadlineMs));
   if(tool==='create_session'){
    if(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey))throw new Error('direct_create_identity_missing');
-   return this.rpc(peer,'tools/call',{name:'fleet_create_session',arguments:{...args,inputId:idempotencyKey}},30000);
+   return this.rpc(peer,'tools/call',{name:'create_session',arguments:{...args,variant:'fleet',inputId:idempotencyKey}},30000);
   }
   const readDeadline=this.readDeadline(peer,'tool',tool);
   return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):readDeadline);

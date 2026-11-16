@@ -59,12 +59,13 @@ describe('mesh-first fleet routing',()=>{
   expect(state.spawns).toHaveLength(1);
   expect(state.spawns[0]!.bin).toBe('/usr/bin/ssh');
  });
- it('maps create_session to the fleet create tool with its idempotency key',async()=>{
+ it('maps remote create_session to the consolidated fleet variant with its idempotency key',async()=>{
   const {mesh,calls}=stubMesh({model_quotas:{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:0,secondary_used:0,allowed:true,limit_reached:false}}]}}});
   const transport=new FleetDirectTransport([remote],10_000,mesh);
   await transport.call('mcp:shell:server-44:AgentHerder','create_session',{harness:'codex'},'a'.repeat(64));
-  expect(calls.map(c=>c.tool)).toEqual(['model_quotas','fleet_create_session']);
-  expect(calls[1]!.args).toMatchObject({harness:'codex',inputId:'a'.repeat(64)});
+  expect(calls.map(c=>c.tool)).toEqual(['model_quotas','create_session']);
+  expect(calls[1]!.args).toMatchObject({harness:'codex',variant:'fleet',inputId:'a'.repeat(64)});
+  expect(calls.some(c=>c.tool==='fleet_create_session')).toBe(false);
  });
  it('serves a remote session read through the verified mesh identity path',async()=>{
   const {mesh,calls}=stubMesh({

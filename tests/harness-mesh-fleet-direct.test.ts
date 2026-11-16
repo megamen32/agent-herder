@@ -120,8 +120,9 @@ describe('owner direct route local logic only',()=>{
   await t.call('mcp:shell:roomhacker-server-88:AgentHerder','create_session',{harness:'codex',name:'empty',cwd:'/home/roomhacker'},'a'.repeat(64));
   // The guard reads the recipient's own quota before the mutation.
   expect(state.spawns[0].body.params.name).toBe('model_quotas');
-  const create=state.spawns.find(s=>s.body.params.name==='fleet_create_session');
-  expect(create?.body.params.arguments.inputId).toBe('a'.repeat(64));
+  const create=state.spawns.find(s=>s.body.params.name==='create_session');
+  expect(create?.body.params.arguments).toMatchObject({variant:'fleet',inputId:'a'.repeat(64)});
+  expect(state.spawns.some(s=>s.body.params.name==='fleet_create_session')).toBe(false);
  });
  it('closed/offline route does not fabricate a response or retry',async()=>{
   state.mode='exit';await expect(new FleetDirectTransport([peer]).schema('mcp:shell:roomhacker-server-88:AgentHerder')).rejects.toThrow('direct_peer_unavailable');expect(state.spawns).toHaveLength(1);

@@ -145,10 +145,11 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='model_quotas')break;}
   const quota=f.calls.at(-1)!;expect(quota.body.params.name).toBe('model_quotas');
   f.respond(quota,{id:quota.body.id,result:{structuredContent:reportedCodexQuota()}});
-  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='fleet_create_session')break;}
-  const create=f.calls.at(-1)!;expect(create.body.params).toMatchObject({name:'fleet_create_session',arguments:{inputId:'a'.repeat(64)}});
+  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='create_session')break;}
+  const create=f.calls.at(-1)!;expect(create.body.params).toMatchObject({name:'create_session',arguments:{variant:'fleet',inputId:'a'.repeat(64)}});
+  expect(f.calls.some(c=>c.body?.params?.name==='fleet_create_session')).toBe(false);
   const rejected=expect(pending).rejects.toThrow('owner_http_deadline');await vi.advanceTimersByTimeAsync(30000);await rejected;
-  expect(f.calls.filter(c=>c.body?.params?.name==='fleet_create_session')).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);
+  expect(f.calls.filter(c=>c.body?.params?.name==='create_session')).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);
  });
  it.each([302,401,404,503])('fails closed HTTP%s with no redirect or retry',async status=>{
   const f=fixture();f.hold();const pending=f.transport.schema(target44);
