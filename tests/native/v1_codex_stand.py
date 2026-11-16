@@ -120,7 +120,7 @@ def adapter_transport(mode, codex, socket, project, codex_home):
             **({'AGENT_HERDER_WORKLOAD_ISOLATION': 'off'} if mode == 'bin' else {})}
 
 
-def prove_owned_child(core_pid, codex, project, codex_home):
+def prove_owned_child(core_pid, codex, expected_home, codex_home, expected_count=1):
     def children(pid):
         path = Path('/proc') / str(pid) / 'task' / str(pid) / 'children'
         return [int(value) for value in path.read_text().split()]
@@ -138,20 +138,29 @@ def prove_owned_child(core_pid, codex, project, codex_home):
                 continue
             if executable == codex:
                 found.append(child)
-    if len(found) != 1:
-        raise ValueError('exact owned Codex child not confirmed')
-    pid = found[0]
-    environ = dict(item.split(b'=', 1) for item in (Path('/proc') / str(pid) / 'environ').read_bytes().split(b'\0') if b'=' in item)
-    if (environ.get(b'HOME') != project.encode() or environ.get(b'CODEX_HOME') != codex_home.encode()
-            or b'OPENAI_API_KEY' in environ or b'OPENAI_API_KEY_ORG' in environ):
-        raise ValueError('Codex child environment invalid')
-    if Path(codex_home, 'auth.json').exists() or Path(project, '.codex/auth.json').exists():
-        raise ValueError('fixture auth file present')
-    child_ns = os.readlink('/proc/%d/ns/net' % pid)
-    if child_ns != os.readlink('/proc/self/ns/net'):
-        raise ValueError('Codex child namespace differs')
-    return {'core_pid': core_pid, 'child_pid': pid, 'executable': codex,
-            'home': project, 'codex_home': codex_home, 'network_namespace': child_ns,
+    if len(found) != expected_count:
+        raise ValueError(f'exact owned Codex child set not confirmed: expected {expected_count}, found {len(found)}')
+    proofs = []
+    for pid in found:
+        environ = dict(item.split(b'=', 1) for item in (Path('/proc') / str(pid) / 'environ').read_bytes().split(b'\0') if b'=' in item)
+        if (environ.get(b'HOME') != expected_home.encode() or environ.get(b'CODEX_HOME') != codex_home.encode()
+                or b'OPENAI_API_KEY' in environ or b'OPENAI_API_KEY_ORG' in environ):
+            raise ValueError('Codex child environment invalid')
+        if Path(codex_home, 'auth.json').exists() or Path(expected_home, '.codex/auth.json').exists():
+            raise ValueError('fixture auth file present')
+        child_ns = os.readlink('/proc/%d/ns/net' % pid)
+        if child_ns != os.readlink('/proc/self/ns/net'):
+            raise ValueError('Codex child namespace differs')
+        proofs.append({'pid': pid, 'network_namespace': child_ns})
+    if expected_count == 1:
+        pid = proofs[0]['pid']
+        return {'core_pid': core_pid, 'child_pid': pid, 'executable': codex,
+                'home': expected_home, 'codex_home': codex_home,
+                'network_namespace': proofs[0]['network_namespace'],
+                'same_network_namespace': True, 'openai_api_key_present': False,
+                'openai_api_key_org_present': False, 'auth_files_present': False}
+    return {'core_pid': core_pid, 'child_count': expected_count, 'children': proofs,
+            'executable': codex, 'home': expected_home, 'codex_home': codex_home,
             'same_network_namespace': True, 'openai_api_key_present': False,
             'openai_api_key_org_present': False, 'auth_files_present': False}
 
@@ -256,7 +265,11 @@ def main():
         parser.add_argument('--' + key, required=True)
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--transport', choices=('bin', 'socket'), default='bin')
+    parser.add_argument('--native-rust', action='store_true',
+                        help='run the script-less Rust Codex adapter instead of AHAP')
     args = parser.parse_args()
+    if args.native_rust and args.transport != 'bin':
+        raise ValueError('Rust Codex adapter requires the direct app-server binary transport')
     identity = validate_inputs(args)
     base = os.environ.get('HERDER_TEST_MODEL_BASE_URL', '')
     url = urllib.parse.urlsplit(base)
@@ -294,18 +307,32 @@ def main():
         raise RuntimeError('fixture bootstrap failed')
     seed = parse_fresh_seed(seed_process.stdout, protected)
     profile_path = Path(seed['profile_seed']).parent / 'profile.json'
+    if args.native_rust:
+        # A script-less codex profile is the explicit production switch for the
+        # Rust adapter. CodexConnection owns the child and supplies CODEX_HOME
+        # itself, so no AHAP runner or adapter environment may cross the profile
+        # boundary.
+        owner = {'kind': 'codex', 'principal': 'isolated-codex-owner',
+                 'node': 'isolated-native-node', 'instance': instance,
+                 'executable': str(args.codex), 'code_home': str(codex_home),
+                 'cwd': str(project)}
+    else:
+        owner = {'kind': 'codex', 'principal': 'isolated-codex-owner',
+                 'node': 'isolated-native-node', 'instance': instance,
+                 'executable': str(args.node), 'ahap_script': str(args.adapter),
+                 'code_home': str(project), 'cwd': str(project),
+                 'ahap_env': adapter_transport(args.transport, args.codex, str(socket), str(project), str(codex_home))}
     profile = {'database': seed['database'], 'gate': seed['gate'], 'generation': seed['generation'],
-               'owner': {'kind': 'codex', 'principal': 'isolated-codex-owner', 'node': 'isolated-native-node',
-                         'instance': instance, 'executable': args.node, 'ahap_script': args.adapter,
-                         'code_home': str(project), 'cwd': str(project),
-                         'ahap_env': adapter_transport(args.transport, args.codex, str(socket), str(project), str(codex_home))}}
+               'owner': owner}
     fd = os.open(profile_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as stream:
         json.dump(profile, stream)
     core = RpcProcess(args.core, profile_path, dict(os.environ))
     try:
         tools = probe_native_tools(core)
-        child_proof = prove_owned_child(core.process.pid, args.codex, str(project), str(codex_home)) if args.transport == 'bin' else None
+        expected_home = str(codex_home if args.native_rust else project)
+        child_count = 3 if args.native_rust else 1
+        child_proof = prove_owned_child(core.process.pid, args.codex, expected_home, str(codex_home), child_count) if args.transport == 'bin' else None
         with urllib.request.urlopen(base[:-3] + '/_stats', timeout=5) as response:
             stats = json.load(response)
         if stats['requests'] != 0:
@@ -318,6 +345,7 @@ def main():
         if evidence_path.exists():
             raise RuntimeError('prior receipt exists; refusing replay')
         evidence = {'result': 'PREMUTATION_READY', 'phase': 'preflight', 'no_replay': True,
+                    'adapter': 'rust-native' if args.native_rust else 'ahap',
                     'run_id': run_id, 'instance': instance, 'first_input': marker,
                     'first_key': key, 'second_input': second, 'second_key': second_key, **identity}
         persist_evidence(evidence_path, evidence)
@@ -346,7 +374,8 @@ def main():
         evidence.update(phase='second_submitted', result='UNKNOWN')
         persist_evidence(evidence_path, evidence)
         delivered = rpc_tool(core, 'deliver', {'action': 'session', 'session_ref': session,
-                             'message': second, 'mode': 'queue', 'request_key': second_key})
+                             'message': second, 'mode': 'start' if args.native_rust else 'queue',
+                             'request_key': second_key})
         if not isinstance(delivered, dict) or delivered.get('resultType') != 'task' or not isinstance(delivered.get('taskId'), str) or not delivered['taskId']:
             raise RuntimeError('second deliver outcome unknown: no task receipt; no replay')
         second_id = delivered['taskId']

@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { chmod, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { chmod, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { getuid } from "node:process";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { releaseProject } from "../src/mcp/project-release-tools.js";
+import { hostname } from "node:os";
+import { executeProjectRelease, releaseProject } from "../src/mcp/project-release-tools.js";
+import { emptyHarnessRuntimeSettings, setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 
 describe("releaseProject git identity", () => {
   it("resolves the same common Git directory from main checkout and linked worktree", async () => {
@@ -19,6 +21,50 @@ describe("releaseProject git identity", () => {
       expect(await releaseProject(repo)).toBe(common);
       expect(await releaseProject(linked)).toBe(common);
     } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("native release owner binding", () => {
+  it("derives the current Codex owner from request metadata and releases the same lease", async () => {
+    const base = await mkdtemp(join(tmpdir(), "herder-native-release-owner-"));
+    const repo = join(base, "repo"), settings = join(base, "settings.json"), ledger = join(base, "leases.json");
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      await writeFile(settings, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }));
+      setHarnessRuntimeSettingsPathForTests(settings);
+      const { ProjectReleaseLeaseStore } = await import("../src/project-release-lease.js");
+      const store = new ProjectReleaseLeaseStore(ledger);
+      const acquired = await executeProjectRelease({ action: "acquire", cwd: repo, ttlSeconds: 30 }, store,
+        { harness: "codex", sessionId: "01a1native-owner" });
+      expect(acquired).toMatchObject({ authorityHost: hostname(), acquired: true,
+        lease: { owner: { hostId: hostname(), harness: "codex", nativeSessionId: "01a1native-owner" } } });
+      expect((acquired.lease as { owner: { process?: { pid: number } } }).owner.process?.pid).toBe(process.pid);
+      await executeProjectRelease({ action: "release", cwd: repo, token: acquired.token, fence: acquired.lease.fence }, store,
+        { harness: "codex", sessionId: "01a1native-owner" });
+      await expect(store.status(await realpath(join(repo, ".git")))).resolves.toMatchObject({ lease: null });
+    } finally {
+      setHarnessRuntimeSettingsPathForTests(undefined);
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an explicit owner that disagrees with native caller metadata before acquisition", async () => {
+    const base = await mkdtemp(join(tmpdir(), "herder-native-release-mismatch-"));
+    const repo = join(base, "repo"), settings = join(base, "settings.json"), ledger = join(base, "leases.json");
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      await writeFile(settings, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }));
+      setHarnessRuntimeSettingsPathForTests(settings);
+      const { ProjectReleaseLeaseStore } = await import("../src/project-release-lease.js");
+      const store = new ProjectReleaseLeaseStore(ledger);
+      await expect(executeProjectRelease({ action: "acquire", cwd: repo, ttlSeconds: 30,
+        owner: { hostId: hostname(), harness: "codex", nativeSessionId: "forged" } }, store,
+        { harness: "codex", sessionId: "01a1native-owner" })).rejects.toThrow("release_lease_caller_identity_mismatch");
+      await expect(store.status(await realpath(join(repo, ".git")))).resolves.toMatchObject({ lease: null });
+    } finally {
+      setHarnessRuntimeSettingsPathForTests(undefined);
       await rm(base, { recursive: true, force: true });
     }
   });

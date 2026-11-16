@@ -1,4 +1,4 @@
-import { realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { hostname } from "node:os";
 import { execFile } from "node:child_process";
@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { projectReleaseLeases, type ProjectReleaseLeaseStore } from "../project-release-lease.js";
+import { callerSessionFromMcpContext, type CallerSession } from "./caller-session.js";
 
 const run = promisify(execFile);
 /** All worktrees of a repository share its git common directory. */
@@ -40,21 +41,55 @@ const schema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   fence: z.number().int().positive().optional(),
 }).strict();
-export async function executeProjectRelease(input: unknown, store: ProjectReleaseLeaseStore) {
+async function currentProcessIdentity() {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const [bootId, statText] = await Promise.all([
+      readFile("/proc/sys/kernel/random/boot_id", "utf8"),
+      readFile("/proc/" + process.pid + "/stat", "utf8"),
+    ]);
+    const closingParen = statText.lastIndexOf(")");
+    if (closingParen < 0) return undefined;
+    const fields = statText.slice(closingParen + 2).trim().split(/\s+/);
+    const startTicks = Number(fields[19]);
+    if (!Number.isSafeInteger(startTicks) || startTicks <= 0) return undefined;
+    return { pid: process.pid, bootId: bootId.trim(), startTicks };
+  } catch {
+    return undefined;
+  }
+}
+
+function sameCallerOwner(owner: { hostId: string; harness: string; nativeSessionId: string }, caller: CallerSession) {
+  return owner.hostId === hostname() && owner.harness === caller.harness && owner.nativeSessionId === caller.sessionId;
+}
+
+async function bindOwner(owner: z.infer<typeof ownerSchema> | undefined, caller: CallerSession | null) {
+  if (!caller) return owner;
+  if (owner && !sameCallerOwner(owner, caller)) throw new Error("release_lease_caller_identity_mismatch");
+  return {
+    hostId: hostname(),
+    harness: caller.harness,
+    nativeSessionId: caller.sessionId,
+    process: await currentProcessIdentity(),
+  };
+}
+
+export async function executeProjectRelease(input: unknown, store: ProjectReleaseLeaseStore, caller: CallerSession | null = null) {
     const args = schema.parse(input);
     const project = await releaseProject(args.cwd);
+    const owner = await bindOwner(args.owner, caller);
     let result: unknown;
     if (args.action === "status") result = await store.status(project);
     else {
-      if (!args.owner) throw new Error("release_lease_owner_required");
-      if (args.owner.hostId !== hostname()) throw new Error("release_lease_use_owner_authority_host");
+      if (!owner) throw new Error("release_lease_owner_required");
+      if (owner.hostId !== hostname()) throw new Error("release_lease_use_owner_authority_host");
       if (args.action === "acquire") {
         const target = args.deploymentTarget ? { fleetDir: await realpath(args.deploymentTarget.fleetDir), unit: args.deploymentTarget.unit } : undefined;
-        result = await store.acquire(project, args.owner, args.ttlSeconds, target);
+        result = await store.acquire(project, owner, args.ttlSeconds, target);
       }
       else {
         if (!args.token || !args.fence) throw new Error("release_lease_proof_required");
-        const proof = { owner: args.owner, token: args.token, fence: args.fence };
+        const proof = { owner, token: args.token, fence: args.fence };
         result = args.action === "renew" ? await store.renew(project, proof, args.ttlSeconds)
           : args.action === "release" ? await store.release(project, proof) : await store.check(project, proof);
       }
@@ -66,8 +101,8 @@ export function registerProjectReleaseTools(server: McpServer, store: ProjectRel
   server.registerTool("project_release_lease", {
     description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. New owner records may include process:{pid,bootId,startTicks} alongside the native session; when release occupancy is explicitly enabled that identity is required and checked. When the runtime capability is off or unknown, acquisition and guard are bypassed so ordinary work continues without a blocking lease. A lease grants no command, merge or deployment authorization.",
     inputSchema: schema,
-  }, async args => {
-    const result = await executeProjectRelease(args, store);
+  }, async (args, context) => {
+    const result = await executeProjectRelease(args, store, callerSessionFromMcpContext(context));
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   });
   server.registerTool("project_integration", {

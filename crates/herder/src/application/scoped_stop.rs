@@ -29,7 +29,8 @@ use crate::domain::address::SessionRef;
 use crate::{
     application::{
         reconcile::{
-            DurableDispatch, ReceiptBinding, StoreReceipt, dispatch_payload_binding_with_sender,
+            DurableDispatch, ReceiptBinding, StoreReceipt, StoredReceipt,
+            dispatch_payload_binding_with_sender, load_native_receipt,
             store_native_receipt_with_sender,
         },
         target_gate::{PinnedTargetGateGuard, acquire_pinned, acquire_pinned_wait},
@@ -97,6 +98,15 @@ pub enum InterruptDisposition {
     InterruptAcknowledged,
     InterruptNotSent,
     InterruptUnknown,
+}
+
+/// An owned binding selected from the authoritative delivery ledger for a
+/// session stop. The stop request key is only an idempotency preference; the
+/// native turn is identified by the stored receipt bound to its intent.
+pub struct NativeInterruptBinding {
+    pub intent_id: String,
+    pub request_key: String,
+    pub address: crate::domain::address::SessionAddress,
 }
 
 /// Only a trusted native adapter that can prove an isolated root creation may
@@ -812,6 +822,58 @@ impl ScopedAuthority {
         };
         writer.connection().execute("UPDATE humanstop_interrupts SET state=?2,updated_at=?3 WHERE intent_id=?1 AND state='dispatching'",params![b.intent_id,state,now]).map_err(|_|GateError::Store)?;
         Ok(disposition)
+    }
+
+    /// Find the exact durable native receipt to interrupt for one session.
+    /// Prefer a matching request key when a caller supplies one, then use the
+    /// newest stored receipt. Invalid or missing receipts are skipped and never
+    /// become permission to send a new native command.
+    pub fn find_native_interrupt_binding(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        session: &SessionRef,
+        instance: &crate::domain::address::InstanceRef,
+        preferred_request_key: &str,
+    ) -> Result<Option<NativeInterruptBinding>, GateError> {
+        let (address, _) = self.resolve_session_read(identity, grants, session, instance)?;
+        let (_gate, writer) = self.lock()?;
+        let principal = match identity.caller() {
+            Caller::Principal(principal) => principal.id.0.clone(),
+            _ => return Err(GateError::Invalid),
+        };
+        let mut statement = writer
+            .connection()
+            .prepare(
+                "SELECT intent_id,request_key FROM intents WHERE principal=?1 AND target=?2 AND native_receipt IS NOT NULL AND state IN ('dispatching','admitted','unknown','confirmed') ORDER BY CASE WHEN request_key=?3 THEN 0 ELSE 1 END, updated_at DESC, intent_id DESC",
+            )
+            .map_err(|_| GateError::Store)?;
+        let rows = statement
+            .query_map(
+                params![principal, session.0, preferred_request_key],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|_| GateError::Store)?;
+        for row in rows {
+            let (intent_id, request_key) = row.map_err(|_| GateError::Store)?;
+            let binding = ReceiptBinding {
+                intent_id: &intent_id,
+                principal: &principal,
+                target_ref: &session.0,
+                request_key: &request_key,
+                address: &address,
+            };
+            if let StoredReceipt::Found(receipt) = load_native_receipt(writer.connection(), &binding)
+                .map_err(|_| GateError::Store)?
+            {
+                return Ok(Some(NativeInterruptBinding {
+                    intent_id,
+                    request_key,
+                    address: receipt.target,
+                }));
+            }
+        }
+        Ok(None)
     }
 }
 

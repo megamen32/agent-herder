@@ -16,6 +16,7 @@ use herder::{
         adapter::{Admission, DispatchPlan, NativeReceipt, RequestKey, SendMode, SubmitError},
         address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
     },
+    mcp::{catalog, transport::ApplicationPort},
     store::{Writer, intents::NewIntent},
 };
 use rusqlite::{Connection, functions::FunctionFlags};
@@ -645,6 +646,68 @@ impl herder::application::scoped_stop::BoundedNativeInterrupt for Interrupt {
         }
     }
 }
+
+#[tokio::test]
+async fn rust_owner_stop_selects_confirmed_receipt_and_deduplicates_interrupt() {
+    use herder::application::scoped_stop::mcp_stop::ScopedStopApplication;
+
+    let f = Fixture::new();
+    create(&f);
+    let p = plan();
+    f.prepare("i", "k", &p);
+    let a = address();
+    let b = binding(&a, "i", "k");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let handoff = Control {
+        calls,
+        db: f.db.clone(),
+        ready: None,
+        proceed: None,
+    };
+    assert!(matches!(
+        f.authority()
+            .claim(&identity(), &grants(), &b, "scope-1", &p, "message", "t")
+            .unwrap(),
+        true
+    ));
+    assert!(matches!(
+        f.authority()
+            .handoff(&identity(), &grants(), &b, "scope-1", p, "message", "t", &handoff)
+            .unwrap(),
+        DurableDispatch::Admitted(_)
+    ));
+
+    let interrupt = Arc::new(Interrupt {
+        calls: AtomicUsize::new(0),
+        lost: false,
+    });
+    let mut stop_grants = grants();
+    stop_grants.push(Grant {
+        principal: PrincipalId("alice".into()),
+        resource: PrivateResource::Session(SessionRef("issued".into())),
+        action: Action::Read,
+    });
+    let app = ScopedStopApplication::new_with_interrupt(
+        f.authority(),
+        a.instance,
+        stop_grants,
+        interrupt.clone(),
+    );
+    let request = || {
+        catalog::Request::Stop(catalog::Stop::Stop {
+            session_ref: "issued".into(),
+            request_key: "stop-key".into(),
+        })
+    };
+    let first = app.call(&identity(), request()).await.unwrap();
+    assert_eq!(first.structured_content.as_ref().unwrap()["native_interrupt"], "acknowledged");
+    assert_eq!(interrupt.calls.load(Ordering::SeqCst), 1);
+    let calls_after_first = interrupt.calls.load(Ordering::SeqCst);
+    let second = app.call(&identity(), request()).await.unwrap();
+    assert_eq!(second.structured_content.as_ref().unwrap()["native_interrupt"], "acknowledged");
+    assert_eq!(interrupt.calls.load(Ordering::SeqCst), calls_after_first);
+}
+
 #[test]
 fn lost_handoff_is_unknown_and_never_replayed() {
     let f = Fixture::new();
