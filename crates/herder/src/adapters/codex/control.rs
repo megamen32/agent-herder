@@ -123,9 +123,9 @@ impl std::error::Error for RequestLookupError {}
 
 struct ControlState {
     connection: CodexConnection,
-    /// A new thread can receive its first turn only through this control object.
+    /// Only threads created by this control object may receive turn/start.
     /// This is a local scope check, not a native concurrency fence.
-    fresh_threads: HashSet<String>,
+    owned_threads: HashSet<String>,
 }
 
 /// A single native Codex app-server connection bound to one configured instance.
@@ -182,7 +182,7 @@ impl CodexControl {
             timeout,
             state: Mutex::new(ControlState {
                 connection,
-                fresh_threads: HashSet::new(),
+                owned_threads: HashSet::new(),
             }),
         })
     }
@@ -224,7 +224,7 @@ impl CodexControl {
             });
         };
         let thread_id = thread_id.to_owned();
-        state.fresh_threads.insert(thread_id.clone());
+        state.owned_threads.insert(thread_id.clone());
         Ok(SessionAddress {
             instance: self.instance.clone(),
             native_session_id: thread_id,
@@ -603,9 +603,9 @@ impl CodexControl {
             let mut state = self.state.try_lock().map_err(|_| SubmitError::DefinitelyNotSent {
                 reason: "Codex control connection is busy or unavailable".into(),
             })?;
-            if method == "turn/start" && !state.fresh_threads.remove(&plan.target.native_session_id) {
+            if method == "turn/start" && !state.owned_threads.contains(&plan.target.native_session_id) {
                 return Err(SubmitError::DefinitelyNotSent {
-                    reason: "Codex turn/start is allowed only on a fresh thread created by this control instance".into(),
+                    reason: "Codex turn/start is allowed only on a thread created by this control instance".into(),
                 });
             }
             state.connection.request(method, params, self.timeout)

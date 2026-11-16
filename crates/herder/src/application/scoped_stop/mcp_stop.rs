@@ -1,10 +1,16 @@
 //! Exact scoped hold through the MCP application boundary.
 //!
 //! Authentication belongs to ingress; this application never interprets MCP
-//! metadata as identity. The stop response does not claim native interruption.
+//! metadata as identity. Native interruption is reported only from the exact
+//! Rust owner port and its durable receipt binding.
 use crate::{
-    application::scoped_stop::{GateError, ScopedAuthority, StopDisposition},
-    auth::identity::{Action, ConnectionIdentity, Grant, PrivateResource},
+    application::{
+        scoped_stop::{
+            BoundedNativeInterrupt, GateError, InterruptAttempt, InterruptDisposition,
+            ScopedAuthority, StopDisposition,
+        },
+    },
+    auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::address::{InstanceRef, SessionRef},
     mcp::{
         catalog,
@@ -14,24 +20,59 @@ use crate::{
 use rmcp::model::CallToolResult;
 use rusqlite::{TransactionBehavior, params};
 use serde_json::json;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub struct ScopedStopApplication {
+/// Compatibility stop application. Native interruption is opt-in because the
+/// OpenCode compatibility owner has no Rust interrupt port.
+pub struct ScopedStopApplication<C = NoNativeInterrupt> {
     authority: ScopedAuthority,
     instance: InstanceRef,
     grants: Vec<Grant>,
+    control: Option<Arc<C>>,
 }
-impl ScopedStopApplication {
+pub struct NoNativeInterrupt;
+impl BoundedNativeInterrupt for NoNativeInterrupt {
+    fn interrupt_exact(
+        &self,
+        _target: &crate::domain::address::SessionAddress,
+        _native_turn_id: &str,
+    ) -> InterruptAttempt {
+        InterruptAttempt::DefinitelyNotSent
+    }
+}
+impl ScopedStopApplication<NoNativeInterrupt> {
     /// The instance and grants come from server policy, never from a request.
     pub fn new(authority: ScopedAuthority, instance: InstanceRef, grants: Vec<Grant>) -> Self {
         Self {
             authority,
             instance,
             grants,
+            control: None,
         }
     }
 }
-impl ApplicationPort for ScopedStopApplication {
+impl<C> ScopedStopApplication<C> {
+    /// Enable the exact native interrupt port owned by the Rust composition.
+    /// The durable receipt binding is still derived inside this boundary.
+    pub fn new_with_interrupt(
+        authority: ScopedAuthority,
+        instance: InstanceRef,
+        grants: Vec<Grant>,
+        control: Arc<C>,
+    ) -> Self {
+        Self {
+            authority,
+            instance,
+            grants,
+            control: Some(control),
+        }
+    }
+}
+
+impl<C: BoundedNativeInterrupt + Send + Sync + 'static> ApplicationPort
+    for ScopedStopApplication<C>
+{
     fn call<'a>(
         &'a self,
         identity: &'a ConnectionIdentity,
@@ -74,17 +115,67 @@ impl ApplicationPort for ScopedStopApplication {
                     ));
                 }
             };
-            match self.authority.stop_exact_session(
-                identity,
-                &self.grants,
-                &session,
-                &self.instance,
-                &now,
-            ) {
-                Ok(StopDisposition::HeldBeforeHandoff) => Some(CallToolResult::structured(
+            let result = if let Some(control) = self.control.as_deref() {
+                let binding = match self.authority.find_native_interrupt_binding(
+                    identity,
+                    &self.grants,
+                    &session,
+                    &self.instance,
+                    &request_key,
+                ) {
+                    Ok(Some(binding)) => Some(binding),
+                    Ok(None) => None,
+                    Err(_) => {
+                        return Some(CallToolResult::structured_error(
+                            json!({"code":"scope_unavailable","effect":"none"}),
+                        ));
+                    }
+                };
+                if let Some(binding) = binding {
+                    let principal = match identity.caller() {
+                        Caller::Principal(principal) => principal.id.0.clone(),
+                        _ => return Some(CallToolResult::structured_error(json!({"code":"unauthorized","effect":"none"}))),
+                    };
+                    let receipt_binding = crate::application::reconcile::ReceiptBinding {
+                        intent_id: &binding.intent_id,
+                        principal: &principal,
+                        target_ref: &session.0,
+                        request_key: &binding.request_key,
+                        address: &binding.address,
+                    };
+                    self.authority
+                        .stop_session_and_interrupt(identity, &self.grants, &receipt_binding, "mcp_stop", &now, control)
+                } else {
+                    self.authority
+                        .stop_exact_session(identity, &self.grants, &session, &self.instance, &now)
+                        .map(|disposition| match disposition {
+                            StopDisposition::HeldBeforeHandoff => InterruptDisposition::HeldBeforeHandoff,
+                            StopDisposition::InterruptOrReconcileRequired => InterruptDisposition::InterruptUnknown,
+                        })
+                }
+            } else {
+                self.authority.stop_exact_session(
+                    identity,
+                    &self.grants,
+                    &session,
+                    &self.instance,
+                    &now,
+                ).map(|disposition| match disposition {
+                    StopDisposition::HeldBeforeHandoff => InterruptDisposition::HeldBeforeHandoff,
+                    StopDisposition::InterruptOrReconcileRequired => InterruptDisposition::InterruptUnknown,
+                })
+            };
+            match result {
+                Ok(InterruptDisposition::HeldBeforeHandoff) => Some(CallToolResult::structured(
                     json!({"session_ref":session.0,"hold":"active","native_interrupt":"not_attempted_no_known_handoff"}),
                 )),
-                Ok(StopDisposition::InterruptOrReconcileRequired) => {
+                Ok(InterruptDisposition::InterruptAcknowledged) => Some(CallToolResult::structured(
+                    json!({"session_ref":session.0,"hold":"active","native_interrupt":"acknowledged"}),
+                )),
+                Ok(InterruptDisposition::InterruptNotSent) => Some(CallToolResult::structured(
+                    json!({"session_ref":session.0,"hold":"active","native_interrupt":"not_sent"}),
+                )),
+                Ok(InterruptDisposition::InterruptUnknown) => {
                     Some(CallToolResult::structured(
                         json!({"session_ref":session.0,"hold":"active","native_interrupt":"required_or_reconcile"}),
                     ))
