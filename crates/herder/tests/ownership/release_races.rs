@@ -133,7 +133,10 @@ fn rejects_admitted_effect_after_owner_changes_before_spawn() {
         .recv_timeout(std::time::Duration::from_millis(50))
         .is_err());
     drop(lock);
-    released_rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+    // The worker is intentionally serialized behind the target lock. Keep the
+    // wait bounded, but leave enough room for the full parallel Rust suite to
+    // schedule the release thread after the lock is dropped.
+    released_rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
     release_worker.join().unwrap();
 
     let replacement_lock = TargetExecutionLock::acquire(

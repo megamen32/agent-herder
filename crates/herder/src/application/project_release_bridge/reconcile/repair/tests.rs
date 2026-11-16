@@ -139,11 +139,17 @@ impl Fixture {
             "execution_root":root.join("executions"),"resources":authority,"administrators":["repair-owner"]}),
         );
         let config = root.join("config.json");
+        let runtime_settings = root.join("harness-runtime-settings.json");
         let ledger = root.join("ledger.json");
+        private(
+            &runtime_settings,
+            &json!({"version":1,"releaseOccupancyEnabled":true}),
+        );
         private(
             &config,
             &json!({"version":1,"process_config":process,"ledger":ledger,"seal_id":"repair-seal",
-            "principal_ref":"repair-owner","mappings":[{"project":project,"resource_ref":resource,"revision":1,
+            "principal_ref":"repair-owner","runtime_settings_path":runtime_settings,
+            "mappings":[{"project":project,"resource_ref":resource,"revision":1,
                 "previous_fence":121,"deployment_target":{"fleetDir":fleet,"unit":target_unit}}]}),
         );
         private(
@@ -151,7 +157,9 @@ impl Fixture {
             &json!({"version":2,"canonical":{"version":1,"config":config,"bridge":executable,
             "seal_id":"repair-seal"},"projects":{}}),
         );
-        let owner = json!({"hostId":"fixture-host","harness":"fixture","nativeSessionId":"fixture-session"});
+        let owner_process = identity(std::process::id());
+        let owner = json!({"hostId":"fixture-host","harness":"fixture","nativeSessionId":"fixture-session",
+            "process":{"pid":owner_process.pid,"bootId":owner_process.boot_id,"startTicks":owner_process.start_ticks}});
         let token = "a".repeat(64);
         let mut bridge = Bridge::open_registered(&config, &executable).unwrap();
         let acquired = bridge
