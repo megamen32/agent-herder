@@ -1,0 +1,42 @@
+{
+  "kind": "agent-herder-live-installed-consumer-readback",
+  "observedAt": "2026-11-16T12:29:38Z",
+  "source": {
+    "sha": "d19105d0278c546cc4a4b8bb39becd3d0f56664e",
+    "bundleFingerprint": "4508a615e8e9c7c7a1dec7291e4339aae6047a0031a4bb76aad11602490abc44",
+    "distIndexSha256": "3c2c93e9782d5ab1f3680112cef0595506a3386ee0ca614ba95bfaecd53a116e",
+    "buildManifest": "/home/roomhacker/agents-projects/.fleet-candidate/releases/d19105d0278c546cc4a4b8bb39becd3d0f56664e/build-manifest.json"
+  },
+  "installedRuntime": {
+    "service": "agent-herder.service",
+    "pid": 2082917,
+    "startedAt": "2026-11-16T12:06:08Z",
+    "execRelease": "/home/roomhacker/agents-projects/.fleet-candidate/releases/d19105d0278c546cc4a4b8bb39becd3d0f56664e/dist/index.js",
+    "state": "active/running"
+  },
+  "ordinaryMcpConsumer": {
+    "endpoint": "http://127.0.0.1:18787/mcp",
+    "initialize": "200",
+    "toolsList": 48,
+    "exactSessionReadback": {
+      "requestedReference": "ses_eac7ce778ffeFIOQrMsi8BFRzl",
+      "canonicalSessionId": "ses_eac7ce778ffeFIOQrMsi8BFRzl",
+      "harness": "opencode",
+      "hostId": "roomhacker-server-100",
+      "status": "running",
+      "cwd": "/home/roomhacker/PycharmProjects/TelegramAuto",
+      "messagesReturned": 6,
+      "readback": "confirmed_after_installed_runtime_restart"
+    },
+    "exactSearch": "the same native session id was returned by the fleet search route"
+  },
+  "meshSnapshot": {
+    "hostId": "roomhacker-server-100",
+    "complete": false,
+    "limited": true,
+    "opencodeDiscovery": "available",
+    "opencodeDelivery": "native_admission_receipt_unverified"
+  },
+  "result": "installed_exact_session_readback_pass",
+  "scopeNote": "This receipt closes installed exact-session readback. It does not claim OpenCode native delivery or the broader cross-host adapter matrix complete."
+}
