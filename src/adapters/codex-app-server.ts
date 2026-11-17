@@ -158,13 +158,13 @@ export interface CodexTrustedTransportOverride {
   config: Readonly<Record<string, unknown>>;
 }
 
-const canonicalCompatUpstream = "https://chatgpt.com/backend-api/codex";
+const canonicalCompatUpstream = "http://127.0.0.1:18127/backend-api/codex";
 function validateTrustedTransportOverrides(value: ReadonlyMap<string, Readonly<Record<string, unknown>>>): ReadonlyMap<string, Readonly<Record<string, unknown>>> {
   for (const [threadId, config] of value) {
     if (!threadId || !/^[A-Za-z0-9_-]{8,256}$/.test(threadId)) throw new Error("trusted transport override thread id invalid");
     const keys = Object.keys(config).sort();
-    if (keys.some((key) => !["openai_base_url", "compression"].includes(key))) throw new Error("trusted transport override contains an unapproved key");
-    if (config.openai_base_url !== canonicalCompatUpstream || config.compression !== false) throw new Error("trusted transport override is not the canonical compressed=false transport");
+    if (keys.some((key) => !["openai_base_url", "features"].includes(key))) throw new Error("trusted transport override contains an unapproved key");
+    if (config.openai_base_url !== canonicalCompatUpstream || JSON.stringify(config.features) !== JSON.stringify({enable_request_compression:false})) throw new Error("trusted transport override is not the canonical loopback compressed=false transport");
   }
   return value;
 }
@@ -2047,7 +2047,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         storedProvider = read.thread.modelProvider;
       }
       const transportConfig = this.trustedTransportOverrides.get(id);
-      if (transportConfig && this.trustedTransportPreflight && !await this.trustedTransportPreflight(id)) {
+      if (transportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(id))) {
         throw new Error("trusted transport override requires a confirmed writer-free cold thread");
       }
       const result = await this.request("thread/resume", {
@@ -2196,13 +2196,17 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (!sessionId) return { ok: false, error: "Codex model changes require a session id with app-server" };
     if (this.projectRuntimePolicy && model !== this.projectRuntimePolicy.modelId) return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
     if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot change a foreign thread" };
+    const trustedTransportConfig = this.trustedTransportOverrides.get(sessionId);
+    if (trustedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
+      return { ok: false, nonRetryable: true, error: "trusted transport override requires a confirmed writer-free cold thread" };
+    }
     try {
       await this.ensureReady();
       const result = await this.request("thread/resume", {
         threadId: sessionId,
         model,
         ...(this.threads.get(sessionId)?.modelProvider ? { modelProvider: this.threads.get(sessionId)!.modelProvider } : {}),
-        ...(this.trustedTransportOverrides.get(sessionId) ? { config: this.trustedTransportOverrides.get(sessionId) } : {}),
+        ...(trustedTransportConfig ? { config: trustedTransportConfig } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (result.thread && result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;

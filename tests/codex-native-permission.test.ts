@@ -26,8 +26,9 @@ it("applies a trusted transport override only to its exact saved-provider thread
   const adapter = new CodexAppServerAdapter({
     socketPath: "/unused-test-socket",
     trustedTransportOverrides: new Map([
-      ["broker-thread", { openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false }],
+      ["broker-thread", { openai_base_url: "http://127.0.0.1:18127/backend-api/codex", features: {enable_request_compression: false} }],
     ]),
+    trustedTransportPreflight: async () => true,
   });
   const internals = adapter as any;
   const calls: Array<{ method: string; params: any }> = [];
@@ -40,7 +41,7 @@ it("applies a trusted transport override only to its exact saved-provider thread
   };
   await expect(adapter.resumeSession("broker-thread")).resolves.toEqual({ ok: true });
   await expect(adapter.resumeSession("other-thread")).resolves.toEqual({ ok: true });
-  expect(calls[0].params.config).toEqual({ openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false });
+  expect(calls[0].params.config).toEqual({ openai_base_url: "http://127.0.0.1:18127/backend-api/codex", features: {enable_request_compression: false} });
   expect(calls[1].params).not.toHaveProperty("config");
   await adapter.dispose();
 });
@@ -48,7 +49,7 @@ it("applies a trusted transport override only to its exact saved-provider thread
 it("fails closed when an exact-thread override lacks a writer-free preflight", async () => {
   const adapter = new CodexAppServerAdapter({
     socketPath: "/unused-test-socket",
-    trustedTransportOverrides: new Map([["broker-thread", { openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false }]]),
+    trustedTransportOverrides: new Map([["broker-thread", { openai_base_url: "http://127.0.0.1:18127/backend-api/codex", features: {enable_request_compression: false} }]]),
     trustedTransportPreflight: async () => false,
   });
   const internals = adapter as any;
