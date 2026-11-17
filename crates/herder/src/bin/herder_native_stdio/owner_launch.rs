@@ -218,6 +218,9 @@ impl ApplicationPort for OwnerApp {
     }
 }
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
+    if has_native_opencode_binding(&opened.owner) {
+        return super::owner_native_opencode::serve(opened).await;
+    }
     // Codex profiles may retain an AHAP field for older manifests, but their
     // exact native executable/profile binding is now consumed directly by the
     // Rust app-server adapter. Other harnesses retain their legacy owner port.
@@ -400,4 +403,8 @@ pub(super) fn has_native_codex_binding(owner: &super::scoped_profile::OwnerProfi
         && ["AHAP_CODEX_BIN", "CODEX_HOME", "AHAP_CODEX_CWD"]
             .iter()
             .all(|name| owner.ahap_env.contains_key(*name))
+}
+
+pub(super) fn has_native_opencode_binding(owner: &super::scoped_profile::OwnerProfile) -> bool {
+    owner.kind == "opencode" && owner.ahap_script.is_none() && owner.ahap_base_url.is_some()
 }

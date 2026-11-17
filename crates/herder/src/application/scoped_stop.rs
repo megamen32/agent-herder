@@ -23,6 +23,7 @@ pub mod process_automation;
 pub mod automation_driver;
 pub mod wait_automation;
 mod wait_sources;
+pub use wait_sources::{NativeTurn, NativeTurnStatus};
 
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
 use crate::domain::address::SessionRef;

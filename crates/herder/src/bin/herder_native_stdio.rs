@@ -22,6 +22,10 @@ mod owner_registration;
 mod owner_launch;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "herder_native_stdio/owner_native_opencode.rs"]
+mod owner_native_opencode;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_policy.rs"]
 mod owner_policy;
 

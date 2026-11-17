@@ -405,6 +405,25 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     }
     match owner.kind.as_str() {
         "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() && owner.ahap_env.is_empty() => (),
+        "opencode" if owner.ahap_script.is_none() && owner.ahap_base_url.is_some() => {
+            trusted_executable(&owner.executable)?;
+            let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
+            if !matches!(url.scheme(), "http" | "https")
+                || url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                return Err(invalid().into());
+            }
+            for (key, value) in &owner.ahap_env {
+                if !allowed_adapter_env(&owner.kind, key) || value.contains('\0') || value.len() > 8192 {
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput,
+                        format!("unsupported adapter environment key {key}; use the documented keys for owner.kind, without process loader or identity overrides")).into());
+                }
+            }
+        }
         "opencode" | "codex" | "zcode" | "chatgpt" | "zai" => {
             trusted_executable(&owner.executable)?;
             if !owner.ahap_script.as_ref().is_some_and(|p| p.is_absolute()) {

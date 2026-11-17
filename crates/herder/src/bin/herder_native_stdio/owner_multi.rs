@@ -1,6 +1,6 @@
 //! Several existing AHAP instances behind one native MCP process.
 //! Each binding retains its own trusted authority, account state and grants.
-use super::{owner_launch, owner_opencode::{self, BoundOwner}, scoped_profile::OpenedOwner};
+use super::{owner_launch, owner_native_opencode, owner_opencode::{self, BoundOwner}, scoped_profile::OpenedOwner};
 use herder::{application::scoped_stop::create_prompt::FreshSessionGrantPolicy,
     domain::address::SessionRef};
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -310,19 +310,26 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
     let mut instances = HashSet::new();
     // Validate the complete set before starting any adapter.
     for profile in &profiles {
-        if &profile.owner.principal != principal || profile.owner.ahap_script.is_none()
+        let native_binding = owner_launch::has_native_codex_binding(&profile.owner)
+            || owner_launch::has_native_opencode_binding(&profile.owner);
+        if &profile.owner.principal != principal
+            || (!native_binding && profile.owner.ahap_script.is_none())
             || !instances.insert(profile.owner.instance.clone()) {
             return Err("multi-owner requires one principal and distinct AHAP instance refs".into());
         }
     }
     let registry=Arc::new(herder::application::scoped_stop::wait_automation::DependencyRegistry::new());
-    let bindings = profiles.into_iter().map(|profile| {
-        if owner_launch::has_native_codex_binding(&profile.owner) {
-            owner_launch::build_with_registry(profile, registry.clone())
+    let mut bindings = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        let binding = if owner_launch::has_native_codex_binding(&profile.owner) {
+            owner_launch::build_with_registry(profile, registry.clone())?
+        } else if owner_launch::has_native_opencode_binding(&profile.owner) {
+            owner_native_opencode::build(profile, registry.clone()).await?
         } else {
-            owner_opencode::build_with_registry(profile, registry.clone())
-        }
-    }).collect::<Result<Vec<_>, _>>()?;
+            owner_opencode::build_with_registry(profile, registry.clone())?
+        };
+        bindings.push(binding);
+    }
     registry.configure(bindings.iter().map(|b|b.source.clone()).collect())?;
     herder::application::scoped_stop::automation_driver::start(bindings.iter().map(BoundOwner::driver_owner).collect())?;
     MultiOwner { bindings }.serve(rmcp::transport::stdio()).await?.waiting().await?;
