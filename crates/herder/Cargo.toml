@@ -17,6 +17,10 @@ path = "src/bin/herder_opencode_read.rs"
 name = "herder-opencode"
 path = "src/bin/herder_opencode.rs"
 
+[[bin]]
+name = "herder-codex"
+path = "src/bin/herder_codex.rs"
+
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 base64 = "0.22"

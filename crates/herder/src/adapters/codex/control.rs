@@ -548,6 +548,17 @@ impl CodexControl {
         message: &str,
         key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
+        self.submit_bounded_input(plan, json!([{"type": "text", "text": message}]), key)
+    }
+
+    /// Submit validated native input parts without changing the durable
+    /// admission and no-replay rules of the text-only path.
+    pub fn submit_bounded_input(
+        &self,
+        plan: DispatchPlan,
+        input: Value,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
         if plan.target.instance != self.instance || plan.target.native_session_id.is_empty() {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "Codex dispatch target does not belong to this configured instance".into(),
@@ -558,12 +569,17 @@ impl CodexControl {
                 reason: "Codex request key is empty or too long".into(),
             });
         }
+        if !input.is_array() || input.as_array().is_some_and(Vec::is_empty) {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "Codex input must be a non-empty array".into(),
+            });
+        }
         let method_and_params = match plan.mode {
             SendMode::Start if plan.expected_turn.is_none() => (
                 "turn/start",
                 json!({
                     "threadId": plan.target.native_session_id,
-                    "input": [{"type": "text", "text": message}],
+                    "input": input,
                     "clientUserMessageId": key.0,
                 }),
             ),
@@ -584,7 +600,7 @@ impl CodexControl {
                     json!({
                         "threadId": plan.target.native_session_id,
                         "expectedTurnId": expected_turn,
-                        "input": [{"type": "text", "text": message}],
+                        "input": input,
                         "clientUserMessageId": key.0,
                     }),
                 )
