@@ -225,6 +225,9 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .send-button:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
 .send-button:disabled { opacity: .45; cursor: not-allowed; }
 .send-open-icon { width: 16px; height: 16px; }
+.send-stop-icon { width: 16px; height: 16px; fill: currentColor; }
+.send-button.composer-stop { padding: 0; border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.send-button.composer-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
 .composer-voice-actions { display: flex; grid-area: voice; align-items: center; gap: 4px; min-width: 0; }
 .composer-voice-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--text-2); }
 .composer-voice-button svg { width: 18px; height: 18px; }

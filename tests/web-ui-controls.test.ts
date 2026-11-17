@@ -57,7 +57,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain("setSessions(nextSessions);");
     expect(main).toContain('aria-label="Прокрутить к последним"');
     expect(main).toContain('label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"}');
-    expect(composerControls).toContain('aria-label={busy ? "Отправляю сообщение" : label}');
+    expect(composerControls).toContain('aria-label={stopping ? (stop?.busy ? "Останавливаю сессию" : "Остановить сессию") : busy ? "Отправляю сообщение" : label}');
     expect(main).toContain('className="send-open-icon"');
     expect(main).toContain('title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии"');
     expect(main).toContain("details?.children?.length");
@@ -130,8 +130,12 @@ describe("mobile chat and session controls", () => {
     expect(main).not.toContain(">+ Фото</button>");
     expect(main).toContain('aria-label="Прикрепить изображение"');
     expect(main).toContain('aria-label="Прикрепить файл"');
-    expect(main).toContain('aria-label={stopSending ? "Останавливаю сессию" : "Остановить сессию"}');
     expect(main).toContain('void runAction("stop")');
+    expect(main).toContain('stop={(activeSession?.status === "running" || sending) ? { busy: stopSending, onStop: () => void runAction("stop") } : undefined}');
+    expect(main).not.toContain('className="stop-button composer-stop" aria-label={stopSending ?');
+    expect(composerControls).toContain('className={`send-button ${stopping ? "stop-button composer-stop" : ""} ${className}`}');
+    expect(composerControls).toContain('send-stop-icon');
+    expect(composerControls).toContain('aria-label={stopping ? (stop?.busy ? "Останавливаю сессию" : "Остановить сессию")');
     expect(main).toContain("isComposerSubmitShortcut(event)");
     expect(composerControls).toMatch(/\/mac\|iphone\|ipad\|ipod\/i\.test\(os\) \? event\.metaKey : event\.ctrlKey/);
     expect(composerControls).toContain("}, 550);");

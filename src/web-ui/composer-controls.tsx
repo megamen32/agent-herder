@@ -353,6 +353,7 @@ export async function acquireCurrentVoiceStream(
 type ComposerSendControlProps = {
   disabled: boolean;
   busy?: boolean;
+  stop?: { busy: boolean; onStop: () => void };
   onSend: (mode?: DeliveryMode) => void;
   icon?: ReactNode;
   label?: string;
@@ -365,6 +366,7 @@ type ComposerSendControlProps = {
 export function ComposerSendControl({
   disabled,
   busy = false,
+  stop,
   onSend,
   icon = "↑",
   label = "Отправить сообщение",
@@ -378,6 +380,7 @@ export function ComposerSendControl({
   const held = useRef(false);
   const firstChoice = useRef<HTMLButtonElement>(null);
   const canChoose = allowModeChoice && !disabled && !busy;
+  const stopping = Boolean(stop);
 
   const clearTimer = () => {
     if (timer.current !== undefined) window.clearTimeout(timer.current);
@@ -441,24 +444,24 @@ export function ComposerSendControl({
         </div>
       )}
       <button
-        className={`send-button ${className}`}
-        title={title}
+        className={`send-button ${stopping ? "stop-button composer-stop" : ""} ${className}`}
+        title={stopping ? (stop?.busy ? "Останавливаю сессию" : "Остановить сессию") : title}
         type="button"
-        onPointerDown={startHold}
-        onPointerUp={clearTimer}
-        onPointerLeave={clearTimer}
-        onPointerCancel={clearTimer}
+        onPointerDown={stopping ? undefined : startHold}
+        onPointerUp={stopping ? undefined : clearTimer}
+        onPointerLeave={stopping ? undefined : clearTimer}
+        onPointerCancel={stopping ? undefined : clearTimer}
         onContextMenu={(event) => {
-          if (held.current) event.preventDefault();
+          if (!stopping && held.current) event.preventDefault();
         }}
-        onClick={click}
-        aria-haspopup={canChoose ? "dialog" : undefined}
-        aria-expanded={canChoose ? open : undefined}
-        aria-busy={busy || undefined}
-        disabled={disabled || busy}
-        aria-label={busy ? "Отправляю сообщение" : label}
+        onClick={stopping ? stop?.onStop : click}
+        aria-haspopup={!stopping && canChoose ? "dialog" : undefined}
+        aria-expanded={!stopping && canChoose ? open : undefined}
+        aria-busy={stopping ? stop?.busy || undefined : busy || undefined}
+        disabled={stopping ? stop?.busy : disabled || busy}
+        aria-label={stopping ? (stop?.busy ? "Останавливаю сессию" : "Остановить сессию") : busy ? "Отправляю сообщение" : label}
       >
-        {icon}
+        {stopping ? <svg className="send-stop-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1" /></svg> : icon}
       </button>
     </>
   );
