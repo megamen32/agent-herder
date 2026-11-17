@@ -319,7 +319,9 @@ function normalizeCodexRecord(row: Record<string, unknown>, line: string, record
     }];
   }
   if (type === "function_call_output" || type === "custom_tool_call_output") {
-    const toolCallId = payload.call_id ?? payload.tool_call_id;
+    // Recent Codex app-server records may identify an output with their own
+    // native id and omit call_id. The output is still an exact native event.
+    const toolCallId = payload.call_id ?? payload.tool_call_id ?? payload.id;
     if (!validId(toolCallId, MAX_EVENT_ID_LENGTH)) return fail("unsupported native Codex tool-result identity");
     const id = sourceEventId(line, recordIndex, payload.event_id ?? payload.id ?? `${toolCallId}:result`);
     const passthrough = payload.internal_chat_message_metadata_passthrough && typeof payload.internal_chat_message_metadata_passthrough === "object"
