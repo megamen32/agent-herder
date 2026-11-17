@@ -6,5 +6,4 @@
       "features": { "enable_request_compression": false }
     }
   },
-  "preflightDir": "/home/roomhacker/.codex/trusted-transport-preflight"
 }

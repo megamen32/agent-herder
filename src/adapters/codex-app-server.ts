@@ -395,6 +395,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly lifecycleSignal?: AbortSignal;
   private readonly trustedTransportOverrides: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
   private readonly trustedTransportResolver?: (threadId: string) => Readonly<Record<string, unknown>> | undefined;
+  private readonly trustedTransportApplied = new Set<string>();
+  private readonly trustedTransportPreflights = new Map<string, Promise<void>>();
   private readonly trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
   private readonly abortListener: () => void;
   private disposed = false;
@@ -2024,6 +2026,25 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  private async ensureTrustedTransportReady(threadId: string): Promise<void> {
+    if (this.trustedTransportApplied.has(threadId)) return;
+    const existing = this.trustedTransportPreflights.get(threadId);
+    if (existing) return existing;
+    const task = (async () => {
+      const generation = this.transportGeneration;
+      const loaded = await this.request("thread/loaded/list", {}) as { data?: unknown[] };
+      if (generation !== this.transportGeneration || !Array.isArray(loaded.data) || !loaded.data.every(value => typeof value === "string")) throw new Error("trusted transport native state changed during preflight");
+      if (loaded.data.includes(threadId)) throw new Error("trusted transport requires a cold unloaded native thread on first application");
+      const read = await this.request("thread/read", { threadId, includeTurns: false }) as { thread?: CodexThread & { status?: string; activeTurnId?: string } };
+      if (generation !== this.transportGeneration || read.thread?.id !== threadId) throw new Error("trusted transport native identity changed during preflight");
+      if (this.activeTurns.has(threadId) || read.thread.activeTurnId || ["inProgress", "running", "waitingOnApproval", "waitingOnUserInput"].includes(String(read.thread.status ?? ""))) throw new Error("trusted transport thread is active during preflight");
+      if (this.trustedTransportPreflight && !await this.trustedTransportPreflight(threadId)) throw new Error("trusted transport external admission guard refused");
+      this.trustedTransportApplied.add(threadId);
+    })();
+    this.trustedTransportPreflights.set(threadId, task);
+    try { await task; } finally { this.trustedTransportPreflights.delete(threadId); }
+  }
+
   private trustedTransportFor(threadId: string): Readonly<Record<string, unknown>> | undefined {
     const resolved = this.trustedTransportResolver?.(threadId);
     return resolved ? validateTrustedTransportOverrides(new Map([[threadId, resolved]])).get(threadId) : this.trustedTransportOverrides.get(threadId);
@@ -2055,9 +2076,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         storedProvider = read.thread.modelProvider;
       }
       const transportConfig = this.trustedTransportFor(id);
-      if (transportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(id))) {
-        throw new Error("trusted transport override requires a confirmed writer-free cold thread");
-      }
+      if (transportConfig) await this.ensureTrustedTransportReady(id);
       const result = await this.request("thread/resume", {
         threadId: id,
         excludeTurns: true,
@@ -2093,6 +2112,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     const resumed = await this.resumeSession(id);
     if (!resumed.ok) {
+      if (this.trustedTransportFor(id)) return resumed;
       const forked = await this.forkSession(id, message);
       return forked.ok ? { ...forked, error: `Original session recovery failed; forked a child instead.` } : forked;
     }
@@ -2139,8 +2159,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const attachedProvider = read.thread.modelProvider;
         if (!attachedProvider) throw new Error("Codex attach requires a saved model provider; refusing current-global fallback");
         const attachedTransportConfig = this.trustedTransportFor(sessionId);
-        if (attachedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
-          throw new Error("trusted transport override requires a confirmed writer-free cold thread");
+        if (attachedTransportConfig && !this.trustedTransportApplied.has(sessionId)) {
+          throw new Error("trusted transport attach requires a prior cold application");
         }
         const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider, ...(attachedTransportConfig ? { config: attachedTransportConfig } : {}) }) as {
           thread?: CodexThread; serviceTier?: string | null; model?: string; reasoningEffort?: string | null;
@@ -2209,8 +2229,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (this.projectRuntimePolicy && model !== this.projectRuntimePolicy.modelId) return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
     if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot change a foreign thread" };
     const trustedTransportConfig = this.trustedTransportFor(sessionId);
-    if (trustedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
-      return { ok: false, nonRetryable: true, error: "trusted transport override requires a confirmed writer-free cold thread" };
+    if (trustedTransportConfig && !this.trustedTransportApplied.has(sessionId)) {
+      try { await this.ensureTrustedTransportReady(sessionId); } catch (error) { return { ok: false, nonRetryable: true, error: (error as Error).message }; }
     }
     try {
       await this.ensureReady();
