@@ -170,6 +170,20 @@ describe("readIntegratorTranscriptPage", () => {
     expect(freshSnapshot.events.slice(-2).map((event) => event.nativeEventId)).toEqual(["appended-1", "appended-2"]);
   });
 
+  it("accepts Codex tool outputs identified by their native output id", async () => {
+    const raw = [
+      JSON.stringify({ type: "session_meta", payload: { id: "thread-7" } }),
+      JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", id: "call-1", call_id: "call-1", name: "shell_exec", input: "{}" } }),
+      JSON.stringify({ type: "response_item", payload: { type: "function_call_output", id: "fco-1", name: "shell_exec", output: "ok" } }),
+    ].join("\n") + "\n";
+    const reader = createRawTranscriptPageReader({
+      scope,
+      getRawTranscript: async () => ({ bytes: new TextEncoder().encode(raw), complete: true, source: { kind: "native-file", location: "/tmp/thread-7.jsonl", format: "jsonl" }, timestampCoverage: "native" }),
+    });
+    const result = await readIntegratorTranscriptPage({ scope, limit: 10, reader });
+    expect(result.events).toMatchObject([{ kind: "tool_call", toolCallId: "call-1" }, { kind: "tool_result", toolCallId: "fco-1", toolName: "shell_exec" }]);
+  });
+
   it("rejects coordinated outer cursor sequence tampering while preserving replay", async () => {
     const bytes = new TextEncoder().encode(Array.from({ length: 4 }, (_, index) => JSON.stringify({
       type: "response_item", payload: { type: "message", id: `m${index}`, role: "user", content: [{ type: "input_text", text: `m${index}` }] },
