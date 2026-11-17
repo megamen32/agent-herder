@@ -47,7 +47,15 @@ describe("trusted native transport admission", () => {
     await f.run();
     const resumes = f.calls.filter(c => c.method === "thread/resume");
     expect(resumes.map(c => c.params.config)).toEqual([config, undefined, config]);
-    expect(resumes.every(c => c.params.modelProvider === "openai")).toBe(true);
+    expect(resumes.map(c => c.params.modelProvider)).toEqual([undefined, "openai", undefined]);
+  });
+
+  it("keeps an explicit model change distinct from a transport-only cold resume", async () => {
+    const f = fixture();
+    await f.admission.resume(id, config, { ...params, model: "gpt-6.1-sol" }, f.hooks);
+    expect(f.calls.find(c => c.method === "thread/resume")?.params).toEqual({
+      ...params, model: "gpt-6.1-sol", config,
+    });
   });
 
   it("serializes the entire resume and receipt, not just its preflight", async () => {

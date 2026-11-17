@@ -46,6 +46,7 @@ it("applies a trusted transport override only to its exact saved-provider thread
   await expect(adapter.resumeSession("broker-thread")).resolves.toEqual({ ok: true });
   await expect(adapter.resumeSession("other-thread")).resolves.toEqual({ ok: true });
   expect(calls.find((call) => call.method === "thread/resume")?.params.config).toEqual({ openai_base_url: "http://127.0.0.1:18127/backend-api/codex", features: {enable_request_compression: false} });
+  expect(calls.find((call) => call.method === "thread/resume")?.params).not.toHaveProperty("modelProvider");
   expect(calls.filter((call) => call.method === "thread/resume")[1].params).not.toHaveProperty("config");
   await adapter.dispose();
 });
