@@ -394,6 +394,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
   private readonly lifecycleSignal?: AbortSignal;
   private readonly trustedTransportOverrides: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+  private readonly trustedTransportResolver?: (threadId: string) => Readonly<Record<string, unknown>> | undefined;
   private readonly trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
   private readonly abortListener: () => void;
   private disposed = false;
@@ -464,6 +465,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
     /** Never populated from project-controlled config or tool arguments. */
     trustedTransportOverrides?: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+    trustedTransportResolver?: (threadId: string) => Readonly<Record<string, unknown>> | undefined;
     /** Trusted cold/writer-free check; false fails closed. */
     trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
     onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
@@ -476,6 +478,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.integratorSessionBindingStore = config.integratorSessionBindingStore;
     this.projectRuntimeOwner = config.projectRuntimeOwner;
     this.trustedTransportOverrides = validateTrustedTransportOverrides(config.trustedTransportOverrides || new Map());
+    this.trustedTransportResolver = config.trustedTransportResolver;
     this.trustedTransportPreflight = config.trustedTransportPreflight;
     this.onMaterializationProgress = config.onMaterializationProgress;
     this.lifecycleSignal = config.signal;
@@ -2021,6 +2024,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  private trustedTransportFor(threadId: string): Readonly<Record<string, unknown>> | undefined {
+    const resolved = this.trustedTransportResolver?.(threadId);
+    return resolved ? validateTrustedTransportOverrides(new Map([[threadId, resolved]])).get(threadId) : this.trustedTransportOverrides.get(threadId);
+  }
+
   async resumeSession(id: string, humanReserve = false): Promise<ControlResult> {
     try { this.assertLifecycleActive(); }
     catch (error) { return { ok: false, nonRetryable: true, error: (error as Error).message }; }
@@ -2046,7 +2054,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
         storedProvider = read.thread.modelProvider;
       }
-      const transportConfig = this.trustedTransportOverrides.get(id);
+      const transportConfig = this.trustedTransportFor(id);
       if (transportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(id))) {
         throw new Error("trusted transport override requires a confirmed writer-free cold thread");
       }
@@ -2130,7 +2138,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         // runtime). The exact loaded list and identity were checked above.
         const attachedProvider = read.thread.modelProvider;
         if (!attachedProvider) throw new Error("Codex attach requires a saved model provider; refusing current-global fallback");
-        const attachedTransportConfig = this.trustedTransportOverrides.get(sessionId);
+        const attachedTransportConfig = this.trustedTransportFor(sessionId);
         if (attachedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
           throw new Error("trusted transport override requires a confirmed writer-free cold thread");
         }
@@ -2200,7 +2208,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (!sessionId) return { ok: false, error: "Codex model changes require a session id with app-server" };
     if (this.projectRuntimePolicy && model !== this.projectRuntimePolicy.modelId) return { ok: false, nonRetryable: true, error: `project-scoped Codex is pinned to ${this.projectRuntimePolicy.modelId}` };
     if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot change a foreign thread" };
-    const trustedTransportConfig = this.trustedTransportOverrides.get(sessionId);
+    const trustedTransportConfig = this.trustedTransportFor(sessionId);
     if (trustedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
       return { ok: false, nonRetryable: true, error: "trusted transport override requires a confirmed writer-free cold thread" };
     }
