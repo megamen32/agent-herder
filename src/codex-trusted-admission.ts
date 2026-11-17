@@ -116,9 +116,17 @@ export class CodexTrustedAdmission {
         if (applying && hooks.locallyBusy(threadId)) throw new Error("trusted transport writer changed before resume");
       };
       beforeWrite();
-      const result = await hooks.request("thread/resume", {
+      const resumeParams: NativeRecord = {
         ...params, modelProvider: thread.modelProvider, ...(applying ? { config } : {}),
-      }, beforeWrite);
+      };
+      if (applying && (params.model === undefined || params.model === null)) {
+        // Codex 0.167 treats even the saved provider as a model override and
+        // then skips restoring the saved model and reasoning effort. A cold
+        // transport-only resume must let native restore all three together.
+        // The native provider remains bound by the read and receipt checks.
+        delete resumeParams.modelProvider;
+      }
+      const result = await hooks.request("thread/resume", resumeParams, beforeWrite);
       current();
       const resumed = record(record(result, "resume receipt").thread, "resumed thread");
       if (resumed.id !== threadId || resumed.modelProvider !== thread.modelProvider) {

@@ -30,7 +30,7 @@ function fixture() {
     guard?.();
     loaded.add(params.threadId);
     model = params.model ?? model;
-    return { thread: { id: params.threadId, modelProvider: params.modelProvider, model, reasoningEffort: "high", status: { type: "idle" } },
+    return { thread: { id: params.threadId, modelProvider: params.modelProvider ?? "openai", model, reasoningEffort: "high", status: { type: "idle" } },
       model, reasoningEffort: "high", serviceTier: "priority" };
   };
   return { adapter, internal, calls, loaded };
@@ -47,6 +47,7 @@ it("production composition supports ordinary cold resume, hot resume, tier attac
     const resumes = f.calls.filter(call => call.method === "thread/resume");
     expect(resumes).toHaveLength(5);
     expect(resumes.map(call => call.params.config)).toEqual([config, undefined, undefined, undefined, undefined]);
+    expect(resumes[0].params).not.toHaveProperty("modelProvider");
     expect(resumes.at(-1)?.params.modelProvider).toBe("omniroute");
     expect(resumes[3].params.model).toBe("gpt-6.1-sol");
   } finally { await f.adapter.dispose(); }
