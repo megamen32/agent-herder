@@ -2037,7 +2037,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       if (loaded.data.includes(threadId)) throw new Error("trusted transport requires a cold unloaded native thread on first application");
       const read = await this.request("thread/read", { threadId, includeTurns: false }) as { thread?: CodexThread & { status?: string; activeTurnId?: string } };
       if (generation !== this.transportGeneration || read.thread?.id !== threadId) throw new Error("trusted transport native identity changed during preflight");
-      if (this.activeTurns.has(threadId) || read.thread.activeTurnId || ["inProgress", "running", "waitingOnApproval", "waitingOnUserInput"].includes(String(read.thread.status ?? ""))) throw new Error("trusted transport thread is active during preflight");
+      if (this.activeTurns.has(threadId) || this.pendingPermissionRequests.has(threadId) || this.pendingNativeUserInputs.has(threadId) || this.internalInterrupts.has(threadId) || read.thread.activeTurnId || ["inProgress", "running", "waitingOnApproval", "waitingOnUserInput"].includes(String(read.thread.status ?? ""))) throw new Error("trusted transport thread is active during preflight");
       if (this.trustedTransportPreflight && !await this.trustedTransportPreflight(threadId)) throw new Error("trusted transport external admission guard refused");
       this.trustedTransportApplied.add(threadId);
     })();
