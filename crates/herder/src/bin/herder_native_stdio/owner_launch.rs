@@ -4,7 +4,8 @@ use herder::{
     adapters::codex::{connection::CodexInstance, create::CodexCreateControl, read::CodexReader},
     application::{
         scoped_stop::{
-            BoundedFreshRootCreate, BoundedNativeHandoff, ScopeGenerationIssuer, ScopedAuthority,
+            BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
+            ScopeGenerationIssuer, ScopedAuthority,
             automation_driver::{self, AutomationOwner},
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
@@ -77,6 +78,20 @@ impl BoundedNativeHandoff for Control {
         self.0.native_control().submit_bounded(p, m, k)
     }
 }
+impl BoundedNativeInterrupt for Control {
+    fn interrupt_exact(
+        &self,
+        target: &SessionAddress,
+        native_turn_id: &str,
+    ) -> InterruptAttempt {
+        use herder::adapters::codex::control::InterruptOutcome;
+        match self.0.native_control().interrupt_exact(target, native_turn_id) {
+            InterruptOutcome::Interrupted => InterruptAttempt::Interrupted,
+            InterruptOutcome::DefinitelyNotSent { .. } => InterruptAttempt::DefinitelyNotSent,
+            InterruptOutcome::OutcomeUnknown { .. } => InterruptAttempt::OutcomeUnknown,
+        }
+    }
+}
 struct OwnerNativeReader {
     control: Arc<Control>,
     reopened: Arc<NativeReader>,
@@ -110,6 +125,7 @@ struct OwnerApp {
     messages: Arc<Mutex<CodexReader>>,
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
+    interrupt: Arc<Control>,
     waits: Arc<WaitAutomationApplication>,
 }
 impl ApplicationPort for OwnerApp {
@@ -185,7 +201,12 @@ impl ApplicationPort for OwnerApp {
                 },
                 catalog::Request::Stop(_) => match make_authority() {
                     Ok(a) => {
-                        ScopedStopApplication::new(a, self.instance.clone(), grants)
+                        ScopedStopApplication::new_with_interrupt(
+                            a,
+                            self.instance.clone(),
+                            grants,
+                            self.interrupt.clone(),
+                        )
                             .call(identity, request)
                             .await
                     }
@@ -316,6 +337,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         messages,
         create,
         deliver,
+        interrupt: control.clone(),
         waits: waits.clone(),
     });
     automation_driver::start(vec![AutomationOwner::new(identity.clone(), vec![waits])])?;

@@ -86,14 +86,35 @@ pub struct NativeMessagePage {
 
 pub struct CodexReader {
     connection: CodexConnection,
+    instance: CodexInstance,
     timeout: Duration,
+    refresh_before_first_message_read: bool,
 }
 
 impl CodexReader {
     pub fn open(instance: CodexInstance, timeout: Duration) -> Result<Self, CodexReadError> {
+        let connection = open_connection(&instance, timeout)?;
+        Ok(Self {
+            connection,
+            instance,
+            timeout,
+            refresh_before_first_message_read: true,
+        })
+    }
+
+    fn reopen(&mut self) -> Result<(), CodexReadError> {
+        self.connection = open_connection(&self.instance, self.timeout)?;
+        Ok(())
+    }
+}
+
+fn open_connection(
+    instance: &CodexInstance,
+    timeout: Duration,
+) -> Result<CodexConnection, CodexReadError> {
         let expected_profile =
             fs::canonicalize(&instance.code_home).map_err(CodexReadError::ProfilePath)?;
-        let mut connection = CodexConnection::open(instance)?;
+        let mut connection = CodexConnection::open(instance.clone())?;
         let initialized = connection.request(
             "initialize",
             json!({
@@ -118,12 +139,18 @@ impl CodexReader {
             });
         }
         connection.notify("initialized", json!({}))?;
-        Ok(Self {
-            connection,
-            timeout,
-        })
+        Ok(connection)
+}
+
+fn is_stale_history_lineage(error: &RpcError) -> bool {
+    matches!(
+        error,
+        RpcError::Remote { message, .. }
+            if message.contains("invalid paginated history lineage")
+    )
     }
 
+impl CodexReader {
     pub fn instance_id(&self) -> &str {
         self.connection.instance_id()
     }
@@ -138,11 +165,11 @@ impl CodexReader {
                 "limit must be positive".into(),
             ));
         }
-        let result = self.connection.request(
-            "thread/list",
-            json!({"cursor": cursor, "limit": limit}),
-            self.timeout,
-        )?;
+        let params = json!({"cursor": cursor, "limit": limit});
+        let result = match self.connection.request("thread/list", params, self.timeout) {
+            Ok(result) => result,
+            Err(error) => return Err(error.into()),
+        };
         let rows = result
             .get("data")
             .and_then(Value::as_array)
@@ -181,16 +208,31 @@ impl CodexReader {
                 "thread_id and limit must be non-empty/positive".into(),
             ));
         }
-        let result = self.connection.request(
-            "thread/items/list",
-            json!({
+        if self.refresh_before_first_message_read {
+            self.reopen()?;
+            self.refresh_before_first_message_read = false;
+        }
+        let params = json!({
                 "threadId": thread_id,
                 "cursor": cursor,
                 "limit": limit,
-                "sortDirection": "desc",
-            }),
-            self.timeout,
-        )?;
+                "sortDirection": "asc",
+            });
+        let result = match self
+            .connection
+            .request("thread/items/list", params.clone(), self.timeout)
+        {
+            Ok(result) => result,
+            Err(error) if is_stale_history_lineage(&error) => {
+                // A reader opened before a new thread can retain a stale
+                // app-server history index. Refresh only this read connection;
+                // never replay a native mutation after an uncertain outcome.
+                self.reopen()?;
+                self.connection
+                    .request("thread/items/list", params, self.timeout)?
+            }
+            Err(error) => return Err(error.into()),
+        };
         let rows = result
             .get("data")
             .and_then(Value::as_array)
@@ -272,5 +314,26 @@ fn optional_cursor(result: &Value, name: &str) -> Result<Option<String>, CodexRe
         Some(_) => Err(CodexReadError::InvalidThreadList(format!(
             "{name} must be a string or null"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refreshes_only_stale_paginated_history_errors() {
+        let stale = RpcError::Remote {
+            request_id: 1,
+            code: Some(-32600),
+            message: "invalid paginated history lineage for thread: missing source rollout".into(),
+        };
+        assert!(is_stale_history_lineage(&stale));
+        let other = RpcError::Remote {
+            request_id: 1,
+            code: Some(-32600),
+            message: "invalid request".into(),
+        };
+        assert!(!is_stale_history_lineage(&other));
     }
 }
