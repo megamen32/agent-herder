@@ -1,5 +1,6 @@
-import { readFile, lstat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { open } from "node:fs/promises";
+import { constants } from "node:fs";
+import { isAbsolute } from "node:path";
 
 export const TRUSTED_LOOPBACK_CONFIG = Object.freeze({
   openai_base_url: "http://127.0.0.1:18127/backend-api/codex",
@@ -17,14 +18,23 @@ function exactConfig(value: unknown): TrustedTransportConfig {
   return TRUSTED_LOOPBACK_CONFIG;
 }
 
-function validId(id: string): boolean { return /^[0-9a-f-]{36}$/i.test(id); }
+function validId(id: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id); }
 
 export async function loadTrustedOperatorProfile(path = process.env.CODEX_TRUSTED_OPERATOR_FILE): Promise<TrustedOperatorProfile | undefined> {
   if (!path?.trim()) return undefined;
-  const filename = resolve(path.trim());
-  const s = await lstat(filename);
-  if (!s.isFile() || s.uid !== (process.getuid?.() ?? s.uid) || (s.mode & 0o077) !== 0) throw new Error("trusted operator file must be a regular file owned by the runtime user and mode 0600");
-  const parsed = JSON.parse(await readFile(filename, "utf8")) as unknown;
+  const filename = path.trim();
+  if (!isAbsolute(filename)) throw new Error("trusted operator file must use an absolute path");
+  const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let parsed: unknown;
+  try {
+    const s = await handle.stat();
+    if (!s.isFile() || s.uid !== (process.getuid?.() ?? s.uid) || (s.mode & 0o777) !== 0o600 || s.size > 65536) {
+      throw new Error("trusted operator file must be a bounded regular file owned by the runtime user and mode 0600");
+    }
+    const raw = await handle.readFile("utf8");
+    if (Buffer.byteLength(raw) > 65536) throw new Error("trusted operator file exceeds budget");
+    parsed = JSON.parse(raw) as unknown;
+  } finally { await handle.close(); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("trusted operator profile must be an object");
   const p = parsed as Record<string, unknown>;
   if (typeof p.enabled !== "boolean" || !p.mappings || typeof p.mappings !== "object" || Array.isArray(p.mappings) || Object.keys(p).sort().join(",") !== "enabled,mappings") throw new Error("trusted operator profile schema invalid");

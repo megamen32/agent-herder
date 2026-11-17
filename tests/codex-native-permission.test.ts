@@ -35,10 +35,12 @@ it("applies a trusted transport override only to its exact saved-provider thread
   internals.threads.set("broker-thread", { id: "broker-thread", modelProvider: "openai" });
   internals.threads.set("other-thread", { id: "other-thread", modelProvider: "openai" });
   internals.ensureReady = async () => undefined;
+  internals.isReady = () => true;
   internals.request = async (method: string, params: any) => {
     calls.push({ method, params });
     if (method === "thread/loaded/list") return { data: [] };
-    if (method === "thread/read") return { thread: { id: params.threadId, modelProvider: "openai" } };
+    if (method === "thread/read") return { thread: { id: params.threadId, modelProvider: "openai", status: { type: "notLoaded" } } };
+    if (method === "thread/turns/list" || method === "thread/queue/list") return { data: [], nextCursor: null };
     return { thread: { id: params.threadId, modelProvider: "openai" } };
   };
   await expect(adapter.resumeSession("broker-thread")).resolves.toEqual({ ok: true });
@@ -57,10 +59,12 @@ it("fails closed when an exact-thread override lacks a writer-free preflight", a
   const internals = adapter as any;
   internals.threads.set("broker-thread", { id: "broker-thread", modelProvider: "openai" });
   internals.ensureReady = async () => undefined;
+  internals.isReady = () => true;
   const calls: string[] = [];
-  internals.request = async (method: string, params: any) => { calls.push(method); if (method === "thread/loaded/list") return { data: [] }; if (method === "thread/read") return { thread: { id: params.threadId, modelProvider: "openai" } }; return { thread: { id: params.threadId, modelProvider: "openai" } }; };
+  internals.request = async (method: string, params: any) => { calls.push(method); if (method === "thread/loaded/list") return { data: [] }; if (method === "thread/read") return { thread: { id: params.threadId, modelProvider: "openai", status: { type: "notLoaded" } } };
+    if (method === "thread/turns/list" || method === "thread/queue/list") return { data: [], nextCursor: null }; return { thread: { id: params.threadId, modelProvider: "openai" } }; };
   await expect(adapter.resumeSession("broker-thread")).resolves.toMatchObject({ ok: false, error: expect.stringContaining("admission guard") });
-  expect(calls).toEqual(["thread/loaded/list", "thread/read"]);
+  expect(calls).toEqual(["thread/loaded/list", "thread/read", "thread/turns/list", "thread/queue/list"]);
   await adapter.dispose();
 });
 

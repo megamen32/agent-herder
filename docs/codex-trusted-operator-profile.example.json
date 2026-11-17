@@ -1,9 +1,9 @@
 {
   "enabled": false,
   "mappings": {
-    "01a1e443-5aa6-73f1-8e27-f5a3448ab78b": {
+    "00000000-0000-4000-8000-000000000001": {
       "openai_base_url": "http://127.0.0.1:18127/backend-api/codex",
       "features": { "enable_request_compression": false }
     }
-  },
+  }
 }
