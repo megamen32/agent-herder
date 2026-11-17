@@ -4,6 +4,35 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 
+it("passes the saved native model provider when resuming a thread", async () => {
+  const adapter = new CodexAppServerAdapter({ socketPath: "/unused-test-socket" });
+  const internals = adapter as any;
+  const calls: Array<{ method: string; params: any }> = [];
+  internals.threads.set("openai-thread", { id: "openai-thread", modelProvider: "openai" });
+  internals.ensureReady = async () => undefined;
+  internals.request = async (method: string, params: any) => {
+    calls.push({ method, params });
+    return { thread: { id: "openai-thread", modelProvider: "openai" } };
+  };
+  await expect(adapter.resumeSession("openai-thread")).resolves.toEqual({ ok: true });
+  expect(calls).toEqual([{
+    method: "thread/resume",
+    params: { threadId: "openai-thread", excludeTurns: true, modelProvider: "openai" },
+  }]);
+  await adapter.dispose();
+});
+
+it("refuses a cold resume when thread/read cannot provide a saved provider", async () => {
+  const adapter = new CodexAppServerAdapter({ socketPath: "/unused-test-socket" });
+  const internals = adapter as any;
+  const calls: string[] = [];
+  internals.ensureReady = async () => undefined;
+  internals.request = async (method: string) => { calls.push(method); return { thread: { id: "cold-thread" } }; };
+  await expect(adapter.resumeSession("cold-thread")).resolves.toMatchObject({ ok: false, error: expect.stringContaining("saved model provider") });
+  expect(calls).toEqual(["thread/read"]);
+  await adapter.dispose();
+});
+
 it("answers an approval only on the same Codex RPC connection and exact thread", async () => {
   const adapter = new CodexAppServerAdapter({ socketPath: "/unused-test-socket" });
   const internals = adapter as any;
@@ -141,7 +170,7 @@ it("does not acquire permission-mode ownership from thread/list, thread/read, or
   internals.request = async (method: string, params: any = {}) => {
     calls.push(method);
     if (method === "thread/list") return { data: [{ id: "foreign-thread", cwd: "/tmp/foreign", name: "foreign", status: "idle" }], nextCursor: null };
-    if (method === "thread/read") return { thread: { id: params.threadId, cwd: "/tmp/foreign", status: "idle" } };
+    if (method === "thread/read") return { thread: { id: params.threadId, cwd: "/tmp/foreign", status: "idle", modelProvider: "openai" } };
     if (method === "thread/resume") return settingsFixture("foreign-thread", "on-request", "workspaceWrite");
     return {};
   };

@@ -2013,8 +2013,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       await this.ensureReady();
       this.assertLifecycleActive();
+      let storedProvider = this.threads.get(id)?.modelProvider;
+      if (!storedProvider) {
+        const read = await this.request("thread/read", { threadId: id, includeTurns: false }) as { thread?: CodexThread };
+        if (read.thread?.id !== id || !read.thread.modelProvider) {
+          throw new Error("Codex thread resume requires a saved model provider; refusing current-global fallback");
+        }
+        storedProvider = read.thread.modelProvider;
+      }
       const result = await this.request("thread/resume", {
         threadId: id,
+        excludeTurns: true,
+        ...(storedProvider ? { modelProvider: storedProvider } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }, "thread/resume", this.requestTimeoutMs, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
@@ -2088,7 +2098,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         // and atomically subscribes this connection to effective settings.
         // Never use this seam for an unloaded thread (cold resume can start a
         // runtime). The exact loaded list and identity were checked above.
-        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true }) as {
+        const attachedProvider = read.thread.modelProvider;
+        if (!attachedProvider) throw new Error("Codex attach requires a saved model provider; refusing current-global fallback");
+        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider }) as {
           thread?: CodexThread; serviceTier?: string | null; model?: string; reasoningEffort?: string | null;
         };
         if (attached.thread?.id !== sessionId || generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex attach snapshot identity or transport mismatch");
@@ -2159,6 +2171,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const result = await this.request("thread/resume", {
         threadId: sessionId,
         model,
+        ...(this.threads.get(sessionId)?.modelProvider ? { modelProvider: this.threads.get(sessionId)!.modelProvider } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (result.thread && result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
