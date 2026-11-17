@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
 import { isCredentialFreeLocalChild, localProviderId } from "./codex-owned-provider.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
+import { CodexTrustedAdmission } from "../codex-trusted-admission.js";
 import WebSocket from "ws";
 import { getHumanStopStore } from "../human-stop-store.js";
 import { CodexAdapter, type CodexAutomationStop, type CodexNativeAutomationMetadata } from "./codex.js";
@@ -150,6 +151,23 @@ interface CodexThread {
   updatedAt?: string | number;
   /** Native thread/start or thread/resume readback; not present on every thread/read. */
   serviceTier?: string | null;
+}
+
+/** Trusted composition-root transport override for one exact native thread. */
+export interface CodexTrustedTransportOverride {
+  threadId: string;
+  config: Readonly<Record<string, unknown>>;
+}
+
+const canonicalCompatUpstream = "http://127.0.0.1:18127/backend-api/codex";
+function validateTrustedTransportOverrides(value: ReadonlyMap<string, Readonly<Record<string, unknown>>>): ReadonlyMap<string, Readonly<Record<string, unknown>>> {
+  for (const [threadId, config] of value) {
+    if (!threadId || !/^[A-Za-z0-9_-]{8,256}$/.test(threadId)) throw new Error("trusted transport override thread id invalid");
+    const keys = Object.keys(config).sort();
+    if (keys.some((key) => !["openai_base_url", "features"].includes(key))) throw new Error("trusted transport override contains an unapproved key");
+    if (config.openai_base_url !== canonicalCompatUpstream || JSON.stringify(config.features) !== JSON.stringify({enable_request_compression:false})) throw new Error("trusted transport override is not the canonical loopback compressed=false transport");
+  }
+  return value;
 }
 
 export type CodexLatestTurnRecoveryEvidence =
@@ -376,6 +394,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
   private readonly onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
   private readonly lifecycleSignal?: AbortSignal;
+  private readonly trustedTransportOverrides: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+  private readonly trustedTransportResolver?: (threadId: string) => Readonly<Record<string, unknown>> | undefined;
+  private readonly trustedAdmission = new CodexTrustedAdmission();
+  private readonly trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
   private readonly abortListener: () => void;
   private disposed = false;
   private disposal?: Promise<void>;
@@ -443,6 +465,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     /** Trusted composition-root H34 journal and fresh H31 proof resolver. */
     integratorSessionBindingStore?: IntegratorSessionBindingStore;
     projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
+    /** Never populated from project-controlled config or tool arguments. */
+    trustedTransportOverrides?: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+    trustedTransportResolver?: (threadId: string) => Readonly<Record<string, unknown>> | undefined;
+    /** Trusted cold/writer-free check; false fails closed. */
+    trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
     onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
     signal?: AbortSignal;
   } = {}) {
@@ -452,6 +479,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.projectToolDenyList = config.projectToolDenyList;
     this.integratorSessionBindingStore = config.integratorSessionBindingStore;
     this.projectRuntimeOwner = config.projectRuntimeOwner;
+    this.trustedTransportOverrides = validateTrustedTransportOverrides(config.trustedTransportOverrides || new Map());
+    this.trustedTransportResolver = config.trustedTransportResolver;
+    this.trustedTransportPreflight = config.trustedTransportPreflight;
     this.onMaterializationProgress = config.onMaterializationProgress;
     this.lifecycleSignal = config.signal;
     this.abortListener = () => {
@@ -1996,6 +2026,25 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
   }
 
+  private async resumeNativeThread(threadId: string, params: Record<string, unknown>, humanReserve = false, allowCold = true): Promise<unknown> {
+    const config = this.trustedTransportFor(threadId);
+    if (!config) return this.request("thread/resume", params, "thread/resume", this.requestTimeoutMs, humanReserve);
+    return this.trustedAdmission.resume(threadId, config, params, {
+      generation: () => this.transportGeneration,
+      ready: () => this.isReady(),
+      locallyBusy: id => this.activeTurns.has(id)
+        || [...this.pendingPermissionRequests.values()].some(request => request.threadId === id && !request.responded)
+        || [...this.pendingNativeUserInputs.values()].some(request => request.threadId === id && !request.responded),
+      externalGuard: this.trustedTransportPreflight,
+      request: (method, body, beforeWrite) => this.request(method, body, method, this.requestTimeoutMs, humanReserve, beforeWrite),
+    }, allowCold);
+  }
+
+  private trustedTransportFor(threadId: string): Readonly<Record<string, unknown>> | undefined {
+    const resolved = this.trustedTransportResolver?.(threadId);
+    return resolved ? validateTrustedTransportOverrides(new Map([[threadId, resolved]])).get(threadId) : this.trustedTransportOverrides.get(threadId);
+  }
+
   async resumeSession(id: string, humanReserve = false): Promise<ControlResult> {
     try { this.assertLifecycleActive(); }
     catch (error) { return { ok: false, nonRetryable: true, error: (error as Error).message }; }
@@ -2021,12 +2070,12 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
         storedProvider = read.thread.modelProvider;
       }
-      const result = await this.request("thread/resume", {
+      const result = await this.resumeNativeThread(id, {
         threadId: id,
         excludeTurns: true,
         ...(storedProvider ? { modelProvider: storedProvider } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-      }, "thread/resume", this.requestTimeoutMs, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
+      }, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
       if (result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
@@ -2055,6 +2104,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     const resumed = await this.resumeSession(id);
     if (!resumed.ok) {
+      if (this.trustedTransportFor(id)) return resumed;
       const forked = await this.forkSession(id, message);
       return forked.ok ? { ...forked, error: `Original session recovery failed; forked a child instead.` } : forked;
     }
@@ -2100,7 +2150,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         // runtime). The exact loaded list and identity were checked above.
         const attachedProvider = read.thread.modelProvider;
         if (!attachedProvider) throw new Error("Codex attach requires a saved model provider; refusing current-global fallback");
-        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider }) as {
+        const attached = await this.resumeNativeThread(sessionId, { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider }, false, false) as {
           thread?: CodexThread; serviceTier?: string | null; model?: string; reasoningEffort?: string | null;
         };
         if (attached.thread?.id !== sessionId || generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex attach snapshot identity or transport mismatch");
@@ -2168,7 +2218,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) return { ok: false, nonRetryable: true, error: "project-scoped Codex cannot change a foreign thread" };
     try {
       await this.ensureReady();
-      const result = await this.request("thread/resume", {
+      const result = await this.resumeNativeThread(sessionId, {
         threadId: sessionId,
         model,
         ...(this.threads.get(sessionId)?.modelProvider ? { modelProvider: this.threads.get(sessionId)!.modelProvider } : {}),
@@ -2959,6 +3009,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   private clearTransportState(error: Error, data: Record<string, unknown>, failActiveTurns: boolean): void {
+    this.trustedAdmission.forget();
     this.invalidateOwnedPermissionThreads();
     const interruptedSessions = [...this.activeTurns.entries()];
     this.activeTurns.clear();
@@ -2983,6 +3034,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private beginTransportGeneration(): void {
     this.transportGeneration++;
+    this.trustedAdmission.forget();
     this.invalidateOwnedPermissionThreads();
   }
 
@@ -3061,7 +3113,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch { return false; }
   }
 
-  private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs, humanReserve = false): Promise<unknown> {
+  private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs, humanReserve = false, beforeWrite?: () => void): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
     if (!this.isTransportWritable()) return Promise.reject(new Error("Codex app-server is not connected"));
@@ -3078,6 +3130,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.assertLifecycleActive();
       if (!this.isTransportWritable()) throw new Error("Codex app-server disconnected during quota check");
     }
+    beforeWrite?.();
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -3199,6 +3252,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     if (["thread/closed", "thread/archived", "thread/deleted"].includes(message.method)) {
       const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+      if (threadId) this.trustedAdmission.forget(threadId);
       if (threadId) this.serviceTierObservations.delete(threadId);
       const tierWaiter = threadId ? this.serviceTierWaiters.get(threadId) : undefined;
       if (tierWaiter) { clearTimeout(tierWaiter.timer); tierWaiter.resolve(undefined); this.serviceTierWaiters.delete(threadId!); }

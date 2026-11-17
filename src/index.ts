@@ -129,6 +129,8 @@ import { ALL_CDP_CHAT_CAPABILITIES, CdpChatClient } from "./cdp-chat.js";
 import { ChatGptAccountArchive } from "./chatgpt-account-archive.js";
 import { ChatGptHistoryArchive } from "./chatgpt-history-archive.js";
 import { isQuotaLensEnabled, startQuotaLensSampler } from "./web/quota-lens.js";
+import { loadTrustedOperatorProfile, type TrustedOperatorProfile } from "./codex-trusted-transport.js";
+import { createCodexAppServerConfig } from "./codex-composition.js";
 
 // ===== Configuration from environment =====
 
@@ -144,6 +146,7 @@ const ENABLE_FAST_AGENT = parseEnvBool(process.env.ENABLE_FAST_AGENT, false);
 const ENABLE_MINIMAX_CODE = parseEnvBool(process.env.ENABLE_MINIMAX_CODE, true);
 const ACP_AGENT_COMMAND = process.env.ACP_AGENT_COMMAND;
 const LAZY_ADAPTERS = new Set(["codex", "hermes", "zcode"]);
+let trustedOperatorProfile: TrustedOperatorProfile | undefined;
 
 function parseEnvBool(val: string | undefined, fallback: boolean): boolean {
   if (!val) return fallback;
@@ -320,7 +323,7 @@ function configureAdapterRegistry(): void {
   adapterFactories.set("claude", () => ENABLE_CLAUDE_SDK ? new ClaudeSDKAdapter() : new ClaudeCodeAdapter({ claudeBin: process.env.CLAUDE_BIN }));
   adapterFactories.set("codex", () => CODEX_TRANSPORT === "cli"
     ? new CodexAdapter({ codexBin: process.env.CODEX_BIN, codexDir: process.env.CODEX_DATA_DIR })
-    : new CodexAppServerAdapter({ codexBin: process.env.CODEX_BIN, cwd: process.env.CODEX_CWD, modelIds: parseCsv(process.env.CODEX_MODELS, []) }));
+    : new CodexAppServerAdapter(createCodexAppServerConfig(trustedOperatorProfile, process.env)));
   adapterFactories.set("qoder", () => new AcpAdapter({
     profile: "qoder", harness: "qoder", command: process.env.QODER_BIN || "qodercli",
     args: [...parseArgs(process.env.QODER_ARGS, "QODER_ARGS"), "--acp", ...(process.env.QODER_MODEL ? ["--model", process.env.QODER_MODEL] : [])],
@@ -455,11 +458,7 @@ async function initAdapters() {
         adapters.delete("codex");
       });
     } else {
-      const nativeAdapter = new CodexAppServerAdapter({
-        codexBin: process.env.CODEX_BIN,
-        cwd: process.env.CODEX_CWD,
-        modelIds: parseCsv(process.env.CODEX_MODELS, []),
-      });
+      const nativeAdapter = new CodexAppServerAdapter(createCodexAppServerConfig(trustedOperatorProfile, process.env));
       adapters.set("codex", nativeAdapter);
       adapterRegistry.registerActive(nativeAdapter);
       if (!LAZY_ADAPTERS.has("codex")) inits.push(nativeAdapter.init().catch(async (err) => {
@@ -1035,6 +1034,7 @@ async function main() {
     console.error(`[agent-herder] ${outboundFamily.reason}`);
   }
 
+  trustedOperatorProfile = await loadTrustedOperatorProfile();
   configureAdapterRegistry();
   const adoptedState = await autopilotStateReady;
   if (adoptedState.length > 0) {
