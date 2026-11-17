@@ -13,6 +13,13 @@ use crate::domain::adapter::{
     Admission, DispatchPlan, NativeReceipt, NativeSessionControl, RequestKey, SendMode, SubmitError,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InterruptOutcome {
+    Interrupted,
+    DefinitelyNotSent { reason: String },
+    OutcomeUnknown { reason: String },
+}
+
 use super::connection::{OpenCodeConnection, OpenCodeRequestFailure};
 
 const MAX_REQUEST_KEY_BYTES: usize = 4096;
@@ -44,6 +51,66 @@ impl OpenCodeSessionControl {
 
     pub fn connection(&self) -> &OpenCodeConnection {
         &self.connection
+    }
+
+    /// Interrupt one exact OpenCode session through its documented native
+    /// route. OpenCode exposes session scope rather than an expected-turn CAS,
+    /// so the caller must reconcile the resulting history before claiming a
+    /// particular turn stopped.
+    pub async fn interrupt_session(
+        &self,
+        target: &crate::domain::address::SessionAddress,
+        request_id: impl Into<String>,
+    ) -> InterruptOutcome {
+        if target.instance != *self.connection.instance()
+            || !valid_session_id(&target.native_session_id)
+        {
+            return InterruptOutcome::DefinitelyNotSent {
+                reason: "OpenCode interrupt target does not belong to this configured instance"
+                    .into(),
+            };
+        }
+        let path = format!("/api/session/{}/interrupt", target.native_session_id);
+        let request = match self.connection.request(request_id, Method::POST, &path) {
+            Ok(request) => request,
+            Err(error) => {
+                return InterruptOutcome::DefinitelyNotSent {
+                    reason: error.to_string(),
+                };
+            }
+        };
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(error) => {
+                return match error.failure {
+                    OpenCodeRequestFailure::DefinitelyNotSent => {
+                        InterruptOutcome::DefinitelyNotSent {
+                            reason: error.to_string(),
+                        }
+                    }
+                    OpenCodeRequestFailure::OutcomeUnknown => InterruptOutcome::OutcomeUnknown {
+                        reason: error.to_string(),
+                    },
+                };
+            }
+        };
+        if response.status().is_success() {
+            InterruptOutcome::Interrupted
+        } else if response.status().is_client_error() {
+            InterruptOutcome::DefinitelyNotSent {
+                reason: format!(
+                    "OpenCode interrupt returned HTTP {}",
+                    response.status().as_u16()
+                ),
+            }
+        } else {
+            InterruptOutcome::OutcomeUnknown {
+                reason: format!(
+                    "OpenCode interrupt returned HTTP {}",
+                    response.status().as_u16()
+                ),
+            }
+        }
     }
 }
 
@@ -383,10 +450,7 @@ mod tests {
             )
             .await;
         let posts = fixture.stop().await;
-        assert!(matches!(
-            result,
-            Err(SubmitError::DefinitelyNotSent { .. })
-        ));
+        assert!(matches!(result, Err(SubmitError::DefinitelyNotSent { .. })));
         assert!(posts.is_empty(), "Current must be refused before POST");
     }
 
