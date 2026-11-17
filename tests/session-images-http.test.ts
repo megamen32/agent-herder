@@ -26,3 +26,19 @@ it('routes uploaded images into native input and rejects cross-chat reuse', asyn
   expect(sendMessage.mock.calls[0]).toEqual(['zcode','a',expect.objectContaining({images:[expect.objectContaining({id:image.id,fileName:'tiny.png',path:join(directory,`${image.id}.png`)})]})]);
  } finally {server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(directory,{recursive:true,force:true});}
 });
+
+it('routes a generic file into Codex attachment input without treating it as an image', async () => {
+ const directory=await mkdtemp(join(tmpdir(),'herder-file-http-'));
+ const sendMessage=vi.fn(async()=>({ok:true,admitted:true}));
+ const server=createWebServer({sessionImageStore:new SessionImageStore(directory), adapters:new Map([['codex',{controlCapabilities:{fileInput:true}} as any]]), converter:{} as any, supervisor:{getSession:async()=>({id:'a'}),sendMessage,changeModel:async()=>({ok:true})} as any});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
+ try {
+  const response=await fetch(origin+'/api/session-files',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({harness:'codex',sessionId:'a',fileName:'notes.txt',mimeType:'text/plain',dataBase64:Buffer.from('hello').toString('base64')})});
+  expect(response.status).toBe(200); const file=await response.json() as {id:string;url:string;kind:string};
+  expect(file.kind).toBe('file'); expect(file.url).toBe(`/api/session-files/${file.id}`);
+  expect((await fetch(origin+file.url)).status).toBe(200);
+  expect((await fetch(origin+'/api/sessions/codex/a/message',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'read it',attachmentIds:[file.id]})})).status).toBe(200);
+  expect(sendMessage.mock.calls[0]).toEqual(['codex','a',expect.objectContaining({images:[expect.objectContaining({kind:'file',fileName:'notes.txt'})]})]);
+ } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); await rm(directory,{recursive:true,force:true}); }
+});
