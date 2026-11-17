@@ -152,6 +152,23 @@ interface CodexThread {
   serviceTier?: string | null;
 }
 
+/** Trusted composition-root transport override for one exact native thread. */
+export interface CodexTrustedTransportOverride {
+  threadId: string;
+  config: Readonly<Record<string, unknown>>;
+}
+
+const canonicalCompatUpstream = "https://chatgpt.com/backend-api/codex";
+function validateTrustedTransportOverrides(value: ReadonlyMap<string, Readonly<Record<string, unknown>>>): ReadonlyMap<string, Readonly<Record<string, unknown>>> {
+  for (const [threadId, config] of value) {
+    if (!threadId || !/^[A-Za-z0-9_-]{8,256}$/.test(threadId)) throw new Error("trusted transport override thread id invalid");
+    const keys = Object.keys(config).sort();
+    if (keys.some((key) => !["openai_base_url", "compression"].includes(key))) throw new Error("trusted transport override contains an unapproved key");
+    if (config.openai_base_url !== canonicalCompatUpstream || config.compression !== false) throw new Error("trusted transport override is not the canonical compressed=false transport");
+  }
+  return value;
+}
+
 export type CodexLatestTurnRecoveryEvidence =
   | {available: false; reason: string}
   | {available: true; observedAt: string; latest: null | {
@@ -376,6 +393,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
   private readonly onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
   private readonly lifecycleSignal?: AbortSignal;
+  private readonly trustedTransportOverrides: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+  private readonly trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
   private readonly abortListener: () => void;
   private disposed = false;
   private disposal?: Promise<void>;
@@ -443,6 +462,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     /** Trusted composition-root H34 journal and fresh H31 proof resolver. */
     integratorSessionBindingStore?: IntegratorSessionBindingStore;
     projectRuntimeOwner?: TrustedRuntimeOwnerResolver;
+    /** Never populated from project-controlled config or tool arguments. */
+    trustedTransportOverrides?: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+    /** Trusted cold/writer-free check; false fails closed. */
+    trustedTransportPreflight?: (threadId: string) => Promise<boolean>;
     onMaterializationProgress?: (progress: CodexMaterializationProgress) => void;
     signal?: AbortSignal;
   } = {}) {
@@ -452,6 +475,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     this.projectToolDenyList = config.projectToolDenyList;
     this.integratorSessionBindingStore = config.integratorSessionBindingStore;
     this.projectRuntimeOwner = config.projectRuntimeOwner;
+    this.trustedTransportOverrides = validateTrustedTransportOverrides(config.trustedTransportOverrides || new Map());
+    this.trustedTransportPreflight = config.trustedTransportPreflight;
     this.onMaterializationProgress = config.onMaterializationProgress;
     this.lifecycleSignal = config.signal;
     this.abortListener = () => {
@@ -2021,10 +2046,15 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         }
         storedProvider = read.thread.modelProvider;
       }
+      const transportConfig = this.trustedTransportOverrides.get(id);
+      if (transportConfig && this.trustedTransportPreflight && !await this.trustedTransportPreflight(id)) {
+        throw new Error("trusted transport override requires a confirmed writer-free cold thread");
+      }
       const result = await this.request("thread/resume", {
         threadId: id,
         excludeTurns: true,
         ...(storedProvider ? { modelProvider: storedProvider } : {}),
+        ...(transportConfig ? { config: transportConfig } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }, "thread/resume", this.requestTimeoutMs, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
@@ -2172,6 +2202,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         threadId: sessionId,
         model,
         ...(this.threads.get(sessionId)?.modelProvider ? { modelProvider: this.threads.get(sessionId)!.modelProvider } : {}),
+        ...(this.trustedTransportOverrides.get(sessionId) ? { config: this.trustedTransportOverrides.get(sessionId) } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
       }) as { thread?: CodexThread } & CodexThreadPermissionState;
       if (result.thread && result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;

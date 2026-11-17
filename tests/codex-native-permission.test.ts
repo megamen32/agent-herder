@@ -22,6 +22,45 @@ it("passes the saved native model provider when resuming a thread", async () => 
   await adapter.dispose();
 });
 
+it("applies a trusted transport override only to its exact saved-provider thread", async () => {
+  const adapter = new CodexAppServerAdapter({
+    socketPath: "/unused-test-socket",
+    trustedTransportOverrides: new Map([
+      ["broker-thread", { openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false }],
+    ]),
+  });
+  const internals = adapter as any;
+  const calls: Array<{ method: string; params: any }> = [];
+  internals.threads.set("broker-thread", { id: "broker-thread", modelProvider: "openai" });
+  internals.threads.set("other-thread", { id: "other-thread", modelProvider: "openai" });
+  internals.ensureReady = async () => undefined;
+  internals.request = async (method: string, params: any) => {
+    calls.push({ method, params });
+    return { thread: { id: params.threadId, modelProvider: "openai" } };
+  };
+  await expect(adapter.resumeSession("broker-thread")).resolves.toEqual({ ok: true });
+  await expect(adapter.resumeSession("other-thread")).resolves.toEqual({ ok: true });
+  expect(calls[0].params.config).toEqual({ openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false });
+  expect(calls[1].params).not.toHaveProperty("config");
+  await adapter.dispose();
+});
+
+it("fails closed when an exact-thread override lacks a writer-free preflight", async () => {
+  const adapter = new CodexAppServerAdapter({
+    socketPath: "/unused-test-socket",
+    trustedTransportOverrides: new Map([["broker-thread", { openai_base_url: "https://chatgpt.com/backend-api/codex", compression: false }]]),
+    trustedTransportPreflight: async () => false,
+  });
+  const internals = adapter as any;
+  internals.threads.set("broker-thread", { id: "broker-thread", modelProvider: "openai" });
+  internals.ensureReady = async () => undefined;
+  const calls: string[] = [];
+  internals.request = async (method: string) => { calls.push(method); return { thread: { id: "broker-thread", modelProvider: "openai" } }; };
+  await expect(adapter.resumeSession("broker-thread")).resolves.toMatchObject({ ok: false, error: expect.stringContaining("writer-free") });
+  expect(calls).toEqual([]);
+  await adapter.dispose();
+});
+
 it("refuses a cold resume when thread/read cannot provide a saved provider", async () => {
   const adapter = new CodexAppServerAdapter({ socketPath: "/unused-test-socket" });
   const internals = adapter as any;
