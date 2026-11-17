@@ -20,3 +20,6 @@
 .service-tier-help, .service-tier-error { display: block; margin-top: 8px; line-height: 1.4; }
 .service-tier-help { color: var(--muted); }
 .service-tier-error { color: var(--status-error); }
+.service-tier-popover.embedded { position: static; width: auto; max-width: none; margin: -2px -2px 4px; padding: 10px 9px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
+.service-tier-popover.embedded .service-tier-heading strong { font-size: 16px; }
+.service-tier-popover.embedded .service-tier-track { margin-top: 12px; }

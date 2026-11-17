@@ -17,6 +17,7 @@ import { readSessionQueueProcessing, submitSessionQueueProcessing } from "../src
 
 const main = readFileSync(new URL("../src/web-ui/main.tsx", import.meta.url), "utf8");
 const composerControls = readFileSync(new URL("../src/web-ui/composer-controls.tsx", import.meta.url), "utf8");
+const serviceTier = readFileSync(new URL("../src/web-ui/service-tier-control.tsx", import.meta.url), "utf8");
 const remoteComposer = readFileSync(new URL("../src/web-ui/fleet/RemoteSessionView.tsx", import.meta.url), "utf8");
 const polish = readFileSync(new URL("../src/web-ui/interface-polish.css", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/web-ui/styles.css", import.meta.url), "utf8");
@@ -132,6 +133,8 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label="Прикрепить файл"');
     expect(main).toContain('aria-label="Прикрепить файл или изображение"');
     expect(main).toContain('className="composer-attachment-menu"');
+    expect(main).toContain('<ServiceTierPanel embedded');
+    expect(serviceTier).toContain('className="service-tier-spark"');
     expect(main).toContain('void runAction("stop")');
     expect(main).toContain('stop={(activeSession?.status === "running" || sending) ? { busy: stopSending, onStop: () => void runAction("stop") } : undefined}');
     expect(main).toContain('&& activeSession?.status !== "running"');
