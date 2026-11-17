@@ -686,7 +686,9 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
 
 .composer-left { grid-area: plus; display: flex; align-items: center; gap: 6px; }
 .composer-left .composer-plus { width: auto; padding: 0 5px; white-space: nowrap; font-size: var(--text-sm); }
-.composer-delivery-mode { border: 0; background: transparent; color: var(--text-2); font-size: var(--text-xs); white-space: nowrap; padding: 5px 0; }
+.composer-delivery-mode { display: inline-flex; align-items: center; justify-content: center; gap: 2px; width: 30px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-2); font-size: 18px; line-height: 1; }
+.composer-delivery-mode:hover, .composer-delivery-mode[aria-expanded="true"] { background: var(--surface-hover); color: var(--text); }
+.composer-delivery-mode-chevron { font-size: 10px; }
 .composer-delivery-menu { position: absolute; bottom: calc(100% + 8px); left: 0; max-width: 430px; padding: 12px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--surface-1); box-shadow: var(--shadow-menu); z-index: 14; }
 .composer .resume-button { width: auto; min-width: 36px; padding: 0 9px; border-radius: 18px; font-size: var(--text-xs); white-space: nowrap; }
 @media(max-width:900px) {
