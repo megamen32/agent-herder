@@ -999,6 +999,7 @@ function App() {
   const [imageUploading, setImageUploading] = React.useState(false);
   const [imageError, setImageError] = React.useState<string>();
   const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const composerTextareaRef = React.useRef<HTMLTextAreaElement>(null);
   React.useEffect(() => { setComposerImages([]); setImageError(undefined); }, [activeKey]);
   const [loading, setLoading] = React.useState(true);
@@ -1068,6 +1069,8 @@ function App() {
   }, [activeKey]);
   // отдельный флаг полёта для кнопки «Продолжить» (resume), не связанный с очередью отправки
   const [resumeSending, setResumeSending] = React.useState(false);
+  const [stopSending, setStopSending] = React.useState(false);
+  const [stopError, setStopError] = React.useState<string>();
   const [showCreateSession, setShowCreateSession] = React.useState(false);
   const [createHarness, setCreateHarness] = React.useState("fast-agent");
   const [createServiceTier, setCreateServiceTier] = React.useState<"normal" | "fast">("normal");
@@ -1082,7 +1085,7 @@ function App() {
   const [creatingSession, setCreatingSession] = React.useState(false);
   const [createSessionError, setCreateSessionError] = React.useState<string>();
   // чип модели в композере: список моделей харнесса и результат смены
-  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean } | null }>>([]);
+  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; fileInput?: boolean; steer?: boolean } | null }>>([]);
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const [modelOptions, setModelOptions] = React.useState<string[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = React.useState(false);
@@ -2058,8 +2061,9 @@ function App() {
 
   const runAction = async (action: "resume" | "stop" | "recover") => {
     if(!detailsVerified||cachedDetails)return;
-    if (!activeKey || (action === "resume" && resumeSending)) return;
+    if (!activeKey || (action === "resume" && resumeSending) || (action === "stop" && stopSending)) return;
     if (action === "resume") setResumeSending(true);
+    if (action === "stop") { setStopSending(true); setStopError(undefined); }
     if (action === "stop") messageDispatcherRef.current.cancelPending(activeKey);
     const { harness, id } = splitKey(activeKey);
     try {
@@ -2080,8 +2084,12 @@ function App() {
       }
       await loadSessions();
       await loadDetails(activeKey);
+    } catch (error) {
+      if (action === "stop") setStopError((error as Error).message);
+      else throw error;
     } finally {
       if (action === "resume") setResumeSending(false);
+      if (action === "stop") setStopSending(false);
     }
   };
   // Тема применяется мгновенно: меняется только атрибут темы у документа, данные не перезапрашиваются.
@@ -2093,7 +2101,7 @@ function App() {
   // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
   React.useEffect(() => {
     let cancelled = false;
-    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; steer?: boolean; projects?: boolean } | null }> }>("/api/adapters")
+    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; fileInput?: boolean; steer?: boolean; projects?: boolean } | null }> }>("/api/adapters")
       .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
       .catch(() => { if (!cancelled) setHarnessAdapters([]); });
     return () => { cancelled = true; };
@@ -2165,20 +2173,21 @@ function App() {
   const nativeCapabilities = harnessAdapters.find(adapter => adapter.id === activeSession?.harness)?.capabilities;
   const supportsSteer = activeSession?.harness === "codex" || nativeCapabilities?.steer === true;
   const supportsImages = nativeCapabilities?.imageInput === true;
-  const uploadImages = async (files: FileList | null) => {
+  const supportsFiles = nativeCapabilities?.fileInput === true;
+  const uploadImages = async (files: FileList | null, kind: "image" | "file" = "image") => {
     if (!files?.length || !activeKey || imageUploading) return;
     const targetKey = activeKey, { harness, id } = splitKey(targetKey);
     setImageUploading(true); setImageError(undefined);
     try {
-      if (composerImages.length + files.length > 4) throw new Error("Можно прикрепить до четырёх изображений.");
+      if (composerImages.length + files.length > 4) throw new Error("Можно прикрепить до четырёх файлов.");
       for (const file of Array.from(files)) {
-        if (file.size > 5 * 1024 * 1024) throw new Error("Изображение должно быть не больше 5 МБ.");
-        const dataBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("Не удалось прочитать изображение.")); reader.readAsDataURL(file); });
-        const image = await api<UploadedImage>("/api/session-images", { method: "POST", body: JSON.stringify({ harness, sessionId: id, fileName: file.name, mimeType: file.type, dataBase64 }) });
+        if (file.size > (kind === "image" ? 5 : 16) * 1024 * 1024) throw new Error(kind === "image" ? "Изображение должно быть не больше 5 МБ." : "Файл должен быть не больше 16 МБ.");
+        const dataBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("Не удалось прочитать файл.")); reader.readAsDataURL(file); });
+        const image = await api<UploadedImage>(kind === "image" ? "/api/session-images" : "/api/session-files", { method: "POST", body: JSON.stringify({ harness, sessionId: id, fileName: file.name, mimeType: file.type || "application/octet-stream", dataBase64 }) });
         if (activeKeyRef.current === targetKey) setComposerImages(current => current.some(item => item.id === image.id) ? current : [...current, image]);
       }
     } catch (error) { if (activeKeyRef.current === targetKey) setImageError((error as Error).message); }
-    finally { setImageUploading(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+    finally { setImageUploading(false); if (imageInputRef.current) imageInputRef.current.value = ""; if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
   // пока режим не выбран вручную — steer там, где харнесс его понимает (codex), иначе очередь
   const effectiveDeliveryMode: DeliveryMode = supportsSteer ? (deliveryModePinned ? deliveryMode : "steer") : "queue";
@@ -2229,7 +2238,7 @@ function App() {
     setOutbox(attempted);
     let responded = false;
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId, ...(images?.length ? { imageIds: images.map(image => image.id) } : {}) }) });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId, ...(images?.length ? { attachmentIds: images.map(image => image.id) } : {}) }) });
       responded = true;
       const payload: unknown = await response.json().catch(() => undefined);
       setOutbox((current) => updateOutboxEntry(current, inputId, classifyMessageDelivery(payload, response.ok)));
@@ -2247,7 +2256,7 @@ function App() {
     if (!activeKey || readOnlySession || imageUploading || (!composer.trim() && !composerImages.length)) return;
     if(queueEdit){await saveQueueEdit();return;}
     const draft = composer;
-    const text = draft.trim() || "Посмотрите прикреплённое изображение.";
+    const text = draft.trim() || "Посмотрите прикреплённый файл.";
     const images = composerImages; setComposerImages([]);
     setComposer((current) => current === draft ? "" : current);
     // Модель, с которой уходит это сообщение: выбранная пользователем иначе
@@ -2626,9 +2635,9 @@ function App() {
           </div>
           {createSessionError && <div className="create-session-error">{createSessionError}</div>}
         </div>}
-        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" disabled={Boolean(queueEdit)} accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files)} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey || Boolean(queueEdit)} onClick={() => imageInputRef.current?.click()}>+</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
+        {!showCreateSession && <><div className="composer-left">{supportsImages && !readOnlySession ? <><input ref={imageInputRef} className="composer-file-input" type="file" disabled={Boolean(queueEdit)} accept="image/png,image/jpeg,image/webp" multiple aria-label="Файл изображения" onChange={event => void uploadImages(event.target.files, "image")} /><button type="button" className="composer-plus" aria-label="Прикрепить изображение" title="Прикрепить изображение (до 5 МБ)" disabled={imageUploading || !activeKey || Boolean(queueEdit)} onClick={() => imageInputRef.current?.click()}>+</button></> : <button type="button" className={`composer-plus ${showCreateSession ? "active" : ""}`} aria-label="Новая сессия" title="Новая сессия агента" onClick={() => { if (showCreateSession) setShowCreateSession(false); else void openCreateSession(); }}>+</button>}{supportsFiles && !readOnlySession && <><input ref={fileInputRef} className="composer-file-input" type="file" disabled={Boolean(queueEdit)} multiple aria-label="Файл" onChange={event => void uploadImages(event.target.files, "file")} /><button type="button" className="composer-plus" aria-label="Прикрепить файл" title="Прикрепить файл (до 16 МБ)" disabled={imageUploading || !activeKey || Boolean(queueEdit)} onClick={() => fileInputRef.current?.click()}>📎</button></>}{activeKey && !readOnlySession && <button type="button" className="composer-delivery-mode" aria-label="Режим отправки" aria-expanded={deliveryMenuOpen} onClick={() => setDeliveryMenuOpen(current => !current)}>{deliveryModeLabel(effectiveDeliveryMode)} ▾</button>}</div>
         {deliveryMenuOpen && <div className="composer-delivery-menu" role="dialog" aria-label="Когда отправлять сообщение">{deliveryModeChoice}</div>}
-        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}><img src={image.url} alt={image.fileName} /><button type="button" disabled={Boolean(queueEdit)} aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю изображение…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
+        {(composerImages.length > 0 || imageUploading || imageError) && <div className="composer-images">{composerImages.map(image => <div className="composer-image" key={image.id}>{image.kind === "file" ? <span className="composer-file-name">📎 {image.fileName}</span> : <img src={image.url} alt={image.fileName} />}<button type="button" disabled={Boolean(queueEdit)} aria-label={`Убрать ${image.fileName}`} onClick={() => setComposerImages(current => current.filter(item => item.id !== image.id))}>×</button></div>)}{imageUploading && <span>Загружаю файл…</span>}{imageError && <span role="alert">{imageError}</span>}</div>}
         {readOnlySession ? <div className="composer-readonly"><strong>{archivedSession ? "Архивная сессия" : "Только просмотр"}</strong><span>{archivedSession ? "Сохранённая история сессии доступна для просмотра." : "Эта сессия пока не поддерживает отправку сообщений."}</span></div> : <>
           <textarea ref={composerTextareaRef} value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={isResumeMode ? "Продолжите работу…" : activeKey ? "Работайте с агентом" : "Сначала выберите сессию"} disabled={!activeKey || readOnlySession} onKeyDown={(event) => {
             if (!isComposerSubmitShortcut(event)) return;
@@ -2649,6 +2658,8 @@ function App() {
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
           </div>}
           <VoiceComposerControl key={activeKey??"no-session"} sessionKey={activeKey??""} disabled={!activeKey||readOnlySession} onTranscript={appendVoiceTranscript} />
+          {activeSession?.status === "running" || sending ? <button type="button" className="stop-button composer-stop" aria-label={stopSending ? "Останавливаю сессию" : "Остановить сессию"} disabled={stopSending || readOnlySession} onClick={() => void runAction("stop")}>{stopSending ? "Останавливаю…" : "Остановить"}</button> : null}
+          {stopError && <span className="composer-stop-error" role="alert">{stopError}</span>}
           <ComposerSendControl className={isResumeMode?"resume-button":""} disabled={queueEditSaving||Boolean(queueEdit?.unknown)||!activeKey||imageUploading||(!isResumeMode&&!composer.trim()&&!composerImages.length)} busy={false} supportsSteer={supportsSteer} allowModeChoice={canOfferSendMode} title={queueEdit?"Сохранить изменения в том же сообщении очереди":isResumeMode?"Возобновить работу в той же сессии":effectiveDeliveryMode==="queue"?"Отправить после ответа агента":"Передать в текущий ход агента"} label={queueEdit?"Сохранить сообщение очереди":isResumeMode?"Продолжить сессию":"Отправить сообщение"} icon={queueEdit?"↑":isResumeMode?<svg className="send-open-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H3v11h11V9M9 3h5v5M14 3 8 9" /></svg>:"↑"} onSend={clickSendButton} />
         </>}
         </>}

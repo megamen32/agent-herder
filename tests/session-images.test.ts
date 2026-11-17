@@ -24,3 +24,16 @@ it('persists immutable, session-bound image references and recovers an unpublish
     await expect(store.upload({ ...input, dataBase64: Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64') })).rejects.toThrow('5 МБ');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+it('stores a session-bound generic file for Codex mention input', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'herder-files-'));
+  const input = { harness: 'codex', sessionId: 'native-file', fileName: 'notes.txt', mimeType: 'text/plain', kind: 'file' as const, dataBase64: Buffer.from('hello Codex').toString('base64') };
+  try {
+    const store = new SessionImageStore(directory), file = await store.upload(input);
+    expect(file.kind).toBe('file');
+    expect(file.url).toBe(`/api/session-files/${file.id}`);
+    const resolved = await store.resolve('codex', 'native-file', [file.id]);
+    expect(resolved[0]).toMatchObject({ kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain' });
+    expect(await readFile(resolved[0].path, 'utf8')).toBe('hello Codex');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

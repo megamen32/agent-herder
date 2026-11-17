@@ -129,6 +129,9 @@ describe("mobile chat and session controls", () => {
     expect(main).not.toContain("composer-hint");
     expect(main).not.toContain(">+ Фото</button>");
     expect(main).toContain('aria-label="Прикрепить изображение"');
+    expect(main).toContain('aria-label="Прикрепить файл"');
+    expect(main).toContain('aria-label={stopSending ? "Останавливаю сессию" : "Остановить сессию"}');
+    expect(main).toContain('void runAction("stop")');
     expect(main).toContain("isComposerSubmitShortcut(event)");
     expect(composerControls).toMatch(/\/mac\|iphone\|ipad\|ipod\/i\.test\(os\) \? event\.metaKey : event\.ctrlKey/);
     expect(composerControls).toContain("}, 550);");

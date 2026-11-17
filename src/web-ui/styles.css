@@ -669,6 +669,9 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
 
 .composer-file-input { display: none; }
 .composer-images { order: -1; flex-basis: 100%; display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+.composer-file-name { display: inline-flex; align-items: center; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-stop { align-self: center; white-space: nowrap; }
+.composer-stop-error { align-self: center; color: var(--status-error); font-size: var(--text-xs); }
 .composer-image { position: relative; }
 .composer-image img, .outbox-image { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
 .composer-image button { position: absolute; right: -5px; top: -5px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text-1); }

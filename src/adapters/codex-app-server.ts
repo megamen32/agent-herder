@@ -368,7 +368,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   readonly lazyStart = true;
   readonly lazyDiscovery = true;
   readonly controlCapabilities: HarnessCapabilities = {
-    imageInput: true, steer: true,
+    imageInput: true, fileInput: true, steer: true,
     cancelTurn: true,
     detach: true,
     resume: true,
@@ -1609,7 +1609,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const result = await this.request("turn/steer", {
           threadId: id,
           expectedTurnId,
-          input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
+          input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => image.kind === "file"
+            ? { type: "mention", name: image.fileName, path: image.path }
+            : { type: "localImage", path: image.path })],
         }, "turn/steer", this.requestTimeoutMs, options.origin === "human" && Number.isFinite(options.humanRequestedAt)) as { turnId?: string };
         if (result.turnId !== expectedTurnId) {
           return { ok: false, admitted: true, nonRetryable: true, error: "Codex steer receipt did not match the verified active turn; do not retry" };
@@ -1663,7 +1665,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     try {
       const result = await this.request("turn/start", {
         threadId: id,
-        input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => ({ type: "localImage", path: image.path }))],
+        input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => image.kind === "file"
+          ? { type: "mention", name: image.fileName, path: image.path }
+          : { type: "localImage", path: image.path })],
         model: this.projectRuntimePolicy?.modelId ?? options.model ?? session.model ?? null,
         ...(this.projectRuntimePolicy ? codexProjectTurnParams(this.projectRuntimePolicy) : {}),
       }, "turn/start", this.requestTimeoutMs, options.origin === "human" && Number.isFinite(options.humanRequestedAt)) as { turn?: { id?: string; status?: string } };

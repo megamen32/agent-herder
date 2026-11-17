@@ -2370,6 +2370,16 @@ it("sends a local image through Codex native turn/start", async () => {
  }finally {await adapter.dispose();await rm(codexDir,{recursive:true,force:true});}
 });
 
+it("sends a generic file as a native Codex mention", async () => {
+ const codexDir=await mkdtemp(join(tmpdir(),"herder-codex-file-")), logPath=join(codexDir,"rpc.log");
+ const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:process.execPath,args:fixtureArgs({ log: logPath }),codexDir});
+ try {
+  await expect(adapter.sendMessage("thread-1",{message:"read it",images:[{id:"b".repeat(64),path:"/protected/notes.txt",fileName:"notes.txt",mimeType:"text/plain",bytes:10,kind:"file"}]})).resolves.toMatchObject({ok:true,admitted:true});
+  const requests=(await readFile(logPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
+  expect(requests.find(row=>row.kind==="request"&&row.method==="turn/start").params.input).toEqual([{type:"text",text:"read it"},{type:"mention",name:"notes.txt",path:"/protected/notes.txt"}]);
+ }finally {await adapter.dispose();await rm(codexDir,{recursive:true,force:true});}
+});
+
 it("reads only the latest Codex turn summary when this process missed its events", async () => {
  const adapter=new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}),codexBin:"/not-started",socketPath:"/tmp/codex-turn-state-fixture.sock"});
  const internals=adapter as unknown as {request(method:string,params:unknown):Promise<unknown>;refreshActiveTurnId(id:string):Promise<void>;toSession(thread:unknown):{meta?:Record<string,unknown>}};

@@ -2595,10 +2595,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const harness = body.harness as string, sessionId = body.sessionId as string;
       if (!adapters.get(harness)?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
       if (!await supervisor.getSession(harness, sessionId)) return sendJson(response, 404, { error: "Чат не найден." });
-      return sendJson(response, 200, await sessionImages.upload(body as unknown as Parameters<SessionImageStore["upload"]>[0]));
+      return sendJson(response, 200, await sessionImages.upload({ ...body, kind: "image" } as unknown as Parameters<SessionImageStore["upload"]>[0]));
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
   }
-  const imageMatch = url.pathname.match(/^\/api\/session-images\/([a-f0-9]{64})$/);
+  if (url.pathname === "/api/session-files" && request.method === "POST") {
+    if (!sessionImages) return sendJson(response, 503, { error: "Прикрепление файлов недоступно." });
+    try {
+      const body = await readJson(request, 24 * 1024 * 1024);
+      for (const key of ["harness", "sessionId", "fileName", "mimeType", "dataBase64"]) if (typeof body[key] !== "string") throw new Error("Некорректный файл.");
+      const harness = body.harness as string, sessionId = body.sessionId as string;
+      if (!adapters.get(harness)?.controlCapabilities?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
+      if (!await supervisor.getSession(harness, sessionId)) return sendJson(response, 404, { error: "Чат не найден." });
+      return sendJson(response, 200, await sessionImages.upload({ ...body, kind: "file" } as unknown as Parameters<SessionImageStore["upload"]>[0]));
+    } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
+  }
+  const imageMatch = url.pathname.match(/^\/api\/(?:session-images|session-files)\/([a-f0-9]{64})$/);
   if (imageMatch && request.method === "GET") {
     try {
       const image = await sessionImages!.content(imageMatch[1]);
@@ -4086,8 +4097,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     let images: import("../types/index.js").MessageImage[];
     try {
-      if (body.imageIds !== undefined && !(route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
-      images = await sessionImages!.resolve(harness, id, body.imageIds);
+      const attachmentIds = body.attachmentIds ?? body.imageIds;
+      const supportsAttachment = (route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities;
+      if (body.imageIds !== undefined && !supportsAttachment?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (body.attachmentIds !== undefined && !supportsAttachment?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
+      images = await sessionImages!.resolve(harness, id, attachmentIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
     if (body.humanRequested === true && route.kind !== "scoped" && isAutopilotHarness(harness)) {
       const target = await adapters.get(harness)?.getSession(id);

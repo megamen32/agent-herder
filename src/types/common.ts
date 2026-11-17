@@ -138,6 +138,7 @@ export interface HarnessEventSourceHealth {
 
 export interface HarnessCapabilities {
   imageInput?: boolean;
+  fileInput?: boolean;
   steer?: boolean;
   cancelTurn: boolean;
   detach: boolean;
@@ -303,7 +304,9 @@ export interface SendMessageOptions {
   durableUserDelivery?: { jobId: string; inputId: string; requestFingerprint: string; harness: string; sessionId: string; targetHostId?: string; mode: "queue" | "steer" | "sync"; actor: { kind: "human" } | { kind: "agent"; principal: "agent-herder-owner-mcp"; senderAssertion: { hostId: string; harness: string; nativeSessionId: string }; senderVerified: false }; minimaxExecPolicy?: { mode: "unset" | "smart" | "full" | "off"; revision: number }; nonce: string; signature: string };
 }
 
-export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number }
+/** A browser attachment staged for one exact native session. Images retain
+ * the historical wire name because durable delivery already persists them. */
+export interface MessageImage { id: string; path: string; fileName: string; mimeType: string; bytes: number; kind?: "image" | "file" }
 
 export interface MessageAdmissionResult {
   /** Technical admission is not model-observed delivery. */
@@ -622,6 +625,7 @@ export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabili
         (key === "terminate" && (typeof adapter.terminate === "function" || typeof adapter.stopSession === "function")),
   ])) as unknown as HarnessCapabilities;
   if (adapter.controlCapabilities?.imageInput) capabilities.imageInput = true;
+  if (adapter.controlCapabilities?.fileInput) capabilities.fileInput = true;
   if (adapter.controlCapabilities?.steer) capabilities.steer = true;
   if (adapter.controlCapabilities?.projects) capabilities.projects = true;
   return capabilities;
