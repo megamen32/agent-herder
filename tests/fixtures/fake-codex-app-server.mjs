@@ -43,6 +43,9 @@ const forcedStartedTurnId = handle("turn-started-id");
 const forcedCompletedTurnId = handle("turn-completed-id");
 const externalRunningThread = handle("external-running-thread");
 const persistedFullAccessThread = handle("full-access-thread");
+if (persistedFullAccessThread && !threads.some(item => item.id === persistedFullAccessThread)) {
+  threads.push(thread(persistedFullAccessThread));
+}
 const numericTimestamps = handle("numeric-timestamps") === "1";
 const failListCursor = handle("fail-list-cursor");
 const threadStatus = handle("thread-status");

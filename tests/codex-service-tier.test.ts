@@ -11,8 +11,8 @@ function fixture(mode: "confirm" | "foreign" | "mismatch" | "missing" = "confirm
   native.request = async (method: string, params: any) => {
     calls.push({ method, params });
     if (method === "thread/loaded/list") return { data: mode === "missing" ? [] : ["target"] };
-    if (method === "thread/read") return { thread: { id: "target", model: "gpt-6-luna", reasoningEffort: "high", status: "active" } };
-    if (method === "thread/resume") return { thread: { id: "target", model: "gpt-6-luna", reasoningEffort: "high", status: "active" }, model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "default" };
+    if (method === "thread/read") return { thread: { id: "target", modelProvider: "openai", model: "gpt-6-luna", reasoningEffort: "high", status: "active" } };
+    if (method === "thread/resume") return { thread: { id: "target", modelProvider: "openai", model: "gpt-6-luna", reasoningEffort: "high", status: "active" }, model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "default" };
     if (method === "thread/settings/update") {
       native.consumeMessage({ method: "thread/settings/updated", params: {
         threadId: mode === "foreign" ? "another" : "target",
@@ -34,7 +34,7 @@ it("changes only service tier for a loaded active Codex thread and confirms the 
     expect((await native.getServiceTier("target")).serviceTier).toBe("fast");
     expect(native.activeTurns.get("target")).toBe("active-turn");
     expect((await native.setServiceTier("target", "normal"))).toMatchObject({ ok: true, nativeServiceTier: "default", serviceTier: "normal" });
-    expect(calls.filter(c => c.method === "thread/resume")).toEqual([{ method: "thread/resume", params: { threadId: "target", excludeTurns: true } }]);
+    expect(calls.filter(c => c.method === "thread/resume")).toEqual([{ method: "thread/resume", params: { threadId: "target", excludeTurns: true, modelProvider: "openai" } }]);
     expect(calls.some(c => /turn\/|config\//.test(c.method))).toBe(false);
   } finally { await adapter.dispose(); }
 });
@@ -76,7 +76,7 @@ it("recovers the effective tier using only a loaded-thread attach snapshot, with
   try {
     expect(await native.getServiceTier("target")).toMatchObject({ canSet: true, serviceTier: "fast", nativeServiceTier: "fast" });
     expect(calls.some(c => c.method === "thread/settings/update" || c.method.startsWith("turn/"))).toBe(false);
-    expect(calls.filter(c => c.method === "thread/resume")).toEqual([{ method: "thread/resume", params: { threadId: "target", excludeTurns: true } }]);
+    expect(calls.filter(c => c.method === "thread/resume")).toEqual([{ method: "thread/resume", params: { threadId: "target", excludeTurns: true, modelProvider: "openai" } }]);
     expect(native.activeTurns.get("target")).toBe("active-turn");
   } finally { await adapter.dispose(); }
 });

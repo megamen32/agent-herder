@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it} from 'vitest';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,realpath,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Client,InMemoryTransport} from '@modelcontextprotocol/client';
@@ -23,7 +23,7 @@ async function node(hostId:string,transport:any){
 }
 describe('actual host workspace MCP',()=>{
  it('declares100→88, preserves launch address, shares remote conflicts and separates equal local path',async()=>{
-  root=await mkdtemp(join(tmpdir(),'herder-workspace-'));const work=join(root,'project');await mkdir(work);
+  root=await realpath(await mkdtemp(join(tmpdir(),'herder-workspace-')));const work=join(root,'project');await mkdir(work);
   const remote=await node('host88',{call:()=>{throw new Error('unexpected onward route');}});
   const requests:any[]=[];const local=await node('host100',{call:async(target:string,name:string,args:any)=>{requests.push({target,name});return remote.call(name,args);}});
   const id={sessionId:'codex100',harness:'codex'};
@@ -42,7 +42,7 @@ describe('actual host workspace MCP',()=>{
   expect(requests.every(r=>r.target==='mcp:shell:host88:AgentHerder')).toBe(true);
  });
  it('locates one project across the fleet with explicit absent and unreachable hosts',async()=>{
-  root=await mkdtemp(join(tmpdir(),'herder-locate-'));const work=join(root,'project');await mkdir(work);
+  root=await realpath(await mkdtemp(join(tmpdir(),'herder-locate-')));const work=join(root,'project');await mkdir(work);
   const remote=await node('host88',{call:async(_target:string,name:string,args:any)=>{if(name==='workspace_probe')return {hostId:'host88',cwd:(args as {cwd:string}).cwd};return {hostId:'host88'};}});
   const transport={discover:async()=>({servers:[{kind:'child_mcp',server_id:'mcp:shell:host100:AgentHerder',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:host88:AgentHerder',status:'online'},{kind:'child_mcp',server_id:'mcp:shell:host44:AgentHerder',status:'online'}]}),call:async(target:string,name:string,args:any)=>{if(target.includes(':host88:'))return remote.call(name,args);throw new Error('ssh: connect to host host44 port 22: Connection refused');}};
   const local=await node('host100',transport);
@@ -56,14 +56,14 @@ describe('actual host workspace MCP',()=>{
   ]);
  });
  it('refuses nonexistent directories and wrong peer host without persisting a declaration',async()=>{
-  root=await mkdtemp(join(tmpdir(),'herder-workspace-'));const local=await node('host100',{call:async()=>({hostId:'wrong',cwd:'/unverified'})});
+  root=await realpath(await mkdtemp(join(tmpdir(),'herder-workspace-')));const local=await node('host100',{call:async()=>({hostId:'wrong',cwd:'/unverified'})});
   await expect(local.call('workspace_declare',{sessionId:'s',harness:'codex',hostId:'host88',cwd:'/repo'})).rejects.toThrow('workspace_peer_identity_mismatch');
   expect(await local.store.activeWorkspaceObservation('s')).toBeUndefined();
   await expect(local.call('workspace_declare',{sessionId:'s',harness:'codex',hostId:'host100',cwd:join(root,'absent')})).rejects.toThrow();
   await expect(local.call('workspace_activity',{sessionId:'s',harness:'codex',paths:['x']})).rejects.toThrow('workspace_declaration_required');
  });
  it('shares conflicts between independent sessions in workspace A and nested workspace A/B',async()=>{
-  root=await mkdtemp(join(tmpdir(),'herder-nested-workspace-'));const project=join(root,'A');const nested=join(project,'B');await mkdir(nested,{recursive:true});
+  root=await realpath(await mkdtemp(join(tmpdir(),'herder-nested-workspace-')));const project=join(root,'A');const nested=join(project,'B');await mkdir(nested,{recursive:true});
   const remote=await node('host88',{call:()=>{throw new Error('unexpected onward route');}});
   const local=await node('host100',{call:async(_target:string,name:string,args:any)=>remote.call(name,args)});
   const outer={sessionId:'session-A',harness:'codex'};

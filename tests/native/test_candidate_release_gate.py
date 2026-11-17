@@ -82,7 +82,7 @@ class CandidateReleaseGateTest(unittest.TestCase):
     def test_local_mode_dispatch_never_imports_remote_fallback(self):
         from zcode_candidate_local import local_configuration
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             official = root / 'official'; official.mkdir()
             mode = local_configuration(str(official), 'a' * 64)
             (root / 'build-manifest.json').write_text(json.dumps({'nativeCandidateGate': mode}))

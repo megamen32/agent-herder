@@ -445,7 +445,7 @@ describe("Codex app-server adapter", () => {
       return {
         activePermissionProfile: { id: policy.permissionProfileId },
         runtimeWorkspaceRoots: [root],
-        thread: { id: "h34-materialized-native-id", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
+        thread: { id: "h34-materialized-native-id", modelProvider: "openai", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
       };
     };
     try {
@@ -484,11 +484,11 @@ describe("Codex app-server adapter", () => {
         return {
           activePermissionProfile: { id: restoredPolicy.permissionProfileId },
           runtimeWorkspaceRoots: [root],
-          thread: { id: "h34-materialized-native-id", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
+          thread: { id: "h34-materialized-native-id", modelProvider: "openai", cwd: root, ephemeral: false, model: "gpt-6-luna", status: "idle" },
         };
       };
       await expect(second.restoreMaterializedSession()).resolves.toEqual({ ok: true, sessionId: created.id });
-      expect(secondCalls.map(call => call.method)).toEqual(["thread/read", "thread/resume"]);
+      expect(secondCalls.map(call => call.method)).toEqual(["thread/read", "thread/read", "thread/resume"]);
       expect(secondCalls.every(call => call.params?.threadId === created.id)).toBe(true);
       expect(await store.get(policy.binding.attemptId)).toMatchObject({ state: "accepted", attempts: [{ address: { nativeSessionId: created.id } }] });
       await second.dispose();
@@ -615,7 +615,7 @@ describe("Codex app-server adapter", () => {
     internals.request = async (method, params) => {
       calls.push({ method, params });
       return {
-        thread: { id: params?.threadId as string, cwd: root },
+        thread: { id: params?.threadId as string, modelProvider: "openai", cwd: root },
         activePermissionProfile: { id: policy.permissionProfileId },
         runtimeWorkspaceRoots: [root],
       };
@@ -629,9 +629,14 @@ describe("Codex app-server adapter", () => {
       internals.projectThreadIds.add("owned-project-thread");
       await expect(adapter.resumeSession("owned-project-thread")).resolves.toEqual({ ok: true });
       expect(calls).toEqual([{
+        method: "thread/read",
+        params: { threadId: "owned-project-thread", includeTurns: false },
+      }, {
         method: "thread/resume",
         params: {
           threadId: "owned-project-thread",
+          modelProvider: "openai",
+          excludeTurns: true,
           permissions: policy.permissionProfileId,
           runtimeWorkspaceRoots: [root],
         },
@@ -1136,6 +1141,7 @@ describe("Codex app-server adapter", () => {
     let threadReadStatus: { type: string; activeFlags?: string[] } = { type: "idle" };
     const thread = {
       id: "thread-unix",
+      modelProvider: "openai",
       cwd: "/workspace",
       name: "Unix socket fixture",
       model: null,
@@ -2343,8 +2349,8 @@ describe("Codex app-server adapter", () => {
         approvalPolicy: "never",
         sandbox: "danger-full-access",
       });
-      expect(requests.find((entry) => entry.method === "thread/resume")?.params).toEqual({ threadId: created.id });
-      expect(requests.filter((entry) => entry.method === "thread/resume").at(-1)?.params).toEqual({ threadId: created.id });
+      expect(requests.find((entry) => entry.method === "thread/resume")?.params).toEqual({ threadId: created.id, excludeTurns: true, modelProvider: "openai" });
+      expect(requests.filter((entry) => entry.method === "thread/resume").at(-1)?.params).toEqual({ threadId: created.id, excludeTurns: true, modelProvider: "openai" });
     } finally {
       await adapter.dispose();
       await rm(codexDir, { recursive: true, force: true });
