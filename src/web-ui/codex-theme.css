@@ -262,8 +262,8 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .composer {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  grid-template-areas: "text text text text" "plus model voice send";
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "text text text text text" "plus model tier voice send";
   align-items: center;
   gap: 4px var(--space-2);
   padding: 12px 13px;
@@ -281,7 +281,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .composer-voice-button { align-self: center; width: 34px; height: 34px; border-radius: 50%; border-color: transparent; background: var(--surface-3); color: var(--text-2); }
 .composer-voice-button.recording { background: color-mix(in srgb, var(--status-error) 16%, var(--surface-3)); color: var(--status-error); }
 .composer-voice-status, .composer-voice-error { grid-column: 1 / -1; }
-.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "text text text text" "plus model voice send"; }
+.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto auto; grid-template-areas: "text text text text text" "plus model tier voice send"; }
 .remote-chat-pane .composer-left { grid-area: plus; min-width: 0; }
 .remote-chat-pane .composer-left select { max-width: 100%; }
 
@@ -425,7 +425,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
   .composer-stack { width: calc(100% - 18px); margin-bottom: 0; }
   .composer { padding: 10px 11px; border-radius: 15px; }
   .composer textarea { min-height: 24px; }
-  .composer { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "text text text text" "plus model voice send"; }
+  .composer { grid-template-columns: auto minmax(0, 1fr) auto auto auto; grid-template-areas: "text text text text text" "plus model tier voice send"; }
   .composer-model { max-width: 100%; }
   .composer-model-menu { right: 12px; width: min(300px, calc(100vw - 40px)); }
   .scroll-latest { bottom: 132px; }

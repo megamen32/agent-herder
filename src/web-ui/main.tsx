@@ -2646,7 +2646,7 @@ function App() {
             event.preventDefault();
             if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage();
           }} />
-          {activeSession?.harness === "codex" && !remoteSelection && directory.localHostId && (!activeSession.hostId || activeSession.hostId === directory.localHostId) && <ServiceTierControl key={`${directory.localHostId}:${activeSession.id}`} sessionId={activeSession.id} hostId={directory.localHostId} request={api} />}
+          {activeSession?.harness === "codex" && !remoteSelection && directory.localHostId && (!activeSession.hostId || activeSession.hostId === directory.localHostId) && <ServiceTierControl key={`${directory.localHostId}:${activeSession.id}`} sessionId={activeSession.id} hostId={directory.localHostId} model={shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")} request={api} />}
           {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name" title={composerModel ? modelOptionLabel(composerModel) : undefined}>{shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
