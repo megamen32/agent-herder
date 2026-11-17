@@ -157,8 +157,9 @@ export async function fetchIntegratorTranscriptPage(input:{address:MeshAddress;e
  const query=new URLSearchParams({limit:'50'});if(input.cursor!==undefined)query.set('cursor',input.cursor);
  const path=`/api/sessions/${encodeURIComponent(input.address.harness)}/${encodeURIComponent(input.address.nativeSessionId)}/transcript?${query}`;
  const response=await (input.fetcher??fetch)(path,{credentials:'same-origin',cache:'no-store'});
- if(!response.ok)throw new Error('Свежая история сессии недоступна. Обновите страницу истории.');
- const value=await response.json() as TranscriptRouteResponse;
+ const payload=await response.json().catch(()=>undefined) as TranscriptRouteResponse & {error?:string}|undefined;
+ if(!response.ok)throw new Error(typeof payload?.error==='string'?payload.error:'Свежая история сессии недоступна. Обновите страницу истории.');
+ const value=payload as TranscriptRouteResponse;
  if(value.session?.id!==input.address.nativeSessionId||value.session.harness!==input.address.harness
   ||value.transcript?.scope?.hostId!==input.expectedHostId||value.transcript.scope.harness!==input.address.harness
   ||value.transcript.scope.nativeSessionId!==input.address.nativeSessionId||!Array.isArray(value.transcript.events)){
