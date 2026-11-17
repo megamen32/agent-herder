@@ -40,6 +40,60 @@ pub struct ExecutionBinding {
     pub resolved_receipt: Option<String>,
 }
 
+/// Preserve an unresolved external effect after its owner generation expired
+/// and the target execution lock proved free. This is advisory recovery
+/// evidence, never permission to replay the old effect.
+pub fn quarantine_expired_execution_binding(
+    authority: &StorageAuthority,
+    resource_ref: &ResourceRef,
+    authorization: Authorization,
+    claim_id: &str,
+    reason: &str,
+) -> io::Result<bool> {
+    let (_guard, dir, _marker, owner) = locked_owner(authority, resource_ref, authorization)?;
+    if owner.claim.claim_id != claim_id || ensure_live_at(&owner.claim, now_seconds()?).is_ok() {
+        return Ok(false);
+    }
+    let Some(binding) = read_binding(&dir)? else { return Ok(false); };
+    if binding.claim_id != claim_id || binding.resolved_receipt.is_some() {
+        return Ok(false);
+    }
+    let _execution_lock = match crate::ownership::release_runner::TargetExecutionLock::try_acquire(
+        authority, resource_ref, authorization,
+    ) {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let archive_dir = dir.join("unresolved-executions");
+    fs::create_dir_all(&archive_dir)?;
+    let archive_path = archive_dir.join(format!("{claim_id}.json"));
+    let archived = serde_json::json!({
+        "version": 1,
+        "kind": "herder-unresolved-execution-quarantine-v1",
+        "resource_ref": resource_ref,
+        "claim_id": claim_id,
+        "reason": reason,
+        "archived_at_seconds": now_seconds()?,
+        "binding": binding,
+    });
+    let bytes = serde_json::to_vec(&archived)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "quarantine cannot encode"))?;
+    match fs::read(&archive_path) {
+        Ok(existing) if existing != bytes => {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "quarantine receipt conflict"));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            write_metadata_atomic(&archive_dir, &format!("{claim_id}.json"), &bytes)?;
+        }
+        Err(error) => return Err(error),
+    }
+    fs::remove_file(dir.join("execution-binding.json"))?;
+    File::open(&dir)?.sync_all()?;
+    Ok(true)
+}
+
 /// Atomically claim one registered resource using the caller's stable UUID nonce.
 /// Every writer opens and locks the same guard inode; this function never removes it.
 pub fn claim(

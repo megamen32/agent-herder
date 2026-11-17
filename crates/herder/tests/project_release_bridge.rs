@@ -616,16 +616,18 @@ fn eof_and_worker_kill_retain_unresolved_occupancy_after_expiry() {
                 .unwrap()
                 .unwrap();
         assert!(binding.resolved_receipt.is_none());
+        let old_claim_id = binding.claim_id.clone();
         let status = f.call(f.request("status", 0));
-        assert_eq!(status["result"]["deploymentInProgress"], true);
-        assert_eq!(status["result"]["lease"]["fence"], 42);
+        assert_eq!(status["result"]["deploymentInProgress"], false);
+        assert_eq!(status["result"]["occupancyState"], "stale_unknown");
+        assert_eq!(status["result"]["reconcileRequired"], true);
         assert_eq!(
             f.call(f.acquire_request(1, &"4".repeat(64)))["result"]["acquired"],
-            false
+            true
         );
         assert_eq!(
             f.call(f.proof_request("release", 0, &token, 42))["error"],
-            "resource_busy"
+            "proof_mismatch"
         );
         let receipts = fs::read_dir(f.resource_dir().join("compat-guards"))
             .unwrap()
@@ -635,6 +637,13 @@ fn eof_and_worker_kill_retain_unresolved_occupancy_after_expiry() {
         assert_eq!(
             receipts, 0,
             "EOF and SIGKILL must never manufacture completion"
+        );
+        assert!(
+            f.resource_dir()
+                .join("unresolved-executions")
+                .join(format!("{old_claim_id}.json"))
+                .is_file(),
+            "the unknown effect must remain as an advisory quarantine receipt"
         );
     }
 }

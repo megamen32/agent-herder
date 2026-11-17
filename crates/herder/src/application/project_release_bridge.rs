@@ -623,17 +623,47 @@ impl Bridge {
         if crate::ownership::migration_hold::read(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)?.is_some() {
             return Ok(true);
         }
-        if claim::read_execution_binding(&self.authority, &mapping.resource_ref, AUTH)
-            .map_err(unavailable)?
-            .is_some_and(|b| b.resolved_receipt.is_none())
-        {
-            return Ok(true);
+        if let Some(binding) = claim::read_execution_binding(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)? {
+            if binding.resolved_receipt.is_none() && !self.stale_binding_recoverable(mapping)? {
+                return Ok(true);
+            }
         }
         match TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH) {
             Ok(_) => Ok(false),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(true),
             Err(e) => Err(unavailable(e)),
         }
+    }
+
+    fn stale_binding_recoverable(&self, mapping: &ProjectMapping) -> Result<bool> {
+        let Some(current) = claim::read_current(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)? else {
+            return Ok(false);
+        };
+        if claim::ensure_live_at(&current, claim::now_seconds().map_err(unavailable)?).is_ok() {
+            return Ok(false);
+        }
+        match TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(false),
+            Err(error) => Err(unavailable(error)),
+        }
+    }
+
+    fn quarantine_stale_binding(&self, mapping: &ProjectMapping) -> Result<bool> {
+        let Some(current) = claim::read_current(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)? else {
+            return Ok(false);
+        };
+        if claim::ensure_live_at(&current, claim::now_seconds().map_err(unavailable)?).is_ok() {
+            return Ok(false);
+        }
+        claim::quarantine_expired_execution_binding(
+            &self.authority,
+            &mapping.resource_ref,
+            AUTH,
+            &current.claim_id,
+            "expired-owner-generation-with-free-target-lock",
+        )
+        .map_err(claim_error)
     }
     fn status(&self, mapping: &ProjectMapping) -> Result<Value> {
         let dir = self.resource_dir(mapping)?;
@@ -642,6 +672,9 @@ impl Bridge {
         let current = claim::read_current(&self.authority, &mapping.resource_ref, AUTH)
             .map_err(unavailable)?;
         let now = claim::now_seconds().map_err(unavailable)?;
+        let binding = claim::read_execution_binding(&self.authority, &mapping.resource_ref, AUTH).map_err(unavailable)?;
+        let unresolved = binding.as_ref().is_some_and(|b| b.resolved_receipt.is_none());
+        let stale_unknown = unresolved && self.stale_binding_recoverable(mapping)?;
         let occupied = self.occupancy(mapping)?;
         let live = current
             .as_ref()
@@ -674,7 +707,8 @@ impl Bridge {
         };
         Ok(
             json!({"lease":lease,"remainingSeconds":remaining,"nextFence":counter.next_fence,
-            "deploymentInProgress":occupied,"contact":contact,"resourceRef":mapping.resource_ref,
+            "deploymentInProgress":occupied,"occupancyState":if stale_unknown {"stale_unknown"} else if unresolved {"unknown"} else if occupied {"active"} else {"free"},
+            "reconcileRequired":unresolved,"contact":contact,"resourceRef":mapping.resource_ref,
             "revision":mapping.revision,"canonicalBusy":canonical_busy,"currentClaim":current_claim,"migrationQuarantine":migration}),
         )
     }
@@ -729,6 +763,7 @@ impl Bridge {
                     if claim::ensure_live_at(&current, now).is_ok() || self.occupancy(mapping)? {
                         return self.busy(mapping, Some(&current), now);
                     }
+                    self.quarantine_stale_binding(mapping)?;
                 } else if self.occupancy(mapping)? {
                     return self.busy(mapping, None, now);
                 }
