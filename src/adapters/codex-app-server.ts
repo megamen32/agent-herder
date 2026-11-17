@@ -2130,7 +2130,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         // runtime). The exact loaded list and identity were checked above.
         const attachedProvider = read.thread.modelProvider;
         if (!attachedProvider) throw new Error("Codex attach requires a saved model provider; refusing current-global fallback");
-        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider }) as {
+        const attachedTransportConfig = this.trustedTransportOverrides.get(sessionId);
+        if (attachedTransportConfig && (!this.trustedTransportPreflight || !await this.trustedTransportPreflight(sessionId))) {
+          throw new Error("trusted transport override requires a confirmed writer-free cold thread");
+        }
+        const attached = await this.request("thread/resume", { threadId: sessionId, excludeTurns: true, modelProvider: attachedProvider, ...(attachedTransportConfig ? { config: attachedTransportConfig } : {}) }) as {
           thread?: CodexThread; serviceTier?: string | null; model?: string; reasoningEffort?: string | null;
         };
         if (attached.thread?.id !== sessionId || generation !== this.transportGeneration || !this.isReady()) throw new Error("Codex attach snapshot identity or transport mismatch");
