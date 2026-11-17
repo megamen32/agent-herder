@@ -23,8 +23,11 @@ def digest(path):
 
 def private_json(path):
     path = Path(path)
+    if not path.is_absolute() or path.is_symlink():
+        raise ValueError('configuration must be a canonical regular file')
+    path = path.resolve(strict=True)
     info = path.lstat()
-    if not path.is_absolute() or path.resolve() != path or not stat.S_ISREG(info.st_mode):
+    if not stat.S_ISREG(info.st_mode):
         raise ValueError('configuration must be a canonical regular file')
     if info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
         raise ValueError('configuration must be private and owned by this user')
