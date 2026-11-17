@@ -79,7 +79,10 @@ type CursorState = {
 const MAX_CURSOR_LENGTH = 4096;
 const MAX_EVENT_ID_LENGTH = 1024;
 const MAX_AUTHOR_ID_LENGTH = 512;
-export const MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES = 16 * 1024 * 1024;
+// Codex rollout JSONL files routinely exceed the old 16 MiB ceiling while
+// remaining bounded native session artifacts. Keep paging over one immutable
+// snapshot, but allow the complete current session to be read.
+export const MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 const SUPPORTED_NATIVE_JSONL_HARNESSES = new Set(["codex", "claude", "qoder"]);
 const SNAPSHOT_CURSOR_TTL_MS = 30 * 60 * 1000;
 const MAX_ISSUED_SNAPSHOT_CURSORS = 2048;
@@ -463,7 +466,7 @@ export function createRawTranscriptPageReader(input: {
 }): NativeTranscriptPageReader {
   const expectedScope = scopeKey(input.scope);
   const maxBytes = input.maxSnapshotBytes ?? MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES;
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES) throw new Error("Native transcript snapshot limit must be 1..16MiB");
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES) throw new Error("Native transcript snapshot limit must be 1..64MiB");
   const issuedCursors = new Map<string, { state: SnapshotCursor; expiresAt: number; stateKey: string }>();
   const cursorByState = new Map<string, string>();
   const removeIssuedCursor = (token: string, entry: { state: SnapshotCursor; expiresAt: number; stateKey: string }): void => {
