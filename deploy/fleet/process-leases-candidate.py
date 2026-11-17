@@ -42,7 +42,13 @@ def canonical(path):
 
 
 def private_file(path):
-    p = canonical(path)
+    p = Path(path)
+    if not p.is_absolute() or p.is_symlink():
+        raise ValueError("expected an absolute non-symlink private file: " + str(p))
+    # Installed authority profiles may live below a private symlinked artifact
+    # directory (the final file itself must still be a regular file).  Resolve
+    # that stable directory indirection before checking ownership and mode.
+    p = p.resolve(strict=True)
     s = p.lstat()
     if not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or s.st_mode & 0o077 or s.st_nlink != 1:
         raise ValueError("expected a private owner-controlled regular file: " + str(p))

@@ -21,6 +21,15 @@ When it is explicitly enabled, a new release owner may include
 Existing unresolved bindings remain durable evidence for later review, but do
 not block the normal path while the capability is off.
 
+When the capability is enabled, status distinguishes an active effect from an
+expired owner generation. An unresolved binding with an expired current claim
+and a free target execution lock is reported as `occupancyState: "stale_unknown"`
+with `reconcileRequired: true`; it remains UNKNOWN evidence, but it does not
+hold a fresh release admission forever. The bridge archives the binding under
+`unresolved-executions/<claim_id>.json` before admitting the next lease. A live
+claim, a busy target lock, migration hold, or an unobservable owner remains a
+hard block. No stale binding is replayed or silently marked successful.
+
 ## Installed surfaces and reviewed baseline
 
 The following observations were made on server-100 on 2026-11-13. Re-read the selected configuration and process identity before any release.
@@ -267,7 +276,14 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" recover \
 
 For the legacy ledger, recover can settle durable occupancy after those observations under a new held release guard. It changes no selector and performs no restart. A mixed or unrelated configuration is refused.
 
-For a canonical UNKNOWN execution binding, recover records the evidence and remains blocked. The bridge deliberately rejects a fresh guard for an unresolved old binding, even with the same proof. A separate reviewed canonical reconciliation must verify terminal evidence for the original guard and exact claim before clearing that binding. cleanup:true is valid only on the continuously held original guard channel; it is not a recovery entrypoint.
+For a canonical UNKNOWN execution binding, recover records the evidence and
+does not fabricate terminal success. If the current claim is expired and the
+target execution lock is demonstrably free, the normal canonical bridge path
+quarantines the binding into its immutable `unresolved-executions` archive and
+admits a new fenced lease; status continues to expose `reconcileRequired: true`.
+A live claim, a busy target lock, or missing identity evidence still requires
+reviewed reconciliation and blocks takeover. `cleanup:true` is valid only on
+the continuously held original guard channel; it is not a recovery entrypoint.
 
 The backup retains exact previous selector/launcher bytes, hashes and modes, including evidence for a half-completed two-file switch. Library rollback validates those hashes and rejects a newer unrelated release; it requires a held mutation admission. Configuration restoration and restart after an uncertain result require a reviewed recovery procedure. Restoring a selector alone cannot migrate active process rules back to an older core. Preserve common stores, workers, claims, wake intents and authority databases; never restore an old DB snapshot to simulate rollback.
 

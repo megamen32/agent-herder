@@ -66,6 +66,19 @@ class MigrationLauncherContracts(unittest.TestCase):
         self.assertEqual(receipt["canonical_migration"], {
             "config": str(self.config), "config_sha256": launcher.digest(self.config), "epoch": "reviewed-epoch"})
 
+    def test_private_profile_parent_alias_is_readable(self):
+        alias = self.root / "profile-artifact-alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.selector.write_text(json.dumps({
+            "manifest": str(self.root / "manifest.json"),
+            "manifest_sha256": launcher.digest(self.root / "manifest.json"),
+            "profiles": [str(alias / self.profile.name)],
+        }) + "\n")
+        self.selector.chmod(0o600)
+
+        argv, _, _ = launcher.prepare(self.selector)
+        self.assertEqual(argv[1:], ["--trusted-owner-profile", str(alias / self.profile.name)])
+
     def test_config_mutation_after_manifest_seal_blocks_launch(self):
         self.bind()
         self.save(self.config, {"version": 1, "mode": "canonical", "epoch": "replaced-epoch"})

@@ -41,6 +41,17 @@ def prepare(selector):
 
 
 class RolloutContracts(unittest.TestCase):
+    def test_private_profile_file_allows_private_symlinked_artifact_parent(self):
+        authority = self.root / "authority"
+        authority.mkdir(mode=0o700)
+        profile = authority / "profile.json"
+        candidate.create(profile, candidate.encoded({"owner": {"principal": "owner-a"}}))
+        alias = self.root / "artifact-alias"
+        alias.symlink_to(authority, target_is_directory=True)
+
+        self.assertEqual(candidate.private_file(alias / profile.name), profile)
+        self.assertEqual(candidate.read_json(alias / profile.name)["owner"]["principal"], "owner-a")
+
     def test_shared_core_descriptors_cannot_be_copied_to_a_replaced_core(self):
         for key in ("core_release", "products", "product_sha256"):
             with self.subTest(key=key):
