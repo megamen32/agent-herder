@@ -2,7 +2,8 @@
 
 use std::{fs, path::PathBuf, time::Duration};
 
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::{Value, json};
 
 use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
 
@@ -47,7 +48,7 @@ impl From<RpcError> for CodexReadError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NativeThread {
     /// Codex's stable native thread/session address.
     pub id: String,
@@ -55,20 +56,21 @@ pub struct NativeThread {
     pub status: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NativeThreadPage {
     pub data: Vec<NativeThread>,
     pub next_cursor: Option<String>,
     pub backwards_cursor: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum NativeMessageRole {
     User,
     Assistant,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeMessage {
     pub id: String,
     pub role: NativeMessageRole,
@@ -77,7 +79,7 @@ pub struct NativeMessage {
     pub turn_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NativeMessagePage {
     pub data: Vec<NativeMessage>,
     pub next_cursor: Option<String>,
@@ -112,34 +114,32 @@ fn open_connection(
     instance: &CodexInstance,
     timeout: Duration,
 ) -> Result<CodexConnection, CodexReadError> {
-        let expected_profile =
-            fs::canonicalize(&instance.code_home).map_err(CodexReadError::ProfilePath)?;
-        let mut connection = CodexConnection::open(instance.clone())?;
-        let initialized = connection.request(
-            "initialize",
-            json!({
-                "clientInfo": {
-                    "name": "agent-herder-native",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-                "capabilities": {"experimentalApi": true},
-            }),
-            timeout,
-        )?;
-        let observed = initialized
-            .get("codexHome")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                CodexReadError::InvalidThreadList("initialize omitted codexHome".into())
-            })?;
-        if PathBuf::from(observed) != expected_profile {
-            return Err(CodexReadError::ProfileMismatch {
-                expected: expected_profile,
-                observed: observed.to_owned(),
-            });
-        }
-        connection.notify("initialized", json!({}))?;
-        Ok(connection)
+    let expected_profile =
+        fs::canonicalize(&instance.code_home).map_err(CodexReadError::ProfilePath)?;
+    let mut connection = CodexConnection::open(instance.clone())?;
+    let initialized = connection.request(
+        "initialize",
+        json!({
+            "clientInfo": {
+                "name": "agent-herder-native",
+                "version": env!("CARGO_PKG_VERSION"),
+            },
+            "capabilities": {"experimentalApi": true},
+        }),
+        timeout,
+    )?;
+    let observed = initialized
+        .get("codexHome")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CodexReadError::InvalidThreadList("initialize omitted codexHome".into()))?;
+    if PathBuf::from(observed) != expected_profile {
+        return Err(CodexReadError::ProfileMismatch {
+            expected: expected_profile,
+            observed: observed.to_owned(),
+        });
+    }
+    connection.notify("initialized", json!({}))?;
+    Ok(connection)
 }
 
 fn is_stale_history_lineage(error: &RpcError) -> bool {
@@ -148,7 +148,7 @@ fn is_stale_history_lineage(error: &RpcError) -> bool {
         RpcError::Remote { message, .. }
             if message.contains("invalid paginated history lineage")
     )
-    }
+}
 
 impl CodexReader {
     pub fn instance_id(&self) -> &str {
@@ -213,26 +213,27 @@ impl CodexReader {
             self.refresh_before_first_message_read = false;
         }
         let params = json!({
-                "threadId": thread_id,
-                "cursor": cursor,
-                "limit": limit,
-                "sortDirection": "asc",
-            });
-        let result = match self
-            .connection
-            .request("thread/items/list", params.clone(), self.timeout)
-        {
-            Ok(result) => result,
-            Err(error) if is_stale_history_lineage(&error) => {
-                // A reader opened before a new thread can retain a stale
-                // app-server history index. Refresh only this read connection;
-                // never replay a native mutation after an uncertain outcome.
-                self.reopen()?;
-                self.connection
-                    .request("thread/items/list", params, self.timeout)?
-            }
-            Err(error) => return Err(error.into()),
-        };
+            "threadId": thread_id,
+            "cursor": cursor,
+            "limit": limit,
+            "sortDirection": "asc",
+        });
+        let result =
+            match self
+                .connection
+                .request("thread/items/list", params.clone(), self.timeout)
+            {
+                Ok(result) => result,
+                Err(error) if is_stale_history_lineage(&error) => {
+                    // A reader opened before a new thread can retain a stale
+                    // app-server history index. Refresh only this read connection;
+                    // never replay a native mutation after an uncertain outcome.
+                    self.reopen()?;
+                    self.connection
+                        .request("thread/items/list", params, self.timeout)?
+                }
+                Err(error) => return Err(error.into()),
+            };
         let rows = result
             .get("data")
             .and_then(Value::as_array)
