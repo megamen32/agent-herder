@@ -684,8 +684,12 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
 
 .model-provider { display: block; color: var(--text-2); opacity: .75; font-size: var(--text-xs); overflow-wrap: anywhere; }
 
-.composer-left { grid-area: plus; display: flex; align-items: center; gap: 6px; }
+.composer-left { position: relative; grid-area: plus; display: flex; align-items: center; gap: 6px; }
 .composer-left .composer-plus { width: auto; padding: 0 5px; white-space: nowrap; font-size: var(--text-sm); }
+.composer-attachment-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20; display: grid; gap: 2px; min-width: 170px; padding: 5px; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--panel); box-shadow: var(--shadow-menu); }
+.composer-attachment-menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 9px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-2); text-align: left; }
+.composer-attachment-menu button:hover { background: var(--surface-hover); color: var(--text); }
+.composer-attachment-menu small { color: var(--muted); font-size: var(--text-xs); }
 .composer-delivery-mode { display: inline-flex; align-items: center; justify-content: center; gap: 2px; width: 30px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-2); font-size: 18px; line-height: 1; }
 .composer-delivery-mode:hover, .composer-delivery-mode[aria-expanded="true"] { background: var(--surface-hover); color: var(--text); }
 .composer-delivery-mode-chevron { font-size: 10px; }
