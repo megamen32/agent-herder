@@ -2093,6 +2093,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.threads.set(id, result.thread);
       return { ok: true };
     } catch (error) {
+      if (this.trustedTransportFor(id)) this.trustedTransportApplied.delete(id);
       const refusal = this.quotaRefusal(error);
       if (refusal) return refusal;
       return { ok: false, error: (error as Error).message };
