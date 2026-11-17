@@ -6,7 +6,7 @@ use herder::{
         scoped_stop::{
             BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
             ScopeGenerationIssuer, ScopedAuthority,
-            automation_driver::{self, AutomationOwner},
+            automation_driver,
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
@@ -218,22 +218,37 @@ impl ApplicationPort for OwnerApp {
     }
 }
 pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
-    // V1 manifests select the existing TypeScript adapter through AHAP for
-    // every harness. The earlier Rust Codex implementation remains preserved
-    // for its existing explicit, script-less profiles.
-    if opened.owner.ahap_script.is_some() {
+    // Codex profiles may retain an AHAP field for older manifests, but their
+    // exact native executable/profile binding is now consumed directly by the
+    // Rust app-server adapter. Other harnesses retain their legacy owner port.
+    if !has_native_codex_binding(&opened.owner) && opened.owner.ahap_script.is_some() {
         return super::owner_opencode::serve(opened).await;
     }
+    let binding = build(opened)?;
+    automation_driver::start(vec![binding.driver_owner()])?;
+    let service = binding.server.serve(rmcp::transport::stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}
+
+pub fn build(
+    opened: OpenedOwner,
+) -> Result<super::owner_opencode::BoundOwner, Box<dyn std::error::Error>> {
+    let registry = Arc::new(DependencyRegistry::new());
+    let binding = build_with_registry(opened, registry.clone())?;
+    registry.configure(vec![binding.source.clone()])?;
+    Ok(binding)
+}
+
+pub fn build_with_registry(
+    opened: OpenedOwner,
+    registry: Arc<DependencyRegistry>,
+) -> Result<super::owner_opencode::BoundOwner, Box<dyn std::error::Error>> {
     let instance = InstanceRef {
         node: NodeRef(opened.owner.node.clone()),
         instance_id: opened.owner.instance.clone(),
     };
-    let process = CodexInstance {
-        instance_id: instance.instance_id.clone(),
-        executable: opened.owner.executable,
-        code_home: opened.owner.code_home,
-        cwd: opened.owner.cwd,
-    };
+    let process = codex_process(&opened.owner, &instance)?;
     let timeout = Duration::from_secs(20);
     let reopened = Arc::new(NativeReader::open(
         process.clone(),
@@ -320,10 +335,8 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         policy.clone(),
         reopened,
     ));
-    let registry = Arc::new(DependencyRegistry::new());
-    registry.configure(vec![source.clone()])?;
     let waits = Arc::new(WaitAutomationApplication::new(
-        source,
+        source.clone(),
         registry,
         deliver.clone(),
         catalog::DeliveryMode::Start,
@@ -331,7 +344,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         policy.clone(),
     ));
     let app = Arc::new(OwnerApp {
-        instance,
+        instance: instance.clone(),
         grants: grants.clone(),
         policy: policy.clone(),
         messages,
@@ -340,11 +353,51 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
         interrupt: control.clone(),
         waits: waits.clone(),
     });
-    automation_driver::start(vec![AutomationOwner::new(identity.clone(), vec![waits])])?;
-    let server = ScopedTaskServer::new(identity, grants, authority, app)
-        .with_create_policy(policy)
+    let server = ScopedTaskServer::new(identity.clone(), grants, authority, app)
+        .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
-    let service = server.serve(rmcp::transport::stdio()).await?;
-    service.waiting().await?;
-    Ok(())
+    Ok(super::owner_opencode::BoundOwner {
+        harness: "codex".into(),
+        process: None,
+        waits,
+        source,
+        identity: identity.clone(),
+        server,
+        policy,
+        instance,
+    })
+}
+
+fn codex_process(
+    owner: &super::scoped_profile::OwnerProfile,
+    instance: &InstanceRef,
+) -> Result<CodexInstance, Box<dyn std::error::Error>> {
+    let binding = owner
+        .ahap_env
+        .get("AHAP_CODEX_BIN")
+        .zip(owner.ahap_env.get("CODEX_HOME"))
+        .zip(owner.ahap_env.get("AHAP_CODEX_CWD"));
+    let (executable, code_home, cwd) = match binding {
+        Some(((executable, code_home), cwd)) if owner.kind == "codex" => {
+            (executable.into(), code_home.into(), cwd.into())
+        }
+        _ => (
+            owner.executable.clone(),
+            owner.code_home.clone(),
+            owner.cwd.clone(),
+        ),
+    };
+    Ok(CodexInstance {
+        instance_id: instance.instance_id.clone(),
+        executable,
+        code_home,
+        cwd,
+    })
+}
+
+pub(super) fn has_native_codex_binding(owner: &super::scoped_profile::OwnerProfile) -> bool {
+    owner.kind == "codex"
+        && ["AHAP_CODEX_BIN", "CODEX_HOME", "AHAP_CODEX_CWD"]
+            .iter()
+            .all(|name| owner.ahap_env.contains_key(*name))
 }

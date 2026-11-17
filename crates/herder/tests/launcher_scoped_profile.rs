@@ -511,7 +511,7 @@ for line in sys.stdin:
  print(json.dumps({'id':r['id'],'result':v}),flush=True)
 "##).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
-    let p = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"local-owner","node":"local","instance":"codex-test","executable":fake,"code_home":f.root,"cwd":f.root}});
+    let p = serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{"principal":"local-owner","node":"local","instance":"codex-test","executable":fake,"ahap_script":fake,"ahap_env":{"AHAP_CODEX_BIN":fake,"CODEX_HOME":f.root,"AHAP_CODEX_CWD":f.root,"AGENT_HERDER_WORKLOAD_ISOLATION":"off"},"code_home":f.root,"cwd":f.root}});
     fs::write(&f.profile, p.to_string()).unwrap();
     if let Some(probe) = std::env::var_os("HERDER_OWNER_SDK_PROBE") {
         let result = Command::new(probe)

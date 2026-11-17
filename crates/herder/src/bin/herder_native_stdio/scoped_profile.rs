@@ -75,6 +75,40 @@ fn invalid_browser_binding() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, "invalid browser binding")
 }
 
+fn validate_codex_native_binding(owner: &OwnerProfile) -> io::Result<()> {
+    if owner.kind != "codex" || owner.ahap_script.is_none() {
+        return Ok(());
+    }
+    let has_binding = ["AHAP_CODEX_BIN", "CODEX_HOME", "AHAP_CODEX_CWD"]
+        .iter()
+        .any(|name| owner.ahap_env.contains_key(*name));
+    if !has_binding {
+        return Ok(());
+    }
+    let executable = owner
+        .ahap_env
+        .get("AHAP_CODEX_BIN")
+        .map(PathBuf::from)
+        .ok_or_else(invalid_browser_binding)?;
+    trusted_executable(&executable)?;
+    for name in ["CODEX_HOME", "AHAP_CODEX_CWD"] {
+        let path = owner
+            .ahap_env
+            .get(name)
+            .map(PathBuf::from)
+            .ok_or_else(invalid_browser_binding)?;
+        if !path.is_absolute()
+            || !path.is_dir()
+            || path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        {
+            return Err(invalid_browser_binding());
+        }
+    }
+    Ok(())
+}
+
 fn valid_sha256_scope(value: &str) -> bool {
     value.len() == 64
         && value
@@ -409,6 +443,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         _ => return Err(invalid().into()),
     }
     validate_existing_sessions(&owner)?;
+    validate_codex_native_binding(&owner)?;
     Ok(OpenedOwner {
         authority,
         owner,
