@@ -12,7 +12,8 @@ describe("RemoteSessionView native transcript integration", () => {
     };
     expect(integratorEventDisplay(event)).toMatchObject({
       attribution: "Неизвестный автор · user",
-      visualRole: "unknown",
+      attribution: "Пользователь",
+      visualRole: "user",
       message: { id: "native-user-1", role: "user", text: "Please inspect this task" },
     });
     expect(fallbackSessionAttribution("user")).toBe("Неизвестный автор · user");

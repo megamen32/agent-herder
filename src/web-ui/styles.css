@@ -219,7 +219,7 @@ h1 { font-size: var(--text-xl); } h2 { font-size: var(--text-lg); }
 .composer textarea { min-height: 28px; max-height: 160px; flex: 1; resize: none; border: 0; background: transparent; color: var(--text); font-size: var(--text-md); line-height: 1.5; } .composer textarea::placeholder { color: var(--muted); }
 .composer-plus { width: 28px; height: 28px; border-radius: var(--radius-s); background: transparent; color: var(--muted); font-size: 20px; } .composer-plus:hover { background: var(--surface-hover); }
 .composer-readonly { min-width: 0; flex: 1; display: grid; gap: 2px; padding: 2px 3px; } .composer-readonly strong { font-size: var(--text-sm); font-weight: 600; } .composer-readonly span { overflow: hidden; color: var(--muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "text text text text" "plus model voice send"; }
+.remote-chat-pane .composer { grid-template-columns: auto minmax(0, 1fr) auto auto auto; grid-template-areas: "text text text text text" "plus model tier voice send"; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--surface-2); color: var(--muted); font-weight: 700; }
 .send-button:not(:disabled) { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .send-button:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, var(--on-accent)); }
@@ -679,18 +679,24 @@ details.activity-group .message-activity-rows { padding: 4px 10px; }
 .composer-image img, .outbox-image { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
 .composer-image button { position: absolute; right: -5px; top: -5px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text-1); }
 .message-image { display: block; max-width: min(100%, 420px); max-height: 320px; object-fit: contain; border-radius: 12px; margin: 8px 0; }
-.composer:has(.composer-images) { grid-template-areas: "images images images images" "text text text text" "plus hint model send"; }
+.composer:has(.composer-images) { grid-template-areas: "images images images images images" "text text text text text" "plus model tier voice send"; }
 .composer-images { grid-area: images; }
 
 .model-provider { display: block; color: var(--text-2); opacity: .75; font-size: var(--text-xs); overflow-wrap: anywhere; }
 
-.composer-left { grid-area: plus; display: flex; align-items: center; gap: 6px; }
+.composer-left { position: relative; grid-area: plus; display: flex; align-items: center; gap: 6px; }
 .composer-left .composer-plus { width: auto; padding: 0 5px; white-space: nowrap; font-size: var(--text-sm); }
-.composer-delivery-mode { border: 0; background: transparent; color: var(--text-2); font-size: var(--text-xs); white-space: nowrap; padding: 5px 0; }
+.composer-attachment-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 20; display: grid; gap: 2px; min-width: 170px; padding: 5px; border: 1px solid var(--border-2); border-radius: var(--radius-m); background: var(--panel); box-shadow: var(--shadow-menu); }
+.composer-attachment-menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 9px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-2); text-align: left; }
+.composer-attachment-menu button:hover { background: var(--surface-hover); color: var(--text); }
+.composer-attachment-menu small { color: var(--muted); font-size: var(--text-xs); }
+.composer-delivery-mode { display: inline-flex; align-items: center; justify-content: center; gap: 2px; width: 30px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text-2); font-size: 18px; line-height: 1; }
+.composer-delivery-mode:hover, .composer-delivery-mode[aria-expanded="true"] { background: var(--surface-hover); color: var(--text); }
+.composer-delivery-mode-chevron { font-size: 10px; }
 .composer-delivery-menu { position: absolute; bottom: calc(100% + 8px); left: 0; max-width: 430px; padding: 12px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--surface-1); box-shadow: var(--shadow-menu); z-index: 14; }
 .composer .resume-button { width: auto; min-width: 36px; padding: 0 9px; border-radius: 18px; font-size: var(--text-xs); white-space: nowrap; }
 @media(max-width:900px) {
- .composer:has(.composer-images) { grid-template-areas: "images images images" "text text text" "plus model send"; }
+ .composer:has(.composer-images) { grid-template-areas: "images images images images images" "text text text text text" "plus model tier voice send"; }
  .composer-left { gap: 3px; }
  .composer-left .composer-plus { font-size: 11px; padding: 0 2px; }
  .composer-delivery-mode { font-size: 10px; }

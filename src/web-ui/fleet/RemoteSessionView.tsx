@@ -128,14 +128,14 @@ export function integratorEventDisplay(event:NativeTranscriptEvent):DisplayMessa
  else if(author.kind==='system')attribution='Система';
  else if(author.kind==='human')attribution='Пользователь';
  else if(author.kind==='tool')attribution=author.id?`Инструмент · ${author.id}`:'Инструмент';
- else if(author.sourceRole)attribution=`Неизвестный автор · ${author.sourceRole}`;
+ else if(author.sourceRole)attribution=author.sourceRole==='user'?'Пользователь':`Неизвестный автор · ${author.sourceRole}`;
  const role:SessionMessageView['role']=event.kind==='tool_result'||author.kind==='tool'?'tool':author.kind==='assistant'||event.kind==='tool_call'?'assistant':author.kind==='system'?'system':'user';
  const parts:SessionMessageView['parts']=event.kind==='tool_call'
   ?[{type:'tool_call',name:event.toolName,input:{callId:event.toolCallId,arguments:event.payload}}]
   :event.kind==='tool_result'
    ?[{type:'tool_result',name:event.toolName,input:{callId:event.toolCallId},output:payloadText(event.payload)}]
    :event.text!==undefined?[{type:'text',text:event.text}]:[];
- return {message:{id:event.eventId,role,...(event.turnId?{turnId:event.turnId}:{}),...(event.timestamp?{timestamp:event.timestamp}:{}),...(event.text!==undefined?{text:event.text}:{}),parts},attribution,visualRole:author.kind==='unknown'?'unknown':author.kind};
+ return {message:{id:event.eventId,role,...(event.turnId?{turnId:event.turnId}:{}),...(event.timestamp?{timestamp:event.timestamp}:{}),...(event.text!==undefined?{text:event.text}:{}),parts},attribution,visualRole:author.kind==='unknown'?(role==='user'?'user':'unknown'):author.kind};
 }
 
 export function fallbackSessionAttribution(role:SessionMessageView['role']):string{
