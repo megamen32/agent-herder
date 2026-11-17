@@ -474,6 +474,31 @@ fn owner_profile_requires_explicit_complete_protected_configuration() {
 }
 
 #[test]
+fn native_opencode_owner_profile_accepts_endpoint_without_ahap_runner() {
+    let f = Fixture::new();
+    let profile = serde_json::json!({
+        "database": f.db,
+        "gate": f.gate,
+        "generation": "generation",
+        "owner": {
+            "kind": "opencode",
+            "principal": "local-owner",
+            "node": "local",
+            "instance": "opencode-test",
+            "executable": fs::canonicalize("/usr/bin/python3").unwrap(),
+            "ahap_base_url": "http://127.0.0.1:4095",
+            "ahap_env": {"AHAP_OPENCODE_PASSWORD": "fixture-only"},
+            "code_home": f.root,
+            "cwd": f.root
+        }
+    });
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    let opened = scoped_profile::open_owner(&f.profile).unwrap();
+    assert_eq!(opened.owner.kind, "opencode");
+    assert!(opened.owner.ahap_script.is_none());
+}
+
+#[test]
 fn trusted_owner_launcher_wires_create_and_scoped_read_over_stdio() {
     use std::io::{BufRead, BufReader, Write};
     let f = Fixture::new();
