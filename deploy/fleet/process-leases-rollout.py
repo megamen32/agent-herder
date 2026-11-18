@@ -654,7 +654,7 @@ def admit(args, gate):
     before_pair_again = drained_again["pair"] if drained_again is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
     if drained_again != drained or before_pair_again != before_pair:
         raise ValueError("running baseline changed during admission")
-    candidate.profile_transition(selection, new_selection, baseline, proposed)
+    candidate.profile_migration(selection, new_selection, baseline, proposed)
     # This proof is fresh but needs no native call: a newly installed canonical
     # TS service may safely fail closed while the old core lacks wait_status.
     proof_bytes, _ = scheduler.read_file(str(args.scheduler_proof))
@@ -686,7 +686,7 @@ def admit(args, gate):
                  "baseline_manifest": selection["manifest"], "baseline_manifest_sha256": selection["manifest_sha256"],
                  "candidate_manifest": new_selection["manifest"], "candidate_manifest_sha256": checked["manifest_sha256"],
                  "baseline_runtime": before_pair, "component_ancestry": ancestry,
-                 "adapter_migration_sha256": checked.get("adapter_migration_sha256"),
+                 "profile_migration_sha256": checked.get("profile_migration_sha256"),
                  "scheduler_identity": scheduler_evidence["identity"],
                  "scheduler_preflight_evidence": scheduler_evidence,
                  "scheduler_preflight_sha256": hashlib.sha256(proof_bytes).hexdigest(),
