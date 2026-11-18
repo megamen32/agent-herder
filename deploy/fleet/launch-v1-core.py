@@ -152,7 +152,13 @@ def prepare(selector):
             raise ValueError('profile does not select the installed executable')
         canonical = manifest['adapters'][owner['kind']]
         identity = (owner.get('node'), owner.get('instance'), owner['kind'])
-        if owner['ahap_script'] != canonical and pinned.get(identity) != owner['ahap_script']:
+        ahap_script = owner.get('ahap_script')
+        if ahap_script is None:
+            # Native OpenCode profiles select the endpoint directly. The Rust
+            # owner composition validates the endpoint and owns the transport.
+            if owner['kind'] != 'opencode' or not isinstance(owner.get('ahap_base_url'), str):
+                raise ValueError('native profile has no supported endpoint binding')
+        elif ahap_script != canonical and pinned.get(identity) != ahap_script:
             raise ValueError('profile does not select the installed artifact')
         argv.extend(['--trusted-owner-profile', path])
     env = dict(os.environ)

@@ -149,6 +149,21 @@ class AdapterMigrationContracts(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             candidate.check_selector(self.new_selector, self.new_launcher)
 
+    def test_native_opencode_profile_payload_removes_only_legacy_runner(self):
+        path = self.root / "profile-opencode.json"
+        profile = copy.deepcopy(candidate.strict_json(self.old_profiles[str(path)]))
+        profile["owner"]["ahap_base_url"] = "http://127.0.0.1:4095"
+        raw = json.dumps(profile, ensure_ascii=True, indent=3).replace("\n", "\r\n").encode() + b"\r\n"
+        payload = candidate.native_profile_payload(raw)
+        before = candidate.strict_json(raw)
+        after = candidate.strict_json(payload)
+        expected = copy.deepcopy(before)
+        del expected["owner"]["ahap_script"]
+        self.assertEqual(after, expected)
+        self.assertIn(b"ahap_base_url", payload)
+        self.assertNotIn(b"ahap_script", payload)
+        self.assertTrue(payload.endswith(b"\r\n"))
+
     def test_guarded_install_creates_private_siblings_and_rollback_keeps_old_profiles(self):
         result = candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(candidate.read_json(self.selector)["profiles"], self.new_selection["profiles"])
