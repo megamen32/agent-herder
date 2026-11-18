@@ -189,11 +189,14 @@ impl ScopedAuthority {
             }
         })?;
         let dm = std::fs::symlink_metadata(&self.db).map_err(|_| GateError::Unavailable)?;
+        let db_parent = self.db.parent().and_then(|path| path.canonicalize().ok());
+        let gate_parent = self.gate.parent().and_then(|path| path.canonicalize().ok());
         if !dm.is_file()
             || dm.nlink() != 1
             || dm.mode() & 0o077 != 0
             || dm.uid() != gm.uid()
-            || self.db.canonicalize().ok().as_deref() != Some(Path::new(&self.db))
+            || db_parent.is_none()
+            || db_parent != gate_parent
         {
             return Err(GateError::Unavailable);
         }
