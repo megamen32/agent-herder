@@ -736,9 +736,9 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
     payload_dir.mkdir(mode=0o700)
     profiles = []
     all_hashes = {}
-    for path in selection["profiles"]:
-        path = private_file(path)
-        all_hashes[str(path)] = digest(path)
+    for selected_path in selection["profiles"]:
+        path = private_file(selected_path)
+        all_hashes[str(selected_path)] = digest(path)
         profile = strict_json(path.read_bytes())
         owner = profile["owner"]
         if owner.get("kind") not in kinds or owner.get("ahap_script") != base["adapters"].get(owner.get("kind")):
@@ -751,7 +751,7 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
         staged = payload_dir / (after_hash + ".json")
         if not staged.exists():
             create(staged, payload, 0o400)
-        profiles.append({"kind": owner["kind"], "previous_path": str(path),
+        profiles.append({"kind": owner["kind"], "previous_path": str(selected_path),
                          "previous_sha256": digest(path), "path": str(target),
                          "sha256": after_hash, "payload": str(staged),
                          "payload_sha256": digest(staged)})
@@ -870,10 +870,11 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     for item in rows:
         if set(item) != {"kind", "previous_path", "previous_sha256", "path", "sha256", "payload", "payload_sha256"}:
             raise ValueError("unexpected native profile transition fields")
-        previous, target = private_file(item["previous_path"]), planned_path(item["path"])
-        if (str(previous) in by_old or target in destinations or target == previous
-                or previous.parent != target.parent or str(previous) not in snapshots
-                or item["previous_sha256"] != snapshots[str(previous)]):
+        previous_key = item["previous_path"]
+        previous, target = private_file(previous_key), planned_path(item["path"])
+        if (previous_key in by_old or target in destinations or target == previous
+                or previous.parent != target.parent or previous_key not in snapshots
+                or item["previous_sha256"] != snapshots[previous_key]):
             raise ValueError("native profile migration must use distinct siblings")
         profile, raw = protected_profile(previous)
         if profile["owner"].get("kind") != item["kind"] or item["kind"] != "opencode":
@@ -887,7 +888,7 @@ def native_profile_transition(old, new, before, after, *, installed=False):
             raise ValueError("native profile migration changes protected fields")
         if installed and private_file(target).read_bytes() != wanted:
             raise ValueError("installed native profile differs from reviewed payload")
-        by_old[str(previous)] = item
+        by_old[previous_key] = item
         destinations.add(target)
     affected = {path for path in old["profiles"]
                 if strict_json(private_file(path).read_bytes())["owner"].get("kind") == "opencode"
