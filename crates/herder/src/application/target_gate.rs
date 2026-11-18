@@ -101,13 +101,13 @@ fn acquire_pinned_inner(
     }
     let invalid = || io::Error::new(io::ErrorKind::PermissionDenied, "untrusted scoped gate");
     let parent = path.parent().ok_or_else(invalid)?;
+    let canonical_parent = parent.canonicalize()?;
     if !path.is_absolute()
-        || parent.canonicalize()? != parent
         || path.file_name().is_none_or(|n| n.as_bytes().is_empty())
     {
         return Err(invalid());
     }
-    let directory = parent.metadata()?;
+    let directory = canonical_parent.metadata()?;
     if !directory.is_dir()
         || directory.uid() != unsafe { geteuid() }
         || directory.mode() & 0o077 != 0
