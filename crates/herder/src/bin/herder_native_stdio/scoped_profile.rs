@@ -501,9 +501,10 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     }
     let uid = unsafe { geteuid() };
     let parent = path.parent().ok_or_else(invalid)?;
+    let canonical_parent = parent.canonicalize()?;
     // Root-owned or current-user-owned ancestors must not be replaceable by
     // another user. Same-UID adversaries and concurrent chmod are out of scope.
-    for ancestor in parent.ancestors() {
+    for ancestor in canonical_parent.ancestors() {
         let m = std::fs::symlink_metadata(ancestor)?;
         if !m.is_dir() || (m.uid() != uid && m.uid() != 0) || m.mode() & 0o022 != 0 {
             return Err(invalid().into());
@@ -511,7 +512,6 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     }
     let dir = parent.metadata()?;
     if !path.is_absolute()
-        || parent.canonicalize()? != parent
         || !dir.is_dir()
         || dir.uid() != uid
         || dir.mode() & 0o077 != 0
@@ -553,11 +553,12 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&p.database)?;
     let dm = database.metadata()?;
-    if !dm.is_file()
+    let database_parent = p.database.parent().ok_or_else(invalid)?.canonicalize()?;
+    if database_parent != canonical_parent
+        || !dm.is_file()
         || dm.uid() != uid
         || dm.nlink() != 1
         || dm.mode() & 0o077 != 0
-        || p.database.canonicalize()? != p.database
     {
         return Err(invalid().into());
     }
