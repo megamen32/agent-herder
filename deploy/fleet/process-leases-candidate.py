@@ -306,6 +306,8 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
     # permission to modify profiles. Every new transition needs its own record.
     m.pop("adapter_migration", None)
     m["sha256"].pop("adapter_migration", None)
+    m.pop("native_profile_migration", None)
+    m["sha256"].pop("native_profile_migration", None)
     old_core = m["core"]
     m.update(artifact_root=str(output), source_commit=source_sha, source_sha=source_sha,
              core=str(output / "fixture/herder_native_stdio"),
@@ -353,6 +355,7 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
 
 
 ADAPTER_UPDATES = {"opencode", "zcode", "codex"}
+NATIVE_PROFILE_UPDATES = {"opencode"}
 
 
 def strict_json(raw):
@@ -406,6 +409,96 @@ def profile_payload(raw, previous, replacement):
     expected["owner"]["ahap_script"] = replacement
     if strict_json(result) != expected or len(result) > 16384:
         raise ValueError("profile migration changes protected fields or exceeds native limit")
+    return result
+
+
+def native_profile_payload(raw):
+    """Remove only the legacy OpenCode runner member from a trusted profile."""
+    before = strict_json(raw)
+    owner = before["owner"]
+    if owner.get("kind") != "opencode" or not isinstance(owner.get("ahap_script"), str):
+        raise ValueError("profile is not a legacy OpenCode owner profile")
+    if not isinstance(owner.get("ahap_base_url"), str) or not owner["ahap_base_url"].strip():
+        raise ValueError("native OpenCode profile requires an endpoint")
+    text = raw.decode("utf-8")
+    decoder = json.JSONDecoder()
+
+    def member_removal(start, name):
+        pos = start
+        while text[pos].isspace():
+            pos += 1
+        if text[pos] != "{":
+            raise ValueError("expected a JSON object")
+        pos += 1
+        first = True
+        separator = None
+        while True:
+            while text[pos].isspace():
+                pos += 1
+            if text[pos] == "}":
+                raise ValueError("missing protected profile member")
+            key_start = pos
+            key, pos = decoder.raw_decode(text, pos)
+            if not isinstance(key, str):
+                raise ValueError("profile member name is not a string")
+            while text[pos].isspace():
+                pos += 1
+            if text[pos] != ":":
+                raise ValueError("invalid JSON member")
+            pos += 1
+            while text[pos].isspace():
+                pos += 1
+            _, value_end = decoder.raw_decode(text, pos)
+            next_pos = value_end
+            while text[next_pos].isspace():
+                next_pos += 1
+            if key == name:
+                if first:
+                    end = next_pos + 1 if text[next_pos:next_pos + 1] == "," else value_end
+                    return start + 1, end
+                return separator, value_end
+            if text[next_pos:next_pos + 1] == ",":
+                separator = next_pos
+                pos = next_pos + 1
+                first = False
+                continue
+            if text[next_pos:next_pos + 1] == "}":
+                raise ValueError("protected profile member not found")
+            raise ValueError("invalid JSON object separator")
+
+    # Reuse the protected-object scanner used by profile_payload without
+    # serializing the profile and changing unrelated bytes.
+    pos = 0
+    while text[pos].isspace():
+        pos += 1
+    if text[pos] != "{":
+        raise ValueError("expected a JSON object")
+    pos += 1
+    while True:
+        while text[pos].isspace() or text[pos] == ",":
+            pos += 1
+        if text[pos] == "}":
+            raise ValueError("owner member not found")
+        key, value_start = decoder.raw_decode(text, pos)
+        while text[value_start].isspace():
+            value_start += 1
+        if text[value_start] != ":":
+            raise ValueError("invalid JSON member")
+        value_start += 1
+        while text[value_start].isspace():
+            value_start += 1
+        _, value_end = decoder.raw_decode(text, value_start)
+        if key == "owner":
+            owner_start = value_start
+            break
+        pos = value_end
+
+    begin, end = member_removal(owner_start, "ahap_script")
+    result = (text[:begin] + text[end:]).encode("utf-8")
+    expected = copy.deepcopy(before)
+    del expected["owner"]["ahap_script"]
+    if strict_json(result) != expected or len(result) > 16384:
+        raise ValueError("native profile migration changes protected fields or exceeds native limit")
     return result
 
 
@@ -635,6 +728,51 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     return migration
 
 
+def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds):
+    """Stage the reviewed OpenCode profile transition to the Rust owner path."""
+    if not kinds or not set(kinds) <= NATIVE_PROFILE_UPDATES:
+        raise ValueError("only native OpenCode profile update is supported")
+    payload_dir = output / "profile-payloads"
+    payload_dir.mkdir(mode=0o700)
+    profiles = []
+    all_hashes = {}
+    for selected_path in selection["profiles"]:
+        path = private_file(selected_path)
+        all_hashes[str(selected_path)] = digest(path)
+        profile = strict_json(path.read_bytes())
+        owner = profile["owner"]
+        if owner.get("kind") not in kinds or owner.get("ahap_script") != base["adapters"].get(owner.get("kind")):
+            continue
+        payload = native_profile_payload(path.read_bytes())
+        after_hash = hashlib.sha256(payload).hexdigest()
+        target = path.parent / ("profile-process-leases-native-" + source[:12] + "-" + after_hash[:20] + ".json")
+        if os.path.lexists(target):
+            raise FileExistsError("new protected profile destination already exists")
+        staged = payload_dir / (after_hash + ".json")
+        if not staged.exists():
+            create(staged, payload, 0o400)
+        profiles.append({"kind": owner["kind"], "previous_path": str(selected_path),
+                         "previous_sha256": digest(path), "path": str(target),
+                         "sha256": after_hash, "payload": str(staged),
+                         "payload_sha256": digest(staged)})
+    if {row["kind"] for row in profiles} != set(kinds):
+        raise ValueError("every native profile update must have an exact selected profile")
+    migration = {"schema": 1, "type": "herder-native-profile-rebind", "source_commit": source,
+                 "kind": "opencode", "base_selector": str(selector),
+                 "base_selector_sha256": digest(selector), "base_manifest": selection["manifest"],
+                 "base_manifest_sha256": selection["manifest_sha256"], "profile_sha256": all_hashes,
+                 "profiles": profiles}
+    path = output / "native-profile-migration.json"
+    create(path, encoded(migration), 0o400)
+    manifest["native_profile_migration"] = str(path)
+    manifest["sha256"]["native_profile_migration"] = digest(path)
+    manifest["composition"]["process_leases"]["scope"] = (
+        "native core and OpenCode owner profile updated; legacy AHAP runner removed from the selected profile")
+    manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native OpenCode profile; all other pins retained"
+    payload_dir.chmod(0o500)
+    return migration
+
+
 def adapter_transition(before, after):
     """Admit exactly the typed manifest transition, never a generic bypass."""
     migration = None
@@ -703,6 +841,76 @@ def adapter_transition(before, after):
     return migration
 
 
+def native_profile_transition(old, new, before, after, *, installed=False):
+    migration_path = private_file(after["native_profile_migration"])
+    if digest(migration_path) != after["sha256"].get("native_profile_migration"):
+        raise ValueError("native profile migration digest mismatch")
+    migration = strict_json(migration_path.read_bytes())
+    fields = {"schema", "type", "source_commit", "kind", "base_selector", "base_selector_sha256",
+              "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
+    if (set(migration) != fields or migration["schema"] != 1
+            or migration["type"] != "herder-native-profile-rebind"
+            or migration["kind"] != "opencode"
+            or migration["source_commit"] != after.get("source_commit")
+            or not re.fullmatch(r"[a-f0-9]{40}", migration["source_commit"])):
+        raise ValueError("invalid native profile migration")
+    if (digest(private_file(migration["base_manifest"])) != migration["base_manifest_sha256"]
+            or read_json(migration["base_manifest"]) != before):
+        raise ValueError("native profile migration baseline mismatch")
+    if (before["adapters"] != after["adapters"]
+            or before["sha256"]["adapters"] != after["sha256"]["adapters"]
+            or before.get("adapter") != after.get("adapter")
+            or before.get("remote_ahap_wrappers", []) != after.get("remote_ahap_wrappers", [])):
+        raise ValueError("native profile migration changed adapter pins")
+    snapshots = migration["profile_sha256"]
+    if not isinstance(snapshots, dict) or set(snapshots) != set(old["profiles"]):
+        raise ValueError("native profile snapshot is incomplete")
+    rows, by_old, destinations = migration["profiles"], {}, set()
+    bundle = migration_path.parent
+    for item in rows:
+        if set(item) != {"kind", "previous_path", "previous_sha256", "path", "sha256", "payload", "payload_sha256"}:
+            raise ValueError("unexpected native profile transition fields")
+        previous_key = item["previous_path"]
+        previous, target = private_file(previous_key), planned_path(item["path"])
+        if (previous_key in by_old or target in destinations or target == previous
+                or previous.parent != target.parent or previous_key not in snapshots
+                or item["previous_sha256"] != snapshots[previous_key]):
+            raise ValueError("native profile migration must use distinct siblings")
+        profile, raw = protected_profile(previous)
+        if profile["owner"].get("kind") != item["kind"] or item["kind"] != "opencode":
+            raise ValueError("native profile kind does not match reviewed transition")
+        payload = private_file(item["payload"])
+        if payload.parent != bundle / "profile-payloads":
+            raise ValueError("native profile payload is not inside the candidate")
+        wanted = native_profile_payload(raw)
+        if (payload.read_bytes() != wanted or digest(payload) != item["payload_sha256"]
+                or item["sha256"] != item["payload_sha256"]):
+            raise ValueError("native profile migration changes protected fields")
+        if installed and private_file(target).read_bytes() != wanted:
+            raise ValueError("installed native profile differs from reviewed payload")
+        by_old[previous_key] = item
+        destinations.add(target)
+    affected = {path for path in old["profiles"]
+                if strict_json(private_file(path).read_bytes())["owner"].get("kind") == "opencode"
+                and strict_json(private_file(path).read_bytes())["owner"].get("ahap_script") == before["adapters"]["opencode"]}
+    if set(by_old) != affected or {item["kind"] for item in rows} != {"opencode"}:
+        raise ValueError("native profile migration omits or adds selected profile bindings")
+    expected = copy.deepcopy(old)
+    expected.update(manifest=new["manifest"], manifest_sha256=new["manifest_sha256"])
+    expected["profiles"] = [by_old[path]["path"] if path in by_old else path for path in old["profiles"]]
+    if expected != new:
+        raise ValueError("selector differs from exact native profile transition")
+    return migration
+
+
+def profile_migration(old, new, before, after, *, installed=False):
+    if "adapter_migration" in after and "native_profile_migration" in after:
+        raise ValueError("candidate contains multiple profile migrations")
+    if "native_profile_migration" in after:
+        return native_profile_transition(old, new, before, after, installed=installed)
+    return profile_transition(old, new, before, after, installed=installed)
+
+
 def profile_transition(old, new, before, after, *, installed=False):
     migration = adapter_transition(before, after)
     expected = copy.deepcopy(old)
@@ -760,7 +968,7 @@ def profile_transition(old, new, before, after, *, installed=False):
 def check_candidate(selector, launcher):
     selection = read_json(selector)
     manifest = read_json(selection["manifest"])
-    if "adapter_migration" not in manifest:
+    if "adapter_migration" not in manifest and "native_profile_migration" not in manifest:
         return check_selector(selector, launcher)
     bundle = Path(selector).parent
     receipt = read_json(bundle / "process-leases-build.json")
@@ -770,7 +978,7 @@ def check_candidate(selector, launcher):
             or digest(private_file(selection["manifest"])) != receipt["candidate_manifest_sha256"]
             or selection["manifest_sha256"] != receipt["candidate_manifest_sha256"]):
         raise ValueError("candidate or baseline changed since adapter build")
-    migration = profile_transition(baseline, selection, read_json(baseline["manifest"]), manifest)
+    migration = profile_migration(baseline, selection, read_json(baseline["manifest"]), manifest)
     if (migration["base_selector"] != receipt["base_selector"]
             or migration["base_selector_sha256"] != receipt["base_selector_sha256"]
             or migration["base_manifest"] != baseline["manifest"]
@@ -785,7 +993,7 @@ def check_candidate(selector, launcher):
         raise ValueError("staged selector does not match the exact reviewed payloads")
     checked = check_selector(staged, launcher)
     return {**checked, "selector": str(selector), "selector_sha256": digest(selector),
-            "adapter_migration_sha256": manifest["sha256"]["adapter_migration"],
+            "profile_migration_sha256": manifest["sha256"].get("adapter_migration", manifest["sha256"].get("native_profile_migration")),
             "profile_validation": "staged_payloads_not_installed"}
 
 
@@ -813,8 +1021,13 @@ def build(args):
     if git("status", "--porcelain"):
         raise ValueError("commit the isolated worktree before a release build")
     updates = getattr(args, "adapter_update", [])
+    native_updates = getattr(args, "native_update", [])
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
+    if len(set(native_updates)) != len(native_updates) or not set(native_updates) <= NATIVE_PROFILE_UPDATES:
+        raise ValueError("select each reviewed native profile update once")
+    if updates and native_updates:
+        raise ValueError("adapter and native profile migrations cannot be combined")
     canonical_config = getattr(args, "canonical_config", None)
     canonical_hash = getattr(args, "canonical_config_sha256", None)
     if (canonical_config is None) != (canonical_hash is None):
@@ -887,6 +1100,8 @@ def build(args):
     if updates:
         adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
+    if native_updates:
+        migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha, native_updates)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]
             or any(digest(private_file(path)) != value for path, value in profile_hashes.items())):
@@ -910,7 +1125,7 @@ def build(args):
         staged["profiles"] = [payloads.get(path, path) for path in staged["profiles"]]
         create(output / "check-selector.json", encoded(staged), 0o400)
         build_receipt.update(staged_selector_sha256=digest(output / "check-selector.json"),
-                             adapter_migration_sha256=manifest["sha256"]["adapter_migration"])
+                             profile_migration_sha256=manifest["sha256"].get("adapter_migration", manifest["sha256"].get("native_profile_migration")))
     create(output / "process-leases-build.json", encoded(build_receipt), 0o400)
     result = check_candidate(output / "selector.json", fixture / "launch-v1-core.py")
     fixture.chmod(0o500)
@@ -951,7 +1166,7 @@ def install(args, *, guard=None):
             raise ValueError("installed selector changed since candidate build")
         old, new = read_json(selector), read_json(candidate)
         old_manifest, candidate_manifest = read_json(old["manifest"]), read_json(new["manifest"])
-        migration = profile_transition(old, new, old_manifest, candidate_manifest)
+        migration = profile_migration(old, new, old_manifest, candidate_manifest)
         if set(build_receipt["profile_sha256"]) != set(old["profiles"]):
             raise ValueError("candidate profile snapshot is incomplete")
         config = read_json(candidate_manifest["process_config"])
@@ -972,7 +1187,7 @@ def install(args, *, guard=None):
             "profiles_preserved": migration is None, "authority_preserved": True,
             "previous_profiles_unchanged": True, "databases_modified": False}
         if migration:
-            receipt["adapter_migration_sha256"] = candidate_manifest["sha256"]["adapter_migration"]
+            receipt["profile_migration_sha256"] = candidate_manifest["sha256"].get("adapter_migration", candidate_manifest["sha256"].get("native_profile_migration"))
             receipt["profile_creation_intent"] = migration["profiles"]
         receipt_path = backup / "receipt.json"
         create(receipt_path, encoded(receipt))
@@ -989,7 +1204,7 @@ def install(args, *, guard=None):
                     raise ValueError("previous profile changed before sibling creation")
                 create(Path(item["path"]), private_file(item["payload"]).read_bytes(), 0o400)
                 sync_dir(Path(item["path"]).parent)
-            profile_transition(old, new, old_manifest, candidate_manifest, installed=True)
+            profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             check_selector(candidate, candidate_launcher)
             receipt["status"] = "profiles_prepared"
             replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
@@ -1046,6 +1261,8 @@ def main():
     b.add_argument("--canonical-config-sha256", help="exact digest of the canonical migration configuration")
     b.add_argument("--adapter-update", action="append", default=[], choices=sorted(ADAPTER_UPDATES),
                    help="explicit reviewed AHAP update; may be repeated once per kind")
+    b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
+                   help="explicit reviewed native owner profile update")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)
