@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
-import {addressKey,unwrapResult} from './protocol.js';
+import {addressKey,isBrowserMeshHarness,unwrapResult,type MeshAddress} from './protocol.js';
 import {projectPeerSession,type GptAdminTransport} from './gptadmin.js';
-import {fleetHarnesses,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt,type FleetSessionTarget,type FleetSessionTargetReceipt} from './fleet-contract.js';
+import {fleetHarnesses,supportsFleetChatDetails,type FleetHostDefinition,type FleetHost,type FleetScope,type FleetView,type FleetSession,type FleetCreateRequest,type FleetCreateReceipt,type FleetSessionTarget,type FleetSessionTargetReceipt} from './fleet-contract.js';
 import {normalizeHostId} from '../coordination-notes.js';
 import {FleetCreateJournal} from './fleet-create-journal.js';
 import type {SessionInventoryPage,InventorySession} from './session-page.js';
@@ -102,16 +102,31 @@ export class FleetCabinetService {
   return searchSessionFleet(input,this.deps.hosts.map(host=>({hostId:host.hostId,target:`mcp:shell:${host.hostId}:AgentHerder`})),(peer,args)=>this.transport(peer.hostId).call(peer.target,'session_search_local',args as unknown as Record<string,unknown>),this.deps.readDeadlineMs??10000);
  }
  async requestSession(address:{hostId:string;harness:string;nativeSessionId:string},control:FleetSessionControl):Promise<FleetSessionResponse>{
-  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!fleetHarnesses.includes(address.harness as any)||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
-  const captured=Object.freeze({...address}),request=fleetSessionControlSchema.parse(control);
-  await this.selectedHost(captured.hostId);
-  const transport=this.transport(captured.hostId);if(!transport.requestSession)throw new Error('fleet_session_control_unavailable');
-  const response=await transport.requestSession(`mcp:shell:${captured.hostId}:AgentHerder`,captured.harness,captured.nativeSessionId,request);
-  if(response.hostId!==captured.hostId)throw new Error('fleet_session_response_identity_mismatch');
+  const {hostId,harness,nativeSessionId}=address;
+  const request=fleetSessionControlSchema.parse(control);
+  const supported=request.operation==='details'?supportsFleetChatDetails(harness):fleetHarnesses.some(value=>value===harness);
+  if(!this.deps.hosts.some(h=>h.hostId===hostId)||!supported||!validText(nativeSessionId,512))throw new Error('fleet_session_invalid');
+  await this.selectedHost(hostId);
+  const transport=this.transport(hostId),target=`mcp:shell:${hostId}:AgentHerder`;
+  // A transport may offer only owner history. Browser chats always use that read-only route.
+  if(request.operation==='details'&&(!transport.requestSession||isBrowserMeshHarness(harness))){
+   if(!transport.readSessionDetails)throw new Error('fleet_session_read_unavailable');
+   const view=record(await this.readFromPeer(transport.readSessionDetails.bind(transport),{hostId,harness,nativeSessionId}));
+   const details=record(view?.details),session=record(details?.session);
+   if(view?.hostId!==hostId||session?.id!==nativeSessionId||session.harness!==harness
+    ||(session.hostId!==undefined&&session.hostId!==hostId))throw new Error('fleet_session_response_identity_mismatch');
+   const metadataOnly=details?.historyUnavailable===true&&details.messages===undefined;
+   if(!metadataOnly&&!Array.isArray(details?.messages))throw new Error('fleet_session_history_invalid');
+   return {hostId,status:200,body:{...details,readOnly:true}};
+  }
+  if(!transport.requestSession)throw new Error('fleet_session_control_unavailable');
+  const response=await transport.requestSession(target,harness,nativeSessionId,request);
+  if(response.hostId!==hostId)throw new Error('fleet_session_response_identity_mismatch');
   return response;
  }
- async readSession(address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
-  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!(address.harness==='minimax-code'||fleetHarnesses.includes(address.harness as any))||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
+ async readSession(input:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
+  const address=Object.freeze({...input});
+  if(!this.deps.hosts.some(h=>h.hostId===address.hostId)||!(address.harness==='minimax-code'||supportsFleetChatDetails(address.harness))||!validText(address.nativeSessionId,512))throw new Error('fleet_session_invalid');
   await this.selectedHost(address.hostId);
   const transport=this.transport(address.hostId);if(!transport.readSession)throw new Error('fleet_session_read_unavailable');
   const read=transport.readSession.bind(transport);
@@ -127,14 +142,17 @@ export class FleetCabinetService {
   }
   return await this.foregroundSessionRead(read,address);
  }
- private async foregroundSessionRead(read:(target:string,harness:string,sessionId:string)=>Promise<unknown>,address:{hostId:string;harness:string;nativeSessionId:string}):Promise<unknown>{
+ private async readFromPeer(read:NonNullable<GptAdminTransport['readSession']>,address:MeshAddress):Promise<unknown>{
   if(this.sessionReads>=3)throw new Error('fleet_session_read_unavailable');
   this.sessionReads++;
   try{
-   const view=await read(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);
-   if(this.diskCache)void this.diskCache.writeSessionView(this.browserScopeKey,address,{version:1,savedAt:this.now(),view}).catch(()=>undefined);
-   return view;
+   return await read(`mcp:shell:${address.hostId}:AgentHerder`,address.harness,address.nativeSessionId);
   }finally{this.sessionReads--;}
+ }
+ private async foregroundSessionRead(read:NonNullable<GptAdminTransport['readSession']>,address:MeshAddress):Promise<unknown>{
+  const view=await this.readFromPeer(read,address);
+  if(this.diskCache)void this.diskCache.writeSessionView(this.browserScopeKey,address,{version:1,savedAt:this.now(),view}).catch(()=>undefined);
+  return view;
  }
  private async backgroundSessionRead(read:(target:string,harness:string,sessionId:string)=>Promise<unknown>,address:{hostId:string;harness:string;nativeSessionId:string}):Promise<void>{
   const key=`${address.hostId}:${address.harness}:${address.nativeSessionId}`;

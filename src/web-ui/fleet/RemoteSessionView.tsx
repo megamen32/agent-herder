@@ -14,7 +14,11 @@ import {remoteReadQuery,remoteSessionStorage} from './session-control.js';
 import {fleetSessionStatus} from './session-labels.js';
 import {readStoredOutbox,writeStoredOutbox,appendOutboxEntry,updateOutboxEntry,newInputId,classifyMessageDelivery,reconcileMessageStatus,deliveryConnectionFailure,outboxStatusLabel,readDefaultDeliveryMode,type OutboxEntry,type DeliveryMode} from '../composer-delivery.js';
 import {projectDeliveredChat} from '../delivered-chat.js';
-type View={hostId:string;details:{session:{id:string;harness:string;hostId?:string;title?:string;cwd?:string;model?:string;status?:string};historyUnavailable?:boolean;messages?:SessionMessageView[]}};
+type View={hostId:string;details:{session:{id:string;harness:string;hostId?:string;title?:string;cwd?:string;model?:string;status?:string};historyUnavailable?:boolean;readOnly?:boolean;messages?:SessionMessageView[]}};
+function matchesOwnerSession(address:MeshAddress,session:View['details']['session']|undefined):boolean {
+ return session?.id===address.nativeSessionId&&session.harness===address.harness
+  &&(session.hostId===undefined||session.hostId===address.hostId);
+}
 type DisplayTranscriptEvent = Omit<NativeTranscriptEvent,'sequence'> & {sequence?:number};
 export type TranscriptView={scope:{hostId:string;harness:string;nativeSessionId:string};events:(DisplayTranscriptEvent|CodexHistoryEvent)[];totalEvents?:number;order?:'latest';nextCursor:string|null;complete:boolean;source:string};
 export type TranscriptUpdate = 'replace' | 'older' | 'refresh';
@@ -220,11 +224,14 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
  const currentTranscript=transcriptForAddress(transcript,captured);
  const {rememberPosition,scrolledUp}=useHistoryScroll(scroll,currentTranscript);
  const codex=captured.harness==='codex';
+ const currentView=view?.hostId===captured.hostId&&matchesOwnerSession(captured,view.details?.session)?view:undefined;
+ const readOnly=currentView?.details.readOnly===true;
+ const canReadTranscript=localHostId===captured.hostId||Boolean(codex&&currentView&&!readOnly);
  const put=(next:OutboxEntry[])=>{if(!writeStoredOutbox(storage,next))throw new Error('Не удалось сохранить отправку.');values.current=next;if(alive.current)setEntries(next);};
  const fresh=async()=>{
   if(reading.current)return;reading.current=true;
   try{const response=await client.control!(captured,{operation:'details'});if(response.status!==200)throw new Error('Свежая история выбранной сессии пока недоступна.');
-   const details=response.body as View['details'];if(details?.session?.id!==captured.nativeSessionId||details.session.harness!==captured.harness||(details.session.hostId!==undefined&&details.session.hostId!==captured.hostId))throw new Error('Не удалось подтвердить выбранную сессию.');
+   const details=response.body as View['details'];if(!matchesOwnerSession(captured,details?.session))throw new Error('Не удалось подтвердить выбранную сессию.');
    if(alive.current){const next={hostId:captured.hostId,details};setView(next);setCached(false);setError('');void cache.put(scope,captured,next);}
   }catch{if(alive.current){setCached(true);setError('Нет свежего подключения. Сохранённая история доступна, команды не отправляются.');}}
   finally{reading.current=false;if(alive.current)setLoading(false);}
@@ -248,27 +255,27 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
  useEffect(()=>{let active=true;client.hosts().then(result=>{if(active)setLocalHostId(result.defaultHostId);}).catch(()=>{});return()=>{active=false;};},[]);
  useEffect(()=>{
   setTranscript(undefined);setTranscriptError('');
-  if(localHostId&&(codex||localHostId===captured.hostId))void readTranscript();
+  if(localHostId&&canReadTranscript)void readTranscript();
   return()=>transcriptOwner.current?.cancel(key);
- },[localHostId,captured]);
+ },[localHostId,captured,canReadTranscript]);
  useEffect(()=>{
-  alive.current=true;void cache.get<View>(scope,captured).then(r=>{if(alive.current&&reading.current&&r?.value.hostId===captured.hostId&&r.value.details?.session.id===captured.nativeSessionId&&r.value.details.session.harness===captured.harness){setView(r.value);setCached(true);}});void fresh();
+  alive.current=true;void cache.get<View>(scope,captured).then(r=>{if(alive.current&&reading.current&&r?.value.hostId===captured.hostId&&matchesOwnerSession(captured,r.value.details?.session)){setView(r.value);setCached(true);}});void fresh();
   const timer=setInterval(()=>{void fresh();for(const entry of values.current)if(['sending','accepted','deferred','pending','unknown'].includes(entry.status))void check(entry);},5000);
   return()=>{alive.current=false;clearInterval(timer);};
  },[captured,scope,storage,localHostId]);
- const currentView=view?.hostId===captured.hostId&&view.details.session.id===captured.nativeSessionId&&view.details.session.harness===captured.harness?view:undefined;
- useCodexHistoryUpdates(codex?key:'',currentView&&!cached?(currentView.details.messages?.at(-1)?.id??''):undefined,
+ useCodexHistoryUpdates(codex&&canReadTranscript?key:'',currentView&&!cached?(currentView.details.messages?.at(-1)?.id??''):undefined,
   !!currentTranscript&&!loadingMore,()=>void readTranscript(undefined,'refresh'));
  const projection=projectDeliveredChat(currentView?.details.messages??[],entries,key);
  const transcriptMessages=currentTranscript?.events.map(integratorEventDisplay);
  const detailsMessages=projection.messages.map(message=>({message,attribution:fallbackSessionAttribution(message.role),visualRole:message.role==='user'?'unknown':message.role}));
  const displayMessages=transcriptMessages??detailsMessages;
  useEffect(()=>{if(!codex||!currentTranscript)scroll.current?.scrollTo({top:scroll.current.scrollHeight});},[codex,currentTranscript,displayMessages.length,entries.length]);
- const available=Boolean(currentView&&!cached&&!loading&&(!currentView.details.historyUnavailable||localHostId===captured.hostId&&!!currentTranscript));
+ const freshHistory=Boolean(currentView&&!cached&&!loading&&(!currentView.details.historyUnavailable||localHostId===captured.hostId&&!!currentTranscript));
+ const available=freshHistory&&!readOnly;
  const readOlder=()=>{
   if(codex&&currentTranscript?.nextCursor&&!loadingMore)void readTranscript(currentTranscript.nextCursor);
  };
- const refresh=()=>{void fresh();if(codex||localHostId===captured.hostId)void readTranscript();};
+ const refresh=()=>{void fresh();if(canReadTranscript)void readTranscript();};
  const submit=async(nextMode:DeliveryMode=mode)=>{
   if(!available||busy.current||!text.trim())return;
   const entry:OutboxEntry={inputId:newInputId(),sessionKey:key,text:text.trim(),mode:nextMode,createdAt:Date.now(),status:'sending'};
@@ -291,14 +298,14 @@ export function RemoteSessionView({address,host,scope,cache,onClose,renderMessag
   finally{busy.current=false;if(alive.current){setAction(undefined);void fresh();}}
  };
  const link=fleetSessionLink(host,captured),session=currentView?.details.session;
- return <section className="chat-pane remote-chat-pane" {...verifiedDetailAttributes({id:captured.nativeSessionId,harness:captured.harness,hostId:captured.hostId},currentView?.details.session,available&&!error)} aria-label="Чат удалённой сессии">
+ return <section className="chat-pane remote-chat-pane" {...verifiedDetailAttributes({id:captured.nativeSessionId,harness:captured.harness,hostId:captured.hostId},currentView?.details.session,freshHistory&&!error)} aria-label="Чат удалённой сессии">
   <header className="chat-header"><button className="quiet-button mobile-back" type="button" onClick={onClose}>← Сессии</button><div className="chat-heading"><h2>{session?.title??captured.nativeSessionId}</h2><span className="chat-session-state" title={session?.cwd}>{host.label} · {captured.harness} · {fleetSessionStatus(session?.status??'unknown')} {session?.model?`· ${session.model}`:''}</span></div><div className="header-actions"><button type="button" className="quiet-button" onClick={refresh}>Обновить</button><button type="button" className="quiet-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('resume')}>{action==='resume'?'Продолжаю…':'Продолжить'}</button><button type="button" className="danger-button" disabled={!available||!!action||actionUnknown} onClick={()=>void control('stop')}>{action==='stop'?'Останавливаю…':'Остановить'}</button>{link&&<details><summary aria-label="Дополнительно">•••</summary><a href={link}>Отдельный кабинет ↗</a></details>}</div></header>
-  {cached&&<p className="cached-view-notice" role="status">Сохранённая история · команды доступны после восстановления связи</p>}{error&&<p role="alert" className="remote-chat-error">{error}</p>}{actionUnknown&&<p role="status" className="remote-chat-error">Результат предыдущей команды не подтверждён. Повторные команды управления заблокированы; история и проверка доставки доступны.</p>}
+  {cached&&<p className="cached-view-notice" role="status">{readOnly?'Сохранённая история · только чтение':'Сохранённая история · команды доступны после восстановления связи'}</p>}{error&&<p role="alert" className="remote-chat-error">{error}</p>}{actionUnknown&&<p role="status" className="remote-chat-error">Результат предыдущей команды не подтверждён. Повторные команды управления заблокированы; история и проверка доставки доступны.</p>}
   <div className="chat-scroll" ref={scroll}
    onScroll={event=>{if(scrolledUp(event.currentTarget))readOlder();}}
    onWheel={event=>{if(event.deltaY<0&&event.currentTarget.scrollTop===0)readOlder();}}>
    {codex&&currentTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={loadingMore} onClick={readOlder}>Загрузить более ранние события</button>}{loading&&!currentView&&<div className="session-loading-chat" role="status" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю историю сессии</strong><small>Читаю переписку выбранной машины; сохранённая история откроется сразу, свежие сообщения подтянутся сами.</small></div>}{displayMessages.length===0&&currentView?.details.historyUnavailable&&<p>История пока недоступна.</p>}{transcriptError&&<p role="alert" className="remote-chat-error">{transcriptError}</p>}{displayMessages.map(({message:m,attribution,visualRole},i)=>{const body=renderMessage?renderMessage(m):<div className="message-body"><pre>{m.text??payloadText(m.parts.map(part=>part.input??part.output).find(value=>value!==undefined)??'')??''}</pre></div>;if(body==null)return null;return <article className={`message ${visualRole}`} key={m.id??i} data-event-id={m.id} data-turn-id={m.turnId}><div className="message-meta"><strong>{attribution}</strong>{m.timestamp&&<time>{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>}</div>{body}</article>;})}{!codex&&currentTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={loadingMore} onClick={()=>void readTranscript(currentTranscript.nextCursor??undefined)}>{loadingMore?'Загружаю…':'Загрузить следующую страницу истории'}</button>}</div>
   <div className="composer-stack">{captured.harness==='zcode'&&<QueueProcessingControl target={{hostId:captured.hostId,harness:captured.harness,sessionId:captured.nativeSessionId}} readState={readSessionQueueProcessing} resume={submitSessionQueueProcessing}/>}{projection.pending.map(entry=><article className={`composer-outbox-entry status-${entry.status}`} key={entry.inputId}><div className="composer-outbox-meta"><span>{outboxStatusLabel(entry.status)}</span>{entry.status==='unknown'&&<button type="button" onClick={()=>void check(entry)}>Проверить доставку</button>}</div><div className="composer-outbox-text">{entry.text}</div>{entry.error&&<small>{entry.error}</small>}</article>)}
-  <form className="composer" onSubmit={e=>e.preventDefault()}><div className="composer-left"><select aria-label="Режим отправки" value={mode} onChange={e=>setMode(e.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход</option></select></div><textarea aria-label="Сообщение удалённой сессии" placeholder={available?'Работайте с агентом':'Подключаю выбранную сессию…'} value={text} disabled={!available} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(isComposerSubmitShortcut(e)){e.preventDefault();void submit();}}}/><VoiceComposerControl key={key} sessionKey={key} disabled={!available||sending} onTranscript={transcript=>setText(current=>current?`${current}${current.endsWith('\n')?'':'\n'}${transcript}`:transcript)}/><ComposerSendControl disabled={!available||!text.trim()} busy={sending} onSend={nextMode=>{if(nextMode)setMode(nextMode);void submit(nextMode??mode);}} title={mode==='queue'?'Отправить после ответа агента':'Передать в текущий ход агента'}/></form></div>
+  <form className="composer" onSubmit={e=>e.preventDefault()}><div className="composer-left"><select aria-label="Режим отправки" value={mode} onChange={e=>setMode(e.target.value as DeliveryMode)}><option value="queue">После ответа</option><option value="steer">В текущий ход</option></select></div><textarea aria-label="Сообщение удалённой сессии" placeholder={readOnly?'История доступна только для чтения':available?'Работайте с агентом':'Подключаю выбранную сессию…'} value={text} disabled={!available} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(isComposerSubmitShortcut(e)){e.preventDefault();void submit();}}}/><VoiceComposerControl key={key} sessionKey={key} disabled={!available||sending} onTranscript={transcript=>setText(current=>current?`${current}${current.endsWith('\n')?'':'\n'}${transcript}`:transcript)}/><ComposerSendControl disabled={!available||!text.trim()} busy={sending} onSend={nextMode=>{if(nextMode)setMode(nextMode);void submit(nextMode??mode);}} title={mode==='queue'?'Отправить после ответа агента':'Передать в текущий ход агента'}/></form></div>
  </section>;
 }
