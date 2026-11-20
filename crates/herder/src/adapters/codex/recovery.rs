@@ -18,6 +18,8 @@ use super::{CodexConnection, CodexControl, RpcError, map_rpc_error};
 mod lineage;
 #[path = "autopilot.rs"]
 pub(super) mod autopilot;
+#[path = "recovery_receipt.rs"]
+mod receipt;
 use lineage::{ThreadLineage, is_unarchived, read_ancestors, read_thread, thread_lineage};
 
 use crate::domain::{
@@ -146,51 +148,6 @@ fn retry_after_throttle(turn: &Value, boundary: &RecoveryBoundary, now: u64) -> 
 fn is_retry_limit(info: &Value) -> bool {
     info.get("responseTooManyFailedAttempts").is_some()
         || info.get("response_too_many_failed_attempts").is_some()
-}
-
-fn sole_user_item(turn: &Value) -> Option<&Value> {
-    let mut users = turn["items"].as_array()?.iter().filter(|item| item["type"] == "userMessage");
-    let item = users.next()?;
-    required_string(item, "id")?;
-    users.next().is_none().then_some(item)
-}
-
-// thread/read returns turns in native history order. Correlate the admitted
-// input in its own failed turn before considering the last turn's input.
-fn superseding_user_turn<'a>(thread: &'a Value, receipt: &NativeReceipt, key: &str) -> Option<&'a str> {
-    let (latest, prior) = thread["turns"].as_array()?.split_last()?;
-    let latest_id = required_string(latest, "id")?;
-    let mut matches = prior.iter().filter(|turn| turn["id"] == receipt.native_id);
-    let old = matches.next()?;
-    if thread["id"] != receipt.target.native_session_id
-        || matches.next().is_some() || latest_id == receipt.native_id
-        || prior.iter().any(|turn| turn["id"] == latest_id)
-        || (!latest["rootTurnId"].is_null() && latest["rootTurnId"] != latest_id)
-        || ![old, latest].iter().all(|turn| {
-            recovery_failure(turn) == Some(RecoveryFailure::Throttled)
-                && is_retry_limit(&turn["error"]["codexErrorInfo"])
-        })
-        || old["completedAt"].as_u64()? > latest["startedAt"].as_u64()?
-    {
-        return None;
-    }
-    let admitted = sole_user_item(old)?;
-    let followup = sole_user_item(latest)?;
-    (admitted["clientId"] == key && admitted["id"] != followup["id"]
-        && (followup["clientId"].is_null() || required_string(followup, "clientId")
-            .is_some_and(|id| !id.starts_with("codex-recovery:"))))
-        .then_some(latest_id)
-}
-
-impl CodexControl {
-    /// Confirm admission of the old recovery when a subsequent composer turn
-    /// independently exhausted its 429 retries in this same native thread.
-    pub fn confirms_superseded_429(&self, thread: &Value, receipt: &NativeReceipt, key: &str) -> bool {
-        receipt.target.instance == self.instance
-            && superseding_user_turn(thread, receipt, key).is_some_and(|latest| {
-                native_turn_trigger(&self.process.code_home, thread, latest).as_deref() == Some("composer")
-            })
-    }
 }
 
 impl RecoveryControl for CodexControl {
@@ -1468,46 +1425,6 @@ mod tests {
         path::PathBuf,
         sync::atomic::{AtomicUsize, Ordering},
     };
-
-    #[test]
-    fn followup_requires_the_receipted_input_and_a_distinct_latest_user_429() {
-        let key = "codex-recovery:original";
-        let receipt = NativeReceipt {
-            target: SessionAddress {
-                instance: InstanceRef { node: NodeRef("node".into()), instance_id: "codex".into() },
-                native_session_id: "thread".into(),
-            },
-            native_id: "recovery".into(),
-        };
-        let turn = |id: &str, input: &str, client: Option<&str>, start: u64| json!({
-            "id":id, "rootTurnId":id, "status":"failed", "startedAt":start, "completedAt":start+1,
-            "error":{"codexErrorInfo":{"responseTooManyFailedAttempts":{"httpStatusCode":429}}},
-            "items":[{"type":"userMessage", "id":input, "clientId":client}]
-        });
-        let old = turn("recovery", "admitted-input", Some(key), 1);
-        let new = turn("manual", "new-input", None, 2);
-        let thread = json!({"id":"thread", "turns":[old, new]});
-        assert_eq!(superseding_user_turn(&thread, &receipt, key), Some("manual"));
-        for (path, value) in [
-            ("/id", json!("other-thread")),
-            ("/turns/0/id", json!("different-recovery")),
-            ("/turns/0/items/0/clientId", json!("other-request")),
-            ("/turns/0/status", json!("inProgress")),
-            ("/turns/0/completedAt", json!(3)),
-            ("/turns/1/id", json!("recovery")),
-            ("/turns/1/rootTurnId", json!("recovery")),
-            ("/turns/1/items", json!([])),
-            ("/turns/1/items/0/id", json!("admitted-input")),
-            ("/turns/1/items/0/clientId", json!("codex-recovery:another")),
-            ("/turns/1/error/codexErrorInfo", json!("usageLimitExceeded")),
-            ("/turns", json!([old, old, new])),
-            ("/turns", json!([old, new, {"id":"later","status":"completed"}])),
-        ] {
-            let mut changed = thread.clone();
-            *changed.pointer_mut(path).unwrap() = value;
-            assert_eq!(superseding_user_turn(&changed, &receipt, key), None, "{path}");
-        }
-    }
 
     #[test]
     fn retry_429_requires_the_same_terminal_failure_and_cooldown_from_completion() {
