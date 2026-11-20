@@ -757,10 +757,14 @@ def recovery_profile_payload(previous, changed, *, installed=False):
         if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
             raise ValueError("installed recovery requires an explicit compatibility handoff")
         handoff = recovery["legacy_handoff"]
+        instance_wide = handoff.get("instance_wide", False)
         native_sessions = handoff.get("native_sessions")
-        if not isinstance(native_sessions, list) or not native_sessions or len(native_sessions) > 128 \
-                or any(not isinstance(value, str) or not value.strip() for value in native_sessions) \
-                or len(set(native_sessions)) != len(native_sessions):
+        if not isinstance(instance_wide, bool) or (instance_wide and "native_sessions" in handoff):
+            raise ValueError("instance_wide recovery requires a boolean and a single handoff scope")
+        if not instance_wide and (
+                not isinstance(native_sessions, list) or not 1 <= len(native_sessions) <= 128
+                or any(not isinstance(value, str) or not value.strip() for value in native_sessions)
+                or len(set(native_sessions)) != len(native_sessions)):
             raise ValueError("installed recovery requires an exact unique session cohort")
         activation = handoff.get("activation_file")
         if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \

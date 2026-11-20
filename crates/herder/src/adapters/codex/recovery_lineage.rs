@@ -3,12 +3,28 @@ use std::{collections::HashSet, path::Path, time::Instant};
 use serde_json::{Value, json};
 
 use super::{
-    CodexConnection, THREAD_PAGE_LIMIT, THREAD_PAGE_SIZE, absent_or_null, goal_allows_recovery,
+    CodexConnection, THREAD_PAGE_SIZE, absent_or_null, goal_allows_recovery,
     read_rpc, required_string,
 };
 use crate::domain::{adapter::ReadError, address::SessionAddress, recovery::RecoveryAncestor};
 
 const MAX_PARENT_DEPTH: u64 = 8;
+
+impl super::CodexControl {
+    /// A metadata read can report "not loaded" for a cold thread. On the same
+    /// control connection, an existing thread can return a null goal. A
+    /// missing thread returns a distinct error naming the requested ID.
+    pub fn confirms_missing_recovery_thread(&self, id: &str) -> bool {
+        let Ok(mut state) = self.state.try_lock() else {
+            return false;
+        };
+        matches!(
+            state.connection.request("thread/goal/get", json!({"threadId": id}), self.timeout),
+            Err(super::RpcError::Remote { code: Some(-32600), message, .. })
+                if message == format!("thread not found: {id}") || message.starts_with("invalid thread id:")
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ThreadLineage<'a> {
@@ -91,6 +107,7 @@ pub(super) fn is_unarchived(
 ) -> Result<bool, ReadError> {
     let mut params = json!({
         "archived": false, "cwd": cwd, "limit": THREAD_PAGE_SIZE,
+        "sortKey": "updated_at", "sortDirection": "desc",
         "modelProviders": [], "sourceKinds": ["cli", "vscode", "appServer", "exec"],
         "useStateDbOnly": true,
     });
@@ -100,7 +117,9 @@ pub(super) fn is_unarchived(
     }
     let mut seen_cursors = HashSet::new();
     let mut cursor = Value::Null;
-    for _ in 0..THREAD_PAGE_LIMIT {
+    // Every request shares the native read deadline. An exact membership
+    // proof can be on any page, including during the final admission recheck.
+    loop {
         params["cursor"] = cursor;
         let page = read_rpc(connection, "thread/list", params.clone(), deadline)?;
         let rows = page["data"]
@@ -122,9 +141,6 @@ pub(super) fn is_unarchived(
             .ok_or_else(|| ReadError("Codex recovery unarchived page cursor is invalid".into()))?;
         cursor = json!(next);
     }
-    Err(ReadError(
-        "Codex recovery unarchived page limit reached".into(),
-    ))
 }
 
 fn active_without_human_input(thread: &Value) -> bool {

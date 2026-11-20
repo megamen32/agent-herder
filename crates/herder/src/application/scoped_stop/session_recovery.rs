@@ -1,4 +1,5 @@
 //! Crash recovery for a native session owner, using the ordinary scoped intent and stop gate.
+mod discovery;
 use super::{
     BoundedNativeHandoff, GateError, ScopedAuthority,
     automation_driver::AutomationTick,
@@ -23,6 +24,7 @@ use crate::{
         },
     },
 };
+pub use discovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -42,6 +44,21 @@ const SCAN_BUDGET: Duration = Duration::from_secs(8);
 const PAGE_SIZE: u32 = 32;
 const MAX_STARTS_PER_TICK: u32 = 8;
 const RETAIN_UNTIL: &str = "9999-12-31T23:59:59Z";
+
+fn now_ms() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
+}
+
+fn recent(timestamp_ms: u64) -> bool {
+    now_ms()
+        .and_then(|now| now.checked_sub(timestamp_ms))
+        .is_some_and(|age| age <= MAX_AGE_MS)
+}
 
 /// This profile binds the existing owner settings and the provider/model pairs
 /// explicitly authorized for this workspace. It is never sourced from a prompt.
@@ -402,12 +419,15 @@ pub struct SessionRecovery {
     waits: Arc<WaitAutomationApplication>,
     reconciler: Arc<dyn TaskReconciler>,
     profile: RecoveryProfile,
+    discovery: RecoveryDiscovery,
     scan: Arc<Mutex<Scan>>,
 }
 
 #[derive(Default)]
 struct Scan {
     after: String,
+    native: discovery::NativePages,
+    cohort_offset: usize,
     last_tick: Option<Instant>,
 }
 
@@ -419,6 +439,7 @@ impl SessionRecovery {
         waits: Arc<WaitAutomationApplication>,
         reconciler: Arc<dyn TaskReconciler>,
         profile: RecoveryProfile,
+        discovery: RecoveryDiscovery,
     ) -> Self {
         Self {
             authority,
@@ -427,6 +448,7 @@ impl SessionRecovery {
             waits,
             reconciler,
             profile,
+            discovery,
             scan: Arc::default(),
         }
     }
@@ -436,6 +458,7 @@ impl SessionRecovery {
         principal: &PrincipalId,
         instance: &InstanceRef,
         after: &str,
+        pending_only: bool,
     ) -> Result<Vec<SessionRef>, GateError> {
         let (_gate, writer) = self.authority.lock()?;
         let mut rows = writer
@@ -446,6 +469,10 @@ impl SessionRecovery {
              JOIN lineage l ON l.session_ref = b.session_ref
              WHERE b.node_ref=?1 AND b.instance_id=?2 AND h.authority_generation=?3
                 AND l.creator_ref=?4 AND b.session_ref > ?5
+                AND (NOT ?7 OR b.session_ref IN (
+                    SELECT i.target FROM intents i LEFT JOIN humanstop_dispatches d ON d.intent_id=i.intent_id
+                    WHERE i.principal=?4 AND i.request_key GLOB ?8
+                    AND (i.state IN ('admitted','unknown') OR (i.state='dispatching' AND d.phase='handing_off'))))
              ORDER BY b.session_ref LIMIT ?6",
             )
             .map_err(|_| GateError::Store)?;
@@ -456,7 +483,9 @@ impl SessionRecovery {
                 self.authority.generation,
                 principal.0,
                 after,
-                PAGE_SIZE
+                PAGE_SIZE,
+                pending_only,
+                format!("{}-recovery:*", self.control.harness())
             ],
             |row| row.get(0).map(SessionRef),
         )
@@ -481,6 +510,40 @@ impl SessionRecovery {
         ])
     }
 
+    fn eligible_boundary(
+        &self,
+        address: &SessionAddress,
+    ) -> Result<Option<(Autostart, RecoveryBoundary)>, GateError> {
+        let harness = self.control.harness();
+        if self
+            .profile
+            .recovery_held(harness, &address.native_session_id)
+        {
+            return Ok(None);
+        }
+        let settings = private_json::<Autostart>(
+            &self
+                .profile
+                .autopilot_state_dir
+                .join("session-autostart.json"),
+        )
+        .map_err(|_| GateError::Unavailable)?;
+        if !settings.enabled(harness, &address.native_session_id) {
+            return Ok(None);
+        }
+        let boundary = self
+            .control
+            .read_boundary(address)
+            .map_err(|_| GateError::Unavailable)?;
+        Ok(boundary
+            .filter(|b| {
+                recent(b.started_at_ms)
+                    && settings.admits(harness, &address.native_session_id, b)
+                    && !self.profile.automation_disarmed(harness, b)
+            })
+            .map(|b| (settings, b)))
+    }
+
     fn recover(
         &self,
         identity: &ConnectionIdentity,
@@ -497,40 +560,16 @@ impl SessionRecovery {
             .authority
             .resolve_session(identity, &grants, session, instance)?;
         self.reconcile_pending(identity, &grants, principal, session)?;
-        if self
-            .profile
-            .recovery_held(harness, &address.native_session_id)
-            || self.waits.recovery_blocked(identity, &address)
-        {
+        if self.waits.recovery_blocked(identity, &address) {
             return Ok(false);
         }
-        let settings_path = self
-            .profile
-            .autopilot_state_dir
-            .join("session-autostart.json");
-        let settings =
-            private_json::<Autostart>(&settings_path).map_err(|_| GateError::Unavailable)?;
-        if !settings.enabled(harness, &address.native_session_id) {
-            return Ok(false);
-        }
-        let Some(boundary) = native
-            .read_boundary(&address)
-            .map_err(|_| GateError::Unavailable)?
-        else {
+        let Some((settings, boundary)) = self.eligible_boundary(&address)? else {
             return Ok(false);
         };
-        let now_ms = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(|_| GateError::Unavailable)?
-            .as_millis() as u64;
-        if boundary.started_at_ms > now_ms
-            || now_ms - boundary.started_at_ms > MAX_AGE_MS
-            || !settings.admits(harness, &address.native_session_id, &boundary)
-            || self.profile.automation_disarmed(harness, &boundary)
-            || boundary
-                .ancestors
-                .iter()
-                .any(|ancestor| self.waits.recovery_blocked(identity, &ancestor.address))
+        if boundary
+            .ancestors
+            .iter()
+            .any(|ancestor| self.waits.recovery_blocked(identity, &ancestor.address))
         {
             return Ok(false);
         }
@@ -663,7 +702,10 @@ impl SessionRecovery {
             control: native,
             boundary,
             route,
-            settings_path,
+            settings_path: self
+                .profile
+                .autopilot_state_dir
+                .join("session-autostart.json"),
             profile: &self.profile,
         };
         let outcome = self.authority.handoff(
@@ -748,17 +790,35 @@ impl AutomationTick for SessionRecovery {
                 }
                 scan.last_tick = Some(Instant::now());
                 let began = Instant::now();
+                if let Some(ids) = authority.profile.legacy_handoff.as_ref().and_then(LegacyRecoveryHandoff::cohort) {
+                    authority.recover_cohort(&identity, &principal, ids, &mut scan.cohort_offset, began + SCAN_BUDGET);
+                    return;
+                }
                 let instance = authority.control.instance();
-                let Ok(sessions) = authority.session_page(&principal, instance, &scan.after) else {
+                let wide = authority
+                    .profile
+                    .legacy_handoff
+                    .as_ref()
+                    .is_some_and(|h| h.instance_wide);
+                // A settled or archived thread can disappear from listing while its
+                // previous admission still needs receipt reconciliation.
+                let Ok(sessions) = authority.session_page(&principal, instance, &scan.after, wide)
+                else {
                     return;
                 };
                 let mut starts = 0;
+                let registered_budget = if wide { SCAN_BUDGET / 2 } else { SCAN_BUDGET };
                 for session in &sessions {
-                    if began.elapsed() >= SCAN_BUDGET {
-                        return;
+                    if began.elapsed() >= registered_budget {
+                        break;
                     }
                     scan.after.clone_from(&session.0);
-                    if authority
+                    if wide {
+                        if let Some(grants) = authority.grants(&principal, instance, session) {
+                            let _ = authority
+                                .reconcile_pending(&identity, &grants, &principal, session);
+                        }
+                    } else if authority
                         .recover(&identity, &principal, session)
                         .unwrap_or(false)
                     {
@@ -768,8 +828,18 @@ impl AutomationTick for SessionRecovery {
                         }
                     }
                 }
-                if sessions.len() < PAGE_SIZE as usize {
+                if sessions.len() < PAGE_SIZE as usize
+                    && sessions.last().is_none_or(|s| scan.after == s.0)
+                {
                     scan.after.clear();
+                }
+                if wide {
+                    authority.discover(
+                        &identity,
+                        &principal,
+                        &mut scan.native,
+                        began + SCAN_BUDGET,
+                    );
                 }
             })
             .await;
@@ -881,7 +951,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             still_available: &still_available,
         });
         let still_allowed = || {
-            !self
+            recent(self.boundary.started_at_ms) && !self
                 .profile
                 .recovery_held(harness, &plan.target.native_session_id)
                 && private_json::<Autostart>(&self.settings_path)
@@ -1156,7 +1226,7 @@ mod tests {
                 cwd: state.0.to_str().unwrap().into(),
                 provider: "test-provider".into(),
                 model: None,
-                started_at_ms: 0,
+                started_at_ms: now_ms().unwrap(),
                 failure: RecoveryFailure::Interrupted,
                 ancestors: Vec::new(),
             },

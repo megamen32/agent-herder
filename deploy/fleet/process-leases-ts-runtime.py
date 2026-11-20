@@ -2,6 +2,7 @@
 """Publish and install an immutable canonical TS runtime after legacy writer drain."""
 import argparse
 import hashlib
+import http.client
 import importlib.util
 import json
 import os
@@ -36,6 +37,7 @@ def publish(path, data, mode=0o400):
         raise ValueError("publication_parent_not_canonical")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, "wb") as output:
+        os.fchmod(fd, mode)
         output.write(data)
         output.flush()
         os.fsync(output.fileno())
@@ -48,11 +50,12 @@ def pinned(path, expected):
     return json.loads(data)
 
 def runtime_identity(path, manifest):
-    return {"manifest": str(path), "manifest_sha256": digest(Path(path).read_bytes()),
+    data, _ = readiness.read_file(str(path), policy="immutable")
+    return {"manifest": str(path), "manifest_sha256": digest(data),
             "source_commit": manifest["source_commit"], "capability": readiness.CAPABILITY,
             "resume_after_authority": "canonical", "legacy_fallback": False}
 
-def freeze(release, source, node, output):
+def freeze(release, source, node, output, *, reuse=False):
     release, node, output = Path(release), Path(node), Path(output)
     if not re.fullmatch(r"[a-f0-9]{40}", source):
         raise ValueError("source_commit_invalid")
@@ -62,6 +65,12 @@ def freeze(release, source, node, output):
     deployment = json.loads((root / "fleet-deployment-manifest.json").read_text())
     if deployment.get("source_sha") != source:
         raise ValueError("compiled_source_mismatch")
+    if reuse and output.exists():
+        identity = runtime_identity(output, {"source_commit": source})
+        manifest, _, _ = readiness.runtime_tree(identity)
+        if manifest["root"] != str(root) or manifest["node_binary"] != str(node):
+            raise ValueError("published_runtime_binding_mismatch")
+        return identity
     node_bytes, _ = readiness.read_file(str(node), maximum=256 * 1024 * 1024, policy="node")
     files, directories, total = {}, [], 0
     for directory, children, names in os.walk(root, followlinks=False):
@@ -126,6 +135,47 @@ def owner_identity(unit):
         return pid, birth, argv
     except (OSError, ValueError, UnicodeError, IndexError):
         return None
+
+def scheduler_pin(release, node, port, bearer):
+    """Ask the running scheduler to prove its own immutable tree and bind the reply to MainPID."""
+    challenge = os.urandom(32).hex()
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    try:
+        conn.request("GET", "/api/canonical-runtime-status?challenge=" + challenge,
+                     headers={"Authorization": "Bearer " + bearer} if bearer else {})
+        reply = conn.getresponse()
+        body = reply.read(65536) if reply.status == 200 else b""
+    except (http.client.HTTPException, ValueError):
+        raise ValueError("canonical runtime proof request failed") from None
+    finally:
+        conn.close()
+    if reply.status != 200:
+        raise ValueError(f"canonical runtime proof returned HTTP {reply.status}")
+    proof = json.loads(body)
+    entry = str(release / "dist/index.js")
+    if not isinstance(proof, dict) or not isinstance(proof.get("process"), dict):
+        raise ValueError("canonical runtime proof incomplete")
+    process = proof["process"]
+    pin = readiness.fields(proof.get("runtime"), ("manifest", "manifest_sha256", "source_commit", "capability",
+                                                  "resume_after_authority", "legacy_fallback"))
+    if (proof.get("kind") != "herder-canonical-runtime-status" or proof.get("version") != 1
+            or proof.get("challenge") != challenge or pin["source_commit"] != release.name
+            or pin != runtime_identity(pin["manifest"], pin)
+            or (process.get("node_binary"), process.get("entry")) != (str(node), entry)
+            or owner_identity(readiness.UNIT) != (process.get("pid"), process.get("start_ticks"), (str(node), entry))):
+        raise ValueError("canonical runtime proof does not belong to the selected scheduler")
+    return pin
+
+def repin_environment(content, previous, candidate):
+    """Edit only the two literal Environment assignments emitted by install()."""
+    for key, field in zip(readiness.ENV_KEYS[-2:], ("manifest", "manifest_sha256")):
+        prefix = b"Environment=" + key.encode() + b"="
+        pattern = re.compile(b"^" + prefix + rb"([^\r\n]*)", re.MULTILINE)
+        if (pattern.findall(content) != [previous[field].encode()]
+                or re.search(r'[\s"\\%]', candidate[field])):
+            raise ValueError("canonical runtime drop-in differs from the running scheduler")
+        content = pattern.sub(lambda _: prefix + candidate[field].encode(), content)
+    return content
 
 def stopped_service():
     result = systemctl("show", readiness.UNIT, "--property=MainPID,ActiveState,SubState")

@@ -4,8 +4,10 @@ pub use super::wait_sources::{
     NativeTurnStatus, native_turn,
 };
 use super::{
-    ScopedAuthority,
+    GateError, ScopedAuthority,
     automation_driver::AutomationTick,
+    recovery_handoff::LegacyRecoveryHandoff,
+    session_recovery::RecoveryListing,
     wait_sources::{self, SessionProof},
 };
 use crate::{
@@ -189,7 +191,7 @@ pub struct WaitAutomationApplication {
     reconciler: Arc<dyn super::task_reconcile::TaskReconciler>,
     policy: Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>,
     automatic_continuation: bool,
-    recovery_handoff: Option<super::recovery_handoff::LegacyRecoveryHandoff>,
+    recovery_handoff: Option<(LegacyRecoveryHandoff, Arc<dyn RecoveryListing>)>,
 }
 impl WaitAutomationApplication {
     pub fn new(
@@ -218,9 +220,10 @@ impl WaitAutomationApplication {
     }
     pub fn with_recovery_handoff(
         mut self,
-        handoff: Option<super::recovery_handoff::LegacyRecoveryHandoff>,
+        handoff: Option<LegacyRecoveryHandoff>,
+        probe: Arc<dyn RecoveryListing>,
     ) -> Self {
-        self.recovery_handoff = handoff;
+        self.recovery_handoff = handoff.map(|h| (h, probe));
         self
     }
     fn principal<'a>(&self, identity: &'a ConnectionIdentity) -> Result<&'a str> {
@@ -966,26 +969,77 @@ impl WaitAutomationApplication {
         self.snapshot(&saved)
     }
     pub(crate) fn recovery_blocked(&self, identity: &ConnectionIdentity, target: &SessionAddress) -> bool {
-        self.wait_status_current(identity, &target.native_session_id, Some(&target.instance.node.0))
-            .map_or(true, |proof| {
-                proof["complete"] != true || proof["mapped"] != true || proof["blocked"] != false
-            })
+        !matches!(self.recovery_binding(identity, target), Ok(Some(_)))
+    }
+
+    pub(super) fn recovery_binding(
+        &self,
+        identity: &ConnectionIdentity,
+        target: &SessionAddress,
+    ) -> std::result::Result<Option<SessionRef>, GateError> {
+        if target.instance != self.source.instance {
+            return Err(GateError::Invalid);
+        }
+        let proof = self
+            .wait_status_current(
+                identity,
+                &target.native_session_id,
+                Some(&target.instance.node.0),
+            )
+            .map_err(|_| GateError::Unavailable)?;
+        if proof["complete"] != true || proof["blocked"] != false {
+            return Err(GateError::Unavailable);
+        }
+        match (
+            proof["mapped"].as_bool(),
+            proof["sessionRefs"].as_array().map(Vec::as_slice),
+        ) {
+            (Some(false), Some([])) if proof["reason"] == "native_session_not_registered" => {
+                Ok(None)
+            }
+            (Some(true), Some([session])) => session
+                .as_str()
+                .map(|id| Some(SessionRef(id.to_owned())))
+                .ok_or(GateError::Unavailable),
+            _ => Err(GateError::Unavailable),
+        }
     }
 
     fn wait_status(
         &self, identity: &ConnectionIdentity, native: &str, node: Option<&str>,
     ) -> Result<Value> {
         let mut value = self.wait_status_current(identity, native, node)?;
-        if value["mapped"] == true
-            && self.recovery_handoff.as_ref().is_some_and(|handoff| handoff.owns(native))
-        {
-            // Automatic clients already honor this wait fence when ownership
-            // changes. Publish it before the new recovery writer is armed.
-            value["recoveryOwner"] = "rust".into();
-            if value["blocked"] == false {
-                value["blocked"] = true.into();
-                value["reason"] = "rust_recovery_handoff".into();
+        let Some((handoff, probe)) = &self.recovery_handoff else {
+            return Ok(value);
+        };
+        if !handoff.owns(native) {
+            return Ok(value);
+        }
+        if value["mapped"] != true {
+            // Several owners can serve the same harness and node. Fence an
+            // unmapped chat only on the instance that actually observes it.
+            if value["reason"] != "native_session_not_registered" {
+                return Ok(value);
             }
+            if probe.instance() != &self.source.instance || probe.harness() != self.source.harness() {
+                return Err("owner_profile_mismatch");
+            }
+            match probe.probe_session(native) {
+                Ok(s) if s.address.instance == self.source.instance && s.address.native_session_id == native => {}
+                Err(()) if probe.confirms_absence(native) => return Ok(value),
+                _ => {
+                    value["complete"] = false.into();
+                    value["blocked"] = true.into();
+                    value["reason"] = "native_recovery_ownership_unavailable".into();
+                    return Ok(value);
+                }
+            }
+        }
+        // Publish the compatibility fence before the new recovery writer is armed.
+        value["recoveryOwner"] = "rust".into();
+        if value["blocked"] == false {
+            value["blocked"] = true.into();
+            value["reason"] = "rust_recovery_handoff".into();
         }
         Ok(value)
     }

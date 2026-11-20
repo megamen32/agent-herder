@@ -14,7 +14,10 @@ const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LegacyRecoveryHandoff {
-    native_sessions: BTreeSet<String>,
+    #[serde(default, deserialize_with = "explicit_cohort")]
+    native_sessions: Option<BTreeSet<String>>,
+    #[serde(default)]
+    pub(super) instance_wide: bool,
     activation_file: PathBuf,
     human_stops: PathBuf,
     human_requests: PathBuf,
@@ -22,13 +25,28 @@ pub struct LegacyRecoveryHandoff {
     unfinished_sessions: PathBuf,
 }
 
+fn explicit_cohort<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> Result<Option<BTreeSet<String>>, D::Error> {
+    // A missing cohort selects the explicit scope. JSON null is not a cohort.
+    BTreeSet::deserialize(de).map(Some)
+}
+
+fn valid_native_id(id: &str) -> bool {
+    !id.trim().is_empty() && id.len() <= 512 && !id.chars().any(char::is_control)
+}
+
 impl LegacyRecoveryHandoff {
+    pub(super) fn cohort(&self) -> Option<&BTreeSet<String>> {
+        self.native_sessions.as_ref()
+    }
+
     pub(super) fn valid(&self) -> bool {
-        !self.native_sessions.is_empty()
-            && self.native_sessions.len() <= 128
-            && self.native_sessions.iter().all(|id| {
-                !id.trim().is_empty() && id.len() <= 512 && !id.chars().any(char::is_control)
-            })
+        (match &self.native_sessions {
+            None => self.instance_wide,
+            Some(ids) => !self.instance_wide && (1..=128).contains(&ids.len())
+                && ids.iter().all(|id| valid_native_id(id)),
+        })
             && [
                 &self.activation_file,
                 &self.human_stops,
@@ -41,7 +59,12 @@ impl LegacyRecoveryHandoff {
     }
 
     pub(super) fn owns(&self, native_id: &str) -> bool {
-        self.native_sessions.contains(native_id)
+        valid_native_id(native_id)
+            && (self.instance_wide
+                || self
+                    .native_sessions
+                    .as_ref()
+                    .is_some_and(|ids| ids.contains(native_id)))
     }
 
     pub(super) fn released(&self) -> bool {
@@ -393,4 +416,39 @@ struct LegacyAttempt {
 struct LegacyQuotaAttempt {
     state: String,
     reason_code: Option<String>,
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn discovery_requires_an_explicit_unambiguous_instance_scope() {
+        let parse = |scope: Value| {
+            let mut profile = json!({"activation_file":"/activate", "choices":"/choices",
+                "human_stops":"/holds", "human_requests":"/requests", "unfinished_sessions":"/unfinished"});
+            profile
+                .as_object_mut()
+                .unwrap()
+                .extend(scope.as_object().unwrap().clone());
+            serde_json::from_value::<LegacyRecoveryHandoff>(profile)
+                .ok()
+                .filter(LegacyRecoveryHandoff::valid)
+        };
+        let cohort = parse(json!({"native_sessions":["one"]})).unwrap();
+        assert!(cohort.owns("one") && !cohort.owns("two"));
+        assert!(parse(json!({"instance_wide":true})).unwrap().owns("two"));
+        for invalid in [
+            json!({}),
+            json!({"native_sessions":[]}),
+            json!({"instance_wide":false}),
+            json!({"instance_wide":"true"}),
+            json!({"native_sessions":null, "instance_wide":true}),
+            json!({"native_sessions":[], "instance_wide":true}),
+            json!({"native_sessions":["one"], "instance_wide":true}),
+        ] {
+            assert!(parse(invalid.clone()).is_none(), "{invalid}");
+        }
+    }
 }

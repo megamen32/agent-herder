@@ -14,6 +14,7 @@ ownership is refused and requires read-only reconciliation.
 import argparse
 import base64
 import hashlib
+import importlib
 import json
 import os
 import plistlib
@@ -211,15 +212,27 @@ def systemd_daemon_reload() -> bool:
 def restore_install(fleet: Path, config_path: Path, config_backup: Path,
                     release_sha: str, previous_sha: str, dropin_path: Path | None,
                     dropin_snapshot: Path | None, restart_command: list, before_restart=None) -> None:
+    canonical = None
+    if dropin_path and dropin_snapshot:
+        canonical = restore_systemd_release_dropin(dropin_path, dropin_snapshot, release_sha,
+            previous_release=fleet / "releases" / previous_sha, config_backup=config_backup)
+    elif dropin_path and has_canonical_dropin(dropin_path):
+        raise RuntimeError("canonical rollback requires a paired drop-in snapshot")
     atomic_copy(config_backup, config_path)
     switch_current(fleet, previous_sha)
-    if dropin_path and dropin_snapshot:
-        restore_systemd_release_dropin(dropin_path, dropin_snapshot, release_sha)
-        if not systemd_daemon_reload():
-            print("rollback systemd daemon-reload failed")
+    if dropin_path and dropin_snapshot and not systemd_daemon_reload():
+        raise RuntimeError("rollback systemd daemon-reload failed")
     if before_restart is not None:
         before_restart()
-    restart(restart_command)
+    result = restart(restart_command)
+    if canonical:
+        if result.returncode or not wait_port(canonical["port"]):
+            raise RuntimeError("canonical rollback restart failed")
+        runtime = importlib.import_module("process-leases-ts-runtime")
+        observed = runtime.scheduler_pin(fleet / "releases" / previous_sha, json.loads(config_backup.read_bytes())["nodeBin"],
+                                         canonical["port"], canonical_mcp_bearer(runtime.readiness.UNIT))
+        if observed != canonical["previousPin"]:
+            raise RuntimeError("canonical rollback scheduler pin mismatch")
 
 
 def wait_port(port: int, attempts: int = 30) -> bool:
@@ -354,7 +367,7 @@ def running_release(fleet: Path, launchd_label: str) -> str:
     return linux_running_release(fleet)
 
 
-def atomic_write(path: Path, content: bytes, mode: int) -> None:
+def atomic_write(path: Path, content: bytes, mode: int, *, exclusive=False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink():
         raise RuntimeError(f"refusing to replace symlink: {path}")
@@ -366,7 +379,11 @@ def atomic_write(path: Path, content: bytes, mode: int) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        if exclusive:
+            os.link(temporary, path)
+            os.unlink(temporary)
+        else:
+            os.replace(temporary, path)
         directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
             os.fsync(directory_fd)
@@ -904,7 +921,14 @@ def systemd_release_dropin_path(unit: str, home: Path | None = None) -> Path:
     return base / ".config" / "systemd" / "user" / f"{unit}.d" / "10-release-exec.conf"
 
 
-def preserve_systemd_release_dropin(path: Path, sha: str) -> Path:
+CANONICAL_DROPIN = "99-canonical-runtime.conf"
+
+
+def has_canonical_dropin(path: Path) -> bool:
+    return path.parent.name == "agent-herder.service.d" and os.path.lexists(path.with_name(CANONICAL_DROPIN))
+
+
+def preserve_systemd_release_dropin(path: Path, sha: str, canonical=None) -> Path:
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         raise ValueError("release SHA must be a full Git commit")
     if path.is_symlink() or (path.exists() and not path.is_file()):
@@ -922,7 +946,13 @@ def preserve_systemd_release_dropin(path: Path, sha: str) -> Path:
         "mode": mode,
         "contentBase64": base64.b64encode(content).decode("ascii"),
     }
-    atomic_write(snapshot, (json.dumps(document, sort_keys=True) + "\n").encode(), 0o600)
+    if canonical:
+        commands = [shlex.split(line.removeprefix("ExecStart=")) for line in content.decode().splitlines()
+                    if line.startswith("ExecStart=")]
+        if commands != [[], canonical["previousArgv"]]:
+            raise ValueError("rollback ExecStart differs from the running scheduler")
+        document["canonicalRuntime"] = canonical
+    atomic_write(snapshot, (json.dumps(document, sort_keys=True) + "\n").encode(), 0o600, exclusive=True)
     return snapshot
 
 
@@ -935,26 +965,80 @@ def systemd_exec_argument(value: str) -> str:
     return escaped
 
 
-def write_systemd_release_dropin(path: Path, node_bin: str, release: Path, sha: str) -> None:
+def systemd_release_content(node_bin: str, release: Path, sha: str) -> bytes:
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         raise ValueError("release SHA must be a full Git commit")
     if not Path(node_bin).is_absolute():
         raise ValueError("nodeBin must be an absolute path")
     entrypoint = (release.expanduser().resolve() / "dist" / "index.js").as_posix()
-    content = (
+    return (
         f"# Agent Herder immutable release {sha}\n"
         "[Service]\n"
         "ExecStart=\n"
         f"ExecStart={systemd_exec_argument(node_bin)} {systemd_exec_argument(entrypoint)}\n"
     ).encode()
+
+
+def write_systemd_release_dropin(path: Path, node_bin: str, release: Path, sha: str) -> None:
     mode = stat.S_IMODE(path.stat().st_mode) if path.is_file() and not path.is_symlink() else 0o644
-    atomic_write(path, content, mode)
+    atomic_write(path, systemd_release_content(node_bin, release, sha), mode)
 
 
-def restore_systemd_release_dropin(path: Path, snapshot: Path, sha: str) -> None:
+def prepare_scheduler_dropins(path, release, previous, node, port, bearer):
+    runtime = importlib.import_module("process-leases-ts-runtime")
+    if release == previous:
+        raise ValueError("canonical scheduler already uses the requested release")
+    before, meta = runtime.readiness.read_file(str(path.with_name(CANONICAL_DROPIN)), policy="unit")
+    prior = runtime.scheduler_pin(previous, node, port, bearer)
+    output = release.parent.parent / f"ts-runtime-{release.name}.json"
+    pin = runtime.freeze(release, release.name, node, output, reuse=True)
+    after = runtime.repin_environment(before, prior, pin)
+    return pin, dict(previousPin=prior, port=port, mode=stat.S_IMODE(meta.st_mode),
+                     previousArgv=[node, str(previous / "dist/index.js")],
+                     nextExecBase64=base64.b64encode(systemd_release_content(node, release, release.name)).decode(),
+                     beforeBase64=base64.b64encode(before).decode(), afterBase64=base64.b64encode(after).decode())
+
+
+def switch_scheduler_dropins(path, document, *, rollback):
+    """Check ownership of both files before replacing either. A partial switch is reversible."""
+    runtime = importlib.import_module("process-leases-ts-runtime")
+    pair = document["canonicalRuntime"]
+    pending = []
+    for target, old, new, mode in (
+            (path, document["contentBase64"], pair["nextExecBase64"], document["mode"]),
+            (path.with_name(CANONICAL_DROPIN), pair["beforeBase64"], pair["afterBase64"], pair["mode"])):
+        expected, desired = (new, old) if rollback else (old, new)
+        desired = base64.b64decode(desired, validate=True)
+        current, meta = runtime.readiness.read_file(str(target), policy="unit")
+        if stat.S_IMODE(meta.st_mode) != mode:
+            raise RuntimeError("scheduler drop-in mode changed")
+        if rollback and current == desired:
+            continue
+        if current != base64.b64decode(expected, validate=True):
+            raise RuntimeError("scheduler drop-in changed outside this rollout")
+        pending.append((target, desired, runtime.digest(current), mode))
+    for change in pending:
+        runtime.replace(*change)
+
+
+def restore_systemd_release_dropin(path: Path, snapshot: Path, sha: str, *, previous_release=None,
+                                   config_backup=None) -> dict | None:
     document = json.loads(snapshot.read_text())
     if document.get("schemaVersion") != 1 or document.get("sourceSha") != sha:
         raise RuntimeError("release drop-in rollback snapshot identity mismatch")
+    if "canonicalRuntime" in document:
+        if previous_release is not None:
+            config = json.loads(config_backup.read_bytes())
+            pin = document["canonicalRuntime"]["previousPin"]
+            runtime = importlib.import_module("process-leases-ts-runtime")
+            manifest, _, _ = runtime.readiness.runtime_tree(pin)
+            if (config["sourceSha"] != previous_release.name or pin["source_commit"] != previous_release.name
+                    or manifest["root"] != str(previous_release / "dist") or manifest["node_binary"] != config["nodeBin"]):
+                raise RuntimeError("rollback config or manifest differs from the saved scheduler")
+        switch_scheduler_dropins(path, document, rollback=True)
+        return document["canonicalRuntime"]
+    if has_canonical_dropin(path):
+        raise RuntimeError("canonical rollback requires a paired drop-in snapshot")
     if document.get("existed") is True:
         raw = base64.b64decode(document["contentBase64"], validate=True)
         mode = document.get("mode")
@@ -1421,6 +1505,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
 
     dropin_path: Path | None = None
     dropin_snapshot: Path | None = None
+    scheduler_pin = None
     if arguments.kind == "fleet":
         # A fleet node is started through its bootstrap: the release is chosen
         # by the current symlink and the sourceSha of the node config. A
@@ -1453,12 +1538,22 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
     elif sys.platform.startswith("linux"):
         try:
             dropin_path = systemd_release_dropin_path(arguments.unit)
-            dropin_snapshot = preserve_systemd_release_dropin(dropin_path, arguments.sha)
-            write_systemd_release_dropin(dropin_path, config["nodeBin"], release, arguments.sha)
-        except (KeyError, OSError, RuntimeError, ValueError) as error:
+            canonical = None
+            if has_canonical_dropin(dropin_path) or (arguments.unit == "agent-herder.service"
+                    and process_environment_value(arguments.unit, "AGENT_HERDER_CANONICAL_MODE") == "canonical"):
+                scheduler_pin, canonical = prepare_scheduler_dropins(dropin_path, release,
+                    fleet / "releases" / previous_sha, config["nodeBin"], arguments.port, readiness_bearer)
+                release_gate.compare_revision(config_path, previous_sha)
+            dropin_snapshot = preserve_systemd_release_dropin(dropin_path, arguments.sha, canonical)
+            if canonical:
+                switch_scheduler_dropins(dropin_path, json.loads(dropin_snapshot.read_bytes()), rollback=False)
+            else:
+                write_systemd_release_dropin(dropin_path, config["nodeBin"], release, arguments.sha)
+        except (KeyError, TypeError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             print("systemd release drop-in update failed:", error)
             if dropin_snapshot:
                 try:
+                    release_gate.compare_cleanup_revision(config_path, (previous_sha,))
                     restore_systemd_release_dropin(dropin_path, dropin_snapshot, arguments.sha)
                 except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
                     print("systemd release drop-in restore failed:", rollback_error)
@@ -1466,7 +1561,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
 
     candidate_generation = None
     def rollback_restart_guard(restored=False):
-        release_gate.compare_cleanup_revision(config_path, (previous_sha, arguments.sha))
+        release_gate.compare_cleanup_revision(config_path, (previous_sha,) if restored else (previous_sha, arguments.sha))
         if stopped_generation is not None:
             if restored:
                 stopped_generation.check_configuration_after_candidate(previous_sha)
@@ -1511,7 +1606,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
                 rollback_restart_guard()
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
                             dropin_path, dropin_snapshot, arguments.restart_cmd.split(),
-                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None else None)
+                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None or scheduler_pin else None)
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as rollback_error:
             print("rollback configuration restore failed:", rollback_error)
         return 1
@@ -1541,11 +1636,16 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
 
     try:
         release_gate.check()
+        if scheduler_pin and not failed:
+            runtime = importlib.import_module("process-leases-ts-runtime")
+            if runtime.scheduler_pin(release, config["nodeBin"], arguments.port, readiness_bearer) != scheduler_pin:
+                raise RuntimeError("running scheduler returned a different canonical runtime pin")
+            release_gate.check()
         if candidate_generation is not None:
             # Readiness must still belong to this run's receipt after the
             # authority roundtrip, not a later process with the same SHA.
             candidate_generation.check_accepted_generation()
-    except (OSError, RuntimeError, ValueError) as error:
+    except (KeyError, TypeError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print("release cancelled before acceptance:", error)
         failed += 1
     if failed:
@@ -1558,7 +1658,7 @@ def _main(argv=None, stopped_generation=None, release_gate=None) -> int:
                 rollback_restart_guard()
             restore_install(fleet, config_path, backup, arguments.sha, previous_sha,
                             dropin_path, dropin_snapshot, arguments.restart_cmd.split(),
-                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None else None)
+                            before_restart=(lambda: rollback_restart_guard(True)) if stopped_generation is not None or scheduler_pin else None)
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
             print("rollback configuration restore failed:", error)
             return 1

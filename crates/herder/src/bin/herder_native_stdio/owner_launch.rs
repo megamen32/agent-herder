@@ -10,7 +10,7 @@ use herder::{
             BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
             ScopeGenerationIssuer, ScopedAuthority,
             automation_driver,
-            session_recovery::SessionRecovery,
+            session_recovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage, SessionRecovery},
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
@@ -64,13 +64,16 @@ impl ScopeGenerationIssuer for Ids {
         random_id()
     }
 }
-struct Control(Arc<CodexCreateControl>);
+struct Control {
+    create: Arc<CodexCreateControl>,
+    reader: Arc<Mutex<CodexReader>>,
+}
 impl BoundedFreshRootCreate for Control {
     fn instance(&self) -> &InstanceRef {
-        self.0.native_control().instance()
+        self.create.native_control().instance()
     }
     fn create_root_bounded(&self, k: &str, s: &str) -> Result<SessionAddress, SubmitError> {
-        self.0.create_root_bounded(k, s)
+        self.create.create_root_bounded(k, s)
     }
 }
 impl BoundedNativeHandoff for Control {
@@ -80,7 +83,7 @@ impl BoundedNativeHandoff for Control {
         m: &str,
         k: &RequestKey,
     ) -> Result<Admission, SubmitError> {
-        self.0.native_control().submit_bounded(p, m, k)
+        self.create.native_control().submit_bounded(p, m, k)
     }
 }
 impl BoundedNativeInterrupt for Control {
@@ -90,7 +93,11 @@ impl BoundedNativeInterrupt for Control {
         native_turn_id: &str,
     ) -> InterruptAttempt {
         use herder::adapters::codex::control::InterruptOutcome;
-        match self.0.native_control().interrupt_exact(target, native_turn_id) {
+        match self
+            .create
+            .native_control()
+            .interrupt_exact(target, native_turn_id)
+        {
             InterruptOutcome::Interrupted => InterruptAttempt::Interrupted,
             InterruptOutcome::DefinitelyNotSent { .. } => InterruptAttempt::DefinitelyNotSent,
             InterruptOutcome::OutcomeUnknown { .. } => InterruptAttempt::OutcomeUnknown,
@@ -100,7 +107,7 @@ impl BoundedNativeInterrupt for Control {
 
 impl BoundedSessionProbe for Control {
     fn instance(&self) -> &InstanceRef {
-        self.0.native_control().instance()
+        self.create.native_control().instance()
     }
 
     fn harness(&self) -> &str {
@@ -112,8 +119,30 @@ impl BoundedSessionProbe for Control {
             instance: BoundedSessionProbe::instance(self).clone(),
             native_session_id: native_session_id.to_owned(),
         };
-        let thread = self.0.native_control().read_snapshot_thread(&target).map_err(|_| ())?;
+        let thread = self.create.native_control().read_snapshot_thread(&target).map_err(|_| ())?;
         Ok(super::native_reader::snapshot_from_metadata(&target, &thread))
+    }
+}
+impl RecoveryListing for Control {
+    fn confirms_absence(&self, native_id: &str) -> bool {
+        self.create.native_control().confirms_missing_recovery_thread(native_id)
+    }
+
+    fn list_recent(&self, cursor: Option<&str>, limit: u32) -> Result<RecoveryPage, ReadError> {
+        let page = self
+            .reader
+            .lock()
+            .map_err(|_| ReadError("Codex reader unavailable".into()))?
+            .list_recent_threads(cursor, limit)
+            .map_err(|e| ReadError(e.to_string()))?;
+        Ok(RecoveryPage {
+            sessions: page
+                .data
+                .into_iter()
+                .filter_map(|t| Some((t.id, t.updated_at?.checked_mul(1000)?)))
+                .collect(),
+            next_cursor: page.next_cursor,
+        })
     }
 }
 struct OwnerNativeReader {
@@ -124,7 +153,7 @@ impl NativeSessionReader for OwnerNativeReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
         let thread = self
             .control
-            .0
+            .create
             .native_control()
             .read_snapshot_thread(target)?;
         Ok(super::native_reader::snapshot_from_metadata(
@@ -140,7 +169,12 @@ impl NativeSessionReader for OwnerNativeReader {
         target: &SessionAddress,
         key: &RequestKey,
     ) -> Result<Option<NativeReceipt>, ReadError> {
-        match self.control.0.native_control().lookup_request(target, key) {
+        match self
+            .control
+            .create
+            .native_control()
+            .lookup_request(target, key)
+        {
             Ok(RequestReceiptLookup::Found(receipt)) => Ok(Some(receipt)),
             Ok(_) => Ok(None),
             Err(_) => Err(ReadError("Codex request correlation unavailable".into())),
@@ -302,11 +336,14 @@ pub fn build_with_registry(
         timeout,
     )?);
     let messages = Arc::new(Mutex::new(CodexReader::open(process.clone(), timeout)?));
-    let control = Arc::new(Control(Arc::new(CodexCreateControl::open(
-        process,
-        instance.clone(),
-        timeout,
-    )?)));
+    let control = Arc::new(Control {
+        create: Arc::new(CodexCreateControl::open(
+            process,
+            instance.clone(),
+            timeout,
+        )?),
+        reader: messages.clone(),
+    });
     let reader = Arc::new(OwnerNativeReader {
         control: control.clone(),
         reopened: reopened.clone(),
@@ -389,11 +426,16 @@ pub fn build_with_registry(
         catalog::DeliveryMode::Start,
         reconciler.clone(),
         policy.clone(),
-    ).with_recovery_handoff(handoff));
+    ).with_recovery_handoff(handoff, control.clone()));
     let session_recovery = opened.owner.codex_recovery.map(|profile| {
         Arc::new(SessionRecovery::new(
-            authority.clone(), control.0.share_native_control(), policy.clone(), waits.clone(),
-            reconciler.clone(), profile,
+            authority.clone(),
+            control.create.share_native_control(),
+            policy.clone(),
+            waits.clone(),
+            reconciler.clone(),
+            profile,
+            RecoveryDiscovery::new(control.clone(), grants.clone()),
         )) as Arc<dyn automation_driver::AutomationTick>
     });
     let app = Arc::new(OwnerApp {
