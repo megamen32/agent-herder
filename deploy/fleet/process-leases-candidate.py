@@ -711,7 +711,7 @@ def check_codex_autopilot(config, recovery):
     if not isinstance(model, str) or not model.strip() or len(model.encode()) > 256 or not isinstance(url, str):
         raise ValueError("invalid Codex autopilot judge model or URL")
     endpoint = urlsplit(url)
-    if (not endpoint.hostname or endpoint.username is not None or endpoint.password is not None
+    if (not endpoint.hostname or endpoint.port == 0 or endpoint.username is not None or endpoint.password is not None
             or endpoint.query or endpoint.fragment or not (
                 endpoint.scheme == "https" or endpoint.scheme == "http" and endpoint.hostname in {"localhost", "127.0.0.1", "::1"})):
         raise ValueError("Codex autopilot requires an HTTPS or loopback judge")
@@ -779,16 +779,11 @@ def recovery_profile_payload(previous, changed, *, installed=False):
             raise ValueError("OpenCode recovery requires the existing native HTTP profile")
     else:
         raise ValueError("unsupported native recovery profile kind")
-    if kind == "codex" and owner.get("codex_autopilot") != new.get("codex_autopilot"):
-        # Semantic rules are opt-in per session. Installing their judge must
-        # preserve the existing recovery configuration, including its active marker.
-        if "codex_autopilot" in new:
-            check_codex_autopilot(new["codex_autopilot"], owner.get("codex_recovery"))
-            owner["codex_autopilot"] = new["codex_autopilot"]
-        else:
-            del owner["codex_autopilot"]
-    elif not socket_only:
-        recovery = new.get(kind + "_recovery")
+    recovery = new.get(kind + "_recovery")
+    recovery_changed = recovery != owner.get(kind + "_recovery")
+    autopilot_changed = kind == "codex" and owner.get("codex_autopilot") != new.get("codex_autopilot")
+    # A change confined to the semantic rule binding keeps the active recovery marker.
+    if not socket_only and (recovery_changed or not autopilot_changed):
         if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
             raise ValueError("installed recovery requires an explicit compatibility handoff")
         handoff = recovery["legacy_handoff"]
@@ -800,6 +795,11 @@ def recovery_profile_payload(previous, changed, *, installed=False):
         for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
             private_file(handoff[field])
         owner[kind + "_recovery"] = recovery
+    if kind == "codex" and "codex_autopilot" in new and (autopilot_changed or recovery_changed):
+        check_codex_autopilot(new["codex_autopilot"], recovery)
+        owner["codex_autopilot"] = new["codex_autopilot"]
+    elif autopilot_changed:
+        del owner["codex_autopilot"]
     if actual != expected or len(changed) > 16384:
         raise ValueError("native recovery changes protected profile fields or exceeds the native limit")
     return changed

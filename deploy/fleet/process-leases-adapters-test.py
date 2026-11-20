@@ -257,12 +257,20 @@ class AdapterMigrationContracts(MigrationFixture):
         self.assertEqual(marker.read_bytes(), b"true\n")
         self.assertEqual(candidate.recovery_profile_payload(after, before), before)
 
+        combined = copy.deepcopy(successor)
+        new_handoff = combined["owner"]["codex_recovery"]["legacy_handoff"]
+        new_handoff.update(native_sessions=["existing-session", "handed-over-session"],
+                           activation_file=str(self.root / "next-activation.json"))
+        combined_bytes = candidate.encoded(combined)
+        self.assertEqual(candidate.recovery_profile_payload(before, combined_bytes), combined_bytes)
+
         for name, edit in (
                 ("foreign provider", lambda p: p["owner"].update(principal="another-owner")),
                 ("different holds", lambda p: p["owner"]["codex_autopilot"]["holds"].update(human_stops=holds["choices"])),
                 ("expanded cohort", lambda p: p["owner"]["codex_recovery"]["legacy_handoff"].update(instance_wide=True)),
                 ("inline secret", lambda p: p["owner"]["codex_autopilot"]["judge"].update(token="fixture")),
-                ("unencrypted judge", lambda p: p["owner"]["codex_autopilot"]["judge"].update(base_url="http://example.test/v1"))):
+                ("unencrypted judge", lambda p: p["owner"]["codex_autopilot"]["judge"].update(base_url="http://example.test/v1")),
+                ("invalid judge port", lambda p: p["owner"]["codex_autopilot"]["judge"].update(base_url="https://example.test:invalid/v1"))):
             with self.subTest(change=name):
                 invalid = copy.deepcopy(successor)
                 edit(invalid)
