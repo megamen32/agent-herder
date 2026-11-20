@@ -62,6 +62,8 @@ enum Phase {
         expires_at_ms: u64,
     },
     JudgeUnavailable,
+    JudgeRateLimited,
+    JudgeQuotaExhausted,
     Held,
     Done,
     Human,

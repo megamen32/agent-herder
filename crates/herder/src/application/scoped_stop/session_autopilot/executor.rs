@@ -1,5 +1,6 @@
 use super::{
-    BoundRule, Phase, Result, Rule, STORE, SessionAutopilot, fingerprint, judge::Decision,
+    BoundRule, Phase, Result, Rule, STORE, SessionAutopilot, fingerprint,
+    judge::{Decision, JudgeFailure},
 };
 use crate::{
     adapters::codex::control::SemanticTurn,
@@ -243,7 +244,7 @@ impl BoundRule {
         &self,
         identity: &ConnectionIdentity,
         evaluation: Evaluation,
-        decision: Result<Decision>,
+        decision: std::result::Result<Decision, JudgeFailure>,
     ) -> Result<()> {
         let Evaluation {
             version,
@@ -269,7 +270,9 @@ impl BoundRule {
                 Phase::Held
             } else {
                 match decision {
-                    Err(_) => Phase::JudgeUnavailable,
+                    Err(JudgeFailure::Unavailable) => Phase::JudgeUnavailable,
+                    Err(JudgeFailure::RateLimited) => Phase::JudgeRateLimited,
+                    Err(JudgeFailure::QuotaExhausted) => Phase::JudgeQuotaExhausted,
                     Ok(Decision::Done) => Phase::Done,
                     Ok(Decision::Human) => Phase::Human,
                     Ok(Decision::Choice) => Phase::Choice,

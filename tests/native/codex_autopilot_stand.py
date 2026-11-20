@@ -22,6 +22,7 @@ INSTRUCTIONS = "Compare the requested colours with the final answer."
 REQUEST = "Give the first colour, red."
 CLARIFICATION = "Also include the second colour, blue."
 NEXT = "Include both requested colours in your answer."
+PRIVATE_ERROR = "private-fixture-provider-detail"
 
 @contextmanager
 def drop_first_ack(endpoint, proxy):
@@ -95,6 +96,15 @@ class Judge(BaseHTTPRequestHandler):
         Judge.calls.append(case)
         if answer == "judge connection lost":
             self.close_connection = True
+            return
+        if answer in ("judge throttled", "judge quota exhausted"):
+            code = "1113" if answer == "judge quota exhausted" else "1302"
+            body = json.dumps({"error": {"code": code, "message": PRIVATE_ERROR + " 1113"}}).encode()
+            self.send_response(429)
+            self.send_header("Retry-After", "0")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if answer.startswith("red only"):
             if answer == "red only":
@@ -212,7 +222,8 @@ def exercise(root, owner, native, home, cwd, endpoint, env, read, wait, module, 
         task_id = rows[0][0]
         assert len(Judge.calls) == 1
     ack[2].set()
-    with stand.owner_client(owner, profile, env) as client:
+    with ExitStack() as drivers:
+        client = drivers.enter_context(stand.owner_client(owner, profile, env))
         def status():
             return automation(client, action="get", rule_ref=rule_ref)
 
@@ -240,12 +251,29 @@ def exercise(root, owner, native, home, cwd, endpoint, env, read, wait, module, 
             phase(decision)
             assert len(ledger(db)) == 1
 
-        before_loss = len(Judge.calls)
-        prompt(session, "Check this once.", "judge connection lost")
-        phase("judge_unavailable")
-        assert json.loads(subprocess.check_output([*probe, "get", rule_ref], env=env)) == status()
-        time.sleep(2.3)
-        assert len(Judge.calls) == before_loss + 1 and len(ledger(db)) == 1
+        failures = {"judge quota exhausted": "judge_quota_exhausted",
+                    "judge throttled": "judge_rate_limited", "judge connection lost": "judge_unavailable"}
+        failure_counts = {}
+        for answer, expected in failures.items():
+            before, deliveries = len(Judge.calls), len(ledger(db))
+            turn = prompt(session, "Check this once.", answer)
+            phase(expected)
+            saved = status()
+            assert saved["turn_id"] == turn and PRIVATE_ERROR not in json.dumps(saved)
+            drivers.close()
+            assert PRIVATE_ERROR not in client.process.stderr.read()
+            client = drivers.enter_context(stand.owner_client(owner, profile, env))
+            time.sleep(2.3)
+            observed = json.loads(subprocess.check_output([*probe, "get", rule_ref], env=env))
+            assert observed == saved, (expected, observed.get("phase"), observed.get("turn_id"))
+            counts = {"judge_requests":len(Judge.calls) - before, "deliveries":len(ledger(db)) - deliveries}
+            assert counts == {"judge_requests":1, "deliveries":0}, (expected, counts)
+            failure_counts[expected] = counts
+            latest = read("thread/turns/list", {"threadId":session, "sortDirection":"desc", "limit":1})["data"]
+            assert [row["id"] for row in latest] == [turn], expected
+            with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)) as conn:
+                assert not conn.execute("SELECT 1 FROM settings WHERE instr(value_json, ?) > 0",
+                                        (PRIVATE_ERROR,)).fetchone()
 
         def delayed():
             Judge.release.clear()
@@ -343,6 +371,7 @@ def exercise(root, owner, native, home, cwd, endpoint, env, read, wait, module, 
             "receipt":receipt["native_receipt_id"], "judge_requests":calls, "native_deliveries":1,
             "ack_recovered":True,"restart_replays":0,"neighbour_judgments":0,
             "independent_rules":2, "native_goal_hold":True, "judge_loss_replays":0,
+            "judge_failures":failure_counts, "judge_failure_restarts":len(failures),
             "pending_recovery_hold":True, "concurrent_owners":2}
 
 

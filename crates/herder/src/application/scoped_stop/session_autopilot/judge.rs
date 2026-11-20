@@ -1,6 +1,5 @@
-use super::Result;
 use crate::adapters::codex::control::SemanticTurn;
-use reqwest::{Client, Url};
+use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -29,6 +28,28 @@ pub(super) enum Decision {
         #[serde(rename = "nextGoal")]
         next_goal: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum JudgeFailure {
+    Unavailable,
+    RateLimited,
+    QuotaExhausted,
+}
+
+fn classify_429(reply: &Value) -> JudgeFailure {
+    // OpenAI-compatible gateways can forward the upstream Z.AI error code verbatim.
+    let error = &reply["error"];
+    let code = &error["code"];
+    let number = code.as_u64().or_else(|| code.as_str()?.parse().ok());
+    if code == "insufficient_quota"
+        || error["type"] == "insufficient_quota"
+        || matches!(number, Some(1113 | 1308 | 1310 | 1316..=1321))
+    {
+        JudgeFailure::QuotaExhausted
+    } else {
+        JudgeFailure::RateLimited
+    }
 }
 
 impl JudgeConfig {
@@ -63,8 +84,8 @@ impl JudgeConfig {
         client: &Client,
         instructions: &str,
         turn: &SemanticTurn,
-    ) -> Result<Decision> {
-        let err = "judge_unavailable";
+    ) -> Result<Decision, JudgeFailure> {
+        let err = JudgeFailure::Unavailable;
         let evidence = json!({"instructions": redact(instructions),
             "human_messages": turn.human_messages.iter().map(|s|redact(s)).collect::<Vec<_>>(),
             "assistant_answer":redact(&turn.assistant_answer)});
@@ -93,17 +114,27 @@ impl JudgeConfig {
             request = request.bearer_auth(token.trim());
         }
         let mut response = request.send().await.map_err(|_| err)?;
-        if !response.status().is_success() {
+        let limited = response.status() == StatusCode::TOO_MANY_REQUESTS;
+        if !limited && !response.status().is_success() {
             return Err(err);
         }
+        // Once the 429 headers arrived, an unreadable body still proves throttling.
+        let (limit, body_error) = if limited {
+            (8192, JudgeFailure::RateLimited)
+        } else {
+            (32768, err)
+        };
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| err)? {
-            if bytes.len() + chunk.len() > 32768 {
-                return Err(err);
+        while let Some(chunk) = response.chunk().await.map_err(|_| body_error)? {
+            if chunk.len() > limit - bytes.len() {
+                return Err(body_error);
             }
             bytes.extend_from_slice(&chunk);
         }
-        let reply: Value = serde_json::from_slice(&bytes).map_err(|_| err)?;
+        let reply: Value = serde_json::from_slice(&bytes).map_err(|_| body_error)?;
+        if limited {
+            return Err(classify_429(&reply));
+        }
         let choices = reply["choices"].as_array().ok_or(err)?;
         let [choice] = choices.as_slice() else {
             return Err(err);
@@ -145,6 +176,36 @@ fn redact(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn quota_requires_a_structured_code_or_type_on_http_429() {
+        for code in [
+            json!("1113"),
+            json!(1113),
+            json!("1310"),
+            json!("insufficient_quota"),
+        ] {
+            assert_eq!(
+                classify_429(&json!({"error":{"code":code}})),
+                JudgeFailure::QuotaExhausted
+            );
+        }
+        assert_eq!(
+            classify_429(&json!({"error":{"type":"insufficient_quota"}})),
+            JudgeFailure::QuotaExhausted
+        );
+        for error in [
+            json!(null),
+            json!({"code":"1302"}),
+            json!({"message":"private 1113"}),
+            json!({"code":{"reason":1113}}),
+        ] {
+            assert_eq!(
+                classify_429(&json!({"error":error})),
+                JudgeFailure::RateLimited
+            );
+        }
+    }
+
     #[test]
     fn credentials_do_not_enter_the_judge_context() {
         for input in [
