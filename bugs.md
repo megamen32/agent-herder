@@ -42,3 +42,18 @@
 - После ошибки `pip check` в защищённом выпуске Account Broker контроллер оставил `occupancyState=unknown` и `reconcileRequired=true`. Кандидат green не запускался. Журнал переключения подтверждает, что текущий blue обслуживает запросы в состоянии `committed`.
 - Это воспроизводится при ошибке подготовки до `switch` внутри `BrokerReleaseGuard`. После завершения процесса попытки закрыть ту же аренду контроллер отклоняет, пока нет подтверждения результата.
 - После истечения аренды при свободной блокировке цели установленный Herder показал `stale_unknown`. Обычный `acquire` перенёс прежнюю запись в карантин и выдал новую аренду для выпуска Broker. Проверки перед продолжением описаны в [жизненном цикле выпуска](docs/canonical-release-cutover.md#effect-lifetime).
+
+## 2026-11-20 — плавающий отказ CI на чтении квоты перед мутацией в fleet owner transport
+
+- **Симптом:** в CI-шаге `Verify peer transport, owner authentication, and process generation` тест `tests/harness-mesh-fleet-owner-http-transport.test.ts` → `sends one create with exact digest and does not replay a lost response` иногда завершается с `expected 'fleet_node_info' to be 'model_quotas'`.
+- **Расположение:** `tests/harness-mesh-fleet-owner-http-transport.test.ts:146`. Тест ждёт, пока защита прочитает квоту получателя (`model_quotas`), но успевает прочитать предыдущий вызов (`fleet_node_info`).
+- **Воспроизведение:** детерминированного воспроизведения нет. На ревизии `d25dcbed` (`origin/main`) файл теста и его зависимости не менялись: десять последовательных локальных прогонов этого файла прошли. В CI тот же коммит прошёл routing при повторном запуске.
+- **Контекст:** поверхность TypeScript (`src/**`, `tests/**`) в ветке `codex/rust-chatgpt-zai-adapters` побайтово совпадает с `origin/main`, поэтому дефект не связан с Rust-адаптерами ChatGPT и Z.ai. Ошибка указывает на гонку порядка вызовов в самом тесте, а не на изменение поведения транспорта.
+
+
+## 2026-11-20 — CI-шаг маршрутизации флота изредка падает без связи с изменением
+
+- **Симптом:** в CI-шаге `Verify peer transport, owner authentication, and process generation` тест `tests/harness-mesh-fleet-owner-http-transport.test.ts` → «sends one create with exact digest and does not replay a lost response» падает с `expected 'fleet_node_info' to be 'model_quotas'`. Guard читает квоту получателя перед мутацией, но тест успевает прочитать последний вызов раньше, чем появится чтение квоты.
+- **Воспроизведение:** нагрузка на раннере тестовом шаге; локальный прогон того же файла 10 раз подряд проходит.
+- **Контекст:** этот шаг падал и на `main` (`d25dcbed`), то есть до текущей работы. Ветка `codex/rust-chatgpt-zai-adapters` не меняет ни одного файла TypeScript в `src/**` и `tests/**` относительно `origin/main`, поэтому её код не может быть причиной. Повторный прогон того же коммита в CI проходит. Считать единичный отказ этого шага флейком и не повторять тест ради «красного» статуса.
+
