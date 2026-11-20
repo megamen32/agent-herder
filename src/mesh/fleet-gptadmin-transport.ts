@@ -1,7 +1,7 @@
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {randomUUID} from 'node:crypto';
 import {isBrowserMeshHarness,unwrapResult,type MeshAddress} from './protocol.js';
-import {FleetAttachmentFrameTooLarge,meshDeliverySchema} from './delivery-schema.js';
+import {FleetAttachmentFrameTooLarge,meshAttachmentsSchema,meshDeliverySchema} from './delivery-schema.js';
 import type {GptAdminTransport} from './gptadmin.js';
 export interface FleetFacadeOptions {
  endpoint:string;
@@ -106,7 +106,14 @@ function assertNativeHerderCall(tool:string,args:Record<string,unknown>):void{
  let valid=false;
  if(tool==='session'&&args.action==='resolve')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
  if(tool==='deliver'&&args.action==='receipt')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
- if(tool==='deliver'&&args.action==='session')valid=keys(['action','session_ref','request_key','message','mode'])&&exact(args.session_ref)&&exact(args.request_key)&&typeof args.message==='string'&&args.message.length>0&&args.message.length<=1024*1024&&['queue','start'].includes(String(args.mode));
+ if(tool==='deliver'&&args.action==='session'){
+  const files=args.attachments;
+  valid=keys(['action','session_ref','request_key','message','mode'],['attachments'])
+   &&exact(args.session_ref)&&exact(args.request_key)&&(args.mode==='queue'||args.mode==='start')
+   &&typeof args.message==='string'&&args.message.length<=1024*1024&&(args.message.length>0||Array.isArray(files)&&files.length>0)
+   &&(files===undefined||meshAttachmentsSchema.safeParse(files).success);
+ }
+ if(tool==='stop'&&args.action==='stop')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
  if(tool==='deliver'&&keys(['target','sender','inputId','message'],['attachments'])){
   valid=peer(args.target)&&isBrowserMeshHarness(args.target.harness)&&peer(args.sender)
    &&exact(args.inputId)&&meshDeliverySchema.safeParse(args).success;

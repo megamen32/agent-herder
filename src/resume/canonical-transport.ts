@@ -67,16 +67,18 @@ function outcome(request: ResumeTransportRequest, status: "ambiguous" | "rejecte
   };
 }
 
-function validateProjection(value: ObjectValue, target: CanonicalSessionRef, key: string, message: string): "queue" | "start" {
+export function canonicalDeliveryReceiptMode(value: ObjectValue, target: CanonicalSessionRef, key: string, message: string,
+  attachments?: readonly MeshInlineAttachment[]): "queue" | "start" {
   const address = object(value.target);
   if (value.version !== 1 || value.complete !== true || typeof value.found !== "boolean"
     || value.session_ref !== target.sessionRef || value.request_key !== key || !exact(value.task_ref)
     || !address || address.node_ref !== target.nodeRef || address.instance_ref !== target.instanceRef
-    || address.native_session_id !== target.nativeSessionId || !["queue", "start"].includes(String(value.delivery_mode))) {
+    || address.native_session_id !== target.nativeSessionId || (value.delivery_mode !== "queue" && value.delivery_mode !== "start")) {
     throw new Error("canonical_receipt_binding_invalid");
   }
-  const mode = value.delivery_mode as "queue" | "start";
-  const expectedHash = canonicalResumePayloadHash(target, mode, message);
+  const mode = value.delivery_mode;
+  const expectedHash = canonicalResumePayloadHash(target, mode, message, attachments);
+  if (value.found && typeof value.payload_hash !== "string") throw new Error("canonical_receipt_binding_invalid");
   if (value.found && value.payload_hash !== expectedHash) throw new Error("idempotency_conflict");
   if (value.reserved_payload_hash !== undefined && value.reserved_payload_hash !== null
     && value.reserved_payload_hash !== expectedHash) throw new Error("idempotency_conflict");
@@ -133,7 +135,7 @@ export function createCanonicalResumeTransport(options: CanonicalResumeTransport
       const message = canonicalResumeMessage(request);
       const read = async (): Promise<ObjectValue> => {
         const value = await authority.call("deliver", { action: "receipt", session_ref: target.sessionRef, request_key: key });
-        validateProjection(value, target, key, message);
+        canonicalDeliveryReceiptMode(value, target, key, message);
         return value;
       };
       let projection = await read();

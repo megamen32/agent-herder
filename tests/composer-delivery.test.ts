@@ -178,10 +178,10 @@ describe("composer outbox persistence", () => {
 
   it("revives entries interrupted by reload as pending reconciliation, never as a silent resend", () => {
     const storage = new MemoryStorage();
-    writeStoredOutbox(storage, [entry({ inputId: "a", status: "sending", text: "незавершённая" })]);
+    writeStoredOutbox(storage, [entry({ inputId: "a", hostId: "selected-host", status: "sending", text: "незавершённая" })]);
     const restored = readStoredOutbox(storage);
     expect(restored).toHaveLength(1);
-    expect(restored[0]).toMatchObject({ inputId: "a", status: "pending", text: "незавершённая" });
+    expect(restored[0]).toMatchObject({ inputId: "a", hostId: "selected-host", status: "pending", text: "незавершённая" });
     expect(restored[0].note).toContain("уточняю состояние доставки у сервера");
   });
 

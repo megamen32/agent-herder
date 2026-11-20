@@ -92,8 +92,10 @@ import { registerDeliveryResponseResource, type DeliveryResponseResourceBinding 
 import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner-routing.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
-import { createConfiguredResumeAfterRuntime } from "./resume-after-runtime.js";
-import type { CanonicalAutomationClient } from "./canonical-herder.js";
+import { resumeAfterRuntimeForClient } from "./resume-after-runtime.js";
+import { createCanonicalAutomationClient, type CanonicalAutomationClient } from "./canonical-herder.js";
+import { CanonicalBrowserActions } from "./adapters/canonical-browser-actions.js";
+import { SessionImageStore } from "./session-images.js";
 import type { ResumeAfterBackend } from "./resume-after.js";
 import type { CadenceScheduler } from "./cadence-scheduler.js";
 import { createCadenceRuntime } from "./cadence-runtime.js";
@@ -315,7 +317,7 @@ const openCodeModelProviderResolver = () => ({
   omniRouteManagementToken: process.env.AGENT_HERDER_OMNIROUTE_MANAGEMENT_TOKEN,
   omniRouteCliToken: process.env.AGENT_HERDER_OMNIROUTE_CLI_TOKEN,
 });
-function configureAdapterRegistry(): void {
+function configureAdapterRegistry(browserActions?: CanonicalBrowserActions): void {
   adapterFactories.set("opencode", () => new OpenCodeAdapter({
     baseUrl: process.env.OPENCODE_URL,
     password: process.env.OPENCODE_SERVER_PASSWORD,
@@ -347,8 +349,8 @@ function configureAdapterRegistry(): void {
     home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
     cwd: process.env.FAST_AGENT_CWD || process.cwd(),
   }));
-  adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt"));
-  adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai"));
+  adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt", undefined, browserActions));
+  adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai", undefined, browserActions));
   adapterFactories.set("minimax-code", () => new MinimaxCodeAdapter({
     sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
     cwd: process.env.MINIMAX_CODE_CWD,
@@ -1039,7 +1041,10 @@ async function main() {
   }
 
   trustedOperatorProfile = await loadTrustedOperatorProfile();
-  configureAdapterRegistry();
+  const canonicalClient = await createCanonicalAutomationClient();
+  const sessionImageStore = new SessionImageStore();
+  const browserActions = canonicalClient && new CanonicalBrowserActions(canonicalClient, sessionImageStore);
+  configureAdapterRegistry(browserActions);
   const adoptedState = await autopilotStateReady;
   if (adoptedState.length > 0) {
     console.error(`[agent-herder] adopted pre-seam autopilot state: ${adoptedState.length} file(s)`);
@@ -1059,7 +1064,7 @@ async function main() {
             return false;
           }
           try {
-            const browser = await loadBrowserChatProviderAdapter(id);
+            const browser = await loadBrowserChatProviderAdapter(id, undefined, browserActions);
             await browser.init();
             adapterRegistry.registerActive(browser);
             console.error(`[agent-herder] browser provider ${id} initialized`);
@@ -1245,7 +1250,7 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
     permissionNoticeObserver,
   });
-  const resumeAfterRuntime = await createConfiguredResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
+  const resumeAfterRuntime = resumeAfterRuntimeForClient(canonicalClient, adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
     undefined, undefined, async wait => {
       if (!wait.humanRequestId) return "closed";
       const verdict = await humanRequests.timeoutResumeWait(wait.humanRequestId, wait.id, "question expired");
@@ -1520,6 +1525,7 @@ async function main() {
     if (isQuotaLensEnabled()) startQuotaLensSampler();
     const webServer = createWebServer({
       adapters,
+      sessionImageStore,
       canonicalRuntimeStatus: createCanonicalRuntimeStatus(resumeAfterRuntime.service),
       hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,

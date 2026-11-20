@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import lockfile from "proper-lockfile";
 import type { MessageImage } from "./types/index.js";
 
@@ -13,7 +14,7 @@ const EXTENSIONS: Record<string, string> = { "image/png": "png", "image/jpeg": "
 
 /** Immutable image references survive queued delivery and browser reload. */
 export class SessionImageStore {
-  constructor(private readonly directory: string) {}
+  constructor(private readonly directory = join(homedir(), ".local/state/agent-herder/session-images")) {}
   async upload(input: { harness: string; sessionId: string; fileName: string; mimeType: string; dataBase64: string; kind?: "image" | "file" }): Promise<UploadedImage> {
     const kind = input.kind === "file" ? "file" : "image";
     const extension = kind === "image" ? EXTENSIONS[input.mimeType] : (input.fileName.match(/\.([a-z0-9]{1,12})$/i)?.[1]?.toLowerCase() || "bin");

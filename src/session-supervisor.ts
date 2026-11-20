@@ -782,12 +782,12 @@ export class SessionSupervisor {
     return result;
   }
 
-  async stopSession(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  async stopSession(harness: string, id: string, inputId?: string): Promise<ControlResult> {
     await this.holdExplicitStop(harness, id);
     const adapter = this.requireAdapter(harness);
     const session = (harness === "codex" || harness === "zcode") ? await adapter.getSession(id) : null;
     const alreadyStopped = session && !session.needsPermission && (session.status === "idle" || session.status === "stopped");
-    const result = alreadyStopped ? { ok: true } : await adapter.stopSession(id);
+    const result = alreadyStopped ? { ok: true } : await adapter.stopSession(id, inputId);
     if (result.ok) {
       await this.unfinishedSessions?.forget(harness, id);
       this.publishSessionChanged(harness, id, "changed");
@@ -808,11 +808,11 @@ export class SessionSupervisor {
     return result;
   }
 
-  async cancelTurn(harness: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  async cancelTurn(harness: string, id: string, inputId?: string): Promise<ControlResult> {
     await this.holdExplicitStop(harness, id);
     const adapter = this.requireAdapter(harness);
     const result = adapter.cancelTurn
-      ? await adapter.cancelTurn(id)
+      ? await adapter.cancelTurn(id, inputId)
       : { ok: false, error: `${adapter.name} does not expose native turn cancellation` };
     if (result.ok) {
       await this.unfinishedSessions?.forget(harness, id);

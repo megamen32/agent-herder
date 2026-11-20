@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BrowserChatAdapter, type BrowserChatDriver } from "./browser-chat.js";
+import type { CanonicalBrowserActions } from "./canonical-browser-actions.js";
 
 export const BROWSER_CHAT_PROVIDERS_ENV = "AGENT_HERDER_BROWSER_CHAT_PROVIDERS";
 
@@ -42,6 +43,7 @@ export function configuredBrowserProviderIds(raw = process.env[BROWSER_CHAT_PROV
  */
 export async function loadBrowserChatProviderAdapter(
   id: "chatgpt" | "zai", raw = process.env[BROWSER_CHAT_PROVIDERS_ENV],
+  canonicalActions?: CanonicalBrowserActions,
 ): Promise<BrowserChatAdapter> {
   if (!raw?.trim()) throw new Error(`Browser provider '${id}' is not configured`);
   configuredBrowserProviderIds(raw);
@@ -61,7 +63,7 @@ export async function loadBrowserChatProviderAdapter(
   }
   return new BrowserChatAdapter(driver, {
     id, name:config.name, harness:id, cwd:config.cwd,
-  }, config.cwd, true);
+  }, config.cwd, true, false, canonicalActions);
 }
 
 /** Resolve both independent adapters; a failed site must not mask the other
