@@ -7,7 +7,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
-import { isCredentialFreeLocalChild, localProviderId } from "./codex-owned-provider.js";
+import { isCredentialFreeLocalChild, localProviderId, parseCodexProviderRoutes, subscriptionIndependentProviderId, type CodexProviderRoutes } from "./codex-owned-provider.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import { CodexTrustedAdmission } from "../codex-trusted-admission.js";
 import WebSocket from "ws";
@@ -417,6 +417,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly pendingNativeUserInputs = new Map<string, CodexPendingNativeUserInput>();
   private readonly seenNativeUserInputIds = new Set<string>();
   private readonly threads = new Map<string, CodexThread>();
+  /** The provider routes of the Codex configuration, read for the scope of the quota guard. */
+  private providerRoutesCache?: { at: number; routes: CodexProviderRoutes };
   /** Permission-setting authority exists only for threads started by this live transport owner. */
   private readonly ownedPermissionThreads = new Map<string, CodexOwnedPermissionState>();
   private readonly permissionSettingsWaiters = new Map<string, CodexPermissionSettingsWaiter>();
@@ -3117,6 +3119,42 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch { return false; }
   }
 
+  /** The provider routes declared by the Codex configuration of this app-server.
+   * The file is the same one the app-server child reads; a route it does not
+   * declare stays unproven and keeps the subscription guard. */
+  private async codexProviderRoutes(): Promise<CodexProviderRoutes> {
+    const cached = this.providerRoutesCache;
+    if (cached && Date.now() - cached.at < 60_000) return cached.routes;
+    let routes: CodexProviderRoutes = { baseUrls: {} };
+    try {
+      routes = parseCodexProviderRoutes(await readFile(join(this.appServerDataHome, "config.toml"), "utf8"));
+    } catch { /* an unreadable configuration keeps the guard fully applied */ }
+    this.providerRoutesCache = { at: Date.now(), routes };
+    return routes;
+  }
+
+  /** The reserve guard protects the official OpenAI Codex subscription. A thread
+   * pinned to a configured third-party provider route is billed by that route,
+   * so the subscription quota is not its budget and must not block it. The route
+   * is proven from the native thread and the Codex configuration; an unproven
+   * route keeps the guard. */
+  private async subscriptionIndependentRoute(method: string, params: unknown): Promise<boolean> {
+    try {
+      const scoped = params as { threadId?: unknown; modelProvider?: unknown };
+      const routes = await this.codexProviderRoutes();
+      let providerId = typeof scoped.modelProvider === "string" ? scoped.modelProvider : undefined;
+      if (!providerId && typeof scoped.threadId === "string") providerId = this.threads.get(scoped.threadId)?.modelProvider;
+      // A fresh thread inherits the configured default provider; an existing
+      // thread without a pinned provider stays unproven.
+      if (!providerId && method === "thread/start") providerId = routes.defaultProviderId;
+      if (!providerId) return false;
+      return subscriptionIndependentProviderId(routes, providerId) !== undefined;
+    } catch {
+      // An unreadable route is not a proven route: the guard stays.
+      return false;
+    }
+  }
+
   private async request(method: string, params: unknown, stage = method, timeoutMs = this.requestTimeoutMs, humanReserve = false, beforeWrite?: () => void): Promise<unknown> {
     try { this.assertLifecycleActive(); }
     catch (error) { return Promise.reject(error); }
@@ -3128,7 +3166,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       const model = typeof scoped?.model === "string" ? scoped.model
         : typeof scoped?.threadId === "string" ? this.threads.get(scoped.threadId)?.model
         : method === "thread/start" ? await this.defaultCodexModel() : undefined;
-      if (!codexQuotaExemptModel(model) && !await this.ownedLocalProviderOperation(method, params)) {
+      if (!codexQuotaExemptModel(model) && !await this.ownedLocalProviderOperation(method, params)
+          && !await this.subscriptionIndependentRoute(method, params)) {
         await assertCodexQuota(method, this.quotaReader ?? (() => this.request("account/rateLimits/read", {})), true, ["thread/resume", "turn/start", "turn/steer"].includes(method) && humanReserve);
       }
       this.assertLifecycleActive();
