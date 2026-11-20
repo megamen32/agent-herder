@@ -628,6 +628,33 @@ for line in sys.stdin:
     );
     let resolved = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"resolve","harness":"codex","native_session_id":"fake-thread","node_ref":"local"}}}));
     assert_eq!(resolved["result"]["structuredContent"]["session_ref"], session, "{resolved}");
+    let instances = call(&mut input, &mut out, serde_json::json!({
+        "jsonrpc":"2.0","id":20,"method":"tools/call","params":{"_meta":meta,
+            "name":"discover","arguments":{"action":"instances","node_ref":"local"}}
+    }));
+    let instance = &instances["result"]["structuredContent"]["instances"][0];
+    assert_eq!(instance["instance_ref"], "codex-test", "{instances}");
+    assert_eq!(instance["harness"], "codex");
+    let mut ordinary = meta.clone();
+    ordinary["io.modelcontextprotocol/clientCapabilities"] = serde_json::json!({});
+    let sender = serde_json::json!({"hostId":"remote","harness":"opencode","nativeSessionId":"sender"});
+    let delivery = serde_json::json!({"_meta":ordinary,"name":"deliver","arguments":{
+        "target":{"hostId":"local","harness":"codex","nativeSessionId":"fake-thread"},
+        "sender":sender,"inputId":"cross-host-followup","message":"Follow-up from OpenCode"
+    }});
+    for id in [21, 22] {
+        let delivered = call(&mut input, &mut out, serde_json::json!({
+            "jsonrpc":"2.0","id":id,"method":"tools/call","params":delivery
+        }));
+        assert_eq!(delivered["result"]["structuredContent"]["outcome"], "confirmed", "{delivered}");
+    }
+    let receipt = call(&mut input, &mut out, serde_json::json!({
+        "jsonrpc":"2.0","id":23,"method":"tools/call","params":{"_meta":ordinary,
+            "name":"deliver","arguments":{"action":"receipt","session_ref":session,"request_key":"cross-host-followup"}}
+    }));
+    assert_eq!(receipt["result"]["structuredContent"]["native_receipt"]["sender"], sender, "{receipt}");
+    let trace = fs::read_to_string(f.root.join("native-trace")).unwrap();
+    assert_eq!(trace.lines().filter(|method| *method == "turn/start").count(), 2, "{trace}");
     let timer_request = serde_json::json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"_meta":meta,"name":"automation","arguments":{"action":"create","session_ref":session,"request_key":"owner-stdio-timer","rule":{"kind":"timer","trigger":{"kind":"delay","delay_ms":3600000},"wake_message":"resume after timer"}}}});
     let timer = call(&mut input, &mut out, timer_request.clone());
     let timer = timer["result"]["structuredContent"].clone();

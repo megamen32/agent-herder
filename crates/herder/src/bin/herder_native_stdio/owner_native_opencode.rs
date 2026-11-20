@@ -389,6 +389,9 @@ impl ApplicationPort for OwnerApp {
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
+            if let Some(result) = self.policy.discover_instance(identity, &request, None) {
+                return Some(result);
+            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }

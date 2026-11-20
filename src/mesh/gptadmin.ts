@@ -3,13 +3,17 @@ import {createHash} from "node:crypto";
 import {hostname} from "node:os";
 import {CoordinationDeliveryBudget} from "../coordination-delivery-budget.js";
 import {normalizeHostId} from "../coordination-notes.js";
-import {addressKey,parseNativeReceipt,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
+import {addressKey,isBrowserMeshHarness,parseNativeReceipt,unwrapResult,type MeshAddress,type MeshSession,type NativeReceipt} from "./protocol.js";
 import {inventoryHarnesses} from "./inventory.js";
 import type {FleetSessionControl,FleetSessionResponse} from './fleet-session-control.js';
 import {checkDeliveryModel,deliveryRefusalText,type ProjectModelPolicyStateProvider} from "../project-model-delivery-gate.js";
 import {coordinationNotes} from "../coordination-notes.js";
 import {compactAutomaticMessage} from "../long-messages.js";
 import {MINIMAX_CODE_HARNESS} from "./native-minimax-code.js";
+import {CanonicalHerderError,type CanonicalAutomationClient,type CanonicalSessionRef} from "../canonical-herder.js";
+import {canonicalBrowserModelRefusal,readCanonicalBrowserReceipt} from "./canonical-browser-delivery.js";
+import {FleetAttachmentFrameTooLarge,hasMeshMessage,type MeshInlineAttachment} from "./delivery-schema.js";
+import type {MeshDeliveryLedger} from "./delivery-ledger.js";
 
 /** Supplied by the authenticated consumer; mesh does not mint tokens or bypass profiles. */
 export interface GptAdminTransport {
@@ -22,11 +26,11 @@ export interface GptAdminTransport {
   schema(target:string):Promise<unknown>;
   call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>;
 }
-export interface MeshDelivery {target:MeshAddress;sender:MeshAddress;inputId:string;message:string}
+export interface MeshDelivery {target:MeshAddress;sender:MeshAddress;inputId:string;message:string;attachments?:MeshInlineAttachment[]}
 export interface MeshHostReceipt {hostId:string;target?:string;state:"available"|"unavailable";reason?:string;complete?:boolean;harnesses?:unknown[]}
 export interface MeshDiscovery {sessions:MeshSession[];hosts:MeshHostReceipt[];complete:boolean;limited:boolean}
 type DeliveryReceipt=NativeReceipt & {reason?:string};
-type Route={target:string;tool:"deliver"|"send_message"|"mesh_deliver";nativeIds:Set<string>;projects:Map<string,string|null>};
+type Route={target:string;tool:"deliver"|"send_message"|"mesh_deliver";nativeIds:Set<string>;projects:Map<string,string|null>;browserBinding?:CanonicalSessionRef;browserInlineAttachments?:boolean};
 export function canonicalMeshHostId(value:string):string{
   const raw=value.trim(),lower=raw.toLowerCase();
   if(lower==="localhost"||lower==="127.0.0.1"||lower==="::1"||lower==="[::1]"
@@ -69,7 +73,8 @@ export class GptAdminMesh {
   private routes=new Map<string,Route>();
   private readonly budget=new CoordinationDeliveryBudget();
   private readonly inputs=new Map<string,{digest:string;result:Promise<DeliveryReceipt>}>();
-  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=meshDiscoveryTimeoutMs()+10000,private readonly deliveryPolicy?:ProjectModelPolicyStateProvider){}
+  constructor(private readonly hub:GptAdminTransport,private readonly deadlineMs=meshDiscoveryTimeoutMs()+10000,private readonly deliveryPolicy?:ProjectModelPolicyStateProvider,
+    private readonly browserOwner?:{client:CanonicalAutomationClient;ledger:MeshDeliveryLedger}){}
   private async bounded<T>(read:Promise<T>,timeoutMs=this.deadlineMs):Promise<T>{
     let timer:ReturnType<typeof setTimeout>|undefined;
     try {return await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("mesh_read_deadline")),Math.max(1,timeoutMs));})]);}
@@ -133,14 +138,23 @@ export class GptAdminMesh {
       sender:{...request.sender,hostId:canonicalMeshHostId(request.sender.hostId)},
     };
     const targetKey=addressKey(request.target);
-    const key=targetKey+":"+request.inputId;
     addressKey(request.sender);
-    if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("Stable inputId and a 1..4000 character delta are required");
+    if(!request.inputId||request.inputId.length>256||!hasMeshMessage(request.target.harness,request.message,request.attachments))throw new Error("A stable inputId and bounded delta are required");
+    const owner=isBrowserMeshHarness(request.target.harness)?this.browserOwner:undefined;
+    const send=()=>this.deliverOnce(request,targetKey,owner?.client);
+    return owner&&request.target.hostId!==hostname()?owner.ledger.once(request,send):send();
+  }
+  private async deliverOnce(request:MeshDelivery,targetKey:string,browserOwner?:CanonicalAutomationClient):Promise<DeliveryReceipt>{
+    const key=targetKey+":"+request.inputId;
     const digest=createHash("sha256").update(JSON.stringify(request)).digest("hex");
     const previous=this.inputs.get(key);
     if(previous)return previous.digest===digest?previous.result:{state:"not_attempted",inputId:request.inputId,retryable:false,reason:"input_id_conflict"};
     if(this.inputs.size>=4096)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_input_capacity"};
-    let route=this.routes.get(request.target.hostId);
+    const browser=isBrowserMeshHarness(request.target.harness);
+    const hasFiles=Boolean(request.attachments?.length);
+    if(hasFiles&&!browser)return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:"attachments_unsupported"};
+    // Legacy discovery cannot establish a Rust-owned browser session.
+    let route=browserOwner||hasFiles?undefined:this.routes.get(request.target.hostId);
     if(route&&!route.nativeIds.has(targetKey)){
       // A host-level discovery receipt is never enough to write to an
       // unlisted native session. Re-read that exact address when the hub can;
@@ -153,15 +167,28 @@ export class GptAdminMesh {
     }
     // A known exact address needs owner identity, schema and its own current
     // session read, not a historical snapshot of every session on every host.
-    if(!route&&this.hub.readSession){
-      try{route=await this.resolveExactRoute(request.target);}catch(error){return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:error instanceof Error?shortReason(error.message):"mesh_route_unavailable"};}
+    if(!route&&(browserOwner||this.hub.readSession)){
+      try{route=await this.resolveExactRoute(request.target,browserOwner);}
+      catch(error){
+        if(browserOwner&&error instanceof CanonicalHerderError){
+          return {state:error.effect==="unknown"?"unknown":"not_attempted",inputId:request.inputId,retryable:false,
+            reason:/^[a-z][a-z0-9_]{0,95}$/.test(error.code)?error.code:"canonical_owner_unavailable"};
+        }
+        return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:error instanceof Error?shortReason(error.message):"mesh_route_unavailable"};
+      }
     }else if(!route){try{await this.discover(12);route=this.routes.get(request.target.hostId);}catch{/* unavailable remains explicit */}}
     if(!route)return {state:"not_attempted",inputId:request.inputId,retryable:true,reason:"mesh_route_unavailable"};
+    if(hasFiles&&(route.tool!=="deliver"||!route.browserInlineAttachments)){
+      return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:"attachments_unsupported"};
+    }
+    if(browser&&(!route.nativeIds.has(targetKey)||route.tool==="send_message")){
+      return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:"browser_owner_envelope_unverified"};
+    }
     // A native session of another machine never passed through the tool gate
     // of herder, so the delivery guards the model the session would run on.
-    const refusal=await this.checkDeliveryModel(request,route);
+    const refusal=browserOwner?await canonicalBrowserModelRefusal(request,this.deliveryPolicy):await this.checkDeliveryModel(request,route);
     if(refusal)return refusal;
-    const result=this.budget.run({target:addressKey(request.target),sender:addressKey(request.sender),inputId:request.inputId,message:request.message},async()=>{
+    const result=this.budget.run({target:addressKey(request.target),sender:addressKey(request.sender),inputId:request.inputId,message:hasFiles?digest:request.message},async()=>{
       try{
         // One call only: a timeout or lost admission response is UNKNOWN, never replayed.
         const message=await this.prepareMessage(request,route);
@@ -177,17 +204,32 @@ export class GptAdminMesh {
         }
         const reply=unwrapResult(raw);
         if(reply.inputId!==request.inputId||!["queued","admitted","not_attempted","unknown"].includes(String(reply.state)))return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
+        if(browser&&(reply.state==="admitted"||reply.state==="queued")){
+          if(reply.state==="admitted"&&typeof reply.nativeReceiptId==="string"&&reply.nativeReceiptId.trim()){
+            if(browserOwner&&route.browserBinding){
+              const proof=await this.bounded(readCanonicalBrowserReceipt(browserOwner,route.browserBinding,request));
+              if(proof?.state!=="admitted"||proof.nativeReceiptId!==reply.nativeReceiptId)return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
+              return JSON.stringify(proof);
+            }
+            return JSON.stringify({state:"admitted",inputId:request.inputId,nativeReceiptId:reply.nativeReceiptId,retryable:false});
+          }
+          return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
+        }
         if(reply.state==="admitted"&&typeof reply.turnId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         if(reply.state==="queued"&&typeof reply.jobId!=="string")return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});
         return JSON.stringify({state:reply.state,...(reply.state==="not_attempted"&&reply.retryable===true?{delivery:"not_attempted"}:{}),inputId:request.inputId,...(typeof reply.jobId==="string"?{jobId:reply.jobId}:{}),...(typeof reply.turnId==="string"?{turnId:reply.turnId}:{}),retryable:reply.state==="not_attempted"&&reply.retryable===true,...(typeof reply.reason==="string"?{reason:reply.reason}:{}),...(typeof reply.retryAfterMs==="number"?{retryAfterMs:reply.retryAfterMs}:{})});
-      }catch{return JSON.stringify({state:"unknown",inputId:request.inputId,retryable:false});}
+      }catch(error){
+        return JSON.stringify(error instanceof FleetAttachmentFrameTooLarge
+          ? {state:"not_attempted",inputId:request.inputId,retryable:false,reason:error.message}
+          : {state:"unknown",inputId:request.inputId,retryable:false});
+      }
     }).then(text=>{const r=JSON.parse(text);return r.state?r:{state:"not_attempted",inputId:request.inputId,retryable:true,reason:r.delivery};});
     this.inputs.set(key,{digest,result});
     const receipt=await result;
     if(receipt.state==="not_attempted"&&receipt.retryable)this.inputs.delete(key);
     return receipt;
   }
-  private async resolveExactRoute(address:MeshAddress):Promise<Route|undefined>{
+  private async resolveExactRoute(address:MeshAddress,browserOwner?:CanonicalAutomationClient):Promise<Route|undefined>{
     const discovery=unwrapResult(await this.bounded(this.hub.discover()));
     if(!Array.isArray(discovery.servers))throw new Error("mesh_route_registry_unavailable");
     const prefix=`mcp:shell:${address.hostId}:`;
@@ -199,11 +241,17 @@ export class GptAdminMesh {
     if(!deliveryTool||!tools.some(t=>t.name==="fleet_node_info"))throw new Error("mesh_route_capability_missing");
     const owner=unwrapResult(await this.bounded(this.hub.call(target,"fleet_node_info",{})));
     if(owner.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
+    if(browserOwner){
+      // Fleet authenticates the receiving machine. Its configured Rust owner
+      // proves the exact session, including the node and harness, under ACL.
+      const browserBinding=await this.bounded(browserOwner.resolveNative(address.harness,address.nativeSessionId,address.hostId));
+      return {target,tool:deliveryTool,nativeIds:new Set([addressKey(address)]),projects:new Map(),browserBinding,browserInlineAttachments:owner.browserInlineAttachments===true};
+    }
     const read=unwrapResult(await this.bounded(this.hub.readSession!(target,address.harness,address.nativeSessionId)));
     if(read.hostId!==undefined&&read.hostId!==address.hostId)throw new Error("native_host_identity_mismatch");
     const session=(read.details as {session?:Record<string,unknown>}|undefined)?.session??read.session as Record<string,unknown>|undefined;
     if(!session||session.id!==address.nativeSessionId||session.harness!==address.harness)throw new Error("native_session_identity_mismatch");
-    const key=addressKey(address);return {target,tool:deliveryTool,nativeIds:new Set([key]),projects:new Map([[key,typeof session.cwd==="string"?session.cwd:null]])};
+    const key=addressKey(address);return {target,tool:deliveryTool,nativeIds:new Set([key]),projects:new Map([[key,typeof session.cwd==="string"?session.cwd:null]]),browserInlineAttachments:owner.browserInlineAttachments===true};
   }
   /**
    * The message of one delivery to another machine.

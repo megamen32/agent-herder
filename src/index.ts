@@ -93,6 +93,7 @@ import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
 import { createConfiguredResumeAfterRuntime } from "./resume-after-runtime.js";
+import type { CanonicalAutomationClient } from "./canonical-herder.js";
 import type { ResumeAfterBackend } from "./resume-after.js";
 import type { CadenceScheduler } from "./cadence-scheduler.js";
 import { createCadenceRuntime } from "./cadence-runtime.js";
@@ -732,6 +733,7 @@ function registerTools(
   chatgptWakeBindings?: WakeBindingStore,
   chatgptWakeAdapters?: Map<string, HarnessAdapter>,
   userioDot?: UserIoDotBinding,
+  canonicalClient?: CanonicalAutomationClient,
 ) {
   // Archive/debug helpers remain available for existing callers. All normal
   // chat control uses the shared HarnessAdapter tools; this optional legacy
@@ -767,7 +769,7 @@ function registerTools(
       : undefined,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   registerProjectReleaseTools(server);
@@ -775,9 +777,9 @@ function registerTools(
   registerActiveSessionTools(server);
   registerSessionWorkspaceTools(server);
   registerSessionSearchTools(server,{transport:new FleetDirectTransport(fleetPeers()),peers:fleetPeers().map(peer=>({hostId:peer.hostId,target:`mcp:shell:${peer.hostId}:AgentHerder`}))});
-  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
+  registerHarnessMeshTools(server, { adapters, gptadmin: new FleetDirectTransport(fleetPeers()), deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, trustedIngress: trustedMeshIngress, ...(inventorySupervisor?{supervisor:inventorySupervisor}:{}) });
   registerWorkspaceTools(server, { transport: workspaceTransport, locateTransport: new FleetDirectTransport(fleetPeers()) });
-  registerFleetNodeTools(server, { adapters, readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir), settings: settingsStore });
+  registerFleetNodeTools(server, { adapters, browserInlineAttachments: Boolean(canonicalClient), readSupervisor:inventorySupervisor, inventorySnapshot: inventorySupervisor ? () => inventorySupervisor.sessionInventorySnapshot() : undefined, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, launchPolicyRevision: readLaunchPolicyRevision, fleetTransport: workspaceTransport, fleetPeers: fleetPeers().filter(peer => peer.hostId !== "MacBook-Pro-User.local").map(peer => ({ hostId: peer.hostId, target: `mcp:shell:${peer.hostId}:AgentHerder` })), policyRevisionLedgerPath: fleetPolicyRevisionLedgerPath(autopilotStateDir), settings: settingsStore });
   // The common settings of the fleet: a node that has no owner of the document
   // named in its environment registers no tool and claims nothing.
   const commonSettings = commonSettingsService({ hooks: hooksLeverFromStore(hooksLeverStore) });
@@ -835,6 +837,7 @@ export interface AgentHerderMcpServerOptions {
   userMessageDelivery?: UserMessageDelivery;
   /** Shared durable joins, never scoped to an MCP transport. */
   resumeAfter?: ResumeAfterBackend;
+  canonicalClient?: CanonicalAutomationClient;
   /** Durable HumanRequest registry for the resume_after question join. */
   humanRequests?: Pick<HumanRequestRegistry, "get" | "bindResumeWait">;
   cadence?: CadenceScheduler;
@@ -988,6 +991,7 @@ export function createAgentHerderMcpServer(cdpChatDriver?: CdpChatDriver, option
     options.chatgptWakeBindings,
     options.chatgptWakeAdapters,
     options.userioDot ?? createUserIoDotBinding(),
+    options.canonicalClient,
     );
     }, hiddenByConsolidation);
   }, hiddenByConsolidation);
@@ -1477,7 +1481,7 @@ async function main() {
   // transports share one option set, so neither can lose the join alone.
   const sharedMcpServerOptions = {
     cdpAccountArchive, cdpHistoryArchive, events: herderEvents, humanResume, humanResumeQuery,
-    inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, cadence,
+    inventorySupervisor: processSupervisor, userMessageDelivery, resumeAfter: resumeAfterRuntime.service, canonicalClient: resumeAfterRuntime.canonicalClient, cadence,
     sessionQueueControl, humanRequests,
   };
   const createHttpMcpServer = (context?: { authInfo?: unknown }) => createAgentHerderMcpServer(cdpChatDriver, {

@@ -426,6 +426,19 @@ fn ordinary_browser_and_scriptless_opencode_envelopes_reach_registered_sessions(
     let oc_ref = register(&mut Wire::open(&profile("register.json", Some(&fixture.script))), "oc", &oc);
     let native_profile = profile("native.json", None);
     let other_native_profile = fixture.profile("zai", "secondary-browser");
+    {
+        let mut client = Wire::ordinary_many(&[&native_profile, &other_native_profile]);
+        let listing = client.call("discover", json!({"action":"instances"}));
+        let rows = content(&listing)["instances"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row["harness"] == "opencode" && row["instance_ref"] == "oc"));
+        assert!(rows.iter().any(|row| row["harness"] == "zai" && row["instance_ref"] == "secondary-browser"));
+        let nodes = client.call("discover", json!({"action":"nodes"}));
+        assert_eq!(content(&nodes)["nodes"].as_array().unwrap().len(), 2);
+        let scoped = client.call("discover", json!({"action":"instances","node_ref":"opencode-node"}));
+        assert_eq!(content(&scoped)["instances"].as_array().unwrap().len(), 1);
+        assert_eq!(content(&scoped)["instances"][0]["instance_ref"], "oc");
+    }
     for kind in ["chatgpt", "zai"] {
         let browser_fixture = Fixture::new();
         let address = json!({"hostId":"browser-node","harness":kind,"nativeSessionId":"existing-native"});

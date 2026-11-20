@@ -7,7 +7,10 @@ import type {HarnessAdapter} from "../types/index.js";
 import type {SessionSupervisor} from "../session-supervisor.js";
 import type {UserMessageDelivery} from "../user-message-delivery.js";
 import {handleSendMessage} from "../mcp-tools/handlers.js";
-import {compactSession,parseNativeReceipt,addressKey,lastActivityKey,type MeshSession,type NativeReceipt,type NativeRenameReceipt} from "./protocol.js";
+import {compactSession,parseNativeReceipt,addressKey,isBrowserMeshHarness,lastActivityKey,type MeshSession,type NativeReceipt,type NativeRenameReceipt} from "./protocol.js";
+import type {CanonicalAutomationClient} from "../canonical-herder.js";
+import {deliverCanonicalBrowser} from "./canonical-browser-delivery.js";
+import {hasMeshMessage} from "./delivery-schema.js";
 import type {MeshDelivery} from "./gptadmin.js";
 import {MeshDeliveryLedger} from "./delivery-ledger.js";
 import {inventoryHarnesses} from "./inventory.js";
@@ -37,17 +40,18 @@ export type MeshRenameReceipt=NativeRenameReceipt&{
  /** What the owner reads: the same words the panel shows for a stored label. */
  message?:string;
 };
-export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unsupported";reason?:string}
+export interface HarnessMeshCapability {harness:string;discovery:"available"|"unavailable";delivery:"available"|"unverified"|"unsupported";reason?:string}
 /** Injects the active coordination notes of the target into a delivered message. */
 export type MeshNotesInjector=(session:{id:string;harness:string;cwd:string;hostId?:string},message:string)=>Promise<string>;
 /** Independent native observation of one exact session of this host. */
 export type MeshNativeObserver=(harness:string,nativeSessionId:string)=>Promise<{nativeSessionId:string;status:string;cwd?:string|null}|null>;
 const officialZcode=(harness:string,adapter:HarnessAdapter|undefined)=>harness==='zcode'&&(adapter as HarnessAdapter & {getOfficialMeshAdmission?:()=>string|undefined}|undefined)?.getOfficialMeshAdmission?.()==='official-ws-v4';
-type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider;userMessageDelivery?:UserMessageDelivery;supervisor?:Pick<SessionSupervisor,"sendMessage">};
+type Dependencies={hostId?:string;adapters:Map<string,HarnessAdapter>;ledgerPath?:string;readDeadlineMs?:number;projectStore?:Pick<CoordinationNoteStore,"activeWorkspaceForSession"> & Partial<Pick<CoordinationNoteStore,"activeWorkspaceObservation">>;notes?:MeshNotesInjector;nativeObserve?:MeshNativeObserver;deliveryPolicy?:ProjectModelPolicyStateProvider;canonicalClient?:CanonicalAutomationClient;userMessageDelivery?:UserMessageDelivery;supervisor?:Pick<SessionSupervisor,"sendMessage">};
 export class LocalHarnessMesh {
  readonly hostId:string;
  private readonly ids=new Map<string,string>();
- private readonly ledger:MeshDeliveryLedger;
+ /** Shared with outbound Fleet delivery so an interrupted browser send survives MCP reconnects. */
+ readonly ledger:MeshDeliveryLedger;
  constructor(private readonly deps:Dependencies){this.hostId=deps.hostId||hostname();this.ledger=new MeshDeliveryLedger(deps.ledgerPath||join(homedir(),".local/state/agent-herder/harness-mesh-receipts.json"));}
  async snapshot(limit=12):Promise<{hostId:string;sessions:MeshSession[];harnesses:HarnessMeshCapability[];complete:boolean;limited:boolean}>{
   if(!Number.isInteger(limit)||limit<1||limit>12)throw new Error("Mesh snapshot limit must be 1..12");
@@ -56,9 +60,10 @@ export class LocalHarnessMesh {
   const freshIds=new Map<string,string>();
   const inspect=async(harness:string)=>{
    const adapter=this.deps.adapters.get(harness);
+   const canonicalBrowser=isBrowserMeshHarness(harness)&&Boolean(this.deps.canonicalClient);
    if(!adapter || (adapter.lazyStart&&adapter.isReady&&!adapter.isReady()&&!officialZcode(harness,adapter))){
     complete=false;
-    harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected"});return;
+    harnesses.push({harness,discovery:"unavailable",delivery:canonicalBrowser?"unverified":"unsupported",reason:!adapter?"adapter_not_registered":"native_transport_disconnected"});return;
    }
    try{
     const remaining=deadline-Date.now();if(remaining<=0)throw new Error("mesh_read_deadline");
@@ -79,8 +84,10 @@ export class LocalHarnessMesh {
     }
     // Existing API implementations do not all provide native admission proof.
     const deliverable=harness==="codex"||harness===MINIMAX_CODE_HARNESS||officialZcode(harness,adapter);
-    harnesses.push({harness,discovery:"available",delivery:deliverable?"available":"unsupported",...(deliverable?{}:{reason:"native_admission_receipt_unverified"})});
-   }catch(error){complete=false;harnesses.push({harness,discovery:"unavailable",delivery:"unsupported",reason:error instanceof Error&&error.message==="mesh_read_deadline"?"native_discovery_deadline":"native_discovery_failed"});}
+    if(canonicalBrowser){
+     harnesses.push({harness,discovery:"available",delivery:"unverified",reason:"canonical_owner_receipt_required"});
+    }else harnesses.push({harness,discovery:"available",delivery:deliverable?"available":"unsupported",...(deliverable?{}:{reason:"native_admission_receipt_unverified"})});
+   }catch(error){complete=false;harnesses.push({harness,discovery:"unavailable",delivery:canonicalBrowser?"unverified":"unsupported",reason:error instanceof Error&&error.message==="mesh_read_deadline"?"native_discovery_deadline":"native_discovery_failed"});}
   };
   // Each registered provider gets the same bounded discovery window. Queuing
   // behind a hung provider consumed that window before later harnesses started.
@@ -94,12 +101,18 @@ export class LocalHarnessMesh {
   addressKey(request.target);addressKey(request.sender);
   const reject=(reason:string)=>({state:"not_attempted" as const,inputId:request.inputId,retryable:true,reason});
   if(request.target.hostId!==this.hostId)return reject("native_host_identity_mismatch");
-  if(!request.inputId||request.inputId.length>256||!request.message.trim()||request.message.length>4000)throw new Error("A stable inputId and bounded delta are required");
+  if(!request.inputId||request.inputId.length>256||!hasMeshMessage(request.target.harness,request.message,request.attachments))throw new Error("A stable inputId and bounded delta are required");
   if(!isTrustedMeshIngress(ingress))return {...reject("authenticated_mesh_ingress_required"),retryable:false};
+  if(request.attachments?.length&&(!isBrowserMeshHarness(request.target.harness)||!this.deps.canonicalClient)){
+   return {...reject("attachments_unsupported"),retryable:false};
+  }
   if(request.target.harness===MINIMAX_CODE_HARNESS){
    return this.deliverMinimaxThroughCommonCore(request,ingress);
   }
   return this.ledger.once(request,async()=>{
+   if(isBrowserMeshHarness(request.target.harness)&&this.deps.canonicalClient){
+    return deliverCanonicalBrowser(this.deps.canonicalClient,request,this.deps.deliveryPolicy);
+   }
    const adapter=this.deps.adapters.get(request.target.harness);
    if(!adapter)return reject("adapter_not_registered");
    // A native session that was born outside herder's tools never passed

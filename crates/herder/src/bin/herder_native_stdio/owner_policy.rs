@@ -32,6 +32,44 @@ pub struct OwnerPolicy {
     pub existing_sessions: Vec<herder::application::scoped_stop::enroll::ExistingSessionApproval>,
 }
 impl OwnerPolicy {
+    /// Inventory of this launch profile is visible only to its configured principal.
+    pub(super) fn discover_instance(
+        &self,
+        identity: &herder::auth::identity::ConnectionIdentity,
+        request: &herder::mcp::catalog::Request,
+        capabilities: Option<&serde_json::Value>,
+    ) -> Option<rmcp::model::CallToolResult> {
+        use herder::{auth::identity::Caller, mcp::catalog::{Discover, Request}};
+        use rmcp::model::CallToolResult;
+        use serde_json::json;
+
+        let Request::Discover(discovery @ (Discover::Nodes {} | Discover::Instances { .. })) = request else {
+            return None;
+        };
+        if !matches!(identity.caller(), Caller::Principal(p) if p.id == self.principal) {
+            return Some(CallToolResult::structured_error(json!({
+                "code":"unauthorized","effect":"none","message":"Use the configured owner identity to discover this instance."
+            })));
+        }
+        let mut result = json!({"scope":"configured_owner_instance","complete":true});
+        if let Discover::Instances { node_ref } = discovery {
+            let rows = node_ref.as_ref().is_none_or(|node| node == &self.instance.node.0)
+                .then(|| {
+                    let mut row = json!({"instance_ref":self.instance.instance_id,
+                        "node_ref":self.instance.node.0,"harness":self.harness});
+                    if let Some(capabilities) = capabilities {
+                        row["capabilities"] = capabilities.clone();
+                    }
+                    row
+                })
+                .into_iter().collect();
+            result["instances"] = serde_json::Value::Array(rows);
+        } else {
+            result["nodes"] = json!([{"node_ref":self.instance.node.0}]);
+        }
+        Some(CallToolResult::structured(result))
+    }
+
     /// The allowlist is loaded only from the protected launch profile. A
     /// retained enrollment receipt alone never grants access after removal.
     pub fn membership_source(&self, db: &Connection, session: &SessionRef) -> rusqlite::Result<Option<&'static str>> {

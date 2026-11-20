@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HarnessAdapter } from "../types/index.js";
 import type { ResumeAfterBackend } from "../resume-after.js";
+import type { CanonicalAutomationClient } from "../canonical-herder.js";
+import { meshDeliverySchema } from "../mesh/delivery-schema.js";
 import { sessionIdentity } from "../session-identity.js";
 import type { HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
@@ -66,20 +68,8 @@ import { applySessionTarget } from "../session-target.js";
 import type {SessionQueueControlGateway} from "../session-queue-control-gateway.js";
 
 const harnessSchema = z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]);
-const deliveryAddressSchema = z.object({
-  hostId: z.string().trim().min(1).max(512),
-  harness: z.string().trim().min(1).max(64),
-  nativeSessionId: z.string().trim().min(1).max(512),
-}).strict();
-/** Exact cross-host delivery contract used by the ordinary session tools. */
-const targetDeliverySchema = z.object({
-  target: deliveryAddressSchema,
-  sender: deliveryAddressSchema,
-  inputId: z.string().trim().min(1).max(256),
-  message: z.string().min(1).max(4000).refine((message) => message.trim().length > 0, "Message cannot be blank"),
-}).strict();
-const universalDeliverySchema = z.union([DeliverSchema, targetDeliverySchema]);
-const universalSendMessageSchema = z.union([SendMessageSchema, targetDeliverySchema]);
+const universalDeliverySchema = z.union([DeliverSchema, meshDeliverySchema]);
+const universalSendMessageSchema = z.union([SendMessageSchema, meshDeliverySchema]);
 
 function isTargetDelivery(value: unknown): value is MeshDelivery {
   return Boolean(value && typeof value === "object" && "target" in value && "sender" in value && "inputId" in value && "message" in value);
@@ -137,6 +127,7 @@ export function registerSessionTools(server: McpServer, deps: {
   launchPolicy?: ProjectModelPolicyProvider;
   /** Reads the current launch policy state for the per-project model gate of a delivery. */
   deliveryPolicy?: ProjectModelPolicyStateProvider;
+  canonicalClient?: CanonicalAutomationClient;
   /** Shared durable queue for public human delivery into native sessions. */
   userMessageDelivery?: UserMessageDelivery;
   /** Owner-routed explicit ZCode queue processing, backed by its native owner's durable job registry. */
@@ -158,12 +149,14 @@ export function registerSessionTools(server: McpServer, deps: {
     hostId: hostname(),
     userMessageDelivery,
     deliveryPolicy: deps.deliveryPolicy,
+    canonicalClient: deps.canonicalClient,
     ...(deps.supervisor ? { supervisor: deps.supervisor } : {}),
   });
   const remoteDeliveryMesh = new GptAdminMesh(
     deps.transport ?? new FleetDirectTransport(fleetPeers()),
     30_000,
     deps.deliveryPolicy,
+    deps.canonicalClient ? { client: deps.canonicalClient, ledger: localDeliveryMesh.ledger } : undefined,
   );
   const deliverTargetEnvelope = async (request: MeshDelivery, ctx: unknown) => {
     const normalizedRequest: MeshDelivery = {
@@ -862,7 +855,7 @@ export function registerSessionTools(server: McpServer, deps: {
     deliverMcpIntroForNamedResult(deps.supervisor, result, args.humanRequested === false ? "automation" : "human");
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Exact native targets use target={hostId,harness,nativeSessionId}, sender and inputId; the target host selects local or remote native transport. Omit both to deliver immediately.", inputSchema: universalDeliverySchema }, async(args, ctx)=>{
+  server.registerTool("deliver", { description: "Deliver a message to an agent. Existing targets default to current-turn-only delivery; idle/completed targets are skipped without deferred debt. Newly created named targets receive their initial task. inputId deduplicates retries for 24 hours. Target by sessionId or harness+name+cwd. create=if_missing creates a missing named session; create=never does not. activation=always may wake/start; if_running returns skipped_inactive for inactive threads; defer stores deduplicated input without waking an inactive thread. Herder checks native activity at delivery time; no list_agents pre-check is needed. deliverIn (seconds) or deliverAt (RFC3339) schedules the message through the durable resume-after service: exact sessionId targets of this machine, the target must exist, a model override is refused, busy sessions queue the message at fire time; status via resume_after_status, cancel via resume_after_cancel with the owner from the schedule receipt. Exact native targets use target={hostId,harness,nativeSessionId}, sender and inputId; the target host selects local or remote native transport. For ChatGPT or Z.ai include inline attachments as {name,mime_type,data_base64}. Up to 16 files and 2 MiB in total. Z.ai requires a caption.", inputSchema: universalDeliverySchema }, async(args, ctx)=>{
     if (isTargetDelivery(args)) return deliverTargetEnvelope(args, ctx);
     const hostId = normalizeHostId(args.hostId, hostname());
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {

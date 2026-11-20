@@ -16,6 +16,8 @@ function fixture(){
  vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);
  let context:Context|undefined={cookie:'session=owner-a',credentialGeneration:'a'};
  const calls:Array<{options:RequestOptions;body?:any;req:any;res?:any}>=[];
+ const sent=new EventEmitter();
+ const nextTool=(name:string)=>new Promise<typeof calls[number]>(resolve=>sent.once(name,resolve));
  let handler=(call:typeof calls[number]):unknown=>{
   const body=call.body;
   if(call.options.method==='GET')return {session:{id:'accepted-44',harness:'codex'},history:{source:'unavailable',complete:false},messages:[]};
@@ -38,6 +40,7 @@ function fixture(){
   const call:any={options,callback:cb};
   call.req=Object.assign(new EventEmitter(),{destroy:vi.fn(),end:vi.fn((body?:string)=>{
    call.body=body?JSON.parse(body):undefined;
+   if(call.body?.method==='tools/call')sent.emit(call.body.params.name,call);
    if(!held)queueMicrotask(()=>{
     if(call.body?.method==='notifications/initialized')return void respond(call,undefined,202);
     const result=handler(call);
@@ -47,7 +50,7 @@ function fixture(){
   })});calls.push(call);return call.req as ClientRequest;
  });
  const transport=new FleetOwnerHttpTransport({ownerContext:()=>context},request);
- return {transport,calls,request,respond,setContext:(c:Context|undefined)=>{context=c;},setHandler:(h:typeof handler)=>{handler=h;},hold:()=>{held=true;},release:()=>{held=false;}};
+ return {transport,calls,request,respond,nextTool,setContext:(c:Context|undefined)=>{context=c;},setHandler:(h:typeof handler)=>{handler=h;},hold:()=>{held=true;},release:()=>{held=false;}};
 }
 afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();vi.mocked(hostname).mockReturnValue('roomhacker-server-100');});
 describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=>{
@@ -154,15 +157,17 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
  });
  it('sends one create with exact digest and does not replay a lost response',async()=>{
   const f=fixture();await f.transport.schema(target44);f.hold();
+  const checkingHost=f.nextTool('fleet_node_info');
+  const checkingQuota=f.nextTool('model_quotas');
+  const creating=f.nextTool('create_session');
   vi.useFakeTimers();const pending=f.transport.call(target44,'create_session',{harness:'codex',cwd:'/work',name:'n',inputId:'wrong'},'a'.repeat(64));
-  await Promise.resolve();await Promise.resolve();const info=f.calls.at(-1)!;
+  const info=await checkingHost;
   f.respond(info,{id:info.body.id,result:{structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}}});
   // The guard reads the recipient's own quota before the mutation.
-  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='model_quotas')break;}
-  const quota=f.calls.at(-1)!;expect(quota.body.params.name).toBe('model_quotas');
+  const quota=await checkingQuota;
+  expect(f.calls.some(c=>c.body?.params?.name==='create_session')).toBe(false);
   f.respond(quota,{id:quota.body.id,result:{structuredContent:reportedCodexQuota()}});
-  for(let i=0;i<40;i++){await vi.advanceTimersByTimeAsync(1);if(f.calls.at(-1)?.body?.params?.name==='create_session')break;}
-  const create=f.calls.at(-1)!;expect(create.body.params).toMatchObject({name:'create_session',arguments:{variant:'fleet',inputId:'a'.repeat(64)}});
+  const create=await creating;expect(create.body.params).toMatchObject({name:'create_session',arguments:{variant:'fleet',inputId:'a'.repeat(64)}});
   expect(f.calls.some(c=>c.body?.params?.name==='fleet_create_session')).toBe(false);
   const rejected=expect(pending).rejects.toThrow('owner_http_deadline');await vi.advanceTimersByTimeAsync(30000);await rejected;
   expect(f.calls.filter(c=>c.body?.params?.name==='create_session')).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);
