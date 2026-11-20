@@ -84,9 +84,26 @@ rejected.
 Successful completion sends `finished`, creating terminal evidence and clearing
 that guard's occupancy while the execution lock remains held. The outer claim
 remains until explicit release or TTL. EOF, exceptions, process death and failed
-completion keep unresolved occupancy. Freeing an OS lock alone does not permit
-takeover. Recovery requires a separate reviewed reconciliation of the original
-effect, not a new token or an automatic retry.
+completion keep unresolved occupancy while the claim is live or the target lock
+is held. Once the claim expires and the target lock is free, status reports
+`occupancyState=stale_unknown`, `deploymentInProgress=false` and
+`reconcileRequired=true`. A new `acquire` for the same deployment target
+quarantines the old binding and advances the fence. The original effect's
+outcome stays unresolved in quarantine.
+
+For an interrupted Account Broker preparation, check the original command
+result and confirm that it failed before `switch`. Verify the old runner's
+exit by boot ID, PID and process start time. Confirm that the old slot still
+serves the committed revision and the stopped candidate matches its manifest.
+If the Broker reports `phase=switching`, reconcile the original switch through
+the Broker controller first.
+
+Read Herder `status` for the same project and deployment target. When status
+reports `stale_unknown`, `deploymentInProgress=false` and
+`canonicalBusy=false`, use the regular `acquire` for that target. Continue
+from the verified preparation step under the new `BrokerReleaseGuard`.
+Confirm the active route and the other slot's process state before closing
+the new claim. The quarantined attempt retains its original outcome.
 
 In sealed mode, `endSession` does not release canonical claims. This prevents an
 agent's turn from ending its running build's lease. A manual claim without a
