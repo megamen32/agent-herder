@@ -70,14 +70,17 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
    '/api/sessions/codex/session%2F1','/api/sessions/codex/session%2F1/transcript?limit=100&order=latest&cursor=older+%2F%2B',
   ]);
  });
- it('reads MiniMax details through the existing owner HTTP route',async()=>{
+ it.each([['minimax-code','mvs_existing'],['chatgpt','chatgpt::qa%2Fchat'],['zai','zai::route%3Aqa']])('reads %s through the addressed owner HTTP route',async(harness,id)=>{
   const f=fixture();f.setHandler(call=>{
-   if(call.options.method==='GET')return {session:{id:'mvs_existing',harness:'minimax-code'}};
+   if(call.options.method==='GET')return {session:{id,harness},messages:[{role:'assistant',text:'QA_OWNER_HTTP'}]};
    if(call.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{},serverInfo:{name:'Herder',version:'1'}};
    return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};
   });
-  expect(await f.transport.readSession(target44,'minimax-code','mvs_existing')).toMatchObject({hostId:'server-44',details:{session:{id:'mvs_existing'}}});
-  expect(f.calls.filter(c=>c.options.method==='GET').map(c=>c.options.path)).toEqual(['/api/sessions/minimax-code/mvs_existing/details?limit=50&quick=1']);
+  expect(await f.transport.readSession(target44,harness,id)).toMatchObject({hostId:'server-44',details:{session:{id,harness},messages:[{text:'QA_OWNER_HTTP'}]}});
+  expect(f.calls.filter(c=>c.options.method==='GET').map(c=>c.options.path)).toEqual([`/api/sessions/${harness}/${encodeURIComponent(id)}/details?limit=50&quick=1`]);
+  const count=f.calls.length;
+  await expect(f.transport.requestSession(target44,harness,id,{operation:'stop'})).rejects.toThrow('owner_http_session_invalid');
+  expect(f.calls).toHaveLength(count);
  });
  it('uses only approved TLS aliases/physicalHAOS and required own Origin, with no bearer/pooled socket',async()=>{
   const f=fixture();expect(await f.transport.schema(target44)).toEqual({tools:[{name:'create_session'}]});
@@ -194,13 +197,13 @@ describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=
   await Promise.all([expect(a).rejects.toThrow('owner_http_rpc_failed'),expect(b).rejects.toThrow('owner_http_rpc_failed')]);
   f.release();await f.transport.schema(target44);expect(f.calls.filter(c=>c.body?.method==='initialize')).toHaveLength(2);
  });
- it.each(['wrong-id','wrong-harness'])('rejects %s details without reinterpreting history or retrying',async outcome=>{
+ it.each(['wrong-id','wrong-harness','wrong-host'])('rejects %s details without reinterpreting history or retrying',async outcome=>{
   const f=fixture();await f.transport.schema(target44);f.hold();
   const pending=f.transport.readSession(target44,'codex','accepted-44');
   await vi.waitFor(()=>expect(f.calls.at(-1)!.body?.params?.name).toBe('fleet_node_info'));
   const info=f.calls.at(-1)!;f.respond(info,{id:info.body.id,result:{structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}}});
   await vi.waitFor(()=>expect(f.calls.at(-1)!.options.method).toBe('GET'));
-  f.respond(f.calls.at(-1)!,{session:{id:outcome==='wrong-id'?'foreign':'accepted-44',harness:outcome==='wrong-harness'?'zcode':'codex'}});
+  f.respond(f.calls.at(-1)!,{session:{id:outcome==='wrong-id'?'foreign':'accepted-44',harness:outcome==='wrong-harness'?'zcode':'codex',hostId:outcome==='wrong-host'?'another-owner':'server-44'}});
   await expect(pending).rejects.toThrow('owner_http_session_identity_mismatch');
   expect(f.calls.filter(c=>c.options.method==='GET')).toHaveLength(1);
  });

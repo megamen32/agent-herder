@@ -32,4 +32,21 @@ describe('remote chat route fences (focused integration; expected2s/max20s)',()=
   request.mockResolvedValue({hostId:'roomhacker-server-88',status:200,body:{ok:true}});vi.spyOn(service as any,'selectedHost').mockResolvedValue('server-44');
   await expect(service.requestSession(address,{operation:'stop',inputId:'second'})).rejects.toThrow('response_identity_mismatch');
  });
+ it('preserves existing native control while browser chats on the same transport can only read owner details',async()=>{
+  const session={id:'chatgpt::qa',harness:'chatgpt',hostId:address.hostId};
+  const readSessionDetails=vi.fn(async()=>({hostId:address.hostId,details:{session,messages:[]}}));
+  const requestSession=vi.fn(async()=>({hostId:address.hostId,status:200,body:{ok:true}}));
+  const service=new FleetCabinetService({
+   hosts:[{hostId:address.hostId,label:'Fixture'}],scope:{profileId:'owner',userId:'fixture'},
+   transportFactory:()=>({discover:vi.fn(),schema:vi.fn(),call:vi.fn(),requestSession,readSessionDetails}),
+  });
+  const browser={hostId:address.hostId,harness:session.harness,nativeSessionId:session.id};
+  expect(await service.requestSession(browser,{operation:'details'})).toMatchObject({status:200,body:{session,readOnly:true}});
+  await expect(service.requestSession(browser,{operation:'stop'})).rejects.toThrow('fleet_session_invalid');
+  expect(requestSession).not.toHaveBeenCalled();
+  expect(await service.requestSession(address,{operation:'details'})).toMatchObject({body:{ok:true}});
+  expect(await service.requestSession(address,{operation:'stop'})).toMatchObject({status:200});
+  expect(requestSession).toHaveBeenCalledTimes(2);
+  expect(readSessionDetails).toHaveBeenCalledTimes(1);
+ });
 });

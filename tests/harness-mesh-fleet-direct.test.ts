@@ -4,8 +4,8 @@ import {createHash} from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {IncomingMessage} from 'node:http';
-const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false,host:'server-44',stderr:'',exitCode:255,exitSignal:undefined as string|undefined}));
+import type {IncomingMessage,ServerResponse} from 'node:http';
+const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{} as Record<string,unknown>,mode:'ok',auth:false,host:'server-44',stderr:'',exitCode:255,exitSignal:undefined as string|undefined}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
 vi.mock('node:os',()=>({hostname:()=> state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home,platform:()=> 'linux'}));
 vi.mock('node:child_process',()=>({execFile:()=>{throw new Error('unexpected execFile in direct transport fixture');},spawn:(bin:string,args:string[])=>{
@@ -17,6 +17,7 @@ vi.mock('node:child_process',()=>({execFile:()=>{throw new Error('unexpected exe
 import {FleetDirectTransport} from '../src/mesh/fleet-direct-transport.js';
 import {isDirectOwnerRequest,createManagedFleetHttpGuard,createConfiguredFleetApiHandler} from '../src/web/fleet-wiring.js';
 import {FleetCabinetService} from '../src/mesh/fleet-service.js';
+import {createFleetApiHandler} from '../src/mesh/fleet-api.js';
 import {registerFleetNodeTools} from '../src/mesh/fleet-node.js';
 const peer={hostId:'roomhacker-server-88',sshHost:'192.168.2.75',nativeUser:'roomhacker',port:18791,python:'/usr/bin/python3'};
 // The personal Mac answers through the authenticated reverse route of server-100.
@@ -25,6 +26,70 @@ const macPeer={hostId:'MacBook-Pro-User.local',sshHost:'127.0.0.1',sshPort:2222,
 const POLICY_DIR='/tmp/herder-quota-policy-none';
 beforeEach(async()=>{const {tmpdir}=await vi.importActual<typeof import('node:os')>('node:os');state.home=await mkdtemp(join(tmpdir(),'direct-'));state.spawns=[];state.reply={tools:[]};state.mode='ok';state.auth=false;state.host='server-44';state.stderr='';state.exitCode=255;state.exitSignal=undefined;vi.stubEnv('AGENT_HERDER_AUTOPILOT_STATE_DIR',POLICY_DIR);});
 afterEach(async()=>{await rm(state.home,{recursive:true,force:true});vi.useRealTimers();vi.unstubAllEnvs();});
+describe('operator cabinet owner history',()=>{
+ function cabinet(){
+  const mesh={discover:vi.fn(),schema:vi.fn(),call:vi.fn()};
+  const direct=new FleetDirectTransport([peer],10000,mesh);
+  const service=new FleetCabinetService({
+   hosts:[{hostId:peer.hostId,nativeUser:peer.nativeUser,label:'QA owner'}],
+   scope:{profileId:'fixture',userId:peer.nativeUser},transportFactory:()=>direct,
+  });
+  const handle=createFleetApiHandler(service);
+  async function get(harness:string,sessionId:string,path='control'){
+   const query=new URLSearchParams({hostId:peer.hostId,harness,sessionId,operation:'details'});
+   const response={writeHead:vi.fn(),end:vi.fn()};
+   await handle({method:'GET',url:'/api/fleet/'+path+'?'+query} as IncomingMessage,response as unknown as ServerResponse);
+   return {status:response.writeHead.mock.calls[0][0],body:JSON.parse(response.end.mock.calls[0][0])};
+  }
+  return {service,get,mesh};
+ }
+ it.each([
+  ['codex','qa-codex'],['opencode','ses_qa'],['chatgpt','chatgpt::qa%2Fchat'],['zai','zai::route%3Aqa'],
+ ])('serves the exact %s owner history in the ordinary chat even with mesh metadata available',async(harness,id)=>{
+  const {get,mesh}=cabinet();
+  const details={session:{hostId:peer.hostId,harness,id},messages:[{role:'assistant',text:'OWNER_QA_REPLY',parts:[]}]};
+  state.reply={hostId:peer.hostId,details};
+  expect(await get(harness,id)).toEqual({status:200,body:{...details,readOnly:true}});
+  expect(state.spawns.map(s=>s.body)).toEqual([expect.objectContaining({
+   hostId:peer.hostId,nativeUser:peer.nativeUser,method:'session/read',params:{harness,sessionId:id},
+  })]);
+  if(harness==='chatgpt'||harness==='zai')expect(await get(harness,id,'session')).toEqual({status:200,body:state.reply});
+  expect(mesh.call).not.toHaveBeenCalled();
+ });
+ it.each([
+  ['envelope host','another-owner',{}],['session host',peer.hostId,{hostId:'another-owner'}],
+  ['harness',peer.hostId,{harness:'chatgpt'}],['scoped id',peer.hostId,{id:'route:qa'}],
+ ] as const)('withholds the entire history for a mismatched %s',async(_field,hostId,override)=>{
+  const {get}=cabinet();
+  const session={hostId:peer.hostId,harness:'zai',id:'zai::route%3Aqa'};
+  state.reply={hostId,details:{session:{...session,...override},messages:[{text:'OTHER_HISTORY'}]}};
+  const result=await get(session.harness,session.id);
+  expect(result.status).toBe(502);
+  expect(result.body).not.toHaveProperty('messages');
+  expect(JSON.stringify(result.body)).not.toContain('OTHER_HISTORY');
+ });
+ it('keeps unavailable owner history distinguishable from an empty chat',async()=>{
+  const {get}=cabinet();
+  const session={id:'qa',harness:'codex'};
+  const details={session,historyUnavailable:true};
+  state.reply={hostId:peer.hostId,details};
+  expect(await get('codex','qa')).toEqual({status:200,body:{...details,readOnly:true}});
+  state.reply={hostId:peer.hostId,details:{session,messages:[]}};
+  expect(await get('codex','qa')).toEqual({status:200,body:{session,messages:[],readOnly:true}});
+  state.reply={hostId:peer.hostId,details:{session}};
+  expect((await get('codex','qa')).status).toBe(502);
+ });
+ it.each(['codex','chatgpt','zai'])('does not dispatch control operations or enable target changes for %s',async harness=>{
+  const {service,mesh}=cabinet();
+  const address={hostId:peer.hostId,harness,nativeSessionId:'qa'};
+  for(const operation of ['message','stop','resume','set-target','message-status'] as const){
+   await expect(service.requestSession(address,{operation,inputId:'qa',message:'fixture',cwd:'/qa'})).rejects.toThrow();
+  }
+  expect((await service.setSessionTarget(address,{hostId:peer.hostId,cwd:'/qa'})).state).toBe('unsupported');
+  expect(state.spawns).toHaveLength(0);
+  expect(mesh.call).not.toHaveBeenCalled();
+ });
+});
 describe('owner direct route local logic only',()=>{
  it('keeps personal Mac in native discovery while workspace mutation scope stays separate',()=>{
   const entry=readFileSync(new URL('../src/index.ts',import.meta.url),'utf8');
@@ -154,8 +219,15 @@ describe('owner direct route local logic only',()=>{
  });
  it('at most three session reads hold slots until their actual requests settle',async()=>{
   let resolve!:()=>void;const pending=new Promise<void>(r=>{resolve=r;});const readSession=vi.fn(()=>pending);
-  const service=new FleetCabinetService({hosts:[{hostId:peer.hostId,label:'88'}],scope:{profileId:'owner',userId:'roomhacker'},transportFactory:()=>({readSession,discover:async()=>({}),schema:async()=>({}),call:async()=>({})})});
-  const a={hostId:peer.hostId,harness:'codex',nativeSessionId:'native-id'};const reads=[service.readSession(a),service.readSession(a),service.readSession(a)];await expect(service.readSession(a)).rejects.toThrow('fleet_session_read_unavailable');expect(readSession).toHaveBeenCalledTimes(3);resolve();await Promise.all(reads);await service.readSession(a);expect(readSession).toHaveBeenCalledTimes(4);
+  const readSessionDetails=vi.fn(async()=>({hostId:peer.hostId,details:{session:{id:'native-id',harness:'codex'},messages:[]}}));
+  const service=new FleetCabinetService({hosts:[{hostId:peer.hostId,label:'88'}],scope:{profileId:'owner',userId:'roomhacker'},transportFactory:()=>({readSession,readSessionDetails,discover:async()=>({}),schema:async()=>({}),call:async()=>({})})});
+  const a={hostId:peer.hostId,harness:'codex',nativeSessionId:'native-id'};
+  const reads=[service.readSession(a),service.readSession(a),service.readSession(a)];
+  await expect(service.readSession(a)).rejects.toThrow('fleet_session_read_unavailable');
+  await expect(service.requestSession(a,{operation:'details'})).rejects.toThrow('fleet_session_read_unavailable');
+  expect(readSessionDetails).not.toHaveBeenCalled();expect(readSession).toHaveBeenCalledTimes(3);
+  resolve();await Promise.all(reads);await service.readSession(a);expect(readSession).toHaveBeenCalledTimes(4);
+  expect((await service.requestSession(a,{operation:'details'})).status).toBe(200);
  });
  it('LAN public guard accepts only verified owner on its exact machine and forbids a foreign POST origin',async()=>{
   const req=(host:string,origin?:string)=>({method:origin?'POST':'GET',socket:{remoteAddress:'192.168.2.101'},headers:{host,cookie:'opaque',...(origin?{origin}:{})}} as IncomingMessage);
@@ -214,7 +286,7 @@ sys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()))
 exec(compile(source,'owned-http-bridge','exec'))`;
   const stdout=execFileSync('/usr/bin/python3',['-I','-S','-B','-c',fixture],{input:JSON.stringify({program}),encoding:'utf8',timeout:5000,maxBuffer:65536});expect(JSON.parse(stdout).marker).toBe('Я'.repeat(3000));
  });
- it.each(['history-unavailable','history-response','history-tail','foreign-id','auth-failure'])('actual bridge local logic preserves native metadata/history distinction: %s',async(mode)=>{
+ it.each(['history-unavailable','history-response','history-tail','foreign-id','foreign-host','auth-failure'])('actual bridge local logic preserves native metadata/history distinction: %s',async(mode)=>{
   const {execFileSync}=await vi.importActual<typeof import('node:child_process')>('node:child_process');
   const program=readFileSync('src/mesh/fleet-direct-transport.ts','utf8').split('const bridge=String.raw`')[1]!.split('`;')[0]!;
   const fixture=String.raw`import sys,json,io,socket,pwd,os,urllib.request,urllib.error
@@ -234,6 +306,7 @@ class Opener:
      count=int(urllib.parse.parse_qs(urllib.parse.urlsplit(request).query).get('limit',['0'])[0]); messages=[{'role':'user','text':'real request'}]+[{'role':'assistant','text':'reply'}]*9
      return Response({'session':{'id':'native-id','harness':'codex'},'history':{'source':'acp-load','complete':False},'messages':messages[-count:]})
     if mode=='history-response':return Response({'session':{'id':'native-id','harness':'codex'},'history':{'source':'unavailable','complete':False},'messages':[]})
+    if mode=='foreign-host':return Response({'session':{'id':'native-id','harness':'codex','hostId':'another-owner'},'messages':[{'text':'OTHER_HISTORY'}]})
     raise urllib.error.HTTPError(request,401 if mode=='auth-failure' else 502,'unavailable',{},io.BytesIO())
    return Response({'session':{'id':'foreign' if mode=='foreign-id' else 'native-id','harness':'codex','title':'verified'}})
   r=json.loads(request.data);result={'content':[{'text':json.dumps({'hostId':socket.gethostname(),'nativeUser':pwd.getpwuid(os.getuid()).pw_name})}]} if r['method']=='tools/call' else {}
@@ -246,7 +319,7 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   if(mode==='history-tail'){const actual=JSON.parse(execute());expect(actual.details.messages.some((m:any)=>m.role==='user'&&m.text==='real request')).toBe(true);expect(actual.details.history.complete).toBe(false);}
   else if(mode==='history-response'){expect(JSON.parse(execute()).details.historyUnavailable).toBe(true);}
   else if(mode==='history-unavailable'){const actual=JSON.parse(execute());expect(actual.details.session.id).toBe('native-id');expect(actual.details.historyUnavailable).toBe(true);expect(actual.details.messages).toBeUndefined();}
-  else expect(execute).toThrow(mode==='foreign-id'?'native_session_identity_mismatch':'HTTP Error 401');
+  else expect(execute).toThrow(mode==='auth-failure'?'HTTP Error 401':'native_session_identity_mismatch');
  });
  it('receiver once-record survives client/server factory replacement and preserves unknown without another native create',async()=>{
   let callback:any;const server={registerTool:(name:string,_spec:any,fn:any)=>{if(name==='fleet_create_session')callback=fn;}};const create=vi.fn(async({cwd}:{cwd:string})=>({id:'native-id',cwd}));const deps={adapters:new Map([['codex',{createSession:create}]])} as any;
