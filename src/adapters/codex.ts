@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES, projectCodexRolloutPage } from "../integrator-transcript.js";
 import { HarnessAdapter, AgentSession, ControlResult, RawTranscriptExport, SendMessageOptions, SetPermissionsOptions, SessionMessagePart, SessionMessageView, SessionSnapshotReceipt, localSessionHostId } from "../types/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -283,7 +285,8 @@ export class CodexAdapter implements HarnessAdapter {
     return { ...this.sessionSnapshotReceipt };
   }
 
-  async getSession(id: string): Promise<AgentSession | null> {
+  async getSession(id: string, options: { includeMetrics?: boolean } = {}): Promise<AgentSession | null> {
+    if (options.includeMetrics === false) return this.getSessionObservation(id);
     const all = await this.listSessions();
     const session = all.find((candidate) => candidate.id === id) || null;
     if (!session) return null;
@@ -489,8 +492,7 @@ export class CodexAdapter implements HarnessAdapter {
     return automationStop ? { automationStop } : {};
   }
 
-  /** Exact persisted metadata and a fresh bounded tail; no global discovery or full metrics. */
-  async getSessionObservation(id: string): Promise<AgentSession | null> {
+  private async exactRolloutState(id: string): Promise<CodexSessionState | null> {
     const databaseAvailable = existsSync(join(this.codexDir, "state_5.sqlite"));
     let state = await this.readSessionStateFromDatabase(id);
     if (!state && !databaseAvailable) {
@@ -500,25 +502,41 @@ export class CodexAdapter implements HarnessAdapter {
         // filenames for this ID, never parse the entire session corpus.
         const paths = await this.findJsonlFiles(join(this.codexDir, "sessions"));
         for (const path of paths.filter(path => basename(path).includes(id))) {
-          const header = await this.readSessionHeader(path);
+          let header = await this.readSessionHeader(path);
+          if (!header.includes("\n") && !this.getHeaderSessionId(header)) {
+            const stream = createReadStream(path, { encoding: "utf8" });
+            try {
+              for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) { header = line; break; }
+            } finally { stream.destroy(); }
+          }
           if (this.getHeaderSessionId(header) !== id) continue;
           state = { filePath: path, cwd: this.getHeaderString(header, "cwd"), model: this.extractLatestTurnModel(header), ...this.extractLineage(header), updatedAtMs: 0 };
           break;
         }
       }
     }
+    return state;
+  }
+
+  /** Archiving may move a rollout between the index lookup and the open. */
+  private async withExactRollout<T>(id: string, read: (state: CodexSessionState) => Promise<T>): Promise<T | null> {
+    const state = await this.exactRolloutState(id);
     if (!state) return null;
-    let tail: CodexRolloutTail;
-    try { tail = await this.readSessionTail(state.filePath); }
-    catch (error) {
+    try {
+      return await read(state);
+    } catch (error) {
       if (!isFileNotFound(error)) throw error;
-      // Archiving can move the rollout between exact lookup and open. Refresh
-      // this ID once, preserving failure if fresh stop evidence is unavailable.
       const current = await this.readSessionStateFromDatabase(id);
       if (!current || current.filePath === state.filePath) throw error;
-      state = current;
-      tail = await this.readSessionTail(current.filePath);
+      return read(current);
     }
+  }
+
+  /** Exact persisted metadata and a fresh bounded tail; no global discovery or full metrics. */
+  async getSessionObservation(id: string): Promise<AgentSession | null> {
+    const observation = await this.withExactRollout(id, async state => ({ state, tail: await this.readSessionTail(state.filePath) }));
+    if (!observation) return null;
+    const { state, tail } = observation;
     return {
       id, harness: "codex", title: state.title || "Untitled session",
       cwd: state.cwd || process.cwd(), hostId: localSessionHostId(), model: tail?.model || state.model,
@@ -773,6 +791,23 @@ export class CodexAdapter implements HarnessAdapter {
     } catch {
       return null;
     }
+  }
+
+  async getCodexHistoryPage(id: string, limit: number, cursor?: string) {
+    return this.withExactRollout(id, async state => {
+      const runner = fileURLToPath(new URL("../../dist/codex-history/codex-rollout-page.mjs", import.meta.url));
+      const args = ["--disable-warning=ExperimentalWarning", runner, state.filePath, id, String(limit)];
+      if (cursor !== undefined) args.push(cursor);
+      const { stdout } = await execFileAsync(process.execPath, args, {
+        timeout: 20_000, maxBuffer: MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES,
+      }).catch(async () => {
+        // Preserve ENOENT for the exact-index retry when the file moved.
+        await stat(state.filePath);
+        throw new Error("Не удалось прочитать страницу файла Codex. Обновите историю сессии.");
+      });
+      const page = JSON.parse(stdout) as { rows: { offset: number; line: string }[]; nextCursor: string | null };
+      return { events: projectCodexRolloutPage(page.rows, id), nextCursor: page.nextCursor };
+    });
   }
 
   async getRawTranscript(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null> {
@@ -1198,10 +1233,11 @@ export class CodexAdapter implements HarnessAdapter {
   }
 
   private getHeaderSessionId(header: string): string | undefined {
-    const firstLine = header.split("\n").find((line) => line.includes('"type":"session_meta"'));
+    const firstLine = header.split("\n").find(line => /"type"\s*:\s*"session_meta"/u.test(line));
     if (firstLine) {
       try {
-        const payload = (JSON.parse(firstLine) as { payload?: Record<string, unknown> }).payload;
+        const row = JSON.parse(firstLine) as { type?: string; payload?: Record<string, unknown> };
+        const payload = row?.type === "session_meta" ? row.payload : undefined;
         if (typeof payload?.id === "string") return payload.id;
         if (typeof payload?.session_id === "string") return payload.session_id;
       } catch {

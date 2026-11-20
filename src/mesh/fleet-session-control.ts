@@ -1,6 +1,8 @@
 import {z} from 'zod';
 export const fleetSessionControlSchema=z.object({
-  operation:z.enum(['details','message-status','message','stop','resume','set-target']),
+  operation:z.enum(['details','transcript','message-status','message','stop','resume','set-target']),
+  cursor:z.string().min(1).max(4096).optional(),
+  limit:z.number().int().min(1).max(100).optional(),
   inputId:z.string().trim().min(1).max(512).optional(),
   message:z.string().min(1).max(262144).optional(),
   mode:z.enum(['queue','steer']).optional(),
@@ -9,6 +11,7 @@ export const fleetSessionControlSchema=z.object({
   /** Work directory of an existing session on that machine. */
   cwd:z.string().trim().min(1).max(4096).optional(),
 }).strict().superRefine((value,context)=>{
+  if(value.operation!=='transcript'&&(value.cursor!==undefined||value.limit!==undefined))context.addIssue({code:'custom',message:'Paging is only supported for transcript reads'});
   if(['message','message-status','resume'].includes(value.operation)&&!value.inputId)context.addIssue({code:'custom',message:'Stable inputId required'});
   if(value.operation==='message'&&!value.message?.trim())context.addIssue({code:'custom',message:'Message required'});
   if(value.operation==='set-target'&&!value.hostId&&!value.cwd)context.addIssue({code:'custom',message:'hostId or cwd required'});

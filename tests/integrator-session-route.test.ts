@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
+import { CodexAppServerAdapter } from "../src/adapters/codex-app-server.js";
 import { createWebServer } from "../src/web/server.js";
 import { HerderEventBus } from "../src/herder-events.js";
 import { HerderJobRegistry } from "../src/herder-jobs.js";
@@ -61,6 +62,57 @@ describe("exact native transcript session route", () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("opens the last 100 native Codex items and continues only with their older cursor", async () => {
+    const session = { id: "thread-1", harness: "codex", status: "idle" };
+    const adapter = new CodexAppServerAdapter({});
+    const getRawTranscript = vi.spyOn(adapter, "getRawTranscript");
+    const getSession = vi.spyOn(adapter, "getSession").mockResolvedValue(session as AgentSession);
+    const rpc = adapter as unknown as {
+      ensureReady(): Promise<void>;
+      request(method: string, params: { threadId: string; cursor?: string; sortDirection: string; limit: number }): Promise<unknown>;
+    };
+    vi.spyOn(rpc, "ensureReady").mockResolvedValue(undefined);
+    const request = vi.spyOn(rpc, "request").mockImplementation(async (_method, { limit, cursor }) => {
+      const end = cursor === "rollout.older /+" ? 5 : 105;
+      const size = Math.min(end, limit);
+      return {
+        data: Array.from({ length: size }, (_, i) => ({
+          turnId: "turn", item: i === 1
+            ? { id: String(end - i), type: "reasoning", summary: ["public summary"], content: ["private fixture"] }
+            : { id: String(end - i), type: "agentMessage", text: String(end - i) },
+        })),
+        ...(end > size ? { nextCursor: "rollout.older /+" } : {}),
+      };
+    });
+    const server = createWebServer({ adapters: new Map([["codex", adapter]]), converter: {} as any,
+      supervisor: {} as any, jobs: new HerderJobRegistry(new HerderEventBus()) });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("fixture bind failed");
+    const url = new URL("/api/sessions/codex/thread-1/transcript?order=latest", `http://127.0.0.1:${address.port}`);
+    try {
+      const first = await (await fetch(url)).json();
+      expect(first.transcript).toMatchObject({ source: "codex-app-server", complete: false, nextCursor: expect.any(String) });
+      expect(first.transcript.items).toHaveLength(100);
+      expect(first.transcript.items[0].item.id).toBe("105");
+      expect(first.transcript.items[1].item).toEqual({ id: "104", type: "reasoning", summary: ["public summary"] });
+      url.searchParams.set("cursor", first.transcript.nextCursor);
+      const last = await fetch(url);
+      expect(last.status).toBe(200);
+      const { transcript } = await last.json();
+      expect(transcript.items.map((row: { item: { id: string } }) => row.item.id)).toEqual(["5", "4", "3", "2", "1"]);
+      expect(transcript).toMatchObject({ complete: true, nextCursor: null });
+      expect(request.mock.calls).toEqual([
+        ["thread/items/list", { threadId: "thread-1", limit: 100, sortDirection: "desc" }],
+        ["thread/items/list", { threadId: "thread-1", limit: 100, sortDirection: "desc", cursor: "rollout.older /+" }],
+      ]);
+      expect(getSession).toHaveBeenCalledWith("thread-1", { includeMetrics: false });
+      expect(getRawTranscript).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
     }
   });
 

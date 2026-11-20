@@ -41,6 +41,7 @@ import type {
   SessionRenameOutcome,
   SetPermissionsOptions,
   RawTranscriptExport,
+  CodexHistoryPage,
   SessionMessageView,
   SessionSnapshotReceipt,
   SessionServiceTierState,
@@ -1414,6 +1415,27 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async getRawTranscript(id: string): Promise<RawTranscriptExport | null> {
     if (!(await this.canReadProjectHistory(id))) return null;
     return this.rawTranscriptAdapter.getRawTranscript(id);
+  }
+
+  async getCodexHistoryPage(id: string, limit: number, cursor?: string): Promise<CodexHistoryPage | null> {
+    if (!(await this.canReadProjectHistory(id))) return null;
+    if (cursor?.startsWith("rollout.")) return this.rawTranscriptAdapter.getCodexHistoryPage(id, limit, cursor);
+    if (cursor !== undefined && !cursor.startsWith("native.")) throw new Error("Invalid Codex history cursor");
+    await this.ensureReady();
+    try {
+      const page = await this.request("thread/items/list", {
+        threadId: id, limit, sortDirection: "desc",
+        ...(cursor === undefined ? {} : { cursor: cursor.slice("native.".length) }),
+      }) as Extract<CodexHistoryPage, { data: unknown }>;
+      // A native cursor is opaque, including one that happens to start with "rollout.".
+      return { ...page, nextCursor: typeof page.nextCursor === "string" && page.nextCursor
+        ? `native.${page.nextCursor}` : page.nextCursor };
+    } catch (error) {
+      // Legacy rollouts do not implement item pagination. Never feed a native
+      // continuation into a different history source.
+      if (cursor !== undefined || !(error instanceof CodexRpcError) || error.code !== -32601) throw error;
+      return this.rawTranscriptAdapter.getCodexHistoryPage(id, limit);
+    }
   }
 
   /** Project history is readable only for a thread admitted by this adapter

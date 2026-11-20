@@ -20,6 +20,7 @@ import { ServiceTierControl, ServiceTierPanel, useServiceTierControl } from "./s
 import { AutopilotGoalPanel } from "./autopilot-goal-panel.js";
 import { NativePermissionStrip } from "./native-permission.js";
 import { ComposerQueue,canEditQueuedEntry } from "./composer-queue.js";
+import {useCodexHistoryUpdates,useHistoryScroll} from "./use-history-scroll.js";
 import { emptyInspectorText, sessionDetailsErrorText } from "./session-error-text.js";
 import { HarnessAutomationSettings, withAutopilotHarness } from "./harness-automation-settings.js";
 import "./styles.css";
@@ -41,7 +42,7 @@ import {useSessionFacts} from './use-session-facts.js';
 import {SessionActivityPanel} from './session-activity-panel.js';
 import {initialPanelLayout, isEmbeddedLhc, writePanelLayout, type PanelLayout} from './ui-layout.js';
 import {directorySession} from './fleet/session-directory.js';
-import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,readSessionQueueProcessing,submitSessionQueueProcessing,transcriptForAddress,transcriptValueIfCurrent,type TranscriptView} from './fleet/RemoteSessionView.js';
+import {RemoteSessionView,TranscriptRequestOwner,fetchIntegratorTranscriptPage,firstEventIndexForTurn,integratorEventDisplay,localTranscriptAddressFor,mergeTranscriptPageIfCurrent,readSessionQueueProcessing,submitSessionQueueProcessing,transcriptForAddress,transcriptValueIfCurrent,type TranscriptUpdate,type TranscriptView} from './fleet/RemoteSessionView.js';
 import {SessionViewCache,indexedViewCacheStore,readViewCacheSettings,writeViewCacheSettings,type ViewCacheSettings} from './fleet/view-cache.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 import { FleetCabinet } from "./fleet/FleetCabinet.js";
@@ -1428,6 +1429,7 @@ function App() {
     if (!element || !shouldFollowRef.current) return;
     let secondFrame = 0;
     const frame = requestAnimationFrame(() => {
+      if (!shouldFollowRef.current) return;
       element.scrollTop = element.scrollHeight;
       secondFrame = requestAnimationFrame(() => {
         if (shouldFollowRef.current) element.scrollTop = element.scrollHeight;
@@ -1542,28 +1544,34 @@ function App() {
   const localTranscriptKey=localTranscriptAddress?JSON.stringify([localTranscriptAddress.hostId,localTranscriptAddress.harness,localTranscriptAddress.nativeSessionId]):"";
   const localTranscriptOwnerRef=React.useRef<TranscriptRequestOwner|null>(null);if(!localTranscriptOwnerRef.current)localTranscriptOwnerRef.current=new TranscriptRequestOwner(localTranscriptKey);localTranscriptOwnerRef.current.setSession(localTranscriptKey);
   const [localTranscript,setLocalTranscript]=React.useState<TranscriptView>(),[localTranscriptError,setLocalTranscriptError]=React.useState(""),[localTranscriptLoading,setLocalTranscriptLoading]=React.useState(false);
-  const readLocalTranscript=React.useCallback(async(cursor?:string,reset=false)=>{
+  const currentLocalTranscript=localTranscriptAddress?transcriptForAddress(localTranscript,localTranscriptAddress):undefined;
+  const {rememberPosition,scrolledUp}=useHistoryScroll(chatScrollRef,currentLocalTranscript);
+  const readLocalTranscript=React.useCallback(async(cursor?:string,update:TranscriptUpdate=cursor===undefined?"replace":"older")=>{
     const address=localTranscriptAddress;if(!address)return;
     const key=JSON.stringify([address.hostId,address.harness,address.nativeSessionId]),owner=localTranscriptOwnerRef.current!;
-    if(reset)owner.cancel(key);
+    if(update==="replace")owner.cancel(key);
     const token=owner.begin(key);if(!token)return;
     const owns=()=>owner.isCurrent(token);
     setLocalTranscriptError("");setLocalTranscriptLoading(true);
     try{
-      const response=await fetchIntegratorTranscriptPage({address,expectedHostId:address.hostId,cursor});
+      const response=await fetchIntegratorTranscriptPage({address,expectedHostId:address.hostId,cursor,latest:address.harness==="codex"});
       if(!owns())return;
-      setLocalTranscript(current=>mergeTranscriptPageIfCurrent(current,response.transcript,owner,token,reset));
+      if(response.transcript.order==="latest" && (cursor || update==="refresh"))rememberPosition(update==="refresh");
+      setLocalTranscript(current=>mergeTranscriptPageIfCurrent(current,response.transcript,owner,token,update));
     }catch(error){if(owns()){const message=error instanceof Error?error.message:"Свежая история сессии недоступна.";setLocalTranscriptError(current=>transcriptValueIfCurrent(current,message,owner,token));}}
     finally{if(owner.finish(token))setLocalTranscriptLoading(current=>transcriptValueIfCurrent(current,false,owner,token));}
-  },[localTranscriptAddress]);
+  },[localTranscriptAddress,rememberPosition]);
   React.useEffect(()=>{
     setLocalTranscript(undefined);setLocalTranscriptError("");
     if(!localTranscriptAddress)return;
     if(sessionHistoryKnownEmpty){setLocalTranscriptLoading(false);return;}
-    void readLocalTranscript(undefined,true);
+    void readLocalTranscript();
     return()=>localTranscriptOwnerRef.current?.cancel(localTranscriptKey);
   },[localTranscriptKey,readLocalTranscript,sessionHistoryKnownEmpty]);
-  const currentLocalTranscript=localTranscriptAddress?transcriptForAddress(localTranscript,localTranscriptAddress):undefined;
+  useCodexHistoryUpdates(localTranscriptAddress?.harness==="codex"?localTranscriptKey:"",
+    detailsVerified&&!cachedDetails&&details?.session.id===localTranscriptAddress?.nativeSessionId&&details?.session.harness==="codex"
+      ? details.messages.at(-1)?.id??"" : undefined,
+    !!currentLocalTranscript&&!localTranscriptLoading,()=>void readLocalTranscript(undefined,"refresh"));
   const turnFocusKey=linkedTurnId&&localTranscriptAddress?JSON.stringify([localTranscriptAddress.hostId,localTranscriptAddress.harness,localTranscriptAddress.nativeSessionId,linkedTurnId]):"";
   const turnFocusPagesRef=React.useRef<{key:string;pages:number}>({key:"",pages:0});
   const turnFocusExhausted=turnFocusKey!==""&&turnFocusPagesRef.current.key===turnFocusKey&&turnFocusPagesRef.current.pages>=20;
@@ -2453,10 +2461,16 @@ function App() {
     setShowScrollToLatest(false);
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   };
+  const readOlderLocalPage = () => {
+    if (currentLocalTranscript?.order === "latest" && currentLocalTranscript.nextCursor && !localTranscriptLoading) {
+      void readLocalTranscript(currentLocalTranscript.nextCursor);
+    }
+  };
   const handleChatScroll = () => {
     const element = chatScrollRef.current;
     if (!element) return;
     const following = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    if (scrolledUp(element)) readOlderLocalPage();
     shouldFollowRef.current = following;
     setShowScrollToLatest(!following && element.scrollHeight > element.clientHeight);
   };
@@ -2594,7 +2608,8 @@ function App() {
       {showStatistics && <StatisticsView statistics={statistics} loading={statisticsLoading} error={statisticsError} days={statisticsDays} onDays={changeStatisticsDays} onRefresh={() => void loadStatistics(statisticsDays, true)} />}
       {!showStatistics && !showJobs && !showQuota && automationSettings && <div className="autopilot-settings-overlay" ref={automationDialogRef} role="dialog" aria-modal="true" aria-label="Настройки автоматизации"><div className="autopilot-settings-shell"><header className="settings-dialog-header"><div className="settings-dialog-title"><span>Автоматизация</span><h2>{automationSettings === "autocontinue" ? "Автопродолжение" : automationSettings === "autopilot" ? "Автопилот" : "Запуск сессий"}</h2></div><button className="settings-close" aria-label={`Закрыть настройки ${automationSettings === "launch-policy" ? "запуска новых сессий" : automationSettings === "autocontinue" ? "автопродолжения" : "автопилота"}`} onClick={() => setAutomationSettings(undefined)}>×</button></header><div className="settings-dialog-body">{automationSettings === "launch-policy" ? <><CodexQuotaSettings /><LaunchPolicySettings onOpenProjects={() => { setAutomationSettings(undefined); setShowProjects(true); }} /><FallbackModelsSettings /></> : <AutomationSettings section={automationSettings} state={autopilotPolicy} draft={autopilotPolicyDraft} saving={autopilotPolicySaving} error={autopilotPolicyError} saved={autopilotPolicySaved} continuation={continuationHarnesses} continuationSaving={continuationHarnessSaving} continuationFailed={continuationHarnessFailed} continuationError={continuationHarnessError} runtimeState={runtimeSettingsState} runtimeDraft={runtimeSettingsDraft} runtimeSaving={runtimeSettingsSaving} runtimeSaved={runtimeSettingsSaved} runtimeError={runtimeSettingsError} modelOptions={runtimeModelOptions} sessionControlAvailable={automationSettings === "autocontinue" ? Boolean(sessionAutostart) : Boolean(autopilotSession)} sessionControlStatus={automationSettings === "autocontinue" ? `Текущая сессия: автопродолжение ${!activeSession || !activeHarnessSupportsAutocontinue ? "для этой среды недоступно" : sessionAutostart === undefined ? "(уточняется…)" : sessionAutostart.enabled ? "включено" : "выключено"}` : `Текущая сессия: автопилот ${!activeSession || !activeHarnessSupportsAutopilot ? "для этой среды недоступен" : autopilotSession === undefined ? "(уточняется…)" : autopilotSession.enabled ? "включён" : "выключен"}`} capabilityNote={activeSession && !activeHarnessSupportsAutocontinue ? `Автопродолжение после сбоя для ${AUTOPILOT_HARNESS_LABELS[activeSession.harness as AutopilotHarness]} пока недоступно. Автопилот может оценивать завершение задач и продолжать их по своей политике.` : undefined} onChange={(next) => { setAutopilotPolicyDraft(next); setAutopilotPolicySaved(false); }} onSave={() => void saveAutopilotPolicy()} onGlobalContinuationToggle={() => void toggleGlobalContinuation()} onContinuationToggle={(harness) => void toggleContinuationHarness(harness)} onRuntimeChange={(next) => { setRuntimeSettingsDraft(next); setRuntimeSettingsSaved(false); }} onRuntimeSave={() => void saveRuntimeSettings()} onOpenSessionControl={() => openSessionInspector(automationSettings === "autocontinue" ? "autocontinue" : "autopilot")} />}</div></div></div>}
       {!showStatistics && !showJobs && !showQuota && !!details?.children?.length && <details className="subagents-panel"><summary>Субагенты <span>{details.children.length}</span></summary><div className="subagents-list">{details.children.map((child) => <button className="subagent-row" key={keyOf(child)} onClick={() => { selectSession(keyOf(child)); setMobileView("chat"); }}><span className={`status-dot status-${statusClass(child.status)}`} /><span><strong>{child.title || child.id}</strong><small>{typeof child.meta?.agentRole === "string" ? child.meta.agentRole : statusLabel(child.status)} · {child.id}</small></span></button>)}</div></details>}
-      {!showCreateSession && !showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}>
+      {!showCreateSession && !showStatistics && !showJobs && !showQuota && <div className="chat-scroll" ref={chatScrollRef} onScroll={handleChatScroll}
+        onWheel={event=>{if(event.deltaY<0&&event.currentTarget.scrollTop===0)readOlderLocalPage();}}>
         <div className="message-column" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Переписка">
           {detailsLoading && !details && <div className="session-loading-chat" aria-live="polite"><div className="session-loading-orbit"><span /><span /><span /></div><strong>Загружаю свежие сообщения</strong><small>Начинаем с последних ходов; остальным Agent Herder можно пользоваться дальше.</small></div>}
           {!detailsLoading && !details && (loading && !activeSession
@@ -2603,7 +2618,8 @@ function App() {
             ? <><strong>{sessionDetailsErrorText(detailsError)?.reason}</strong><br />{sessionDetailsErrorText(detailsError)?.hint}</>
             : "Выберите сессию, чтобы открыть переписку."}</div>)}
           {detailsHydrating && details && <div className="history-loading-banner"><span className="inline-loading-dot" /> Последние {formatLoadTiming(latestTimingMs)} · подгружаю историю и метрики…</div>}
-          {localTranscriptAddress&&!sessionHistoryKnownEmpty&&<div className="local-transcript-controls"><button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(undefined,true)}>Обновить историю</button>{localTranscriptLoading&&<span role="status">Загружаю историю сессии…</span>}</div>}
+          {currentLocalTranscript?.order==="latest"&&currentLocalTranscript.nextCursor&&<button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={readOlderLocalPage}>Загрузить более ранние события</button>}
+          {localTranscriptAddress&&!sessionHistoryKnownEmpty&&<div className="local-transcript-controls"><button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript()}>Обновить историю</button>{localTranscriptLoading&&<span role="status">Загружаю историю сессии…</span>}</div>}
           {!detailsLoading&&sessionHistoryKnownEmpty&&<p className="empty-chat" role="status">Сессия пока пустая. Сообщений ещё нет.</p>}
           {localTranscriptError&&!sessionHistoryKnownEmpty&&<p role="alert" className="remote-chat-error">{localTranscriptError}</p>}
           {linkedTurnId&&turnFocusKey&&currentLocalTranscript&&firstEventIndexForTurn(currentLocalTranscript.events,linkedTurnId)===undefined&&<p role="status">{currentLocalTranscript.nextCursor?(turnFocusExhausted?"Связанное сообщение пока не найдено. Загрузите следующую страницу истории.":"Ищу точное сообщение по ссылке…"):currentLocalTranscript.complete?"Связанное сообщение не найдено в истории этой сессии.":"История продолжается; точное сообщение пока не найдено. Загрузите следующую страницу истории."}</p>}
@@ -2623,7 +2639,7 @@ function App() {
               return noteLabel ? <ServiceNote key={message.id} label={noteLabel} message={message} /> : <CollapsibleMessage key={message.id} message={message} showReasoning={showReasoning} showTools={showTools} jsonRendering={jsonRendering} collapseLongMessages={collapseLongMessages} groupThinkingTools={groupThinkingTools} forceExpanded={isLastAssistant && index === visible.length - 1} />;
             })}</article>;
           })}
-          {currentLocalTranscript?.nextCursor&&<button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(currentLocalTranscript.nextCursor??undefined)}>Загрузить следующую страницу истории</button>}
+          {currentLocalTranscript?.nextCursor&&currentLocalTranscript.order!=="latest"&&<button type="button" className="quiet-button" disabled={localTranscriptLoading} onClick={()=>void readLocalTranscript(currentLocalTranscript.nextCursor??undefined)}>Загрузить следующую страницу истории</button>}
         </div>
       </div>}
       {!showCreateSession && !showStatistics && !showJobs && !showQuota && showScrollToLatest && <button className="scroll-latest" aria-label="Прокрутить к последним" onClick={scrollToBottom}>↓</button>}

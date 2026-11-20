@@ -11,7 +11,6 @@ describe("RemoteSessionView native transcript integration", () => {
       author: { kind: "unknown", sourceRole: "user" }, text: "Please inspect this task",
     };
     expect(integratorEventDisplay(event)).toMatchObject({
-      attribution: "Неизвестный автор · user",
       attribution: "Пользователь",
       visualRole: "user",
       message: { id: "native-user-1", role: "user", text: "Please inspect this task" },
@@ -19,6 +18,13 @@ describe("RemoteSessionView native transcript integration", () => {
     expect(fallbackSessionAttribution("user")).toBe("Неизвестный автор · user");
     expect(fallbackSessionAttribution("tool")).toBe("Инструмент");
     expect(fallbackSessionAttribution("system")).toBe("Система");
+  });
+
+  it("renders an image-only user entry from a Codex rollout page", () => {
+    const url = "data:image/png;base64,YQ==";
+    const event = { kind: "message", author: { kind: "unknown", sourceRole: "user" }, eventId: "image",
+      payload: { content: [{ type: "input_image", image_url: url }] } } as const;
+    expect(integratorEventDisplay(event).message.parts).toEqual([{ type: "image", imageUrl: url, fileName: "Изображение" }]);
   });
 
   it("retains native tool name, call identity and payload for display", () => {
@@ -45,6 +51,31 @@ describe("RemoteSessionView native transcript integration", () => {
       { credentials: "same-origin", cache: "no-store" },
     );
     expect(page.transcript.scope).toEqual(address);
+  });
+
+  it.each([false, true])("opens the Codex chat tail and forwards its opaque older cursor (remote=%s)", async remote => {
+    const fetcher = vi.fn(async (path: RequestInfo | URL) => {
+      const older = new URL(String(path), "http://herder.test").searchParams.has("cursor");
+      return new Response(JSON.stringify({
+        session: { id: address.nativeSessionId, harness: "codex" },
+        transcript: {
+          scope: address, order: "latest", source: "codex-app-server",
+          items: (older ? [100] : [102, 101]).map(id => ({
+            turnId: "turn", item: { id: String(id), type: "agentMessage", text: String(id) },
+          })),
+          nextCursor: older ? null : "older /+", complete: older,
+        },
+      }));
+    });
+    const page = await fetchIntegratorTranscriptPage({ address, expectedHostId: address.hostId, latest: true, remote, fetcher });
+    const url = new URL(String(fetcher.mock.calls[0]?.[0]), "http://herder.test");
+    expect(url.pathname).toBe(remote ? "/api/fleet/control" : "/api/sessions/codex/thread%2F1/transcript");
+    expect(url.searchParams.get("limit")).toBe("100");
+    if (remote) expect(Object.fromEntries(url.searchParams)).toMatchObject({hostId: address.hostId, sessionId: address.nativeSessionId, operation: "transcript"});
+    else expect(url.searchParams.get("order")).toBe("latest");
+    expect(page.transcript.events.map(e => integratorEventDisplay(e).message.text)).toEqual(["101", "102"]);
+    await fetchIntegratorTranscriptPage({address, expectedHostId: address.hostId, latest: true, remote, cursor: page.transcript.nextCursor!, fetcher});
+    expect(new URL(String(fetcher.mock.calls[1]?.[0]), "http://herder.test").searchParams.get("cursor")).toBe("older /+");
   });
 
   it("renders transcript state only for the exact captured host, harness and session", () => {

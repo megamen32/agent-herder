@@ -28,12 +28,15 @@ export function createFleetApiHandler(resolve:FleetCabinetService|((request:Inco
    if(url.pathname==='/api/fleet/control'&&['GET','POST'].includes(request.method??'')){
     const address={hostId:url.searchParams.get('hostId')??'',harness:url.searchParams.get('harness')??'',nativeSessionId:url.searchParams.get('sessionId')??''};
     let value:unknown;
-    if(request.method==='GET')value={operation:url.searchParams.get('operation'),...(url.searchParams.has('inputId')?{inputId:url.searchParams.get('inputId')}:{})};
+    if(request.method==='GET')value={operation:url.searchParams.get('operation'),
+     ...(url.searchParams.has('inputId')?{inputId:url.searchParams.get('inputId')}:{}),
+     ...(url.searchParams.has('cursor')?{cursor:url.searchParams.get('cursor')}:{}),
+     ...(url.searchParams.has('limit')?{limit:Number(url.searchParams.get('limit'))}:{})};
     else {
      let bytes=0;const chunks:Buffer[]=[];let timer:ReturnType<typeof setTimeout>|undefined;
      value=await Promise.race([(async()=>{for await(const chunk of request){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>1048576)throw new Error('request_too_large');chunks.push(b);}return JSON.parse(Buffer.concat(chunks).toString('utf8'));})(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('request_body_deadline')),3000);})]).finally(()=>{if(timer)clearTimeout(timer);});
     }
-    const parsed=fleetSessionControlSchema.safeParse(value);if(!parsed.success||((request.method==='GET')!==['details','message-status'].includes(parsed.data.operation))){send(400,{error:'Некорректная команда сессии'});return true;}
+    const parsed=fleetSessionControlSchema.safeParse(value);if(!parsed.success||((request.method==='GET')!==['details','transcript','message-status'].includes(parsed.data.operation))){send(400,{error:'Некорректная команда сессии'});return true;}
     try{const result=await service.requestSession(address,parsed.data);send(result.status,result.body);}catch{send(502,{ok:false,error:'Связь с выбранной сессией не подтверждена.',...(request.method==='POST'?{admissionUnknown:true,nonRetryable:true}:{})});}
     return true;
    }

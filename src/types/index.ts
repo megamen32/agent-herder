@@ -14,6 +14,8 @@ export {
   type SetPermissionsOptions,
   type HarnessPermissionState,
   type RawTranscriptExport,
+  type CodexHistoryPage,
+  type CodexHistoryItem,
   type SessionSnapshotReceipt,
   type HarnessAdapter,
   type SessionLineageKind,
