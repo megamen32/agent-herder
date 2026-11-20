@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { installedLocalRecovery } from "./host-local-recovery.js";
 import { createCanonicalRuntimeStatus } from "./canonical-runtime-status.js";
 import { createAutostartSourceVerifierTick } from "./autopilot/autostart-source-verifier.js";
 import { isMainEntrypoint } from "./main-entrypoint.js";
@@ -1020,6 +1021,7 @@ async function main() {
   }
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
+  if (isManagedFleetNode()) installedLocalRecovery?.start();
 
   // The file of the product keeps the marker of every secret, so the raw value
   // of a secret is taken from the store of the secrets and put into the
@@ -1506,6 +1508,7 @@ async function main() {
     for (const stop of stopNativeTurnObservers) stop();
     userMessageDelivery.close();
     void (async () => {
+      await installedLocalRecovery?.close().catch(() => undefined);
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await integratorFleetRuntime.dispose(); }
       catch (error) { console.error('[agent-herder] scoped Codex shutdown failed:', String(error)); }

@@ -1,3 +1,4 @@
+import { LOCAL_RECOVERY_WAIT_PATH, observeInstalledRecoveryWait } from "../process-wait-gate.js";
 import { CANONICAL_RUNTIME_STATUS_PATH, CanonicalRuntimeStatusError, parseCanonicalRuntimeStatusRequest, type CanonicalRuntimeStatusSource } from "../canonical-runtime-status.js";
 import {incidentSessionPolicy} from '../automation/incident-session-router.js';
 import { recordProjectLifecycle, type IntegrationWake } from "../project-integration.js";
@@ -3077,7 +3078,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 404, { error: (error as Error).message });
     }
   }
-  if (url.pathname === "/mcp" || url.pathname === CANONICAL_RUNTIME_STATUS_PATH) {
+  if (url.pathname === "/mcp" || url.pathname === CANONICAL_RUNTIME_STATUS_PATH || url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
     const authorization = request.headers.authorization;
     let authenticatedToken: string | undefined;
     let oauthPrincipal: Awaited<ReturnType<ReturnType<typeof getDefaultMcpOAuthTokenStore>["verifyAccessToken"]>>;
@@ -3096,7 +3097,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       response.setHeader("Cache-Control", "no-store");
       return sendJson(response, 401, { error: "unauthorized" });
     }
-    if (url.pathname === CANONICAL_RUNTIME_STATUS_PATH) {
+    if (url.pathname === CANONICAL_RUNTIME_STATUS_PATH || url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("X-Content-Type-Options", "nosniff");
       if (request.method !== "GET") {
@@ -3105,6 +3106,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       try {
         const query = parseCanonicalRuntimeStatusRequest(url.searchParams);
+        if (url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
+          if (!query.probe) return sendJson(response, 400, { error: "invalid_runtime_probe" });
+          return sendJson(response, 200, { challenge: query.challenge, pid: process.pid,
+            decision: await observeInstalledRecoveryWait(query.probe) });
+        }
         if (!canonicalRuntimeStatus) throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable");
         return sendJson(response, 200, await canonicalRuntimeStatus.observe(query));
       } catch (error) {
