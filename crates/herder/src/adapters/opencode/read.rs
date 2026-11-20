@@ -165,15 +165,63 @@ impl OpenCodeSessionReader {
         self.connection.instance()
     }
 
+    pub async fn confirms_missing_session(&self, id: &str) -> bool {
+        if !valid_native_session_id(id) {
+            return true;
+        }
+        let path = format!("/api/session/{id}");
+        let Ok(request) = self.connection.request("herder-recovery-presence", Method::GET, &path)
+        else {
+            return false;
+        };
+        let Ok(response) = request.send().await else {
+            return false;
+        };
+        response.status() == StatusCode::NOT_FOUND
+            && response.json::<serde_json::Value>().await.is_ok_and(|error| {
+                error["_tag"] == "SessionNotFoundError" && error["sessionID"] == id
+            })
+    }
+
     /// Read the native first page (OpenCode defaults to newest 50 sessions).
     /// Any returned cursor remains opaque and is passed through unchanged.
     pub async fn list_sessions(
         &self,
         request_id: impl Into<String>,
     ) -> Result<OpenCodeSessionPage, ReadError> {
+        self.session_page(request_id, "/api/session").await
+    }
+
+    pub async fn list_recent_sessions(
+        &self,
+        request_id: impl Into<String>,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<OpenCodeSessionPage, ReadError> {
+        let mut url = self.connection.endpoint().clone();
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("limit", &limit.to_string());
+            if let Some(cursor) = cursor {
+                query.append_pair("cursor", cursor);
+            } else {
+                query
+                    .append_pair("order", "desc")
+                    .append_pair("archived", "false");
+            }
+        }
+        let path = format!("/api/session?{}", url.query().unwrap_or_default());
+        self.session_page(request_id, &path).await
+    }
+
+    async fn session_page(
+        &self,
+        request_id: impl Into<String>,
+        path: &str,
+    ) -> Result<OpenCodeSessionPage, ReadError> {
         let request = self
             .connection
-            .request(request_id, Method::GET, "/api/session")
+            .request(request_id, Method::GET, path)
             .map_err(map_connection_error)?;
         let response = request
             .send()
@@ -239,6 +287,9 @@ impl OpenCodeSessionReader {
             SessionResponseWire::Direct(session)
             | SessionResponseWire::Wrapped { data: session } => session,
         };
+        if session.id != address.native_session_id {
+            return Err(ReadError("OpenCode session read returned another identity".into()));
+        }
         self.project_session(session)
     }
 

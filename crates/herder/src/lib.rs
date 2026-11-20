@@ -15,6 +15,7 @@ pub mod adapters {
         pub mod control;
         pub mod create;
         pub mod read;
+        mod recovery_quota;
     }
     pub mod chatgpt;
     pub mod zai;
@@ -58,6 +59,7 @@ pub mod domain {
     pub mod address;
     pub mod attachment;
     pub mod completion;
+    pub mod recovery;
     pub mod resource;
     pub mod transcript;
 }

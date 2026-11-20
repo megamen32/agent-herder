@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import time
 import uuid
@@ -639,6 +640,29 @@ def status(args):
                if canonical_reconciliation_valid(state) else {})}
 
 
+def scheduler_source(git_dir, proposed, migration, receipt):
+    source = proposed["process_leases_build"]["source_commit"]
+    if not migration or migration.get("kind") != "recovery":
+        return source
+    installed = receipt.get("response", {}).get("runtime", {}).get("source_commit")
+    if installed == source:
+        return source
+    if not isinstance(installed, str) or not main_guard.SHA_RE.fullmatch(installed):
+        raise ValueError("missing installed scheduler source")
+    git = ["git", "--git-dir", str(git_dir)]
+    # A Rust-only rollout can retain the separately pinned, running scheduler.
+    # Require identical inputs outside native code, its release tools and tests.
+    excluded = ["crates/herder", "tests", "docs", "bugs.md",
+                "deploy/fleet/process-leases-candidate.py", "deploy/fleet/process-leases-rollout.py",
+                "deploy/fleet/rollout-node.py", "deploy/fleet/process-leases-ts-runtime.py",
+                "deploy/fleet/process-leases-adapters-test.py", "deploy/fleet/process-leases-rollout-test.py"]
+    paths = [":(top,exclude)" + path for path in excluded]
+    if (subprocess.run(git + ["merge-base", "--is-ancestor", installed, source]).returncode
+            or subprocess.run(git + ["diff", "--quiet", "--no-ext-diff", installed, source, "--", *paths]).returncode):
+        raise ValueError("native recovery candidate changes installed scheduler inputs")
+    return installed
+
+
 def admit(args, gate):
     selector = candidate.private_file(args.selector)
     launcher = candidate.private_file(args.launcher)
@@ -654,13 +678,13 @@ def admit(args, gate):
     before_pair_again = drained_again["pair"] if drained_again is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
     if drained_again != drained or before_pair_again != before_pair:
         raise ValueError("running baseline changed during admission")
-    candidate.profile_migration(selection, new_selection, baseline, proposed)
+    migration = candidate.profile_migration(selection, new_selection, baseline, proposed)
     # This proof is fresh but needs no native call: a newly installed canonical
     # TS service may safely fail closed while the old core lacks wait_status.
     proof_bytes, _ = scheduler.read_file(str(args.scheduler_proof))
     scheduler_receipt = json.loads(proof_bytes)
     scheduler_evidence = scheduler.validate_receipt(scheduler_receipt,
-        proposed["process_leases_build"]["source_commit"], stage="preflight")
+        scheduler_source(gate.proof["project"], proposed, migration, scheduler_receipt), stage="preflight")
     root = Path(args.job_dir)
     if not root.is_absolute() or root.parent.resolve(strict=True) != root.parent or root.exists():
         raise ValueError("new private job directory must have a canonical existing parent")

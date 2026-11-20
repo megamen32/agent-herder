@@ -22,6 +22,9 @@ pub mod automation;
 pub mod process_automation;
 pub mod automation_driver;
 pub mod wait_automation;
+pub mod session_recovery;
+pub mod recovery_handoff;
+mod recovery_omniroute;
 mod wait_sources;
 pub use wait_sources::{NativeTurn, NativeTurnStatus};
 
@@ -42,13 +45,21 @@ use crate::{
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use std::{
     os::unix::fs::MetadataExt,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 /// Synchronous and bounded native write+admission. Returning guarantees that
 /// this call has no surviving delegated writer. A timeout/disconnect after a
 /// possible write is UNKNOWN; no retry. Only trusted adapters may implement it.
 pub trait BoundedNativeHandoff {
+    fn recovery_ancestors(&self) -> &[crate::domain::recovery::RecoveryAncestor] {
+        &[]
+    }
+
+    fn requires_clear_waits(&self) -> bool {
+        false
+    }
+
     /// Read the initialized instance's upload capability before reserving a
     /// delivery key or creating a session. This check performs no native I/O.
     fn supports_attachments(&self) -> bool {
@@ -656,6 +667,11 @@ impl ScopedAuthority {
         let message = message.into();
         authorize_session(identity, grants, b)?;
         let (_gate, mut writer) = self.lock()?;
+        let pending_wait = control.requires_clear_waits()
+            && !wait_automation::WaitAutomationApplication::blocking_rules_locked(
+                &writer, b.principal, b.target_ref, &b.address.instance,
+            ).map_err(|_| GateError::Store)?.is_empty();
+        let ancestor_held = self.recovery_ancestors_held(&writer, b, control.recovery_ancestors())?;
         {
             let tx = writer
                 .connection_mut()
@@ -696,10 +712,15 @@ impl ScopedAuthority {
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::StoppedBeforeHandoff);
             }
-            if scope_held(&tx, b)? {
+            if pending_wait || ancestor_held || scope_held(&tx, b)? {
                 tx.execute("UPDATE intents SET state='rejected',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
                 tx.execute("UPDATE humanstop_dispatches SET phase='stopped',updated_at=?2 WHERE intent_id=?1 AND phase='claimed'",params![b.intent_id,now]).map_err(|_|GateError::Store)?;
-                tx.execute("UPDATE tasks SET result_json=?2,updated_at=?3 WHERE task_id=(SELECT task_id FROM intents WHERE intent_id=?1)", params![b.intent_id,r#"{"outcome":"stopped_before_handoff","native_submit":"definitely_not_sent"}"#,now]).map_err(|_|GateError::Store)?;
+                let result = if pending_wait {
+                    r#"{"outcome":"waiting_before_handoff","native_submit":"definitely_not_sent"}"#
+                } else {
+                    r#"{"outcome":"stopped_before_handoff","native_submit":"definitely_not_sent"}"#
+                };
+                tx.execute("UPDATE tasks SET result_json=?2,updated_at=?3 WHERE task_id=(SELECT task_id FROM intents WHERE intent_id=?1)", params![b.intent_id,result,now]).map_err(|_|GateError::Store)?;
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::StoppedBeforeHandoff);
             }

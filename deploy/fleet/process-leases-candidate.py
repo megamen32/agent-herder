@@ -687,6 +687,60 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     return migration
 
 
+def recovery_profile_payload(previous, changed, *, installed=False):
+    """Stage the shared Codex socket or an inactive recovery handoff."""
+    expected = strict_json(previous)
+    actual = strict_json(changed)
+    owner, new = expected["owner"], actual["owner"]
+    kind = owner.get("kind")
+    socket_only = False
+    if kind == "codex":
+        binding = owner.get("ahap_env", {})
+        if not all(binding.get(key) for key in ("AHAP_CODEX_BIN", "AHAP_CODEX_CWD", "CODEX_HOME")):
+            raise ValueError("Codex recovery requires the existing native instance binding")
+        socket = new.get("ahap_env", {}).get("AHAP_CODEX_SOCKET")
+        if not isinstance(socket, str) or not Path(socket).is_absolute() or ".." in Path(socket).parts:
+            raise ValueError("Codex recovery requires the exact shared app-server socket")
+        prior_socket = binding.get("AHAP_CODEX_SOCKET")
+        if prior_socket not in (None, socket):
+            raise ValueError("native recovery cannot change the existing Codex socket")
+        socket_only = prior_socket is None and "codex_recovery" not in owner and "codex_recovery" not in new
+        binding["AHAP_CODEX_SOCKET"] = socket
+    elif kind == "opencode":
+        if owner.get("ahap_script") is not None or not owner.get("ahap_base_url"):
+            raise ValueError("OpenCode recovery requires the existing native HTTP profile")
+    else:
+        raise ValueError("unsupported native recovery profile kind")
+    if not socket_only:
+        recovery = new.get(kind + "_recovery")
+        if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
+            raise ValueError("installed recovery requires an explicit compatibility handoff")
+        handoff = recovery["legacy_handoff"]
+        instance_wide = handoff.get("instance_wide", False)
+        native_sessions = handoff.get("native_sessions")
+        if not isinstance(instance_wide, bool) or (instance_wide and "native_sessions" in handoff):
+            raise ValueError("instance_wide recovery requires a boolean and a single handoff scope")
+        if not instance_wide and (
+                not isinstance(native_sessions, list) or not 1 <= len(native_sessions) <= 128
+                or any(not isinstance(value, str) or not value.strip() for value in native_sessions)
+                or len(set(native_sessions)) != len(native_sessions)):
+            raise ValueError("installed recovery requires an exact unique session cohort")
+        activation = handoff.get("activation_file")
+        if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
+                or not installed and os.path.lexists(activation):
+            raise ValueError("stage recovery with a fresh private activation path")
+        for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            private_file(handoff[field])
+        owner[kind + "_recovery"] = recovery
+    if actual != expected or len(changed) > 16384:
+        raise ValueError("native recovery changes protected profile fields or exceeds the native limit")
+    return changed
+
+
+def native_profile_identity(owner):
+    return tuple(owner.get(field) for field in ("kind", "node", "instance"))
+
+
 BROWSER_SCOPE = "AHAP_BROWSER_ACCOUNT_SCOPE"
 USERIO_SCOPE = "AHAP_USERIO_ACCOUNT_SCOPE"
 CDP_FIELDS = {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT", "AHAP_BROWSER_CDP_WS_URL",
@@ -782,12 +836,23 @@ def browser_profile_payload(raw, owner, core, binding):
     return edit_owner(raw, changes, remove_script=legacy)
 
 
-def native_profile_plan(base, manifest, selection, output, source, kinds, bindings):
+def native_profile_plan(base, manifest, selection, output, source, kinds, bindings, *,
+                        recovery_profiles=(), installed=False, legacy_recovery_paths=False):
     """Derive every sibling again from the old selector and independent pins."""
     if (not isinstance(kinds, (list, set, tuple)) or not all(isinstance(k, str) for k in kinds)
             or len(set(kinds)) != len(kinds) or not set(kinds) <= NATIVE_PROFILE_UPDATES
             or not isinstance(bindings, dict) or not set(bindings) <= set(kinds) & BROWSER_KINDS):
         raise ValueError("invalid native profile selection or browser binding providers")
+    if recovery_profiles and (kinds or bindings):
+        raise ValueError("select only one profile migration type")
+    reviewed = {}
+    for successor in recovery_profiles:
+        raw = private_file(successor).read_bytes()
+        identity = native_profile_identity(strict_json(raw)["owner"])
+        if identity in reviewed:
+            raise ValueError("duplicate native recovery profile identity")
+        reviewed[identity] = raw
+    matched = set()
     snapshots, planned, used_bindings = {}, [], set()
     for selected in selection["profiles"]:
         path = private_file(selected)
@@ -797,20 +862,28 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
         kind = owner.get("kind")
         script = owner.get("ahap_script")
         native_browser = kind in BROWSER_KINDS and script is None
-        if kind not in kinds and not native_browser:
-            continue
-        if retained_remote_wrapper(owner, base):
-            continue
-        if script is None and kind == "opencode":
-            continue  # The native OpenCode owner retains the Node and endpoint pins.
-        if owner.get("executable") != base["core" if native_browser else "node"]:
-            raise ValueError("previous owner does not select the exact installed executable")
-        if not native_browser and (not isinstance(script, str) or script != base["adapters"].get(kind)):
-            raise ValueError("previous owner does not select the reviewed local runner")
+        identity = native_profile_identity(owner)
+        recovering = bool(reviewed) and identity in reviewed
+        if not recovering:
+            if kind not in kinds and not native_browser:
+                continue
+            if retained_remote_wrapper(owner, base):
+                continue
+            if script is None and kind == "opencode":
+                continue  # The native OpenCode owner retains the Node and endpoint pins.
+            if owner.get("executable") != base["core" if native_browser else "node"]:
+                raise ValueError("previous owner does not select the exact installed executable")
+            if not native_browser and (not isinstance(script, str) or script != base["adapters"].get(kind)):
+                raise ValueError("previous owner does not select the reviewed local runner")
         profile, checked = protected_profile(path)
         if checked != raw:
             raise ValueError("protected profile changed during migration")
-        if kind == "opencode":
+        if recovering:
+            if identity in matched:
+                raise ValueError("selected recovery profile identity is ambiguous")
+            matched.add(identity)
+            payload = recovery_profile_payload(raw, reviewed[identity], installed=installed)
+        elif kind == "opencode":
             payload = native_profile_payload(raw)
         else:
             binding = None
@@ -821,14 +894,17 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
                 used_bindings.add(kind)
             payload = browser_profile_payload(raw, owner, manifest["core"], binding)
         after_hash = hashlib.sha256(payload).hexdigest()
-        parent = authority_parent(path, profile)
+        # Schema 1 recovery receipts recorded the resolved authority directory.
+        parent = path.parent if recovering and legacy_recovery_paths else authority_parent(path, profile)
         target = parent / ("profile-process-leases-native-" + source[:12] + "-" + after_hash[:20] + ".json")
         row = {"kind": kind, "previous_path": selected, "previous_sha256": profile_hash,
                "path": str(target), "sha256": after_hash, "payload_sha256": after_hash,
                "payload": str(output / "profile-payloads" / (after_hash + ".json"))}
-        if kind in BROWSER_KINDS:
+        if kind in BROWSER_KINDS or (recovering and parent != path.parent):
             row["authority_directory"] = str(path.parent)
         planned.append((row, payload))
+    if matched != reviewed.keys():
+        raise ValueError("every native recovery profile must match an exact selected profile")
     if not set(kinds) <= {row["kind"] for row, _ in planned} or used_bindings != set(bindings):
         raise ValueError("each selected native update and private binding must match a profile")
     if len({Path(row["path"]).resolve() for row, _ in planned}) != len(planned):
@@ -848,17 +924,27 @@ def stage_native_payloads(planned):
     return profiles
 
 
-def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds, bindings=None):
+def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds, bindings=None, *,
+                                   recovery_profiles=()):
+    # Earlier callers supplied the recovery profile paths as the eighth positional argument.
+    if isinstance(bindings, (list, tuple)) and not recovery_profiles:
+        recovery_profiles, bindings = bindings, None
     bindings = {} if bindings is None else bindings
-    snapshots, planned = native_profile_plan(base, manifest, selection, output, source, kinds, bindings)
+    snapshots, planned = native_profile_plan(base, manifest, selection, output, source, kinds, bindings,
+                                             recovery_profiles=recovery_profiles)
     if not planned:
         return None
     payload_dir = output / "profile-payloads"
     payload_dir.mkdir(mode=0o700)
     profiles = stage_native_payloads(planned)
-    # Preserve the existing on-disk OpenCode contract.
-    version = ({"schema": 1, "kind": "opencode"} if all(row["kind"] == "opencode" for row in profiles)
-               else {"schema": 2, "kinds": sorted(kinds), "bindings": bindings})
+    if recovery_profiles:
+        # Browsers and recovery siblings behind directory aliases also pin the resolved authority.
+        pinned_authority = any("authority_directory" in row for row in profiles)
+        version = {"schema": 3 if pinned_authority else 1, "kind": "recovery"}
+    elif all(row["kind"] == "opencode" for row in profiles):
+        version = {"schema": 1, "kind": "opencode"}
+    else:
+        version = {"schema": 2, "kinds": sorted(kinds), "bindings": bindings}
     migration = {**version, "type": "herder-native-profile-rebind", "source_commit": source,
                  "base_selector": str(selector), "base_selector_sha256": digest(selector),
                  "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
@@ -971,10 +1057,15 @@ def native_profile_transition(old, new, before, after, *, installed=False):
               "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
     if not isinstance(migration, dict) or type(migration.get("schema")) is not int:
         raise ValueError("invalid native profile migration")
-    if migration["schema"] == 1 and migration.get("kind") == "opencode":
+    schema = migration["schema"]
+    recovering = schema in (1, 3) and migration.get("kind") == "recovery"
+    if recovering:
+        fields.add("kind")
+        kinds, bindings = [], {}
+    elif schema == 1 and migration.get("kind") == "opencode":
         fields.add("kind")
         kinds, bindings = ["opencode"], {}
-    elif migration["schema"] == 2:
+    elif schema == 2:
         fields.update(("kinds", "bindings"))
         kinds, bindings = migration.get("kinds"), migration.get("bindings")
     else:
@@ -989,10 +1080,30 @@ def native_profile_transition(old, new, before, after, *, installed=False):
             or digest(private_file(old["manifest"])) != old["manifest_sha256"] or read_json(old["manifest"]) != before):
         raise ValueError("native profile migration baseline mismatch")
     adapter_transition(before, after)
-    snapshots, planned = native_profile_plan(before, after, old, bundle, source, kinds, bindings)
+    recovery_profiles = []
+    if recovering:
+        payload_dir = private_directory(bundle / "profile-payloads")
+        if not isinstance(migration["profiles"], list):
+            raise ValueError("invalid native recovery profiles")
+        for row in migration["profiles"]:
+            if not isinstance(row, dict):
+                raise ValueError("invalid native recovery profile row")
+            if row.get("kind") in BROWSER_KINDS:
+                continue  # The planner derives browser rows exclusively from the old selector.
+            sha = row.get("payload_sha256")
+            if (row.get("kind") not in ("codex", "opencode") or not isinstance(sha, str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", sha)):
+                raise ValueError("invalid native recovery profile row")
+            recovery_profiles.append(payload_dir / (sha + ".json"))
+        if not recovery_profiles:
+            raise ValueError("native recovery migration requires a reviewed recovery profile")
+    snapshots, planned = native_profile_plan(before, after, old, bundle, source, kinds, bindings,
+                                             recovery_profiles=recovery_profiles, installed=installed,
+                                             legacy_recovery_paths=recovering and schema == 1)
     if snapshots != migration["profile_sha256"]:
         raise ValueError("previous protected profile changed or snapshot is incomplete")
-    if not planned or (migration["schema"] == 1 and any(row["kind"] != "opencode" for row, _ in planned)):
+    pinned_authority = any("authority_directory" in row for row, _ in planned)
+    if not planned or (schema == 1 and pinned_authority) or (schema == 3 and not pinned_authority):
         raise ValueError("invalid native profile migration coverage")
     rebound = checked_native_rows(migration["profiles"], planned, installed)
     expected = copy.deepcopy(old)
@@ -1137,12 +1248,13 @@ def build(args):
         raise ValueError("commit the isolated worktree before a release build")
     updates = getattr(args, "adapter_update", [])
     native_updates = getattr(args, "native_update", [])
+    recovery_profiles = getattr(args, "native_recovery_profile", [])
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
     if len(set(native_updates)) != len(native_updates) or not set(native_updates) <= NATIVE_PROFILE_UPDATES:
         raise ValueError("select each reviewed native profile update once")
-    if updates and native_updates:
-        raise ValueError("adapter and native profile migrations cannot be combined")
+    if sum(map(bool, (updates, native_updates, recovery_profiles))) > 1:
+        raise ValueError("select only one profile migration type")
     browser_bindings = {}
     for kind, path, sha256 in getattr(args, "browser_binding", []):
         if kind not in BROWSER_KINDS or kind not in native_updates or kind in browser_bindings:
@@ -1204,9 +1316,10 @@ def build(args):
         create(fixture / "process-wait-status.py", wait_reader.read_bytes(), 0o500)
         hashes["process_wait_reader"] = digest(fixture / "process-wait-status.py")
     remote_source = repo / "src/herder-process-remote-bridge.ts"
-    compilation = compile_typescript(repo, output, sha, base) if updates or remote_source.is_file() else None
+    replace_remote_bridge = not recovery_profiles and remote_source.is_file()
+    compilation = compile_typescript(repo, output, sha, base) if updates or replace_remote_bridge else None
     remote_bridge = None
-    if remote_source.is_file():
+    if replace_remote_bridge:
         remote_bridge = bundle_process_remote_bridge(repo, output, sha, base, compilation)
         hashes["process_remote_bridge"] = remote_bridge["sha256"]
     manifest = compose_manifest(base, output, sha, base_path, selection["manifest_sha256"], hashes, argv)
@@ -1222,7 +1335,7 @@ def build(args):
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
     else:
         migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha,
-                                                  native_updates, browser_bindings)
+                                                  native_updates, browser_bindings, recovery_profiles=recovery_profiles)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]
             or any(digest(private_file(path)) != value for path, value in profile_hashes.items())):
@@ -1390,6 +1503,8 @@ def main():
                    help="explicit reviewed AHAP update; may be repeated once per kind")
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
+    b.add_argument("--native-recovery-profile", action="append", default=[], type=Path,
+                   help="protected successor profile with a new shared Codex socket or inactive recovery handoff")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed direct-CDP binding for a selected legacy browser")
     c = sub.add_parser("check")

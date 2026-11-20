@@ -4,13 +4,15 @@ pub use super::wait_sources::{
     NativeTurnStatus, native_turn,
 };
 use super::{
-    ScopedAuthority,
+    GateError, ScopedAuthority,
     automation_driver::AutomationTick,
+    recovery_handoff::LegacyRecoveryHandoff,
+    session_recovery::RecoveryListing,
     wait_sources::{self, SessionProof},
 };
 use crate::{
     auth::identity::{ConnectionIdentity, Grant},
-    domain::address::SessionRef,
+    domain::address::{InstanceRef, SessionAddress, SessionRef},
     mcp::{
         catalog,
         transport::{ApplicationFuture, ApplicationPort},
@@ -189,6 +191,7 @@ pub struct WaitAutomationApplication {
     reconciler: Arc<dyn super::task_reconcile::TaskReconciler>,
     policy: Arc<dyn super::create_prompt::FreshSessionGrantPolicy + Send + Sync>,
     automatic_continuation: bool,
+    recovery_handoff: Option<(LegacyRecoveryHandoff, Arc<dyn RecoveryListing>)>,
 }
 impl WaitAutomationApplication {
     pub fn new(
@@ -208,10 +211,19 @@ impl WaitAutomationApplication {
             reconciler,
             policy,
             automatic_continuation: true,
+            recovery_handoff: None,
         }
     }
     pub fn with_automatic_continuation(mut self, allowed: bool) -> Self {
         self.automatic_continuation = allowed;
+        self
+    }
+    pub fn with_recovery_handoff(
+        mut self,
+        handoff: Option<LegacyRecoveryHandoff>,
+        probe: Arc<dyn RecoveryListing>,
+    ) -> Self {
+        self.recovery_handoff = handoff.map(|h| (h, probe));
         self
     }
     fn principal<'a>(&self, identity: &'a ConnectionIdentity) -> Result<&'a str> {
@@ -258,6 +270,9 @@ impl WaitAutomationApplication {
     }
     fn rules(&self, principal: &str) -> Result<Vec<WaitRule>> {
         let (_gate, writer) = self.authority.lock().map_err(|_| "scope_unavailable")?;
+        Self::rules_locked(&writer, principal, &self.source.instance)
+    }
+    fn rules_locked(writer: &Writer, principal: &str, instance: &InstanceRef) -> Result<Vec<WaitRule>> {
         let rules: Vec<_> = writer
             .list_settings(&Self::scope(principal), "rule:")
             .map_err(|_| "store_unavailable")?
@@ -266,7 +281,7 @@ impl WaitAutomationApplication {
             .collect::<Result<_>>()?;
         Ok(rules
             .into_iter()
-            .filter(|r| r.target.owner.address().instance == self.source.instance)
+            .filter(|r| r.target.owner.address().instance == *instance)
             .collect())
     }
     pub fn owns_rule(&self, principal: &str, rule_ref: &str) -> std::result::Result<bool, ()> {
@@ -411,6 +426,9 @@ impl WaitAutomationApplication {
     }
     fn intent_state(&self, rule: &WaitRule) -> Result<Option<String>> {
         let (_gate, writer) = self.authority.lock().map_err(|_| "scope_unavailable")?;
+        Self::intent_state_locked(&writer, rule)
+    }
+    fn intent_state_locked(writer: &Writer, rule: &WaitRule) -> Result<Option<String>> {
         writer.connection().query_row("SELECT state FROM intents WHERE task_id=?1 AND principal=?2 AND target=?3 AND request_key=?4",
             rusqlite::params![Self::task_id(rule),rule.principal,rule.session_ref,Self::task_key(rule)],|r|r.get(0))
             .optional().map_err(|_|"store_unavailable")
@@ -951,7 +969,83 @@ impl WaitAutomationApplication {
         drop(locked);
         self.snapshot(&saved)
     }
+    pub(crate) fn recovery_blocked(&self, identity: &ConnectionIdentity, target: &SessionAddress) -> bool {
+        !matches!(self.recovery_binding(identity, target), Ok(Some(_)))
+    }
+
+    pub(super) fn recovery_binding(
+        &self,
+        identity: &ConnectionIdentity,
+        target: &SessionAddress,
+    ) -> std::result::Result<Option<SessionRef>, GateError> {
+        if target.instance != self.source.instance {
+            return Err(GateError::Invalid);
+        }
+        let proof = self
+            .wait_status_current(
+                identity,
+                &target.native_session_id,
+                Some(&target.instance.node.0),
+            )
+            .map_err(|_| GateError::Unavailable)?;
+        if proof["complete"] != true || proof["blocked"] != false {
+            return Err(GateError::Unavailable);
+        }
+        match (
+            proof["mapped"].as_bool(),
+            proof["sessionRefs"].as_array().map(Vec::as_slice),
+        ) {
+            (Some(false), Some([])) if proof["reason"] == "native_session_not_registered" => {
+                Ok(None)
+            }
+            (Some(true), Some([session])) => session
+                .as_str()
+                .map(|id| Some(SessionRef(id.to_owned())))
+                .ok_or(GateError::Unavailable),
+            _ => Err(GateError::Unavailable),
+        }
+    }
+
     fn wait_status(
+        &self, identity: &ConnectionIdentity, native: &str, node: Option<&str>,
+    ) -> Result<Value> {
+        let mut value = self.wait_status_current(identity, native, node)?;
+        let Some((handoff, probe)) = &self.recovery_handoff else {
+            return Ok(value);
+        };
+        if !handoff.owns(native) {
+            return Ok(value);
+        }
+        if value["mapped"] != true {
+            // Several owners can serve the same harness and node. Fence an
+            // unmapped chat only on the instance that actually observes it.
+            if value["reason"] != "native_session_not_registered" {
+                return Ok(value);
+            }
+            if probe.instance() != &self.source.instance || probe.harness() != self.source.harness() {
+                return Err("owner_profile_mismatch");
+            }
+            match probe.probe_session(native) {
+                Ok(s) if s.address.instance == self.source.instance && s.address.native_session_id == native => {}
+                Err(()) if probe.confirms_absence(native) => return Ok(value),
+                _ => {
+                    value["complete"] = false.into();
+                    value["blocked"] = true.into();
+                    value["reason"] = "native_recovery_ownership_unavailable".into();
+                    return Ok(value);
+                }
+            }
+        }
+        // Publish the compatibility fence before the new recovery writer is armed.
+        value["recoveryOwner"] = "rust".into();
+        if value["blocked"] == false {
+            value["blocked"] = true.into();
+            value["reason"] = "rust_recovery_handoff".into();
+        }
+        Ok(value)
+    }
+
+    fn wait_status_current(
         &self, identity: &ConnectionIdentity, native: &str, node: Option<&str>,
     ) -> Result<Value> {
         self.principal(identity)?;
@@ -1015,13 +1109,25 @@ impl WaitAutomationApplication {
                 "mapped":true,"sessionRefs":[session],"ruleRefs":[],"observedAt":observed}),
             );
         }
+        let (_gate, writer) = self.authority.lock().map_err(|_| "scope_unavailable")?;
+        let blocked = Self::blocking_rules_locked(&writer, principal, session, &self.source.instance)?;
+        Ok(
+            json!({"version":1,"configured":true,"complete":true,"blocked":!blocked.is_empty(),
+            "reason":if blocked.is_empty(){"no_canonical_wait"}else{"canonical_wait_active"},"mapped":true,
+            "sessionRefs":[session],"ruleRefs":blocked,"observedAt":observed}),
+        )
+    }
+
+    pub(super) fn blocking_rules_locked(
+        writer: &Writer, principal: &str, session: &str, instance: &InstanceRef,
+    ) -> Result<Vec<String>> {
         let mut blocked = Vec::new();
-        for rule in self.rules(principal)? {
+        for rule in Self::rules_locked(writer, principal, instance)? {
             if rule.session_ref != session {
                 continue;
             }
-            let state = self.read_state(&rule);
-            let intent = self.intent_state(&rule)?;
+            let state = Self::read_state_locked(writer, &rule);
+            let intent = Self::intent_state_locked(writer, &rule)?;
             let clear = match (
                 state.as_ref().map(|(_, s)| s.phase.as_str()),
                 intent.as_deref(),
@@ -1035,11 +1141,7 @@ impl WaitAutomationApplication {
             }
         }
         blocked.sort();
-        Ok(
-            json!({"version":1,"configured":true,"complete":true,"blocked":!blocked.is_empty(),
-            "reason":if blocked.is_empty(){"no_canonical_wait"}else{"canonical_wait_active"},"mapped":true,
-            "sessionRefs":[session],"ruleRefs":blocked,"observedAt":observed}),
-        )
+        Ok(blocked)
     }
 }
 impl AutomationTick for WaitAutomationApplication {

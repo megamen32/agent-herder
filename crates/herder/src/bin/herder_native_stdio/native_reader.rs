@@ -1,6 +1,6 @@
 //! Read-only, instance-bound Codex snapshot and exact receipt observation.
 use herder::{
-    adapters::codex::connection::{CodexConnection, CodexInstance},
+    adapters::codex::{connection::CodexInstance, read::CodexReader},
     application::scoped_stop::wait_automation::{
         NativeTurn, NativeTurnReader, NativeTurnStatus, native_turn,
     },
@@ -15,13 +15,12 @@ use herder::{
         },
     },
 };
-use serde_json::{Value, json};
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use serde_json::Value;
+use std::{sync::Mutex, time::Duration};
 
 pub struct NativeReader {
     instance: InstanceRef,
-    connection: Mutex<CodexConnection>,
-    timeout: Duration,
+    reader: Mutex<CodexReader>,
 }
 impl NativeReader {
     pub fn open(
@@ -32,50 +31,20 @@ impl NativeReader {
         if process.instance_id != instance.instance_id || timeout.is_zero() {
             return Err("invalid reader instance or timeout".into());
         }
-        let home = std::fs::canonicalize(&process.code_home)?;
-        let mut connection = CodexConnection::open(process)?;
-        let result = connection.request("initialize",json!({"clientInfo":{"name":"agent-herder-native-reader","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}),timeout)?;
-        if result
-            .get("codexHome")
-            .and_then(Value::as_str)
-            .map(PathBuf::from)
-            .as_ref()
-            != Some(&home)
-        {
-            return Err("reader profile mismatch".into());
-        }
-        connection.notify("initialized", json!({}))?;
         Ok(Self {
             instance,
-            connection: Mutex::new(connection),
-            timeout,
+            reader: Mutex::new(CodexReader::open(process, timeout)?),
         })
     }
     fn read(&self, target: &SessionAddress) -> Result<Value, ReadError> {
         if target.instance != self.instance || target.native_session_id.is_empty() {
             return Err(ReadError("wrong instance or empty target".into()));
         }
-        let mut connection = self
-            .connection
+        self.reader
             .lock()
-            .map_err(|_| ReadError("reader lock poisoned".into()))?;
-        let response = connection
-            .request(
-                "thread/read",
-                json!({"threadId":target.native_session_id,"includeTurns":true}),
-                self.timeout,
-            )
-            .map_err(|e| ReadError(e.to_string()))?;
-        let thread = response
-            .get("thread")
-            .filter(|t| {
-                t.get("id").and_then(Value::as_str) == Some(target.native_session_id.as_str())
-            })
-            .ok_or_else(|| ReadError("thread identity mismatch".into()))?;
-        if !thread.get("turns").is_some_and(Value::is_array) {
-            return Err(ReadError("thread turns unavailable".into()));
-        }
-        Ok(thread.clone())
+            .map_err(|_| ReadError("reader lock poisoned".into()))?
+            .read_thread_with_turns(&target.native_session_id)
+            .map_err(|error| ReadError(error.to_string()))
     }
 }
 fn exact_wait_turn(
@@ -241,6 +210,7 @@ impl NativeSessionReader for NativeReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use herder::domain::address::NodeRef;
     #[test]
     fn waits_require_exact_native_turn_and_keep_prior_turn_proof_after_a_new_run() {
@@ -364,6 +334,7 @@ for line in sys.stdin:
             executable: script,
             code_home: dir.clone(),
             cwd: dir.clone(),
+            socket_path: None,
         };
         let reader =
             NativeReader::open(process, r.target.instance.clone(), Duration::from_secs(3)).unwrap();
