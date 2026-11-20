@@ -2,16 +2,16 @@
 //! This uses the existing tasks table, not a second store or queue.
 use super::{GateError, ScopedAuthority, create_prompt::CreatePromptOutcome};
 use crate::{
-    application::reconcile::{ReceiptBinding, StoredReceipt, load_native_receipt},
+    application::reconcile::{ReceiptBinding, StoredReceipt, create_payload_binding, load_native_receipt},
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource},
     domain::address::{InstanceRef, NodeRef, SessionAddress},
+    domain::adapter::SendPayload,
     error::Diagnostic,
 };
 use rmcp::model::{CallToolResult, DetailedTask, GetTaskResult, Task, TaskPayload, TaskStatus};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::Digest;
 use std::io::Read;
 
 #[derive(Serialize, Deserialize)]
@@ -141,7 +141,7 @@ impl ScopedAuthority {
         instance: &InstanceRef,
         delivery_task: &str,
         root_intent_id: &str,
-        specification: &str,
+        specification: SendPayload<'_>,
         outcome: CreatePromptOutcome,
     ) -> Result<String, GateError> {
         let Caller::Principal(principal) = identity.caller() else {
@@ -155,31 +155,7 @@ impl ScopedAuthority {
                 Action::Write,
             )
             .map_err(|_| GateError::Invalid)?;
-        let payload_hash = format!(
-            "create-v1:{}",
-            sha2::Sha256::digest(
-                serde_json::to_vec(&(1u8, instance, specification))
-                    .map_err(|_| GateError::Invalid)?,
-            )
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-        );
-        {
-            let (_gate, writer) = self.lock()?;
-            let existing: Option<String> = writer
-                .connection()
-                .query_row(
-                    "SELECT task_id FROM tasks WHERE principal=?1 AND result_json IS NOT NULL AND json_extract(result_json,'$.kind')='fresh_create_prompt_v1' AND json_extract(result_json,'$.root_intent_id')=?2 AND json_extract(result_json,'$.payload_hash')=?3 ORDER BY rowid DESC LIMIT 1",
-                    params![principal.id.0, root_intent_id, payload_hash],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|_| GateError::Store)?;
-            if let Some(task_id) = existing {
-                return Ok(task_id);
-            }
-        }
+        let payload_hash = create_payload_binding(instance, specification);
         let (status, session, child, body) = match outcome {
             CreatePromptOutcome::CreateUnknown | CreatePromptOutcome::CreatePending => (
                 "completed",
@@ -290,6 +266,16 @@ impl ScopedAuthority {
         let raw = serde_json::to_string(&record).map_err(|_| GateError::Store)?;
         let now = super::mcp_deliver::utc_now().map_err(|_| GateError::Unavailable)?;
         let (_gate, writer) = self.lock()?;
+        // Check and publish under the same gate: concurrent replays of the
+        // same root and payload must keep one aggregate task handle.
+        let existing: Option<String> = writer.connection().query_row(
+            "SELECT task_id FROM tasks WHERE principal=?1 AND result_json IS NOT NULL AND json_extract(result_json,'$.kind')='fresh_create_prompt_v1' AND json_extract(result_json,'$.root_intent_id')=?2 AND json_extract(result_json,'$.payload_hash')=?3 ORDER BY rowid DESC LIMIT 1",
+            params![principal.id.0, root_intent_id, record.payload_hash],
+            |row| row.get(0),
+        ).optional().map_err(|_| GateError::Store)?;
+        if let Some(id) = existing {
+            return Ok(id);
+        }
         let id = random_task_id()?;
         writer.connection().execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at,result_json) VALUES (?1,?2,?3,?4,?4,?5)",params![id,principal.id.0,status,now,raw]).map_err(|_|GateError::Store)?;
         Ok(id)

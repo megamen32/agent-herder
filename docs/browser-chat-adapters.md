@@ -1,5 +1,65 @@
 # Browser chat providers
 
+## Native Rust owner profiles
+
+The native MCP server can run either browser adapter over direct Chrome CDP.
+Rust handles validation, session routing and durable receipts. Each adapter
+executes JavaScript inside its bound page to operate the composer and read
+the site's conversation API.
+Use a protected owner profile with `kind` set to `chatgpt` or `zai`, omit
+`ahap_script`, and point `executable` at the installed `herder_native_stdio`.
+The standalone `herder-browser` executable implements the same AHAP 0.1
+JSONL interface. Each owner uses its own explicit browser binding.
+
+| Field in `owner.ahap_env` | Value |
+| --- | --- |
+| `AHAP_BROWSER_TRANSPORT` | `direct-cdp` |
+| `AHAP_BROWSER_CDP_WS_URL` | Browser-level loopback URL, for example `ws://127.0.0.1:9222/devtools/browser/<browser-id>` |
+| `AHAP_BROWSER_CDP_CONTEXT_ID` | Exact Chrome browser context |
+| `AHAP_BROWSER_CDP_TARGET_ID` | Exact signed-in site tab in that context |
+| `AHAP_BROWSER_ACCOUNT_SCOPE` | Lowercase SHA-256 of the provider's account ID |
+| `AHAP_BROWSER_CDP_ORIGIN_PORT` | Optional remote Chrome origin port when the loopback tunnel uses a different port |
+
+In a V1 installation, select the profile in the usual private launcher
+selector. Set `owner.executable` to the exact `core` path from its pinned
+manifest. To run the core directly, use `--trusted-owner-profile PATH`.
+The native path supports session discovery, exact session lookup, recent
+message history, draft creation, delivery, and stopping a response. Create
+saves a local account-scoped draft. Its first send binds
+the stable draft ID to the new conversation. A confirmed send carries the
+provider's new user-message ID. Herder persists the delivery receipt and
+handles request-key replay across restarts. Inspect `initialize.capabilities`
+for the operations available through this adapter.
+
+In MCP, `create` and `deliver` accept an optional `attachments` array.
+Each entry carries `name`, `mime_type`, and standard padded `data_base64`.
+The inline transfer supports up to 16 files and 2 MiB of original bytes in
+total per input. Reuse the same request key to recover the original receipt.
+Changing the attached content under that key produces an idempotency conflict.
+ChatGPT accepts an empty caption. The Z.ai web composer requires text with
+an upload. Its native adapter advertises `browserFeatures.attachmentCaptionRequired`
+and checks the prompt before uploading.
+
+Read the chat with `session` action `messages`. Each image or file in a
+message's `parts` has an `attachment_id`, name and MIME type. Use `session`
+action `attachment` with the same `session_ref` and `attachment_id`, and
+set `message_id` to the row's `id`. The result contains the original bytes
+in `data_base64`, up to 2 MiB per download. Download requires read access
+to the session. Plain Markdown links, including ChatGPT `sandbox:` links,
+remain in the message text.
+
+Use `stop` action `stop` with `session_ref` and `request_key` during
+generation. Herder can use the delivery's request key to identify the
+input. The browser verifies the open conversation and active input before
+clicking its Stop control. The response reports the scoped hold and the
+outcome of the native interruption separately.
+
+The reproducible browser acceptance test starts a private Chrome context,
+serves local fixtures for each origin, and exercises both the standalone and
+owner MCP interfaces. See [browser_adapter_smoke.py](../tests/native/browser_adapter_smoke.py).
+
+## TypeScript compatibility profiles
+
 ChatGPT and Z.ai are **two separate Agent Herder adapters** with one shared
 implementation: `BrowserChatAdapter`. The adapter registry, UI, harness
 routing, lifecycle, capabilities and enabled setting belong to each provider,

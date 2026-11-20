@@ -1,12 +1,13 @@
 //! Read the existing create outcome without reissuing native create.
 use super::{GateError, ScopedAuthority};
 use crate::{
+    application::reconcile::create_payload_binding,
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
+    domain::adapter::SendPayload,
     domain::address::{InstanceRef, SessionAddress, SessionRef},
 };
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RecoveredCreate {
@@ -39,13 +40,13 @@ impl ScopedAuthority {
     /// Exact principal, instance, request key and create payload are required.
     /// This operation performs no native action; missing or uncertain state is
     /// never evidence that retrying an earlier create is safe.
-    pub fn recover_fresh_create(
+    pub fn recover_fresh_create<'a>(
         &self,
         identity: &ConnectionIdentity,
         grants: &[Grant],
         instance: &InstanceRef,
         request_key: &str,
-        specification: &str,
+        specification: impl Into<SendPayload<'a>>,
     ) -> Result<RecoveredCreate, GateError> {
         let target = serde_json::to_string(instance).map_err(|_| GateError::Invalid)?;
         identity
@@ -58,18 +59,11 @@ impl ScopedAuthority {
         let Caller::Principal(principal) = identity.caller() else {
             return Err(GateError::Invalid);
         };
+        let specification = specification.into();
         if request_key.is_empty() || specification.is_empty() {
             return Err(GateError::Invalid);
         }
-        let bytes =
-            serde_json::to_vec(&(1u8, instance, specification)).map_err(|_| GateError::Invalid)?;
-        let payload = format!(
-            "create-v1:{}",
-            Sha256::digest(bytes)
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect::<String>()
-        );
+        let payload = create_payload_binding(instance, specification);
         let (_guard, writer) = self.lock()?;
         let row:Option<(String,String,String,Option<String>,Option<String>)>=writer.connection().query_row(
             "SELECT i.payload_hash,i.state,i.task_id,i.native_receipt,t.result_json FROM intents i JOIN tasks t ON t.task_id=i.task_id WHERE i.principal=?1 AND i.target=?2 AND i.request_key=?3",

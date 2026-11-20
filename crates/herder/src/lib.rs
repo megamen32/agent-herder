@@ -2,6 +2,7 @@
 pub mod adapters {
     pub mod ahap;
     pub mod ahap_opencode;
+    pub mod browser;
     pub mod cdp;
     pub mod codex {
         pub mod connection;
@@ -55,6 +56,7 @@ pub mod cli;
 pub mod domain {
     pub mod adapter;
     pub mod address;
+    pub mod attachment;
     pub mod completion;
     pub mod resource;
     pub mod transcript;

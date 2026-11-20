@@ -21,7 +21,7 @@ use std::{
     fs::{self, OpenOptions},
     os::unix::{fs::{MetadataExt, OpenOptionsExt, PermissionsExt}, io::AsRawFd},
     path::PathBuf,
-    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -690,6 +690,7 @@ fn canonical_resume_payload_matches_typescript_golden_vector() {
 #[derive(Default)]
 struct CanonicalKeyNative {
     submissions: AtomicUsize,
+    uploads: AtomicBool,
     corrupt_registry: Option<PathBuf>,
 }
 impl NativeSessionReader for CanonicalKeyNative {
@@ -711,6 +712,14 @@ impl NativeSessionReader for CanonicalKeyNative {
     }
 }
 impl BoundedNativeHandoff for CanonicalKeyNative {
+    fn supports_attachments(&self) -> bool { self.uploads.load(Ordering::SeqCst) }
+    fn submit_bounded_payload(&self, plan: DispatchPlan, payload: herder::domain::adapter::SendPayload<'_>, key: &RequestKey) -> Result<Admission, SubmitError> {
+        if !payload.attachments().is_empty() {
+            assert!(self.supports_attachments());
+            assert_eq!(payload.attachments()[0].data_base64, "YQ==");
+        }
+        self.submit_bounded(plan, payload.text, key)
+    }
     fn submit_bounded(&self,plan:DispatchPlan,_:&str,_:&RequestKey)->Result<Admission,SubmitError>{
         self.submissions.fetch_add(1,Ordering::SeqCst);
         Ok(Admission{receipt:NativeReceipt{target:plan.target,native_id:"native-global-key".into()}})
@@ -728,7 +737,7 @@ fn global_keys(fixture:&Fixture)->Arc<herder::application::delivery_keys::Delive
 }
 fn key_send(session:&str,key:&str)->herder::mcp::catalog::Request{
     use herder::mcp::catalog::{Request,Deliver,DeliveryMode};
-    Request::Deliver(Deliver::Session{session_ref:session.into(),request_key:key.into(),message:"one selected payload".into(),mode:DeliveryMode::Start,sender:None})
+    Request::Deliver(Deliver::Session{session_ref:session.into(),request_key:key.into(),message:"one selected payload".into(),attachments:None,mode:DeliveryMode::Start,sender:None})
 }
 #[tokio::test]
 async fn compatibility_key_target_switch_is_rejected_before_a_second_native_submission() {
@@ -756,8 +765,8 @@ async fn compatibility_key_target_switch_is_rejected_before_a_second_native_subm
 async fn compatibility_key_is_revalidated_inside_the_actual_native_handoff() {
     use herder::mcp::transport::ApplicationPort;
     let fixture=Fixture::new("rejected",true);
-    let keys=global_keys(&fixture);let native=Arc::new(CanonicalKeyNative{submissions:AtomicUsize::new(0),
-        corrupt_registry:Some(fixture.root.join("resources-authority/delivery-bindings"))});
+    let keys=global_keys(&fixture);let native=Arc::new(CanonicalKeyNative{
+        corrupt_registry:Some(fixture.root.join("resources-authority/delivery-bindings")), ..Default::default()});
     let mut allowed=grants("alice");allowed.push(Grant{principal:PrincipalId("alice".into()),resource:PrivateResource::Session(SessionRef("issued".into())),action:Action::Write});
     let app=herder::application::scoped_stop::mcp_deliver::ScopedDeliverApplication::new(
         Arc::new(fixture.authority()),address().instance,allowed,native.clone(),native.clone(),"retain".into()).unwrap().with_delivery_keys(keys);
@@ -766,4 +775,36 @@ async fn compatibility_key_is_revalidated_inside_the_actual_native_handoff() {
     assert_eq!(native.submissions.load(Ordering::SeqCst),0);
     let state:String=Connection::open(&fixture.db).unwrap().query_row("SELECT state FROM intents WHERE request_key=?1",[key],|r|r.get(0)).unwrap();
     assert_eq!(state,"rejected");
+}
+
+#[tokio::test]
+async fn attachments_bind_the_canonical_key_and_replay_after_capability_is_withdrawn() {
+    use herder::{application::scoped_stop::mcp_deliver::ScopedDeliverApplication, mcp::{catalog, transport::ApplicationPort}};
+    let fixture = Fixture::new("rejected", true);
+    let keys = global_keys(&fixture);
+    let native = Arc::new(CanonicalKeyNative::default());
+    let mut allowed = grants("alice");
+    allowed.push(Grant { principal: PrincipalId("alice".into()), resource: PrivateResource::Session(SessionRef("issued".into())), action: Action::Write });
+    let app = ScopedDeliverApplication::new(
+        Arc::new(fixture.authority()), address().instance, allowed, native.clone(), native.clone(), "retain".into(),
+    ).unwrap().with_delivery_keys(keys.clone());
+    let key = format!("compat-resume:v1:{}", "c".repeat(64));
+    let request = |data: &str| catalog::dispatch("deliver", json!({
+        "action":"session","session_ref":"issued","request_key":key,"mode":"start","message":"",
+        "attachments":[{"name":"f","mime_type":"text/plain","data_base64":data}]
+    })).unwrap().request;
+    let alice = identity("alice");
+    let denied = app.call(&alice, request("YQ==")).await.unwrap();
+    assert_eq!(denied.structured_content.unwrap()["code"], "attachments_unsupported");
+    assert!(keys.lookup("alice","issued",&address(),&key).unwrap().is_none());
+    native.uploads.store(true, Ordering::SeqCst);
+    let admitted = app.call(&alice, request("YQ==")).await.unwrap();
+    assert_ne!(admitted.is_error, Some(true), "{admitted:?}");
+    assert!(keys.lookup("alice","issued",&address(),&key).unwrap().is_some());
+    native.uploads.store(false, Ordering::SeqCst);
+    let replay = app.call(&alice, request("YQ==")).await.unwrap();
+    assert_eq!(replay.structured_content, admitted.structured_content);
+    let conflict = app.call(&alice, request("Yg==")).await.unwrap();
+    assert_eq!(conflict.structured_content.unwrap()["code"], "idempotency_conflict");
+    assert_eq!(native.submissions.load(Ordering::SeqCst), 1);
 }

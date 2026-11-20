@@ -104,9 +104,8 @@ impl ServerHandler for MultiOwner {
                 return candidates[0].server.call_tool(request, ctx).await;
             }
 
-            // Host+harness is not unique when two independent sessions share
-            // one machine. Resolve the exact native ID in each candidate first;
-            // only the unique owner receives the mutating envelope.
+            // All bindings share one ACL-checked registry. Resolve once and
+            // select its exact instance from the matching host and harness.
             let mut resolve_args = serde_json::Map::new();
             resolve_args.insert("action".into(), json!("resolve"));
             resolve_args.insert("harness".into(), json!(harness));
@@ -114,30 +113,21 @@ impl ServerHandler for MultiOwner {
             resolve_args.insert("node_ref".into(), json!(host));
             let resolve = CallToolRequestParams::new("session")
                 .with_arguments(resolve_args);
-            let mut selected = None;
-            for binding in candidates {
-                let response = binding.server.call_tool(resolve.clone(), ctx.clone()).await?;
-                let successful = matches!(
-                    &response,
-                    CallToolResponse::Complete(result) if result.is_error != Some(true)
-                );
-                if successful {
-                    if selected.is_some() {
-                        return Ok(denied("ambiguous_native_identity"));
-                    }
-                    selected = Some(binding);
-                }
+            let resolved = candidates[0].server.call_tool(resolve, ctx.clone()).await?;
+            let CallToolResponse::Complete(result) = &resolved else {
+                return Ok(denied("native_session_not_registered"));
+            };
+            if result.is_error == Some(true) {
+                return Ok(resolved);
             }
-            return match selected {
+            let instance = result.structured_content.as_ref()
+                .and_then(|value| value["owner"]["instance_ref"].as_str());
+            return match candidates.into_iter().find(|binding| Some(binding.instance.instance_id.as_str()) == instance) {
                 Some(binding) => binding.server.call_tool(request, ctx).await,
                 None => Ok(denied("native_session_not_registered")),
             };
         }
         if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
-            if args.and_then(|a|a.get("native_session_id")).and_then(Value::as_str)
-                .is_some_and(|native| native.starts_with("ses_")) {
-                return self.route_native_reference(request, ctx).await;
-            }
             // The shared registry resolves exact canonical metadata with fresh ACLs.
             return self.bindings[0].server.call_tool(request,ctx).await;
         }
@@ -313,7 +303,7 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
         let native_binding = owner_launch::has_native_codex_binding(&profile.owner)
             || owner_launch::has_native_opencode_binding(&profile.owner);
         if &profile.owner.principal != principal
-            || (!native_binding && profile.owner.ahap_script.is_none())
+            || (!native_binding && !profile.owner.has_ahap_runner())
             || !instances.insert(profile.owner.instance.clone()) {
             return Err("multi-owner requires one principal and distinct AHAP instance refs".into());
         }

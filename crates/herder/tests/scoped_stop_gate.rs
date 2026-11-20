@@ -2304,6 +2304,21 @@ async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
                 json!({"messages":[{"id":"fixture-message","text":"fixture-text"}],"coverage":"complete"}),
             )
         }
+        fn read_attachment(
+            &mut self,
+            address: &SessionAddress,
+            message: &str,
+            file: &str,
+        ) -> Result<herder::domain::attachment::InlineAttachment, ()> {
+            assert_eq!(*address, super_address());
+            assert_eq!((message, file), ("fixture-message", "f1"));
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(herder::domain::attachment::InlineAttachment {
+                name: "bytes.bin".into(),
+                mime_type: "application/octet-stream".into(),
+                data_base64: "AP8=".into(),
+            })
+        }
     }
     fn super_address() -> SessionAddress {
         address()
@@ -2311,8 +2326,7 @@ async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
     async fn read(
         identity: ConnectionIdentity,
         app: Arc<ScopedReadApplication<Reader>>,
-        session: &str,
-        cursor: Option<&str>,
+        arguments: Value,
     ) -> Value {
         let server = NativeServer::with_connection_identity(identity, app);
         let (client, io) = tokio::io::duplex(65536);
@@ -2321,7 +2335,7 @@ async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
         let (r, mut w) = tokio::io::split(client);
         let mut lines = BufReader::new(r).lines();
         let meta = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"fixture","version":"1"},"principal":"alice"});
-        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":{"action":"messages","session_ref":session,"cursor":cursor}}});
+        let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":meta,"name":"session","arguments":arguments}});
         w.write_all(format!("{request}\n").as_bytes())
             .await
             .unwrap();
@@ -2369,25 +2383,32 @@ async fn mcp_read_wire_requires_read_grant_and_exact_scoped_mapping() {
         }),
         None,
     );
+    let messages = |session: &str, cursor: Option<&str>| {
+        json!({"action":"messages","session_ref":session,"cursor":cursor})
+    };
+    let attachment = |session: &str| {
+        json!({"action":"attachment","session_ref":session,"message_id":"fixture-message","attachment_id":"f1"})
+    };
+    for request in [messages("issued", None), attachment("issued")] {
+        assert_eq!(read(bob.clone(), app.clone(), request).await["result"]["structuredContent"]["code"], "unauthorized");
+    }
     assert_eq!(
-        read(bob, app.clone(), "issued", None).await["result"]["structuredContent"]["code"],
-        "unauthorized"
-    );
-    assert_eq!(
-        read(identity(), app.clone(), "issued", Some("foreign-cursor")).await["result"]["structuredContent"]
+        read(identity(), app.clone(), messages("issued", Some("foreign-cursor"))).await["result"]["structuredContent"]
             ["code"],
         "unsupported_cursor"
     );
-    assert_eq!(
-        read(identity(), app.clone(), "imported", None).await["result"]["structuredContent"]["code"],
-        "scope_unavailable"
-    );
-    let result = read(identity(), app, "issued", None).await;
+    for request in [messages("imported", None), attachment("imported")] {
+        assert_eq!(read(identity(), app.clone(), request).await["result"]["structuredContent"]["code"], "scope_unavailable");
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let result = read(identity(), app.clone(), messages("issued", None)).await;
     assert_eq!(
         result["result"]["structuredContent"]["page"]["messages"][0]["text"],
         "fixture-text"
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let result = read(identity(), app, attachment("issued")).await;
+    assert_eq!(result["result"]["structuredContent"]["data_base64"], "AP8=");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -4839,6 +4860,7 @@ async fn direct_queue_delivery_requires_trusted_composition_and_deduplicates() {
         catalog::Request::Deliver(catalog::Deliver::Session {
             session_ref: "issued".into(),
             message: "hi".into(),
+            attachments: None,
             mode: catalog::DeliveryMode::Queue,
             request_key: "queue-key".into(),
             sender: None,

@@ -44,6 +44,13 @@ pub struct OwnerProfile {
     pub existing_sessions: Vec<herder::application::scoped_stop::enroll::ExistingSessionApproval>,
 }
 
+impl OwnerProfile {
+    /// The protected profile has already selected and validated the child.
+    pub fn has_ahap_runner(&self) -> bool {
+        self.ahap_script.is_some() || matches!(self.kind.as_str(), "chatgpt" | "zai")
+    }
+}
+
 /// Only adapter configuration crosses the process boundary. Process loader,
 /// identity and HOME variables are set by the composition, never this map.
 fn allowed_adapter_env(kind: &str, name: &str) -> bool {
@@ -114,6 +121,19 @@ fn valid_sha256_scope(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn validate_native_browser(owner: &OwnerProfile) -> io::Result<()> {
+    trusted_executable(&owner.executable)?;
+    if owner.ahap_base_url.is_some()
+        || !matches!(owner.executable.file_name().and_then(|name| name.to_str()),
+            Some("herder_native_stdio" | "herder-browser"))
+        || owner.executable.metadata()?.mode() & 0o111 == 0
+    {
+        return Err(invalid_browser_binding());
+    }
+    herder::adapters::browser::validate_native_browser_env(&owner.ahap_env)
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))
 }
 
 fn valid_browser_instance_id(value: &str) -> bool {
@@ -405,6 +425,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     }
     match owner.kind.as_str() {
         "codex" if owner.ahap_script.is_none() && owner.ahap_base_url.is_none() && owner.ahap_env.is_empty() => (),
+        "chatgpt" | "zai" if owner.ahap_script.is_none() => validate_native_browser(&owner)?,
         "opencode" if owner.ahap_script.is_none() && owner.ahap_base_url.is_some() => {
             trusted_executable(&owner.executable)?;
             let url = reqwest::Url::parse(owner.ahap_base_url.as_deref().ok_or_else(invalid)?)?;
@@ -476,7 +497,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
 /// pinned account. No wildcard, native draft alias, or cross-provider import.
 fn validate_existing_sessions(owner: &OwnerProfile) -> io::Result<()> {
     if owner.existing_sessions.is_empty() { return Ok(()) }
-    if owner.kind != "chatgpt" || owner.ahap_script.is_none() || owner.existing_sessions.len() > 256 {
+    if owner.kind != "chatgpt" || owner.existing_sessions.len() > 256 {
         return Err(invalid());
     }
     let scope = owner
@@ -633,7 +654,7 @@ mod enrollment_tests {
         let mut profile=owner();assert!(validate_existing_sessions(&profile).is_ok());
         profile.existing_sessions[0].account_scope="a".repeat(64);assert!(validate_existing_sessions(&profile).is_err());
         let mut profile=owner();profile.kind="zai".into();assert!(validate_existing_sessions(&profile).is_err());
-        let mut profile=owner();profile.ahap_script=None;assert!(validate_existing_sessions(&profile).is_err());
+        let mut profile=owner();profile.ahap_script=None;assert!(validate_existing_sessions(&profile).is_ok());
     }
     #[test]
     fn duplicate_keys_natives_and_wildcards_are_not_grants() {

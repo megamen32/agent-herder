@@ -1,31 +1,38 @@
-//! Typed projection of a ChatGPT conversation payload into Herder messages.
-//!
-//! This module performs no I/O and makes no claim that the caller is
-//! authenticated. The expected conversation id must come from the selected
-//! instance/profile adapter and is checked before any message is returned.
+//! ChatGPT operations on one account and Chrome target, and offline transcript projection.
 
-use serde::Deserialize;
+mod native;
+
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, time::Duration};
 
+use super::browser::{BrowserAttachment, BrowserFile};
 use super::cdp::{
     CdpConnection, CdpCreateError, CdpError, CdpTargetIdentity, create_page_target_with_origin_port,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     User,
     Assistant,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct NormalizedMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    #[serde(default)]
+    pub attachments: Vec<BrowserFile>,
     pub create_time: Option<f64>,
     pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(rename = "completionStatus", skip_serializing_if = "Option::is_none")]
+    pub completion_status: Option<String>,
+    #[serde(rename = "endTurn", skip_serializing_if = "Option::is_none")]
+    pub end_turn: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +40,7 @@ pub enum NormalizeError {
     MissingConversationId,
     ConversationMismatch,
     MissingMapping,
+    ContextTooLarge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,11 +70,12 @@ pub struct ChatGptSendReceipt {
     pub expected_response_seen: bool,
 }
 
-/// Authenticated read-only adapter bound to one browser instance, context,
+/// Authenticated adapter bound to one browser instance, context,
 /// and page target. Auth data never leaves the selected Chrome page.
 pub struct ChatGptReader {
     cdp: CdpConnection,
     account_scope: String,
+    fresh_blank: bool,
 }
 
 impl ChatGptReader {
@@ -116,6 +125,7 @@ impl ChatGptReader {
         let mut reader = Self {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
+            fresh_blank: true,
         };
         match reader.cdp.wait_for_origin("https://chatgpt.com").await {
             Ok(true) => {}
@@ -182,6 +192,7 @@ impl ChatGptReader {
         Ok(Self {
             cdp,
             account_scope: expected,
+            fresh_blank: false,
         })
     }
 
@@ -225,6 +236,7 @@ impl ChatGptReader {
         Ok(Self {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
+            fresh_blank: false,
         })
     }
 
@@ -236,41 +248,8 @@ impl ChatGptReader {
         &self.account_scope
     }
 
-    pub async fn read_conversation(
-        &mut self,
-        conversation_id: &str,
-    ) -> Result<Vec<NormalizedMessage>, ChatGptReadError> {
-        if conversation_id.is_empty()
-            || conversation_id.len() > 128
-            || !conversation_id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        {
-            return Err(ChatGptReadError::InvalidResponse);
-        }
-        let id = serde_json::to_string(conversation_id)
-            .map_err(|_| ChatGptReadError::InvalidResponse)?;
-        let expression = format!(
-            "(async()=>{{if(location.origin!==\"https://chatgpt.com\")return {{origin:location.origin}};const id={id};const r=await fetch('/backend-api/conversation/'+encodeURIComponent(id),{{credentials:'same-origin',cache:'no-store'}});let payload=null;try{{payload=await r.json()}}catch{{}}return {{origin:location.origin,status:r.status,payload}}}})()"
-        );
-        let result = self
-            .cdp
-            .evaluate(&expression)
-            .await
-            .map_err(ChatGptReadError::Cdp)?;
-        if result.get("origin").and_then(Value::as_str) != Some("https://chatgpt.com") {
-            return Err(ChatGptReadError::WrongOrigin);
-        }
-        let status = result.get("status").and_then(Value::as_u64).unwrap_or(0) as u16;
-        if status != 200 {
-            return Err(ChatGptReadError::ProviderStatus(status));
-        }
-        let payload = result
-            .get("payload")
-            .ok_or(ChatGptReadError::InvalidResponse)?;
-        let payload =
-            serde_json::to_string(payload).map_err(|_| ChatGptReadError::InvalidResponse)?;
-        normalize_conversation(conversation_id, &payload).map_err(ChatGptReadError::Normalize)
+    pub(crate) fn connection_mut(&mut self) -> &mut CdpConnection {
+        &mut self.cdp
     }
 
     /// Send exactly one harmless first prompt into a fresh task-owned chat.
@@ -287,105 +266,33 @@ impl ChatGptReader {
         {
             return Err(ChatGptSendError::InvalidInput);
         }
-        self.cdp
-            .activate_target()
+        use crate::adapters::browser::BrowserSubmitError;
+        let (conversation_id, input_id) = self
+            .submit_message(None, text)
             .await
-            .map_err(ChatGptSendError::Cdp)?;
-        let preflight = self
-            .cdp
-            .evaluate(CHATGPT_SEND_PREFLIGHT)
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        if preflight.get("ready").and_then(Value::as_bool) != Some(true) {
-            return Err(ChatGptSendError::Preflight);
-        }
-        self.cdp
-            .command("DOM.enable", serde_json::json!({}))
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        let document = self
-            .cdp
-            .command("DOM.getDocument", serde_json::json!({"depth": 0}))
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        let root = document
-            .pointer("/root/nodeId")
-            .and_then(Value::as_u64)
-            .ok_or(ChatGptSendError::InputNotAccepted)?;
-        let query = self
-            .cdp
-            .command(
-                "DOM.querySelector",
-                serde_json::json!({"nodeId": root, "selector": CHATGPT_COMPOSER_SELECTOR}),
-            )
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        let node_id = query
-            .get("nodeId")
-            .and_then(Value::as_u64)
-            .filter(|node| *node != 0)
-            .ok_or(ChatGptSendError::InputNotAccepted)?;
-        self.cdp
-            .command("DOM.focus", serde_json::json!({"nodeId": node_id}))
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        self.cdp
-            .command("Input.insertText", serde_json::json!({"text": text}))
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        let expected_text =
-            serde_json::to_string(text).map_err(|_| ChatGptSendError::InvalidInput)?;
-        let verify = format!(
-            r#"(()=>{{const e=document.querySelector({});const f=e?.closest('form');const b=f?.querySelector('button[type="submit"],button[data-testid="send-button"]');const events=globalThis.__herderCdpInputEvents||[];const inputSeen=events.some(x=>x.target===e&&x.value==={expected_text});return {{ready:location.origin==="https://chatgpt.com"&&location.pathname==="/"&&!!e&&e.innerText.trim()==={expected_text}&&inputSeen&&!!b&&!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&!(f&&f.querySelector('[data-testid="stop-button"]'))}}}})()"#,
-            serde_json::to_string(CHATGPT_COMPOSER_SELECTOR).unwrap()
-        );
-        let verify = self
-            .cdp
-            .evaluate(&verify)
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        if verify.get("ready").and_then(Value::as_bool) != Some(true) {
-            return Err(ChatGptSendError::SendNotReady);
-        }
-        let click = format!(
-            r#"(()=>{{if(location.origin!=="https://chatgpt.com"||location.pathname!=="/")return {{clicked:false}};const e=document.querySelector({});const f=e?.closest('form');const b=f?.querySelector('button[type="submit"],button[data-testid="send-button"]');if(!e||e.innerText.trim()!=={expected_text}||!b||b.disabled||b.getAttribute('aria-disabled')==='true')return {{clicked:false}};b.click();return {{clicked:true}}}})()"#,
-            serde_json::to_string(CHATGPT_COMPOSER_SELECTOR).unwrap()
-        );
-        let clicked = self
-            .cdp
-            .evaluate(&click)
-            .await
-            .map_err(ChatGptSendError::Cdp)?;
-        if clicked.get("clicked").and_then(Value::as_bool) != Some(true) {
-            return Err(ChatGptSendError::SendNotReady);
-        }
-        let marker = serde_json::to_string(expected_response_marker)
-            .map_err(|_| ChatGptSendError::InvalidInput)?;
-        for _ in 0..90 {
-            let observed = self
-                .cdp
-                .evaluate(&format!(
-                    r#"(()=>{{const id=location.pathname.match(/^\/c\/([a-f0-9-]{{12,80}})$/i)?.[1];const a=[...document.querySelectorAll('[data-message-author-role="assistant"]')].map(e=>(e.innerText||e.textContent||'').trim()).filter(Boolean);return {{id,matched:a.some(t=>t.includes({marker}))}}}})()"#
-                ))
-                .await
-                .map_err(ChatGptSendError::Cdp)?;
-            if let Some(id) = observed.get("id").and_then(Value::as_str) {
-                if observed.get("matched").and_then(Value::as_bool) == Some(true) {
+            .map_err(|error| match error {
+                BrowserSubmitError::BeforeSend => ChatGptSendError::Preflight,
+                BrowserSubmitError::Unknown => ChatGptSendError::ResponseNotObserved {
+                    conversation_id: None,
+                },
+            })?;
+        for _ in 0..30 {
+            match self.read_conversation(&conversation_id).await {
+                Ok(messages) if response_seen(&messages, &input_id, expected_response_marker) => {
                     return Ok(ChatGptSendReceipt {
-                        conversation_id: id.to_owned(),
+                        conversation_id,
                         expected_response_seen: true,
                     });
                 }
+                Ok(_) | Err(ChatGptReadError::ProviderStatus(404)) => {}
+                Err(ChatGptReadError::Cdp(error)) => return Err(ChatGptSendError::Cdp(error)),
+                Err(_) => break,
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
         }
-        let conversation_id = self
-            .cdp
-            .evaluate("(()=>location.pathname.match(/^\\/c\\/([a-f0-9-]{12,80})$/i)?.[1]||null)()")
-            .await
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned));
-        Err(ChatGptSendError::ResponseNotObserved { conversation_id })
+        Err(ChatGptSendError::ResponseNotObserved {
+            conversation_id: Some(conversation_id),
+        })
     }
 
     pub async fn close(self) {
@@ -426,29 +333,19 @@ const CHATGPT_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
   return {origin:location.origin,scope:[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')};
 })()"#;
 
-const CHATGPT_COMPOSER_SELECTOR: &str =
-    r#"div[contenteditable="true"][role="textbox"][data-composer-markdown]"#;
-
-const CHATGPT_SEND_PREFLIGHT: &str = r#"(()=>{
-  if(!globalThis.__herderCdpInputListener){
-    globalThis.__herderCdpInputEvents=[];
-    document.addEventListener('input',e=>{if(e.target?.matches?.('div[contenteditable="true"][role="textbox"][data-composer-markdown]'))globalThis.__herderCdpInputEvents.push({target:e.target,value:e.target.innerText||e.target.textContent||''})},true);
-    globalThis.__herderCdpInputListener=true;
-  }
-  const e=document.querySelector('div[contenteditable="true"][role="textbox"][data-composer-markdown]');
-  const f=e?.closest('form');
-  const visible=n=>!!n&&n.getClientRects().length>0;
-  const buttons=[...(f?.querySelectorAll('button')||[])].filter(visible);
-  const send=buttons.filter(b=>b.type==='submit'||b.getAttribute('data-testid')==='send-button'||/^(Send message|Send prompt|Отправить сообщение)$/i.test(b.getAttribute('aria-label')||''));
-  const stop=buttons.some(b=>b.getAttribute('data-testid')==='stop-button'||/^(Stop generating|Stop response|Остановить генерацию|Остановить ответ|Остановить)$/i.test(b.getAttribute('aria-label')||''));
-  return {ready:location.origin==='https://chatgpt.com'&&location.pathname==='/'&&!!e&&visible(e)&&!(e.innerText||e.textContent||'').trim()&&!document.querySelector('[data-message-author-role="user"]')&&!stop&&send.length===1&&!send[0].disabled};
-})()"#;
+fn response_seen(messages: &[NormalizedMessage], input_id: &str, marker: &str) -> bool {
+    let mut turn = messages.iter().skip_while(|m| m.id != input_id || m.role != Role::User);
+    turn.next();
+    turn.take_while(|m| m.role != Role::User)
+        .any(|m| m.role == Role::Assistant && m.text.contains(marker))
+}
 
 #[derive(Debug, Deserialize)]
 struct Conversation {
     conversation_id: Option<String>,
     current_node: Option<String>,
     mapping: Option<HashMap<String, Node>>,
+    messages: Option<Vec<Message>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -463,6 +360,8 @@ struct Message {
     author: Option<Author>,
     recipient: Option<String>,
     channel: Option<String>,
+    status: Option<String>,
+    end_turn: Option<bool>,
     create_time: Option<f64>,
     metadata: Option<Metadata>,
     content: Option<Content>,
@@ -476,29 +375,108 @@ struct Author {
 #[derive(Debug, Deserialize)]
 struct Metadata {
     model_slug: Option<String>,
+    is_visually_hidden_from_conversation: Option<bool>,
+    attachments: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Content {
-    parts: Option<Vec<Part>>,
+    parts: Option<Vec<Value>>,
     text: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Part {
-    Text(String),
-    Object { text: Option<String> },
+fn image_part(part: &Value) -> bool {
+    matches!(
+        part["content_type"].as_str(),
+        Some("image" | "image_asset_pointer")
+    )
 }
 
-impl Part {
-    fn text(&self) -> &str {
-        match self {
-            Self::Text(text) => text,
-            Self::Object { text: Some(text) } => text,
-            Self::Object { text: None } => "",
+fn part_text(part: &Value) -> &str {
+    part.as_str()
+        .or_else(|| part["text"].as_str())
+        .or_else(|| part["content"].as_str())
+        .unwrap_or_else(|| {
+            if image_part(part) {
+                "[Изображение]"
+            } else {
+                ""
+            }
+        })
+}
+
+fn project_files(message: &Message) -> Vec<BrowserFile> {
+    let mut files = Vec::<BrowserFile>::new();
+    let mut positions = HashMap::<String, usize>::new();
+    let mut add = |id: &str, raw: &Value, image: bool| {
+        if !native::native_id(id) {
+            return;
+        }
+        if let Some(&i) = positions.get(id) {
+            files[i].image |= image;
+            return;
+        }
+        let meta = &raw["metadata"];
+        let name = [
+            &raw["name"],
+            &raw["filename"],
+            &meta["name"],
+            &meta["filename"],
+        ]
+        .into_iter()
+        .find(|v| !v.is_null())
+        .map_or(Some(id), Value::as_str);
+        let mime = [
+            &raw["mimeType"],
+            &raw["mime_type"],
+            &meta["mimeType"],
+            &meta["mime_type"],
+        ]
+        .into_iter()
+        .find(|v| !v.is_null())
+        .map_or(Some("application/octet-stream"), Value::as_str);
+        let (Some(name), Some(mime)) = (name, mime) else {
+            return;
+        };
+        let metadata = BrowserAttachment {
+            name: name.into(),
+            mime_type: mime.into(),
+            data_base64: String::new(),
+        };
+        if metadata.validate().is_ok() {
+            positions.insert(id.to_owned(), files.len());
+            files.push(BrowserFile {
+                id: id.into(),
+                name: metadata.name,
+                mime_type: metadata.mime_type,
+                image,
+            });
+        }
+    };
+    if let Some(records) = message
+        .metadata
+        .as_ref()
+        .and_then(|m| m.attachments.as_ref())
+        .and_then(Value::as_array)
+    {
+        for raw in records {
+            if let Some(id) = raw["id"].as_str().or_else(|| raw["file_id"].as_str()) {
+                add(id, raw, false);
+            }
         }
     }
+    if let Some(parts) = message.content.as_ref().and_then(|c| c.parts.as_ref()) {
+        for part in parts.iter().filter(|p| image_part(p)) {
+            if let Some(id) = part["asset_pointer"].as_str().and_then(|pointer| {
+                pointer
+                    .strip_prefix("file-service://")
+                    .or_else(|| pointer.strip_prefix("sediment://"))
+            }) {
+                add(id, part, true);
+            }
+        }
+    }
+    files
 }
 
 /// Validate identity and project only the selected conversation branch.
@@ -516,42 +494,67 @@ pub fn normalize_conversation(
     if actual_id != expected_id {
         return Err(NormalizeError::ConversationMismatch);
     }
-    let mapping = conversation.mapping.ok_or(NormalizeError::MissingMapping)?;
-
-    let mut nodes: Vec<&Node> = Vec::new();
-    if let Some(current) = conversation.current_node.as_deref() {
-        let mut cursor = Some(current);
+    let newest: Vec<_> = if let Some(messages) = &conversation.messages {
+        messages.iter().rev().take(1024).collect()
+    } else {
+        let mapping = conversation.mapping.as_ref().ok_or(NormalizeError::MissingMapping)?;
+        let mut cursor = conversation.current_node.as_deref();
+        if cursor.is_none() && !mapping.is_empty() {
+            // Older linear fixtures can omit current_node. A fork without
+            // a selected tip has no unambiguous current conversation.
+            let parents: std::collections::HashSet<_> = mapping.values().filter_map(|n| n.parent.as_deref()).collect();
+            let mut leaves = mapping.keys().map(String::as_str).filter(|id| !parents.contains(id));
+            cursor = Some(leaves.next().ok_or(NormalizeError::MissingMapping)?);
+            if leaves.next().is_some() { return Err(NormalizeError::MissingMapping); }
+        }
+        let mut messages = Vec::new();
         let mut seen = std::collections::HashSet::new();
         while let Some(id) = cursor {
-            if !seen.insert(id) {
-                break;
-            }
-            let Some(node) = mapping.get(id) else { break };
-            nodes.push(node);
+            if seen.len() == 1024 { break; }
+            if !seen.insert(id) { return Err(NormalizeError::MissingMapping); }
+            let node = mapping.get(id).ok_or(NormalizeError::MissingMapping)?;
+            messages.extend(node.message.as_ref());
             cursor = node.parent.as_deref();
         }
-        nodes.reverse();
-    } else {
-        nodes.extend(mapping.values());
-        nodes.sort_by(|a, b| {
-            a.message
-                .as_ref()
-                .and_then(|m| m.create_time)
-                .partial_cmp(&b.message.as_ref().and_then(|m| m.create_time))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        messages
+    };
+    let mut projected = newest.into_iter().filter_map(project_message).take(180).collect::<Vec<_>>();
+    let mut used = 2;
+    let budget = 512 * 1024;
+    let mut latest = [false; 2];
+    let mut keep = vec![false; projected.len()];
+    let sizes: Vec<_> = projected.iter().map(|m| serde_json::to_vec(m).map(|v| v.len() + 1)
+        .map_err(|_| NormalizeError::MissingMapping)).collect::<Result<_, _>>()?;
+    for (index, message) in projected.iter().enumerate() {
+        let slot = usize::from(message.role == Role::Assistant);
+        if !latest[slot] {
+            latest[slot] = true;
+            keep[index] = true;
+            used += sizes[index];
+        }
     }
-
-    Ok(nodes
-        .into_iter()
-        .filter_map(|node| node.message.as_ref())
-        .filter_map(project_message)
-        .collect())
+    if used > budget { return Err(NormalizeError::ContextTooLarge); }
+    for (take, size) in keep.iter_mut().zip(sizes) {
+        if *take { continue; }
+        if used + size > budget { break; }
+        used += size;
+        *take = true;
+    }
+    let mut keep = keep.into_iter();
+    projected.retain(|_| keep.next() == Some(true));
+    projected.reverse();
+    Ok(projected)
 }
 
 fn project_message(message: &Message) -> Option<NormalizedMessage> {
     let id = message.id.as_ref()?.trim();
-    if id.is_empty() {
+    if id.is_empty()
+        || message
+            .metadata
+            .as_ref()
+            .and_then(|m| m.is_visually_hidden_from_conversation)
+            == Some(true)
+    {
         return None;
     }
     let role = match message.author.as_ref()?.role.as_deref()? {
@@ -575,19 +578,24 @@ fn project_message(message: &Message) -> Option<NormalizedMessage> {
     let content = message.content.as_ref();
     let text = content
         .and_then(|content| content.parts.as_ref())
-        .map(|parts| parts.iter().map(Part::text).collect::<Vec<_>>().join("\n"))
+        .map(|parts| parts.iter().map(part_text).collect::<Vec<_>>().join("\n"))
         .or_else(|| content.and_then(|content| content.text.clone()))
         .unwrap_or_default()
         .trim()
         .to_owned();
-    if text.is_empty() {
+    let attachments = project_files(message);
+    if text.is_empty() && attachments.is_empty() {
         return None;
     }
     Some(NormalizedMessage {
         id: id.to_owned(),
         role,
         text,
+        attachments,
         create_time: message.create_time,
+        phase: message.channel.clone(),
+        completion_status: message.status.clone(),
+        end_turn: message.end_turn,
         model: message
             .metadata
             .as_ref()
@@ -616,7 +624,7 @@ mod tests {
         let endpoint = format!("ws://{address}/devtools/browser/chatgpt-fixture");
         let listed_context = listed_context.to_owned();
         let verified_context = verified_context.to_owned();
-        let fixture: Value = serde_json::from_str(OBSERVED_SHAPE).unwrap();
+        let fixture = normalize_conversation("chat-fixture-001", OBSERVED_SHAPE).unwrap();
         let task = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let mut socket = accept_async(stream).await.unwrap();
@@ -651,26 +659,19 @@ mod tests {
                             .pointer("/params/expression")
                             .and_then(Value::as_str)
                             .unwrap();
-                        if expression.contains("/api/auth/session") {
-                            serde_json::json!({"result":{"value":{
-                                "origin":"https://chatgpt.com","scope":"a".repeat(64)
-                            }}})
-                        } else {
-                            assert!(
-                                expression.contains("location.origin!==\"https://chatgpt.com\"")
-                            );
-                            assert!(expression.contains(
-                                "fetch('/backend-api/conversation/'+encodeURIComponent(id)"
-                            ));
-                            assert!(
-                                expression.contains("credentials:'same-origin',cache:'no-store'")
-                            );
+                        if expression.starts_with("/* herder.chatgpt.read */") {
                             if disconnect_on_conversation {
                                 socket.close(None).await.unwrap();
                                 break;
                             }
                             serde_json::json!({"result":{"value":{
-                                "origin":"https://chatgpt.com","status":200,"payload":fixture
+                                "origin":"https://chatgpt.com","scope":"a".repeat(64),
+                                "value":{"id":"chat-fixture-001","messages":fixture}
+                            }}})
+                        } else {
+                            assert!(expression.contains("/api/auth/session"));
+                            serde_json::json!({"result":{"value":{
+                                "origin":"https://chatgpt.com","scope":"a".repeat(64)
                             }}})
                         }
                     }
@@ -765,6 +766,38 @@ mod tests {
         assert_eq!(messages[1].role, Role::Assistant);
         assert_eq!(messages[1].text, "fixture answer");
         assert_eq!(messages[1].model.as_deref(), Some("fixture-model"));
+    }
+
+    #[test]
+    fn projects_files_and_pointer_only_images_without_following_text_links() {
+        let data = serde_json::json!({"conversation_id":"chat", "messages":[
+            {"id":"u", "author":{"role":"user"}, "metadata":{"attachments":[
+                {"id":"file-bin", "name":"data.bin", "mimeType":"application/octet-stream"},
+                {"id":"../host", "name":"bad", "mimeType":"text/plain"}]}},
+            {"id":"a", "author":{"role":"assistant"},
+             "metadata":{"attachments":[{"id":"file-image", "name":"render.webp", "mimeType":"image/webp"}]},
+             "content":{"parts":[
+                {"content_type":"image_asset_pointer", "asset_pointer":"file-service://file-image",
+                 "metadata":{"filename":"render.webp", "mime_type":"image/webp"}},
+                {"content_type":"image_asset_pointer", "asset_pointer":"sediment://file-unknown"},
+                "[report](sandbox:/mnt/data/report.pdf)"]}},
+            {"id":"hidden", "author":{"role":"assistant"}, "channel":"analysis",
+             "metadata":{"attachments":[{"id":"private"}]}}
+        ]});
+        let rows = normalize_conversation("chat", &data.to_string()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].text.is_empty());
+        assert_eq!(rows[0].attachments.len(), 1);
+        assert_eq!(rows[0].attachments[0].id, "file-bin");
+        assert!(!rows[0].attachments[0].image);
+        let files = &rows[1].attachments;
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "render.webp");
+        assert_eq!(files[0].mime_type, "image/webp");
+        assert!(files[0].image);
+        assert_eq!(files[1].name, "file-unknown");
+        assert_eq!(files[1].mime_type, "application/octet-stream");
+        assert!(files[1].image);
     }
 
     #[test]
@@ -866,7 +899,7 @@ mod tests {
                     && request
                         .pointer("/params/expression")
                         .and_then(Value::as_str)
-                        .is_some_and(|expression| expression.contains("/backend-api/conversation/"))
+                        .is_some_and(|expression| expression.starts_with("/* herder.chatgpt.read */"))
             })
             .count();
         assert_eq!(reads, 1);

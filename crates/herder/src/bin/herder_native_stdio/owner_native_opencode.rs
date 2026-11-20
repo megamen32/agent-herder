@@ -79,10 +79,10 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
         .block_on(future)
 }
 
-fn thread_block_on<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> T {
-    std::thread::spawn(move || block_on(future))
-        .join()
-        .expect("native OpenCode read thread")
+fn thread_block_on<T: Send>(future: impl Future<Output = T> + Send) -> T {
+    std::thread::scope(|scope| {
+        scope.spawn(|| block_on(future)).join().expect("native OpenCode I/O thread")
+    })
 }
 
 impl BoundedNativeHandoff for NativeControl {
@@ -92,7 +92,8 @@ impl BoundedNativeHandoff for NativeControl {
         message: &str,
         key: &RequestKey,
     ) -> Result<Admission, herder::domain::adapter::SubmitError> {
-        self.block(self.control.submit(plan, message, key))
+        // Scoped delivery invokes this synchronous handoff inside its snapshot runtime.
+        thread_block_on(self.control.submit(plan, message, key))
     }
 }
 
@@ -275,16 +276,17 @@ impl ApplicationPort for OwnerApp {
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }
-            if matches!(&request, catalog::Request::Deliver(_)) {
-                return self.deliver.call(identity, request).await;
+            if let catalog::Request::Deliver(operation) = request {
+                return super::owner_opencode::deliver_to_owner(
+                    identity, operation, &self.policy, SendMode::Queue, &self.waits, self.deliver.as_ref(),
+                ).await;
             }
             if let Some(result) = self.waits.call(identity, request.clone()).await {
                 return Some(result);
             }
             let session = match &request {
                 catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
-                | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
-                | catalog::Request::Deliver(catalog::Deliver::Session { session_ref, .. }) => {
+                | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. }) => {
                     SessionRef(session_ref.clone())
                 }
                 _ => return None,

@@ -2,10 +2,10 @@
 //!
 //! A production implementation must read immutable, uniquely issued bindings
 //! from the authoritative store. The existing v1 schema has no such mapping.
-use crate::application::reconcile::{DurableDispatch, ReceiptBinding, dispatch_payload_binding};
+use crate::application::reconcile::{DurableDispatch, ReceiptBinding, create_payload_binding, dispatch_payload_binding};
 use crate::auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource};
 use crate::domain::adapter::{
-    DecisionError, NativeSessionControl, NativeSessionReader, SendCommand, decide_send,
+    DecisionError, NativeSessionControl, NativeSessionReader, SendCommand, SendPayload, decide_send,
 };
 use crate::domain::address::{InstanceRef, SessionAddress, SessionRef};
 use crate::store::{
@@ -41,13 +41,26 @@ pub trait SessionRefIssuer {
     fn issue(&self) -> Result<SessionRef, RegistryUnavailable>;
 }
 
-pub struct CreateRequest<'a> {
+pub struct CreateRequest<'a, P = &'a str> {
     pub intent_id: &'a str,
     pub task_id: &'a str,
     pub request_key: &'a str,
-    pub specification: &'a str,
+    pub specification: P,
     pub now: &'a str,
     pub retain_until: &'a str,
+}
+
+impl<'a, P: Into<SendPayload<'a>>> CreateRequest<'a, P> {
+    pub(crate) fn into_payload_request(self) -> CreateRequest<'a, SendPayload<'a>> {
+        CreateRequest {
+            intent_id: self.intent_id,
+            task_id: self.task_id,
+            request_key: self.request_key,
+            specification: self.specification.into(),
+            now: self.now,
+            retain_until: self.retain_until,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -69,7 +82,6 @@ pub async fn create_once<C: NativeCreateControl, I: SessionRefIssuer>(
     request: CreateRequest<'_>,
 ) -> Result<CreateResult, TargetError> {
     use crate::store::lineage::NewCreateLineageIntent;
-    use sha2::{Digest, Sha256};
     let instance = control.instance();
     let target = serde_json::to_string(instance).map_err(|_| TargetError::Store)?;
     let resource = PrivateResource::Resource(format!("instance:{target}"));
@@ -91,15 +103,7 @@ pub async fn create_once<C: NativeCreateControl, I: SessionRefIssuer>(
     {
         return Err(TargetError::InvalidAddress);
     }
-    let payload = serde_json::to_vec(&(1u8, instance, request.specification))
-        .map_err(|_| TargetError::Store)?;
-    let payload_hash = format!(
-        "create-v1:{}",
-        Sha256::digest(payload)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-    );
+    let payload_hash = create_payload_binding(instance, request.specification.into());
     let intent = NewCreateLineageIntent {
         intent_id: request.intent_id,
         task_id: request.task_id,
@@ -214,6 +218,8 @@ pub enum TargetError {
     ReadUnavailable,
     SnapshotMismatch,
     Decision(DecisionError),
+    AttachmentsUnsupported,
+    InvalidAttachments(&'static str),
     Conflict,
     Store,
 }
@@ -266,12 +272,12 @@ pub fn verify_created_target<R: SessionRegistry>(
     Ok(resolved)
 }
 
-pub struct DeliverRequest<'a> {
+pub struct DeliverRequest<'a, P = &'a str> {
     pub session: &'a SessionRef,
     pub intent_id: &'a str,
     pub task_id: &'a str,
     pub request_key: &'a str,
-    pub message: &'a str,
+    pub message: P,
     /// Attribution from the action-less universal envelope. It is persisted
     /// in the native receipt but never used as authorization evidence.
     pub sender: Option<&'a crate::mcp::catalog::DeliveryPeer>,
@@ -346,6 +352,7 @@ pub async fn deliver<R: SessionRegistry, N: NativeSessionReader + NativeSessionC
 /// serialized with HumanStop through the authority's canonical gate.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub async fn deliver_scoped<
+    'a,
     N: NativeSessionReader,
     C: crate::application::scoped_stop::BoundedNativeHandoff,
 >(
@@ -355,8 +362,10 @@ pub async fn deliver_scoped<
     grants: &[Grant],
     reader: &N,
     control: &C,
-    request: DeliverRequest<'_>,
+    request: DeliverRequest<'a, impl Into<SendPayload<'a>>>,
 ) -> Result<DurableDispatch, TargetError> {
+    use crate::application::scoped_stop::GateError;
+
     identity
         .authorize(
             grants,
@@ -370,6 +379,14 @@ pub async fn deliver_scoped<
     let (address, generation) = authority
         .resolve_session(identity, grants, request.session, instance)
         .map_err(|_| TargetError::RegistryUnavailable)?;
+    let payload = request.message.into();
+    control
+        .check_attachment_support(payload)
+        .map_err(|error| match error {
+            GateError::InvalidAttachments(reason) => TargetError::InvalidAttachments(reason),
+            GateError::AttachmentsUnsupported => TargetError::AttachmentsUnsupported,
+            _ => TargetError::Store,
+        })?;
     let snapshot = reader
         .snapshot(&address)
         .await
@@ -392,7 +409,7 @@ pub async fn deliver_scoped<
             &initial,
             &generation,
             &plan,
-            request.message,
+            payload,
             request.task_id,
             request.now,
             request.retain_until,
@@ -413,7 +430,7 @@ pub async fn deliver_scoped<
             &binding,
             &generation,
             &plan,
-            request.message,
+            payload,
             request.now,
             request.sender,
         )
@@ -428,7 +445,7 @@ pub async fn deliver_scoped<
             &binding,
             &generation,
             plan,
-            request.message,
+            payload,
             request.now,
             request.sender,
             control,

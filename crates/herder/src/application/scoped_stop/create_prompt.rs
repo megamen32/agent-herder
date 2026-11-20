@@ -10,7 +10,7 @@ use crate::{
     },
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrincipalId, PrivateResource},
     domain::{
-        adapter::{BrowserSendDiagnostic, NativeReceipt, NativeSessionReader, SendCommand, SendMode},
+        adapter::{BrowserSendDiagnostic, NativeReceipt, NativeSessionReader, SendCommand, SendMode, SendPayload},
         address::{InstanceRef, SessionRef},
     },
     error::{Diagnostic, Effect, Retry, stored_browser_send_diagnostic},
@@ -141,7 +141,7 @@ pub(super) fn migration_origin_key(c:&rusqlite::Connection,b:&crate::application
 /// The request and exact grants are supplied by trusted application policy.
 /// Native create never sends the prompt. A separate durable delivery key is
 /// derived from the principal, exact instance, and original create key.
-pub async fn create_with_prompt<C, I, G, N, D, P>(
+pub async fn create_with_prompt<'a, C, I, G, N, D, P>(
     authority: &ScopedAuthority,
     identity: &ConnectionIdentity,
     grants: &[Grant],
@@ -151,7 +151,7 @@ pub async fn create_with_prompt<C, I, G, N, D, P>(
     reader: &N,
     delivery: &D,
     policy: &P,
-    request: CreateRequest<'_>,
+    request: CreateRequest<'a, impl Into<SendPayload<'a>>>,
 ) -> Result<CreatePromptOutcome, GateError>
 where
     C: BoundedFreshRootCreate,
@@ -165,6 +165,8 @@ where
         return Err(GateError::Invalid);
     };
     let instance = creator.instance();
+    let request = request.into_payload_request();
+    let payload = request.specification;
     let delivery_mode = creator.initial_delivery_mode();
     if !matches!(delivery_mode, SendMode::Start | SendMode::Queue) {
         return Err(GateError::Invalid);
@@ -178,7 +180,7 @@ where
         grants,
         instance,
         request.request_key,
-        request.specification,
+        payload,
     )?;
     let session = match recovered {
         RecoveredCreate::Created { session, .. } => session,
@@ -189,21 +191,18 @@ where
         RecoveredCreate::Unknown => return Ok(CreatePromptOutcome::CreateUnknown),
         RecoveredCreate::Conflict => return Ok(CreatePromptOutcome::Conflict),
         RecoveredCreate::Missing => {
-            let create = authority.create_fresh_root(
+            delivery.check_attachment_support(payload)?;
+            let create = match authority.create_bound_root(
                 identity,
                 grants,
                 creator,
                 issuer,
                 generations,
-                CreateRequest {
-                    intent_id: request.intent_id,
-                    task_id: request.task_id,
-                    request_key: request.request_key,
-                    specification: request.specification,
-                    now: request.now,
-                    retain_until: request.retain_until,
-                },
-            )?;
+                &request,
+            ) {
+                Err(GateError::IdempotencyConflict) => return Ok(CreatePromptOutcome::Conflict),
+                result => result?,
+            };
             match create {
                 CreateResult::Created(session) => session,
                 CreateResult::DefinitelyNotSent => {
@@ -215,7 +214,7 @@ where
                     grants,
                     instance,
                     request.request_key,
-                    request.specification,
+                    payload,
                 )? {
                     RecoveredCreate::Created { session, .. } => session,
                     RecoveredCreate::DefinitelyNotSent { .. } => {
@@ -284,7 +283,7 @@ where
                 mode: delivery_mode,
                 expected_turn: None,
             },
-            request.specification,
+            payload,
         );
         let (_guard, writer) = authority.lock()?;
         let row:Option<(String,String,String,Option<String>,String,Option<String>)> = writer.connection().query_row(
@@ -375,7 +374,7 @@ where
             intent_id: &intent_id,
             task_id: &task_id,
             request_key: &delivery_key,
-            message: request.specification,
+            message: payload,
             sender: None,
             command: SendCommand {
                 mode: delivery_mode,
@@ -391,6 +390,18 @@ where
         }
         Ok(DurableDispatch::DefinitelyNotSent) => {
             CreatePromptOutcome::DeliveryDefinitelyNotSent { session }
+        }
+        Err(crate::application::target::TargetError::AttachmentsUnsupported) => {
+            CreatePromptOutcome::DeliveryNotSent {
+                session,
+                diagnostic: Diagnostic::attachments_unsupported(),
+            }
+        }
+        Err(crate::application::target::TargetError::InvalidAttachments(reason)) => {
+            CreatePromptOutcome::DeliveryNotSent {
+                session,
+                diagnostic: Diagnostic::invalid_attachments(reason),
+            }
         }
         Ok(DurableDispatch::StoppedBeforeHandoff) => {
             CreatePromptOutcome::StoppedBeforeHandoff { session }

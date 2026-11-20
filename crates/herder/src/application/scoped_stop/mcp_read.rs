@@ -16,6 +16,14 @@ use std::sync::Mutex;
 /// Trusted composition supplies a reader for exactly the selected instance.
 pub trait ScopedMessageReader: Send {
     fn read_messages(&mut self, address: &SessionAddress) -> Result<Value, ()>;
+    fn read_attachment(
+        &mut self,
+        _address: &SessionAddress,
+        _message: &str,
+        _file: &str,
+    ) -> Result<crate::domain::attachment::InlineAttachment, ()> {
+        Err(())
+    }
 }
 impl ScopedMessageReader for CodexReader {
     fn read_messages(&mut self, address: &SessionAddress) -> Result<Value, ()> {
@@ -59,12 +67,17 @@ impl<R: ScopedMessageReader + 'static> ApplicationPort for ScopedReadApplication
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
-            let catalog::Request::Session(catalog::Session::Messages {
-                session_ref,
-                cursor,
-            }) = request
-            else {
-                return None;
+            let (session_ref, cursor, attachment) = match request {
+                catalog::Request::Session(catalog::Session::Messages {
+                    session_ref,
+                    cursor,
+                }) => (session_ref, cursor, None),
+                catalog::Request::Session(catalog::Session::Attachment {
+                    session_ref,
+                    message_id,
+                    attachment_id,
+                }) => (session_ref, None, Some((message_id, attachment_id))),
+                _ => return None,
             };
             let session = SessionRef(session_ref);
             if identity
@@ -97,15 +110,17 @@ impl<R: ScopedMessageReader + 'static> ApplicationPort for ScopedReadApplication
                     ));
                 }
             };
-            let result = self
-                .reader
-                .lock()
-                .map_err(|_| ())
-                .and_then(|mut r| r.read_messages(&address));
+            let result = self.reader.lock().map_err(|_| ()).and_then(|mut reader| {
+                if let Some((message, file)) = attachment {
+                    let data = reader.read_attachment(&address, &message, &file)?;
+                    Ok(json!({"session_ref":session.0,"message_id":message,"attachment_id":file,
+                        "name":data.name,"mime_type":data.mime_type,"data_base64":data.data_base64}))
+                } else {
+                    reader.read_messages(&address).map(|page| json!({"session_ref":session.0,"page":page}))
+                }
+            });
             match result {
-                Ok(page) => Some(CallToolResult::structured(
-                    json!({"session_ref":session.0,"page":page}),
-                )),
+                Ok(data) => Some(CallToolResult::structured(data)),
                 Err(_) => Some(CallToolResult::structured_error(
                     json!({"code":"source_unavailable","effect":"none"}),
                 )),

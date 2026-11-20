@@ -1,5 +1,7 @@
 //! Generic client of existing TypeScript AHAP adapters (historical OpenCode name).
 //! This module owns no ledger; the scoped authority persists intents/receipts.
+mod browser_interrupt;
+
 use crate::{
     adapters::ahap::{AhapClient, AhapError},
     application::{
@@ -9,7 +11,7 @@ use crate::{
     domain::{
         adapter::{
             Admission, DispatchPlan, NativeReceipt, NativeSessionReader, Observation, ReadError,
-            RequestKey, SendMode, SessionActivity, SessionSnapshot, SubmitError,
+            RequestKey, SendMode, SendPayload, SessionActivity, SessionSnapshot, SubmitError,
         },
         address::{
             Authorization, Availability, Capability, CapabilityVersion, InstanceRef,
@@ -296,6 +298,37 @@ impl AhapOpenCode {
             return Err(ReadError("AHAP messages incomplete or unavailable".into()));
         }
         Ok(result)
+    }
+
+    pub fn attachment(
+        &self,
+        address: &SessionAddress,
+        message: &str,
+        file: &str,
+    ) -> Result<super::browser::BrowserAttachment, ReadError> {
+        if !self.matches(address) || !valid_native_id(message) || !valid_native_id(file) {
+            return Err(ReadError("invalid attachment address".into()));
+        }
+        let result = self.raw_call(
+            "getMessageAttachment",
+            json!({"id":address.native_session_id,"messageId":message,"attachmentId":file}),
+        )?;
+        let Value::Object(mut fields) = result else {
+            return Err(ReadError("invalid attachment result".into()));
+        };
+        for (key, expected) in [
+            ("sessionId", address.native_session_id.as_str()),
+            ("messageId", message),
+            ("attachmentId", file),
+        ] {
+            if fields.remove(key).as_ref().and_then(Value::as_str) != Some(expected) {
+                return Err(ReadError("attachment address mismatch".into()));
+            }
+        }
+        let data: super::browser::BrowserAttachment = serde_json::from_value(Value::Object(fields))
+            .map_err(|_| ReadError("invalid attachment data".into()))?;
+        data.validate().map_err(|e| ReadError(e.into()))?;
+        Ok(data)
     }
 }
 
@@ -612,15 +645,39 @@ impl BoundedFreshRootCreate for AhapOpenCode {
     }
 }
 impl BoundedNativeHandoff for AhapOpenCode {
+    fn requires_attachment_caption(&self) -> bool {
+        self.capabilities()
+            .pointer("/browserFeatures/attachmentCaptionRequired")
+            .and_then(Value::as_bool) == Some(true)
+    }
+
+    fn supports_attachments(&self) -> bool {
+        let caps = self.capabilities();
+        matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
+            && self.mutation_ready()
+            && caps["nativeProtocol"] == "direct-cdp"
+            && caps.pointer("/browserFeatures/attachments").and_then(Value::as_bool) == Some(true)
+    }
+
     fn submit_bounded(
         &self,
         plan: DispatchPlan,
         message: &str,
         key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
+        self.submit_bounded_payload(plan, message.into(), key)
+    }
+
+    fn submit_bounded_payload(
+        &self,
+        plan: DispatchPlan,
+        payload: SendPayload<'_>,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
         if !self.mutation_ready()
             || !self.matches(&plan.target)
-            || message.is_empty()
+            || payload.is_empty()
+            || self.check_attachment_support(payload).is_err()
             || !valid_native_id(&key.0)
         {
             return Err(SubmitError::DefinitelyNotSent {
@@ -653,6 +710,7 @@ impl BoundedNativeHandoff for AhapOpenCode {
                 reason: "AHAP native turn changed".into(),
             });
         }
+        let message = payload.text;
         let mut options = match plan.mode {
             // The TS "sync" mode starts an idle session without the special
             // fresh-only OpenCode start flag. It is an explicit wire mapping.
@@ -669,19 +727,18 @@ impl BoundedNativeHandoff for AhapOpenCode {
                 json!({"message":message,"queue":false,"steer":true,"activeTurnOnly":true,"inputId":key.0})
             }
         };
+        if !payload.attachments().is_empty() {
+            options["attachments"] = json!(payload.attachments());
+        }
         if let Some(turn) = &plan.expected_turn {
             options["expectedTurnId"] = json!(turn);
         }
         if self.automatic_delivery {
             options["origin"] = json!("automation");
         }
-        let result = self
-            .client
-            .call(
-                "sendMessage",
-                json!({"id":plan.target.native_session_id,"options":options}),
-            )
-            .map_err(transport_failure)?;
+        let mut params = json!({"id":plan.target.native_session_id});
+        params["options"] = options;
+        let result = self.client.call("sendMessage", params).map_err(transport_failure)?;
         let admitted = result.get("admitted").and_then(Value::as_bool) == Some(true)
             || matches!(
                 result.get("admission").and_then(Value::as_str),
@@ -980,6 +1037,7 @@ for line in sys.stdin:
   if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key','sessionId':session}]
  else:raise Exception(m)
  if m=='initialize' and automatic:v['capabilities'].update({'nativeProtocol':'v2','deliveryModes':['queue','start'],'nativeAutomaticContinuation':'synthetic-queue-v1'})
+ if m=='initialize' and os.environ['MODE']=='upload-marker':v['capabilities'].update({'nativeProtocol':'direct-cdp','browserFeatures':{'attachments':True}})
  if m=='initialize' and cold:v['capabilities']['methods'].append('getQueuedContinuationState');v['capabilities']['nativeAutomaticContinuation']='cold-queue-subscription-v1'
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##).unwrap();
@@ -1085,6 +1143,23 @@ for line in sys.stdin:
             assert_eq!(rows[0].pointer("/options/origin").and_then(Value::as_str), automatic.then_some("automation"));
             assert_eq!(rows[0].pointer("/options/queue"), Some(&json!(true)));
         }
+    }
+
+    #[test]
+    fn attachments_marker_on_a_non_browser_harness_cannot_enable_uploads() {
+        use crate::domain::attachment::InlineAttachment;
+        let (fixture, adapter) = setup("upload-marker");
+        assert!(!adapter.supports_attachments());
+        let files = [InlineAttachment { name: "x".into(), mime_type: "text/plain".into(), data_base64: "eA==".into() }];
+        let payload = SendPayload::new("caption", &files).unwrap();
+        let plan = DispatchPlan {
+            target: SessionAddress { instance: adapter.instance.clone(), native_session_id: "sesABC".into() },
+            mode: SendMode::Start,
+            expected_turn: None,
+        };
+        assert!(matches!(adapter.submit_bounded_payload(plan, payload, &RequestKey("key".into())),
+            Err(SubmitError::DefinitelyNotSent { .. })));
+        assert!(!fs::read_to_string(fixture.0.join("trace")).unwrap().lines().any(|m| m == "sendMessage"));
     }
 
     #[test]

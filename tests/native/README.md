@@ -131,3 +131,59 @@ disposable native session, sends one message with a stable inputId, and reads
 the exact native session and durable user/assistant messages back. The isolated
 fake model must observe exactly one request. An uncertain delivery outcome
 terminates the disposable child without replaying the message.
+
+### Native ChatGPT and Z.ai browser smoke
+
+On Linux, use Google Chrome, Node 22+, Python 3.10+ and the OpenSSL CLI.
+Run these commands from the checkout. The owner profile requires a build path
+with trusted ancestors.
+
+```sh
+build=$(mktemp -d "$HOME/herder-browser-build.XXXXXX")
+cargo build --locked --target-dir "$build" --manifest-path crates/herder/Cargo.toml --bin herder-browser --bin herder_native_stdio
+cargo build --locked --target-dir "$build" --manifest-path deploy/fleet/owner-bootstrap/Cargo.toml
+npm install --prefix "$build/fixture" --ignore-scripts --no-audit --no-fund playwright-core@1.61.1
+export PLAYWRIGHT_MODULE="$build/fixture/node_modules/playwright-core/index.mjs"
+python3 tests/native/browser_adapter_smoke.py --bin-dir "$build/debug" --output "$build/receipts"
+```
+
+An existing Playwright Core installation can supply `PLAYWRIGHT_MODULE`.
+Use `--harness chatgpt|zai` or `--surface ahap|mcp` for one case. A release
+build can supply the same three executables via `--bin-dir`.
+
+Each case starts Chrome with a private home and an incognito context. Chrome
+maps the selected provider's HTTPS origin to a loopback server and accepts its
+per-run certificate by public key. This serves the very first navigation from
+Rust's independent CDP connection. Other HTTP and HTTPS connections go to a
+loopback proxy that drops them. The MCP owner launches its compiled executable
+as the embedded adapter.
+
+The four default cases check two exact seed histories, two identical prompts
+with distinct native user IDs, and the bound history after process restart.
+AHAP also checks the reopened draft's `meta.sourceRoute` against the chat ID
+recorded by the fixture. Owner MCP checks same-key replay and changed-payload
+conflict. Each receipt includes the served document paths, accepted form
+submits and account-mismatch results. Read and list timings use three warmups
+and 20 measured round trips per operation by default. Set `--iterations N` to
+change the sample size. Failed cases save screenshots in the output directory.
+
+Run the lost-receipt cases for both providers in a separate output directory.
+
+```sh
+python3 tests/native/browser_adapter_smoke.py --bin-dir "$build/debug" --lost-receipt --output "$build/lost-receipts"
+```
+
+The site stores the first submit and returns success to the form, then answers
+the adapter's read of that chat's messages with HTTP 503. Owner MCP must report
+`outcome_unknown` with `retry=forbidden`. After receipt reads are restored and
+the owner restarts, the same create key must return the original task and
+outcome. The fixture checks its own submit ledger before restart, after restart
+and after replay. Each checkpoint must contain exactly the same one submit.
+
+For the site-specific checks on editor state, attachments, route changes and
+account identity, run the following commands with the same Chrome installation.
+
+```sh
+node --test crates/herder/src/adapters/chatgpt/native.test.mjs acceptance/native/z-ai/list-scope.test.mjs
+cargo test --locked --manifest-path crates/herder/Cargo.toml --lib adapters::zai::chrome_tests -- --ignored
+```

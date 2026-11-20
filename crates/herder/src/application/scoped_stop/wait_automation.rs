@@ -797,6 +797,7 @@ impl WaitAutomationApplication {
             .call(
                 identity,
                 catalog::Request::Deliver(catalog::Deliver::Session {
+                    attachments: None,
                     session_ref: rule.session_ref.clone(),
                     message,
                     mode: self.delivery_mode.clone(),
