@@ -23,7 +23,7 @@ use herder::{
     domain::{
         adapter::{
             Admission, DispatchPlan, NativeReceipt, NativeSessionReader, Observation, ReadError,
-            RequestKey, SessionSnapshot, SubmitError,
+            RequestKey, SendMode, SessionSnapshot, SubmitError,
         },
         address::{InstanceRef, NodeRef, SessionAddress, SessionRef},
     },
@@ -135,19 +135,23 @@ impl ApplicationPort for OwnerApp {
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
+            if let Some(result) = self.policy.discover_instance(identity, &request, None) {
+                return Some(result);
+            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }
-            if matches!(&request, catalog::Request::Deliver(_)) {
-                return self.deliver.call(identity, request).await;
+            if let catalog::Request::Deliver(operation) = request {
+                return super::owner_opencode::deliver_to_owner(
+                    identity, operation, &self.policy, SendMode::Start, &self.waits, self.deliver.as_ref(),
+                ).await;
             }
             if let Some(result) = self.waits.call(identity, request.clone()).await {
                 return Some(result);
             }
             let session = match &request {
                 catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
-                | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
-                | catalog::Request::Deliver(catalog::Deliver::Session { session_ref, .. }) => {
+                | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. }) => {
                     SessionRef(session_ref.clone())
                 }
                 _ => return None,

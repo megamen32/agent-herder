@@ -144,35 +144,8 @@ impl ApplicationPort for App {
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
-            if matches!(
-                &request,
-                catalog::Request::Discover(
-                    catalog::Discover::Nodes {} | catalog::Discover::Instances { .. }
-                )
-            ) {
-                if !matches!(identity.caller(), Caller::Principal(p) if p.id == self.policy.principal)
-                {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"unauthorized","effect":"none","message":"Use the configured owner identity to discover this instance."}),
-                    ));
-                }
-                let value = match &request {
-                    catalog::Request::Discover(catalog::Discover::Nodes {}) => serde_json::json!({
-                        "nodes":[{"node_ref":self.instance.node.0}],"scope":"configured_owner_instance","complete":true}),
-                    catalog::Request::Discover(catalog::Discover::Instances { node_ref }) => {
-                        let rows = if node_ref.as_ref().is_none_or(|n| n == &self.instance.node.0) {
-                            vec![
-                                serde_json::json!({"instance_ref":self.instance.instance_id,"node_ref":self.instance.node.0,
-                                "harness":self.harness,"capabilities":self.adapter.capabilities()}),
-                            ]
-                        } else {
-                            vec![]
-                        };
-                        serde_json::json!({"instances":rows,"scope":"configured_owner_instance","complete":true})
-                    }
-                    _ => unreachable!(),
-                };
-                return Some(rmcp::model::CallToolResult::structured(value));
+            if let Some(result) = self.policy.discover_instance(identity, &request, Some(self.adapter.capabilities())) {
+                return Some(result);
             }
             if let catalog::Request::Automation(catalog::Automation::WaitStatus {
                 harness,
