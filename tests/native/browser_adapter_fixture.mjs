@@ -12,7 +12,8 @@ import { createInterface } from "node:readline";
 import { buffer as readBytes, json as readJson } from "node:stream/consumers";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright-core");
-const [harness, originPort, evidenceDir] = process.argv.slice(2);
+const [harness, originPort, evidenceDir, replyMode] = process.argv.slice(2);
+assert.ok(replyMode === undefined || replyMode === "--echo");
 const origin = { chatgpt: "https://chatgpt.com", zai: "https://chat.z.ai" }[harness];
 assert.ok(origin && /^[1-9]\d*$/.test(originPort));
 const { hostname } = new URL(origin);
@@ -299,7 +300,7 @@ async function serve(request, response) {
         ? replyOriginals.map(f => storeFile(f.name, f.mime_type, Buffer.from(f.data_base64, "base64"))) : [];
       const rows = [
         { id: randomUUID(), role: "user", text, files: attached },
-        { id: randomUUID(), role: "assistant", text: "Fixture answer " + turn, files: replyFiles },
+        { id: randomUUID(), role: "assistant", text: replyMode === "--echo" ? "Fixture received " + text : "Fixture answer " + turn, files: replyFiles },
       ];
       sends.push({ id, addressed, account, rows });
       if (!addressed) chats.set(id, []);
