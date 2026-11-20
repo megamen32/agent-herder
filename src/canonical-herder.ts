@@ -61,14 +61,48 @@ export class CanonicalHerderError extends Error {
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+function jobMcpResult(value: unknown): Record<string, unknown> {
+  if (!isRecord(value) || value.error != null || (value.isError !== undefined && typeof value.isError !== "boolean")
+    || (!Array.isArray(value.content) && !isRecord(value.structuredContent))) throw new Error("canonical_transport_failed");
+  return value;
+}
+
+/** A full shell job can retain both the shell and child MCP call wrappers. */
+function fullJobPayload(serverId: unknown, response: Record<string, unknown>): unknown {
+  const shell = response.structuredContent;
+  if (response.isError === true || !isRecord(shell) || !exact(shell.server) || serverId !== "shell:" + shell.server
+    || !Object.keys(shell).every(key => ["server", "result", "resources"].includes(key))) return response;
+  const child = jobMcpResult(shell.result);
+  const call = child.structuredContent;
+  if (child.isError !== true && isRecord(call) && call.ref === "AgentHerder" && exact(call.name)
+    && Object.keys(call).every(key => ["ref", "name", "result"].includes(key))) return jobMcpResult(call.result);
+  return child;
+}
+
 /** Unwrap transport records only. A domain field named result is ordinary data. */
 export function unwrapCanonicalResult(value: unknown): Record<string, unknown> {
   let current = value;
   let failed = false;
   for (let depth = 0; depth < 12; depth++) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) throw new Error("canonical_response_invalid");
-    const row = current as Record<string, unknown>;
+    if (!isRecord(current)) throw new Error("canonical_response_invalid");
+    const row = current;
     if (row.isError === true) failed = true;
+    const fullJob = Object.hasOwn(row, "task_id") && exact(row.server_id);
+    if (exact(row.job_id) && (fullJob || (exact(row.owner_endpoint, 4096) && exact(row.owner_target)))) {
+      if ((fullJob && row.task_id !== row.job_id) || row.error != null) throw new Error("canonical_transport_failed");
+      if (row.status === "failed") failed = true;
+      else if (row.status !== "completed") {
+        // Fleet polls these receipts by job ID and owner, even when a partial result exists.
+        if (!failed && typeof row.status === "string" && ["queued", "running", "waiting", "pending"].includes(row.status)) return row;
+        throw new Error("canonical_transport_failed");
+      }
+      const payload = jobMcpResult(fullJob ? row.response : row.result);
+      current = fullJob ? fullJobPayload(row.server_id, payload) : payload;
+      continue;
+    }
     if (row.structuredContent && typeof row.structuredContent === "object"
       && (Array.isArray(row.content) || row.isError !== undefined || Object.keys(row).every(key => key === "structuredContent" || key === "_meta"))) {
       current = row.structuredContent; continue;
