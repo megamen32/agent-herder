@@ -422,11 +422,15 @@ function parseJsonlRecords(records: Array<{ line: string; recordIndex: number }>
 }
 
 /** Parse only whole newline-terminated records plus a valid final EOF record. */
-function parseCompleteJsonlPrefix(bytes: Uint8Array, allowIncompleteTail: boolean, expectedSessionId: string): ParsedTranscriptPrefix {
+function parseCompleteJsonlPrefix(bytes: Uint8Array, allowIncompleteTail: boolean, scope: TranscriptSessionScope): ParsedTranscriptPrefix {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const expectedSessionId = scope.nativeSessionId;
   const records: Array<{ line: string; recordIndex: number }> = [];
   const decodeLine = (slice: Buffer, index: number): string => {
     const content = slice.length && slice[slice.length - 1] === 13 ? slice.subarray(0, -1) : slice;
+    // A Codex rollout can contain a complete line of NUL padding between events.
+    // Its bytes still count towards the snapshot hash and physical record index.
+    if (scope.harness === "codex" && content[0] === 0 && content.every(byte => byte === 0)) return "";
     try { return new TextDecoder("utf-8", { fatal: true }).decode(content); }
     catch { return fail(`native JSONL record ${index} has invalid UTF-8`); }
   };
@@ -530,7 +534,7 @@ export function createRawTranscriptPageReader(input: {
       return fail("native transcript was truncated or its source metadata changed");
     }
     const candidateBytes = raw.bytes.subarray(0, state?.snapshotBytes ?? raw.bytes.byteLength);
-    const snapshot = parseCompleteJsonlPrefix(candidateBytes, !state, scope.nativeSessionId);
+    const snapshot = parseCompleteJsonlPrefix(candidateBytes, !state, scope);
     if (state && snapshot.byteLength !== state.snapshotBytes) return fail("cursor does not end on a complete native event boundary");
     const snapshotBytes = state?.snapshotBytes ?? snapshot.byteLength;
     const snapshotHash = createHash("sha256").update(raw.bytes.subarray(0, snapshotBytes)).digest("hex");
