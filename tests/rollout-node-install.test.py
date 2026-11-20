@@ -1,5 +1,7 @@
 """Focused release-installer invariants; no service or configuration mutations."""
 import importlib.util
+import http.client
+import json
 import os
 import pathlib
 import plistlib
@@ -8,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+from contextlib import ExitStack
 from unittest.mock import patch, Mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -550,6 +553,170 @@ class RolloutNodeInstallTests(unittest.TestCase):
             self.assertEqual(switched, [])
             self.assertEqual(__import__("json").loads(config.read_text())["sourceSha"], previous)
             self.assertEqual((fleet / "current").resolve(), fleet / "releases" / previous)
+
+
+class CanonicalOwnerInstallTests(unittest.TestCase):
+    def setUp(self):
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        self.root = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        self.runtime = importlib.import_module("process-leases-ts-runtime")
+        self.node = self.root / "node"
+        self.node.write_bytes(b"fixture node")
+        self.node.chmod(0o500)
+        self.old, self.new = "a" * 40, "b" * 40
+        self.unit = "agent-herder.service"
+        self.release = self.root / "releases"
+        for sha in (self.old, self.new):
+            dist = self.release / sha / "dist"
+            dist.mkdir(parents=True)
+            for name in self.runtime.readiness.REQUIRED_FILES:
+                (dist / name).write_text(sha)
+            payload = {p.name: rollout.sha256(p) for p in dist.iterdir()}
+            (dist / "fleet-deployment-manifest.json").write_text(json.dumps({"source_sha": sha, "payload": payload}))
+        self.addCleanup(self.thaw)
+        self.pin = self.runtime.freeze(self.release / self.old, self.old, self.node, self.root / "old.json")
+        self.config = self.root / "node-config.json"
+        self.config.write_text(json.dumps({"sourceSha": self.old, "nodeBin": str(self.node)}))
+        rollout.switch_current(self.root, self.old)
+        self.exe = rollout.systemd_release_dropin_path(self.unit, self.root)
+        rollout.write_systemd_release_dropin(self.exe, str(self.node), self.release / self.old, self.old)
+        self.env = self.exe.with_name("99-canonical-runtime.conf")
+        self.env.write_text("[Service]\nEnvironment=AGENT_HERDER_CANONICAL_MODE=canonical\n"
+                            f"Environment=AGENT_HERDER_TS_RUNTIME_MANIFEST={self.pin['manifest']}\n"
+                            f"Environment=AGENT_HERDER_TS_RUNTIME_MANIFEST_SHA256={self.pin['manifest_sha256']}\n"
+                            "UnsetEnvironment=NODE_OPTIONS LD_PRELOAD\n# keep these bytes\n")
+        self.env.chmod(0o640)
+        self.before = (self.exe.read_bytes(), self.env.read_bytes(), self.config.read_bytes())
+        self.restarts = []
+        self.reload_unit()
+        self.running = self.loaded
+        self.proof_error = None
+        ready = dict(reason="ready", live_sha=self.new, sessions=200, policy=200, mcp=200)
+        for name, value in dict(canonical_mcp_bearer="fixture", system_pause_state="", disarm_state="",
+                                process_environment_value="canonical", prepare_packages="", wait_codex_socket=True,
+                                package_resolution="ok", wait_release_ready=ready, wait_port=True,
+                                running_release=self.old, http_status=200, mcp_status=200).items():
+            stack.enter_context(patch.object(rollout, name, return_value=value))
+        stack.enter_context(patch.object(rollout.Path, "home", return_value=self.root))
+        stack.enter_context(patch.object(rollout, "systemd_daemon_reload", side_effect=self.reload_unit))
+        stack.enter_context(patch.object(rollout, "restart", side_effect=self.restart))
+        stack.enter_context(patch.object(self.runtime, "owner_identity", side_effect=lambda unit: (42, "123", self.running[0])))
+        client = stack.enter_context(patch.object(http.client, "HTTPConnection")).return_value
+        client.getresponse.side_effect = lambda: self.response(client.request.call_args)
+
+    def thaw(self):
+        for path, _, _ in os.walk(self.release):
+            os.chmod(path, 0o700)
+
+    def reload_unit(self):
+        argv = tuple(self.exe.read_text().split("ExecStart=")[-1].strip().split())
+        self.loaded = argv, self.env.read_text()
+        return True
+
+    def restart(self, command):
+        self.running = self.loaded
+        self.restarts.append(self.running[0][1])
+        return subprocess.CompletedProcess(command, 0)
+
+    def response(self, request):
+        method, url = request.args[:2]
+        self.assertEqual(method, "GET")
+        self.assertEqual(request.kwargs["headers"]["Authorization"], "Bearer fixture")
+        prefix = "/api/canonical-runtime-status?challenge="
+        self.assertTrue(url.startswith(prefix))
+        (node, entry), environment = self.running
+        sha = pathlib.Path(entry).parents[1].name
+        env = dict(line.removeprefix("Environment=").split("=", 1) for line in environment.splitlines()
+                   if line.startswith("Environment="))
+        pin = dict(self.pin, manifest=env["AGENT_HERDER_TS_RUNTIME_MANIFEST"],
+                   manifest_sha256=env["AGENT_HERDER_TS_RUNTIME_MANIFEST_SHA256"], source_commit=sha)
+        manifest, _, _ = self.runtime.readiness.runtime_tree(pin)
+        self.assertEqual((node, entry), (manifest["node_binary"], manifest["root"] + "/index.js"))
+        reply = Mock(status=503 if self.proof_error == "unavailable" and sha == self.new else 200)
+        if self.proof_error == "stale" and sha == self.new:
+            pin["manifest_sha256"] = self.pin["manifest_sha256"]
+        reply.read.return_value = json.dumps(dict(version=1, kind="herder-canonical-runtime-status",
+            challenge=url[len(prefix):], runtime=pin, process=dict(pid=42, start_ticks="123", node_binary=node, entry=entry))).encode()
+        return reply
+
+    def promote(self):
+        return rollout._main(["--kind", "owner", "--fleet-dir", str(self.root), "--sha", self.new,
+            "--previous-sha", self.old, "--unit", self.unit, "--port", "19091", "--restart-cmd", "mock-restart"],
+            release_gate=Mock())
+
+    def assert_previous(self):
+        self.assertEqual((self.exe.read_bytes(), self.env.read_bytes(), self.config.read_bytes()), self.before)
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o640)
+        self.assertEqual((self.root / "current").resolve(), self.release / self.old)
+
+    def rollback(self):
+        rollout.restore_install(self.root, self.config, self.root / f"node-config-before-{self.new[:8]}.json",
+            self.new, self.old, self.exe, self.exe.with_name(f"{self.exe.name}.rollback-{self.new}.json"), ["mock-restart"])
+
+    def test_promote_binds_exact_scheduler_and_stored_snapshot_restores_both_dropins(self):
+        published = self.root / f"ts-runtime-{self.new}.json"
+        self.runtime.freeze(self.release / self.new, self.new, self.node, published)
+        inode = published.stat().st_ino
+        self.assertEqual(self.promote(), 0)
+        self.assertEqual(published.stat().st_ino, inode)
+        self.assertNotIn(self.pin["manifest"].encode(), self.env.read_bytes())
+        self.assertIn(b"UnsetEnvironment=NODE_OPTIONS LD_PRELOAD\n# keep these bytes\n", self.env.read_bytes())
+        self.assertEqual(self.env.stat().st_mode & 0o777, 0o640)
+        self.rollback()
+        self.assert_previous()
+
+    def test_failed_runtime_proof_rolls_back_even_when_http_and_mcp_are_ready(self):
+        self.proof_error = "unavailable"
+        self.assertEqual(self.promote(), 1)
+        self.assertEqual(self.restarts, [str(self.release / sha / "dist/index.js") for sha in (self.new, self.old)])
+        self.assert_previous()
+
+    def test_http_200_with_wrong_digest_cannot_accept_release(self):
+        self.proof_error = "stale"
+        self.assertEqual(self.promote(), 1)
+        self.assert_previous()
+
+    def test_failure_between_dropins_restores_first_without_reload_or_restart(self):
+        replace = self.runtime.replace
+        def interrupt(path, *args):
+            if path == self.env:
+                raise OSError("interrupted between writes")
+            return replace(path, *args)
+        with patch.object(self.runtime, "replace", side_effect=interrupt):
+            self.assertEqual(self.promote(), 1)
+        self.assert_previous()
+        rollout.systemd_daemon_reload.assert_not_called()
+        self.assertEqual(self.restarts, [])
+
+    def test_rollback_refuses_foreign_edit_before_touching_other_selectors(self):
+        self.assertEqual(self.promote(), 0)
+        self.env.write_bytes(self.env.read_bytes() + b"# concurrent edit\n")
+        installed = self.exe.read_bytes(), self.env.read_bytes(), self.config.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "outside this rollout"):
+            self.rollback()
+        self.assertEqual((self.exe.read_bytes(), self.env.read_bytes(), self.config.read_bytes()), installed)
+        self.assertEqual((self.root / "current").resolve(), self.release / self.new)
+        self.assertEqual(len(self.restarts), 1)
+
+    def test_foreign_manifest_at_candidate_destination_refuses_before_switch(self):
+        output = self.root / f"ts-runtime-{self.new}.json"
+        output.write_bytes(pathlib.Path(self.pin["manifest"]).read_bytes())
+        output.chmod(0o400)
+        self.assertEqual(self.promote(), 1)
+        self.assert_previous()
+        self.assertEqual(self.restarts, [])
+
+    def test_legacy_snapshot_with_only_execstart_cannot_roll_back_a_pinned_unit(self):
+        self.assertEqual(self.promote(), 0)
+        snapshot = self.exe.with_name(f"{self.exe.name}.rollback-{self.new}.json")
+        document = json.loads(snapshot.read_bytes())
+        del document["canonicalRuntime"]
+        snapshot.write_text(json.dumps(document))
+        with self.assertRaisesRegex(RuntimeError, "paired drop-in snapshot"):
+            self.rollback()
+        self.assertEqual(self.restarts, [str(self.release / self.new / "dist/index.js")])
+        self.assertEqual(json.loads(self.config.read_bytes())["sourceSha"], self.new)
 
 
 if __name__ == "__main__":
