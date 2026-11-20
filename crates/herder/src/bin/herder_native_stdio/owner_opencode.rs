@@ -65,6 +65,63 @@ fn canonical_host_id(value: &str) -> &str {
     }
 }
 
+/// Resolve an ordinary envelope at the receiving owner before invoking its scoped writer.
+/// The authenticated connection supplies the grants. The sender is receipt attribution.
+pub(super) async fn deliver_to_owner(
+    identity: &ConnectionIdentity,
+    operation: catalog::Deliver,
+    policy: &OwnerPolicy,
+    mode: SendMode,
+    resolver: &WaitAutomationApplication,
+    writer: &dyn ApplicationPort,
+) -> Option<rmcp::model::CallToolResult> {
+    use rmcp::model::CallToolResult;
+    use serde_json::json;
+
+    let catalog::Deliver::Envelope { target, sender, input_id, message, attachments } = operation else {
+        return writer.call(identity, catalog::Request::Deliver(operation)).await;
+    };
+    if canonical_host_id(&target.host_id) != canonical_host_id(&policy.instance.node.0)
+        || target.harness != policy.harness
+    {
+        return Some(CallToolResult::structured_error(json!({
+            "code":"owner_profile_mismatch","effect":"none",
+            "message":"delivery envelope target does not match the configured owner"
+        })));
+    }
+    let resolve = catalog::Session::Resolve {
+        harness: target.harness,
+        native_session_id: target.native_session_id,
+        node_ref: Some(policy.instance.node.0.clone()),
+    };
+    let unregistered = || CallToolResult::structured_error(json!({
+        "code":"native_session_not_registered","effect":"none"
+    }));
+    let Some(resolved) = resolver.call(identity, catalog::Request::Session(resolve)).await else {
+        return Some(unregistered());
+    };
+    if resolved.is_error == Some(true) {
+        return Some(resolved);
+    }
+    let Some(mapping) = resolved.structured_content else { return Some(unregistered()) };
+    if mapping["owner"]["instance_ref"].as_str() != Some(&policy.instance.instance_id) {
+        return Some(CallToolResult::structured_error(json!({"code":"owner_profile_mismatch","effect":"none"})));
+    }
+    let Some(session_ref) = mapping["session_ref"].as_str() else { return Some(unregistered()) };
+    let mode = match mode {
+        SendMode::Queue => catalog::DeliveryMode::Queue,
+        SendMode::Start => catalog::DeliveryMode::Start,
+        SendMode::Current => return Some(CallToolResult::structured_error(
+            json!({"code":"unsupported_delivery_mode","effect":"none"}),
+        )),
+    };
+    let session = catalog::Deliver::Session {
+        session_ref: session_ref.to_owned(), message, attachments, mode,
+        request_key: input_id, sender: Some(sender),
+    };
+    writer.call(identity, catalog::Request::Deliver(session)).await
+}
+
 struct App {
     authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
@@ -183,88 +240,12 @@ impl ApplicationPort for App {
             {
                 return Some(result);
             }
-            if let catalog::Request::Deliver(catalog::Deliver::Envelope {
-                target,
-                sender,
-                input_id,
-                message,
-                attachments,
-            }) = request
-            {
-                // The envelope target selects this owner, but sender is only
-                // attribution. Trust still comes from the configured owner,
-                // native resolver and the existing delivery ACL/ledger.
-                if canonical_host_id(&target.host_id) != canonical_host_id(&self.instance.node.0)
-                    || target.harness != self.harness
-                {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({
-                            "code":"owner_profile_mismatch",
-                            "effect":"none",
-                            "message":"delivery envelope target does not match the configured owner"
-                        }),
-                    ));
-                }
-                let target_host = canonical_host_id(&target.host_id).to_owned();
-                let resolved = self
-                    .waits
-                    .call(
-                        identity,
-                        catalog::Request::Session(catalog::Session::Resolve {
-                            harness: target.harness,
-                            native_session_id: target.native_session_id,
-                            node_ref: Some(target_host),
-                        }),
-                    )
-                    .await;
-                let Some(resolved) = resolved else {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
-                    ));
-                };
-                if resolved.is_error == Some(true) {
-                    return Some(resolved);
-                }
-                let Some(session_ref) = resolved
-                    .structured_content
-                    .as_ref()
-                    .and_then(|value| value.get("session_ref"))
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned)
-                else {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
-                    ));
-                };
-                let mode = match self.delivery_mode {
-                    SendMode::Queue => catalog::DeliveryMode::Queue,
-                    SendMode::Start => catalog::DeliveryMode::Start,
-                    SendMode::Current => {
-                        return Some(rmcp::model::CallToolResult::structured_error(
-                            serde_json::json!({"code":"unsupported_delivery_mode","effect":"none"}),
-                        ));
-                    }
-                };
-                return self
-                    .deliver
-                    .call(
-                        identity,
-                        catalog::Request::Deliver(catalog::Deliver::Session {
-                            session_ref,
-                            message,
-                            attachments,
-                            mode,
-                            request_key: input_id,
-                            sender: Some(sender),
-                        }),
-                    )
-                    .await;
-            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }
-            if matches!(&request, catalog::Request::Deliver(_)) {
-                return self.deliver.call(identity, request).await;
+            if let catalog::Request::Deliver(operation) = request {
+                return deliver_to_owner(identity, operation, &self.policy, self.delivery_mode,
+                    &self.waits, self.deliver.as_ref()).await;
             }
             if matches!(
                 &request,

@@ -16,7 +16,7 @@ use std::{
 
 const ADAPTER: &str = r##"import base64,hashlib,json,os,sys
 harness=os.environ['AHAP_HARNESS']
-profile=os.environ['AHAP_BROWSER_PAGE_ID']
+profile=os.environ.get('AHAP_BROWSER_PAGE_ID', harness)
 home=os.environ['HOME']
 trace=os.path.join(home,'native.jsonl')
 def records():
@@ -210,11 +210,22 @@ struct Wire {
     output: Receiver<Value>,
     stderr: PathBuf,
     sequence: u64,
+    task_capable: bool,
 }
 
 impl Wire {
     fn open(profile: &Path) -> Self {
         Self::open_many(&[profile])
+    }
+
+    fn ordinary(profile: &Path) -> Self {
+        Self::ordinary_many(&[profile])
+    }
+
+    fn ordinary_many(profiles: &[&Path]) -> Self {
+        let mut wire = Self::open_many(profiles);
+        wire.task_capable = false;
+        wire
     }
 
     fn open_many(profiles: &[&Path]) -> Self {
@@ -261,6 +272,7 @@ impl Wire {
             output: receiver,
             stderr,
             sequence: 0,
+            task_capable: true,
         }
     }
 
@@ -268,7 +280,9 @@ impl Wire {
         self.sequence += 1;
         params["_meta"] = json!({
             "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-            "io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},
+            "io.modelcontextprotocol/clientCapabilities":if self.task_capable {
+                json!({"extensions":{"io.modelcontextprotocol/tasks":{}}})
+            } else { json!({}) },
             "io.modelcontextprotocol/clientInfo":{"name":"registration-test","version":"1"},
             "principal":"spoofed-client-principal","session_ref":"spoofed-client-session"
         });
@@ -335,6 +349,138 @@ fn task_body(client: &mut Wire, task: &str) -> Value {
     let response = client.rpc("tasks/get", json!({"taskId":task}));
     assert_eq!(response["result"]["status"], "completed", "{response}");
     response["result"]["result"]["structuredContent"].clone()
+}
+
+// A loopback OpenCode v2 consumer. Its history records only actual prompt POSTs.
+const OPENCODE_HTTP: &str = r#"
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+
+native = 'ses_mesh_fixture'
+path = '/api/session/' + native
+messages = []
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def reply(self, data):
+        body = json.dumps(data).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        if self.path == '/openapi.json':
+            self.reply({'openapi':'3.1.0','paths':{'/api/session':{'get':{},'post':{}},'/api/event':{'get':{}}}})
+        elif self.path == path:
+            self.reply({'id':native,'projectID':'fixture','time':{'created':1,'updated':2,'idle':2},
+                        'location':{'directory':'/fixture'}})
+        elif self.path == path + '/message':
+            self.reply({'data':messages})
+        else:
+            self.send_error(404)
+    def do_POST(self):
+        if self.path != path + '/prompt':
+            return self.send_error(404)
+        data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        assert data['delivery'] == 'queue' and data['metadata']['agentHerderInputId']
+        mid = 'msg_fixture' + str(len(messages))
+        messages.append({'id':mid,'type':'user','text':data['text'],'time':{'created':2}})
+        self.reply({'data':{'id':mid,'sessionID':native,'delivery':'queue'}})
+server = HTTPServer(('127.0.0.1', 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+"#;
+
+struct HttpFixture(Child);
+impl Drop for HttpFixture {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[test]
+fn ordinary_browser_and_scriptless_opencode_envelopes_reach_registered_sessions() {
+    let fixture = Fixture::new();
+    let python = fs::canonicalize("/usr/bin/python3").unwrap();
+    let mut http = HttpFixture(Command::new(&python).args(["-I", "-B", "-c", OPENCODE_HTTP])
+        .stdout(Stdio::piped()).spawn().unwrap());
+    let port: u16 = BufReader::new(http.0.stdout.take().unwrap()).lines().next().unwrap().unwrap().parse().unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let profile = |name: &str, script: Option<&Path>| {
+        let path = fixture.root.join(name);
+        let mut owner = json!({"kind":"opencode","principal":"owner","node":"opencode-node","instance":"oc",
+            "executable":python,"code_home":fixture.root,"cwd":fixture.root,"ahap_base_url":endpoint});
+        if let Some(script) = script { owner["ahap_script"] = json!(script); }
+        write_private(&path, json!({"owner":owner,"database":fixture.db,"gate":fixture.gate,
+            "generation":"registration-test"}).to_string());
+        path
+    };
+    let oc = json!({"hostId":"opencode-node","harness":"opencode","nativeSessionId":"ses_mesh_fixture"});
+    // Register the pre-existing OpenCode session with the same owner before opening its scriptless binding.
+    let register = |wire: &mut Wire, instance: &str, address: &Value| {
+        let reply = wire.call("session", json!({"action":"register","instance_ref":instance,
+            "native_session_id":address["nativeSessionId"],"request_key":"register"}));
+        content(&reply)["session_ref"].as_str().unwrap().to_owned()
+    };
+    let oc_ref = register(&mut Wire::open(&profile("register.json", Some(&fixture.script))), "oc", &oc);
+    let native_profile = profile("native.json", None);
+    let other_native_profile = fixture.profile("zai", "secondary-browser");
+    for kind in ["chatgpt", "zai"] {
+        let browser_fixture = Fixture::new();
+        let address = json!({"hostId":"browser-node","harness":kind,"nativeSessionId":"existing-native"});
+        let browser_profile = browser_fixture.profile(kind, kind);
+        let other_browser_profile = browser_fixture.profile(kind, "secondary-browser");
+        let browser_ref = register(&mut Wire::ordinary(&browser_profile), kind, &address);
+        for (path, other, session_ref, target, sender) in [
+            (&native_profile, &other_native_profile, &oc_ref, &oc, &address),
+            (&browser_profile, &other_browser_profile, &browser_ref, &address, &oc),
+        ] {
+            let marker = format!("{kind}-to-{}", target["harness"].as_str().unwrap());
+            let envelope = json!({"target":target,"sender":sender,"inputId":marker,"message":marker});
+            let first = Wire::ordinary(path).call("deliver", envelope.clone());
+            assert_eq!(content(&first)["outcome"], "confirmed");
+
+            // A separate owner connection reads durable evidence and independent native history.
+            let mut reader = Wire::ordinary_many(&[other, path]);
+            let native_id = &content(&first)["native_receipt_id"];
+            assert_eq!(&content(&reader.call("deliver", envelope.clone()))["native_receipt_id"], native_id);
+            let mut changed = envelope.clone();
+            changed["sender"]["nativeSessionId"] = json!("other-source");
+            assert_eq!(&content(&reader.call("deliver", changed.clone()))["native_receipt_id"], native_id);
+            changed["message"] = json!("different payload");
+            let conflict = reader.call("deliver", changed);
+            assert_eq!(conflict["result"]["structuredContent"]["code"], "idempotency_conflict", "{conflict}");
+            let mut unknown = envelope;
+            unknown["target"]["nativeSessionId"] = json!("unregistered");
+            expect_error(&reader.call("deliver", unknown));
+            let resolved = reader.call("session", json!({"action":"resolve","node_ref":target["hostId"],
+                "harness":target["harness"],"native_session_id":target["nativeSessionId"]}));
+            assert_eq!(content(&resolved)["session_ref"], *session_ref);
+            let receipt = reader.call("deliver", json!({"action":"receipt","session_ref":session_ref,"request_key":marker}));
+            let proof = &content(&receipt)["native_receipt"];
+            assert_eq!(&proof["native_id"], native_id);
+            assert_eq!(&proof["sender"], sender);
+            assert_eq!(proof["target"]["native_session_id"], target["nativeSessionId"]);
+            let history = reader.call("session", json!({"action":"messages","session_ref":session_ref}));
+            let messages = content(&history)["page"]["messages"].as_array().unwrap();
+            let received: Vec<_> = messages.iter().filter(|row| row["text"] == marker).collect();
+            assert_eq!(received.len(), 1);
+            if target["harness"] == "opencode" {
+                assert_eq!(received[0]["id"], proof["native_id"]);
+            } else {
+                let reference = native_id.as_str().unwrap().strip_prefix("ahap-receipt:v1:").unwrap();
+                assert_eq!(serde_json::from_str::<Value>(reference).unwrap(),
+                    json!({"kind":"message","native_id":received[0]["id"]}));
+            }
+        }
+        register(&mut Wire::ordinary(&other_browser_profile), "secondary-browser", &address);
+        let mut multi = Wire::ordinary_many(&[&other_browser_profile, &browser_profile]);
+        let ambiguous = multi.call("deliver", json!({"sender":oc,"target":address,
+            "inputId":"ambiguous","message":"must not be submitted"}));
+        expect_error(&ambiguous);
+        assert_eq!(browser_fixture.native_calls("sendMessage").len(), 1);
+    }
 }
 
 #[test]
