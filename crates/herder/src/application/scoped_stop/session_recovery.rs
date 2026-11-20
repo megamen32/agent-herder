@@ -6,7 +6,7 @@ use super::{
     create_prompt::FreshSessionGrantPolicy,
     mcp_deliver::utc_now,
     recovery_handoff::{
-        LegacyRecoveryHandoff, automation_disarm_held, notice_attempt_held, private_json,
+        LegacyRecoveryHandoff, RecoveryWorkspaceProbe, automation_disarm_held, notice_attempt_held, private_json,
     },
     recovery_omniroute,
     task_reconcile::TaskReconciler,
@@ -20,7 +20,7 @@ use crate::{
         address::{InstanceRef, SessionAddress, SessionRef},
         recovery::{
             RecoveryAncestor, RecoveryBoundary, RecoveryControl, RecoveryCredential,
-            RecoveryFailure, RecoveryPermit, RecoveryQuotaProof, RecoveryRoute,
+            RecoveryFailure, RecoveryPermit, RecoveryQuotaProof, RecoveryRoute, SameRouteRetry,
         },
     },
 };
@@ -107,6 +107,11 @@ impl OmniRouteQuota {
 }
 
 impl RecoveryProfile {
+    pub fn valid_for(&self, harness: &str) -> bool {
+        self.valid()
+            && (harness == "codex" || self.legacy_handoff.as_ref().is_none_or(|h| !h.scans_workspaces()))
+    }
+
     pub fn valid(&self) -> bool {
         self.autopilot_state_dir.is_absolute()
             && self
@@ -137,7 +142,7 @@ impl RecoveryProfile {
     fn recovery_held(&self, harness: &str, native_id: &str) -> bool {
         self.legacy_handoff
             .as_ref()
-            .is_some_and(|handoff| !handoff.owns(native_id) || handoff.held(harness, native_id))
+            .is_some_and(|handoff| handoff.held(harness, native_id))
             || (harness == "opencode"
                 && notice_attempt_held(&self.autopilot_state_dir.join("sessions.json"), native_id))
     }
@@ -150,6 +155,20 @@ impl RecoveryProfile {
                         handoff.held(harness, &ancestor.address.native_session_id)
                     })
             })
+    }
+
+    fn owns_target(&self, harness: &str, address: &SessionAddress, boundary: &RecoveryBoundary) -> bool {
+        self.legacy_handoff.as_ref().is_none_or(|h| {
+            h.owns_boundary(harness, &address.native_session_id, &boundary.cwd, &boundary.provider)
+        })
+    }
+
+    fn owns_ancestors(&self, harness: &str, address: &SessionAddress, boundary: &RecoveryBoundary) -> bool {
+        self.legacy_handoff.as_ref().is_none_or(|h| {
+            boundary.ancestors.iter().all(|a| {
+                a.address.instance == address.instance && h.owns_ancestor(harness, &a.address, &a.cwd)
+            })
+        })
     }
 
     fn router(&self, provider: &str, model: Option<&str>, cwd: &str) -> Option<&OmniRouteQuota> {
@@ -182,7 +201,7 @@ impl RecoveryProfile {
     }
 }
 
-fn route_id(value: &str) -> bool {
+pub(super) fn route_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
         && value
@@ -380,11 +399,11 @@ fn select_route(
     } else {
         primary.unwrap_or(quota_policy.on_unknown == UnknownQuota::Allow)
     };
+    let target = SessionAddress {
+        instance: native.instance().clone(),
+        native_session_id: id.into(),
+    };
     if fallback && (throttled || !same_route && (from_quota_failure || primary == Some(false))) {
-        let target = SessionAddress {
-            instance: native.instance().clone(),
-            native_session_id: id.into(),
-        };
         for route in &profile.fallback_routes {
             let candidate = RecoveryRoute {
                 provider: route.provider.clone(),
@@ -405,7 +424,19 @@ fn select_route(
             }
         }
     }
-    same_route.then(|| RecoveryRoute {
+    let allowed = if throttled && native.harness() == "codex" && boundary.provider == "opencodex" {
+        match native.same_route_retry(&target, boundary) {
+            SameRouteRetry::Hold => false,
+            SameRouteRetry::UseQuotaPolicy => same_route,
+            // Absence of an account meter on this custom route is expected.
+            // A configured meter with unknown or exhausted quota retains its policy.
+            SameRouteRetry::Ready => same_route || (primary.is_none()
+                && profile.router(&boundary.provider, boundary.model.as_deref(), &boundary.cwd).is_none()),
+        }
+    } else {
+        same_route
+    };
+    allowed.then(|| RecoveryRoute {
         provider: boundary.provider.clone(),
         model: boundary.model.clone(),
     })
@@ -428,19 +459,23 @@ struct Scan {
     after: String,
     native: discovery::NativePages,
     cohort_offset: usize,
+    workspaces_first: bool,
     last_tick: Option<Instant>,
 }
 
 impl SessionRecovery {
     pub fn new(
         authority: Arc<ScopedAuthority>,
-        control: Arc<dyn RecoveryControl>,
+        control: Arc<dyn RecoveryWorkspaceProbe>,
         policy: Arc<dyn FreshSessionGrantPolicy + Send + Sync>,
         waits: Arc<WaitAutomationApplication>,
         reconciler: Arc<dyn TaskReconciler>,
         profile: RecoveryProfile,
         discovery: RecoveryDiscovery,
     ) -> Self {
+        if let Some(handoff) = &profile.legacy_handoff {
+            handoff.bind_workspace_probe(control.clone());
+        }
         Self {
             authority,
             control,
@@ -538,6 +573,8 @@ impl SessionRecovery {
         Ok(boundary
             .filter(|b| {
                 recent(b.started_at_ms)
+                    && self.profile.owns_target(harness, address, b)
+                    && self.profile.owns_ancestors(harness, address, b)
                     && settings.admits(harness, &address.native_session_id, b)
                     && !self.profile.automation_disarmed(harness, b)
             })
@@ -632,11 +669,7 @@ impl SessionRecovery {
             }
             let key = format!("{harness}-recovery:{suffix}");
             let recovery_keys = format!("{harness}-recovery:*");
-            let unsettled: bool = connection.query_row(
-                "SELECT EXISTS(SELECT 1 FROM intents WHERE principal=?1 AND target=?2 AND request_key<>?3
-                   AND request_key GLOB ?4 AND state IN ('dispatching','unknown','admitted'))",
-                params![principal.0, session.0, key, recovery_keys], |r| r.get(0),
-            ).map_err(|_| GateError::Store)?;
+            let held = recovery_delivery_held(connection, &principal.0, &session.0, &key, harness, &boundary)?;
             let previous: u32 = connection.query_row(
                 "SELECT COUNT(*) FROM intents WHERE principal=?1 AND target=?2 AND request_key<>?3
                    AND request_key GLOB ?4 AND julianday(created_at) > julianday(?5, '-10 minutes')",
@@ -648,7 +681,7 @@ impl SessionRecovery {
             (
                 suffix,
                 claimed,
-                !unsettled && previous < 3 && (ready || claimed),
+                !held && previous < 3 && (ready || claimed),
             )
         };
         if !may_start || self.waits.recovery_blocked(identity, &address) {
@@ -790,16 +823,16 @@ impl AutomationTick for SessionRecovery {
                 }
                 scan.last_tick = Some(Instant::now());
                 let began = Instant::now();
-                if let Some(ids) = authority.profile.legacy_handoff.as_ref().and_then(LegacyRecoveryHandoff::cohort) {
-                    authority.recover_cohort(&identity, &principal, ids, &mut scan.cohort_offset, began + SCAN_BUDGET);
+                let handoff = authority.profile.legacy_handoff.as_ref();
+                if let Some(ids) = handoff.filter(|h| !h.scans_workspaces()).and_then(LegacyRecoveryHandoff::cohort) {
+                    authority.recover_cohort(
+                        &identity, &principal, ids, &mut scan.cohort_offset,
+                        began + SCAN_BUDGET, MAX_STARTS_PER_TICK,
+                    );
                     return;
                 }
                 let instance = authority.control.instance();
-                let wide = authority
-                    .profile
-                    .legacy_handoff
-                    .as_ref()
-                    .is_some_and(|h| h.instance_wide);
+                let wide = handoff.is_some_and(|h| h.instance_wide || h.scans_workspaces());
                 // A settled or archived thread can disappear from listing while its
                 // previous admission still needs receipt reconciliation.
                 let Ok(sessions) = authority.session_page(&principal, instance, &scan.after, wide)
@@ -834,17 +867,33 @@ impl AutomationTick for SessionRecovery {
                     scan.after.clear();
                 }
                 if wide {
-                    authority.discover(
-                        &identity,
-                        &principal,
-                        &mut scan.native,
-                        began + SCAN_BUDGET,
-                    );
+                    authority.discover_scope(&identity, &principal, &mut scan, began + SCAN_BUDGET);
                 }
             })
             .await;
         })
     }
+}
+
+fn recovery_delivery_held(
+    connection: &rusqlite::Connection,
+    principal: &str,
+    session: &str,
+    key: &str,
+    harness: &str,
+    boundary: &RecoveryBoundary,
+) -> Result<bool, GateError> {
+    // A failed continuation has a new turn and input, hence a new request key.
+    // The earlier admission receipt still identifies its output turn after restart.
+    let retryable_codex = harness == "codex"
+        && matches!(boundary.failure, RecoveryFailure::Retryable | RecoveryFailure::Throttled);
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM intents WHERE principal=?1 AND target=?2 AND request_key<>?3
+            AND request_key GLOB ?4 AND (state IN ('dispatching','unknown','admitted')
+                OR (?5 AND json_extract(native_receipt,'$.native_id')=?6)))",
+        params![principal, session, key, format!("{harness}-recovery:*"), retryable_codex, boundary.turn_id],
+        |r| r.get(0),
+    ).map_err(|_| GateError::Store)
 }
 
 fn recovery_key(
@@ -890,10 +939,11 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
     ) -> Result<Admission, SubmitError> {
         let native = self.control;
         let harness = native.harness();
-        if self
-            .profile
-            .recovery_held(harness, &plan.target.native_session_id)
-        {
+        // The adapter revalidates this native boundary under its control lock.
+        // The permit rechecks scope and legacy state without a recursive RPC.
+        let target_allowed = || self.profile.owns_target(harness, &plan.target, &self.boundary)
+            && !self.profile.recovery_held(harness, &plan.target.native_session_id);
+        if !target_allowed() || !self.profile.owns_ancestors(harness, &plan.target, &self.boundary) {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "Native recovery ownership or legacy hold changed".into(),
             });
@@ -941,19 +991,14 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                     router.available(credential, model, reserve)
                 })
                 == Some(true)
-                && !self
-                    .profile
-                    .recovery_held(harness, &plan.target.native_session_id)
-                && !disarm_held()
+                && target_allowed() && !disarm_held()
         };
         let quota_proof = credential.as_ref().map(|credential| RecoveryQuotaProof {
             credential,
             still_available: &still_available,
         });
         let still_allowed = || {
-            recent(self.boundary.started_at_ms) && !self
-                .profile
-                .recovery_held(harness, &plan.target.native_session_id)
+            recent(self.boundary.started_at_ms) && target_allowed()
                 && private_json::<Autostart>(&self.settings_path)
                     .ok()
                     .is_some_and(|settings| {
@@ -1063,6 +1108,27 @@ mod tests {
     };
 
     struct TestState(PathBuf);
+
+    #[test]
+    fn retry_429_cannot_recover_a_confirmed_recovery_turn() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE intents(principal, target, request_key, state, native_receipt);
+            INSERT INTO intents VALUES ('owner','session','codex-recovery:original','confirmed',
+                                         '{\"native_id\":\"recovery-turn\"}');").unwrap();
+        let mut boundary = RecoveryBoundary {
+            turn_id: "recovery-turn".into(), input_item_id: "new-input".into(),
+            cwd: "/project".into(), provider: "opencodex".into(), model: Some("saved".into()),
+            started_at_ms: 1000, failure: RecoveryFailure::Throttled, ancestors: vec![],
+        };
+        let held = |boundary: &RecoveryBoundary| {
+            recovery_delivery_held(&db, "owner", "session", "codex-recovery:next", "codex", boundary).unwrap()
+        };
+        assert!(held(&boundary));
+        boundary.turn_id = "subsequent-user-turn".into();
+        assert!(!held(&boundary));
+        db.execute("UPDATE intents SET state='unknown', native_receipt=NULL", []).unwrap();
+        assert!(held(&boundary));
+    }
 
     impl TestState {
         fn new() -> Self {

@@ -257,8 +257,21 @@ class AdapterMigrationContracts(MigrationFixture):
         scope["instance_wide"] = True
         wide_raw = candidate.encoded(wide)
         self.assertEqual(candidate.recovery_profile_payload(raw, wide_raw), wide_raw)
+        workspace = {"cwd": "/work/handed-over", "provider": "opencodex"}
+        for selected in ({"workspaces": [workspace]}, {"workspaces": [workspace], "native_sessions": ["known-session"]}):
+            with self.subTest(selected=selected):
+                handed_over = copy.deepcopy(wide)
+                scope = handed_over["owner"]["codex_recovery"]["legacy_handoff"]
+                del scope["instance_wide"]
+                scope.update(selected)
+                payload = candidate.encoded(handed_over)
+                self.assertEqual(candidate.recovery_profile_payload(raw, payload), payload)
         for invalid in ({}, {"instance_wide": False}, {"instance_wide": 1}, {"instance_wide": "true"},
                         {"instance_wide": True, "native_sessions": []},
+                        {"instance_wide": True, "workspaces": [workspace]}, {"workspaces": []},
+                        {"workspaces": [workspace, workspace]}, {"workspaces": [dict(workspace, cwd="../other")]},
+                        {"workspaces": [dict(workspace, cwd="/work/./project")]},
+                        {"workspaces": [dict(workspace, provider="")]}, {"workspaces": [dict(workspace, extra=True)]},
                         {"instance_wide": True, "native_sessions": ["known-session"]}):
             with self.subTest(scope=invalid):
                 bad = copy.deepcopy(wide)
