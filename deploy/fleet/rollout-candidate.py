@@ -878,7 +878,7 @@ def main() -> int:
                         "descriptor": node, "descriptorDigest": pinned_descriptor}
             # Proof and ledger never leave this authority. Its OS locks span
             # staging, remote mutation, readiness and any guarded rollback.
-            with ReleaseGate(arguments.release_proof, target=target) as gate:
+            with ReleaseGate(arguments.release_proof, target=target, require_target_lease=bool(node.get("authorityGroup"))) as gate:
                 gate.candidate_descends_from(live_sha, arguments.sha)
                 run_native_candidate_preflight(release, arguments.sha, catalog, gate)
                 ssh = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",

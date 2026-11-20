@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("canonical_release_gate", ROOT / "deploy/fleet/release_gate.py")
@@ -78,6 +79,20 @@ if guard:
         with self.assertRaisesRegex(RuntimeError, "release_canonical_cleanup_requires_guard"):
             self.gate().check(cleanup=True)
         self.assertEqual(self.history(), [])
+
+    def test_shared_fleet_target_requires_its_lease_before_admission(self):
+        gate = MODULE.ReleaseGate(self.proof, self.ledger, target=self.target, require_target_lease=True)
+        with patch.object(MODULE, "release_occupancy_enabled", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "release_shared_target_lease_required"), gate:
+                self.fail("disabled shared fleet rollout")
+        self.assertEqual(self.history(), [])
+        with patch.object(MODULE, "release_occupancy_enabled", return_value=True):
+            for lease in (None, {"deploymentTarget": {**self.target, "unit": "owner.service"}}):
+                with self.subTest(lease=lease), patch.object(gate, "_exchange", return_value={"guarded": True, "lease": lease}):
+                    with self.assertRaisesRegex(RuntimeError, "release_shared_target_lease_required"), gate:
+                        self.fail("unbound shared fleet rollout")
+            with patch.object(gate, "_exchange", return_value={"guarded": True, "lease": {"deploymentTarget": self.target}}), gate:
+                self.assertIsNotNone(gate._bridge)
 
     def test_mixed_seal_is_rejected_without_starting_any_bridge(self):
         self.state["projects"]["project"]["lease"] = None

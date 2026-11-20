@@ -54,6 +54,38 @@ Resource registration already enforces unique external identity under the
 registry lock. Metadata does not grant access: the bridge uses the installed
 principal policy and the existing canonical resource authority.
 
+### Two deployment targets for one Git project
+
+Bridge configuration version 2 allows a project to select a registered
+deployment resource by the exact `deploymentTarget` in a request. A project
+with one mapping retains its implicit default. For a project with multiple
+mappings, set `default_for_project: true` on the existing owner mapping to
+preserve calls that omit the target. Without a default those calls return an
+ambiguity error. The sealed ledger and its marker keep their existing formats.
+
+Prepare the new descriptor with its own resource reference and external
+identity. In a copy of the installed bridge configuration, retain the full
+mapping inventory, mark the original default and add the fleet mapping with
+its descriptor revision and exact directory and unit. Keep the original
+resource reference, fence seed, principal and process authority. For fleet
+nodes that share this target, use the same nonempty `authorityGroup` on
+their deployment profiles. Each node still has its own descriptor digest.
+The fleet controller requires the shared target's active lease before it
+stages files or starts the remote rollout.
+
+Before binding the live target, show the owner the proposed descriptor,
+both target tuples, the selected nodes and the staged status readbacks.
+An unqualified status and an explicit owner status must resolve the same
+original resource. Explicit fleet status must resolve the new resource.
+Acquire, renew, check, guard and release a fixture claim against its own
+target and verify that the other target refuses that proof. Repeat the
+status checks through the installed bridge after an approved activation.
+For an existing sealed ledger, register the approved resource and pass the
+reviewed mapping file to `rotate_canonical_bridge.py --successor-config`.
+The rotation rechecks the ledger under its writer lock and returns a busy
+error while a deployment holds an execution lock.
+Use a new target-bound proof for each guarded rollout.
+
 The sealed ledger uses `version: 2` and
 `canonical: {version: 1, config, bridge, seal_id}`. Its `projects` entries keep
 advisory metadata only. Unmapped projects fail closed; there is no fallback to

@@ -706,3 +706,6 @@ fn acquired_identity_survives_repository_move_without_authorizing_fresh_acquire(
 
 #[path = "support/project_release_reconcile.rs"]
 mod reconciliation;
+
+#[path = "support/project_release_targets.rs"]
+mod targets;

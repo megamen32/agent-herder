@@ -2,21 +2,23 @@
 """CAS-protected rotation of an already sealed canonical release bridge.
 
 This operation changes only the v2 canonical marker and its private config.
-It preserves the previous ledger/config bytes, refuses active leases, validates
+It preserves the previous ledger/config bytes, refuses active effects, validates
 the successor bridge against an isolated ledger copy, and never performs a
 lease acquisition or deployment itself.
 """
 import argparse
+from contextlib import ExitStack, contextmanager
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import tempfile
 import time
+
+from apply_canonical_release_cutover import ledger_barrier, protected_directory, validate_lock
 
 
 def digest(path):
@@ -77,6 +79,27 @@ def bridge_status(binary, config, project):
     return value["result"]
 
 
+@contextmanager
+def idle_execution_locks(config):
+    # A running controller pins the sealed marker until its guarded effect
+    # finishes. Rust holds the target's execution.lock exclusively for that time.
+    runtime = json.loads(private(config["process_config"]).read_bytes())
+    registry = protected_directory(Path(runtime["resources"]["root"]) / "resources")
+    with ExitStack() as stack:
+        for ref in sorted({m["resource_ref"] for m in config["mappings"]}):
+            if not ref or ref in (".", "..") or Path(ref).name != ref:
+                raise ValueError("invalid resource reference")
+            path = protected_directory(registry / ref) / "execution.lock"
+            fd = os.open(path, os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            stack.callback(os.close, fd)
+            validate_lock(path, fd)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("active deployment prevents bridge rotation") from None
+        yield
+
+
 def rotate(ledger, config, binary, archive_dir, expected_sha256, project, successor_config=None):
     ledger = private(ledger)
     old_config = private(config)
@@ -87,7 +110,7 @@ def rotate(ledger, config, binary, archive_dir, expected_sha256, project, succes
     if archive_dir.exists():
         raise FileExistsError("archive directory already exists")
     before = ledger.read_bytes()
-    if digest(ledger) != expected_sha256:
+    if hashlib.sha256(before).hexdigest() != expected_sha256:
         raise RuntimeError("ledger CAS failed")
     state = json.loads(before)
     marker = state.get("canonical")
@@ -101,19 +124,16 @@ def rotate(ledger, config, binary, archive_dir, expected_sha256, project, succes
         raise RuntimeError("config does not match current canonical marker")
     archive_dir.mkdir(mode=0o700, parents=False)
     atomic(archive_dir / "ledger.json", before, 0o400)
-    atomic(archive_dir / "config.json", old_config.read_bytes(), 0o400)
-    atomic(archive_dir / "manifest.json", encoded({"version": 1, "ledger_sha256": digest(ledger),
-        "config_sha256": digest(old_config), "bridge_sha256": digest(old_marker_bridge),
+    old_config_bytes = old_config.read_bytes()
+    atomic(archive_dir / "config.json", old_config_bytes, 0o400)
+    atomic(archive_dir / "manifest.json", encoded({"version": 1, "ledger_sha256": expected_sha256,
+        "config_sha256": hashlib.sha256(old_config_bytes).hexdigest(), "bridge_sha256": digest(old_marker_bridge),
         "archived_at_unix_ms": int(time.time() * 1000)}), 0o400)
 
     new_config = Path(config).with_name(Path(config).stem + ".rotated.json")
-    config_data = json.loads(private(successor_config).read_bytes()) if successor_config else json.loads(old_config.read_bytes())
+    original = json.loads(old_config_bytes)
+    config_data = json.loads(private(successor_config).read_bytes()) if successor_config else dict(original)
     config_data["ledger"] = str(ledger)
-    if new_config.exists():
-        if private(new_config).read_bytes() != encoded(config_data):
-            raise RuntimeError("successor config already exists with different bytes")
-    else:
-        atomic(new_config, encoded(config_data), 0o600)
     staged_ledger = archive_dir / "staged-ledger.json"
     staged = dict(state)
     staged["canonical"] = {"version": 1, "config": str(archive_dir / "staged-config.json"), "bridge": str(binary),
@@ -126,11 +146,20 @@ def rotate(ledger, config, binary, archive_dir, expected_sha256, project, succes
     staged_data["ledger"] = str(staged_ledger)
     atomic(staged_config, encoded(staged_data), 0o600)
     readback = bridge_status(binary, staged_config, project)
-    atomic(new_config, encoded(config_data), 0o600)
     final = dict(state)
     final["canonical"] = {"version": 1, "config": str(new_config), "bridge": str(binary),
                           "seal_id": marker.get("seal_id")}
-    atomic(ledger, encoded(final), 0o600)
+    with ledger_barrier(ledger) as verify_barrier:
+        if ledger.read_bytes() != before or old_config.read_bytes() != old_config_bytes:
+            raise RuntimeError("ledger or config CAS failed")
+        with idle_execution_locks(original):
+            if new_config.exists():
+                if private(new_config).read_bytes() != encoded(config_data):
+                    raise RuntimeError("successor config already exists with different bytes")
+            else:
+                atomic(new_config, encoded(config_data), 0o600)
+            verify_barrier()
+            atomic(ledger, encoded(final), 0o600)
     return {"rotated": True, "ledger": str(ledger), "config": str(new_config), "bridge": str(binary),
             "archive": str(archive_dir), "before_sha256": digest(archive_dir / "ledger.json"),
             "after_sha256": digest(ledger), "successor_status": readback}

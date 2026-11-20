@@ -90,6 +90,31 @@ it("acquisition binds exact deployment target into durable lease",async()=>{
  expect((await store.status("p")).lease?.deploymentTarget).toEqual(target);
 });
 
+it("keeps a single legacy slot and rejects an explicit target that does not match its lease", async () => {
+ const { store } = await setup(), project = "repo";
+ const target = { fleetDir: "/fleet", unit: "primary.service" };
+ const otherDir = { ...target, fleetDir: "/other" }, otherUnit = { ...target, unit: "secondary.service" };
+ expect((await store.status(project, target)).lease).toBeNull();
+ const unbound = proof(await store.acquire(project, owner));
+ await expect(store.check(project, { ...unbound, deploymentTarget: target })).rejects.toThrow("release_lease_target_mismatch");
+ await expect(store.status(project, target)).rejects.toThrow("release_lease_target_mismatch");
+ await store.release(project, unbound);
+ const bound = proof(await store.acquire(project, owner, 300, target));
+ expect((await store.acquire(project, owner, 300, otherUnit)).acquired).toBe(false);
+ for (const wrong of [otherDir, otherUnit]) {
+  await expect(store.status(project, wrong)).rejects.toThrow("release_lease_target_mismatch");
+  for (const action of ["check", "renew", "release"] as const) {
+   await expect(store[action](project, { ...bound, deploymentTarget: wrong })).rejects.toThrow("release_lease_target_mismatch");
+  }
+ }
+ expect((await store.status(project, target)).lease?.fence).toBe(bound.fence);
+ await expect(store.check(project, bound)).resolves.toMatchObject({ deploymentTarget: target });
+ await store.renew(project, { ...bound, deploymentTarget: target }, 60);
+ expect((await store.status(project)).remainingSeconds).toBe(60);
+ await store.release(project, { ...bound, deploymentTarget: target });
+ expect((await store.status(project, otherUnit)).lease).toBeNull();
+});
+
 async function holdDeployment(store: ProjectReleaseLeaseStore, unit: string) {
  const path=join(dirname(store.file),"deploy-unit-"+createHash("sha256").update(unit).digest("hex")+".lock");
  const child=spawn("python3",["-u","-c","import os,fcntl,sys; fd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600); fcntl.flock(fd,fcntl.LOCK_EX); print('ready'); sys.stdin.read()",path],{stdio:["pipe","pipe","pipe"]});

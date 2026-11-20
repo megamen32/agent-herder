@@ -37,7 +37,8 @@ const schema = z.object({
   cwd: z.string().min(1).max(4096),
   owner: ownerSchema.optional(),
   ttlSeconds: z.number().int().min(30).max(1800).optional(),
-  deploymentTarget: z.object({ fleetDir: z.string().min(1).max(4096), unit: z.string().regex(/^[A-Za-z0-9_.@-]+$/) }).strict().optional(),
+  deploymentTarget: z.object({ fleetDir: z.string().min(1).max(4096), unit: z.string().regex(/^[A-Za-z0-9_.@-]+$/) }).strict().optional()
+    .describe("Select an exact deployment target for this lease action. Omit to use the sealed project's default. A legacy ledger has one lease per project."),
   token: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   fence: z.number().int().positive().optional(),
 }).strict();
@@ -78,18 +79,20 @@ export async function executeProjectRelease(input: unknown, store: ProjectReleas
     const args = schema.parse(input);
     const project = await releaseProject(args.cwd);
     const owner = await bindOwner(args.owner, caller);
+    const deploymentTarget = args.deploymentTarget && {
+      fleetDir: await realpath(args.deploymentTarget.fleetDir), unit: args.deploymentTarget.unit,
+    };
     let result: unknown;
-    if (args.action === "status") result = await store.status(project);
+    if (args.action === "status") result = await store.status(project, deploymentTarget);
     else {
       if (!owner) throw new Error("release_lease_owner_required");
       if (owner.hostId !== hostname()) throw new Error("release_lease_use_owner_authority_host");
       if (args.action === "acquire") {
-        const target = args.deploymentTarget ? { fleetDir: await realpath(args.deploymentTarget.fleetDir), unit: args.deploymentTarget.unit } : undefined;
-        result = await store.acquire(project, owner, args.ttlSeconds, target);
+        result = await store.acquire(project, owner, args.ttlSeconds, deploymentTarget);
       }
       else {
         if (!args.token || !args.fence) throw new Error("release_lease_proof_required");
-        const proof = { owner, token: args.token, fence: args.fence };
+        const proof = { owner, token: args.token, fence: args.fence, ...(deploymentTarget && { deploymentTarget }) };
         result = args.action === "renew" ? await store.renew(project, proof, args.ttlSeconds)
           : args.action === "release" ? await store.release(project, proof) : await store.check(project, proof);
       }
@@ -99,7 +102,7 @@ export async function executeProjectRelease(input: unknown, store: ProjectReleas
 
 export function registerProjectReleaseTools(server: McpServer, store: ProjectReleaseLeaseStore = projectReleaseLeases) {
   server.registerTool("project_release_lease", {
-    description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. New owner records may include process:{pid,bootId,startTicks} alongside the native session; when release occupancy is explicitly enabled that identity is required and checked. When the runtime capability is off or unknown, acquisition and guard are bypassed so ordinary work continues without a blocking lease. A lease grants no command, merge or deployment authorization.",
+    description: "Compatibility facade for project release ownership. A reviewed sealed authority maps the canonical Git common directory and exact deployment target to one generic Herder resource; all claims and renewals then use the Rust resource store. An unsealed existing ledger keeps its prior behavior until reviewed migration. Worktrees share one project key. Owner is attribution under existing MCP authorization, not authentication. New owner records may include process:{pid,bootId,startTicks} alongside the native session; when release occupancy is explicitly enabled that identity is required and checked. Disabled occupancy prevents acquisition. The sealed authority decides whether a proof may be bypassed. A lease grants no command, merge or deployment authorization.",
     inputSchema: schema,
   }, async (args, context) => {
     const result = await executeProjectRelease(args, store, callerSessionFromMcpContext(context));

@@ -46,7 +46,7 @@ def release_occupancy_enabled():
 
 
 class ReleaseGate:
-    def __init__(self, proof_path, state_path=None, now=None, target=None):
+    def __init__(self, proof_path, state_path=None, now=None, target=None, *, require_target_lease=False):
         self.proof = json.loads(Path(proof_path).read_text())
         self.state_path = Path(state_path or os.environ.get(
             "AGENT_HERDER_RELEASE_LEASES",
@@ -55,6 +55,7 @@ class ReleaseGate:
         self.fd = None
         self.target_fd = None
         self.target = target
+        self.require_target_lease = require_target_lease
         self._bridge = None
         self._bridge_buffer = b""
         self._canonical = None
@@ -189,6 +190,8 @@ class ReleaseGate:
 
     def __enter__(self):
         if not release_occupancy_enabled():
+            if self.require_target_lease:
+                raise RuntimeError("release_shared_target_lease_required")
             self._occupancy_disabled = True
             return self
         marker = self._canonical_authority(json.loads(self.state_path.read_text()))
@@ -198,6 +201,10 @@ class ReleaseGate:
                 result = self._exchange(self._request("guard"))
                 if not isinstance(result, dict) or result.get("guarded") is not True:
                     raise RuntimeError("release_canonical_guard_not_acquired")
+                if self.require_target_lease:
+                    lease = result.get("lease")
+                    if not isinstance(lease, dict) or lease.get("deploymentTarget") != self.target:
+                        raise RuntimeError("release_shared_target_lease_required")
             except BaseException:
                 self._close_bridge()
                 raise
