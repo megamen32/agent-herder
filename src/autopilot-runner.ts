@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { notifyAutopilotStop } from "./autopilot/stop-notify.js";
 import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,7 +26,7 @@ import type { PendingHumanQuestion } from "./autopilot/index.js";
 import { AutopilotPolicyStore, resolveAutopilotPolicyStorePath } from "./autopilot/policy-store.js";
 import { adoptLegacyAutopilotState, resolveAutopilotStateDir, resolveHumanRequestStorePath } from "./autopilot/state-dir.js";
 import { effectivePolicyAllowsTarget } from "./autopilot/policy.js";
-import { AutopilotSessionStore, type AutopilotHarness } from "./autopilot/session-store.js";
+import { AutopilotSessionStore, readGoalSnapshot, type AutopilotHarness } from "./autopilot/session-store.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
 import { acquireLock, checkpointAutopilotReceipts } from "./autopilot-hook.js";
 import { SessionAutostartStore } from "./autopilot/unfinished-session-launcher.js";
@@ -81,14 +81,43 @@ async function noticeQuestionProducer(): Promise<NoticeQuestionConfig | undefine
   };
 }
 
-export async function runAutopilotCommand(input: AutopilotRunnerInput): Promise<Record<string, unknown>> {
+type SessionControl = (command: "on" | "off" | "status", target: AutopilotRunnerInput,
+  store: AutopilotSessionStore, policy: AutopilotPolicyStore) => Promise<Record<string, unknown> | undefined>;
+
+/** Installed Codex plugins share the inspector's session endpoint, independent of plugin cache version. */
+const inspectorCommand: SessionControl = async (command, target, store) => {
+  if (target.harness !== "codex") return;
+  const endpoint = process.env.AGENT_HERDER_URL;
+  if (!endpoint && !process.env.HERDER_V1_ENTRY) {
+    try { await access(join(homedir(), ".local/bin/agent-herder-v1")); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if ((await store.get(target.harness, target.sessionId))?.executor !== "rust") return; // Standalone legacy installation.
+    }
+  }
+  const base = new URL(endpoint || "http://127.0.0.1:18787");
+  if (base.protocol !== "http:" || !["127.0.0.1", "[::1]", "localhost"].includes(base.hostname) || base.username || base.password)
+    throw new Error("Codex autopilot requires the local Herder inspector");
+  const url = new URL("/api/autopilot/sessions/codex/" + encodeURIComponent(target.sessionId), base);
+  url.searchParams.set("cwd", resolve(target.cwd));
+  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(30_000),
+    ...(command === "status" ? {} : { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: command === "on", cwd: resolve(target.cwd) }) }) });
+  const result = await response.json();
+  if (!response.ok || result.harness !== "codex" || result.sessionId !== target.sessionId || typeof result.enabled !== "boolean")
+    throw new Error(result.error || "Invalid autopilot session receipt from the inspector");
+  return { ...result, ok: true, command, session_id: target.sessionId, source: result.command_source ?? result.source };
+};
+
+export async function runAutopilotCommand(input: AutopilotRunnerInput, control: SessionControl = inspectorCommand): Promise<Record<string, unknown>> {
   if (input.command === "stop") {
-    const status = await evaluateAutopilotCommand({ ...input, command: "status" });
+    const status = await legacyAutopilotStatus(input);
+    if (status.executor === "rust") return { ...status, command: "stop", decision: "rust-executor" };
     if (status.human_stop_held) return { ...status, command: "stop", decision: "human-stop-held" };
     if (!status.enabled) return { ...status, command: "stop", decision: "disabled" };
     return notifyAutopilotStop(input);
   }
-  return evaluateAutopilotCommand(input);
+  return evaluateAutopilotCommand(input, false, control);
 }
 
 /** Process-owned background consumer; hooks call notifyAutopilotStop instead. */
@@ -96,17 +125,35 @@ export async function evaluateAutopilotStop(input: AutopilotRunnerInput): Promis
   return evaluateAutopilotCommand({ ...input, command: "stop" }, true);
 }
 
-async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background = false): Promise<Record<string, unknown>> {
+/** Admission for the existing TypeScript consumer, including its final check before delivery. */
+export function legacyAutopilotStatus(input: AutopilotRunnerInput) {
+  return evaluateAutopilotCommand({ ...input, command: "status" }, true);
+}
+
+async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background = false, control?: SessionControl): Promise<Record<string, unknown>> {
   await adoptLegacyAutopilotState(stateDir);
   const command = input.command ?? "on";
+  const store = new AutopilotSessionStore(join(stateDir, "sessions.json"));
+  const goalStore = new GoalStore(stateDir);
+  const policyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(stateDir));
+  if (control && command !== "stop") {
+    const result = await control(command, input, store, policyStore);
+    if (result) return result;
+  }
   const humanStops = getHumanStopStore();
   const held = () => humanStops.isHeld(input.harness, input.sessionId);
   if (command === "on" && await held()) {
     return { ok: true, command, harness: input.harness, session_id: input.sessionId, enabled: false, human_stop_held: true };
   }
-  const store = new AutopilotSessionStore(join(stateDir, "sessions.json"));
-  const goalStore = new GoalStore(stateDir);
-  const policyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(stateDir));
+  if (background && input.harness === "codex") {
+    const row = await store.get(input.harness, input.sessionId);
+    if (row?.executor === "rust" && !row.noticeIncident && !row.noticeAttempt
+      && (await policyStore.readEffective()).policy.judgeMode !== "self"
+      && !await readGoalSnapshot(goalStore, { ...input, cwd: row.cwd })) {
+      return { ok: true, command, harness: input.harness, session_id: input.sessionId,
+        enabled: false, executor: "rust", decision: "rust-executor" };
+    }
+  }
   if (command === "status") {
     const record = await store.get(input.harness, input.sessionId);
     const goal = await readGoalSnapshot(goalStore, { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) });
@@ -128,7 +175,7 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
     const record = await store.set({ harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) }, command === "on");
     const identity = { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) };
     if (command === "off") { if (await readGoalSnapshot(goalStore, identity)) await goalStore.stop(identity); }
-    else if (await readGoalSnapshot(goalStore, identity)) await goalStore.resume(identity);
+    else await store.resumeGoalIfPresent(identity);
     return { ok: true, command, harness: record.harness, session_id: record.sessionId, enabled: record.enabled };
   }
 
@@ -459,14 +506,6 @@ function explicitUnavailableMaterials(events: Array<{ eventId: string; refs?: Ar
       return [{ id: `${requirement.id}:${ref.uri}`, text: `Материал не поддерживается для проверки: ${ref.label ?? ref.uri}`, complete: false as const, version: "unavailable", kind: "file" as const }];
     });
   }));
-}
-
-async function readGoalSnapshot(store: GoalStore, identity: { harness: string; sessionId: string; cwd: string }) {
-  try { return await store.snapshot(identity); }
-  catch (error) {
-    if (error instanceof Error && error.message === "goal is not armed for this session") return undefined;
-    throw error;
-  }
 }
 
 export async function autopilotGoalFenceCurrent(input: Pick<AutopilotRunnerInput, "harness" | "sessionId" | "cwd">, expected: Record<string, unknown>): Promise<boolean> {

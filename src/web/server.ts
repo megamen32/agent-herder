@@ -69,7 +69,9 @@ import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, i
 import { noticeplaceAttemptOutcome } from '../automation/noticeplace-attempt-outcome.js';
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { HarnessRuntimeSettingsError, HarnessRuntimeSettingsStore, harnessRuntimeView, type HarnessRuntimeView } from "../harness-runtime-settings.js";
-import { AutopilotSessionStore, parseNoticeAttempt, type AutopilotHarness } from "../autopilot/session-store.js";
+import { AutopilotSessionStore, isAutopilotHarness, parseNoticeAttempt, readGoalSnapshot, type AutopilotHarness } from "../autopilot/session-store.js";
+import { GoalStore } from "../autopilot/goal-store.js";
+import { nativeAutopilotCommand } from "../autopilot/native-command.js";
 import { parseChatCommand, type ChatCommandPipeline } from "../autopilot/chat-commands.js";
 import { browserChatInventorySummary } from "../adapters/browser-chat-inventory-cache.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
@@ -2313,6 +2315,23 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = decodeURIComponent(autopilotSessionMatch[1]);
     const sessionId = decodeURIComponent(autopilotSessionMatch[2]);
     if (!isAutopilotHarness(harness) || sessionId.trim().length === 0) return sendJson(response, 400, { error: "unsupported harness or empty session id" });
+    const body: Record<string, unknown> = request.method === "PUT" ? await readJson(request)
+      : { enabled: false, cwd: url.searchParams.get("cwd") || "/" };
+    if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || !body.cwd.trim())
+      return sendJson(response, 400, { error: "enabled and cwd are required" });
+    let resetNative = false;
+    if (harness === "codex" && body.noticeIncident === undefined && body.noticeAttempt === undefined) {
+      const command = request.method === "GET" ? "status" : request.method === "DELETE" ? "reset" : body.enabled ? "on" : "off";
+      try {
+        if (command === "on" && await getHumanStopStore().isHeld(harness, sessionId))
+          return sendJson(response, 200, { harness, sessionId, enabled: false, source: "session", human_stop_held: true });
+        const result = await nativeAutopilotCommand(command, { harness, sessionId, cwd: body.cwd }, autopilotSessionStore, autopilotPolicyStore);
+        if (result && command !== "reset") return sendJson(response, 200, result);
+        resetNative = !!result;
+      } catch (error) {
+        return sendJson(response, 503, { error: (error as Error).message });
+      }
+    }
     if (request.method === "GET") {
       const record = await autopilotSessionStore.get(harness, sessionId);
       const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
@@ -2320,16 +2339,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const inheritedEnabled = effective
         ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd })
         : harness === "codex";
+      const goal = harness === "codex" ? await readGoalSnapshot(new GoalStore(autopilotSessionStore.stateDir), { harness, sessionId, cwd }) : undefined;
+      const goalOptIn = record?.enabled !== false && goal?.armed === true;
       return sendJson(response, 200, {
         harness,
         sessionId,
-        enabled: record?.enabled ?? inheritedEnabled,
+        enabled: goalOptIn || (record?.enabled ?? inheritedEnabled),
         source: record?.enabled !== undefined ? "session" : effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
+        ...(harness === "codex" && { command_source: goalOptIn ? "goal-session" : record?.enabled !== undefined ? "session" : effective?.source,
+          goal_opt_in: goalOptIn, goal_revision: goal?.goalRevision, goal_completed: goal?.completed,
+          human_stop_held: await getHumanStopStore().isHeld(harness, sessionId) }),
         ...(record ? { cwd: record.cwd, updatedAt: record.updatedAt } : {}),
       });
     }
     if (request.method === "DELETE") {
-      await autopilotSessionStore.delete(harness, sessionId);
+      if (!resetNative) await autopilotSessionStore.delete(harness, sessionId);
       // The incident binding of this session is gone: its card must not keep
       // receiving progress from this session.
       noticeplaceHealthObserver?.stopTarget({ harness, sessionId });
@@ -2342,10 +2366,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         enabled: effective ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd }) : harness === "codex",
         source: effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
       });
-    }
-    const body = await readJson(request);
-    if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || body.cwd.trim().length === 0) {
-      return sendJson(response, 400, { error: "enabled and cwd are required" });
     }
     try {
       const previous = await autopilotSessionStore.get(harness, sessionId);
@@ -2360,6 +2380,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const noticeIncident = requested === undefined ? undefined : { ...requested, ...(planId ? { planId } : {}) };
       const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }),
         ...(body.noticeAttempt === undefined ? {} : { noticeAttempt: parseNoticeAttempt(body.noticeAttempt) }) }, body.enabled);
+      if (body.enabled && harness === "codex" && !record.noticeIncident && !record.noticeAttempt)
+        await autopilotSessionStore.resumeGoalIfPresent(record);
       if (body.enabled && record.noticeIncident) {
         // The center armed this session for one original incident: watch it
         // until it ends and keep that incident's card truthful meanwhile.
@@ -4274,10 +4296,6 @@ function validSourceSessionFields(value: Record<string, unknown>): boolean {
 
 function hasControlCharacters(value: string): boolean {
   return /[\u0000-\u001f\u007f]/u.test(value);
-}
-
-function isAutopilotHarness(value: string): value is AutopilotHarness {
-  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode" || value === "chatgpt" || value === "zai";
 }
 
 /**

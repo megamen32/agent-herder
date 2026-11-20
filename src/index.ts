@@ -10,7 +10,8 @@ import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.
 import { ChatCommandPipeline } from "./autopilot/chat-commands.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
-import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { nativeAutopilotCommand } from "./autopilot/native-command.js";
+import { evaluateAutopilotStop, legacyAutopilotStatus, runAutopilotCommand } from "./autopilot-runner.js";
 import { selfJudgeEvaluate } from "./autopilot/self-judge.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
@@ -711,7 +712,7 @@ async function autopilotSessionCommand(
   if (!cwd || !cwd.startsWith("/")) {
     return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
   }
-  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd });
+  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd }, nativeAutopilotCommand);
 }
 
 function registerTools(
@@ -1273,7 +1274,7 @@ async function main() {
     held: (harness, id) => humanStopStore.isHeld(harness, id),
     allowed: async input => {
       stopPendingQuestions.invalidate();
-      const status = await runAutopilotCommand({ ...input, command: "status" });
+      const status = await legacyAutopilotStatus(input);
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: async (input, goal, inputId) => {
@@ -1326,7 +1327,7 @@ async function main() {
       const observer = new NativeTurnAutopilotObserver({
         harness,
         adapter,
-        enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+        enabled: async (input) => (await legacyAutopilotStatus(input)).enabled === true,
         submit: (input) => backgroundAutopilotStop!.submit(input),
         resolveCwd: async (sessionId) => (await adapter.getSession(sessionId))?.cwd,
         onError: (message) => console.error(`[agent-herder] ${message}`),
