@@ -1,5 +1,23 @@
 # Обнаруженные дефекты
 
+## 2026-11-20 — тестовый набор Agent Herder красный вне изменений лимита Codex
+
+- **Симптом.** `npx vitest run --root . --config vitest.config.ts` в рабочем дереве `codex/native-autorecovery` падает во многих файлах, не связанных с лимитом Codex: `tests/planner-route-notice.test.ts` (5), `tests/codex-resume-receipt.test.ts` (9), `tests/autopilot-core.test.ts` (17), `tests/unfinished-session-launcher-title-idempotence.test.ts` (10), `tests/recovery-admission.test.ts` (9) и другие.
+- **Воспроизведение.** Выполнить команду выше в `/home/roomhacker/.codex/worktrees/codex-autorecovery/agent-herder` без изменений в `src/` и `tests/codex-*.test.ts` (проверено через `git stash`): падает тот же набор файлов и то же число тестов (48 файлов, 239 тестов).
+- **Контекст.** Обнаружено при проверке исправления лимита Codex: зелёными остаются только изменённые файлы, полный набор был красным до изменений. Не использовать полный прогон как критерий приёмки этого исправления; сравнивать состав падений до и после.
+
+## 2026-11-20 — устаревшая фикстура теста отказа лимита не доходила до проверки отказа
+
+- **Симптом.** `tests/codex-quota-guard.test.ts` («a refused resume is not submitted and must not be replayed») падал: `resumeSession` отказывал раньше проверки лимита с «Codex thread resume requires a saved model provider», потому что фикстура не отдавала сохранённый провайдер треда.
+- **Воспроизведение.** Запустить `npx vitest run --root . --config vitest.config.ts tests/codex-quota-guard.test.ts` на вершине `2567f2fe` без правок: тест падает с ожиданием `notSubmitted:true`, а фактически приходит ошибка провайдера.
+- **Контекст.** Обнаружено при исправлении области лимита для кастомного провайдера; поведение продукта (отказ без сохранённого провайдера) намеренное, исправлена фикстура теста.
+
+## 2026-11-20 — пустые служебные ссылки Codex ломали `git fetch` общего репозитория
+
+- **Симптом.** `git fetch origin main` в общем checkout Agent Herder завершался с `fatal: bad object refs/codex/turn-diffs/captures/…/base` и «не отправил все необходимые объекты», из-за чего проверка главной ветки релиза (`deploy/fleet/main_guard.py`) не могла обновить `origin/main` и отказывала в выкатке.
+- **Воспроизведение.** Проверить размер файлов ссылок: `.git/refs/codex/turn-diffs/captures/1795141019370/51b4951b-d158-446b-b18d-24ed902d0229/base` и `.git/refs/codex/turn-diffs/captures/1795141275506/752c0047-1b11-474f-91b2-f09ca8219b99/base` были пустыми файлами нулевой длины, созданными 20.11 в 05:16 и 05:21.
+- **Контекст.** Обнаружено при выкатке исправления лимита Codex. Пустые файлы ссылок удалены (данных в них не было), после этого `git fetch origin +refs/heads/main:refs/remotes/origin/main` проходит. Остальные 14 ссылок `refs/codex/turn-diffs/*` сохранены.
+
 ## 2026-11-16 — wrapper session_info не повторяет прямой MCP readback
 
 - **Симптом:** подключённый wrapper-вызов mcp__agent_herder__session_info для существующей OpenCode-сессии ses_eac7ce778ffeFIOQrMsi8BFRzl возвращает fleet_session_native_not_ready.
