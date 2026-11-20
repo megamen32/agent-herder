@@ -726,12 +726,43 @@ for line in sys.stdin:
 
 #[test]
 fn native_codex_owner_recovers_the_same_thread_once_after_restart() {
-    exercise_codex_owner_recovery(false);
+    exercise_codex_owner_recovery(CodexHandoff::Cohort);
 }
 
 #[test]
 fn native_codex_owner_discovers_new_chats_after_restart() {
-    exercise_codex_owner_recovery(true);
+    exercise_codex_owner_recovery(CodexHandoff::Instance);
+}
+
+#[test]
+fn native_codex_workspace_handoff_matches_legacy_wait_status_and_recovery() {
+    exercise_codex_owner_recovery(CodexHandoff::Workspaces);
+}
+
+#[test]
+fn native_codex_workspace_handoff_discovers_chats_without_an_exact_cohort() {
+    exercise_codex_owner_recovery(CodexHandoff::WorkspacesOnly);
+}
+
+#[test]
+fn trusted_profile_accepts_workspace_handoff_only_for_codex() {
+    use serde_json::json;
+    let f = Fixture::new();
+    let mut profile = json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "principal":"owner","node":"local","instance":"local-opencode","kind":"opencode",
+        "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"code_home":f.root,"cwd":f.root,
+        "ahap_base_url":"http://127.0.0.1:1",
+        "opencode_recovery":{"autopilot_state_dir":f.root,"legacy_handoff":{
+            "native_sessions":["existing"], "activation_file":f.root.join("activation"),
+            "human_stops":f.root.join("stops"),"unfinished_sessions":f.root.join("unfinished"),
+            "human_requests":f.root.join("requests"),"choices":f.root.join("choices")}}
+    }});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_ok());
+    profile["owner"]["opencode_recovery"]["legacy_handoff"]["workspaces"] =
+        json!([{"cwd":"/work/one","provider":"opencodex"}]);
+    fs::write(&f.profile, profile.to_string()).unwrap();
+    assert!(scoped_profile::open_owner(&f.profile).is_err());
 }
 
 fn recovery_client_meta() -> serde_json::Value {
@@ -879,7 +910,15 @@ fn native_opencode_owner_discovers_and_recovers_an_unregistered_session_once() {
     assert!(sends.starts_with("opencode-recovery:"));
 }
 
-fn exercise_codex_owner_recovery(instance_wide: bool) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CodexHandoff {
+    Cohort,
+    Instance,
+    Workspaces,
+    WorkspacesOnly,
+}
+
+fn exercise_codex_owner_recovery(scope: CodexHandoff) {
     use serde_json::{Value, json};
     use std::{
         io::{BufRead, BufReader, Write},
@@ -890,6 +929,11 @@ fn exercise_codex_owner_recovery(instance_wide: bool) {
 
     let f = Fixture::new();
     let fake = f.root.join("fake-codex");
+    let instance_wide = scope == CodexHandoff::Instance;
+    let workspaces = matches!(scope, CodexHandoff::Workspaces | CodexHandoff::WorkspacesOnly);
+    if workspaces {
+        fs::write(f.root.join("workspace-mode"), "").unwrap();
+    }
     fs::write(&fake, r#"#!/usr/bin/python3
 import json, os, sys, time
 from pathlib import Path
@@ -899,9 +943,18 @@ styles={'preserve':'openai','quota-reset':'openai','uncertain':'openai','disable
         'legacy-uncertain':'openai','outside-cohort':'openai','foreign-project':'openai'}
 if (home/'new-native-chats').exists():
  styles.update(dict.fromkeys(('first','later-page','old','changed','completed','held-new'),'openai'))
+workspace_mode=(home/'workspace-mode').exists()
+if workspace_mode:
+ styles.update(dict.fromkeys(('fresh','healthy','legacy-fallback','late-fallback','rerouted','sibling','outside-cohort','held-new'),'opencodex'))
+ styles.update(dict.fromkeys(('reviewed-'+str(i) for i in range(10)), 'openai'))
+ styles['other-provider']='openai'
+ styles['missing-provider']=None
 loaded={}
 started=int((home/'fake-codex').stat().st_mtime)-10
 def cwd(target):
+ if workspace_mode:
+  if target in ('fresh','healthy','legacy-fallback','late-fallback','rerouted','other-provider','held-new'): return str(home/'transferred')
+  if target in ('sibling','outside-cohort'): return str(home/'transferred-old')
  if target=='later-page': return str(home/'deep-workspace')
  if target=='foreign-project': return str(home/'other-project')
  return str(home/'unverified-route') if target=='unknown-quota' else str(home)
@@ -918,7 +971,7 @@ for line in sys.stdin:
  model='old-model' if provider=='retired' else 'gpt-fixture'
  item={'id':'user-'+target,'type':'userMessage','content':[{'type':'text','text':'fixture work'}]} if target else None
  kind='failed' if target in ('quota-reset','unknown-quota') else 'interrupted'
- if target=='completed' or (target=='changed' and (home/'changed-observed').exists()): kind='completed'
+ if target in ('completed','healthy') or (target=='changed' and (home/'changed-observed').exists()): kind='completed'
  old={'id':previous,'status':kind,'startedAt':started,
       'completedAt':started+1 if kind=='failed' else None,'itemsView':'full','items':[item]}
  if kind=='failed':
@@ -944,6 +997,9 @@ for line in sys.stdin:
   cursor=p.get('cursor')
   rows=[('held-new',started-2),('first',started),('completed',started-1)] if cursor is None else [
         ('later-page',started-4),('changed',started-3),('old',started-3*86400)]
+  if workspace_mode:
+   rows=[('sibling',started),('outside-cohort',started),('legacy-fallback',started)] if cursor is None else [
+         ('healthy',started),('late-fallback',started),('rerouted',started),('fresh',started),('other-provider',started),('held-new',started)]
   assert cursor in (None,'next-page')
   v={'data':[{'id':x,'updatedAt':updated} for x,updated in rows],'nextCursor':'next-page' if cursor is None else None}
  elif m=='thread/list':
@@ -978,8 +1034,14 @@ for line in sys.stdin:
   v={'config':{'model_provider':'openai','model_providers':{},
                'openai_base_url':'http://127.0.0.1:1' if p.get('cwd')==cwd('unknown-quota') else None}}
  elif m=='thread/resume' and target in styles:
+  if target=='late-fallback':
+   registry=home/'unfinished-sessions.json'
+   saved=json.loads(registry.read_text())
+   saved['sessions'].append({'harness':'codex','sessionId':target,'state':'active','quotaRecovery':{'state':'waiting'}})
+   registry.write_text(json.dumps(saved))
   with (home/('attach-'+target)).open('a') as out: out.write(json.dumps(p)+'\n')
   loaded[target]=p.get('modelProvider',provider)
+  if target=='rerouted': loaded[target]='openai'
   effective_model=p.get('model',model)
   v={'thread':dict(thread,modelProvider=loaded[target],model=effective_model,status={'type':'idle'}),
      'model':effective_model,'modelProvider':loaded[target],'cwd':cwd(target)}
@@ -1008,7 +1070,7 @@ for line in sys.stdin:
     let cohort = ["preserve", "quota-reset", "uncertain", "disabled", "unknown-quota", "held",
         "pending-question", "legacy-uncertain"];
     for (id, target) in cohort.iter().chain([&"outside-cohort"])
-        .filter(|&&target| !instance_wide && target != "preserve").enumerate() {
+        .filter(|&&target| !instance_wide && target != "preserve" && (!workspaces || target == "outside-cohort")).enumerate() {
         let input = provisioning.stdin.as_mut().unwrap();
         writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id+1,"method":"tools/call",
             "params":{"_meta":meta,"name":"session","arguments":{"action":"register","instance_ref":"codex-test",
@@ -1055,7 +1117,8 @@ for line in sys.stdin:
         {"target":{"agent":"codex","sessionId":"pending-question"},"status":"pending"}
     ]}).to_string()).unwrap();
     fs::write(&unfinished, json!({"version":1,"sessions":[
-        {"harness":"codex","sessionId":"legacy-uncertain","deliveryPending":true}
+        {"harness":"codex","sessionId":"legacy-uncertain","deliveryPending":true},
+        {"harness":"codex","sessionId":"legacy-fallback","state":"active","quotaRecovery":{"state":"waiting"}}
     ]}).to_string()).unwrap();
     profile["owner"]["codex_recovery"] = json!({"autopilot_state_dir":f.root,
         "legacy_handoff":{"native_sessions":cohort,"activation_file":activation,
@@ -1071,9 +1134,92 @@ for line in sys.stdin:
         handoff.remove("native_sessions");
         handoff.insert("instance_wide".into(), true.into());
     }
+    if workspaces {
+        let handoff = &mut profile["owner"]["codex_recovery"]["legacy_handoff"];
+        if scope == CodexHandoff::Workspaces {
+            let mut exact = vec![String::from("preserve")];
+            exact.extend((0..10).map(|i| format!("reviewed-{i}")));
+            handoff["native_sessions"] = json!(exact);
+        } else {
+            handoff.as_object_mut().unwrap().remove("native_sessions");
+        }
+        handoff["workspaces"] = json!([{"cwd": f.root.join("transferred"), "provider": "opencodex"}]);
+    }
     fs::write(&f.profile, profile.to_string()).unwrap();
 
     let mut staged = launch();
+    if workspaces {
+        for id in ["fresh", "healthy", "late-fallback", "rerouted"] {
+            let status = recovery_wait_status(&mut staged, "codex", id);
+            assert_eq!(status["reason"], "rust_recovery_handoff", "{id}: {status}");
+            assert_eq!(status["recoveryOwner"], "rust", "{id}: {status}");
+        }
+        let mixed = scope == CodexHandoff::Workspaces;
+        let explicit = recovery_wait_status(&mut staged, "codex", "preserve");
+        assert_eq!(explicit["blocked"], mixed, "{explicit}");
+        assert_eq!(explicit["recoveryOwner"].as_str(), mixed.then_some("rust"), "{explicit}");
+        for id in ["sibling", "outside-cohort", "other-provider", "legacy-fallback"] {
+            let status = recovery_wait_status(&mut staged, "codex", id);
+            assert_eq!(status["blocked"], false, "{id}: {status}");
+            assert!(status["recoveryOwner"].is_null(), "{id}: {status}");
+            assert_eq!(status["mapped"], id == "outside-cohort", "{id}: {status}");
+        }
+        check_unmapped_recovery_fences(&mut staged, "codex");
+        let unknown = recovery_wait_status(&mut staged, "codex", "missing-provider");
+        assert_eq!(unknown["reason"], "native_recovery_ownership_unavailable", "{unknown}");
+        assert_eq!(unknown["complete"], false, "{unknown}");
+        assert!(unknown["recoveryOwner"].is_null(), "{unknown}");
+        let saved_registry = unfinished.with_extension("staged");
+        fs::rename(&unfinished, &saved_registry).unwrap();
+        let unknown = recovery_wait_status(&mut staged, "codex", "fresh");
+        assert_eq!(unknown["blocked"], true, "{unknown}");
+        assert_eq!(unknown["complete"], false, "{unknown}");
+        assert!(unknown["recoveryOwner"].is_null(), "{unknown}");
+        assert_eq!(recovery_wait_status(&mut staged, "codex", "sibling")["blocked"], false);
+        fs::rename(saved_registry, &unfinished).unwrap();
+        close(staged);
+        assert!(!f.root.join("send-order").exists());
+        fs::write(&activation, "true").unwrap();
+        let mut child = launch();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !f.root.join("sent-fresh").exists() || mixed && !f.root.join("sent-preserve").exists() {
+            assert!(Instant::now() < deadline, "expected both the new workspace chat and the unlisted explicit ID");
+            thread::sleep(Duration::from_millis(40));
+        }
+        // A read during the bounded dispatch can find the authority gate busy.
+        // Read from this same owner once it releases the gate.
+        for id in ["late-fallback", "rerouted"] {
+            loop {
+                let legacy = recovery_wait_status(&mut child, "codex", id);
+                if legacy["code"] != "legacy_migration_unavailable" {
+                    assert_eq!(legacy["blocked"], false, "{id}: {legacy}");
+                    assert!(legacy["recoveryOwner"].is_null(), "{id}: {legacy}");
+                    break;
+                }
+                assert!(Instant::now() < deadline, "{legacy}");
+                thread::sleep(Duration::from_millis(40));
+            }
+            assert!(f.root.join(format!("attach-{id}")).exists());
+            assert!(!f.root.join(format!("sent-{id}")).exists());
+        }
+        close(child);
+        let db = Connection::open(&f.db).unwrap();
+        let mut stmt = db.prepare("SELECT native_session_id FROM session_bindings ORDER BY native_session_id").unwrap();
+        let bound = stmt.query_map([], |r| r.get::<_, String>(0)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let sends = fs::read_to_string(f.root.join("send-order")).unwrap();
+        let mut ids = sends.lines().collect::<Vec<_>>();
+        let reviewed = ids.iter().filter(|id| id.starts_with("reviewed-")).count();
+        // Both sources must advance on the first tick, even with more explicit
+        // eligible IDs than the complete start budget. No ID starts twice.
+        assert!(reviewed <= 3);
+        assert_eq!(ids.iter().filter(|id| **id == "fresh").count(), 1);
+        assert_eq!(ids.iter().filter(|id| **id == "preserve").count(), usize::from(mixed));
+        assert_eq!(ids.len(), 1 + usize::from(mixed) + reviewed);
+        ids.extend(["late-fallback", "outside-cohort", "rerouted"]);
+        ids.sort_unstable();
+        assert_eq!(bound, ids);
+        return;
+    }
     let fence = recovery_wait_status(
         &mut staged, "codex",
         if instance_wide { "first" } else { "preserve" },

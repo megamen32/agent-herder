@@ -504,7 +504,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         owner.kind != "opencode"
             || owner.ahap_script.is_some()
             || owner.ahap_base_url.is_none()
-            || !recovery.valid()
+            || !recovery.valid_for("opencode")
     }) {
         return Err(invalid().into());
     }

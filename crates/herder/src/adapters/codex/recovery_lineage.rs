@@ -219,7 +219,7 @@ pub(super) fn read_ancestors(
         )? {
             return Ok(None);
         }
-        if !goal_allows_recovery(connection, &parent_id, deadline)? {
+        if !goal_allows_recovery(connection, &parent_id, None, deadline)? {
             return Ok(None);
         }
         let turns = read_rpc(
