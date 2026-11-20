@@ -1,5 +1,5 @@
 import {describe,it,expect,afterEach,vi} from "vitest";
-import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {evaluateCodexQuota,DEFAULT_CODEX_QUOTA_POLICY,validateCodexQuotaPolicy,loadCodexQuotaPolicy,saveCodexQuotaPolicy,checkCodexQuota,CodexQuotaBlockedError,assertRemoteCodexAdmission} from "../src/codex-quota-guard.js";
@@ -38,7 +38,7 @@ describe("Codex quota reserve",()=>{
   }finally{await rm(dir,{recursive:true,force:true});}
  });
  it("native admission gates all consuming methods before the transport write; reads and interruption stay available",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"quota-native-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+  const dir=await mkdtemp(join(tmpdir(),"quota-native-"));const home=join(dir,"codex-home");await mkdir(home,{recursive:true});vi.stubEnv("CODEX_HOME",home);vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
   try {
    const a=new CodexAppServerAdapter({});const x=a as any;const calls:string[]=[];
    x.isTransportWritable=()=>true;
@@ -115,19 +115,25 @@ it("thread/resume is gated as well: a continuation cannot spend the reserve",asy
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
-it("a refused resume is not submitted and must not be replayed",async()=>{
- const dir=await mkdtemp(join(tmpdir(),"quota-refusal-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
- try{
-  const a=new CodexAppServerAdapter({});const x=a as any;
-  x.isReady=()=>true;
-  x.isTransportWritable=()=>true;
-  x.writeMessage=(m:any)=>{const p=x.pending.get(m.id);clearTimeout(p.timer);x.pending.delete(m.id);p.resolve(m.method==="account/rateLimits/read"?sample(86):{ok:true});};
-  const result=await a.resumeSession("thread-quota-1");
-  expect(result.ok).toBe(false);
-  expect(result).toMatchObject({notSubmitted:true,admitted:false,nonRetryable:true,admissionUnknown:false});
-  expect(String((result as any).error)).toContain("codex_quota_guard");
- }finally{await rm(dir,{recursive:true,force:true});}
-});
+ it("a refused resume is not submitted and must not be replayed",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"quota-refusal-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+  const home=join(dir,"codex-home");await mkdir(home,{recursive:true});vi.stubEnv("CODEX_HOME",home);
+  try{
+   const a=new CodexAppServerAdapter({});const x=a as any;
+   x.isReady=()=>true;
+   x.isTransportWritable=()=>true;
+   // The resume needs the saved provider of the thread; the refusal itself is
+   // produced by the reserve guard on the official subscription provider.
+   x.writeMessage=(m:any)=>{const p=x.pending.get(m.id);clearTimeout(p.timer);x.pending.delete(m.id);
+    if(m.method==="account/rateLimits/read"){p.resolve(sample(86));return;}
+    if(m.method==="thread/read"){p.resolve({thread:{id:"thread-quota-1",modelProvider:"openai"}});return;}
+    p.resolve({ok:true});};
+   const result=await a.resumeSession("thread-quota-1");
+   expect(result.ok).toBe(false);
+   expect(result).toMatchObject({notSubmitted:true,admitted:false,nonRetryable:true,admissionUnknown:false});
+   expect(String((result as any).error)).toContain("codex_quota_guard");
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
 
 describe("Codex send admission receipts",()=>{
  it.each(["quota", "transport"])("preserves %s failure through send and durable lookup without replay",async(failure)=>{
@@ -205,3 +211,70 @@ it("only exempts a declared human steer from the local reserve, never a provider
   await expect(guardModule.assertCodexQuota("turn/steer",async()=>({...sample(95),ordinaryUsageAllowed:false}),true,true)).rejects.toMatchObject({decision:{reason:"provider_denied"}});
  } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+describe("Codex subscription scope of the reserve guard",()=>{
+ const exhausted={rateLimits:{primary:{usedPercent:100}},ordinaryUsageAllowed:false};
+ const customRoute=`
+model_provider = "opencodex"
+
+[model_providers.opencodex]
+name = "OpenCodex Proxy"
+base_url = "http://192.168.2.75:10100/v1"
+wire_api = "responses"
+`;
+ async function withAdapter(configText:string,threadProvider:string|undefined,run:(x:any)=>Promise<void>){
+  const dir=await mkdtemp(join(tmpdir(),"quota-scope-"));vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR",dir);
+  const home=join(dir,"codex-home");await mkdir(home,{recursive:true});
+  if(configText)await writeFile(join(home,"config.toml"),configText);
+  vi.stubEnv("CODEX_HOME",home);
+  try{
+   const a=new CodexAppServerAdapter({});const x=a as any;const calls:string[]=[];
+   x.isReady=()=>true;
+   x.isTransportWritable=()=>true;
+   x.threads=new Map(threadProvider?[["thread-scope",{id:"thread-scope",modelProvider:threadProvider}]]:[]);
+   x.writeMessage=(m:any)=>{
+    calls.push(m.method);
+    const p=x.pending.get(m.id);clearTimeout(p.timer);x.pending.delete(m.id);
+    if(m.method==="account/rateLimits/read")p.resolve(exhausted);
+    else p.resolve({ok:true});
+   };
+   await run(x,calls);
+  }finally{await rm(dir,{recursive:true,force:true});}
+ }
+ it("does not spend the subscription quota of a thread pinned to a configured third-party provider",async()=>{
+  await withAdapter(customRoute,"opencodex",async(x,calls)=>{
+   await expect(x.request("turn/start",{threadId:"thread-scope"})).resolves.toEqual({ok:true});
+   expect(calls).toEqual(["turn/start"]);
+  });
+ });
+ it("keeps the guard for the official subscription provider",async()=>{
+  await withAdapter(`
+model_provider = "openai"
+
+[model_providers.openai]
+base_url = "https://api.openai.com/v1"
+`,"openai",async(x,calls)=>{
+   await expect(x.request("turn/start",{threadId:"thread-scope"})).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+   expect(calls).toEqual(["account/rateLimits/read"]);
+  });
+ });
+ it("keeps the guard when the route of the pinned provider is not declared",async()=>{
+  await withAdapter('model_provider = "opencodex"',"opencodex",async(x,calls)=>{
+   await expect(x.request("turn/start",{threadId:"thread-scope"})).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+   expect(calls).toEqual(["account/rateLimits/read"]);
+  });
+ });
+ it("keeps the guard when the thread has no pinned provider",async()=>{
+  await withAdapter(customRoute,undefined,async(x,calls)=>{
+   await expect(x.request("turn/start",{threadId:"thread-scope"})).rejects.toBeInstanceOf(CodexQuotaBlockedError);
+   expect(calls).toEqual(["account/rateLimits/read"]);
+  });
+ });
+ it("admits a fresh thread that inherits the configured third-party provider",async()=>{
+  await withAdapter(customRoute,undefined,async(x,calls)=>{
+   await expect(x.request("thread/start",{})).resolves.toEqual({ok:true});
+   expect(calls).toEqual(["thread/start"]);
+  });
+ });
+});
+
