@@ -1234,6 +1234,74 @@ fn trusted_owner_profiles_bind_all_v1_types_to_legacy_runners() {
 }
 
 #[test]
+fn scriptless_browser_requires_trusted_executable_exact_binding_and_current_authority() {
+    use serde_json::json;
+    let f = Fixture::new();
+    let executable = f.root.join("herder-browser");
+    fs::copy(env!("CARGO_BIN_EXE_herder-browser"), &executable).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let env = json!({
+        "AHAP_BROWSER_TRANSPORT":"direct-cdp",
+        "AHAP_BROWSER_CDP_WS_URL":"ws://127.0.0.1:9222/devtools/browser/owner-fixture",
+        "AHAP_BROWSER_CDP_CONTEXT_ID":"fixture-context",
+        "AHAP_BROWSER_CDP_TARGET_ID":"fixture-target",
+        "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64),
+    });
+    let mut profile = json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+        "kind":"chatgpt","principal":"owner","node":"node","instance":"browser",
+        "executable":executable,"code_home":f.root,"cwd":f.root,"ahap_env":env
+    }});
+    let accepted = |p: &serde_json::Value| {
+        fs::write(&f.profile, p.to_string()).unwrap();
+        scoped_profile::open_owner(&f.profile).is_ok()
+    };
+    for kind in ["chatgpt", "zai"] {
+        profile["owner"]["kind"] = json!(kind);
+        assert!(accepted(&profile));
+        let mut origin_port = profile.clone();
+        origin_port["owner"]["ahap_env"]["AHAP_BROWSER_CDP_ORIGIN_PORT"] = json!("9222");
+        assert!(accepted(&origin_port));
+        for key in env.as_object().unwrap().keys() {
+            let mut missing = profile.clone();
+            missing["owner"]["ahap_env"].as_object_mut().unwrap().remove(key);
+            assert!(!accepted(&missing), "{kind} accepted missing {key}");
+        }
+    }
+    for (key, value) in [
+        ("AHAP_BROWSER_TRANSPORT", "userio"),
+        ("AHAP_BROWSER_CDP_WS_URL", "ws://192.0.2.1:9222/devtools/browser/foreign"),
+        ("AHAP_BROWSER_CDP_WS_URL", "ws://localhost:9222/devtools/page/wrong-endpoint"),
+        ("AHAP_BROWSER_CDP_ORIGIN_PORT", "65536"),
+        ("AHAP_BROWSER_ACCOUNT_SCOPE", "wrong-scope"),
+        ("AHAP_BROWSER_PAGE_ID", "1"),
+        ("AHAP_BROWSER_VIBE_TARGET", "mac-mini"),
+        ("AHAP_USERIO_ENDPOINT", "https://example.invalid"),
+        ("HOME", "/"),
+        ("AHAP_HARNESS", "chatgpt"),
+    ] {
+        let mut mixed = profile.clone();
+        mixed["owner"]["ahap_env"][key] = json!(value);
+        assert!(!accepted(&mixed), "accepted {key}");
+    }
+    for (field, value) in [
+        ("args", json!(["--instance","foreign"])),
+        ("ahap_base_url", json!("http://localhost")),
+        ("executable", json!(fs::canonicalize("/usr/bin/true").unwrap())),
+    ] {
+        let mut mixed = profile.clone();
+        mixed["owner"][field] = value;
+        assert!(!accepted(&mixed), "accepted {field}");
+    }
+    let mut stale = profile.clone();
+    stale["generation"] = json!("stale-generation");
+    assert!(!accepted(&stale));
+    for mode in [0o600, 0o777] {
+        fs::set_permissions(&executable, fs::Permissions::from_mode(mode)).unwrap();
+        assert!(!accepted(&profile), "accepted executable with mode {mode:o}");
+    }
+}
+
+#[test]
 fn trusted_owner_runner_rejects_process_injection_and_cross_family_environment() {
     let f = Fixture::new();
     let script = f.root.join("runner.js");

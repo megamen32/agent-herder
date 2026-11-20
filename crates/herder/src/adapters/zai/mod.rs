@@ -1,17 +1,19 @@
-//! Typed projection of Z.ai messages/batch responses into Herder messages.
-//!
-//! This module performs no network or profile access. The caller supplies the
-//! expected chat id and requested message ids; payload identity is checked
-//! before messages are returned.
+//! Native Z.ai operations on one scoped Chrome CDP connection.
+
+#[cfg(test)]
+mod chrome_tests;
+mod native;
 
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, time::Duration};
 
+use crate::adapters::browser::BrowserFile;
 use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent};
 use crate::domain::{
     address::{InstanceRef, NodeRef, SessionAddress},
+    attachment::has_browser_caption,
     transcript::{
         RawTranscriptBlock, TranscriptBlock, TranscriptBlockKind, TranscriptPage,
         TranscriptSourceRef, normalize_transcript_blocks,
@@ -34,6 +36,7 @@ pub struct NormalizedMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    pub attachments: Vec<BrowserFile>,
     /// Provider timestamp kept in its original numeric unit.
     pub timestamp: Option<u64>,
     pub model: Option<String>,
@@ -81,28 +84,25 @@ pub struct ZaiSendReceipt {
     pub expected_response_seen: bool,
 }
 
-/// Read-only Z.ai adapter bound to one exact Chrome instance/context/target
+/// Z.ai adapter bound to one exact Chrome instance/context/target
 /// and the expected hashed Z.ai account scope.
 pub struct ZaiReader {
     cdp: CdpConnection,
     account_scope: String,
+    fresh_blank: bool,
 }
 
 impl ZaiReader {
     pub async fn account_scope_for_target(cdp: &mut CdpConnection) -> Result<String, ZaiReadError> {
-        let scope = cdp
-            .evaluate(ZAI_ACCOUNT_SCOPE_EXPRESSION)
+        let value = cdp
+            .evaluate(&native::expression("account", None, Value::Null))
             .await
             .map_err(ZaiReadError::Cdp)?;
-        if scope.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
-            return Err(ZaiReadError::WrongOrigin);
-        }
-        scope
-            .get("scope")
-            .and_then(Value::as_str)
-            .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
-            .map(str::to_ascii_lowercase)
-            .ok_or(ZaiReadError::AccountMismatch)
+        Ok(native::verified_scope(&value)?.to_ascii_lowercase())
+    }
+
+    pub(crate) fn connection_mut(&mut self) -> &mut CdpConnection {
+        &mut self.cdp
     }
 
     pub async fn create_new_chat(
@@ -133,6 +133,7 @@ impl ZaiReader {
         let mut reader = Self {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
+            fresh_blank: true,
         };
         match reader.cdp.wait_for_origin("https://chat.z.ai").await {
             Ok(true) => {}
@@ -169,6 +170,7 @@ impl ZaiReader {
                 .await
                 .map_err(ZaiReadError::Cdp)?,
             account_scope: expected_account_scope.to_ascii_lowercase(),
+            fresh_blank: false,
         };
         reader.verify_account().await?;
         Ok(reader)
@@ -213,21 +215,14 @@ impl ZaiReader {
         let mut reader = Self {
             cdp,
             account_scope: expected_account_scope.to_ascii_lowercase(),
+            fresh_blank: false,
         };
         reader.verify_account().await?;
         Ok(reader)
     }
 
     async fn verify_account(&mut self) -> Result<(), ZaiReadError> {
-        let result = self
-            .cdp
-            .evaluate(ZAI_ACCOUNT_SCOPE_EXPRESSION)
-            .await
-            .map_err(ZaiReadError::Cdp)?;
-        if result.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
-            return Err(ZaiReadError::WrongOrigin);
-        }
-        if result.get("scope").and_then(Value::as_str) != Some(self.account_scope.as_str()) {
+        if Self::account_scope_for_target(&mut self.cdp).await? != self.account_scope {
             return Err(ZaiReadError::AccountMismatch);
         }
         Ok(())
@@ -241,37 +236,49 @@ impl ZaiReader {
     /// this reader. The observed API is page based; this method does not claim
     /// that later pages are absent.
     pub async fn list_chats(&mut self) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
-        self.verify_account().await?;
-        let expected_scope = serde_json::to_string(&self.account_scope)
-            .map_err(|_| ZaiReadError::InvalidResponse)?;
-        let expression = ZAI_CHAT_LIST_EXPRESSION.replace("__EXPECTED_SCOPE__", &expected_scope);
+        self.list_page(None).await
+    }
+
+    pub async fn list_native_ids(&mut self, limit: usize) -> Result<Vec<String>, ZaiReadError> {
+        Ok(self
+            .list_page(Some(limit.min(180)))
+            .await?
+            .into_iter()
+            .map(|chat| chat.id)
+            .collect())
+    }
+
+    async fn list_page(
+        &mut self,
+        native_limit: Option<usize>,
+    ) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
+        let account = serde_json::json!(self.account_scope);
+        let list = ZAI_CHAT_LIST_EXPRESSION
+            .replace("__EXPECTED_SCOPE__", &account.to_string())
+            .replace(
+                "/* authenticateEmpty */",
+                if native_limit.is_some() {
+                    "true"
+                } else {
+                    "false"
+                },
+            );
+        // The list operation already proves the owner of its own page. Only IDs
+        // cross CDP, including when a provider adds fields such as chat titles.
+        let limit = native_limit.unwrap_or(u32::MAX as usize);
+        let expression = format!(
+            "(async()=>{{const r=await {list}; if(Array.isArray(r.chats)) r.chats=r.chats.slice(0,{limit}).map(row=>({{id:row?.id}})); return r}})()"
+        );
         let result = self
             .cdp
             .evaluate(&expression)
             .await
             .map_err(ZaiReadError::Cdp)?;
-        if result.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
-            return Err(ZaiReadError::WrongOrigin);
-        }
-        if matches!(
-            result.get("error").and_then(Value::as_str),
-            Some("account_mismatch" | "account_unverified")
-        ) {
-            return Err(ZaiReadError::AccountMismatch);
-        }
-        if result.get("error").is_some() {
+        native::verify_response(&result, &self.account_scope, None)?;
+        let chats = result.get("chats").ok_or(ZaiReadError::InvalidResponse)?;
+        if !chats.as_array().is_some_and(|rows| rows.len() <= limit) {
             return Err(ZaiReadError::InvalidResponse);
         }
-        let status = result.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
-        if status != 200 {
-            return Err(ZaiReadError::ProviderStatus(status));
-        }
-        if result.get("scope_verified").and_then(Value::as_bool) != Some(true)
-            || result.get("scope").and_then(Value::as_str) != Some(self.account_scope.as_str())
-        {
-            return Err(ZaiReadError::AccountMismatch);
-        }
-        let chats = result.get("chats").ok_or(ZaiReadError::InvalidResponse)?;
         normalize_chat_list(chats).map_err(ZaiReadError::Normalize)
     }
 
@@ -280,77 +287,39 @@ impl ZaiReader {
         chat_id: &str,
     ) -> Result<Vec<NormalizedMessage>, ZaiReadError> {
         let (ids, batch) = self.read_chat_batch(chat_id).await?;
-        let requested: Vec<&str> = ids.iter().map(String::as_str).collect();
-        normalize_batch(chat_id, &requested, &batch).map_err(ZaiReadError::Normalize)
+        project_batch(chat_id, ids.iter().map(String::as_str), batch)
+            .map_err(ZaiReadError::Normalize)
     }
 
     async fn read_chat_batch(
         &mut self,
         chat_id: &str,
-    ) -> Result<(Vec<String>, String), ZaiReadError> {
-        if !valid_chat_id(chat_id) {
-            return Err(ZaiReadError::InvalidResponse);
+    ) -> Result<(Vec<String>, Batch), ZaiReadError> {
+        let value = self.native_read("read", Some(chat_id), Value::Null).await?;
+        #[derive(Deserialize)]
+        struct Readback {
+            ids: Vec<String>,
+            #[serde(flatten)]
+            batch: Batch,
         }
-        let id = serde_json::to_string(chat_id).map_err(|_| ZaiReadError::InvalidResponse)?;
-        let expected_scope = serde_json::to_string(&self.account_scope)
-            .map_err(|_| ZaiReadError::InvalidResponse)?;
-        let expression = format!(
-            r#"(async()=>{{
-              if(location.origin!=="https://chat.z.ai")return {{origin:location.origin}};
-              const id={id},expected={expected_scope};
-              const r=await fetch('/api/v1/chats/'+encodeURIComponent(id),{{credentials:'same-origin',cache:'no-store'}});
-              let chat=null;try{{chat=await r.json()}}catch{{}}
-              if(!r.ok)return {{origin:location.origin,status:r.status}};
-              if(chat?.id!==id||!chat?.user_id)return {{origin:location.origin,error:'identity_mismatch'}};
-              const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(chat.user_id)));
-              const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
-              if(scope!==expected)return {{origin:location.origin,error:'account_mismatch'}};
-              const ids=Object.keys(chat.chat?.history?.messages||{{}}).slice(-180);
-              const data={{}};
-              for(let start=0;start<ids.length;start+=60){{
-                const part=ids.slice(start,start+60);
-                const batch=await fetch('/api/v1/chats/'+encodeURIComponent(id)+'/messages/batch',{{method:'POST',credentials:'same-origin',headers:{{'content-type':'application/json'}},body:JSON.stringify({{ids:part}})}});
-                if(!batch.ok)return {{origin:location.origin,status:batch.status}};
-                const value=await batch.json();
-                if(value.chat_id!==id||!value.data||typeof value.data!=='object')return {{origin:location.origin,error:'batch_identity_mismatch'}};
-                for(const key of part)if(value.data[key])data[key]=value.data[key];
-              }}
-              return {{origin:location.origin,chat_id:id,data,ids}};
-            }})()"#
-        );
-        let result = self
-            .cdp
-            .evaluate(&expression)
-            .await
-            .map_err(ZaiReadError::Cdp)?;
-        if result.get("origin").and_then(Value::as_str) != Some("https://chat.z.ai") {
-            return Err(ZaiReadError::WrongOrigin);
-        }
-        if result.get("error").and_then(Value::as_str) == Some("account_mismatch") {
-            return Err(ZaiReadError::AccountMismatch);
-        }
-        if result.get("error").is_some() {
-            return Err(ZaiReadError::InvalidResponse);
-        }
-        let status = result.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
-        if status != 200 {
-            return Err(ZaiReadError::ProviderStatus(status));
-        }
-        let ids: Vec<String> = result
-            .get("ids")
-            .and_then(Value::as_array)
-            .ok_or(ZaiReadError::InvalidResponse)?
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect();
+        let result: Readback =
+            serde_json::from_value(value).map_err(|_| ZaiReadError::InvalidResponse)?;
         let data = result
-            .get("data")
-            .cloned()
+            .batch
+            .data
+            .as_ref()
             .ok_or(ZaiReadError::InvalidResponse)?;
-        let batch = serde_json::to_string(&serde_json::json!({"chat_id": chat_id, "data": data}))
-            .map_err(|_| ZaiReadError::InvalidResponse)?;
-        Ok((ids, batch))
+        let ids: std::collections::HashSet<_> = result.ids.iter().collect();
+        if result.ids.len() > 180
+            || ids.len() != result.ids.len()
+            || ids.iter().any(|id| !native::valid_message_id(id))
+            || data
+                .iter()
+                .any(|(id, row)| !ids.contains(id) || row.id.as_ref() != Some(id))
+        {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        Ok((result.ids, result.batch))
     }
 
     /// Project the newest user and assistant records from one explicitly
@@ -376,8 +345,6 @@ impl ZaiReader {
         let identity = self.cdp.identity().clone();
         let account_scope = self.account_scope.clone();
         let (ids, batch) = self.read_chat_batch(chat_id).await?;
-        let batch: Batch =
-            serde_json::from_str(&batch).map_err(|_| ZaiReadError::InvalidResponse)?;
         project_transcript_page(
             principal_id,
             &account_scope,
@@ -395,109 +362,42 @@ impl ZaiReader {
         text: &str,
         expected_response_marker: &str,
     ) -> Result<ZaiSendReceipt, ZaiSendError> {
-        if text.trim().is_empty()
+        if !has_browser_caption(text)
             || text.len() > 8_000
             || expected_response_marker.trim().is_empty()
         {
             return Err(ZaiSendError::InvalidInput);
         }
-        self.cdp
-            .activate_target()
+        let (chat_id, _) = self
+            .submit_message(None, text)
             .await
-            .map_err(ZaiSendError::Cdp)?;
-        let preflight = self
-            .cdp
-            .evaluate(ZAI_SEND_PREFLIGHT)
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        if preflight.get("ready").and_then(Value::as_bool) != Some(true) {
-            return Err(ZaiSendError::Preflight);
-        }
-        self.cdp
-            .command("DOM.enable", serde_json::json!({}))
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        let document = self
-            .cdp
-            .command("DOM.getDocument", serde_json::json!({"depth": 0}))
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        let root = document
-            .pointer("/root/nodeId")
-            .and_then(Value::as_u64)
-            .ok_or(ZaiSendError::InputNotAccepted)?;
-        let query = self
-            .cdp
-            .command(
-                "DOM.querySelector",
-                serde_json::json!({"nodeId": root, "selector": ZAI_COMPOSER_SELECTOR}),
-            )
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        let node_id = query
-            .get("nodeId")
-            .and_then(Value::as_u64)
-            .filter(|node| *node != 0)
-            .ok_or(ZaiSendError::InputNotAccepted)?;
-        self.cdp
-            .command("DOM.focus", serde_json::json!({"nodeId": node_id}))
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        self.cdp
-            .command("Input.insertText", serde_json::json!({"text": text}))
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        let expected_text = serde_json::to_string(text).map_err(|_| ZaiSendError::InvalidInput)?;
-        let verify = format!(
-            r#"(()=>{{const e=document.querySelector({});const b=document.querySelector('#send-message-button');const events=globalThis.__herderCdpInputEvents||[];const inputSeen=events.some(x=>x.target===e&&x.value==={expected_text});return {{ready:location.origin==="https://chat.z.ai"&&location.pathname==="/"&&!!e&&e.value.trim()==={expected_text}&&inputSeen&&!!b&&!b.disabled&&!([...document.querySelectorAll('button')].some(x=>x.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted')))}}}})()"#,
-            serde_json::to_string(ZAI_COMPOSER_SELECTOR).unwrap()
-        );
-        let verify = self
-            .cdp
-            .evaluate(&verify)
-            .await
-            .map_err(ZaiSendError::Cdp)?;
-        if verify.get("ready").and_then(Value::as_bool) != Some(true) {
-            return Err(ZaiSendError::SendNotReady);
-        }
-        let click = format!(
-            r#"(()=>{{if(location.origin!=="https://chat.z.ai"||location.pathname!=="/")return {{clicked:false}};const e=document.querySelector({});const b=document.querySelector('#send-message-button');if(!e||e.value.trim()!=={expected_text}||!b||b.disabled)return {{clicked:false}};b.click();return {{clicked:true}}}})()"#,
-            serde_json::to_string(ZAI_COMPOSER_SELECTOR).unwrap()
-        );
-        let clicked = self.cdp.evaluate(&click).await.map_err(ZaiSendError::Cdp)?;
-        if clicked.get("clicked").and_then(Value::as_bool) != Some(true) {
-            return Err(ZaiSendError::SendNotReady);
-        }
-        let marker = expected_response_marker.to_owned();
-        let mut chat_id = None;
-        for _ in 0..30 {
-            let route = self
-                .cdp
-                .evaluate(
-                    "(()=>location.pathname.match(/^\\/c\\/([a-f0-9-]{12,80})$/i)?.[1]||null)()",
-                )
-                .await
-                .map_err(ZaiSendError::Cdp)?;
-            if let Some(id) = route.as_str() {
-                chat_id = Some(id.to_owned());
-                match self.read_chat(id).await {
-                    Ok(messages)
-                        if messages.iter().any(|message| {
-                            message.role == Role::Assistant && message.text.contains(&marker)
-                        }) =>
-                    {
-                        return Ok(ZaiSendReceipt {
-                            chat_id: id.to_owned(),
-                            expected_response_seen: true,
-                        });
-                    }
-                    Ok(_) | Err(ZaiReadError::ProviderStatus(_)) => {}
-                    Err(error) => return Err(ZaiSendError::Read(error)),
+            .map_err(|error| match error {
+                crate::adapters::browser::BrowserSubmitError::BeforeSend => ZaiSendError::Preflight,
+                crate::adapters::browser::BrowserSubmitError::Unknown => {
+                    ZaiSendError::ResponseNotObserved { chat_id: None }
                 }
+            })?;
+        for _ in 0..30 {
+            match self.read_chat(&chat_id).await {
+                Ok(messages)
+                    if messages.iter().any(|message| {
+                        message.role == Role::Assistant
+                            && message.text.contains(expected_response_marker)
+                    }) =>
+                {
+                    return Ok(ZaiSendReceipt {
+                        chat_id,
+                        expected_response_seen: true,
+                    });
+                }
+                Ok(_) | Err(ZaiReadError::ProviderStatus(_)) => {}
+                Err(error) => return Err(ZaiSendError::Read(error)),
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        Err(ZaiSendError::ResponseNotObserved { chat_id })
+        Err(ZaiSendError::ResponseNotObserved {
+            chat_id: Some(chat_id),
+        })
     }
 
     pub async fn close(self) {
@@ -509,50 +409,35 @@ impl ZaiReader {
     }
 }
 
-const ZAI_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
-  if(location.origin!=="https://chat.z.ai")return {origin:location.origin};
-  const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',{credentials:'same-origin',cache:'no-store'});
-  if(!r.ok)return {origin:location.origin};
-  const chats=await r.json();
-  if(!Array.isArray(chats)||!chats[0]?.id)return {origin:location.origin};
-  const info=await fetch('/api/v1/chats/'+encodeURIComponent(chats[0].id),{credentials:'same-origin',cache:'no-store'});
-  if(!info.ok)return {origin:location.origin};
-  const chat=await info.json();
-  if(!chat?.user_id)return {origin:location.origin};
-  const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(chat.user_id)));
-  return {origin:location.origin,scope:[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')};
-})()"#;
-
-const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async()=>{
+const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async(authenticateEmpty = false)=>{
   if(location.origin!=="https://chat.z.ai")return {origin:location.origin};
   const expected=__EXPECTED_SCOPE__;
-  const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',{credentials:'same-origin',cache:'no-store'});
+  const options={credentials:'same-origin',cache:'no-store',mode:'same-origin',redirect:'error'};
+  const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',options);
   if(!r.ok)return {origin:location.origin,status:r.status};
   let chats;try{chats=await r.json()}catch{return {origin:location.origin,error:'invalid_json'}};
   if(!Array.isArray(chats))return {origin:location.origin,error:'invalid_list'};
-  if(!chats.length||typeof chats[0]?.id!=='string')return {origin:location.origin,error:'account_unverified'};
-  const proof=await fetch('/api/v1/chats/'+encodeURIComponent(chats[0].id),{credentials:'same-origin',cache:'no-store'});
-  if(!proof.ok)return {origin:location.origin,error:'account_unverified'};
-  let chat;try{chat=await proof.json()}catch{return {origin:location.origin,error:'account_unverified'}};
-  if(chat?.id!==chats[0].id||!chat?.user_id)return {origin:location.origin,error:'account_unverified'};
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(chat.user_id)));
+  const unverified={origin:location.origin,error:'account_unverified'};
+  const empty=chats.length===0, first=chats[0]?.id;
+  if(empty ? !authenticateEmpty : typeof first!=='string')return unverified;
+  const proof=await fetch(empty ? '/api/v1/auths/' : '/api/v1/chats/'+encodeURIComponent(first),options);
+  if(!proof.ok)return empty ? {origin:location.origin,status:proof.status} : unverified;
+  let record;try{record=await proof.json()}catch{return unverified};
+  const owner=empty ? record?.id : record?.user_id;
+  if(empty ? typeof owner!=='string'||!owner.trim() : record?.id!==first||!owner)return unverified;
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(owner)));
   const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
   if(scope!==expected)return {origin:location.origin,error:'account_mismatch',scope,scope_verified:true};
-  return {origin:location.origin,chats,scope,scope_verified:true};
-})()"#;
-
-const ZAI_COMPOSER_SELECTOR: &str = r#"textarea[placeholder="Send a Message"]"#;
-const ZAI_SEND_PREFLIGHT: &str = r#"(()=>{
-  if(!globalThis.__herderCdpInputListener){
-    globalThis.__herderCdpInputEvents=[];
-    document.addEventListener('input',e=>{if(e.target?.matches?.('textarea[placeholder="Send a Message"]'))globalThis.__herderCdpInputEvents.push({target:e.target,value:e.target.value})},true);
-    globalThis.__herderCdpInputListener=true;
+  // A cached owned chat can still be readable after the browser switches
+  // accounts. The native inventory also proves the current login.
+  if(authenticateEmpty&&!empty){
+    const auth=await fetch('/api/v1/auths/',options);
+    if(!auth.ok)return {origin:location.origin,status:auth.status};
+    let session;try{session=await auth.json()}catch{return unverified};
+    if(typeof session?.id!=='string'||session.id!==String(owner))return {origin:location.origin,error:'account_mismatch'};
   }
-  const e=document.querySelector('textarea[placeholder="Send a Message"]');
-  const b=document.querySelector('#send-message-button');
-  const stop=[...document.querySelectorAll('button')].some(x=>x.getClientRects().length>0&&!!x.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted'));
-  return {ready:location.origin==='https://chat.z.ai'&&location.pathname==='/'&&!!e&&e.getClientRects().length>0&&!e.value.trim()&&!document.querySelector('[data-message-author-role="user"]')&&!stop&&!!b};
-})()"#;
+  return {origin:location.origin,chats,scope,scope_verified:true};
+})(/* authenticateEmpty */)"#;
 
 #[derive(Debug, Deserialize)]
 struct Batch {
@@ -566,6 +451,8 @@ struct RawMessage {
     role: Option<String>,
     content: Option<Value>,
     content_blocks: Option<Vec<ContentBlock>>,
+    #[serde(default)]
+    attachments: Vec<BrowserFile>,
     created_at: Option<Value>,
     timestamp: Option<Value>,
     model: Option<String>,
@@ -579,21 +466,28 @@ struct ContentBlock {
 }
 
 /// Validate the chat and preserve caller supplied message ordering.
-/// Unknown roles, absent requested messages and empty text are omitted.
+/// Unknown roles, absent requested messages and empty messages are omitted.
 pub fn normalize_batch(
     expected_chat_id: &str,
     requested_ids: &[&str],
     input: &str,
 ) -> Result<Vec<NormalizedMessage>, NormalizeError> {
     let batch: Batch = serde_json::from_str(input).map_err(|_| NormalizeError::InvalidPayload)?;
+    project_batch(expected_chat_id, requested_ids.iter().copied(), batch)
+}
+
+fn project_batch<'a>(
+    expected_chat_id: &str,
+    requested_ids: impl Iterator<Item = &'a str>,
+    batch: Batch,
+) -> Result<Vec<NormalizedMessage>, NormalizeError> {
     if batch.chat_id.as_deref() != Some(expected_chat_id) {
         return Err(NormalizeError::ChatMismatch);
     }
     let data = batch.data.ok_or(NormalizeError::InvalidPayload)?;
     Ok(requested_ids
-        .iter()
         .filter_map(|id| {
-            data.get(*id)
+            data.get(id)
                 .and_then(|message| project_message(id, message))
         })
         .collect())
@@ -766,7 +660,7 @@ fn project_transcript_page(
 }
 
 fn project_message(requested_id: &str, message: &RawMessage) -> Option<NormalizedMessage> {
-    let id = message.id.as_deref().unwrap_or(requested_id).trim();
+    let id = message.id.as_deref()?;
     if id.is_empty() || id != requested_id {
         return None;
     }
@@ -793,7 +687,7 @@ fn project_message(requested_id: &str, message: &RawMessage) -> Option<Normalize
         .unwrap_or_default()
         .trim()
         .to_owned();
-    if text.is_empty() {
+    if text.is_empty() && message.attachments.is_empty() {
         return None;
     }
     let timestamp = message
@@ -805,6 +699,7 @@ fn project_message(requested_id: &str, message: &RawMessage) -> Option<Normalize
         id: id.to_owned(),
         role,
         text,
+        attachments: message.attachments.clone(),
         timestamp,
         model: message.model.clone(),
     })
@@ -824,10 +719,7 @@ mod tests {
     const RECENT_TWO_CHATS: &str =
         include_str!("../../../../../acceptance/native/z-ai/recent-two-chats.json");
 
-    async fn fake_cdp(
-        preflight_scope: Option<String>,
-        listed_scope: Option<String>,
-    ) -> (String, tokio::task::JoinHandle<()>) {
+    async fn fake_cdp(listed_scope: Option<String>) -> (String, tokio::task::JoinHandle<usize>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let endpoint = format!("ws://{address}/devtools/page/target-1");
@@ -835,8 +727,12 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut socket = accept_async(stream).await.unwrap();
             let attached_scope = "a".repeat(64);
-            let mut account_checks = 0;
+            let mut account_checked = false;
+            let mut commands_after_account_check = 0;
             while let Some(Ok(Message::Text(text))) = socket.next().await {
+                if account_checked {
+                    commands_after_account_check += 1;
+                }
                 let request: Value = serde_json::from_str(&text).unwrap();
                 let id = request.get("id").and_then(Value::as_u64).unwrap();
                 let method = request.get("method").and_then(Value::as_str).unwrap();
@@ -849,19 +745,10 @@ mod tests {
                             .pointer("/params/expression")
                             .and_then(Value::as_str)
                             .unwrap();
-                        let value = if expression.contains("const info=await fetch") {
-                            account_checks += 1;
-                            let scope = if account_checks == 1 {
-                                Some(attached_scope.as_str())
-                            } else {
-                                preflight_scope.as_deref()
-                            };
-                            match scope {
-                                Some(scope) => serde_json::json!({
-                                    "origin":"https://chat.z.ai","scope":scope
-                                }),
-                                None => serde_json::json!({"origin":"https://chat.z.ai"}),
-                            }
+                        let value = if expression.contains(r#""op":"account""#) {
+                            assert!(!account_checked, "list performs its own account proof");
+                            account_checked = true;
+                            serde_json::json!({"origin":"https://chat.z.ai", "scope": attached_scope, "scope_verified":true})
                         } else if expression.contains("scope_verified:true") {
                             match listed_scope.as_deref() {
                                 Some(scope) => {
@@ -879,12 +766,7 @@ mod tests {
                                 }),
                             }
                         } else {
-                            let scope = preflight_scope.as_deref().unwrap_or(&attached_scope);
-                            let prefix = if scope == attached_scope { "a" } else { "b" };
-                            serde_json::json!({
-                                "origin":"https://chat.z.ai",
-                                "chats":[{"id":format!("{prefix}001000000000001")}]
-                            })
+                            panic!("unexpected page operation");
                         };
                         serde_json::json!({"result":{"value":value}})
                     }
@@ -896,6 +778,7 @@ mod tests {
                     .await
                     .unwrap();
             }
+            commands_after_account_check
         });
         (endpoint, task)
     }
@@ -907,6 +790,31 @@ mod tests {
             browser_context_id: "context-1".into(),
             target_id: "target-1".into(),
         }
+    }
+
+    #[tokio::test]
+    async fn blank_attachment_captions_are_refused_without_a_cdp_command() {
+        use crate::adapters::browser::{BrowserAttachment, BrowserSubmitError};
+
+        let (endpoint, server) = fake_cdp(None).await;
+        let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
+            .await
+            .unwrap();
+        let files = [BrowserAttachment {
+            name: "note.txt".into(),
+            mime_type: "text/plain".into(),
+            data_base64: "QQ==".into(),
+        }];
+        for caption in ["", " \t\r\n", "\u{a0}\u{feff}\u{2029}"] {
+            assert_eq!(
+                reader
+                    .submit_with_attachments(Some("aaaa000000000001"), caption, &files)
+                    .await,
+                Err(BrowserSubmitError::BeforeSend),
+            );
+        }
+        reader.close().await;
+        assert_eq!(server.await.unwrap(), 0);
     }
 
     #[test]
@@ -1025,7 +933,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_chats_rejects_account_changed_between_preflight_and_list_result() {
-        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), Some("b".repeat(64))).await;
+        let (endpoint, server) = fake_cdp(Some("b".repeat(64))).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();
@@ -1037,7 +945,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_chats_allows_the_same_verified_account() {
-        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), Some("a".repeat(64))).await;
+        let (endpoint, server) = fake_cdp(Some("a".repeat(64))).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();
@@ -1049,7 +957,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_chats_fails_closed_when_account_identity_is_unavailable() {
-        let (endpoint, server) = fake_cdp(Some("a".repeat(64)), None).await;
+        let (endpoint, server) = fake_cdp(None).await;
         let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
             .await
             .unwrap();

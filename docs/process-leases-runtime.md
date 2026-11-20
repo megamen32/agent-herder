@@ -85,7 +85,7 @@ The source_commit in a new manifest describes replaced components. Retained adap
 
 ## Reviewed OpenCode and ZCode adapter transition
 
-The default build retains all adapter pins and profile paths. The paired release explicitly adds `--adapter-update opencode --adapter-update zcode`. Only these two kinds are accepted. The builder recompiles the workspace package and TypeScript runners into a new private directory, then reuses `deploy/fleet/build-v1-core.py`'s Rolldown bundler from the same clean commit. The copied Node executable remains the installed pin. Only the selected bundles enter the candidate; browser, Codex, compat, bootstrap and remote wrapper pins remain unchanged.
+The default build retains the adapter pins. The paired OpenCode and ZCode release explicitly adds `--adapter-update opencode --adapter-update zcode`. A release can also select the local Codex runner with `--adapter-update codex`. The builder recompiles the workspace package and TypeScript runners into a new private directory, then reuses `deploy/fleet/build-v1-core.py`'s Rolldown bundler from the same clean commit. The copied Node executable remains the installed pin. Only the selected bundles enter the candidate; browser, Codex, compat, bootstrap and remote wrapper pins remain unchanged.
 
 `adapter-migration.json` is pinned by the main manifest. Its versioned `herder-ahap-profile-rebind` record contains the exact old/new adapter paths, SHA256 digests and component source commits, fresh compiler/bundler evidence, all old profile hashes, and each new profile/payload hash. Both the candidate checker and the release coordinator validate this typed transition. There is no generic profile-change exception. Main ancestry is checked separately for each replaced adapter, so a valid new core cannot discard newer installed adapter work.
 
@@ -98,6 +98,38 @@ During the continuously held release guard, install first records every planned 
 The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only with verified `nativeProtocol: v2`. The core selects fresh-session Start only with this exact capability. Existing-session Queue and Steer keep their original semantics. The updated runner advertises nativeAutomaticContinuation: unsupported-no-idle-admission-v1. The core disables automatic continuation for every OpenCode protocol, including v22. The observed failure was on v2: a real canary produced two assistant replies for one canonical wake, and its native prompt contract lacks an atomic idle/turn condition. This is the new candidate's policy; the unchanged public bundle is still the historical baseline. New automatic waits and canonical resume refuse before protected effects; old jobs continue observation and claim finalization. Do not enable this capability from a source test or a single input receipt. A legacy pinned runner without the capability retains the legacy initial delivery choice, so a core-only candidate does not silently change its contract. The paired native canary must observe the marker and prove that the original initial prompt was admitted in one native request.
 
 Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
+
+## Reviewed native browser profile migration
+
+Use the same candidate builder and the same node, storage and state-root arguments as in **Build and inspect**. Select each legacy browser provider explicitly. Pass the following additional arguments for a pair of UserIO profiles.
+
+~~~sh
+--native-update chatgpt --native-update zai \
+--browser-binding chatgpt "$CHATGPT_BINDING_FILE" "$CHATGPT_BINDING_SHA256" \
+--browser-binding zai "$ZAI_BINDING_FILE" "$ZAI_BINDING_SHA256"
+~~~
+
+Supply the absolute path and reviewed SHA-256 of each operator-owned file. Keep it in a private directory outside the candidate, with a single link, a canonical path and mode 0600 or 0400. Keep the same bytes available through staged checking and guarded installation. Each file authorizes the exact bytes of one selected previous profile. The example uses ChatGPT. For Z.ai, set `kind` to `zai` and use that profile’s hash and binding.
+
+~~~json
+{
+  "kind": "chatgpt",
+  "profile_sha256": "<SHA-256 of the selected previous profile file>",
+  "ahap_env": {
+    "AHAP_BROWSER_TRANSPORT": "direct-cdp",
+    "AHAP_BROWSER_ACCOUNT_SCOPE": "<previous account scope, 64 lowercase hex digits>",
+    "AHAP_BROWSER_CDP_WS_URL": "ws://127.0.0.1:9222/devtools/browser/<reviewed-browser-id>",
+    "AHAP_BROWSER_CDP_CONTEXT_ID": "<reviewed browser context ID>",
+    "AHAP_BROWSER_CDP_TARGET_ID": "<reviewed provider page target ID>"
+  }
+}
+~~~
+
+The only optional native field is `AHAP_BROWSER_CDP_ORIGIN_PORT`, a decimal port string. Use the confirmed loopback browser WebSocket, context and target from the operator's binding. Build and check work offline. They verify the old browser or UserIO account scope, both when present, and the account scope of existing session grants. The manifest pins the migration record, which records the external file path and digest. The CDP values go in the private profile payload.
+
+For a legacy profile already on direct CDP, use just `--native-update chatgpt` or `--native-update zai`. The existing binding supplies the native fields. The legacy numeric page hint is retired. Later core builds, including an AHAP runner update, rebind an already scriptless browser from the exact installed core to the candidate core using its existing CDP configuration. The first conversion from a legacy browser uses a separate release from an AHAP runner update. The sibling keeps the original database and gate directory spelling, including a protected directory alias.
+
+The OpenCode-only transition retains its existing record format. An already native OpenCode endpoint profile and a local Codex profile with `AHAP_CODEX_BIN`, `CODEX_HOME` and `AHAP_CODEX_CWD` keep their current profile paths. Remote wrapper descriptors remain pinned to the exact node, instance, script and configuration. Run `check --staged-profiles` as shown below to verify all selected profiles before installation.
 
 ## Build and inspect
 
@@ -132,7 +164,7 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-candidate.py" check \
   --staged-profiles
 ~~~
 
-Omit the two adapter-update flags for a core-only candidate that retains existing adapters/profiles. Staged checking also accepts that baseline path. Build runs Cargo release with --locked and an isolated target directory. It copies and hashes the binaries, records source/profile/selector stability, and calls the launcher's preparation function. It does not start an MCP child, native harness, worker or remote owner.
+Omit the adapter-update flags for a core-only candidate. Existing scriptless browser profiles follow the new core automatically. Staged checking also accepts that baseline path. Build runs Cargo release with --locked and an isolated target directory. It copies and hashes the binaries, records source/profile/selector stability, and calls the launcher's preparation function. It does not start an MCP child, native harness, worker or remote owner.
 
 Inspect the resulting node, store identities, administrator list, component ancestry, exact profile transition and retained pins. Retain the base_selector_sha256 literal from the build receipt. A changed selector or profile requires new review and a new candidate.
 

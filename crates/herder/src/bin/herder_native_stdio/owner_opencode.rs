@@ -1,4 +1,4 @@
-//! Trusted owner composition for one pinned legacy adapter AHAP subprocess.
+//! Trusted owner composition for one pinned AHAP subprocess.
 use super::{
     owner_launch::Ids,
     owner_policy::OwnerPolicy,
@@ -44,6 +44,15 @@ impl ScopedMessageReader for Messages {
         // This legacy API is a bounded tail and has no completeness cursor.
         Ok(serde_json::json!({"messages":messages,"next_cursor":null,"complete":false}))
     }
+
+    fn read_attachment(
+        &mut self,
+        address: &SessionAddress,
+        message: &str,
+        file: &str,
+    ) -> Result<herder::domain::attachment::InlineAttachment, ()> {
+        self.0.attachment(address, message, file).map_err(|_| ())
+    }
 }
 
 fn canonical_host_id(value: &str) -> &str {
@@ -54,6 +63,63 @@ fn canonical_host_id(value: &str) -> &str {
         "44.bezrabotnyi.com" | "remote-ssh-discovered:44.bezrabotnyi.com" => "server-44",
         other => other,
     }
+}
+
+/// Resolve an ordinary envelope at the receiving owner before invoking its scoped writer.
+/// The authenticated connection supplies the grants. The sender is receipt attribution.
+pub(super) async fn deliver_to_owner(
+    identity: &ConnectionIdentity,
+    operation: catalog::Deliver,
+    policy: &OwnerPolicy,
+    mode: SendMode,
+    resolver: &WaitAutomationApplication,
+    writer: &dyn ApplicationPort,
+) -> Option<rmcp::model::CallToolResult> {
+    use rmcp::model::CallToolResult;
+    use serde_json::json;
+
+    let catalog::Deliver::Envelope { target, sender, input_id, message, attachments } = operation else {
+        return writer.call(identity, catalog::Request::Deliver(operation)).await;
+    };
+    if canonical_host_id(&target.host_id) != canonical_host_id(&policy.instance.node.0)
+        || target.harness != policy.harness
+    {
+        return Some(CallToolResult::structured_error(json!({
+            "code":"owner_profile_mismatch","effect":"none",
+            "message":"delivery envelope target does not match the configured owner"
+        })));
+    }
+    let resolve = catalog::Session::Resolve {
+        harness: target.harness,
+        native_session_id: target.native_session_id,
+        node_ref: Some(policy.instance.node.0.clone()),
+    };
+    let unregistered = || CallToolResult::structured_error(json!({
+        "code":"native_session_not_registered","effect":"none"
+    }));
+    let Some(resolved) = resolver.call(identity, catalog::Request::Session(resolve)).await else {
+        return Some(unregistered());
+    };
+    if resolved.is_error == Some(true) {
+        return Some(resolved);
+    }
+    let Some(mapping) = resolved.structured_content else { return Some(unregistered()) };
+    if mapping["owner"]["instance_ref"].as_str() != Some(&policy.instance.instance_id) {
+        return Some(CallToolResult::structured_error(json!({"code":"owner_profile_mismatch","effect":"none"})));
+    }
+    let Some(session_ref) = mapping["session_ref"].as_str() else { return Some(unregistered()) };
+    let mode = match mode {
+        SendMode::Queue => catalog::DeliveryMode::Queue,
+        SendMode::Start => catalog::DeliveryMode::Start,
+        SendMode::Current => return Some(CallToolResult::structured_error(
+            json!({"code":"unsupported_delivery_mode","effect":"none"}),
+        )),
+    };
+    let session = catalog::Deliver::Session {
+        session_ref: session_ref.to_owned(), message, attachments, mode,
+        request_key: input_id, sender: Some(sender),
+    };
+    writer.call(identity, catalog::Request::Deliver(session)).await
 }
 
 struct App {
@@ -174,86 +240,12 @@ impl ApplicationPort for App {
             {
                 return Some(result);
             }
-            if let catalog::Request::Deliver(catalog::Deliver::Envelope {
-                target,
-                sender,
-                input_id,
-                message,
-            }) = &request
-            {
-                // The envelope target selects this owner, but sender is only
-                // attribution. Trust still comes from the configured owner,
-                // native resolver and the existing delivery ACL/ledger.
-                if canonical_host_id(&target.host_id) != canonical_host_id(&self.instance.node.0)
-                    || target.harness != self.harness
-                {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({
-                            "code":"owner_profile_mismatch",
-                            "effect":"none",
-                            "message":"delivery envelope target does not match the configured owner"
-                        }),
-                    ));
-                }
-                let target_host = canonical_host_id(&target.host_id).to_owned();
-                let resolved = self
-                    .waits
-                    .call(
-                        identity,
-                        catalog::Request::Session(catalog::Session::Resolve {
-                            harness: target.harness.clone(),
-                            native_session_id: target.native_session_id.clone(),
-                            node_ref: Some(target_host),
-                        }),
-                    )
-                    .await;
-                let Some(resolved) = resolved else {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
-                    ));
-                };
-                if resolved.is_error == Some(true) {
-                    return Some(resolved);
-                }
-                let Some(session_ref) = resolved
-                    .structured_content
-                    .as_ref()
-                    .and_then(|value| value.get("session_ref"))
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned)
-                else {
-                    return Some(rmcp::model::CallToolResult::structured_error(
-                        serde_json::json!({"code":"native_session_not_registered","effect":"none"}),
-                    ));
-                };
-                let mode = match self.delivery_mode {
-                    SendMode::Queue => catalog::DeliveryMode::Queue,
-                    SendMode::Start => catalog::DeliveryMode::Start,
-                    SendMode::Current => {
-                        return Some(rmcp::model::CallToolResult::structured_error(
-                            serde_json::json!({"code":"unsupported_delivery_mode","effect":"none"}),
-                        ));
-                    }
-                };
-                return self
-                    .deliver
-                    .call(
-                        identity,
-                        catalog::Request::Deliver(catalog::Deliver::Session {
-                            session_ref,
-                            message: message.clone(),
-                            mode,
-                            request_key: input_id.clone(),
-                            sender: Some(sender.clone()),
-                        }),
-                    )
-                    .await;
-            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }
-            if matches!(&request, catalog::Request::Deliver(_)) {
-                return self.deliver.call(identity, request).await;
+            if let catalog::Request::Deliver(operation) = request {
+                return deliver_to_owner(identity, operation, &self.policy, self.delivery_mode,
+                    &self.waits, self.deliver.as_ref()).await;
             }
             if matches!(
                 &request,
@@ -332,6 +324,7 @@ impl ApplicationPort for App {
             let session = match &request {
                 catalog::Request::Session(
                     catalog::Session::Messages { session_ref, .. }
+                    | catalog::Session::Attachment { session_ref, .. }
                     | catalog::Session::Archive { session_ref, .. },
                 )
                 | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
@@ -429,6 +422,13 @@ impl ApplicationPort for App {
                     Err(_) => None,
                 },
                 catalog::Request::Stop(_) => match authority() {
+                    Ok(a) if self.adapter.supports_browser_interrupt() => {
+                        ScopedStopApplication::new_with_browser_interrupt(
+                            a, self.instance.clone(), grants, self.adapter.clone(),
+                        )
+                        .call(identity, request)
+                        .await
+                    }
                     Ok(a) => {
                         ScopedStopApplication::new(a, self.instance.clone(), grants)
                             .call(identity, request)
@@ -469,11 +469,16 @@ pub(super) fn open_adapter(
     owner: &OwnerProfile,
     instance: &InstanceRef,
 ) -> Result<(Arc<AhapOpenCode>, SendMode), Box<dyn std::error::Error>> {
-    let script = owner
-        .ahap_script
-        .clone()
-        .ok_or("missing trusted AHAP script")?;
     let harness = owner.kind.clone();
+    let args = match &owner.ahap_script {
+        Some(script) => vec![script.to_string_lossy().into_owned()],
+        None if owner.has_ahap_runner() => vec![
+            "--harness".into(), harness.clone(),
+            "--node".into(), instance.node.0.clone(),
+            "--instance".into(), instance.instance_id.clone(),
+        ],
+        None => return Err("missing trusted AHAP runner".into()),
+    };
     let mut env = vec![
         (
             "HOME".into(),
@@ -500,7 +505,7 @@ pub(super) fn open_adapter(
         instance_id: instance.instance_id.clone(),
         harness: harness.clone(),
         executable: owner.executable.clone(),
-        args: vec![script.to_string_lossy().into_owned()],
+        args,
         cwd: owner.cwd.clone(),
         env,
         // Browser operations compose several existing 30-second transport calls

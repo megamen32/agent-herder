@@ -51,6 +51,34 @@ fn mode_name(mode: SendMode) -> &'static str {
 }
 
 impl Diagnostic {
+    pub(crate) fn invalid_attachments(reason: &'static str) -> Self {
+        Self {
+            code: "invalid_attachments",
+            field: Some("attachments"),
+            received: Some(reason),
+            expected: None,
+            fix: None,
+            effect: Effect::None,
+            retry: Retry::SafeSameKey,
+            receipt_ref: None,
+            diagnostic_ref: None,
+        }
+    }
+
+    pub(crate) fn attachments_unsupported() -> Self {
+        Self {
+            code: "attachments_unsupported",
+            field: Some("attachments"),
+            received: None,
+            expected: Some(vec!["a native browser adapter with attachment support"]),
+            fix: None,
+            effect: Effect::None,
+            retry: Retry::SafeSameKey,
+            receipt_ref: None,
+            diagnostic_ref: None,
+        }
+    }
+
     /// Call only after the requested mode is proven unsupported, before dispatch.
     /// A suggestion requires one distinct supported alternative; it is conditional
     /// on the caller wanting that behavior and is never applied automatically.

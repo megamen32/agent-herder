@@ -1,5 +1,4 @@
-//! Registration acceptance through the actual Rust stdio launcher and an
-//! isolated AHAP subprocess. No browser, account, or real conversation is used.
+//! Owner registration through the Rust stdio launcher and isolated adapter profiles.
 #![cfg(target_os = "linux")]
 
 use herder::{application::target_gate::acquire_pinned, store::Writer};
@@ -15,9 +14,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const ADAPTER: &str = r##"import json,os,sys
+const ADAPTER: &str = r##"import base64,hashlib,json,os,sys
 harness=os.environ['AHAP_HARNESS']
-profile=os.environ['AHAP_BROWSER_PAGE_ID']
+profile=os.environ.get('AHAP_BROWSER_PAGE_ID', harness)
 home=os.environ['HOME']
 trace=os.path.join(home,'native.jsonl')
 def records():
@@ -35,22 +34,29 @@ for line in sys.stdin:
  row={'method':method,'harness':harness,'profile':profile,'id':p.get('id')}
  if method=='initialize':
   value={'harness':harness,'capabilities':{'methods':['init','getSession','listSessions','getSessionMessages','sendMessage','createSession'],'deliveryModes':['queue']}}
+  if profile in ('uploads','direct-only'): value['capabilities']['nativeProtocol']='direct-cdp'
+  if profile in ('uploads','flag-only'): value['capabilities']['browserFeatures']={'attachments':True}
  elif method=='init': value=None
  elif method=='getSession': value=session(p['id'])
  elif method=='listSessions': value=[session('existing-native')]
  elif method=='getSessionMessages': value=messages(p['id'])
  elif method=='sendMessage':
-  assert p['id']=='existing-native'
+  assert p['id']=='existing-native' or (profile=='uploads' and p['id']=='created-native')
   assert p['options']['queue'] is True and p['options']['activeTurnOnly'] is False
   assert p['options']['inputId']
   mid=profile+'-message-'+str(len(messages(p['id'])))
   row['message']={'id':mid,'role':'user','text':p['options']['message']}
+  if 'attachments' in p['options']:
+   assert profile=='uploads'
+   row['files']=[[f['name'],f['mime_type'],hashlib.sha256(base64.b64decode(f['data_base64'],validate=True)).hexdigest()] for f in p['options']['attachments']]
   value={'ok':True,'admitted':True,'nativeInputMessageId':mid,
          'inputId':p['options']['inputId'],'sessionId':p['id'],'harness':harness}
  elif method=='createSession':
-  raise AssertionError('Registration must not create a native conversation')
+  assert profile=='uploads' and 'attachments' not in p['options']
+  value={'id':'created-native','harness':harness}
  else: raise AssertionError('Unexpected AHAP method '+method)
  with open(trace,'a') as stream: stream.write(json.dumps(row)+'\n')
+ if method=='sendMessage' and p['options']['message']=='lose receipt': sys.exit(0)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':value}),flush=True)
 "##;
 
@@ -134,17 +140,39 @@ impl Fixture {
     }
 
     fn profile(&self, provider: &str, instance: &str) -> PathBuf {
+        self.write_profile(
+            provider, instance, &fs::canonicalize("/usr/bin/python3").unwrap(), Some(&self.script),
+            json!({"AHAP_BROWSER_PAGE_ID":instance}),
+        )
+    }
+
+    fn native_profile(&self, provider: &str, instance: &str, binary: &Path, env: Value) -> PathBuf {
+        // Cargo's target directory can be under /tmp; provision the actual
+        // compiled artifact inside this owner's protected directory.
+        let executable = self.root.join(binary.file_name().unwrap());
+        if !executable.exists() {
+            fs::copy(binary, &executable).unwrap();
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        self.write_profile(provider, instance, &executable, None, env)
+    }
+
+    fn write_profile(
+        &self, provider: &str, instance: &str, executable: &Path, script: Option<&Path>, env: Value,
+    ) -> PathBuf {
         let path = self.root.join(format!("{provider}-{instance}.json"));
+        let mut owner = json!({
+            "kind":provider,"principal":"owner","node":"browser-node","instance":instance,
+            "executable":executable,"code_home":self.root,"cwd":self.root,"ahap_env":env,
+        });
+        if let Some(script) = script {
+            owner["ahap_script"] = json!(script);
+        }
         write_private(
             &path,
             json!({
                 "database":self.db,"gate":self.gate,"generation":"registration-test",
-                "owner":{
-                    "kind":provider,"principal":"owner","node":"browser-node",
-                    "instance":instance,"executable":fs::canonicalize("/usr/bin/python3").unwrap(),
-                    "ahap_script":self.script,"code_home":self.root,"cwd":self.root,
-                    "ahap_env":{"AHAP_BROWSER_PAGE_ID":instance}
-                }
+                "owner":owner
             })
             .to_string(),
         );
@@ -182,11 +210,26 @@ struct Wire {
     output: Receiver<Value>,
     stderr: PathBuf,
     sequence: u64,
+    task_capable: bool,
 }
 
 impl Wire {
     fn open(profile: &Path) -> Self {
-        let stderr = profile.with_extension(format!(
+        Self::open_many(&[profile])
+    }
+
+    fn ordinary(profile: &Path) -> Self {
+        Self::ordinary_many(&[profile])
+    }
+
+    fn ordinary_many(profiles: &[&Path]) -> Self {
+        let mut wire = Self::open_many(profiles);
+        wire.task_capable = false;
+        wire
+    }
+
+    fn open_many(profiles: &[&Path]) -> Self {
+        let stderr = profiles[0].with_extension(format!(
             "{}.stderr",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -199,9 +242,11 @@ impl Wire {
             .mode(0o600)
             .open(&stderr)
             .unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
-            .arg("--trusted-owner-profile")
-            .arg(profile)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"));
+        for profile in profiles {
+            command.arg("--trusted-owner-profile").arg(profile);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(log))
@@ -227,6 +272,7 @@ impl Wire {
             output: receiver,
             stderr,
             sequence: 0,
+            task_capable: true,
         }
     }
 
@@ -234,7 +280,9 @@ impl Wire {
         self.sequence += 1;
         params["_meta"] = json!({
             "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-            "io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/tasks":{}}},
+            "io.modelcontextprotocol/clientCapabilities":if self.task_capable {
+                json!({"extensions":{"io.modelcontextprotocol/tasks":{}}})
+            } else { json!({}) },
             "io.modelcontextprotocol/clientInfo":{"name":"registration-test","version":"1"},
             "principal":"spoofed-client-principal","session_ref":"spoofed-client-session"
         });
@@ -284,6 +332,363 @@ fn expect_error(response: &Value) {
         response.get("error").is_some() || response["result"]["isError"] == true,
         "{response}"
     );
+}
+
+fn files() -> Value {
+    json!([
+        {"name":"note.txt","mime_type":"text/plain","data_base64":"cHJpdmF0ZS10ZXN0LWF0dGFjaG1lbnQ="},
+        {"name":"raw.bin","mime_type":"application/octet-stream","data_base64":"AP8="}
+    ])
+}
+
+fn task_id(response: &Value) -> &str {
+    response["result"]["taskId"].as_str().unwrap_or_else(|| panic!("expected a task: {response}"))
+}
+
+fn task_body(client: &mut Wire, task: &str) -> Value {
+    let response = client.rpc("tasks/get", json!({"taskId":task}));
+    assert_eq!(response["result"]["status"], "completed", "{response}");
+    response["result"]["result"]["structuredContent"].clone()
+}
+
+// A loopback OpenCode v2 consumer. Its history records only actual prompt POSTs.
+const OPENCODE_HTTP: &str = r#"
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+
+native = 'ses_mesh_fixture'
+path = '/api/session/' + native
+messages = []
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def reply(self, data):
+        body = json.dumps(data).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        if self.path == '/openapi.json':
+            self.reply({'openapi':'3.1.0','paths':{'/api/session':{'get':{},'post':{}},'/api/event':{'get':{}}}})
+        elif self.path == path:
+            self.reply({'id':native,'projectID':'fixture','time':{'created':1,'updated':2,'idle':2},
+                        'location':{'directory':'/fixture'}})
+        elif self.path == path + '/message':
+            self.reply({'data':messages})
+        else:
+            self.send_error(404)
+    def do_POST(self):
+        if self.path != path + '/prompt':
+            return self.send_error(404)
+        data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        assert data['delivery'] == 'queue' and data['metadata']['agentHerderInputId']
+        mid = 'msg_fixture' + str(len(messages))
+        messages.append({'id':mid,'type':'user','text':data['text'],'time':{'created':2}})
+        self.reply({'data':{'id':mid,'sessionID':native,'delivery':'queue'}})
+server = HTTPServer(('127.0.0.1', 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+"#;
+
+struct HttpFixture(Child);
+impl Drop for HttpFixture {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[test]
+fn ordinary_browser_and_scriptless_opencode_envelopes_reach_registered_sessions() {
+    let fixture = Fixture::new();
+    let python = fs::canonicalize("/usr/bin/python3").unwrap();
+    let mut http = HttpFixture(Command::new(&python).args(["-I", "-B", "-c", OPENCODE_HTTP])
+        .stdout(Stdio::piped()).spawn().unwrap());
+    let port: u16 = BufReader::new(http.0.stdout.take().unwrap()).lines().next().unwrap().unwrap().parse().unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let profile = |name: &str, script: Option<&Path>| {
+        let path = fixture.root.join(name);
+        let mut owner = json!({"kind":"opencode","principal":"owner","node":"opencode-node","instance":"oc",
+            "executable":python,"code_home":fixture.root,"cwd":fixture.root,"ahap_base_url":endpoint});
+        if let Some(script) = script { owner["ahap_script"] = json!(script); }
+        write_private(&path, json!({"owner":owner,"database":fixture.db,"gate":fixture.gate,
+            "generation":"registration-test"}).to_string());
+        path
+    };
+    let oc = json!({"hostId":"opencode-node","harness":"opencode","nativeSessionId":"ses_mesh_fixture"});
+    // Register the pre-existing OpenCode session with the same owner before opening its scriptless binding.
+    let register = |wire: &mut Wire, instance: &str, address: &Value| {
+        let reply = wire.call("session", json!({"action":"register","instance_ref":instance,
+            "native_session_id":address["nativeSessionId"],"request_key":"register"}));
+        content(&reply)["session_ref"].as_str().unwrap().to_owned()
+    };
+    let oc_ref = register(&mut Wire::open(&profile("register.json", Some(&fixture.script))), "oc", &oc);
+    let native_profile = profile("native.json", None);
+    let other_native_profile = fixture.profile("zai", "secondary-browser");
+    for kind in ["chatgpt", "zai"] {
+        let browser_fixture = Fixture::new();
+        let address = json!({"hostId":"browser-node","harness":kind,"nativeSessionId":"existing-native"});
+        let browser_profile = browser_fixture.profile(kind, kind);
+        let other_browser_profile = browser_fixture.profile(kind, "secondary-browser");
+        let browser_ref = register(&mut Wire::ordinary(&browser_profile), kind, &address);
+        for (path, other, session_ref, target, sender) in [
+            (&native_profile, &other_native_profile, &oc_ref, &oc, &address),
+            (&browser_profile, &other_browser_profile, &browser_ref, &address, &oc),
+        ] {
+            let marker = format!("{kind}-to-{}", target["harness"].as_str().unwrap());
+            let envelope = json!({"target":target,"sender":sender,"inputId":marker,"message":marker});
+            let first = Wire::ordinary(path).call("deliver", envelope.clone());
+            assert_eq!(content(&first)["outcome"], "confirmed");
+
+            // A separate owner connection reads durable evidence and independent native history.
+            let mut reader = Wire::ordinary_many(&[other, path]);
+            let native_id = &content(&first)["native_receipt_id"];
+            assert_eq!(&content(&reader.call("deliver", envelope.clone()))["native_receipt_id"], native_id);
+            let mut changed = envelope.clone();
+            changed["sender"]["nativeSessionId"] = json!("other-source");
+            assert_eq!(&content(&reader.call("deliver", changed.clone()))["native_receipt_id"], native_id);
+            changed["message"] = json!("different payload");
+            let conflict = reader.call("deliver", changed);
+            assert_eq!(conflict["result"]["structuredContent"]["code"], "idempotency_conflict", "{conflict}");
+            let mut unknown = envelope;
+            unknown["target"]["nativeSessionId"] = json!("unregistered");
+            expect_error(&reader.call("deliver", unknown));
+            let resolved = reader.call("session", json!({"action":"resolve","node_ref":target["hostId"],
+                "harness":target["harness"],"native_session_id":target["nativeSessionId"]}));
+            assert_eq!(content(&resolved)["session_ref"], *session_ref);
+            let receipt = reader.call("deliver", json!({"action":"receipt","session_ref":session_ref,"request_key":marker}));
+            let proof = &content(&receipt)["native_receipt"];
+            assert_eq!(&proof["native_id"], native_id);
+            assert_eq!(&proof["sender"], sender);
+            assert_eq!(proof["target"]["native_session_id"], target["nativeSessionId"]);
+            let history = reader.call("session", json!({"action":"messages","session_ref":session_ref}));
+            let messages = content(&history)["page"]["messages"].as_array().unwrap();
+            let received: Vec<_> = messages.iter().filter(|row| row["text"] == marker).collect();
+            assert_eq!(received.len(), 1);
+            if target["harness"] == "opencode" {
+                assert_eq!(received[0]["id"], proof["native_id"]);
+            } else {
+                let reference = native_id.as_str().unwrap().strip_prefix("ahap-receipt:v1:").unwrap();
+                assert_eq!(serde_json::from_str::<Value>(reference).unwrap(),
+                    json!({"kind":"message","native_id":received[0]["id"]}));
+            }
+        }
+        register(&mut Wire::ordinary(&other_browser_profile), "secondary-browser", &address);
+        let mut multi = Wire::ordinary_many(&[&other_browser_profile, &browser_profile]);
+        let ambiguous = multi.call("deliver", json!({"sender":oc,"target":address,
+            "inputId":"ambiguous","message":"must not be submitted"}));
+        expect_error(&ambiguous);
+        assert_eq!(browser_fixture.native_calls("sendMessage").len(), 1);
+    }
+}
+
+#[test]
+fn attachments_reach_first_prompt_action_and_envelope_with_exact_replay() {
+    let fixture = Fixture::new();
+    let profile = fixture.profile("chatgpt", "uploads");
+    let mut wire = Wire::open(&profile);
+    let create = json!({"action":"create","instance_ref":"uploads","prompt":"","attachments":files(),"request_key":"first"});
+    let parent = task_id(&wire.call("create", create.clone())).to_owned();
+    let created = task_body(&mut wire, &parent);
+    assert_eq!(created["prompt"]["outcome"], "confirmed", "{created}");
+    let session = &created["create"]["session_ref"];
+    let action = json!({"action":"session","session_ref":session,"mode":"queue","request_key":"next","message":"caption","attachments":files()});
+    let child = task_id(&wire.call("deliver", action.clone())).to_owned();
+    assert_eq!(task_body(&mut wire, &child)["outcome"], "confirmed");
+    let sender = json!({"hostId":"peer","harness":"codex","nativeSessionId":"caller"});
+    let envelope = json!({"target":{"hostId":"browser-node","harness":"chatgpt","nativeSessionId":"created-native"},
+        "sender":sender,"inputId":"envelope","message":"","attachments":files()});
+    let envelope_task = task_id(&wire.call("deliver", envelope.clone())).to_owned();
+    assert_eq!(task_body(&mut wire, &envelope_task)["outcome"], "confirmed");
+    drop(wire);
+
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("create", create.clone())), parent);
+    assert_eq!(task_id(&wire.call("deliver", action.clone())), child);
+    assert_eq!(task_id(&wire.call("deliver", envelope)), envelope_task);
+    let receipt = wire.call("deliver", json!({"action":"receipt","session_ref":session,"request_key":"envelope"}));
+    assert_eq!(content(&receipt)["native_receipt"]["sender"], sender);
+    for (field, change) in [("name", "renamed.txt"), ("data_base64", "UQ=="), ("mime_type", "text/csv")] {
+        let mut different = create.clone();
+        different["attachments"][0][field] = json!(change);
+        let conflict = wire.call("create", different);
+        assert_eq!(task_body(&mut wire, task_id(&conflict))["code"], "idempotency_conflict");
+        let mut different = action.clone();
+        different["attachments"][0][field] = json!(change);
+        assert_eq!(wire.call("deliver", different)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    }
+    let mut reversed = action.clone();
+    reversed["attachments"].as_array_mut().unwrap().reverse();
+    assert_eq!(wire.call("deliver", reversed)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    let mut text_only = action;
+    text_only.as_object_mut().unwrap().remove("attachments");
+    assert_eq!(wire.call("deliver", text_only)["result"]["structuredContent"]["code"], "idempotency_conflict");
+
+    let sends = fixture.native_calls("sendMessage");
+    assert_eq!(fixture.native_calls("createSession").len(), 1);
+    assert_eq!(sends.len(), 3);
+    for (send, caption) in sends.iter().zip(["", "caption", ""]) {
+        assert_eq!(send["id"], "created-native");
+        assert_eq!(send["message"]["text"], caption);
+        assert_eq!(send["files"], json!([
+            ["note.txt","text/plain","3d6124c0105928e47dd1a8dcdacb48e9a0b229a4ad56e7b97b3bebd2b0340c28"],
+            ["raw.bin","application/octet-stream","06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8"]
+        ]));
+    }
+    let db = Connection::open(&fixture.db).unwrap();
+    for marker in ["data_base64", "note.txt", files()[0]["data_base64"].as_str().unwrap()] {
+        let persisted: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE instr(result_json, ?1)>0) OR EXISTS(SELECT 1 FROM intents WHERE instr(payload_hash, ?1)>0 OR instr(native_receipt, ?1)>0)",
+            [marker], |r| r.get(0),
+        ).unwrap();
+        assert!(!persisted, "attachment material in the generic ledger");
+    }
+}
+
+#[test]
+fn attachments_lost_receipt_is_never_resubmitted_on_restart() {
+    let fixture = Fixture::new();
+    let profile = fixture.profile("zai", "uploads");
+    let create = json!({"action":"create","instance_ref":"uploads","prompt":"lose receipt","attachments":files(),"request_key":"lost-first"});
+    let mut wire = Wire::open(&profile);
+    let parent = task_id(&wire.call("create", create.clone())).to_owned();
+    drop(wire);
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("create", create)), parent);
+    let body = task_body(&mut wire, &parent);
+    assert_eq!(body["prompt"]["effect"], "unknown", "{body}");
+    let mut action = json!({"action":"session","session_ref":body["create"]["session_ref"],"mode":"queue","request_key":"lost-next","message":"lose receipt","attachments":files()});
+    let held = wire.call("deliver", action.clone());
+    assert_eq!(held["result"]["structuredContent"]["code"], "delivery_blocked", "{held}");
+    // The unresolved first prompt fences that session. Exercise a lost
+    // ordinary delivery on an independently authorized native session.
+    let registered = wire.call("session", json!({"action":"register","instance_ref":"uploads","native_session_id":"existing-native","request_key":"register"}));
+    action["session_ref"] = content(&registered)["session_ref"].clone();
+    let child = task_id(&wire.call("deliver", action.clone())).to_owned();
+    drop(wire);
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("deliver", action.clone())), child);
+    assert_eq!(task_body(&mut wire, &child)["effect"], "unknown");
+    let mut changed = action;
+    changed["attachments"][0]["data_base64"] = json!("UQ==");
+    assert_eq!(wire.call("deliver", changed)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    assert_eq!(fixture.native_calls("createSession").len(), 1);
+    let sends = fixture.native_calls("sendMessage");
+    assert_eq!(sends.iter().map(|send| send["id"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["created-native", "existing-native"]);
+}
+
+#[test]
+fn attachments_aggregate_limit_survives_the_stdio_and_ahap_frames() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use herder::domain::attachment::MAX_ATTACHMENT_BYTES;
+
+    let fixture = Fixture::new();
+    let mut wire = Wire::open(&fixture.profile("chatgpt", "uploads"));
+    let registered = wire.call("session", json!({"action":"register","instance_ref":"uploads","native_session_id":"existing-native","request_key":"register"}));
+    let mut send = json!({
+        "action":"session","session_ref":content(&registered)["session_ref"],"mode":"queue","message":"","request_key":"size",
+        "attachments":[
+            {"name":"limit.bin","mime_type":"application/octet-stream","data_base64":STANDARD.encode(vec![0xff; MAX_ATTACHMENT_BYTES])},
+            {"name":"extra.bin","mime_type":"application/octet-stream","data_base64":"eA=="}
+        ]
+    });
+    let refused = wire.call("deliver", send.clone());
+    assert_eq!(refused["result"]["structuredContent"]["code"], "invalid_attachments", "{refused}");
+    assert!(fixture.native_calls("sendMessage").is_empty());
+    send["attachments"].as_array_mut().unwrap().pop();
+    let admitted = wire.call("deliver", send);
+    assert_eq!(task_body(&mut wire, task_id(&admitted))["outcome"], "confirmed");
+    assert_eq!(fixture.native_calls("sendMessage").len(), 1);
+}
+
+#[test]
+fn attachments_need_valid_bytes_both_capability_markers_and_session_grants() {
+    for instance in ["uploads", "flag-only", "direct-only"] {
+        let fixture = Fixture::new();
+        let mut wire = Wire::open(&fixture.profile("chatgpt", instance));
+        let mut input = files();
+        let code = if instance == "uploads" {
+            input[0]["data_base64"] = json!("invalid!");
+            "invalid_attachments"
+        } else {
+            "attachments_unsupported"
+        };
+        let create = wire.call("create", json!({"action":"create","instance_ref":instance,"prompt":"caption","attachments":input,"request_key":"refused"}));
+        assert_eq!(create["result"]["structuredContent"]["code"], code, "{create}");
+        let registered = wire.call("session", json!({"action":"register","instance_ref":instance,"native_session_id":"existing-native","request_key":"registration"}));
+        let mut send = json!({"action":"session","session_ref":content(&registered)["session_ref"],"mode":"queue","message":"caption","attachments":input,"request_key":"refused"});
+        let refused = wire.call("deliver", send.clone());
+        assert_eq!(refused["result"]["structuredContent"]["code"], code, "{refused}");
+        send["attachments"] = files();
+        send["session_ref"] = json!("foreign-session");
+        let denied = wire.call("deliver", send);
+        assert_eq!(denied["result"]["structuredContent"]["code"], "session_grant_required", "{denied}");
+        assert!(fixture.native_calls("createSession").is_empty());
+        assert!(fixture.native_calls("sendMessage").is_empty());
+        let intents: i64 = Connection::open(&fixture.db).unwrap().query_row(
+            "SELECT count(*) FROM intents WHERE request_key='refused'", [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(intents, 0);
+    }
+}
+
+#[test]
+fn native_owner_single_and_mixed_multi_route_to_the_profile_selected_runner() {
+    let fixture = Fixture::new();
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let address = socket.local_addr().unwrap();
+    let binding = |kind: &str| json!({
+        "AHAP_BROWSER_TRANSPORT":"direct-cdp",
+        "AHAP_BROWSER_CDP_WS_URL":format!("ws://{address}/devtools/browser/fixture"),
+        "AHAP_BROWSER_CDP_CONTEXT_ID":format!("{kind}-context"),
+        "AHAP_BROWSER_CDP_TARGET_ID":format!("{kind}-target"),
+        "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64),
+    });
+    let mut native = Vec::new();
+    for (kind, binary) in [
+        ("chatgpt", env!("CARGO_BIN_EXE_herder_native_stdio")),
+        ("zai", env!("CARGO_BIN_EXE_herder-browser")),
+    ] {
+        let instance = format!("{kind}-rust");
+        let path = fixture.native_profile(kind, &instance, Path::new(binary), binding(kind));
+        let mut client = Wire::open(&path);
+        let instances = client.call("discover", json!({"action":"instances"}));
+        let rows = content(&instances)["instances"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["instance_ref"], instance);
+        assert_eq!(rows[0]["node_ref"], "browser-node");
+        assert_eq!(rows[0]["harness"], kind);
+        assert_eq!(rows[0]["capabilities"]["nativeProtocol"], "direct-cdp");
+        expect_error(&client.call("session", json!({"action":"messages","session_ref":"unregistered"})));
+        native.push(path);
+    }
+    let mut legacy_env = binding("legacy");
+    legacy_env["AHAP_BROWSER_PAGE_ID"] = json!("1");
+    let legacy = fixture.write_profile("chatgpt", "legacy", &fs::canonicalize("/usr/bin/python3").unwrap(),
+        Some(&fixture.script), legacy_env);
+    let mut multi = Wire::open_many(&[&native[0], &legacy, &native[1]]);
+    let instances = multi.call("discover", json!({"action":"instances","node_ref":"browser-node"}));
+    let rows = content(&instances)["instances"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        match row["instance_ref"].as_str().unwrap() {
+            "chatgpt-rust" | "zai-rust" => assert_eq!(row["capabilities"]["nativeProtocol"], "direct-cdp"),
+            "legacy" => assert!(row["capabilities"].get("nativeProtocol").is_none()),
+            other => panic!("unexpected instance {other}"),
+        }
+    }
+    let registered = multi.call("session", json!({"action":"register","instance_ref":"legacy",
+        "native_session_id":"existing-native","request_key":"legacy-owner-proof"}));
+    let session = &content(&registered)["session_ref"];
+    let messages = multi.call("session", json!({"action":"messages","session_ref":session}));
+    assert_eq!(content(&messages)["page"]["messages"], json!([]));
+    assert_eq!(fixture.native_calls("getSessionMessages")[0]["profile"], "1");
+    assert_eq!(fixture.binding_count(), 1);
+    // Discovery and refused reads must not even open a CDP connection.
+    assert_eq!(socket.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
 }
 
 fn registration(provider: &str) {

@@ -1,15 +1,15 @@
 //! Readback of a dispatching intent never grants permission to submit again.
-use crate::domain::adapter::{NativeReceipt, NativeSessionReader, Observation};
-use crate::domain::address::SessionAddress;
+use crate::domain::adapter::{NativeReceipt, NativeSessionReader, Observation, SendPayload};
+use crate::domain::address::{InstanceRef, SessionAddress};
 use crate::mcp::catalog::DeliveryPeer;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 /// SHA-256 of canonical, versioned JSON for the exact native submission.
 /// The intent must be prepared with this value before invoking the dispatcher.
-pub fn dispatch_payload_binding(
+pub fn dispatch_payload_binding<'a>(
     plan: &crate::domain::adapter::DispatchPlan,
-    message: &str,
+    message: impl Into<SendPayload<'a>>,
 ) -> String {
     use crate::domain::adapter::SendMode;
     let mode = match plan.mode {
@@ -17,26 +17,39 @@ pub fn dispatch_payload_binding(
         SendMode::Queue => "queue",
         SendMode::Start => "start",
     };
-    let bytes = serde_json::to_vec(&(1u8, &plan.target, mode, &plan.expected_turn, message))
-        .expect("serializing a dispatch plan cannot fail");
-    let mut out = String::from("sha256-dispatch-v1:");
-    for byte in sha256(&bytes) {
-        use std::fmt::Write;
-        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    out
+    let input = (1u8, &plan.target, mode, &plan.expected_turn, message.into().binding());
+    let bytes = serde_json::to_vec(&input).expect("serializing a dispatch plan cannot fail");
+    binding_hash("sha256-dispatch-v1:", &bytes)
 }
 
 /// Sender is durable attribution, not effect identity or authorization. Keep
 /// it out of the payload hash so a repeated envelope from another attributed
 /// peer returns the original receipt without changing the native effect.
-pub fn dispatch_payload_binding_with_sender(
+pub fn dispatch_payload_binding_with_sender<'a>(
     plan: &crate::domain::adapter::DispatchPlan,
-    message: &str,
+    message: impl Into<SendPayload<'a>>,
     sender: Option<&DeliveryPeer>,
 ) -> String {
     let _ = sender;
     dispatch_payload_binding(plan, message)
+}
+
+pub(crate) fn create_payload_binding(
+    instance: &InstanceRef, specification: SendPayload<'_>,
+) -> String {
+    let bytes = serde_json::to_vec(&(1u8, instance, specification.binding()))
+        .expect("instance and create payload serialize");
+    binding_hash("create-v1:", &bytes)
+}
+
+fn binding_hash(prefix: &str, bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(prefix.len() + 64);
+    out.push_str(prefix);
+    for byte in sha256(bytes) {
+        write!(out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
 }
 
 fn sha256(data: &[u8]) -> [u8; 32] {
@@ -583,6 +596,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(persisted, "{bad");
+    }
+
+    #[test]
+    fn attachments_binding_preserves_text_keys_and_cannot_be_forged_by_prompt_text() {
+        use crate::domain::{adapter::{DispatchPlan, SendMode}, attachment::InlineAttachment};
+        let plan = DispatchPlan { target: receipt().target, mode: SendMode::Start, expected_turn: None };
+        let instance = &plan.target.instance;
+        let text = "Привет \"QA\"\nline\\path";
+        let plain = SendPayload::new(text, &[]).unwrap();
+        assert_eq!(create_payload_binding(instance, plain),
+            "create-v1:8be53d21a4b814b127248682413f0f98865d19863a8d82fdac9f07e7ab7627e5");
+
+        let files = [InlineAttachment { name: "file".into(), mime_type: "text/plain".into(), data_base64: "YQ==".into() }];
+        let upload = SendPayload::new(text, &files).unwrap();
+        let forged = serde_json::to_string(&upload.binding()).unwrap();
+        for other in [plain, forged.as_str().into()] {
+            assert_ne!(create_payload_binding(instance, other), create_payload_binding(instance, upload));
+            assert_ne!(dispatch_payload_binding(&plan, other), dispatch_payload_binding(&plan, upload));
+        }
     }
 
     #[test]

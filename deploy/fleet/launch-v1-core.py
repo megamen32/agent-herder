@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Installed stdio entry: pinned manifest -> compat -> Rust core -> TS AHAP.
+"""Launch the pinned Rust core with the adapters selected by its owner profiles.
 
 Selection is one private JSON file, not a legacy fleet current symlink.
 This launcher never provisions stores, sends prompts or retries operations.
@@ -148,15 +148,23 @@ def prepare(selector):
     for path in profiles:
         profile = private_json(path)
         owner = profile['owner']
-        if owner['executable'] != manifest['node']:
-            raise ValueError('profile does not select the installed executable')
-        canonical = manifest['adapters'][owner['kind']]
-        identity = (owner.get('node'), owner.get('instance'), owner['kind'])
+        kind = owner['kind']
+        canonical = manifest['adapters'][kind]
         ahap_script = owner.get('ahap_script')
-        if ahap_script is None:
+        native_browser = kind in ('chatgpt', 'zai') and ahap_script is None
+        if owner['executable'] != manifest['core' if native_browser else 'node']:
+            raise ValueError('profile does not select the installed executable')
+        identity = (owner.get('node'), owner.get('instance'), kind)
+        if native_browser:
+            # The pinned core validates the complete CDP binding before attachment.
+            adapter_env = owner.get('ahap_env')
+            if (not isinstance(adapter_env, dict) or adapter_env.get('AHAP_BROWSER_TRANSPORT') != 'direct-cdp'
+                    or owner.get('ahap_base_url') is not None):
+                raise ValueError('native browser profile requires direct CDP')
+        elif ahap_script is None:
             # Native OpenCode profiles select the endpoint directly. The Rust
             # owner composition validates the endpoint and owns the transport.
-            if owner['kind'] != 'opencode' or not isinstance(owner.get('ahap_base_url'), str):
+            if kind != 'opencode' or not isinstance(owner.get('ahap_base_url'), str):
                 raise ValueError('native profile has no supported endpoint binding')
         elif ahap_script != canonical and pinned.get(identity) != ahap_script:
             raise ValueError('profile does not select the installed artifact')

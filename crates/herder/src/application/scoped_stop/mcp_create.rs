@@ -2,13 +2,14 @@
 use crate::{
     application::{
         scoped_stop::{
-            BoundedFreshRootCreate, BoundedNativeHandoff, ScopeGenerationIssuer, ScopedAuthority,
+            BoundedFreshRootCreate, BoundedNativeHandoff, GateError, ScopeGenerationIssuer, ScopedAuthority,
             create_prompt::{FreshSessionGrantPolicy, create_with_prompt, delivery_identifiers},
         },
         target::{CreateRequest, SessionRefIssuer},
     },
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
-    domain::adapter::NativeSessionReader,
+    domain::adapter::{NativeSessionReader, SendPayload},
+    error::Diagnostic,
     mcp::{
         catalog,
         transport::{ApplicationFuture, ApplicationPort},
@@ -104,6 +105,7 @@ where
                 instance_ref,
                 project_ref,
                 prompt,
+                attachments,
                 request_key,
             }) = request
             else {
@@ -153,13 +155,14 @@ where
                     "Omit project_ref and retry, or select an application that supports project-scoped creation.",
                 ));
             }
-            if prompt.is_empty() {
+            let attachments = attachments.unwrap_or_default();
+            if prompt.is_empty() && attachments.is_empty() {
                 return Some(input_error(
                     "prompt_required",
                     "prompt",
                     "prompt is empty",
-                    "non-empty prompt text",
-                    "Provide the intended prompt and retry.",
+                    "prompt text or at least one attachment",
+                    "Provide the intended prompt or an attachment and retry.",
                 ));
             }
             if request_key.is_empty()
@@ -220,10 +223,12 @@ where
             let retain = self.retain_until.clone();
             let identity = identity.clone();
             let run = tokio::task::spawn_blocking(move || {
+                let payload = SendPayload::new(&prompt, &attachments)
+                    .map_err(GateError::InvalidAttachments)?;
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|_| ())?;
+                    .map_err(|_| GateError::Unavailable)?;
                 let outcome = runtime
                     .block_on(create_with_prompt(
                         &authority,
@@ -239,12 +244,11 @@ where
                             intent_id: &intent,
                             task_id: &task,
                             request_key: &request_key,
-                            specification: &prompt,
+                            specification: payload,
                             now: &now,
                             retain_until: &retain,
                         },
-                    ))
-                    .map_err(|_| ())?;
+                    ))?;
                 authority
                     .record_create_task(
                         &identity,
@@ -252,16 +256,21 @@ where
                         &instance,
                         &child,
                         &intent,
-                        &prompt,
+                        payload,
                         outcome,
                     )
-                    .map_err(|_| ())
             })
             .await;
             match run {
                 Ok(Ok(id)) => Some(CallToolResult::structured(
                     json!({"_herder_create_task":id}),
                 )),
+                Ok(Err(GateError::InvalidAttachments(reason))) => Some(
+                    CallToolResult::structured_error(json!(Diagnostic::invalid_attachments(reason))),
+                ),
+                Ok(Err(GateError::AttachmentsUnsupported)) => Some(
+                    CallToolResult::structured_error(json!(Diagnostic::attachments_unsupported())),
+                ),
                 _ => Some(CallToolResult::structured_error(
                     serde_json::to_value(crate::error::Diagnostic::outcome_unknown(None)).unwrap(),
                 )),

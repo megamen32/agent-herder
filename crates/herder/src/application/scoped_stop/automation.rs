@@ -458,6 +458,7 @@ impl<R: CompletedTurnReader> ApplicationPort for ScopedAutomationApplication<R> 
                         };
                     }
                     let deliver_request = catalog::Request::Deliver(catalog::Deliver::Session {
+                        attachments: None,
                         session_ref: parent.0.clone(),
                         message,
                         mode: self.delivery_mode.clone(),

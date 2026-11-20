@@ -2,6 +2,7 @@
 """Review adapter/profile migration in isolated authorities; no live runtime."""
 import argparse
 import copy
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -27,7 +28,7 @@ fixtures = load("migration_fixtures", "process-leases-test.py")
 candidate = fixtures.candidate
 
 
-class AdapterMigrationContracts(unittest.TestCase):
+class MigrationFixture(unittest.TestCase):
     def setUp(self):
         fixtures.RolloutContracts.setUp(self)
         self.source = "d" * 40
@@ -72,6 +73,12 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.old_profiles[str(self.remote_profile)] = remote_raw
         self.base["adapter"] = self.base["adapters"]["opencode"]
         self.base["sha256"]["adapter"] = self.base["sha256"]["adapters"]["opencode"]
+        self.new_launcher.chmod(0o700)
+        self.new_launcher.write_bytes(Path(__file__).with_name("launch-v1-core.py").read_bytes())
+        self.new_launcher.chmod(0o500)
+        candidate.create(self.new / "check-selector.json", b"{}")
+
+    def seal_baseline(self):
         self.base_manifest.write_bytes(candidate.encoded(self.base))
         self.selection.update(manifest_sha256=candidate.digest(self.base_manifest), profiles=list(self.old_profiles))
         self.selector.write_bytes(candidate.encoded(self.selection))
@@ -80,29 +87,12 @@ class AdapterMigrationContracts(unittest.TestCase):
         hashes = {key: self.manifest["sha256"][key] for key in ("core", "process_worker", "process_config")}
         self.manifest = candidate.compose_manifest(self.base, self.new, self.source, self.base_manifest,
             candidate.digest(self.base_manifest), hashes, ["cargo", "build"])
-        adapters = {}
-        for kind in ("opencode", "zcode", "codex"):
-            path = self.new / "fixture" / ("ahap-" + kind + "-runner.mjs")
-            candidate.create(path, ("new reviewed " + kind).encode(), 0o400)
-            adapters[kind] = {"previous_path": self.base["adapters"][kind],
-                              "previous_sha256": self.base["sha256"]["adapters"][kind],
-                              "previous_source_commit": candidate.adapter_source(self.base, kind),
-                              "path": str(path), "sha256": candidate.digest(path), "source_commit": self.source,
-                              "compiled_entrypoint_sha256": "e" * 64}
-        self.migration = candidate.stage_adapter_migration(self.base, self.manifest, self.selection,
-            self.selector, self.new, self.source, adapters,
-            {"source_commit": self.source, "bundler_sha256": "f" * 64, "compile_argv": [["tsc", "package"], ["tsc", "app"]]})
-        self.new_launcher.chmod(0o700)
-        self.new_launcher.write_bytes(Path(__file__).with_name("launch-v1-core.py").read_bytes())
-        self.new_launcher.chmod(0o500)
-        candidate.create(self.new / "check-selector.json", b"{}")
-        self.reseal()
 
     def reseal(self):
-        migration_path = self.new / "adapter-migration.json"
+        migration_path = Path(self.manifest[self.migration_key])
         migration_path.chmod(0o600)
         migration_path.write_bytes(candidate.encoded(self.migration))
-        self.manifest["sha256"]["adapter_migration"] = candidate.digest(migration_path)
+        self.manifest["sha256"][self.migration_key] = candidate.digest(migration_path)
         self.manifest_path.write_bytes(candidate.encoded(self.manifest))
         rebound = {item["previous_path"]: item["path"] for item in self.migration["profiles"]}
         self.new_selection = {**self.selection, "manifest": str(self.manifest_path),
@@ -122,7 +112,7 @@ class AdapterMigrationContracts(unittest.TestCase):
             candidate_manifest_sha256=candidate.digest(self.manifest_path),
             profile_sha256=self.migration["profile_sha256"],
             staged_selector_sha256=candidate.digest(staged_path),
-            adapter_migration_sha256=candidate.digest(migration_path))
+            profile_migration_sha256=candidate.digest(migration_path))
         (self.new / "process-leases-build.json").write_bytes(candidate.encoded(self.build_receipt))
 
     def check(self):
@@ -133,6 +123,27 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.assertEqual(self.database.read_bytes(), self.before_db)
         for path, raw in self.old_profiles.items():
             self.assertEqual(Path(path).read_bytes(), raw)
+
+
+class AdapterMigrationContracts(MigrationFixture):
+    migration_key = "adapter_migration"
+
+    def setUp(self):
+        super().setUp()
+        self.seal_baseline()
+        adapters = {}
+        for kind in ("opencode", "zcode", "codex"):
+            path = self.new / "fixture" / ("ahap-" + kind + "-runner.mjs")
+            candidate.create(path, ("new reviewed " + kind).encode(), 0o400)
+            adapters[kind] = {"previous_path": self.base["adapters"][kind],
+                              "previous_sha256": self.base["sha256"]["adapters"][kind],
+                              "previous_source_commit": candidate.adapter_source(self.base, kind),
+                              "path": str(path), "sha256": candidate.digest(path), "source_commit": self.source,
+                              "compiled_entrypoint_sha256": "e" * 64}
+        self.migration = candidate.stage_adapter_migration(self.base, self.manifest, self.selection,
+            self.selector, self.new, self.source, adapters,
+            {"source_commit": self.source, "bundler_sha256": "f" * 64, "compile_argv": [["tsc", "package"], ["tsc", "app"]]})
+        self.reseal()
 
     def test_staging_checks_actual_payloads_without_creating_authority_files(self):
         self.assertEqual(self.check()["profile_validation"], "staged_payloads_not_installed")
@@ -164,6 +175,16 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.assertNotIn(b"ahap_script", payload)
         self.assertTrue(payload.endswith(b"\r\n"))
 
+    def stage_recovery(self, selection, selector, output, reviewed):
+        output.mkdir(mode=0o700)
+        manifest = candidate.compose_manifest(self.base, output, self.source, self.base_manifest,
+            selection["manifest_sha256"], self.manifest["sha256"], ["cargo", "build"])
+        staged = candidate.stage_native_profile_migration(
+            self.base, manifest, selection, selector, output, self.source, [], [reviewed])
+        path = output / "manifest.json"
+        candidate.create(path, candidate.encoded(manifest), 0o400)
+        return staged, manifest, {**selection, "manifest": str(path), "manifest_sha256": candidate.digest(path)}
+
     def test_codex_socket_can_be_staged_before_a_recovery_cohort_is_registered(self):
         old_path = self.root / "native-codex-profile.json"
         old = candidate.strict_json(self.old_profiles[str(self.root / "profile-codex.json")])
@@ -180,13 +201,9 @@ class AdapterMigrationContracts(unittest.TestCase):
         candidate.create(reviewed, candidate.encoded(successor))
 
         output = self.root / "socket-candidate"
-        output.mkdir(mode=0o700)
-        manifest = copy.deepcopy(self.base)
-        manifest.update(source_commit=self.source, composition={"process_leases": {}}, build_inputs={})
-        staged = candidate.stage_native_profile_migration(
-            self.base, manifest, selection, selector, output, self.source, [], [reviewed])
+        staged, manifest, new = self.stage_recovery(selection, selector, output, reviewed)
         [binding] = staged["profiles"]
-        new = {**selection, "profiles": [binding["path"], str(self.remote_profile)]}
+        new["profiles"] = [binding["path"], str(self.remote_profile)]
         self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), staged)
         self.assertEqual(candidate.read_json(binding["payload"]), successor)
         self.assertEqual(old_path.read_bytes(), before)
@@ -226,14 +243,9 @@ class AdapterMigrationContracts(unittest.TestCase):
         reviewed = self.root / "reviewed-codex.json"
         candidate.create(reviewed, candidate.encoded(recovery))
         out = self.root / "recovery-candidate"
-        out.mkdir(mode=0o700)
-        manifest = copy.deepcopy(self.base)
-        manifest.update(source_commit=self.source, composition={"process_leases": {}}, build_inputs={})
-
-        staged = candidate.stage_native_profile_migration(
-            self.base, manifest, selection, selector, out, self.source, [], [reviewed])
+        staged, manifest, new = self.stage_recovery(selection, selector, out, reviewed)
         [row] = staged["profiles"]
-        new = {**selection, "profiles": [row["path"], str(self.remote_profile)]}
+        new["profiles"] = [row["path"], str(self.remote_profile)]
         self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), staged)
         self.assertEqual(row["previous_path"], str(old_path))
         self.assertEqual(old_path.read_bytes(), raw)
@@ -404,6 +416,361 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.assertNotIn("adapter_migration", later)
         self.assertNotIn("adapter_migration", later["sha256"])
         self.assertEqual(later["adapters"], self.manifest["adapters"])
+
+
+class NativeProfileMigrationContracts(MigrationFixture):
+    migration_key = "native_profile_migration"
+
+    def setUp(self):
+        super().setUp()
+        self.authority = self.root / "browser-authority"
+        self.authority.mkdir(mode=0o700)
+        self.alias = self.root / "authority-alias"
+        self.alias.symlink_to(self.authority, target_is_directory=True)
+        for name in ("gate", "database"):
+            candidate.create(self.authority / name, b"existing browser authority")
+        self.env = {}
+        self.paths = {}
+        self.pins = {}
+        self.reviewed = self.root / "reviewed"
+        self.reviewed.mkdir(mode=0o700)
+        for kind, scope in (("chatgpt", "b" * 64), ("zai", "c" * 64)):
+            self.base["adapters"][kind] = self.base["adapters"]["browser"]
+            self.base["sha256"]["adapters"][kind] = self.base["sha256"]["adapters"]["browser"]
+            self.env[kind] = {
+                "AHAP_BROWSER_TRANSPORT": "direct-cdp", "AHAP_BROWSER_ACCOUNT_SCOPE": scope,
+                "AHAP_BROWSER_CDP_WS_URL": "ws://127.0.0.1:9222/devtools/browser/private-fixture",
+                "AHAP_BROWSER_CDP_CONTEXT_ID": "context-" + kind, "AHAP_BROWSER_CDP_TARGET_ID": "target-" + kind,
+                "AHAP_BROWSER_CDP_ORIGIN_PORT": "9223"}
+            self.paths[kind] = self.alias / (kind + ".json")
+            owner = {"principal": "owner-a", "node": "node-a", "kind": kind, "instance": kind + "-local",
+                     "code_home": str(self.root), "cwd": str(self.root), "executable": self.base["node"],
+                     "ahap_script": self.base["adapters"][kind],
+                     "ahap_env": {**self.env[kind], "AHAP_BROWSER_PAGE_ID": "7"}}
+            if kind == "chatgpt":
+                owner["ahap_env"] = self.userio(scope)
+                owner["existing_sessions"] = [{"request_key": "granted", "native_session_id": "old-session",
+                                               "account_scope": scope}]
+            profile = {"database": str(self.alias / "database"), "gate": str(self.alias / "gate"),
+                       "generation": "unchanged", "owner": owner}
+            candidate.create(self.paths[kind], b"")
+            self.save_profile(self.paths[kind], profile)
+
+        # The local Codex session already uses the native triple. OpenCode already owns its endpoint.
+        for kind in ("codex", "opencode"):
+            path = self.root / ("profile-" + kind + ".json")
+            profile = candidate.read_json(path)
+            if kind == "codex":
+                profile["owner"]["ahap_env"] = {"AHAP_CODEX_BIN": self.base["node"], "AHAP_CODEX_CWD": str(self.root),
+                                                "CODEX_HOME": str(self.root)}
+            else:
+                del profile["owner"]["ahap_script"]
+                profile["owner"]["ahap_base_url"] = "http://127.0.0.1:4095"
+            self.save_profile(path, profile)
+        self.pin("chatgpt")
+        self.seal_baseline()
+
+    @staticmethod
+    def userio(scope):
+        return {"AHAP_BROWSER_TRANSPORT": "userio", "AHAP_BROWSER_ACCOUNT_SCOPE": scope,
+                "AHAP_USERIO_ACCOUNT_SCOPE": scope, "AHAP_USERIO_AGENT_ID": "agent", "AHAP_USERIO_ENDPOINT": "fixture",
+                "AHAP_USERIO_CONNECTION_ID": "connection", "AHAP_USERIO_INSTANCE_ID": "legacy-instance",
+                "AHAP_USERIO_PRINCIPAL_ID": "principal", "AHAP_USERIO_ACCESS_TOKEN_FILE": "/never-open-private-ref"}
+
+    def save_profile(self, path, profile):
+        raw = (json.dumps(profile, indent=3, ensure_ascii=True).replace("\n", "\r\n") + "\r\n").encode()
+        path.write_bytes(raw)
+        self.old_profiles[str(path)] = raw
+
+    def pin(self, provider, **changes):
+        path = self.reviewed / (provider + ".json")
+        binding = {"kind": provider, "profile_sha256": candidate.digest(self.paths[provider]), "ahap_env": self.env[provider]}
+        path.write_bytes(candidate.encoded({**binding, **changes}))
+        path.chmod(0o600)
+        self.pins[provider] = {"path": str(path), "sha256": candidate.digest(path)}
+
+    def stage(self, kinds, pins):
+        self.migration = candidate.stage_native_profile_migration(
+            self.base, self.manifest, self.selection, self.selector, self.new, self.source, kinds, pins)
+        self.reseal()
+
+    def plan(self, kinds, pins):
+        return candidate.native_profile_plan(self.base, self.manifest, self.selection, self.new, self.source, kinds, pins)
+
+    def test_both_browsers_staged_checked_and_installed_as_exact_private_siblings(self):
+        self.stage(["chatgpt", "zai"], self.pins)
+        result = self.check()
+        self.assertEqual(result["profile_validation"], "staged_payloads_not_installed")
+        self.assertEqual(self.migration["bindings"], self.pins)
+        self.assertEqual(len(self.migration["profiles"]), 2)
+        evidence = json.dumps([result, self.migration, self.manifest, self.build_receipt])
+        for private in ("private-fixture", "context-chatgpt", "target-chatgpt", "b" * 64, "/never-open-private-ref"):
+            self.assertNotIn(private, evidence)
+        for row in self.migration["profiles"]:
+            kind = row["kind"]
+            previous = candidate.read_json(self.paths[kind])
+            expected = copy.deepcopy(previous)
+            del expected["owner"]["ahap_script"]
+            expected["owner"].update(executable=self.manifest["core"], ahap_env=self.env[kind])
+            self.assertEqual(candidate.read_json(row["payload"]), expected)
+            self.assertEqual(Path(row["payload"]).stat().st_mode & 0o777, 0o400)
+            self.assertEqual(Path(row["path"]).parent, Path(expected["database"]).parent)
+            self.assertFalse(os.path.lexists(row["path"]))
+        self.assert_unchanged()
+        installed = candidate.install(self.install_args, guard=self.guard)
+        for row in self.migration["profiles"]:
+            self.assertEqual(candidate.private_file(row["path"]).parent, self.authority)
+            self.assertEqual(Path(row["path"]).stat().st_mode & 0o777, 0o400)
+        for path in self.selection["profiles"]:
+            if path not in {str(p) for p in self.paths.values()}:
+                self.assertIn(path, self.new_selection["profiles"])
+        candidate.rollback(argparse.Namespace(receipt=Path(installed["rollback_receipt"])), guard=self.guard)
+        self.assert_unchanged()
+        self.assertEqual((self.alias / "database").read_bytes(), b"existing browser authority")
+
+    def test_explicit_zai_pin_and_userio_only_scope_leave_unselected_chatgpt(self):
+        profile = candidate.read_json(self.paths["zai"])
+        env = self.userio(self.env["zai"][candidate.BROWSER_SCOPE])
+        del env[candidate.BROWSER_SCOPE]
+        profile["owner"]["ahap_env"] = env
+        self.save_profile(self.paths["zai"], profile)
+        self.pin("zai")
+        with self.assertRaisesRegex(ValueError, "provider and protected profile"):
+            self.plan(["zai"], {"zai": self.pins["chatgpt"]})
+        self.stage(["zai"], {"zai": self.pins["zai"]})
+        self.check()
+        self.assertEqual([row["kind"] for row in self.migration["profiles"]], ["zai"])
+        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
+
+    def test_core_only_rebind_changes_only_exact_old_executable(self):
+        path = self.paths["zai"]
+        profile = candidate.read_json(path)
+        del profile["owner"]["ahap_script"]
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
+        self.save_profile(path, profile)
+        self.stage([], {})
+        self.check()
+        row, = self.migration["profiles"]
+        self.assertEqual(Path(row["payload"]).read_bytes(), path.read_bytes().replace(
+            json.dumps(self.base["core"]).encode(), json.dumps(self.manifest["core"]).encode()))
+        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
+        profile["owner"]["executable"] = self.manifest["core"]
+        self.save_profile(path, profile)
+        with self.assertRaisesRegex(ValueError, "exact installed executable"):
+            self.check()
+
+    def test_recovery_rebinds_native_browser_and_preserves_legacy_browser(self):
+        path = self.paths["zai"]
+        profile = candidate.read_json(path)
+        del profile["owner"]["ahap_script"]
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
+        self.save_profile(path, profile)
+        self.seal_baseline()
+
+        successor = candidate.read_json(self.root / "profile-codex.json")
+        successor["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "shared.sock")
+        reviewed = self.reviewed / "codex.json"
+        candidate.create(reviewed, candidate.encoded(successor))
+        args = (self.base, self.manifest, self.selection, self.selector, self.new, self.source)
+        with self.assertRaisesRegex(ValueError, "only one profile migration type"):
+            candidate.stage_native_profile_migration(*args, ["chatgpt"], self.pins, recovery_profiles=[reviewed])
+        self.migration = candidate.stage_native_profile_migration(*args, [], {}, recovery_profiles=[reviewed])
+        self.reseal()
+        self.assertEqual(self.check()["profile_validation"], "staged_payloads_not_installed")
+        rows = {row["kind"]: row for row in self.migration["profiles"]}
+        self.assertEqual(set(rows), {"codex", "zai"})
+        self.assertEqual(Path(rows["codex"]["payload"]).read_bytes(), reviewed.read_bytes())
+        self.assertEqual(Path(rows["zai"]["payload"]).read_bytes(), path.read_bytes().replace(
+            json.dumps(self.base["core"]).encode(), json.dumps(self.manifest["core"]).encode()))
+        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
+        self.assert_unchanged()
+
+        self.migration["profiles"].remove(rows["zai"])
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "exact reviewed profile bindings"):
+            self.check()
+
+    def test_schema_one_opencode_transition_keeps_original_payload_and_selector(self):
+        path = self.root / "profile-opencode.json"
+        previous = self.old_profiles[str(path)]
+        # A first member (including its trailing comma) must be removed exactly as by the v1 builder.
+        raw = previous.replace(b'"owner": {', b'"owner": {"ahap_script":'
+                               + json.dumps(self.base["adapters"]["opencode"]).encode() + b',', 1)
+        path.write_bytes(raw)
+        self.stage(["opencode"], {})
+        self.check()
+        self.assertEqual((self.migration["schema"], self.migration["kind"]), (1, "opencode"))
+        self.assertNotIn("bindings", self.migration)
+        self.assertEqual(Path(self.migration["profiles"][0]["payload"]).read_bytes(), previous)
+
+    def test_binding_file_privacy_independence_digest_and_schema(self):
+        path = Path(self.pins["chatgpt"]["path"])
+        def check(pin):
+            with self.assertRaises((ValueError, OSError)):
+                self.plan(["chatgpt"], {"chatgpt": pin})
+        pin = self.pins["chatgpt"].copy()
+        path.chmod(0o644)
+        check(pin)
+        path.chmod(0o600)
+        link = self.reviewed / "link"
+        link.symlink_to(path)
+        check({**pin, "path": str(link)})
+        hard = self.reviewed / "hard"
+        os.link(path, hard)
+        check(pin)
+        hard.unlink()
+        inside = self.new / "self-attestation.json"
+        candidate.create(inside, path.read_bytes())
+        check({**pin, "path": str(inside)})
+        check({**pin, "sha256": "0" * 64})
+        for changes in ({"kind": "zai"}, {"profile_sha256": "0" * 64}, {"instance": "override"}):
+            self.pin("chatgpt", **changes)
+            check(self.pins["chatgpt"])
+        path.write_bytes(b'{"kind":"chatgpt","kind":"chatgpt"}')
+        check({"path": str(path), "sha256": candidate.digest(path)})
+        with self.assertRaisesRegex(ValueError, "requires a reviewed private"):
+            self.plan(["chatgpt"], {})
+        self.pin("zai")
+        with self.assertRaisesRegex(ValueError, "binding must match"):
+            self.plan(["zai"], {"zai": self.pins["zai"]})
+
+    def test_incomplete_mixed_or_unsafe_cdp_is_rejected_without_disclosing_values(self):
+        good = self.env["chatgpt"]
+        invalid = [dict((k, v) for k, v in good.items() if k != missing) for missing in candidate.CDP_FIELDS]
+        for key, value in (("AHAP_BROWSER_TRANSPORT", "userio"), ("AHAP_BROWSER_CDP_CONTEXT_ID", " "),
+                           ("AHAP_BROWSER_CDP_TARGET_ID", "not\nexact"), ("AHAP_BROWSER_CDP_TARGET_ID", "x" * 257),
+                           (candidate.ORIGIN_PORT, "0"), (candidate.ORIGIN_PORT, 9223),
+                           (candidate.BROWSER_SCOPE, "A" * 64), (candidate.BROWSER_SCOPE, "d" * 64),
+                           ("AHAP_USERIO_ACCESS_TOKEN_FILE", "private-sentinel"), ("LD_PRELOAD", "private-sentinel")):
+            invalid.append({**good, key: value})
+        for url in ("wss://localhost/devtools/browser/one", "ws://other-host/devtools/browser/one",
+                    "ws://private-sentinel@localhost/devtools/browser/one", "ws://localhost/devtools/page/one",
+                    good["AHAP_BROWSER_CDP_WS_URL"] + "?query=private-sentinel",
+                    good["AHAP_BROWSER_CDP_WS_URL"] + "#private-sentinel", "ws://localhost:65536/devtools/browser/one"):
+            invalid.append({**good, "AHAP_BROWSER_CDP_WS_URL": url})
+        for i, env in enumerate(invalid):
+            with self.subTest(case=i):
+                self.pin("chatgpt", ahap_env=env)
+                with self.assertRaises(ValueError) as refused:
+                    self.plan(["chatgpt"], self.pins)
+                self.assertNotIn("private-sentinel", str(refused.exception))
+
+    def test_old_scope_alias_grants_and_unreviewed_runner_fail_closed(self):
+        original = candidate.read_json(self.paths["chatgpt"])
+        for mutate in (lambda o: o["ahap_env"].update(AHAP_USERIO_ACCOUNT_SCOPE="f" * 64),
+                       lambda o: o["existing_sessions"][0].update(account_scope="f" * 64),
+                       lambda o: o["ahap_env"].update(AHAP_BROWSER_CDP_TARGET_ID="partial"),
+                       lambda o: o.update(executable=self.base["core"]), lambda o: o.update(ahap_script=str(self.wrapper))):
+            profile = copy.deepcopy(original)
+            mutate(profile["owner"])
+            self.save_profile(self.paths["chatgpt"], profile)
+            self.pin("chatgpt")
+            with self.assertRaises(ValueError):
+                self.plan(["chatgpt"], self.pins)
+
+    def test_resealed_browser_payload_cannot_select_its_own_authority_or_binding(self):
+        self.stage(["chatgpt"], self.pins)
+        row = self.migration["profiles"][0]
+        payload_dir = Path(row["payload"]).parent
+        payload_dir.chmod(0o700)
+        original = candidate.read_json(row["payload"])
+        for mutate in (lambda p: p.update(database="other"), lambda p: p.update(gate="other"),
+                       lambda p: p.update(generation="other"), lambda p: p["owner"].update(principal="other"),
+                       lambda p: p["owner"].update(instance="other"), lambda p: p["owner"].update(node="other"),
+                       lambda p: p["owner"].update(existing_sessions=[]),
+                       lambda p: p["owner"].update(executable=self.base["core"]),
+                       lambda p: p["owner"]["ahap_env"].update(AHAP_BROWSER_CDP_TARGET_ID="other")):
+            value = copy.deepcopy(original)
+            mutate(value)
+            raw = candidate.encoded(value)
+            sha = hashlib.sha256(raw).hexdigest()
+            payload = payload_dir / (sha + ".json")
+            candidate.create(payload, raw, 0o400)
+            target = self.alias / ("profile-process-leases-native-" + self.source[:12] + "-" + sha[:20] + ".json")
+            row.update(path=str(target), payload=str(payload), sha256=sha, payload_sha256=sha)
+            self.reseal()
+            with self.assertRaisesRegex(ValueError, "exact reviewed profile bindings"):
+                self.check()
+        self.assert_unchanged()
+
+    def test_same_profile_bytes_under_retargeted_authority_alias_are_rejected(self):
+        self.stage(["chatgpt"], self.pins)
+        replacement = self.root / "other-authority"
+        shutil.copytree(self.authority, replacement)
+        self.alias.unlink()
+        self.alias.symlink_to(replacement, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "exact reviewed profile bindings"):
+            self.check()
+
+    def test_binding_is_checked_again_and_an_old_launcher_cannot_skip_profiles(self):
+        self.stage(["chatgpt"], self.pins)
+        self.new_launcher.chmod(0o700)
+        self.new_launcher.write_text(fixtures.NEW_LAUNCHER)
+        with self.assertRaisesRegex(ValueError, "launcher differs"):
+            self.check()
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "exact reviewed owner profiles"):
+            self.check()
+        path = Path(self.pins["chatgpt"]["path"])
+        path.write_bytes(path.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "binding digest mismatch"):
+            self.check()
+
+    def test_remote_browser_wrapper_must_keep_its_exact_identity_even_on_selected_kind(self):
+        wrapper = self.old / "remote-zai.mjs"
+        candidate.create(wrapper, b"remote browser transport")
+        config = Path(str(wrapper) + ".json")
+        candidate.create(config, candidate.encoded({"nodeRef": "remote-node", "kind": "zai"}))
+        self.base["remote_ahap_wrappers"].append({"kind": "zai", "node": "remote-node", "instance": "remote-zai",
+            "script": str(wrapper), "script_sha256": candidate.digest(wrapper), "config_sha256": candidate.digest(config)})
+        path = self.alias / "remote-zai.json"
+        profile = candidate.read_json(self.paths["zai"])
+        profile["owner"].update(node="remote-node", instance="remote-zai", ahap_script=str(wrapper))
+        candidate.create(path, b"")
+        self.save_profile(path, profile)
+        self.seal_baseline()
+        self.stage(["zai"], {})
+        self.check()
+        self.assertIn(str(path), self.new_selection["profiles"])
+        profile["owner"]["ahap_script"] = self.base["adapters"]["zai"]
+        self.save_profile(path, profile)
+        with self.assertRaisesRegex(ValueError, "exact retained remote wrapper"):
+            self.check()
+
+    def test_later_ahap_build_can_only_rebind_an_already_native_browser(self):
+        profile = candidate.read_json(self.paths["zai"])
+        del profile["owner"]["ahap_script"]
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
+        self.save_profile(self.paths["zai"], profile)
+        previous = self.root / "profile-zcode.json"
+        zcode = candidate.read_json(previous)
+        zcode.update(database=str(self.alias / "database"), gate=str(self.alias / "gate"))
+        zcode["owner"]["ahap_env"] = {}
+        del self.old_profiles[str(previous)]
+        path = self.alias / "zcode.json"
+        candidate.create(path, b"")
+        self.save_profile(path, zcode)
+        self.seal_baseline()
+        path = self.new / "fixture/ahap-zcode-runner.mjs"
+        candidate.create(path, b"new ZCode runner", 0o400)
+        old = self.base["adapters"]["zcode"]
+        self.migration_key = "adapter_migration"
+        self.migration = candidate.stage_adapter_migration(self.base, self.manifest, self.selection,
+            self.selector, self.new, self.source, {"zcode": {
+                "previous_path": old, "previous_sha256": candidate.digest(old),
+                "previous_source_commit": candidate.adapter_source(self.base, "zcode"), "path": str(path),
+                "sha256": candidate.digest(path), "source_commit": self.source, "compiled_entrypoint_sha256": "e" * 64}},
+            {"source_commit": self.source, "bundler_sha256": "f" * 64, "compile_argv": [["tsc"], ["tsc"]]})
+        self.reseal()
+        self.check()
+        self.assertEqual([row["kind"] for row in self.migration["profiles"]], ["zcode", "zai"])
+        self.assertTrue(all(Path(row["path"]).parent == self.alias for row in self.migration["profiles"]))
+        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
+        self.migration["profiles"].pop()
+        self.migration["schema"] = 1
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "required native browser core rebinds"):
+            self.check()
 
 
 class FreshBundlerContract(unittest.TestCase):

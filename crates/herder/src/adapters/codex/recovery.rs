@@ -74,16 +74,22 @@ impl RecoveryObservation {
     fn matches_thread(&self, thread: &Value, thread_id: &str) -> bool {
         let lineage = thread_lineage(thread, thread_id);
         let ancestors = &self.boundary.ancestors;
-        match (ancestors.first(), ancestors.last()) {
-            (Some(parent), Some(root)) => {
-                lineage
-                    == Some(ThreadLineage::Spawned {
-                        parent: &parent.address.native_session_id,
-                        session: &root.address.native_session_id,
-                        depth: ancestors.len() as u64,
-                    })
+        match (lineage, ancestors.first(), ancestors.last()) {
+            (Some(ThreadLineage::Root), None, None) => true,
+            (
+                Some(ThreadLineage::Spawned {
+                    parent,
+                    session,
+                    depth,
+                }),
+                Some(direct),
+                Some(root),
+            ) => {
+                parent == direct.address.native_session_id
+                    && depth == ancestors.len() as u64
+                    && (session == thread_id || session == root.address.native_session_id)
             }
-            _ => lineage == Some(ThreadLineage::Root),
+            _ => false,
         }
     }
 }

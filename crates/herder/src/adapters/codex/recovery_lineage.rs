@@ -3,8 +3,8 @@ use std::{collections::HashSet, path::Path, time::Instant};
 use serde_json::{Value, json};
 
 use super::{
-    CodexConnection, THREAD_PAGE_SIZE, absent_or_null, goal_allows_recovery,
-    read_rpc, required_string,
+    CodexConnection, THREAD_PAGE_SIZE, absent_or_null, goal_allows_recovery, read_rpc,
+    required_string,
 };
 use crate::domain::{adapter::ReadError, address::SessionAddress, recovery::RecoveryAncestor};
 
@@ -70,13 +70,11 @@ pub(super) fn thread_lineage<'a>(thread: &'a Value, id: &str) -> Option<ThreadLi
     let depth = spawn["depth"]
         .as_u64()
         .filter(|depth| (1..=MAX_PARENT_DEPTH).contains(depth))?;
-    (thread["parentThreadId"] == parent && parent != id && session != id).then_some(
-        ThreadLineage::Spawned {
-            parent,
-            session,
-            depth,
-        },
-    )
+    (thread["parentThreadId"] == parent && parent != id).then_some(ThreadLineage::Spawned {
+        parent,
+        session,
+        depth,
+    })
 }
 
 pub(super) fn read_thread(
@@ -187,7 +185,16 @@ pub(super) fn read_ancestors(
             ThreadLineage::Spawned { parent, depth, .. } if depth == expected_depth => Some(parent),
             _ => return Ok(None),
         };
-        if thread["sessionId"] != session || !active_without_human_input(&thread) {
+        // Codex can report a thread's own session ID at every depth after
+        // reload. Older daemons report the root session ID on every node.
+        // Keep one encoding across the chain and still verify each spawn
+        // edge and its active root turn below.
+        let expected_session = if session == target.native_session_id {
+            parent_id.as_str()
+        } else {
+            session
+        };
+        if thread["sessionId"] != expected_session || !active_without_human_input(&thread) {
             return Ok(None);
         }
         let Some(cwd) = required_string(&thread, "cwd").filter(|cwd| Path::new(cwd).is_absolute())

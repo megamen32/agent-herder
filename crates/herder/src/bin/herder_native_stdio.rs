@@ -52,6 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args_os().skip(1);
     match args.next() {
         None => transport::serve_stdio().await,
+        Some(flag) if flag == "--harness" => {
+            herder::adapters::browser::run(std::iter::once(flag).chain(args)).await
+        }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         Some(flag) if flag == "--trusted-owner-profile" => {
             let path = args.next().ok_or_else(|| {

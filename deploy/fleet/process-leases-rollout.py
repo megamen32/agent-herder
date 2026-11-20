@@ -654,6 +654,7 @@ def scheduler_source(git_dir, proposed, migration, receipt):
     # Require identical inputs outside native code, its release tools and tests.
     excluded = ["crates/herder", "tests", "docs", "bugs.md",
                 "deploy/fleet/process-leases-candidate.py", "deploy/fleet/process-leases-rollout.py",
+                "deploy/fleet/rollout-node.py", "deploy/fleet/process-leases-ts-runtime.py",
                 "deploy/fleet/process-leases-adapters-test.py", "deploy/fleet/process-leases-rollout-test.py"]
     paths = [":(top,exclude)" + path for path in excluded]
     if (subprocess.run(git + ["merge-base", "--is-ancestor", installed, source]).returncode

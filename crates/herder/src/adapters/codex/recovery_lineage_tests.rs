@@ -23,6 +23,8 @@ resumed = False
 def thread(id):
     row = {"id": id, "sessionId": root, "source": "appServer", "ephemeral": False,
            "cwd": str(home / id), "modelProvider": "pinned", "model": "saved-model"}
+    if case == "per-thread-session" or case == "mixed-session" and id == child:
+        row["sessionId"] = id
     if id != root:
         direct = parent if id == child else root
         if case == "cycle" and id == parent:
@@ -288,8 +290,26 @@ fn original_child_recovery_is_bound_to_its_own_turn_and_exact_ancestors() {
 }
 
 #[test]
+fn child_recovery_accepts_native_per_thread_session_ids() {
+    let stand = Stand::new("per-thread-session");
+    let control = stand.open();
+    let boundary = control.read_boundary(&stand.target).unwrap().unwrap();
+    assert_eq!(boundary.ancestors.len(), 2);
+    let receipt = submit(&control, &stand.target, &boundary, &|| true)
+        .unwrap()
+        .receipt;
+    assert_eq!(receipt.target, stand.target);
+    assert_eq!(receipt.native_id, "child-continuation");
+    assert_eq!(
+        stand.mutation_calls(),
+        ["thread/resume codex-child", "turn/start codex-child"]
+    );
+}
+
+#[test]
 fn child_recovery_rejects_unproved_lineage_and_ineligible_ancestors() {
     for case in [
+        "mixed-session",
         "fork",
         "attached",
         "review",

@@ -2,14 +2,16 @@
 use crate::{
     application::{
         delivery_keys::DeliveryKeyRegistry,
-        scoped_stop::{BoundedNativeHandoff, ScopedAuthority},
+        reconcile::dispatch_payload_binding_with_sender,
+        scoped_stop::{BoundedNativeHandoff, GateError, ScopedAuthority},
         target::{DeliverRequest, deliver_scoped},
     },
     auth::identity::{Action, Caller, ConnectionIdentity, Grant, PrivateResource},
     domain::{
-        adapter::{NativeSessionReader, SendCommand, SendMode},
+        adapter::{Admission, DispatchPlan, NativeSessionReader, RequestKey, SendCommand, SendMode, SendPayload, SubmitError},
         address::{InstanceRef, SessionRef},
     },
+    error::Diagnostic,
     mcp::{
         catalog,
         transport::{ApplicationFuture, ApplicationPort},
@@ -177,25 +179,43 @@ pub(super) struct IdleQueueReader<'a, R> {
     pub(super) mode: SendMode,
 }
 
-struct KeyBoundHandoff<'a,C> {
-    inner:&'a C,
-    registry:Option<&'a DeliveryKeyRegistry>,
-    principal:&'a str,
-    session:&'a str,
-    request_key:&'a str,
+struct KeyBoundHandoff<'a, C> {
+    inner: &'a C,
+    registry: Option<&'a DeliveryKeyRegistry>,
+    principal: &'a str,
+    session: &'a str,
+    request_key: &'a str,
     sender: Option<&'a catalog::DeliveryPeer>,
 }
-impl<C:BoundedNativeHandoff> BoundedNativeHandoff for KeyBoundHandoff<'_,C> {
-    fn submit_bounded(&self,plan:crate::domain::adapter::DispatchPlan,message:&str,
-        key:&crate::domain::adapter::RequestKey)->Result<crate::domain::adapter::Admission,crate::domain::adapter::SubmitError> {
-        use crate::{application::reconcile::dispatch_payload_binding_with_sender,domain::adapter::SubmitError};
+impl<C: BoundedNativeHandoff> BoundedNativeHandoff for KeyBoundHandoff<'_, C> {
+    fn supports_attachments(&self) -> bool {
+        self.inner.supports_attachments()
+    }
+    fn requires_attachment_caption(&self) -> bool {
+        self.inner.requires_attachment_caption()
+    }
+
+    fn submit_bounded(
+        &self, plan: DispatchPlan, message: &str, key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        self.submit_bounded_payload(plan, message.into(), key)
+    }
+
+    fn submit_bounded_payload(
+        &self, plan: DispatchPlan, payload: SendPayload<'_>, key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
         if DeliveryKeyRegistry::applies(self.request_key) {
-            let valid=key.0==self.request_key && self.registry.and_then(|registry|
-                registry.lookup(self.principal,self.session,&plan.target,self.request_key).ok().flatten())
-                .is_some_and(|binding|binding.payload_hash==dispatch_payload_binding_with_sender(&plan,message,self.sender));
-            if !valid {return Err(SubmitError::DefinitelyNotSent{reason:"canonical delivery key binding changed before native admission".into()})}
+            let binding = self.registry.and_then(|registry| {
+                registry.lookup(self.principal, self.session, &plan.target, self.request_key).ok().flatten()
+            });
+            let expected = dispatch_payload_binding_with_sender(&plan, payload, self.sender);
+            if key.0 != self.request_key || binding.is_none_or(|binding| binding.payload_hash != expected) {
+                return Err(SubmitError::DefinitelyNotSent {
+                    reason: "canonical delivery key binding changed before native admission".into(),
+                });
+            }
         }
-        self.inner.submit_bounded(plan,message,key)
+        self.inner.submit_bounded_payload(plan, payload, key)
     }
 }
 impl<R: NativeSessionReader> NativeSessionReader for IdleQueueReader<'_, R> {
@@ -263,6 +283,7 @@ where
             let catalog::Request::Deliver(catalog::Deliver::Session {
                 session_ref,
                 message,
+                attachments,
                 mode,
                 request_key,
                 sender,
@@ -311,10 +332,11 @@ where
                     json!({"code":"session_grant_required","effect":"none"}),
                 ));
             }
+            let attachments = attachments.unwrap_or_default();
             if request_key.is_empty()
                 || request_key.len() > 4096
                 || request_key.chars().any(char::is_control)
-                || message.is_empty()
+                || (message.is_empty() && attachments.is_empty())
             {
                 return Some(CallToolResult::structured_error(
                     json!({"code":"invalid_request","effect":"none"}),
@@ -371,29 +393,50 @@ where
             let retain = self.retain_until.clone();
             let identity = identity.clone();
             let delivery_keys = self.delivery_keys.clone();
-            let sender = sender.clone();
             let task_lookup = task_id.clone();
             let lookup_inside = task_lookup.clone();
             let run = tokio::task::spawn_blocking(move || {
                 use rusqlite::OptionalExtension;
-                use crate::application::reconcile::dispatch_payload_binding_with_sender;
-                let (address,_) = authority.resolve_session(&identity,&grants,&session,&instance).map_err(|_|())?;
-                let expected=dispatch_payload_binding_with_sender(&crate::domain::adapter::DispatchPlan{target:address.clone(),mode,expected_turn:None},&message,sender.as_ref());
+                let (address, _) = authority.resolve_session(&identity, &grants, &session, &instance)?;
+                let payload = SendPayload::new(&message, &attachments)
+                    .map_err(GateError::InvalidAttachments)?;
+                let attachment_check = control.check_attachment_support(payload);
+                let expected = dispatch_payload_binding_with_sender(
+                    &DispatchPlan { target: address.clone(), mode, expected_turn: None },
+                    payload, sender.as_ref(),
+                );
+                let lookup = || -> Result<Option<String>, GateError> {
+                    let (_guard, writer) = authority.lock()?;
+                    writer.connection().query_row(
+                        "SELECT payload_hash FROM intents WHERE task_id=?1 AND principal=?2 AND target=?3 AND request_key=?4",
+                        rusqlite::params![lookup_inside, principal_id, session.0, request_key], |r| r.get(0),
+                    ).optional().map_err(|_| GateError::Store)
+                };
+                let recorded = lookup()?;
                 if DeliveryKeyRegistry::applies(&request_key) {
-                    let Some(registry)=delivery_keys.as_ref() else {return Ok::<_,()>("registry_unavailable")};
-                    if let Err(error)=registry.reserve(&principal_id,&session.0,&address,&request_key,&expected) {
+                    let Some(registry)=delivery_keys.as_ref() else {return Ok("registry_unavailable")};
+                    let binding = if attachment_check.is_ok() {
+                        registry.reserve(&principal_id, &session.0, &address, &request_key, &expected)
+                    } else {
+                        // Read an old reservation after a capability change. A fresh
+                        // unsupported request must never consume the key.
+                        match registry.lookup(&principal_id, &session.0, &address, &request_key) {
+                            Ok(Some(binding)) if binding.payload_hash != expected => return Ok("conflict"),
+                            Ok(None) if recorded.is_some() => return Ok("registry_unavailable"),
+                            Ok(_) => Ok(()),
+                            Err(error) => Err(error),
+                        }
+                    };
+                    if let Err(error)=binding {
                         return Ok(if error.kind()==std::io::ErrorKind::AlreadyExists {"conflict"}else{"registry_unavailable"});
                     }
                 }
-                let lookup = || -> Result<Option<String>,()> {
-                    let (_guard,writer)=authority.lock().map_err(|_|())?;
-                    writer.connection().query_row("SELECT payload_hash FROM intents WHERE task_id=?1 AND principal=?2 AND target=?3 AND request_key=?4",rusqlite::params![lookup_inside,principal_id,session.0,request_key],|r|r.get(0)).optional().map_err(|_|())
-                };
-                match lookup()? {
-                    Some(hash) if hash!=expected => return Ok::<_,()>("conflict"),
-                    Some(_) => return Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside).map_err(|_|())?.is_some(){"task"}else{"unknown"}),
+                match recorded {
+                    Some(hash) if hash!=expected => return Ok("conflict"),
+                    Some(_) => return Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside)?.is_some(){"task"}else{"unknown"}),
                     None=>(),
                 }
+                attachment_check?;
                 // Native reads/replays above remain available. Every fresh MCP
                 // handoff is machine-originated, regardless of caller metadata.
                 let migration = match authority.migration_decision(&instance,Some(&address.native_session_id),Some(&request_key)) {
@@ -401,13 +444,23 @@ where
                     Err(_) => return Ok("migration_unavailable"),
                 };
                 if migration.blocked { return Ok("migration_quarantined"); }
-                let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|())?;
+                let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|GateError::Unavailable)?;
                 let restricted = IdleQueueReader { inner: reader.as_ref(), mode };
-                let fenced=KeyBoundHandoff {inner:control.as_ref(),registry:delivery_keys.as_deref(),principal:&principal_id,session:&session.0,request_key:&request_key,sender:sender.as_ref()};
-                let result=runtime.block_on(deliver_scoped(&authority,&instance,&identity,&grants,&restricted,&fenced,DeliverRequest{session:&session,intent_id:&intent_id,task_id:&task_id,request_key:&request_key,message:&message,sender:sender.as_ref(),command:SendCommand{mode},now:&now,retain_until:&retain}));
+                let fenced = KeyBoundHandoff {
+                    inner: control.as_ref(), registry: delivery_keys.as_deref(), principal: &principal_id,
+                    session: &session.0, request_key: &request_key, sender: sender.as_ref(),
+                };
+                let request = DeliverRequest {
+                    session: &session, intent_id: &intent_id, task_id: &task_id, request_key: &request_key,
+                    message: payload, sender: sender.as_ref(), command: SendCommand { mode },
+                    now: &now, retain_until: &retain,
+                };
+                let result = runtime.block_on(deliver_scoped(
+                    &authority, &instance, &identity, &grants, &restricted, &fenced, request,
+                ));
                 match lookup()? {
                     Some(hash) if hash!=expected=>Ok("conflict"),
-                    Some(_)=>Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside).map_err(|_|())?.is_some(){"task"}else{"unknown"}),
+                    Some(_)=>Ok(if authority.get_delivery_task(&identity,&grants,&lookup_inside)?.is_some(){"task"}else{"unknown"}),
                     None=>Ok(match result {Ok(_)=>"blocked",Err(crate::application::target::TargetError::Store)=>"unknown",Err(_)=>"refused"}),
                 }
             }).await;
@@ -433,6 +486,12 @@ where
                 Ok(Ok("registry_unavailable")) => Some(CallToolResult::structured_error(
                     json!({"code":"canonical_key_registry_unavailable","effect":"none"}),
                 )),
+                Ok(Err(GateError::InvalidAttachments(reason))) => Some(
+                    CallToolResult::structured_error(json!(Diagnostic::invalid_attachments(reason))),
+                ),
+                Ok(Err(GateError::AttachmentsUnsupported)) => Some(
+                    CallToolResult::structured_error(json!(Diagnostic::attachments_unsupported())),
+                ),
                 _ => Some(CallToolResult::structured_error(
                     serde_json::to_value(crate::error::Diagnostic::outcome_unknown(None)).unwrap(),
                 )),
