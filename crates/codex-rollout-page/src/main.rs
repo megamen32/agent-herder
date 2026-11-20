@@ -99,8 +99,9 @@ fn page(
                 continue;
             }
             line.reverse();
-            if !line.iter().all(u8::is_ascii_whitespace) {
-                match serde_json::from_slice::<Value>(&line) {
+            let content = line.strip_suffix(b"\r").unwrap_or(&line);
+            if !content.iter().all(u8::is_ascii_whitespace) {
+                match serde_json::from_slice::<Value>(content) {
                     Ok(row) if transcript_record(&row) => {
                         let offset = start + i as u64 + 1;
                         if rows.len() == limit {
@@ -112,6 +113,8 @@ fn page(
                         rows.push(json!({"offset":offset,"line":std::str::from_utf8(&line)?}));
                     }
                     Ok(_) => (),
+                    // NUL-only lines between Codex events occupy bytes but carry no event.
+                    Err(_) if content.iter().all(|&byte| byte == 0) => (),
                     Err(err) if at_eof && err.is_eof() => (),
                     Err(_) => return Err("malformed Codex rollout record".into()),
                 }
@@ -184,6 +187,23 @@ mod tests {
             }
         }
         assert!(token.is_none());
+    }
+
+    #[test]
+    fn pages_across_a_nul_only_record_but_rejects_a_damaged_record() {
+        let header = json!({"type":"session_meta","payload":{"id":"s"}});
+        let padding = "\0".repeat(1313);
+        let bytes = format!("{header}\n{}\n{padding}\r\n{}\n", record(1), record(2));
+        let mut file = Cursor::new(bytes.into_bytes());
+        let latest = page(&mut file, "s", "file", 1, None).unwrap();
+        assert_eq!(latest["rows"][0]["line"], record(2));
+        let cursor = latest["nextCursor"].as_str().unwrap();
+        let older = page(&mut file, "s", "file", 1, Some(cursor)).unwrap();
+        assert_eq!(older["rows"][0]["line"], record(1));
+        assert!(older["nextCursor"].is_null());
+
+        let damaged = format!("{header}\n{padding}{}\n", record(1));
+        assert!(page(&mut Cursor::new(damaged.as_bytes()), "s", "file", 1, None).is_err());
     }
 
     #[test]
