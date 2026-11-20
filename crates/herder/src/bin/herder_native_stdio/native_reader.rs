@@ -36,7 +36,7 @@ impl NativeReader {
             reader: Mutex::new(CodexReader::open(process, timeout)?),
         })
     }
-    pub(super) fn read(&self, target: &SessionAddress) -> Result<Value, ReadError> {
+    fn read(&self, target: &SessionAddress) -> Result<Value, ReadError> {
         if target.instance != self.instance || target.native_session_id.is_empty() {
             return Err(ReadError("wrong instance or empty target".into()));
         }
@@ -130,7 +130,7 @@ fn activity(thread: &Value) -> SessionActivity {
         .map(|turn_id| SessionActivity::Busy { turn_id })
         .unwrap_or(SessionActivity::Idle)
 }
-pub(super) fn observe(thread: &Value, receipt: &NativeReceipt) -> Observation {
+fn observe(thread: &Value, receipt: &NativeReceipt) -> Observation {
     let unknown = || Observation::Unknown {
         receipt: receipt.clone(),
     };
@@ -205,6 +205,21 @@ impl NativeSessionReader for NativeReader {
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         let thread = self.read(&receipt.target)?;
         Ok(observe(&thread, receipt))
+    }
+
+    async fn reconcile_admitted_recovery(
+        &self,
+        receipt: &NativeReceipt,
+        key: &str,
+    ) -> Result<Observation, ReadError> {
+        if receipt.target.instance != self.instance {
+            return Err(ReadError("wrong Codex receipt instance".into()));
+        }
+        self.reader
+            .try_lock()
+            .map_err(|_| ReadError("Codex receipt reader unavailable".into()))?
+            .observe_admitted_recovery(receipt, key)
+            .map_err(|error| ReadError(error.to_string()))
     }
 }
 #[cfg(test)]

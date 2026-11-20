@@ -149,6 +149,10 @@ struct OwnerNativeReader {
     control: Arc<Control>,
     reopened: Arc<NativeReader>,
 }
+#[cfg(test)]
+#[path = "owner_recovery_receipt_tests.rs"]
+mod receipt_tests;
+
 impl NativeSessionReader for OwnerNativeReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
         let thread = self
@@ -169,11 +173,7 @@ impl NativeSessionReader for OwnerNativeReader {
         receipt: &NativeReceipt,
         key: &str,
     ) -> Result<Observation, ReadError> {
-        let thread = self.reopened.read(&receipt.target)?;
-        if self.control.create.native_control().confirms_superseded_429(&thread, receipt, key) {
-            return Ok(Observation::Confirmed { receipt: receipt.clone() });
-        }
-        Ok(super::native_reader::observe(&thread, receipt))
+        self.reopened.reconcile_admitted_recovery(receipt, key).await
     }
 
     async fn recover_admission(
