@@ -285,7 +285,7 @@ impl RecoveryControl for CodexControl {
             params["model"] = json!(expected_model);
             params["config"] = selected.overrides(&boundary.provider);
         }
-        if (child || alternate) && !still_allowed() {
+        if !still_allowed() {
             return Err(not_sent("Codex recovery is held before resume"));
         }
         let remaining = remaining_time(deadline).map_err(read_refusal)?;
@@ -683,7 +683,14 @@ fn read_observation(
 
     // thread/read also returns archived threads. Prove membership in the
     // non-archived native index by exact ID, independently of the profile default provider.
-    if !is_unarchived(connection, thread_id, cwd, lineage, deadline, is_quiescent)? {
+    if !is_unarchived(
+        connection,
+        thread_id,
+        cwd,
+        lineage,
+        deadline,
+        index_is_quiescent,
+    )? {
         return Ok(None);
     }
     // The summary contains the original input. Inspect the tail of this turn
@@ -784,12 +791,20 @@ fn accepts_child_input(thread: &Value) -> bool {
 }
 
 fn is_quiescent(thread: &Value) -> bool {
+    index_is_quiescent(thread)
+        && (thread["status"]["type"] != "systemError" || thread["canAcceptDirectInput"] == true)
+}
+
+// The state-DB-only list omits canAcceptDirectInput on root threads.
+// thread/read above supplies the live permission for a failed session.
+fn index_is_quiescent(thread: &Value) -> bool {
     let status = &thread["status"];
-    (matches!(status["type"].as_str(), Some("notLoaded" | "idle"))
-        || (status["type"] == "systemError" && thread["canAcceptDirectInput"] == true))
-        && status
-            .get("activeFlags")
-            .is_none_or(|flags| flags.as_array().is_some_and(Vec::is_empty))
+    matches!(
+        status["type"].as_str(),
+        Some("notLoaded" | "idle" | "systemError")
+    ) && status
+        .get("activeFlags")
+        .is_none_or(|flags| flags.as_array().is_some_and(Vec::is_empty))
         && absent_or_null(thread, "activeTurnId")
         && matches!(
             thread.get("canAcceptDirectInput"),
@@ -1338,19 +1353,21 @@ for line in sys.stdin:
     thread = {"id": "saved-thread", "source": "appServer", "cwd": str(home),
               "modelProvider": "pinned", "model": model,
               "status": {"type": "idle" if loaded else "notLoaded"}}
+    if case == "root-held":
+        thread.update(status={"type":"systemError"}, canAcceptDirectInput=True)
     if method == "initialize":
         result = {"codexHome": str(home)}
     elif method == "thread/read":
         result = {"thread": thread}
     elif method == "thread/list":
-        result = {"data": [thread], "nextCursor": None}
+        result = {"data": [{k:v for k,v in thread.items() if k != "canAcceptDirectInput"}], "nextCursor": None}
     elif method == "thread/loaded/list":
         result = {"data": ["saved-thread"] if loaded else [], "nextCursor": None}
     elif method == "thread/turns/list":
         assert params["itemsView"] == "summary" and params["limit"] == 1
         result = {"data": [{"id": "old-turn", "status": "failed", "startedAt": 100,
                             "completedAt": 101, "itemsView": "summary",
-                            "error": {"codexErrorInfo": "usageLimitExceeded"},
+                            "error": {"codexErrorInfo": "serverOverloaded" if case == "root-held" else "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
     elif method == "thread/goal/get":
         result = {"goal": None}
@@ -1389,10 +1406,11 @@ for line in sys.stdin:
 "#;
 
     #[test]
-    fn alternate_requires_cold_resume_and_rechecks_route_before_turn() {
+    fn recovery_checks_owner_hold_and_alternate_route_before_submit() {
         for (case, resumes, starts, quota_checks) in [
             ("cold", 1, 1, 2),
             ("already-loaded", 0, 0, 0),
+            ("root-held", 0, 0, 0),
             ("ignored", 1, 0, 1),
             ("rotated", 1, 0, 1),
             ("lost-quota", 1, 0, 2),
@@ -1428,9 +1446,16 @@ for line in sys.stdin:
             )
             .unwrap();
             let boundary = control.read_boundary(&target).unwrap().unwrap();
-            let route = RecoveryRoute {
-                provider: "alternate".into(),
-                model: Some("codex/gpt-5.6-luna".into()),
+            let route = if case == "root-held" {
+                RecoveryRoute {
+                    provider: boundary.provider.clone(),
+                    model: boundary.model.clone(),
+                }
+            } else {
+                RecoveryRoute {
+                    provider: "alternate".into(),
+                    model: Some("codex/gpt-5.6-luna".into()),
+                }
             };
             let credential = static_responses_route(
                 &json!({"wire_api":"responses","base_url":BASE_URL,"experimental_bearer_token":BEARER}),
@@ -1451,7 +1476,7 @@ for line in sys.stdin:
                         credential: &credential,
                         still_available: &still_available,
                     }),
-                    still_allowed: &|| true,
+                    still_allowed: &|| case != "root-held",
                 },
                 "continue fixture",
                 &RequestKey("exact-request".into()),
