@@ -4084,9 +4084,10 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
     // A chat command is the owner talking to the herder, not to the agent: it
     // is executed here and never delivered to the harness chat as a message.
-    if (body.imageIds === undefined && parseChatCommand(body.message)) {
+    const chatCommand = attachmentIds === undefined ? parseChatCommand(body.message) : null;
+    if (chatCommand) {
       if (!chatCommands) return sendJson(response, 503, { ok: false, error: "Команды чата недоступны" });
-      const outcome = await chatCommands.handleDirect(parseChatCommand(body.message)!, harness, id);
+      const outcome = await chatCommands.handleDirect(chatCommand, harness, id);
       return sendJson(response, outcome.ok ? 200 : 409, {
         ok: outcome.ok,
         admitted: true,

@@ -96,7 +96,7 @@ it.each(["chatgpt", "zai"] as const)("delivers %s cabinet uploads once after a l
     expect(response.status).toBe(200);
     ids.push((await response.json()).id);
   }
-  const message = harness === "chatgpt" ? "" : "fixture caption";
+  const message = harness === "chatgpt" ? "" : "/pilot status";
   const attachments = [png, file];
   const proof = { ...f.lookup, found: true, state: "confirmed", payload_hash: canonicalResumePayloadHash(f.target, "queue", message, attachments),
     native_receipt: f.nativeReceipt };
