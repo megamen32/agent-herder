@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalFixture, sha256 } from "./helpers/canonical-herder-fixture.js";
-import { createCanonicalAutomationClient, requireCanonicalMigrationReady } from "../src/canonical-herder.js";
+import { CanonicalHerderError, createCanonicalAutomationClient, requireCanonicalMigrationReady, unwrapCanonicalResult } from "../src/canonical-herder.js";
+import { FleetGptAdminTransport } from "../src/mesh/fleet-gptadmin-transport.js";
+import { CanonicalResumeAfterService } from "../src/resume-after-canonical.js";
+
+const owner = { job_id: "job-1", owner_endpoint: "https://owner.example", owner_target: "shell:server-100" };
+const fullJob = { job_id: owner.job_id, task_id: owner.job_id, server_id: owner.owner_target, trace_id: "trace-1" };
+const mcp = (structuredContent: unknown, isError = false) => ({ content: [], isError, structuredContent });
+function fullShellJob(payload: unknown) {
+  const child = mcp({ ref: "AgentHerder", name: "automation", result: payload });
+  return { ...fullJob, status: "completed", response: mcp({ server: "server-100", result: child }) };
+}
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -47,20 +57,90 @@ async function fixture() {
     authority_generation: profile.authority_generation, node_ref: profile.node_ref, instance_ref: profile.instance_ref,
     snapshot_sha256: state.stale ? "b".repeat(64) : f.config.quarantine!.snapshots[0]!.sha256,
     inventory_sha256: inventory, writer_drain_sha256: f.config.writer_drain.sha256 });
+  const waitStatus = () => ({ version: 1, configured: true, complete: true, blocked: false, mapped: false,
+    reason: "native_session_not_registered", sessionRefs: [], ruleRefs: [], observedAt: new Date().toISOString(),
+    migration_authorities: [proof()] });
   const client = async () => (await createCanonicalAutomationClient({ env: f.env, transportFactory: async () => ({
     call: async (_target, tool, args) => {
       state.calls.push({ tool, args });
       if (tool !== "automation" || (args as any).action !== "wait_status") throw new Error("unexpected mutation");
-      return { version: 1, configured: true, complete: true, blocked: false, mapped: false,
-        reason: "native_session_not_registered", sessionRefs: [], ruleRefs: [], observedAt: new Date().toISOString(),
-        migration_authorities: [proof()] };
+      return { ...owner, status: "completed", result: mcp(waitStatus()) };
     },
   }) }))!;
-  return { ...f, snapshot, state, client, async rewrite() {
+  return { ...f, snapshot, state, client, waitStatus, async rewrite() {
     const pin = await write("quarantine.json", snapshot);
     f.config.quarantine!.snapshots[0] = { ...profile, ...pin }; await f.writeConfig();
   } };
 }
+describe("GPTAdmin canonical job envelopes", () => {
+  const domain = { version: 1, complete: true, job_id: "native-job", status: "completed",
+    result: { admitted: true }, response: { detail: "native receipt" } };
+  const error = { code: "rule_not_found", effect: "none", message: "Missing rule" };
+  it.each([
+    { kind: "mcp.call", wrap: (payload: unknown) => ({ ...owner, status: "completed", result: payload }) },
+    { kind: "job full", wrap: (payload: unknown) => ({ ...fullJob, status: "completed", response: payload }) },
+    { kind: "full shell job", wrap: fullShellJob },
+  ])("$kind preserves the native record and propagates an inner MCP error", ({ wrap }) => {
+    expect(unwrapCanonicalResult(wrap(mcp(domain)))).toBe(domain);
+    expect(() => unwrapCanonicalResult(wrap(mcp(error, true)))).toThrowError(
+      expect.objectContaining({ name: "CanonicalHerderError", ...error }));
+    expect(() => unwrapCanonicalResult(mcp(wrap(mcp(domain)), true))).toThrow(CanonicalHerderError);
+  });
+
+  it("preserves native result and response fields when transport identity is absent", () => {
+    for (const partial of [{ job_id: owner.job_id, owner_target: owner.owner_target },
+      { job_id: fullJob.job_id, server_id: fullJob.server_id }]) {
+      const native = { ...domain, ...partial, result: mcp(domain), response: mcp(domain) };
+      expect(unwrapCanonicalResult(fullShellJob(mcp(native)))).toBe(native);
+    }
+  });
+
+  it("keeps a pending receipt pollable and rejects unsuccessful or malformed jobs", () => {
+    const pending = { ...owner, status: "running", result: mcp(domain) };
+    expect(unwrapCanonicalResult(pending)).toBe(pending);
+    for (const receipt of [
+      { ...pending, status: "unknown" }, { ...pending, status: "failed" },
+      { ...pending, status: "completed", error: "relay failed" },
+      { ...owner, status: "completed" }, { ...fullJob, status: "completed", response: null },
+      { ...owner, status: "completed", result: domain }, fullShellJob(domain),
+      { ...pending, status: "completed", result: { ...mcp(domain), isError: "false" } },
+      { ...fullJob, status: "failed", response: mcp(domain) },
+    ]) expect(() => unwrapCanonicalResult(receipt)).toThrow();
+  });
+
+  it.each(["immediate", "polled", "mismatched IDs"])("checks %s wait_status through the operational scheduler", async route => {
+    const f = await fixture();
+    const calls: string[] = [];
+    const transport = new FleetGptAdminTransport({ endpoint: owner.owner_endpoint, headersProvider: () => ({}),
+      unwrapResponse: unwrapCanonicalResult, nativeHerderAuthority: f.config.authority,
+      fetch: async (_url, init) => {
+        const { method, id, params } = JSON.parse(String(init?.body));
+        if (method === "notifications/initialized") return new Response(null, { status: 204 });
+        if (method === "initialize") return Response.json({ jsonrpc: "2.0", id, result: {} });
+        calls.push(params.name);
+        const native = mcp(f.waitStatus());
+        let receipt;
+        if (params.name === "exec") {
+          expect(params.arguments.code).toContain('"action":"wait_status"');
+          receipt = { status: "completed", calls: 1, result: route === "immediate"
+            ? { ...owner, status: "completed", result: native } : { ...owner, status: "running", result: native } };
+        } else {
+          expect(params).toEqual({ name: "job", arguments: { id: owner.job_id, owner_target: owner.owner_target, detail: "full" } });
+          receipt = fullShellJob(native);
+          if (route === "mismatched IDs") receipt.task_id = "another-job";
+        }
+        return Response.json({ jsonrpc: "2.0", id, result: mcp(receipt) });
+      } });
+    const client = (await createCanonicalAutomationClient({ env: f.env, transportFactory: async () => transport }))!;
+    const readiness = new CanonicalResumeAfterService(client).canonicalReadiness("operational");
+    if (route === "mismatched IDs") await expect(readiness).rejects.toThrow("canonical_transport_failed");
+    else await expect(readiness).resolves.toMatchObject({
+      quarantine: { native_verified: true, authorities: [{ snapshot_sha256: f.config.quarantine!.snapshots[0]!.sha256 }] },
+    });
+    expect(calls).toEqual(route === "immediate" ? ["exec"] : ["exec", "job"]);
+  });
+});
+
 describe("scoped migration quarantine readiness", () => {
   it("permits unrelated work only after native proof, preserving UNKNOWN and original bytes", async () => {
     const f = await fixture(); const before = await fs.readFile(path.join(f.directory, f.snapshot.records[0].request_keys[0] + ".json"));
