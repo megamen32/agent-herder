@@ -21,6 +21,7 @@ pub mod migration_quarantine;
 pub mod automation;
 pub mod process_automation;
 pub mod automation_driver;
+pub mod session_autopilot;
 pub mod wait_automation;
 pub mod session_recovery;
 pub mod recovery_handoff;
@@ -52,6 +53,11 @@ use std::{
 /// this call has no surviving delegated writer. A timeout/disconnect after a
 /// possible write is UNKNOWN; no retry. Only trusted adapters may implement it.
 pub trait BoundedNativeHandoff {
+    /// Check a decision made outside the gate against its durable revision under the handoff lock.
+    fn permits_claim_locked(&self, _writer: &Writer) -> Result<bool, GateError> {
+        Ok(true)
+    }
+
     fn recovery_ancestors(&self) -> &[crate::domain::recovery::RecoveryAncestor] {
         &[]
     }
@@ -672,6 +678,7 @@ impl ScopedAuthority {
                 &writer, b.principal, b.target_ref, &b.address.instance,
             ).map_err(|_| GateError::Store)?.is_empty();
         let ancestor_held = self.recovery_ancestors_held(&writer, b, control.recovery_ancestors())?;
+        let claim_current = control.permits_claim_locked(&writer)?;
         {
             let tx = writer
                 .connection_mut()
@@ -712,10 +719,12 @@ impl ScopedAuthority {
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::StoppedBeforeHandoff);
             }
-            if pending_wait || ancestor_held || scope_held(&tx, b)? {
+            if !claim_current || pending_wait || ancestor_held || scope_held(&tx, b)? {
                 tx.execute("UPDATE intents SET state='rejected',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
                 tx.execute("UPDATE humanstop_dispatches SET phase='stopped',updated_at=?2 WHERE intent_id=?1 AND phase='claimed'",params![b.intent_id,now]).map_err(|_|GateError::Store)?;
-                let result = if pending_wait {
+                let result = if !claim_current {
+                    r#"{"outcome":"rejected","native_submit":"definitely_not_sent","reason":"semantic decision changed before handoff"}"#
+                } else if pending_wait {
                     r#"{"outcome":"waiting_before_handoff","native_submit":"definitely_not_sent"}"#
                 } else {
                     r#"{"outcome":"stopped_before_handoff","native_submit":"definitely_not_sent"}"#

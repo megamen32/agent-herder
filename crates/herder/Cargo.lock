@@ -534,6 +534,7 @@ dependencies = [
  "futures-util",
  "jsonschema",
  "libc",
+ "regex",
  "reqwest",
  "rmcp",
  "rusqlite",

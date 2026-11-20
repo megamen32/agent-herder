@@ -45,6 +45,8 @@ pub struct OwnerProfile {
     #[serde(default)]
     pub codex_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
     #[serde(default)]
+    pub codex_autopilot: Option<herder::application::scoped_stop::session_autopilot::AutopilotProfile>,
+    #[serde(default)]
     pub opencode_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
 }
 
@@ -488,6 +490,10 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     }
     validate_existing_sessions(&owner)?;
     validate_codex_native_binding(&owner)?;
+    if owner.codex_autopilot.as_ref().is_some_and(|pilot| owner.kind != "codex" || !pilot.valid()
+        || !owner.ahap_env.contains_key("AHAP_CODEX_SOCKET")) {
+        return Err(invalid().into());
+    }
     if owner.codex_recovery.as_ref().is_some_and(|recovery| {
         owner.kind != "codex" || !recovery.valid()
             || (owner.ahap_script.is_some() && !owner.ahap_env.contains_key("AHAP_CODEX_BIN"))
@@ -666,6 +672,7 @@ mod enrollment_tests {
             ahap_env:BTreeMap::from([("AHAP_BROWSER_ACCOUNT_SCOPE".into(),"b".repeat(64))]),
             existing_sessions:vec![ExistingSessionApproval{request_key:"k".into(),native_session_id:"native~conversation".into(),account_scope:"b".repeat(64)}],
             codex_recovery:None,
+            codex_autopilot:None,
             opencode_recovery:None,
         }
     }

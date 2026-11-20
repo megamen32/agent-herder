@@ -77,48 +77,7 @@ impl LegacyRecoveryHandoff {
     }
 
     fn read_held(&self, harness: &str, native_id: &str) -> io::Result<bool> {
-        let holds: Sessions<Hold> = private_json(&self.human_stops)?;
-        require_v1(holds.version)?;
-        if holds
-            .sessions
-            .iter()
-            .any(|r| r.harness == harness && r.id == native_id && r.active)
-        {
-            return Ok(true);
-        }
-        let requests: Requests<HumanRequest> = private_json(&self.human_requests)?;
-        require_v1(requests.version)?;
-        for request in requests.requests {
-            let target = request.target;
-            if target.session_id == native_id
-                && target
-                    .agent
-                    .or(target.harness)
-                    .as_deref()
-                    .unwrap_or("codex")
-                    == harness
-                && (matches!(request.status.as_str(), "pending" | "resuming")
-                    || request.status == "resume_failed"
-                        && (request.receipt.as_deref() != Some("agent-resume:native-unavailable")
-                            || request.resume_retryable == Some(false)))
-            {
-                return Ok(true);
-            }
-        }
-        let choices: Requests<Choice> = private_json(&self.choices)?;
-        require_v1(choices.version)?;
-        if choices.requests.iter().any(|r| {
-            r.session_id == native_id
-                && r.harness.as_deref().unwrap_or("codex") == harness
-                && matches!(
-                    r.status.as_str(),
-                    "pending"
-                        | "claimed"
-                        | "dispatching"
-                        | "expired-needs-human"
-                        | "delivery_unknown"
-                )
-        }) {
+        if human_held(harness, native_id, &self.human_stops, &self.human_requests, &self.choices)? {
             return Ok(true);
         }
         let previous: Sessions<LegacyAttempt> = private_json(&self.unfinished_sessions)?;
@@ -344,6 +303,75 @@ struct AutopilotSession {
     enabled: bool,
 }
 
+fn human_held(
+    harness: &str,
+    native_id: &str,
+    human_stops: &Path,
+    human_requests: &Path,
+    choice_path: &Path,
+) -> io::Result<bool> {
+    let holds: Sessions<Hold> = private_json(human_stops)?;
+    require_v1(holds.version)?;
+    if holds
+        .sessions
+        .iter()
+        .any(|r| r.harness == harness && r.id == native_id && r.active)
+    {
+        return Ok(true);
+    }
+    let requests: Requests<HumanRequest> = private_json(human_requests)?;
+    require_v1(requests.version)?;
+    for request in requests.requests {
+        let target = request.target;
+        if target.session_id == native_id
+            && target
+                .agent
+                .or(target.harness)
+                .as_deref()
+                .unwrap_or("codex")
+                == harness
+            && (matches!(request.status.as_str(), "pending" | "resuming")
+                || request.status == "resume_failed"
+                    && (request.receipt.as_deref() != Some("agent-resume:native-unavailable")
+                        || request.resume_retryable == Some(false)))
+        {
+            return Ok(true);
+        }
+    }
+    let choices: Requests<Choice> = private_json(choice_path)?;
+    require_v1(choices.version)?;
+    Ok(choices.requests.iter().any(|r| {
+        r.session_id == native_id
+            && r.harness.as_deref().unwrap_or("codex") == harness
+            && matches!(
+                r.status.as_str(),
+                "pending"
+                    | "claimed"
+                    | "dispatching"
+                    | "expired-needs-human"
+                    | "delivery_unknown"
+            )
+    }))
+}
+
+pub(super) fn read_automation_holds(
+    harness: &str,
+    native_id: &str,
+    human_stops: &Path,
+    human_requests: &Path,
+    choices: &Path,
+    unfinished_sessions: &Path,
+) -> io::Result<bool> {
+    if human_held(harness, native_id, human_stops, human_requests, choices)? {
+        return Ok(true);
+    }
+    let previous: Sessions<LegacyAttempt> = private_json(unfinished_sessions)?;
+    require_v1(previous.version)?;
+    Ok(previous.sessions.iter().any(|r| {
+        r.harness == harness && r.session_id == native_id && r.retains_workspace_session()
+    }))
+}
+
 fn require_v1(version: u8) -> io::Result<()> {
     if version == 1 {
         Ok(())
@@ -416,6 +444,23 @@ struct LegacyAttempt {
 struct LegacyQuotaAttempt {
     state: String,
     reason_code: Option<String>,
+}
+
+impl LegacyAttempt {
+    fn retains_workspace_session(&self) -> bool {
+        self.quota_recovery.is_some() || self.in_flight()
+    }
+
+    fn in_flight(&self) -> bool {
+        self.delivery_pending
+            || self.state.as_deref() == Some("recovering")
+            || self.admission_phase.as_deref() == Some("accepted_pending")
+            || self.recovery_blocked_reason.is_some()
+            || self.non_retryable_admission
+            || self.quota_recovery.as_ref().is_some_and(|q| {
+                q.state == "dispatching" || q.reason_code.as_deref() == Some("delivery_unknown")
+            })
+    }
 }
 
 #[cfg(test)]

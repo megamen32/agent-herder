@@ -18,7 +18,7 @@ pub struct RecoveryBoundary {
     pub ancestors: Vec<RecoveryAncestor>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct RecoveryAncestor {
     pub address: SessionAddress,
     pub cwd: String,
