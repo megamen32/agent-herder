@@ -606,6 +606,59 @@ def verify_crash(read, active, database, thread, interrupted, ref, original_prom
     return receipt
 
 
+def verify_independent_followup(read, wait_for_turn, owner, profile, env, database, thread, requests):
+    prior = turns(read, thread)
+    old_recovery = prior[-1]["id"]
+    old_row, = [row for row in receipt_rows(database) if row[0] == thread]
+    require(old_row[1] == "admitted" and json.loads(old_row[2])["native_id"] == old_recovery,
+            "follow-up needs the exact admission of the failed recovery")
+    client_id = "independent-native-user-input"
+    user_turn = read("turn/start", {"threadId": thread, "turnTrigger": "composer",
+                                    "clientUserMessageId": client_id, "input": [
+        {"type": "text", "text": "This is a new request. Reply with one word."},
+    ]})["turn"]["id"]
+    failed = wait_for_turn(thread, user_turn)
+    history = turns(read, thread)
+    user_items = [item for item in history[-1]["items"] if item["type"] == "userMessage"]
+    require(len(history) == 3 and history[:2] == prior and history[-1]["id"] == user_turn
+            and len({turn["id"] for turn in history}) == 3 and len(requests) == 3
+            and failed["status"] == "failed"
+            and failed["error"]["codexErrorInfo"] == {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}
+            and len(user_items) == 1 and user_items[0].get("clientId") == client_id,
+            "independent user 429 was not the latest native turn")
+    boundary = ["codex-recovery-v1", json.loads(old_row[2])["address"], user_turn, user_items[0]["id"]]
+    new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest()
+    print(json.dumps({"phase": "independent_user_429", "old_recovery": old_recovery,
+                      "old_receipt_state": old_row[1], "latest_user_turn": user_turn}), flush=True)
+    with owner_client(owner, profile, env):
+        try:
+            wait_for("independent user turn remained blocked", lambda: len(requests) >= 4, seconds=68)
+        except TimeoutError as error:
+            states = [row[1] for row in receipt_rows(database) if row[0] == thread]
+            raise RuntimeError(f"{error}; native_turns={len(turns(read, thread))}, "
+                               f"http_requests={len(requests)}, receipt_states={states}") from error
+        wait_for("independent recovery did not complete", lambda: len(now := turns(read, thread)) == 4
+                 and now[-1]["status"] == "completed")
+        now = turns(read, thread)
+        require(now[:3] == history and now[-1]["id"] not in {t["id"] for t in history}
+                and len(requests) == 4 and requests[3] - requests[2] >= 29
+                and any(item.get("clientId") == new_key and item["type"] == "userMessage"
+                        for item in now[-1]["items"]),
+                "owner replayed or replaced an earlier turn, or bypassed the follow-up cooldown")
+        new_recovery = now[-1]["id"]
+
+        def exact_followup_receipts():
+            rows = [row for row in receipt_rows(database) if row[0] == thread]
+            confirmed = [json.loads(row[2]) for row in rows if row[1] == "confirmed" and row[2]]
+            return (len(rows) == len(confirmed) == 2 and any(row[2] == old_row[2] for row in rows)
+                    and any(r["native_id"] == new_recovery and r["request_key"] == new_key for r in confirmed))
+
+        wait_for("missing durable receipts for the two distinct recoveries", exact_followup_receipts, seconds=45)
+    return {"old_recovery_turn": old_recovery, "user_turn": user_turn, "new_recovery_turn": new_recovery,
+            "old_admission": "confirmed", "old_turn_status": history[1]["status"],
+            "http_requests": len(requests), "new_receipt": "confirmed", "cooldown_seconds": round(requests[3] - requests[2], 1)}
+
+
 def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
     home, project = root / "codex-home", root / "project"
     home.mkdir(mode=0o700)
@@ -629,7 +682,8 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
             require(model in requests and self.headers.get("Authorization") == f"Bearer {token}",
                     "unexpected recovery model or credential")
             requests[model].append(time.monotonic())
-            if model != persistent and len(requests[model]) > 1:
+            failures = 3 if model == persistent else 1
+            if len(requests[model]) > failures:
                 return super().send_responses(request, sequence)
             return self.reply(429, "application/json", b'{"error":{"message":"Too many requests"}}')
 
@@ -726,8 +780,8 @@ experimental_bearer_token = "{token}"
                 if {row[0] for row in rows} != {s[0] for s in sessions.values()} or len(rows) != len(sessions):
                     return False
                 for thread, state, receipt, _ in rows:
-                    # A failed native turn retains its admission ACK. Reconciliation
-                    # confirms a completed turn with a user item, never a failed turn.
+                    # The failed recovery is still the latest turn on this thread.
+                    # Its admission must stay pinned across the owner restart below.
                     expected_state = "admitted" if thread == sessions[persistent][0] else "confirmed"
                     if state != expected_state or not receipt:
                         return False
@@ -745,13 +799,18 @@ experimental_bearer_token = "{token}"
                 and all(len(turns(read, thread)) == 2 for thread, _, _ in sessions.values()),
                 "owner delivered another continuation after the first recovery")
         require(digest(home / "config.toml") == config_hash, "native profile changed")
-        return {"provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
-                "positive_quota_model": persistent if quota_profile else None,
-                "receipts": {m: next(r[1] for r in receipts if r[0] == s[0]) for m, s in sessions.items()},
-                "outcomes": {m: turns(read, s[0])[1]["status"] for m, s in sessions.items()},
-                "http_requests": {model: len(seen) for model, seen in requests.items()},
-                "recheck_seconds": {model: round(seen[1] - seen[0], 1) for model, seen in requests.items()},
-                "owner_restart_repeat": 0}
+        proof = {
+            "provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
+            "positive_quota_model": persistent if quota_profile else None,
+            "receipts": {m: next(r[1] for r in receipts if r[0] == s[0]) for m, s in sessions.items()},
+            "outcomes": {m: turns(read, s[0])[1]["status"] for m, s in sessions.items()},
+            "http_requests": {model: len(seen) for model, seen in requests.items()},
+            "recheck_seconds": {model: round(seen[1] - seen[0], 1) for model, seen in requests.items()},
+            "owner_restart_repeat": 0,
+        }
+        proof["independent_followup"] = verify_independent_followup(
+            read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent])
+        return proof
 
 
 def inside(parent_namespace, same_route_only=False, quota_profile=False):

@@ -36,7 +36,7 @@ impl NativeReader {
             reader: Mutex::new(CodexReader::open(process, timeout)?),
         })
     }
-    fn read(&self, target: &SessionAddress) -> Result<Value, ReadError> {
+    pub(super) fn read(&self, target: &SessionAddress) -> Result<Value, ReadError> {
         if target.instance != self.instance || target.native_session_id.is_empty() {
             return Err(ReadError("wrong instance or empty target".into()));
         }
@@ -130,7 +130,7 @@ fn activity(thread: &Value) -> SessionActivity {
         .map(|turn_id| SessionActivity::Busy { turn_id })
         .unwrap_or(SessionActivity::Idle)
 }
-fn observe(thread: &Value, receipt: &NativeReceipt) -> Observation {
+pub(super) fn observe(thread: &Value, receipt: &NativeReceipt) -> Observation {
     let unknown = || Observation::Unknown {
         receipt: receipt.clone(),
     };

@@ -164,6 +164,18 @@ impl NativeSessionReader for OwnerNativeReader {
         self.reopened.reconcile(receipt).await
     }
 
+    async fn reconcile_admitted_recovery(
+        &self,
+        receipt: &NativeReceipt,
+        key: &str,
+    ) -> Result<Observation, ReadError> {
+        let thread = self.reopened.read(&receipt.target)?;
+        if self.control.create.native_control().confirms_superseded_429(&thread, receipt, key) {
+            return Ok(Observation::Confirmed { receipt: receipt.clone() });
+        }
+        Ok(super::native_reader::observe(&thread, receipt))
+    }
+
     async fn recover_admission(
         &self,
         target: &SessionAddress,

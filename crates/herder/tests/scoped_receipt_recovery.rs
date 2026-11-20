@@ -277,6 +277,53 @@ impl NativeSessionReader for Reader {
 }
 
 #[tokio::test]
+async fn only_a_stored_admitted_recovery_can_use_the_followup_observation() {
+    const KEY: &str = "codex-recovery:old";
+    const TASK: &str = "codex-recovery-task:old";
+    const INTENT: &str = "codex-recovery-intent:old";
+    struct FollowupReader;
+    impl NativeSessionReader for FollowupReader {
+        async fn snapshot(&self, _: &SessionAddress) -> Result<SessionSnapshot, ReadError> { unreachable!() }
+        async fn recover_admission(&self, target: &SessionAddress, _: &RequestKey) -> Result<Option<NativeReceipt>, ReadError> {
+            Ok(Some(NativeReceipt { target: target.clone(), native_id: "failed-recovery".into() }))
+        }
+        async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
+            Ok(Observation::Unknown { receipt: receipt.clone() })
+        }
+        async fn reconcile_admitted_recovery(&self, receipt: &NativeReceipt, key: &str) -> Result<Observation, ReadError> {
+            assert_eq!(key, KEY);
+            Ok(Observation::Confirmed { receipt: receipt.clone() })
+        }
+    }
+    let receipt = NativeReceipt { target: address(), native_id: "failed-recovery".into() };
+    for (state, stored, intent, expected) in [
+        ("admitted", true, INTENT, "confirmed"),
+        ("unknown", true, INTENT, "unknown"),
+        ("dispatching", true, INTENT, "dispatching"),
+        ("admitted", false, INTENT, "admitted"),
+        ("admitted", true, "ordinary-delivery-intent", "admitted"),
+    ] {
+        let fixture = Fixture::new("prepared", false);
+        let mut db = mutation_connection(&fixture.db);
+        db.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at)
+                    VALUES (?1,'alice','working','created','updated')", [TASK]).unwrap();
+        db.execute("INSERT INTO intents VALUES (?1,?2,'alice','issued',?3,'payload',?4,NULL,'created','updated','retain')",
+                   params![intent, TASK, KEY, state]).unwrap();
+        if stored {
+            let binding = ReceiptBinding { intent_id: intent, principal: "alice", target_ref: "issued",
+                request_key: KEY, address: &receipt.target };
+            herder::application::reconcile::store_native_receipt(&mut db, &binding, &receipt, "updated").unwrap();
+        }
+        let result = fixture.authority()
+            .reconcile_delivery_task(&identity("alice"), &grants("alice"), TASK, &FollowupReader).await.unwrap();
+        assert_eq!(result, if expected == "confirmed" { Reconciliation::Confirmed(receipt.clone()) }
+                           else { Reconciliation::Unknown });
+        let actual: String = db.query_row("SELECT state FROM intents WHERE intent_id=?1", [intent], |row| row.get(0)).unwrap();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[tokio::test]
 async fn lost_ack_recovers_once_for_unknown_dispatching_and_admitted_without_resend() {
     for state in ["unknown", "dispatching", "admitted"] {
         let fixture = Fixture::new(state, false);

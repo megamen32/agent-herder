@@ -4,7 +4,7 @@ use crate::{
     application::{
         reconcile::{
             ReceiptBinding, Reconciliation, StoredReceipt, encode_native_receipt,
-            load_native_receipt, reconcile_dispatching,
+            load_native_receipt, reconcile_bound_receipt,
         },
         scoped_stop::{GateError, ScopedAuthority, create_prompt::FreshSessionGrantPolicy},
     },
@@ -77,6 +77,14 @@ impl DeliverySnapshot {
     }
     fn dispatch_needs_finalization(&self) -> bool {
         self.dispatch_phase.as_deref() == Some("handing_off")
+    }
+    fn admitted_recovery_key(&self) -> Option<&str> {
+        let suffix = self.key.strip_prefix("codex-recovery:")?;
+        (self.state == "admitted"
+            && self.raw_receipt.is_some()
+            && self.intent.strip_prefix("codex-recovery-intent:") == Some(suffix)
+            && self.task.strip_prefix("codex-recovery-task:") == Some(suffix))
+            .then_some(self.key.as_str())
     }
     fn dispatch_binding_valid(&self) -> bool {
         match self.dispatch_phase.as_deref() {
@@ -192,7 +200,7 @@ impl ScopedAuthority {
         let Some(encoded) = encode_native_receipt(&snapshot.binding(), &receipt) else {
             return Ok(Reconciliation::Unknown);
         };
-        let observed = reconcile_dispatching(reader, Some(&receipt)).await;
+        let observed = reconcile_bound_receipt(reader, &receipt, snapshot.admitted_recovery_key()).await;
         if !matches!(&observed, Reconciliation::Confirmed(value) if *value == receipt) {
             return Ok(observed);
         }
