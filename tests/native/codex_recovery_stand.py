@@ -30,7 +30,7 @@ from http.server import ThreadingHTTPServer
 
 
 INSTANCE = "shared-codex-fixture"
-SOURCE_PROVIDER = "fixture-source"
+SOURCE_PROVIDER = "opencodex"
 FALLBACK_PROVIDER = "fixture-omniroute"
 FALLBACK_MODEL = "codex/gpt-5.6-luna"
 ACCOUNT = "authorized-fixture-account"
@@ -364,6 +364,21 @@ def checked_transcript(call, session, failure_id):
     return current[1]["id"]
 
 
+def make_owner_profile(root, codex, home, project, socket_path):
+    gate, database = make_authority(root, Path("/fixture/store"))
+    tripwire = root / "legacy-runner"
+    private_write(tripwire, "#!/bin/sh\nexit 99\n")
+    tripwire.chmod(0o700)
+    binding = {
+        "kind": "codex", "principal": "fixture-owner", "node": "fixture-node", "instance": INSTANCE,
+        "executable": str(tripwire), "ahap_script": str(tripwire),
+        "code_home": str(home), "cwd": str(project),
+        "ahap_env": {"AHAP_CODEX_BIN": str(codex), "CODEX_HOME": str(home),
+                     "AHAP_CODEX_CWD": str(project), "AHAP_CODEX_SOCKET": str(socket_path)},
+    }
+    return {"database": str(database), "gate": str(gate), "generation": "fixture", "owner": binding}
+
+
 def exercise(root, codex, owner, source_url, fallback_url, source, fallback, answer,
              source_token, fallback_token):
     home, project = root / "codex-home", root / "project"
@@ -400,19 +415,10 @@ experimental_bearer_token = "{fallback_token}"
         with native_client(alias, home) as (seed, wait_for_turn):
             thread, failure_id = seed_failure(seed, wait_for_turn, project, source)
 
-    gate, database = make_authority(root, Path("/fixture/store"))
+    data = make_owner_profile(root, codex, home, project, alias)
+    database = Path(data["database"])
+    binding = data["owner"]
     profile = root / "owner.json"
-    tripwire = root / "legacy-runner"
-    private_write(tripwire, "#!/bin/sh\nexit 99\n")
-    tripwire.chmod(0o700)
-    binding = {
-        "kind": "codex", "principal": "fixture-owner", "node": "fixture-node", "instance": INSTANCE,
-        "executable": str(tripwire), "ahap_script": str(tripwire),
-        "code_home": str(home), "cwd": str(project),
-        "ahap_env": {"AHAP_CODEX_BIN": str(codex), "CODEX_HOME": str(home),
-                     "AHAP_CODEX_CWD": str(project), "AHAP_CODEX_SOCKET": str(alias)},
-    }
-    data = {"database": str(database), "gate": str(gate), "generation": "fixture", "owner": binding}
     private_write(profile, json.dumps(data))
     wrong_backup, exact_backup = root / "wrong-account.sqlite", root / "exact-account.sqlite"
     quota_backup(wrong_backup, fallback_token, OTHER_ACCOUNT)
@@ -448,6 +454,10 @@ experimental_bearer_token = "{fallback_token}"
         require(fallback.count == 0 and not receipt_rows(database),
                 "the backup with quota on a different account admitted recovery")
 
+        if isinstance(source.expected_error, dict):
+            # Both the original route's backoff and the verified cold alternate
+            # must be eligible when the next owner chooses between them.
+            time.sleep(max(0, failed[0]["completedAt"] + 31 - time.time()))
         route["omniroute"]["database"] = str(exact_backup)
         private_write(profile, json.dumps(data))
         with owner_client(owner, profile, env) as active:
@@ -596,7 +606,155 @@ def verify_crash(read, active, database, thread, interrupted, ref, original_prom
     return receipt
 
 
-def inside(parent_namespace):
+def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
+    home, project = root / "codex-home", root / "project"
+    home.mkdir(mode=0o700)
+    project.mkdir(mode=0o700)
+    env = {"HOME": str(home), "CODEX_HOME": str(home), "PATH": "/usr/bin:/bin"}
+    endpoint = root / "codex.sock"
+    profile = root / "owner.json"
+    data = make_owner_profile(root, codex, home, project, endpoint)
+    database = Path(data["database"])
+    private_write(profile, json.dumps(data))
+    private_write(root / "session-autostart.json", json.dumps({
+        "version": 8, "enabled": True, "sessions": [], "recoverOnFailure": True,
+    }))
+    warm, cold = "warm-model", "cold-model"
+    persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
+    requests = {warm: [], cold: [], persistent: []}
+
+    class Provider(module.Handler):
+        def send_responses(self, request, sequence):
+            model = request.get("model")
+            require(model in requests and self.headers.get("Authorization") == f"Bearer {token}",
+                    "unexpected recovery model or credential")
+            requests[model].append(time.monotonic())
+            if model != persistent and len(requests[model]) > 1:
+                return super().send_responses(request, sequence)
+            return self.reply(429, "application/json", b'{"error":{"message":"Too many requests"}}')
+
+    with ExitStack() as stack:
+        url = stack.enter_context(http_fixture(Provider))
+        private_write(home / "config.toml", f'''
+model_provider = "opencodex"
+model = "unused-default-model"
+approval_policy = "never"
+sandbox_mode = "read-only"
+[model_providers.opencodex]
+name = "Isolated opencodex"
+base_url = "{url}"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+experimental_bearer_token = "{token}"
+''')
+        config_hash = digest(home / "config.toml")
+        def seed(call, wait, model):
+            thread = call("thread/start", {"cwd": str(project), "model": model})["thread"]["id"]
+            turn = call("turn/start", {"threadId": thread, "input": [
+                {"type": "text", "text": "Reply with one word without using tools."},
+            ]})["turn"]["id"]
+            failed = wait(thread, turn)
+            message = "exceeded retry limit, last status: 429 Too Many Requests"
+            require(failed["status"] == "failed" and message in failed["error"]["message"]
+                    and failed["error"]["codexErrorInfo"] == {"responseTooManyFailedAttempts": {"httpStatusCode": 429}},
+                    f"unexpected native failure: {failed['error']}")
+            print(json.dumps({"phase": "seeded", "provider": "opencodex", "model": model,
+                              "failure": message}), flush=True)
+            return thread, turn
+
+        with codex_server(codex, endpoint, env, project), native_client(endpoint, home) as (call, wait):
+            cold_seed = seed(call, wait, cold)
+        stack.enter_context(codex_server(codex, endpoint, env, project))
+        read, wait_for_turn = stack.enter_context(native_client(endpoint, home))
+        sessions = {}
+        with owner_client(owner, profile, env) as provision:
+            for model in requests:
+                thread, turn = cold_seed if model == cold else seed(read, wait_for_turn, model)
+                native_thread = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
+                statuses = ("notLoaded",) if model == cold else ("idle", "systemError")
+                require(native_thread["modelProvider"] == "opencodex" and native_thread["model"] == model
+                        and native_thread["status"]["type"] in statuses, "original route or load state changed")
+                ref = session_tool(provision, action="register", instance_ref=INSTANCE,
+                                   native_session_id=thread, request_key=f"register-{model}")["session_ref"]
+                sessions[model] = (thread, turn, ref)
+                print(json.dumps({"phase": "registered", "model": model, "status": native_thread["status"]["type"]}),
+                      flush=True)
+
+        data["owner"]["codex_recovery"] = {"autopilot_state_dir": str(root)}
+        if quota_profile:
+            backup = root / "primary-quota.sqlite"
+            quota_backup(backup, token, ACCOUNT)
+            data["owner"]["codex_recovery"]["fallback_routes"] = [{
+                "workspace": str(project), "provider": "opencodex", "model": persistent,
+                "omniroute": {"endpoint": url, "database": str(backup), "account": ACCOUNT, "upstream_provider": "codex"},
+            }]
+            private_write(root / "codex-quota-guard.json", json.dumps({
+                "version": 1, "policy": {"enabled": True, "minRemainingPercent": 20, "onUnknown": "allow"},
+            }))
+        private_write(profile, json.dumps(data))
+        with owner_client(owner, profile, env) as active:
+            time.sleep(3)  # The initial owner scan runs immediately.
+            early = {model: len(seen) for model, seen in requests.items()}
+            require(all(n == 1 for n in early.values()) and not receipt_rows(database),
+                    f"recovery admitted before cooldown; HTTP requests={early}, receipts={len(receipt_rows(database))}")
+            try:
+                wait_for("missing same-route recovery", lambda: all(len(v) >= 2 for v in requests.values()),
+                         seconds=68)
+            except TimeoutError as error:
+                counts = {model: len(seen) for model, seen in requests.items()}
+                raise RuntimeError(f"{error}; HTTP requests={counts}, receipts={len(receipt_rows(database))}") from error
+            for model, (thread, original, ref) in sessions.items():
+                outcome = "failed" if model == persistent else "completed"
+                wait_for("recovery did not settle", lambda: len(t := turns(read, thread)) == 2
+                         and t[1]["status"] == outcome)
+                current = turns(read, thread)
+                require(len(current) == 2 and current[0]["id"] == original, "original turn changed")
+                result = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
+                require(result["modelProvider"] == "opencodex" and result["model"] == model,
+                        "resumed thread changed provider or model")
+                if model != persistent:
+                    require(module.ANSWER in json.dumps(session_tool(active, action="messages", session_ref=ref)),
+                            "owner could not read back the recovered answer")
+                else:
+                    require(current[1]["error"]["codexErrorInfo"] == current[0]["error"]["codexErrorInfo"],
+                            "expected the recovery turn itself to hit the same 429")
+                require(requests[model][1] - requests[model][0] >= 29, "owner immediately replayed a 429")
+
+            def exact_receipts():
+                rows = receipt_rows(database)
+                if {row[0] for row in rows} != {s[0] for s in sessions.values()} or len(rows) != len(sessions):
+                    return False
+                for thread, state, receipt, _ in rows:
+                    # A failed native turn retains its admission ACK. Reconciliation
+                    # confirms a completed turn with a user item, never a failed turn.
+                    expected_state = "admitted" if thread == sessions[persistent][0] else "confirmed"
+                    if state != expected_state or not receipt:
+                        return False
+                    admitted = json.loads(receipt)
+                    if (admitted["address"]["native_session_id"] != thread
+                            or admitted["native_id"] != turns(read, thread)[1]["id"]):
+                        return False
+                return True
+
+            wait_for("durable receipt did not match the exact native turn and outcome", exact_receipts, seconds=45)
+        receipts = receipt_rows(database)
+        with owner_client(owner, profile, env):
+            time.sleep(34)  # Let the restarted owner recheck the failed recovery across two scans.
+        require(receipt_rows(database) == receipts and all(len(v) == 2 for v in requests.values())
+                and all(len(turns(read, thread)) == 2 for thread, _, _ in sessions.values()),
+                "owner delivered another continuation after the first recovery")
+        require(digest(home / "config.toml") == config_hash, "native profile changed")
+        return {"provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
+                "positive_quota_model": persistent if quota_profile else None,
+                "receipts": {m: next(r[1] for r in receipts if r[0] == s[0]) for m, s in sessions.items()},
+                "outcomes": {m: turns(read, s[0])[1]["status"] for m, s in sessions.items()},
+                "http_requests": {model: len(seen) for model, seen in requests.items()},
+                "recheck_seconds": {model: round(seen[1] - seen[0], 1) for model, seen in requests.items()},
+                "owner_restart_repeat": 0}
+
+
+def inside(parent_namespace, same_route_only=False, quota_profile=False):
     require(namespace() != parent_namespace and {name for _, name in socket.if_nameindex()} == {"lo"},
             "isolated loopback-only network required")
     root = Path("/stand")
@@ -614,6 +772,10 @@ def inside(parent_namespace):
     source_token = "fixture-source-" + secrets.token_hex(24)
     fallback_token = "fixture-fallback-" + secrets.token_hex(24)
     module = model_fixture()
+    if same_route_only:
+        proof = exercise_same_route_429(root, codex, owner, module, source_token, quota_profile)
+        print(json.dumps(dict(proof, result="PASS", network="loopback-only", owner_sha256=digest(owner))), flush=True)
+        return
     source, fallback = model_providers(source_token, fallback_token, module)
     with http_fixture(source) as primary_url, http_fixture(fallback) as fallback_url:
         proof = exercise(root, codex, owner, primary_url, fallback_url, source,
@@ -633,6 +795,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex", type=Path, required=True)
     parser.add_argument("--owner", type=Path, required=True)
+    parser.add_argument("--same-route-429", action="store_true",
+                        help="exercise a connected custom provider with no alternate route")
+    parser.add_argument("--same-route-quota", action="store_true",
+                        help="exercise same-route cooldown with unknown-allow and positive bound quota")
     args = parser.parse_args()
     codex, owner = (path.resolve(strict=True) for path in (args.codex, args.owner))
     for executable in (codex, owner):
@@ -654,11 +820,15 @@ def main():
         "--ro-bind", str(codex), "/fixture/codex", "--ro-bind", str(owner), "/fixture/owner",
         "--", "/usr/bin/python3", "-uB", f"/fixture/native/{Path(__file__).name}", "--inside", namespace(),
     ]
+    if args.same_route_429 or args.same_route_quota:
+        command.append("--same-route-429")
+    if args.same_route_quota:
+        command.append("--same-route-quota")
     subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "--inside":
-        inside(sys.argv[2])
+    if sys.argv[1:2] == ["--inside"]:
+        inside(sys.argv[2], "--same-route-429" in sys.argv[3:], "--same-route-quota" in sys.argv[3:])
     else:
         main()

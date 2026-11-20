@@ -39,6 +39,13 @@ pub struct RecoveryRoute {
     pub model: Option<String>,
 }
 
+pub enum SameRouteRetry {
+    Hold,
+    Ready,
+    /// The re-read matched a different known throttle. Use its existing quota policy.
+    UseQuotaPolicy,
+}
+
 /// Credential bound to a native provider endpoint. Only its digest crosses
 /// the adapter boundary.
 #[derive(Clone, Eq, PartialEq)]
@@ -66,6 +73,14 @@ pub trait RecoveryControl: Send + Sync {
     -> Result<Option<RecoveryBoundary>, ReadError>;
     fn quota(&self, provider: &str, cwd: &str, reserve: u8) -> Option<bool>;
     fn credential(&self, provider: &str, model: &str, cwd: &str) -> Option<RecoveryCredential>;
+    /// Recheck a terminal throttle before resuming on the saved provider and model.
+    fn same_route_retry(
+        &self,
+        _target: &SessionAddress,
+        _boundary: &RecoveryBoundary,
+    ) -> SameRouteRetry {
+        SameRouteRetry::Hold
+    }
     fn supports_alternate(
         &self,
         _target: &SessionAddress,

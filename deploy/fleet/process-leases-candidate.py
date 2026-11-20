@@ -687,6 +687,40 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     return migration
 
 
+def check_recovery_scope(kind, handoff):
+    wide = handoff.get("instance_wide", False)
+    if not isinstance(wide, bool) or (wide and ("native_sessions" in handoff or "workspaces" in handoff)):
+        raise ValueError("instance_wide recovery requires a boolean and a single handoff scope")
+    if wide:
+        return
+    if "native_sessions" not in handoff and "workspaces" not in handoff:
+        raise ValueError("installed recovery needs an explicit handoff scope")
+    if "native_sessions" in handoff:
+        ids = handoff["native_sessions"]
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 128
+                or any(not isinstance(value, str) or not value.strip() for value in ids)
+                or len(set(ids)) != len(ids)):
+            raise ValueError("installed recovery requires an exact unique session cohort")
+    if "workspaces" in handoff:
+        workspaces = handoff["workspaces"]
+        if kind != "codex" or not isinstance(workspaces, list) or not workspaces:
+            raise ValueError("workspace recovery requires an explicit list of Codex workspaces")
+        seen = set()
+        for workspace in workspaces:
+            if not isinstance(workspace, dict) or set(workspace) != {"cwd", "provider"}:
+                raise ValueError("a recovery workspace needs exactly cwd and provider")
+            cwd, provider = workspace["cwd"], workspace["provider"]
+            if (not isinstance(cwd, str) or not cwd.startswith("/") or len(cwd.encode()) > 4096
+                    or cwd != "/" and any(part in {"", ".", ".."} for part in cwd[1:].split("/"))
+                    or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in cwd)
+                    or not isinstance(provider, str) or not re.fullmatch(r"[a-zA-Z0-9._/:$-]{1,256}", provider)):
+                raise ValueError("invalid recovery workspace or provider")
+            key = (cwd, provider)
+            if key in seen:
+                raise ValueError("duplicate recovery workspace and provider")
+            seen.add(key)
+
+
 def recovery_profile_payload(previous, changed, *, installed=False):
     """Stage the shared Codex socket or an inactive recovery handoff."""
     expected = strict_json(previous)
@@ -716,15 +750,7 @@ def recovery_profile_payload(previous, changed, *, installed=False):
         if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
             raise ValueError("installed recovery requires an explicit compatibility handoff")
         handoff = recovery["legacy_handoff"]
-        instance_wide = handoff.get("instance_wide", False)
-        native_sessions = handoff.get("native_sessions")
-        if not isinstance(instance_wide, bool) or (instance_wide and "native_sessions" in handoff):
-            raise ValueError("instance_wide recovery requires a boolean and a single handoff scope")
-        if not instance_wide and (
-                not isinstance(native_sessions, list) or not 1 <= len(native_sessions) <= 128
-                or any(not isinstance(value, str) or not value.strip() for value in native_sessions)
-                or len(set(native_sessions)) != len(native_sessions)):
-            raise ValueError("installed recovery requires an exact unique session cohort")
+        check_recovery_scope(kind, handoff)
         activation = handoff.get("activation_file")
         if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
                 or not installed and os.path.lexists(activation):
