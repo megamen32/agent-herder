@@ -1,6 +1,7 @@
 import type { AgentSession, ControlResult, CreateSessionOptions, HarnessAdapter, HarnessCapabilities, HarnessEvent, HarnessType, RawTranscriptExport, ListSessionsOptions, SendMessageOptions, SendMessageResult, SetPermissionsOptions } from "../types/index.js";
 import { localSessionHostId, type SessionMessageView } from "../types/index.js";
 import { BrowserChatHistoryCache } from "./browser-chat-history-cache.js";
+import type { CanonicalBrowserActions } from "./canonical-browser-actions.js";
 import { liveHarnessPollingEnabled } from "../harness-runtime-settings.js";
 /** Normalized browser chat; native IDs belong to their provider driver. */
 export interface BrowserChat {
@@ -184,6 +185,7 @@ export class BrowserChatAdapter implements HarnessAdapter {
     private readonly cwd = provider.cwd,
     private readonly scopedIds = false,
     private readonly foregroundOnly = false,
+    private readonly canonicalActions?: CanonicalBrowserActions,
   ) {
     this.pollingHarness = provider.id === "zai" ? "zai" : "chatgpt";
     this.historyCache = new BrowserChatHistoryCache(
@@ -195,7 +197,8 @@ export class BrowserChatAdapter implements HarnessAdapter {
     const supportsPromptEvents = typeof driver.subscribePromptEvents === "function";
     this.controlCapabilities = {
       ...BrowserChatAdapter.browserCapabilities,
-      cancelTurn: typeof driver.stopTurn === "function",
+      cancelTurn: Boolean(canonicalActions) || typeof driver.stopTurn === "function",
+      ...(canonicalActions && { stableInputIdRequired: true, imageInput: true, fileInput: true }),
       modelSwitch: driver.supportsModelSwitch?.() ?? typeof driver.changeModel === "function",
       // Advertise event emission only when the underlying driver actually
       // emits modal-prompt events; otherwise the supervisor would call
@@ -452,6 +455,11 @@ export class BrowserChatAdapter implements HarnessAdapter {
   async sendMessage(id: string, options: SendMessageOptions): Promise<SendMessageResult> {
     try {
       const nativeId = this.nativeId(id);
+      if (this.canonicalActions) {
+        const result = await this.canonicalActions.send(this.type, id, options);
+        if (result.admitted || result.admissionUnknown) this.historyCache.invalidate(nativeId);
+        return result;
+      }
       // Correlated AHAP sends need a provider message ID, not merely a click.
       // Snapshot first so an older identical prompt cannot become the receipt.
       let beforeIds: Set<string> | undefined;
@@ -554,11 +562,12 @@ export class BrowserChatAdapter implements HarnessAdapter {
   /** Stop and cancel both map to the site's own Stop-generation control.
    * The native chat stays alive and can accept subsequent human messages.
    */
-  async stopSession(id: string): Promise<ControlResult> {
-    return this.cancelTurn(id);
+  async stopSession(id: string, inputId?: string): Promise<ControlResult> {
+    return this.cancelTurn(id, inputId);
   }
 
-  async cancelTurn(id: string): Promise<ControlResult> {
+  async cancelTurn(id: string, inputId?: string): Promise<ControlResult> {
+    if (this.canonicalActions) return this.canonicalActions.stop(this.type, id, inputId);
     if (!this.driver.stopTurn) {
       return { ok: false, error: `${this.provider.name} does not expose a verified Stop control` };
     }

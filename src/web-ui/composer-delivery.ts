@@ -9,6 +9,7 @@ export type OutboxStatus = "ready" | "sending" | "accepted" | "delivered" | "def
 export type OutboxEntry = {
   inputId: string;
   sessionKey: string;
+  hostId?: string;
   text: string;
   images?: UploadedImage[];
   mode: DeliveryMode;
@@ -173,11 +174,13 @@ const reviveOutboxEntry = (raw: unknown): OutboxEntry | null => {
   const entry = raw as Partial<OutboxEntry>;
   if (typeof entry.inputId !== "string" || !entry.inputId) return null;
   if (typeof entry.sessionKey !== "string" || typeof entry.text !== "string") return null;
+  if (entry.hostId !== undefined && (typeof entry.hostId !== "string" || !entry.hostId || entry.hostId.trim() !== entry.hostId)) return null;
   if (entry.mode !== "steer" && entry.mode !== "queue") return null;
   if (typeof entry.createdAt !== "number" || !Number.isFinite(entry.createdAt)) return null;
   if (typeof entry.status !== "string" || !STATUS_VALUES.has(entry.status)) return null;
   const images = Array.isArray(entry.images) ? entry.images.filter(image => /^[a-f0-9]{64}$/.test(image?.id) && (image.url === `/api/session-images/${image.id}` || image.url === `/api/session-files/${image.id}`) && typeof image.fileName === "string").slice(0, 4) : undefined;
-  const base = { images, inputId: entry.inputId, sessionKey: entry.sessionKey, text: entry.text, mode: entry.mode, createdAt: entry.createdAt, ...(typeof entry.deliveredAt === 'number' && Number.isFinite(entry.deliveredAt) ? {deliveredAt:entry.deliveredAt} : {}), ...(typeof entry.nativeTurnId === 'string' && entry.nativeTurnId ? {nativeTurnId:entry.nativeTurnId} : {}), jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
+  const base = { images, inputId: entry.inputId, sessionKey: entry.sessionKey, ...(entry.hostId && { hostId: entry.hostId }),
+    text: entry.text, mode: entry.mode, createdAt: entry.createdAt, ...(typeof entry.deliveredAt === 'number' && Number.isFinite(entry.deliveredAt) ? {deliveredAt:entry.deliveredAt} : {}), ...(typeof entry.nativeTurnId === 'string' && entry.nativeTurnId ? {nativeTurnId:entry.nativeTurnId} : {}), jobId: typeof entry.jobId === "string" && entry.jobId ? entry.jobId : undefined };
   if (entry.status === "sending") {
     // Отправка прервалась перезагрузкой: состояние уточняется у сервера (GET message-status),
     // повторный POST автоматически не отправляется.

@@ -1,6 +1,7 @@
 import { detailQuery, resolveDetailHost, verifiedDetailAttributes } from './session-detail-identity.js';
 import {AUTOCONTINUE_HARNESS_IDS,loadAutocontinueHarnesses,saveAutocontinueHarness,type AutocontinueHarness,type WebSessionAutostartHarness} from "./autocontinue-harnesses.js";
 import * as React from "react";
+import { requestBrowserStop } from "./browser-stop.js";
 import type { AgentActivityStatistics, DistributionSummary as StatisticsDistribution } from "../session-statistics.js";
 import { createRoot } from "react-dom/client";
 import {ComposerSendControl,QueueProcessingControl,VoiceComposerControl,isComposerSubmitShortcut} from "./composer-controls.js";
@@ -66,7 +67,7 @@ import { currentModelOption, modelSwitchSupported, requestModelChange, shortMode
 import { readSessionListSettings, writeSessionListSettings, SESSION_LIST_SHOW_COMPLETED_ARIA, SESSION_LIST_SHOW_COMPLETED_HINT, SESSION_LIST_SHOW_COMPLETED_LABEL } from "./session-list-preferences.js";
 import { readModelTimeline, writeModelTimeline, recordModelAt, modelAt, latestModel, type ModelTimelineEntry } from "./session-model-timeline.js";
 import type { UploadedImage } from "../session-images.js";
-import type { HarnessPermissionState, SessionMessageView } from "../types/index.js";
+import type { HarnessCapabilities, HarnessPermissionState, SessionMessageView } from "../types/index.js";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
@@ -79,6 +80,7 @@ type HerderSession = SessionListSession & {
   costUsd?: number;
 };
 type SessionMessage = SessionMessageView;
+type CabinetAdapter = { id: string; active?: boolean; capabilities?: Partial<HarnessCapabilities> | null };
 type SessionDetails = { session: HerderSession; lineage?: { kind?: string; parentId?: string; role?: string; task?: string }; children?: HerderSession[]; messages: SessionMessage[]; history?: { source: string; complete: boolean } };
 type PermissionModeRead = { available: boolean; permissionState?: HarnessPermissionState; reason?: string };
 type PermissionModeAttempt = { inputId: string; expectedCurrentMode: string; mode: string; status: "unknown" | "accepted"; at: string };
@@ -1086,7 +1088,7 @@ function App() {
   const [creatingSession, setCreatingSession] = React.useState(false);
   const [createSessionError, setCreateSessionError] = React.useState<string>();
   // чип модели в композере: список моделей харнесса и результат смены
-  const [harnessAdapters, setHarnessAdapters] = React.useState<Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; fileInput?: boolean; steer?: boolean } | null }>>([]);
+  const [harnessAdapters, setHarnessAdapters] = React.useState<CabinetAdapter[]>([]);
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const [modelOptions, setModelOptions] = React.useState<string[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = React.useState(false);
@@ -2076,6 +2078,14 @@ function App() {
     if (action === "stop") messageDispatcherRef.current.cancelPending(activeKey);
     const { harness, id } = splitKey(activeKey);
     try {
+      if (action === "stop" && nativeCapabilities?.stableInputIdRequired) {
+        if (!activeSession?.hostId || activeSession.harness !== harness || activeSession.id !== id) throw new Error("Сессия остановки не подтверждена.");
+        const lastInput = details?.messages.slice().reverse().find(message => message.role === "user");
+        await requestBrowserStop({ hostId: activeSession.hostId, harness, id }, lastInput?.id, window.localStorage);
+        await loadSessions();
+        await loadDetails(activeKey);
+        return;
+      }
       if (action === "resume" && ["codex", "zcode", "fast-agent"].includes(harness)) {
         const intent = planContinuation(outboxRef.current, activeKey);
         if (!intent.alreadyPending && !messageDispatcherRef.current.hasPending(intent.inputId)) {
@@ -2110,7 +2120,7 @@ function App() {
   // capabilities.modelSwitch решает, показывать ли чип вообще: неподдерживаемый харнесс прячем.
   React.useEffect(() => {
     let cancelled = false;
-    void api<{ adapters?: Array<{ id: string; active?: boolean; capabilities?: { modelSwitch?: boolean; imageInput?: boolean; fileInput?: boolean; steer?: boolean; projects?: boolean } | null }> }>("/api/adapters")
+    void api<{ adapters?: CabinetAdapter[] }>("/api/adapters")
       .then((result) => { if (!cancelled) setHarnessAdapters(Array.isArray(result.adapters) ? result.adapters : []); })
       .catch(() => { if (!cancelled) setHarnessAdapters([]); });
     return () => { cancelled = true; };
@@ -2238,11 +2248,19 @@ function App() {
           : undefined;
   const submitOutboxEntry = async (sessionKey: string, text: string, mode: DeliveryMode, inputId: string, images?: UploadedImage[]) => {
     const { harness, id } = splitKey(sessionKey);
-    const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, text, images, mode, createdAt: Date.now(), status: "ready" });
+    const priorHost = outboxRef.current.find(entry => entry.inputId === inputId)?.hostId;
+    const keyed = harnessAdapters.find(adapter => adapter.id === harness)?.capabilities?.stableInputIdRequired;
+    const selectedHost = detailsVerified && details?.session.harness === harness && details.session.id === id ? details.session.hostId : undefined;
+    const hostId = priorHost ?? (keyed ? selectedHost ?? resolveDetailHost(sessionCatalogRef.current, harness, id, directory.localHostId) : undefined);
+    const next = appendOutboxEntry(outboxRef.current, { inputId, sessionKey, ...(hostId && { hostId }), text, images, mode, createdAt: Date.now(), status: "ready" });
     outboxRef.current = next;
     setOutbox(next);
     if (!writeStoredOutbox(window.localStorage, next)) {
       setOutbox((current) => updateOutboxEntry(current, inputId, { status: "failed", error: "Не удалось сохранить предпросмотр. Сообщение не отправлено; освободите место в истории отправки." }));
+      return;
+    }
+    if (keyed && !hostId) {
+      setOutbox(current => updateOutboxEntry(current, inputId, { status: "failed", error: "Не удалось подтвердить машину выбранной сессии." }));
       return;
     }
     shouldFollowRef.current = true; setShowScrollToLatest(false);
@@ -2257,7 +2275,7 @@ function App() {
     setOutbox(attempted);
     let responded = false;
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId, ...(images?.length ? { attachmentIds: images.map(image => image.id) } : {}) }) });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(30_000), body: JSON.stringify({ message: text, mode, humanRequested: true, inputId, ...(hostId && { hostId }), ...(images?.length ? { attachmentIds: images.map(image => image.id) } : {}) }) });
       responded = true;
       const payload: unknown = await response.json().catch(() => undefined);
       setOutbox((current) => updateOutboxEntry(current, inputId, classifyMessageDelivery(payload, response.ok)));
@@ -2275,7 +2293,7 @@ function App() {
     if (!activeKey || readOnlySession || imageUploading || (!composer.trim() && !composerImages.length)) return;
     if(queueEdit){await saveQueueEdit();return;}
     const draft = composer;
-    const text = draft.trim() || "Посмотрите прикреплённый файл.";
+    const text = draft.trim() || (activeSession?.harness === "chatgpt" && nativeCapabilities?.stableInputIdRequired ? "" : "Посмотрите прикреплённый файл.");
     const images = composerImages; setComposerImages([]);
     setComposer((current) => current === draft ? "" : current);
     // Модель, с которой уходит это сообщение: выбранная пользователем иначе

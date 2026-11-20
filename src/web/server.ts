@@ -15,6 +15,7 @@ import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
+import { validBrowserInputId } from "../adapters/canonical-browser-actions.js";
 import { getDefaultMcpClientTokenStore } from "../mcp/client-token-store.js";
 import { getDefaultMcpOAuthTokenStore, MCP_OAUTH_OWNER_SCOPE, type McpOAuthTokenStore } from "../mcp/oauth-token-store.js";
 import { MCP_OAUTH_ISSUER, MCP_OAUTH_PRM_URL, MCP_OAUTH_RESOURCE } from "../mcp/oauth-constants.js";
@@ -1041,7 +1042,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
   const ownsUserMessageDelivery=!dependencies.userMessageDelivery;
   const userMessageDelivery = dependencies.userMessageDelivery ?? (dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined);
-  const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
+  const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore();
   const rag = agentHerderRag();
   const stopActiveFleetInventory = process.env.VITEST ? undefined : startActiveFleetInventoryOwner();
   const stopActiveInventory = process.env.VITEST ? undefined : startActiveInventoryOwner(()=>supervisor.nativeInventorySnapshot(),dependencies.adapters);
@@ -4000,6 +4001,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", nonRetryable: true, error: "Scoped session control port is unavailable." });
     if (route.kind === "scoped" && !["message", "resume", "stop"].includes(action)) return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "This project-scoped control is not supported." });
     const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const capabilities = (route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities;
+    if (capabilities?.stableInputIdRequired && ["message", "stop", "cancel"].includes(action)) {
+      if (body.hostId !== undefined && body.hostId !== hostname()) return sendJson(response, 409, { error: "browser_session_host_mismatch" });
+      if (!validBrowserInputId(body.inputId)) return sendJson(response, 400, { error: "browser_input_id_required" });
+    }
     if (["stop", "cancel", "terminate"].includes(action)) {
       const localRecord = route.kind !== "scoped" && isAutopilotHarness(harness) ? await autopilotSessionStore?.get(harness, id) : undefined;
       if (localRecord) await stopGoalForSession({ harness, sessionId: id, cwd: localRecord.cwd });
@@ -4013,13 +4019,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendOperationResult(response, await sessionSupervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
     }
     if (action === "stop") {
-      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id));
+      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id, optionalString(body.inputId)));
     }
     if (action === "terminate") {
       return sendOperationResult(response, await supervisor.terminateSession(harness, id));
     }
     if (action === "cancel") {
-      return sendOperationResult(response, await supervisor.cancelTurn(harness, id));
+      return sendOperationResult(response, await supervisor.cancelTurn(harness, id, optionalString(body.inputId)));
     }
     if (action === "compact") {
       if (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512) return sendJson(response, 400, { error: "compact requires a stable inputId" });
@@ -4069,14 +4075,16 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         body.remember === true,
       ));
     }
-    if (typeof body.message !== "string" || body.message.trim().length === 0) {
+    const attachmentIds = body.attachmentIds ?? body.imageIds;
+    const attachmentOnly = harness === "chatgpt" && capabilities?.stableInputIdRequired && Array.isArray(attachmentIds) && attachmentIds.length > 0;
+    if (typeof body.message !== "string" || (body.message.trim().length === 0 && !attachmentOnly)) {
       return sendJson(response, 400, { error: "message must be a non-empty string" });
     }
     if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
     // A chat command is the owner talking to the herder, not to the agent: it
     // is executed here and never delivered to the harness chat as a message.
-    if (body.imageIds === undefined && typeof body.message === "string" && parseChatCommand(body.message)) {
+    if (body.imageIds === undefined && parseChatCommand(body.message)) {
       if (!chatCommands) return sendJson(response, 503, { ok: false, error: "Команды чата недоступны" });
       const outcome = await chatCommands.handleDirect(parseChatCommand(body.message)!, harness, id);
       return sendJson(response, outcome.ok ? 200 : 409, {
@@ -4097,10 +4105,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     let images: import("../types/index.js").MessageImage[];
     try {
-      const attachmentIds = body.attachmentIds ?? body.imageIds;
-      const supportsAttachment = (route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities;
-      if (body.imageIds !== undefined && !supportsAttachment?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
-      if (body.attachmentIds !== undefined && !supportsAttachment?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
+      if (body.imageIds !== undefined && !capabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (body.attachmentIds !== undefined && !capabilities?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
       images = await sessionImages!.resolve(harness, id, attachmentIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
     if (body.humanRequested === true && route.kind !== "scoped" && isAutopilotHarness(harness)) {

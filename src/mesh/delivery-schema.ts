@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const maxBytes = 2 * 1024 * 1024;
+export const MAX_INLINE_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 /** The GPTAdmin exec facade limits its complete UTF-8 program to 64 KiB. */
 export class FleetAttachmentFrameTooLarge extends Error {
   constructor() { super("fleet_attachment_frame_too_large"); }
@@ -14,13 +14,13 @@ const file = z.object({
     Buffer.byteLength(name) <= 255 && !/^\p{White_Space}*$/u.test(name)
     && name !== "." && name !== ".." && !/[\\/\p{Cc}]/u.test(name), "Invalid attachment filename"),
   mime_type: z.string().max(255).regex(mimeType),
-  data_base64: z.string().max(maxBase64Length(maxBytes)),
+  data_base64: z.string().max(maxBase64Length(MAX_INLINE_ATTACHMENT_BYTES)),
 }).strict();
 
 export type MeshInlineAttachment = z.infer<typeof file>;
 export const meshAttachmentsSchema = z.array(file).max(16).superRefine((files, ctx) => {
   if (files.length > 16) return;
-  let remaining = maxBytes;
+  let remaining = MAX_INLINE_ATTACHMENT_BYTES;
   for (const [index, { data_base64 }] of files.entries()) {
     if (data_base64.length <= maxBase64Length(remaining)) {
       const bytes = Buffer.from(data_base64, "base64");
