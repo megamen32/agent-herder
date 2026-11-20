@@ -4,7 +4,7 @@
 //! key is therefore bound only to this invocation; if its native response is
 //! uncertain, this adapter returns `Unknown` and never repeats the operation.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
     application::target::{NativeCreateControl, NativeCreateOutcome},
@@ -18,7 +18,7 @@ use super::{connection::CodexInstance, control::CodexControl};
 
 /// Create threads on exactly the Codex process/profile and cwd supplied here.
 pub struct CodexCreateControl {
-    control: CodexControl,
+    control: Arc<CodexControl>,
     cwd: PathBuf,
 }
 
@@ -30,12 +30,19 @@ impl CodexCreateControl {
     ) -> Result<Self, super::control::CodexControlOpenError> {
         let cwd = process.cwd.clone();
         let control = CodexControl::open(process, instance, timeout)?;
-        Ok(Self { control, cwd })
+        Ok(Self {
+            control: Arc::new(control),
+            cwd,
+        })
     }
 
     /// Reuse the same instance-bound connection for other native control ports.
     pub fn native_control(&self) -> &CodexControl {
         &self.control
+    }
+
+    pub fn share_native_control(&self) -> Arc<CodexControl> {
+        self.control.clone()
     }
 }
 
@@ -85,7 +92,9 @@ impl NativeCreateControl for CodexCreateControl {
             Err(SubmitError::DefinitelyNotSent { reason }) => {
                 NativeCreateOutcome::DefinitelyNotSent { reason }
             }
-            Err(SubmitError::OutcomeUnknown { .. } | SubmitError::BrowserOutcomeUnknown(_)) => NativeCreateOutcome::Unknown,
+            Err(SubmitError::OutcomeUnknown { .. } | SubmitError::BrowserOutcomeUnknown(_)) => {
+                NativeCreateOutcome::Unknown
+            }
         }
     }
 }
@@ -150,6 +159,7 @@ mod tests {
                 executable,
                 code_home: home,
                 cwd,
+                socket_path: None,
             },
             instance,
             timeout,

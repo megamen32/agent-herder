@@ -17,13 +17,15 @@ use herder::{
         scoped_stop::{
             BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
             ScopedAuthority,
-            automation_driver::AutomationOwner,
+            automation_driver::{self, AutomationTick},
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
             mcp_read::{ScopedMessageReader, ScopedReadApplication},
             mcp_stop::ScopedStopApplication,
             mcp_task_server::ScopedTaskServer,
+            registration::BoundedSessionProbe,
+            session_recovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage, SessionRecovery},
             task_reconcile::ScopedReceiptReconciler,
             wait_automation::{DependencyRegistry, DependencySource, WaitAutomationApplication},
         },
@@ -36,11 +38,14 @@ use herder::{
     domain::{
         adapter::{
             Admission, NativeReceipt, NativeSessionControl, NativeSessionReader, Observation,
-            ReadError, RequestKey, SendMode, SessionActivity, SessionSnapshot,
+            ReadError, RequestKey, SendMode, SessionActivity, SessionSnapshot, SubmitError,
         },
         address::{
             Authorization, Availability, Capability, CapabilityVersion, InstanceRef, NodeRef,
             SessionAddress, SessionRef, Support,
+        },
+        recovery::{
+            RecoveryBoundary, RecoveryControl, RecoveryCredential, RecoveryPermit, RecoveryRoute,
         },
     },
     mcp::{
@@ -97,6 +102,101 @@ impl BoundedNativeHandoff for NativeControl {
     }
 }
 
+impl RecoveryControl for NativeControl {
+    fn harness(&self) -> &'static str {
+        "opencode"
+    }
+
+    fn instance(&self) -> &InstanceRef {
+        self.control.connection().instance()
+    }
+
+    fn mode(&self) -> SendMode {
+        SendMode::Queue
+    }
+
+    fn read_boundary(
+        &self,
+        target: &SessionAddress,
+    ) -> Result<Option<RecoveryBoundary>, ReadError> {
+        self.block(self.control.read_recovery_boundary(target))
+    }
+
+    fn quota(&self, _provider: &str, _cwd: &str, _reserve: u8) -> Option<bool> {
+        None
+    }
+
+    fn credential(&self, provider: &str, model: &str, cwd: &str) -> Option<RecoveryCredential> {
+        self.block(self.control.recovery_credential(provider, model, cwd))
+    }
+
+    fn submit(
+        &self,
+        target: &SessionAddress,
+        boundary: &RecoveryBoundary,
+        route: &RecoveryRoute,
+        permit: RecoveryPermit<'_>,
+        message: &str,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        self.block(
+            self.control
+                .submit_recovery(target, boundary, route, permit, message, key),
+        )
+    }
+}
+
+impl BoundedSessionProbe for NativeControl {
+    fn instance(&self) -> &InstanceRef {
+        self.control.connection().instance()
+    }
+
+    fn harness(&self) -> &str {
+        "opencode"
+    }
+
+    fn probe_session(&self, native_session_id: &str) -> Result<SessionSnapshot, ()> {
+        let control = self.control.clone();
+        let target = SessionAddress {
+            instance: control.connection().instance().clone(),
+            native_session_id: native_session_id.to_owned(),
+        };
+        thread_block_on(async move {
+            let reader = NativeReader {
+                reader: OpenCodeSessionReader::new(control.connection().clone()),
+                recovery: control,
+            };
+            reader.snapshot(&target).await
+        })
+        .map_err(|_| ())
+    }
+}
+
+impl RecoveryListing for NativeControl {
+    fn confirms_absence(&self, native_id: &str) -> bool {
+        let reader = OpenCodeSessionReader::new(self.control.connection().clone());
+        let native_id = native_id.to_owned();
+        thread_block_on(async move { reader.confirms_missing_session(&native_id).await })
+    }
+
+    fn list_recent(&self, cursor: Option<&str>, limit: u32) -> Result<RecoveryPage, ReadError> {
+        let reader = OpenCodeSessionReader::new(self.control.connection().clone());
+        let page =
+            self.block(reader.list_recent_sessions("herder-owner-recovery-list", cursor, limit))?;
+        Ok(RecoveryPage {
+            sessions: page
+                .sessions
+                .into_iter()
+                .filter(|s| {
+                    s.time.archived.is_none() && s.time.updated.is_finite() && s.time.updated > 0.
+                })
+                .map(|s| (s.address.native_session_id, s.time.updated as u64))
+                .collect(),
+            next_cursor: page.next,
+        })
+    }
+}
+
 impl BoundedFreshRootCreate for NativeControl {
     fn instance(&self) -> &InstanceRef {
         self.create.instance()
@@ -145,6 +245,7 @@ impl BoundedNativeInterrupt for NativeControl {
 #[derive(Clone)]
 struct NativeReader {
     reader: OpenCodeSessionReader,
+    recovery: OpenCodeSessionControl,
 }
 
 impl NativeReader {
@@ -201,12 +302,15 @@ impl NativeSessionReader for NativeReader {
     }
 
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
-        let messages = self.messages(&receipt.target).await?;
-        let found = messages.messages.iter().any(|message| match message {
-            herder::adapters::opencode::read::OpenCodeMessage { id, .. } => {
-                id == &receipt.native_id
-            }
-        });
+        let found = if receipt.native_id.starts_with("msg_herderauto") {
+            self.recovery.reconcile_recovery_receipt(receipt).await?
+        } else {
+            let messages = self.messages(&receipt.target).await?;
+            messages
+                .messages
+                .iter()
+                .any(|message| message.id == receipt.native_id)
+        };
         Ok(if found {
             Observation::Confirmed {
                 receipt: receipt.clone(),
@@ -217,6 +321,17 @@ impl NativeSessionReader for NativeReader {
             }
         })
     }
+
+    async fn recover_admission(
+        &self,
+        target: &SessionAddress,
+        key: &RequestKey,
+    ) -> Result<Option<NativeReceipt>, ReadError> {
+        if !key.0.starts_with("opencode-recovery:") {
+            return Ok(None);
+        }
+        self.recovery.recover_recovery_admission(target, key).await
+    }
 }
 
 impl herder::application::scoped_stop::wait_automation::NativeTurnReader for NativeReader {
@@ -226,10 +341,9 @@ impl herder::application::scoped_stop::wait_automation::NativeTurnReader for Nat
     ) -> Result<Option<herder::application::scoped_stop::NativeTurn>, ReadError> {
         let reader = self.reader.clone();
         let target = target.clone();
-        let session = thread_block_on(async move {
-            reader.get_session(&target, "herder-owner-turn").await
-        })
-            .map_err(|error| ReadError(error.0))?;
+        let session =
+            thread_block_on(async move { reader.get_session(&target, "herder-owner-turn").await })
+                .map_err(|error| ReadError(error.0))?;
         Ok(session
             .time
             .busy
@@ -246,7 +360,8 @@ impl ScopedMessageReader for MessageReader {
     fn read_messages(&mut self, target: &SessionAddress) -> Result<serde_json::Value, ()> {
         let reader = self.0.lock().map_err(|_| ())?.clone();
         let target = target.clone();
-        let messages = thread_block_on(async move { reader.messages(&target).await }).map_err(|_| ())?;
+        let messages =
+            thread_block_on(async move { reader.messages(&target).await }).map_err(|_| ())?;
         Ok(json!({
             "messages": messages.messages,
             "next_cursor": messages.next,
@@ -256,6 +371,7 @@ impl ScopedMessageReader for MessageReader {
 }
 
 struct OwnerApp {
+    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
@@ -285,6 +401,17 @@ impl ApplicationPort for OwnerApp {
                 ).await;
             }
             if let Some(result) = self.waits.call(identity, request.clone()).await {
+                return Some(result);
+            }
+            if let Some(result) = super::owner_registration::call(
+                identity,
+                &request,
+                self.interrupt.as_ref(),
+                &self.policy,
+                &self.instance,
+                &self.authority,
+                &self.grants,
+            ) {
                 return Some(result);
             }
             let session = match &request {
@@ -385,12 +512,13 @@ pub async fn build(
         .unwrap_or_else(|| "opencode".into());
     let auth = password.map(|password| OpenCodeAuth::new(username, password));
     let connection = OpenCodeConnection::open(instance.clone(), &profile, auth).await?;
-    let reader = Arc::new(NativeReader {
-        reader: OpenCodeSessionReader::new(connection.clone()),
-    });
     let control = Arc::new(NativeControl {
         create: OpenCodeCreateControl::new(connection.clone()),
-        control: OpenCodeSessionControl::new(connection),
+        control: OpenCodeSessionControl::new(connection.clone()),
+    });
+    let reader = Arc::new(NativeReader {
+        reader: OpenCodeSessionReader::new(connection),
+        recovery: control.control.clone(),
     });
     let principal = PrincipalId(opened.owner.principal);
     let identity = ConnectionIdentity::new(
@@ -461,6 +589,8 @@ pub async fn build(
         policy.clone(),
         reader.clone(),
     ));
+    let profile = opened.owner.opencode_recovery;
+    let handoff = profile.as_ref().and_then(|p| p.legacy_handoff.clone());
     let waits = Arc::new(
         WaitAutomationApplication::new(
             source.clone(),
@@ -470,10 +600,23 @@ pub async fn build(
             reconciler.clone(),
             policy.clone(),
         )
-        .with_automatic_continuation(false),
+        .with_automatic_continuation(false)
+        .with_recovery_handoff(handoff, control.clone()),
     );
+    let session_recovery = profile.map(|profile| {
+        Arc::new(SessionRecovery::new(
+            authority.clone(),
+            control.clone(),
+            policy.clone(),
+            waits.clone(),
+            reconciler.clone(),
+            profile,
+            RecoveryDiscovery::new(control.clone(), grants.clone()),
+        )) as Arc<dyn AutomationTick>
+    });
     let messages = Arc::new(Mutex::new((*reader).clone()));
     let app = Arc::new(OwnerApp {
+        authority: authority.clone(),
         instance: instance.clone(),
         grants: grants.clone(),
         policy: policy.clone(),
@@ -488,6 +631,7 @@ pub async fn build(
         .with_reconciler(reconciler);
     Ok(BoundOwner {
         harness: "opencode".into(),
+        session_recovery,
         process: None,
         waits,
         source,
@@ -502,10 +646,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     let registry = Arc::new(DependencyRegistry::new());
     let binding = build(opened, registry.clone()).await?;
     registry.configure(vec![binding.source.clone()])?;
-    herder::application::scoped_stop::automation_driver::start(vec![AutomationOwner::new(
-        binding.identity.clone(),
-        vec![binding.waits.clone()],
-    )])?;
+    automation_driver::start(vec![binding.driver_owner()])?;
     binding
         .server
         .serve(rmcp::transport::stdio())

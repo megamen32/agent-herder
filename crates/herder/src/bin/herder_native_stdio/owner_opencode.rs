@@ -194,7 +194,7 @@ impl ApplicationPort for App {
             if let Some(result) = super::owner_registration::call(
                 identity,
                 &request,
-                &self.adapter,
+                self.adapter.as_ref(),
                 &self.policy,
                 &self.instance,
                 &self.authority,
@@ -416,6 +416,7 @@ impl ApplicationPort for App {
 }
 pub struct BoundOwner {
     pub harness: String,
+    pub session_recovery: Option<Arc<dyn AutomationTick>>,
     pub process: Option<Arc<ProcessAutomationApplication>>,
     pub waits: Arc<WaitAutomationApplication>,
     pub source: Arc<DependencySource>,
@@ -731,6 +732,7 @@ pub fn build_with_registry(
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(BoundOwner {
+        session_recovery: None,
         server,
         policy,
         instance,
@@ -749,6 +751,9 @@ impl BoundOwner {
             modules.push(process.clone());
         }
         modules.push(self.waits.clone());
+        if let Some(recovery) = &self.session_recovery {
+            modules.push(recovery.clone());
+        }
         AutomationOwner::new(self.identity.clone(), modules)
     }
 }

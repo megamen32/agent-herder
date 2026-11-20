@@ -356,6 +356,15 @@ async fn native_opencode_reader_reaches_list_application_over_mcp() {
             .unwrap();
         created.push(value["data"]["id"].as_str().unwrap().to_owned());
     }
+    client
+        .patch(format!("{base}/api/session/{}", created[0]))
+        .basic_auth("opencode", Some("isolated-test-only"))
+        .json(&json!({"title":"Recently updated first session"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
     let instance = InstanceRef {
         node: NodeRef("test-node".into()),
         instance_id: "test-instance".into(),
@@ -376,6 +385,25 @@ async fn native_opencode_reader_reaches_list_application_over_mcp() {
         .unwrap(),
     );
     let native = reader.list_sessions("v031-native-list").await.unwrap();
+    let head = reader
+        .list_recent_sessions("recovery-head", None, 1)
+        .await
+        .unwrap();
+    assert_eq!(head.sessions.len(), 1);
+    assert_eq!(head.sessions[0].address.native_session_id, created[0]);
+    let tail = reader
+        .list_recent_sessions("recovery-tail", Some(head.next.as_deref().unwrap()), 1)
+        .await
+        .unwrap();
+    assert_eq!(tail.sessions.len(), 1);
+    assert_eq!(tail.sessions[0].address.native_session_id, created[1]);
+    if let Some(cursor) = tail.next {
+        let end = reader
+            .list_recent_sessions("recovery-end", Some(&cursor), 1)
+            .await
+            .unwrap();
+        assert!(end.sessions.is_empty() && end.next.is_none());
+    }
     let native_complete = native.next.is_none();
     assert_eq!(native.sessions.len(), 2);
     let records: Vec<_> = native

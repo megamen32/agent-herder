@@ -54,6 +54,9 @@ pub struct NativeThread {
     pub id: String,
     pub cwd: Option<String>,
     pub status: Option<Value>,
+    /// Native last-activity time in Unix seconds.
+    #[serde(skip)]
+    pub updated_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -108,6 +111,38 @@ impl CodexReader {
         self.connection = open_connection(&self.instance, self.timeout)?;
         Ok(())
     }
+
+    fn shared_connection_closed(&mut self) -> bool {
+        self.instance.socket_path.is_some() && self.connection.unavailable()
+    }
+
+    pub fn read_thread_with_turns(&mut self, thread_id: &str) -> Result<Value, CodexReadError> {
+        if self.shared_connection_closed() {
+            self.reopen()?;
+        }
+        let params = json!({"threadId": thread_id, "includeTurns": true});
+        let response = match self
+            .connection
+            .request("thread/read", params.clone(), self.timeout)
+        {
+            Ok(response) => response,
+            Err(error) if self.shared_connection_closed() || is_stale_history_lineage(&error) => {
+                // A shared server can disconnect between the health check and
+                // this read. Only repeat the read on a newly verified connection.
+                self.reopen()?;
+                self.connection
+                    .request("thread/read", params, self.timeout)?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        response
+            .get("thread")
+            .filter(|thread| thread["id"] == thread_id && thread["turns"].is_array())
+            .cloned()
+            .ok_or_else(|| {
+                CodexReadError::InvalidThreadList("missing bound thread or turns".into())
+            })
+    }
 }
 
 fn open_connection(
@@ -160,16 +195,41 @@ impl CodexReader {
         cursor: Option<&str>,
         limit: u32,
     ) -> Result<NativeThreadPage, CodexReadError> {
+        self.thread_page(json!({"cursor": cursor, "limit": limit}), limit)
+    }
+
+    pub fn list_recent_threads(
+        &mut self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<NativeThreadPage, CodexReadError> {
+        self.thread_page(
+            json!({
+                "cursor": cursor, "limit": limit, "archived": false,
+                "sortKey": "updated_at", "sortDirection": "desc", "modelProviders": [],
+                "sourceKinds": ["cli", "vscode", "appServer", "exec", "subAgentThreadSpawn"],
+                "useStateDbOnly": true,
+            }),
+            limit,
+        )
+    }
+
+    fn thread_page(
+        &mut self,
+        params: Value,
+        limit: u32,
+    ) -> Result<NativeThreadPage, CodexReadError> {
         if limit == 0 {
             return Err(CodexReadError::InvalidThreadList(
                 "limit must be positive".into(),
             ));
         }
-        let params = json!({"cursor": cursor, "limit": limit});
-        let result = match self.connection.request("thread/list", params, self.timeout) {
-            Ok(result) => result,
-            Err(error) => return Err(error.into()),
-        };
+        if self.shared_connection_closed() {
+            self.reopen()?;
+        }
+        let result = self
+            .connection
+            .request("thread/list", params, self.timeout)?;
         let rows = result
             .get("data")
             .and_then(Value::as_array)
@@ -186,6 +246,7 @@ impl CodexReader {
                 id,
                 cwd: row.get("cwd").and_then(Value::as_str).map(str::to_owned),
                 status: row.get("status").cloned(),
+                updated_at: row.get("updatedAt").and_then(Value::as_u64),
             });
         }
         Ok(NativeThreadPage {
@@ -208,7 +269,7 @@ impl CodexReader {
                 "thread_id and limit must be non-empty/positive".into(),
             ));
         }
-        if self.refresh_before_first_message_read {
+        if self.refresh_before_first_message_read || self.shared_connection_closed() {
             self.reopen()?;
             self.refresh_before_first_message_read = false;
         }

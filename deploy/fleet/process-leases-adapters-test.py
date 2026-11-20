@@ -175,6 +175,109 @@ class AdapterMigrationContracts(MigrationFixture):
         self.assertNotIn(b"ahap_script", payload)
         self.assertTrue(payload.endswith(b"\r\n"))
 
+    def stage_recovery(self, selection, selector, output, reviewed):
+        output.mkdir(mode=0o700)
+        manifest = candidate.compose_manifest(self.base, output, self.source, self.base_manifest,
+            selection["manifest_sha256"], self.manifest["sha256"], ["cargo", "build"])
+        staged = candidate.stage_native_profile_migration(
+            self.base, manifest, selection, selector, output, self.source, [], [reviewed])
+        path = output / "manifest.json"
+        candidate.create(path, candidate.encoded(manifest), 0o400)
+        return staged, manifest, {**selection, "manifest": str(path), "manifest_sha256": candidate.digest(path)}
+
+    def test_codex_socket_can_be_staged_before_a_recovery_cohort_is_registered(self):
+        old_path = self.root / "native-codex-profile.json"
+        old = candidate.strict_json(self.old_profiles[str(self.root / "profile-codex.json")])
+        old["owner"]["ahap_env"] = {"AHAP_CODEX_BIN": self.base["node"],
+                                     "AHAP_CODEX_CWD": str(self.root), "CODEX_HOME": str(self.root)}
+        before = candidate.encoded(old)
+        candidate.create(old_path, before)
+        selection = {**self.selection, "profiles": [str(old_path), str(self.remote_profile)]}
+        selector = self.root / "socket-base.json"
+        candidate.create(selector, candidate.encoded(selection))
+        successor = copy.deepcopy(old)
+        successor["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "shared.sock")
+        reviewed = self.root / "reviewed-shared-socket.json"
+        candidate.create(reviewed, candidate.encoded(successor))
+
+        output = self.root / "socket-candidate"
+        staged, manifest, new = self.stage_recovery(selection, selector, output, reviewed)
+        [binding] = staged["profiles"]
+        new["profiles"] = [binding["path"], str(self.remote_profile)]
+        self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), staged)
+        self.assertEqual(candidate.read_json(binding["payload"]), successor)
+        self.assertEqual(old_path.read_bytes(), before)
+        self.assertFalse(Path(binding["path"]).exists())
+
+        changed = copy.deepcopy(successor)
+        changed["database"] = str(self.root / "different.db")
+        with self.assertRaisesRegex(ValueError, "changes protected profile"):
+            candidate.recovery_profile_payload(before, candidate.encoded(changed))
+
+        changed = copy.deepcopy(successor)
+        changed["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "different.sock")
+        with self.assertRaisesRegex(ValueError, "cannot change the existing Codex socket"):
+            candidate.recovery_profile_payload(candidate.encoded(successor), candidate.encoded(changed))
+
+    def test_native_recovery_stages_only_the_explicit_existing_profile(self):
+        old_path = self.root / "native-codex-profile.json"
+        old = json.loads(self.old_profiles[str(self.root / "profile-codex.json")])
+        old["owner"]["ahap_env"] = {
+            "AHAP_CODEX_BIN": self.base["node"],
+            "CODEX_HOME": str(self.root),
+            "AHAP_CODEX_CWD": str(self.root),
+        }
+        raw = candidate.encoded(old)
+        candidate.create(old_path, raw)
+        selection = {**self.selection, "profiles": [str(old_path), str(self.remote_profile)]}
+        selector = self.root / "recovery-base.json"
+        candidate.create(selector, candidate.encoded(selection))
+        recovery = copy.deepcopy(old)
+        handoff = {"native_sessions": ["known-session"], "activation_file": str(self.root / "active.json")}
+        for key in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            path = self.root / (key + ".json")
+            candidate.create(path, b"{}")
+            handoff[key] = str(path)
+        recovery["owner"]["codex_recovery"] = {"autopilot_state_dir": str(self.root), "legacy_handoff": handoff}
+        recovery["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "codex.sock")
+        reviewed = self.root / "reviewed-codex.json"
+        candidate.create(reviewed, candidate.encoded(recovery))
+        out = self.root / "recovery-candidate"
+        staged, manifest, new = self.stage_recovery(selection, selector, out, reviewed)
+        [row] = staged["profiles"]
+        new["profiles"] = [row["path"], str(self.remote_profile)]
+        self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), staged)
+        self.assertEqual(row["previous_path"], str(old_path))
+        self.assertEqual(old_path.read_bytes(), raw)
+        self.assertFalse(Path(row["path"]).exists())
+
+        wide = copy.deepcopy(recovery)
+        scope = wide["owner"]["codex_recovery"]["legacy_handoff"]
+        del scope["native_sessions"]
+        scope["instance_wide"] = True
+        wide_raw = candidate.encoded(wide)
+        self.assertEqual(candidate.recovery_profile_payload(raw, wide_raw), wide_raw)
+        for invalid in ({}, {"instance_wide": False}, {"instance_wide": 1}, {"instance_wide": "true"},
+                        {"instance_wide": True, "native_sessions": []},
+                        {"instance_wide": True, "native_sessions": ["known-session"]}):
+            with self.subTest(scope=invalid):
+                bad = copy.deepcopy(wide)
+                bad_scope = bad["owner"]["codex_recovery"]["legacy_handoff"]
+                del bad_scope["instance_wide"]
+                bad_scope.update(invalid)
+                with self.assertRaises(ValueError):
+                    candidate.recovery_profile_payload(raw, candidate.encoded(bad))
+
+        changed = copy.deepcopy(recovery)
+        changed["owner"]["ahap_env"]["CODEX_HOME"] = "/foreign-home"
+        with self.assertRaisesRegex(ValueError, "changes protected profile"):
+            candidate.recovery_profile_payload(raw, candidate.encoded(changed))
+        candidate.create(Path(handoff["activation_file"]), b"true")
+        with self.assertRaisesRegex(ValueError, "fresh private activation"):
+            candidate.recovery_profile_payload(raw, wide_raw)
+        with self.assertRaisesRegex(ValueError, "fresh private activation"):
+            candidate.native_profile_transition(selection, new, self.base, manifest)
+
     def test_guarded_install_creates_private_siblings_and_rollback_keeps_old_profiles(self):
         result = candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(candidate.read_json(self.selector)["profiles"], self.new_selection["profiles"])
@@ -454,6 +557,37 @@ class NativeProfileMigrationContracts(MigrationFixture):
         profile["owner"]["executable"] = self.manifest["core"]
         self.save_profile(path, profile)
         with self.assertRaisesRegex(ValueError, "exact installed executable"):
+            self.check()
+
+    def test_recovery_rebinds_native_browser_and_preserves_legacy_browser(self):
+        path = self.paths["zai"]
+        profile = candidate.read_json(path)
+        del profile["owner"]["ahap_script"]
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
+        self.save_profile(path, profile)
+        self.seal_baseline()
+
+        successor = candidate.read_json(self.root / "profile-codex.json")
+        successor["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "shared.sock")
+        reviewed = self.reviewed / "codex.json"
+        candidate.create(reviewed, candidate.encoded(successor))
+        args = (self.base, self.manifest, self.selection, self.selector, self.new, self.source)
+        with self.assertRaisesRegex(ValueError, "only one profile migration type"):
+            candidate.stage_native_profile_migration(*args, ["chatgpt"], self.pins, recovery_profiles=[reviewed])
+        self.migration = candidate.stage_native_profile_migration(*args, [], {}, recovery_profiles=[reviewed])
+        self.reseal()
+        self.assertEqual(self.check()["profile_validation"], "staged_payloads_not_installed")
+        rows = {row["kind"]: row for row in self.migration["profiles"]}
+        self.assertEqual(set(rows), {"codex", "zai"})
+        self.assertEqual(Path(rows["codex"]["payload"]).read_bytes(), reviewed.read_bytes())
+        self.assertEqual(Path(rows["zai"]["payload"]).read_bytes(), path.read_bytes().replace(
+            json.dumps(self.base["core"]).encode(), json.dumps(self.manifest["core"]).encode()))
+        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
+        self.assert_unchanged()
+
+        self.migration["profiles"].remove(rows["zai"])
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "exact reviewed profile bindings"):
             self.check()
 
     def test_schema_one_opencode_transition_keeps_original_payload_and_selector(self):

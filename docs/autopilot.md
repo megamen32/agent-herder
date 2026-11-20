@@ -142,6 +142,57 @@ input or approvals, human-stop holds, non-retryable admissions, and native
 Codex subagent threads are excluded. The supervisor delegates recovery to this
 single owner, so a second retry loop cannot bypass these settings.
 
+### Native Rust Codex owner
+
+The Rust owner uses the existing automation driver to continue interrupted
+turns in their original Codex threads. In its trusted owner profile, set `owner.codex_recovery`
+with `autopilot_state_dir` pointing to the owner's existing
+`session-autostart.json` and `codex-quota-guard.json` directory. Set this
+binding where this owner controls the Codex runtime. For a shared Codex
+app-server, bind the existing socket through `owner.ahap_env.AHAP_CODEX_SOCKET`
+to observe its active and queued turns.
+
+For a staged handoff, set `legacy_handoff.native_sessions` to the exact
+thread IDs being transferred. Once every project on the instance has been
+handed over, `legacy_handoff.instance_wide: true` enables discovery for the
+whole instance. The owner reads recent native sessions in descending order
+of activity and follows the cursor across polling cycles. Bind the existing
+`human_stops`, `human_requests`, `choices` and `unfinished_sessions` files.
+Start with the private `activation_file` absent. A wait-status decision of
+`rust_recovery_handoff` fences the compatibility writer for that thread.
+Stage the profile with the release coordinator's
+`process-leases-candidate.py build --native-recovery-profile` option. This
+build reuses the installed remote bridge pin and compiles the Rust binaries.
+Verify this decision through the installed gate and reconcile outstanding
+admissions from the previous owner, then atomically publish JSON `true` at
+the activation path. Rust rereads existing holds and pending admissions
+before submission.
+
+The owner preserves the saved provider when continuing the same thread.
+The optional `fallback_routes` list accepts exact `workspace`, `provider`
+and `model` triples. A provider switch requires the quota fallback setting
+and fresh positive quota for that route. On Codex 0.170, an unloaded thread
+with an overridable custom Responses provider can use the alternate endpoint
+and bearer through its resume configuration. The thread keeps its native
+provider ID. A thread using built-in OpenAI waits for its bound ChatGPT
+account's native quota. A local OmniRoute Codex route uses
+`omniroute` with its exact `endpoint`, SQLite `database`, `upstream_provider`
+and `account`. The native bearer must be restricted to the selected account
+and model. The quota observation must be at most five minutes old with an
+unexpired usage window above the reserve. A lost acknowledgement is reconciled
+against the same native thread using the stored request key.
+
+### Native Rust OpenCode owner
+
+Set `owner.opencode_recovery` on a trusted OpenCode v2 HTTP profile with
+the same settings and optional handoff fields. Verify the handoff for
+the selected OpenCode sessions through the installed wait gate. Rust checks the native
+active list, inbox, forms and permissions before it submits a continuation.
+For an approved alternate route, it selects the model in the existing
+session and verifies the selection and account quota before enqueueing.
+The native synthetic inbox item carries the durable request identity through
+to transcript reconciliation.
+
 After a restart, ZCode recovery also reads the newest durable native error
 receipt without starting its transport. It must belong to a root session and
 the exact latest user message, with no newer progress, successful answer,

@@ -42,6 +42,10 @@ pub struct OwnerProfile {
     pub ahap_env: BTreeMap<String, String>,
     #[serde(default)]
     pub existing_sessions: Vec<herder::application::scoped_stop::enroll::ExistingSessionApproval>,
+    #[serde(default)]
+    pub codex_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
+    #[serde(default)]
+    pub opencode_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
 }
 
 impl OwnerProfile {
@@ -484,6 +488,20 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     }
     validate_existing_sessions(&owner)?;
     validate_codex_native_binding(&owner)?;
+    if owner.codex_recovery.as_ref().is_some_and(|recovery| {
+        owner.kind != "codex" || !recovery.valid()
+            || (owner.ahap_script.is_some() && !owner.ahap_env.contains_key("AHAP_CODEX_BIN"))
+    }) {
+        return Err(invalid().into());
+    }
+    if owner.opencode_recovery.as_ref().is_some_and(|recovery| {
+        owner.kind != "opencode"
+            || owner.ahap_script.is_some()
+            || owner.ahap_base_url.is_none()
+            || !recovery.valid()
+    }) {
+        return Err(invalid().into());
+    }
     Ok(OpenedOwner {
         authority,
         owner,
@@ -647,6 +665,8 @@ mod enrollment_tests {
             kind:"chatgpt".into(),ahap_script:Some("/opt/herder/browser.js".into()),ahap_base_url:None,
             ahap_env:BTreeMap::from([("AHAP_BROWSER_ACCOUNT_SCOPE".into(),"b".repeat(64))]),
             existing_sessions:vec![ExistingSessionApproval{request_key:"k".into(),native_session_id:"native~conversation".into(),account_scope:"b".repeat(64)}],
+            codex_recovery:None,
+            opencode_recovery:None,
         }
     }
     #[test]
