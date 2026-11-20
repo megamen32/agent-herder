@@ -1,18 +1,23 @@
 //! Explicit single-principal local-owner composition. Never used by default.
 use super::{native_reader::NativeReader, owner_policy::OwnerPolicy, scoped_profile::OpenedOwner};
 use herder::{
-    adapters::codex::{connection::CodexInstance, create::CodexCreateControl, read::CodexReader},
+    adapters::codex::{
+        connection::CodexInstance, control::RequestReceiptLookup, create::CodexCreateControl,
+        read::CodexReader,
+    },
     application::{
         scoped_stop::{
             BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
             ScopeGenerationIssuer, ScopedAuthority,
             automation_driver,
+            session_recovery::SessionRecovery,
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
             mcp_read::{ScopedMessageReader, ScopedReadApplication},
             mcp_stop::ScopedStopApplication,
             mcp_task_server::ScopedTaskServer,
+            registration::BoundedSessionProbe,
             wait_automation::{DependencyRegistry, DependencySource, WaitAutomationApplication},
         },
         target::{RegistryUnavailable, SessionRefIssuer},
@@ -92,6 +97,25 @@ impl BoundedNativeInterrupt for Control {
         }
     }
 }
+
+impl BoundedSessionProbe for Control {
+    fn instance(&self) -> &InstanceRef {
+        self.0.native_control().instance()
+    }
+
+    fn harness(&self) -> &str {
+        "codex"
+    }
+
+    fn probe_session(&self, native_session_id: &str) -> Result<SessionSnapshot, ()> {
+        let target = SessionAddress {
+            instance: BoundedSessionProbe::instance(self).clone(),
+            native_session_id: native_session_id.to_owned(),
+        };
+        let thread = self.0.native_control().read_snapshot_thread(&target).map_err(|_| ())?;
+        Ok(super::native_reader::snapshot_from_metadata(&target, &thread))
+    }
+}
 struct OwnerNativeReader {
     control: Arc<Control>,
     reopened: Arc<NativeReader>,
@@ -110,6 +134,18 @@ impl NativeSessionReader for OwnerNativeReader {
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         self.reopened.reconcile(receipt).await
     }
+
+    async fn recover_admission(
+        &self,
+        target: &SessionAddress,
+        key: &RequestKey,
+    ) -> Result<Option<NativeReceipt>, ReadError> {
+        match self.control.0.native_control().lookup_request(target, key) {
+            Ok(RequestReceiptLookup::Found(receipt)) => Ok(Some(receipt)),
+            Ok(_) => Ok(None),
+            Err(_) => Err(ReadError("Codex request correlation unavailable".into())),
+        }
+    }
 }
 struct SharedRead(Arc<Mutex<CodexReader>>);
 impl ScopedMessageReader for SharedRead {
@@ -119,6 +155,7 @@ impl ScopedMessageReader for SharedRead {
     }
 }
 struct OwnerApp {
+    authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     grants: Vec<Grant>,
     policy: Arc<OwnerPolicy>,
@@ -135,6 +172,12 @@ impl ApplicationPort for OwnerApp {
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
+            if let Some(result) = super::owner_registration::call(
+                identity, &request, self.interrupt.as_ref(), &self.policy,
+                &self.instance, &self.authority, &self.grants,
+            ) {
+                return Some(result);
+            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }
@@ -338,6 +381,7 @@ pub fn build_with_registry(
         policy.clone(),
         reopened,
     ));
+    let handoff = opened.owner.codex_recovery.as_ref().and_then(|profile| profile.legacy_handoff.clone());
     let waits = Arc::new(WaitAutomationApplication::new(
         source.clone(),
         registry,
@@ -345,8 +389,15 @@ pub fn build_with_registry(
         catalog::DeliveryMode::Start,
         reconciler.clone(),
         policy.clone(),
-    ));
+    ).with_recovery_handoff(handoff));
+    let session_recovery = opened.owner.codex_recovery.map(|profile| {
+        Arc::new(SessionRecovery::new(
+            authority.clone(), control.0.share_native_control(), policy.clone(), waits.clone(),
+            reconciler.clone(), profile,
+        )) as Arc<dyn automation_driver::AutomationTick>
+    });
     let app = Arc::new(OwnerApp {
+        authority: authority.clone(),
         instance: instance.clone(),
         grants: grants.clone(),
         policy: policy.clone(),
@@ -361,6 +412,7 @@ pub fn build_with_registry(
         .with_reconciler(reconciler);
     Ok(super::owner_opencode::BoundOwner {
         harness: "codex".into(),
+        session_recovery,
         process: None,
         waits,
         source,
@@ -395,6 +447,7 @@ fn codex_process(
         executable,
         code_home,
         cwd,
+        socket_path: owner.ahap_env.get("AHAP_CODEX_SOCKET").map(Into::into),
     })
 }
 

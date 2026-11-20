@@ -951,6 +951,7 @@ fn real_codex_fresh_create_deliver_native_read_stop_next_denied() {
         executable: PathBuf::from(std::env::var("HERDER_TEST_CODEX_BIN").unwrap()),
         code_home: home,
         cwd: f.root.clone(),
+        socket_path: None,
     };
     let control = CodexCreateControl::open(
         native_instance.clone(),

@@ -698,6 +698,234 @@ for line in sys.stdin:
 }
 
 #[test]
+fn native_codex_owner_recovers_the_same_thread_once_after_restart() {
+    use serde_json::{Value, json};
+    use std::{
+        io::{BufRead, BufReader, Write},
+        process::Child,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    let f = Fixture::new();
+    let fake = f.root.join("fake-codex");
+    fs::write(&fake, r#"#!/usr/bin/python3
+import json, os, sys, time
+from pathlib import Path
+home=Path(os.environ['CODEX_HOME'])
+styles={'preserve':'openai','quota-reset':'openai','uncertain':'openai','disabled':'openai',
+        'held':'openai','unknown-quota':'retired','pending-question':'openai',
+        'legacy-uncertain':'openai','outside-cohort':'openai'}
+loaded={}
+started=int((home/'fake-codex').stat().st_mtime)-10
+def cwd(target):
+ return str(home/'unverified-route') if target=='unknown-quota' else str(home)
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r: continue
+ m,p=r['method'],r.get('params',{})
+ target=p.get('threadId')
+ sent=home/('sent-'+target) if target else None
+ starts=sent.read_text().splitlines() if sent and sent.exists() else []
+ previous='prior-'+target if target else None
+ provider=loaded.get(target,styles.get(target))
+ model='old-model' if provider=='retired' else 'gpt-fixture'
+ item={'id':'user-'+target,'type':'userMessage','content':[{'type':'text','text':'fixture work'}]} if target else None
+ kind='failed' if target in ('quota-reset','unknown-quota') else 'interrupted'
+ old={'id':previous,'status':kind,'startedAt':started,
+      'completedAt':started+1 if kind=='failed' else None,'itemsView':'full','items':[item]}
+ if kind=='failed':
+  old['error']={'message':'quota','codexErrorInfo':'usageLimitExceeded'}
+ turns=[old]
+ if starts and target!='uncertain':
+  added={'id':'recovered-'+target,'status':'inProgress','startedAt':int(time.time()),
+         'itemsView':'summary','items':[{'id':'user-resumed','type':'userMessage','clientId':starts[0]}]}
+  turns.append(added)
+ active=len(turns)==2
+ thread={'id':target,'cwd':cwd(target),'source':'cli','modelProvider':provider,'model':model,
+         'status':{'type':'active','activeFlags':[]} if active else {'type':'idle' if target in loaded else 'notLoaded'},
+         'turns':turns}
+ if m=='initialize': v={'codexHome':str(home)}
+ elif m=='thread/read' and target in styles: v={'thread':thread}
+ elif m=='thread/list':
+  v={'data':[{'id':x,'cwd':cwd(x),'source':'cli','status':{'type':'idle' if x in loaded else 'notLoaded'}}
+             for x in styles if cwd(x)==p.get('cwd')],
+     'nextCursor':None}
+ elif m=='thread/turns/list' and target in styles: v={'data':[turns[-1]],'nextCursor':None}
+ elif m=='thread/queue/list' and target in styles: v={'data':[],'nextCursor':None}
+ elif m=='thread/loaded/list': v={'data':list(loaded),'nextCursor':None}
+ elif m=='thread/items/list' and target in styles:
+  v={'data':[{'turnId':t['id'],'item':i} for t in turns for i in t['items']],'nextCursor':None}
+ elif m=='account/rateLimits/read':
+  v={'rateLimits':{'limitId':'codex','primary':{'usedPercent':25,'resetsAt':int(time.time())+1200},
+                   'secondary':{'usedPercent':30,'resetsAt':int(time.time())+1200}}}
+ elif m=='account/read':
+  v={'account':{'type':'chatgpt'},'requiresOpenaiAuth':True}
+ elif m=='config/read':
+  v={'config':{'model_provider':'openai','model_providers':{},
+               'openai_base_url':'http://127.0.0.1:1' if p.get('cwd')==cwd('unknown-quota') else None}}
+ elif m=='thread/resume' and target in styles:
+  with (home/('attach-'+target)).open('a') as out: out.write(json.dumps(p)+'\n')
+  loaded[target]=p.get('modelProvider',provider)
+  effective_model=p.get('model',model)
+  v={'thread':dict(thread,modelProvider=loaded[target],model=effective_model,status={'type':'idle'}),
+     'model':effective_model,'modelProvider':loaded[target],'cwd':cwd(target)}
+ elif m=='turn/start' and target in loaded:
+  with sent.open('a') as out: out.write(p['clientUserMessageId']+'\n')
+  v={'turn':{'id':'recovered-'+target,'status':'inProgress'}} if target!='uncertain' else {}
+ else: raise RuntimeError('unexpected '+m)
+ print(json.dumps({'id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut profile = json!({"database":f.db,"gate":f.gate,"generation":"generation",
+        "owner":{"principal":"local-owner","node":"local","instance":"codex-test",
+        "executable":fake,"code_home":f.root,"cwd":f.root}});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+
+    let meta = json!({
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities":{},
+        "io.modelcontextprotocol/clientInfo":{"name":"owner-recovery-fixture","version":"1"}
+    });
+    let launch = || {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
+            .arg("--trusted-owner-profile").arg(&f.profile)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().unwrap();
+        let input = child.stdin.as_mut().unwrap();
+        let mut output = BufReader::new(child.stdout.take().unwrap());
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":0,"method":"tools/list","params":{
+            "_meta":meta
+        }})).unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        let initialized: Value = serde_json::from_str(&line).unwrap();
+        assert!(initialized["result"]["tools"].is_array(), "{initialized}");
+        child.stdout = Some(output.into_inner());
+        child
+    };
+    let close = |mut child: Child| {
+        drop(child.stdin.take());
+        let result = child.wait_with_output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    };
+    let mut provisioning = launch();
+    let mut reader = BufReader::new(provisioning.stdout.take().unwrap());
+    let cohort = ["preserve", "quota-reset", "uncertain", "disabled", "unknown-quota", "held",
+        "pending-question", "legacy-uncertain"];
+    for (id, target) in cohort.iter().chain([&"outside-cohort"]).enumerate() {
+        let input = provisioning.stdin.as_mut().unwrap();
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id+1,"method":"tools/call",
+            "params":{"_meta":meta,"name":"session","arguments":{"action":"register","instance_ref":"codex-test",
+                        "native_session_id":target,"request_key":format!("register-{target}")}}})).unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let result: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(result["result"]["structuredContent"]["address"]["native_session_id"], *target, "{result}");
+        if *target == "held" {
+            let session = &result["result"]["structuredContent"]["session_ref"];
+            writeln!(input, "{}", json!({"jsonrpc":"2.0","id":50,"method":"tools/call",
+                "params":{"_meta":meta,"name":"stop","arguments":{"action":"stop",
+                            "session_ref":session,"request_key":"stop-before-recovery"}}})).unwrap();
+            input.flush().unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            let result: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(result["result"]["structuredContent"]["hold"], "active", "{result}");
+        }
+    }
+    close(provisioning);
+    fs::write(f.root.join("session-autostart.json"), json!({
+        "version":8,"enabled":true,"recoverOnDisconnect":true,"recoverOnFailure":true,
+        "waitForQuota":true,"fallbackForQuota":true,
+        "sessions":[{"harness":"codex","sessionId":"disabled","cwd":f.root,
+                     "enabled":false,"updatedAt":"2026-01-01T00:00:00Z"}]
+    }).to_string()).unwrap();
+    let activation = f.root.join("recovery-enabled.json");
+    let stops = f.root.join("human-stops.json");
+    let questions = f.root.join("human-requests.json");
+    let choices = f.root.join("choices.json");
+    let unfinished = f.root.join("unfinished-sessions.json");
+    fs::write(&stops, r#"{"version":1,"sessions":[]}"#).unwrap();
+    fs::write(&choices, r#"{"version":1,"requests":[]}"#).unwrap();
+    fs::write(&questions, json!({"version":1,"requests":[
+        {"target":{"agent":"codex","sessionId":"pending-question"},"status":"pending"}
+    ]}).to_string()).unwrap();
+    fs::write(&unfinished, json!({"version":1,"sessions":[
+        {"harness":"codex","sessionId":"legacy-uncertain","deliveryPending":true}
+    ]}).to_string()).unwrap();
+    profile["owner"]["codex_recovery"] = json!({"autopilot_state_dir":f.root,
+        "legacy_handoff":{"native_sessions":cohort,"activation_file":activation,
+            "human_stops":stops,"human_requests":questions,"choices":choices,"unfinished_sessions":unfinished},
+        "fallback_routes":[
+        {"workspace":f.root,"provider":"openai","model":"gpt-fixture"},
+        {"workspace":f.root.join("unverified-route"),"provider":"openai","model":"gpt-fixture"}
+    ]});
+    fs::write(&f.profile, profile.to_string()).unwrap();
+
+    let mut staged = launch();
+    let input = staged.stdin.as_mut().unwrap();
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":60,"method":"tools/call",
+        "params":{"_meta":meta,"name":"automation","arguments":{"action":"wait_status",
+            "harness":"codex","native_session_id":"preserve","node_ref":"local"}}})).unwrap();
+    input.flush().unwrap();
+    let mut line = String::new();
+    BufReader::new(staged.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let status: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(status["result"]["structuredContent"]["recoveryOwner"], "rust", "{status}");
+    assert_eq!(status["result"]["structuredContent"]["reason"], "rust_recovery_handoff", "{status}");
+    assert_eq!(status["result"]["structuredContent"]["blocked"], true, "{status}");
+    close(staged);
+    assert!(!f.root.join("attach-preserve").exists());
+    fs::write(&activation, "true").unwrap();
+
+    let wait_for = |expected: usize| {
+        let db = Connection::open(&f.db).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            let count: usize = db.query_row(
+                "SELECT COUNT(*) FROM intents WHERE request_key LIKE 'codex-recovery:%'
+                 AND state IN ('admitted','confirmed','unknown')", [], |row| row.get(0),
+            ).unwrap();
+            if count == expected { return }
+            assert!(Instant::now() < deadline, "expected {expected} durable admissions, saw {count}");
+            thread::sleep(Duration::from_millis(40));
+        }
+    };
+    let recovered = launch();
+    wait_for(3);
+    close(recovered);
+    let rerun = launch();
+    // Wait for at least one normal owner tick against the same durable state.
+    thread::sleep(Duration::from_secs(3));
+    close(rerun);
+    for target in ["preserve", "quota-reset", "uncertain"] {
+        let sends = fs::read_to_string(f.root.join(format!("sent-{target}"))).unwrap();
+        assert_eq!(sends.lines().count(), 1, "{target}");
+        assert!(sends.starts_with("codex-recovery:"));
+        let attach = fs::read_to_string(f.root.join(format!("attach-{target}"))).unwrap();
+        assert_eq!(attach.lines().count(), 1, "{target}");
+        let params: Value = serde_json::from_str(attach.trim()).unwrap();
+        assert_eq!(params["threadId"], target);
+        assert!(params.get("modelProvider").is_none(), "{params}");
+        assert!(params.get("model").is_none(), "{params}");
+    }
+    for target in ["disabled", "held", "unknown-quota", "pending-question", "legacy-uncertain",
+        "outside-cohort"] {
+        assert!(!f.root.join(format!("sent-{target}")).exists(), "{target}");
+        assert!(!f.root.join(format!("attach-{target}")).exists(), "{target}");
+    }
+    let db = Connection::open(&f.db).unwrap();
+    let ids: Vec<String> = db.prepare(
+        "SELECT b.native_session_id FROM intents i JOIN session_bindings b ON b.session_ref=i.target
+         WHERE i.request_key LIKE 'codex-recovery:%' AND i.native_receipt IS NOT NULL ORDER BY b.native_session_id",
+    ).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(ids, ["preserve", "quota-reset"]);
+}
+
+#[test]
 #[ignore = "run exactly once in the isolated tests/native launcher after Task reconciliation review"]
 fn real_sdk_owner_stdio_create_task_and_reopened_messages() {
     use std::io::{Read, Write};

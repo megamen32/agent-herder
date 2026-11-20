@@ -24,6 +24,9 @@ use crate::domain::{
 
 use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
 
+#[path = "recovery.rs"]
+mod recovery;
+
 const LOOKUP_PAGE_LIMIT: u32 = 200;
 const LOOKUP_MAX_PAGES: usize = 128;
 const LOOKUP_RETRY_LIMIT: usize = 20;
@@ -123,7 +126,7 @@ impl std::error::Error for RequestLookupError {}
 
 struct ControlState {
     connection: CodexConnection,
-    /// Only threads created by this control object may receive turn/start.
+    /// Only threads created by this control object may receive an ordinary turn/start.
     /// This is a local scope check, not a native concurrency fence.
     owned_threads: HashSet<String>,
 }
@@ -131,6 +134,7 @@ struct ControlState {
 /// A single native Codex app-server connection bound to one configured instance.
 pub struct CodexControl {
     instance: InstanceRef,
+    process: CodexInstance,
     timeout: Duration,
     state: Mutex<ControlState>,
 }
@@ -147,9 +151,25 @@ impl CodexControl {
         if process.instance_id != instance.instance_id {
             return Err(CodexControlOpenError::InstanceMismatch);
         }
+        let connection = Self::connect(&process, timeout)?;
+        Ok(Self {
+            instance,
+            process,
+            timeout,
+            state: Mutex::new(ControlState {
+                connection,
+                owned_threads: HashSet::new(),
+            }),
+        })
+    }
+
+    fn connect(
+        process: &CodexInstance,
+        timeout: Duration,
+    ) -> Result<CodexConnection, CodexControlOpenError> {
         let expected_profile =
             fs::canonicalize(&process.code_home).map_err(CodexControlOpenError::ProfilePath)?;
-        let mut connection = CodexConnection::open(process)?;
+        let mut connection = CodexConnection::open(process.clone())?;
         let initialized = connection.request(
             "initialize",
             json!({
@@ -177,14 +197,7 @@ impl CodexControl {
             });
         }
         connection.notify("initialized", json!({}))?;
-        Ok(Self {
-            instance,
-            timeout,
-            state: Mutex::new(ControlState {
-                connection,
-                owned_threads: HashSet::new(),
-            }),
-        })
+        Ok(connection)
     }
 
     pub fn instance(&self) -> &InstanceRef {
@@ -790,7 +803,7 @@ mod tests {
         FIXTURE_LOCK.lock().unwrap()
     }
 
-    fn fake_control(server_body: &str, timeout: Duration) -> (CodexControl, PathBuf) {
+    pub(super) fn fake_control(server_body: &str, timeout: Duration) -> (CodexControl, PathBuf) {
         use std::{fs, os::unix::fs::PermissionsExt, time::SystemTime};
 
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -823,6 +836,7 @@ mod tests {
                 executable,
                 code_home: home.clone(),
                 cwd: root.clone(),
+                socket_path: None,
             },
             instance,
             timeout,

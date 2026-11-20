@@ -165,6 +165,10 @@ impl OpenCodeConnection {
 
         let client = Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
+            // Scoped native calls also run on short-lived blocking runtimes.
+            // A pooled connection can still depend on the caller's runtime.
+            .pool_max_idle_per_host(0)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|_| OpenCodeConnectionError::Transport)?;
         let connection = Self {

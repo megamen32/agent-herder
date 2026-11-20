@@ -239,6 +239,9 @@ impl OpenCodeSessionReader {
             SessionResponseWire::Direct(session)
             | SessionResponseWire::Wrapped { data: session } => session,
         };
+        if session.id != address.native_session_id {
+            return Err(ReadError("OpenCode session read returned another identity".into()));
+        }
         self.project_session(session)
     }
 

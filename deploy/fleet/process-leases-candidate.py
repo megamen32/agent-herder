@@ -728,10 +728,66 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     return migration
 
 
-def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds):
-    """Stage the reviewed OpenCode profile transition to the Rust owner path."""
-    if not kinds or not set(kinds) <= NATIVE_PROFILE_UPDATES:
-        raise ValueError("only native OpenCode profile update is supported")
+def recovery_profile_payload(previous, changed, *, installed=False):
+    """Allow an exact native recovery binding on an already selected owner."""
+    expected = strict_json(previous)
+    actual = strict_json(changed)
+    owner, new = expected["owner"], actual["owner"]
+    kind = owner.get("kind")
+    if kind == "codex":
+        binding = owner.get("ahap_env", {})
+        if not all(binding.get(key) for key in ("AHAP_CODEX_BIN", "AHAP_CODEX_CWD", "CODEX_HOME")):
+            raise ValueError("Codex recovery requires the existing native instance binding")
+        socket = new.get("ahap_env", {}).get("AHAP_CODEX_SOCKET")
+        if not isinstance(socket, str) or not Path(socket).is_absolute() or ".." in Path(socket).parts:
+            raise ValueError("Codex recovery requires the exact shared app-server socket")
+        if binding.get("AHAP_CODEX_SOCKET") not in (None, socket):
+            raise ValueError("native recovery cannot change the existing Codex socket")
+        binding["AHAP_CODEX_SOCKET"] = socket
+    elif kind == "opencode":
+        if owner.get("ahap_script") is not None or not owner.get("ahap_base_url"):
+            raise ValueError("OpenCode recovery requires the existing native HTTP profile")
+    else:
+        raise ValueError("unsupported native recovery profile kind")
+    recovery = new.get(kind + "_recovery")
+    if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
+        raise ValueError("installed recovery requires an explicit compatibility handoff")
+    handoff = recovery["legacy_handoff"]
+    native_sessions = handoff.get("native_sessions")
+    if not isinstance(native_sessions, list) or not native_sessions or len(native_sessions) > 128 \
+            or any(not isinstance(value, str) or not value.strip() for value in native_sessions) \
+            or len(set(native_sessions)) != len(native_sessions):
+        raise ValueError("installed recovery requires an exact unique session cohort")
+    activation = handoff.get("activation_file")
+    if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
+            or not installed and os.path.lexists(activation):
+        raise ValueError("stage recovery with a fresh private activation path")
+    for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+        private_file(handoff[field])
+    owner[kind + "_recovery"] = recovery
+    if actual != expected or len(changed) > 16384:
+        raise ValueError("native recovery changes protected profile fields or exceeds the native limit")
+    return changed
+
+
+def native_profile_identity(raw):
+    owner = strict_json(raw)["owner"]
+    return tuple(owner.get(field) for field in ("kind", "node", "instance"))
+
+
+def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds,
+                                   recovery_profiles=()):
+    """Stage the reviewed native profile transition as protected sibling files."""
+    if bool(kinds) == bool(recovery_profiles) or not set(kinds) <= NATIVE_PROFILE_UPDATES:
+        raise ValueError("select one native profile migration type")
+    reviewed = {}
+    for path in recovery_profiles:
+        raw = private_file(path).read_bytes()
+        identity = native_profile_identity(raw)
+        if identity in reviewed:
+            raise ValueError("duplicate native recovery profile identity")
+        reviewed[identity] = raw
+    expected_identities = set(reviewed)
     payload_dir = output / "profile-payloads"
     payload_dir.mkdir(mode=0o700)
     profiles = []
@@ -739,11 +795,20 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
     for selected_path in selection["profiles"]:
         path = private_file(selected_path)
         all_hashes[str(selected_path)] = digest(path)
-        profile = strict_json(path.read_bytes())
+        raw = path.read_bytes()
+        profile = strict_json(raw)
         owner = profile["owner"]
-        if owner.get("kind") not in kinds or owner.get("ahap_script") != base["adapters"].get(owner.get("kind")):
-            continue
-        payload = native_profile_payload(path.read_bytes())
+        if recovery_profiles:
+            identity = native_profile_identity(raw)
+            if identity not in expected_identities:
+                continue
+            if identity not in reviewed:
+                raise ValueError("selected recovery profile identity is ambiguous")
+            payload = recovery_profile_payload(raw, reviewed.pop(identity))
+        else:
+            if owner.get("kind") not in kinds or owner.get("ahap_script") != base["adapters"].get(owner.get("kind")):
+                continue
+            payload = native_profile_payload(raw)
         after_hash = hashlib.sha256(payload).hexdigest()
         target = path.parent / ("profile-process-leases-native-" + source[:12] + "-" + after_hash[:20] + ".json")
         if os.path.lexists(target):
@@ -755,10 +820,10 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
                          "previous_sha256": digest(path), "path": str(target),
                          "sha256": after_hash, "payload": str(staged),
                          "payload_sha256": digest(staged)})
-    if {row["kind"] for row in profiles} != set(kinds):
+    if reviewed or not profiles or (kinds and {row["kind"] for row in profiles} != set(kinds)):
         raise ValueError("every native profile update must have an exact selected profile")
     migration = {"schema": 1, "type": "herder-native-profile-rebind", "source_commit": source,
-                 "kind": "opencode", "base_selector": str(selector),
+                 "kind": "recovery" if recovery_profiles else "opencode", "base_selector": str(selector),
                  "base_selector_sha256": digest(selector), "base_manifest": selection["manifest"],
                  "base_manifest_sha256": selection["manifest_sha256"], "profile_sha256": all_hashes,
                  "profiles": profiles}
@@ -767,8 +832,9 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
     manifest["native_profile_migration"] = str(path)
     manifest["sha256"]["native_profile_migration"] = digest(path)
     manifest["composition"]["process_leases"]["scope"] = (
+        "native core and exact recovery bindings on selected profiles" if recovery_profiles else
         "native core and OpenCode owner profile updated; legacy AHAP runner removed from the selected profile")
-    manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native OpenCode profile; all other pins retained"
+    manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native profiles; all other pins retained"
     payload_dir.chmod(0o500)
     return migration
 
@@ -850,7 +916,7 @@ def native_profile_transition(old, new, before, after, *, installed=False):
               "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
     if (set(migration) != fields or migration["schema"] != 1
             or migration["type"] != "herder-native-profile-rebind"
-            or migration["kind"] != "opencode"
+            or migration["kind"] not in ("opencode", "recovery")
             or migration["source_commit"] != after.get("source_commit")
             or not re.fullmatch(r"[a-f0-9]{40}", migration["source_commit"])):
         raise ValueError("invalid native profile migration")
@@ -866,6 +932,9 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     if not isinstance(snapshots, dict) or set(snapshots) != set(old["profiles"]):
         raise ValueError("native profile snapshot is incomplete")
     rows, by_old, destinations = migration["profiles"], {}, set()
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("native profile migration has no affected bindings")
+    recovering = migration["kind"] == "recovery"
     bundle = migration_path.parent
     for item in rows:
         if set(item) != {"kind", "previous_path", "previous_sha256", "path", "sha256", "payload", "payload_sha256"}:
@@ -874,15 +943,18 @@ def native_profile_transition(old, new, before, after, *, installed=False):
         previous, target = private_file(previous_key), planned_path(item["path"])
         if (previous_key in by_old or target in destinations or target == previous
                 or previous.parent != target.parent or previous_key not in snapshots
-                or item["previous_sha256"] != snapshots[previous_key]):
+                or item["previous_sha256"] != snapshots[previous_key]
+                or digest(previous) != item["previous_sha256"]):
             raise ValueError("native profile migration must use distinct siblings")
         profile, raw = protected_profile(previous)
-        if profile["owner"].get("kind") != item["kind"] or item["kind"] != "opencode":
+        if (profile["owner"].get("kind") != item["kind"]
+                or item["kind"] not in (("codex", "opencode") if recovering else ("opencode",))):
             raise ValueError("native profile kind does not match reviewed transition")
         payload = private_file(item["payload"])
         if payload.parent != bundle / "profile-payloads":
             raise ValueError("native profile payload is not inside the candidate")
-        wanted = native_profile_payload(raw)
+        wanted = (recovery_profile_payload(raw, payload.read_bytes(), installed=installed) if recovering
+                  else native_profile_payload(raw))
         if (payload.read_bytes() != wanted or digest(payload) != item["payload_sha256"]
                 or item["sha256"] != item["payload_sha256"]):
             raise ValueError("native profile migration changes protected fields")
@@ -893,7 +965,7 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     affected = {path for path in old["profiles"]
                 if strict_json(private_file(path).read_bytes())["owner"].get("kind") == "opencode"
                 and strict_json(private_file(path).read_bytes())["owner"].get("ahap_script") == before["adapters"]["opencode"]}
-    if set(by_old) != affected or {item["kind"] for item in rows} != {"opencode"}:
+    if not recovering and (set(by_old) != affected or {item["kind"] for item in rows} != {"opencode"}):
         raise ValueError("native profile migration omits or adds selected profile bindings")
     expected = copy.deepcopy(old)
     expected.update(manifest=new["manifest"], manifest_sha256=new["manifest_sha256"])
@@ -1022,12 +1094,13 @@ def build(args):
         raise ValueError("commit the isolated worktree before a release build")
     updates = getattr(args, "adapter_update", [])
     native_updates = getattr(args, "native_update", [])
+    recovery_profiles = getattr(args, "native_recovery_profile", [])
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
     if len(set(native_updates)) != len(native_updates) or not set(native_updates) <= NATIVE_PROFILE_UPDATES:
         raise ValueError("select each reviewed native profile update once")
-    if updates and native_updates:
-        raise ValueError("adapter and native profile migrations cannot be combined")
+    if sum(map(bool, (updates, native_updates, recovery_profiles))) > 1:
+        raise ValueError("select only one profile migration type")
     canonical_config = getattr(args, "canonical_config", None)
     canonical_hash = getattr(args, "canonical_config_sha256", None)
     if (canonical_config is None) != (canonical_hash is None):
@@ -1084,9 +1157,10 @@ def build(args):
         create(fixture / "process-wait-status.py", wait_reader.read_bytes(), 0o500)
         hashes["process_wait_reader"] = digest(fixture / "process-wait-status.py")
     remote_source = repo / "src/herder-process-remote-bridge.ts"
-    compilation = compile_typescript(repo, output, sha, base) if updates or remote_source.is_file() else None
+    replace_remote_bridge = not recovery_profiles and remote_source.is_file()
+    compilation = compile_typescript(repo, output, sha, base) if updates or replace_remote_bridge else None
     remote_bridge = None
-    if remote_source.is_file():
+    if replace_remote_bridge:
         remote_bridge = bundle_process_remote_bridge(repo, output, sha, base, compilation)
         hashes["process_remote_bridge"] = remote_bridge["sha256"]
     manifest = compose_manifest(base, output, sha, base_path, selection["manifest_sha256"], hashes, argv)
@@ -1100,8 +1174,9 @@ def build(args):
     if updates:
         adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
-    if native_updates:
-        migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha, native_updates)
+    if native_updates or recovery_profiles:
+        migration = stage_native_profile_migration(
+            base, manifest, selection, selector, output, sha, native_updates, recovery_profiles)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]
             or any(digest(private_file(path)) != value for path, value in profile_hashes.items())):
@@ -1263,6 +1338,8 @@ def main():
                    help="explicit reviewed AHAP update; may be repeated once per kind")
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
+    b.add_argument("--native-recovery-profile", action="append", default=[], type=Path,
+                   help="protected successor profile for one existing native owner, with recovery inactive")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)

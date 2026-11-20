@@ -2,11 +2,10 @@
 //! used by create and deliver. Request claims never establish a self binding.
 use super::owner_policy::OwnerPolicy;
 use herder::{
-    adapters::ahap_opencode::AhapOpenCode,
     application::scoped_stop::{
         GateError, ScopedAuthority,
         create_prompt::FreshSessionGrantPolicy,
-        registration::{self, RegistrationError, RegistrationRequest},
+        registration::{self, BoundedSessionProbe, RegistrationError, RegistrationRequest},
     },
     auth::identity::{Caller, ConnectionIdentity, Grant},
     domain::address::{InstanceRef, SessionRef},
@@ -16,10 +15,10 @@ use rmcp::model::CallToolResult;
 use serde_json::json;
 use std::sync::Arc;
 
-pub fn call(
+pub fn call<P: BoundedSessionProbe>(
     identity: &ConnectionIdentity,
     request: &Request,
-    adapter: &Arc<AhapOpenCode>,
+    adapter: &P,
     policy: &Arc<OwnerPolicy>,
     instance: &InstanceRef,
     authority: &Arc<ScopedAuthority>,
@@ -52,7 +51,7 @@ pub fn call(
                 let result = authority.register_existing(
                     identity,
                     grants,
-                    adapter.as_ref(),
+                    adapter,
                     RegistrationRequest {
                         native_session_id,
                         workspace: workspace.as_ref(),

@@ -108,6 +108,38 @@ impl CodexReader {
         self.connection = open_connection(&self.instance, self.timeout)?;
         Ok(())
     }
+
+    fn shared_connection_closed(&mut self) -> bool {
+        self.instance.socket_path.is_some() && self.connection.unavailable()
+    }
+
+    pub fn read_thread_with_turns(&mut self, thread_id: &str) -> Result<Value, CodexReadError> {
+        if self.shared_connection_closed() {
+            self.reopen()?;
+        }
+        let params = json!({"threadId": thread_id, "includeTurns": true});
+        let response = match self
+            .connection
+            .request("thread/read", params.clone(), self.timeout)
+        {
+            Ok(response) => response,
+            Err(error) if self.shared_connection_closed() || is_stale_history_lineage(&error) => {
+                // A shared server can disconnect between the health check and
+                // this read. Only repeat the read on a newly verified connection.
+                self.reopen()?;
+                self.connection
+                    .request("thread/read", params, self.timeout)?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        response
+            .get("thread")
+            .filter(|thread| thread["id"] == thread_id && thread["turns"].is_array())
+            .cloned()
+            .ok_or_else(|| {
+                CodexReadError::InvalidThreadList("missing bound thread or turns".into())
+            })
+    }
 }
 
 fn open_connection(
@@ -208,7 +240,7 @@ impl CodexReader {
                 "thread_id and limit must be non-empty/positive".into(),
             ));
         }
-        if self.refresh_before_first_message_read {
+        if self.refresh_before_first_message_read || self.shared_connection_closed() {
             self.reopen()?;
             self.refresh_before_first_message_read = false;
         }

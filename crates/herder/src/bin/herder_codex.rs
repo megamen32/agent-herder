@@ -36,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         executable: options.executable,
         code_home: options.code_home,
         cwd: options.cwd,
+        socket_path: None,
     };
     let timeout = Duration::from_secs(20);
     let mut adapter: Option<Adapter> = None;

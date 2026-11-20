@@ -164,6 +164,51 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.assertNotIn(b"ahap_script", payload)
         self.assertTrue(payload.endswith(b"\r\n"))
 
+    def test_native_recovery_stages_only_the_explicit_existing_profile(self):
+        old_path = self.root / "native-codex-profile.json"
+        old = json.loads(self.old_profiles[str(self.root / "profile-codex.json")])
+        old["owner"]["ahap_env"] = {
+            "AHAP_CODEX_BIN": self.base["node"],
+            "CODEX_HOME": str(self.root),
+            "AHAP_CODEX_CWD": str(self.root),
+        }
+        raw = candidate.encoded(old)
+        candidate.create(old_path, raw)
+        selection = {**self.selection, "profiles": [str(old_path), str(self.remote_profile)]}
+        selector = self.root / "recovery-base.json"
+        candidate.create(selector, candidate.encoded(selection))
+        recovery = copy.deepcopy(old)
+        handoff = {"native_sessions": ["known-session"], "activation_file": str(self.root / "active.json")}
+        for key in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            path = self.root / (key + ".json")
+            candidate.create(path, b"{}")
+            handoff[key] = str(path)
+        recovery["owner"]["codex_recovery"] = {"autopilot_state_dir": str(self.root), "legacy_handoff": handoff}
+        recovery["owner"]["ahap_env"]["AHAP_CODEX_SOCKET"] = str(self.root / "codex.sock")
+        reviewed = self.root / "reviewed-codex.json"
+        candidate.create(reviewed, candidate.encoded(recovery))
+        out = self.root / "recovery-candidate"
+        out.mkdir(mode=0o700)
+        manifest = copy.deepcopy(self.base)
+        manifest.update(source_commit=self.source, composition={"process_leases": {}}, build_inputs={})
+
+        staged = candidate.stage_native_profile_migration(
+            self.base, manifest, selection, selector, out, self.source, [], [reviewed])
+        [row] = staged["profiles"]
+        new = {**selection, "profiles": [row["path"], str(self.remote_profile)]}
+        self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), staged)
+        self.assertEqual(row["previous_path"], str(old_path))
+        self.assertEqual(old_path.read_bytes(), raw)
+        self.assertFalse(Path(row["path"]).exists())
+
+        changed = copy.deepcopy(recovery)
+        changed["owner"]["ahap_env"]["CODEX_HOME"] = "/foreign-home"
+        with self.assertRaisesRegex(ValueError, "changes protected profile"):
+            candidate.recovery_profile_payload(raw, candidate.encoded(changed))
+        candidate.create(Path(handoff["activation_file"]), b"true")
+        with self.assertRaisesRegex(ValueError, "fresh private activation"):
+            candidate.native_profile_transition(selection, new, self.base, manifest)
+
     def test_guarded_install_creates_private_siblings_and_rollback_keeps_old_profiles(self):
         result = candidate.install(self.install_args, guard=self.guard)
         self.assertEqual(candidate.read_json(self.selector)["profiles"], self.new_selection["profiles"])
