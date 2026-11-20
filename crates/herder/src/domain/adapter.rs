@@ -295,6 +295,15 @@ pub struct ReadError(pub String);
 pub trait NativeSessionReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError>;
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError>;
+    /// An already persisted recovery admission may have additional native evidence.
+    /// Lost ACKs and UNKNOWN intents use the ordinary reconciliation path.
+    async fn reconcile_admitted_recovery(
+        &self,
+        receipt: &NativeReceipt,
+        _request_key: &str,
+    ) -> Result<Observation, ReadError> {
+        self.reconcile(receipt).await
+    }
     /// Recover only a native admission already bound to this exact session and
     /// original request key. Implementations must perform bounded reads only;
     /// caller IDs, text similarity and turn IDs are not native message evidence.

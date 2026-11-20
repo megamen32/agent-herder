@@ -939,7 +939,8 @@ import json, os, sys, time
 from pathlib import Path
 home=Path(os.environ['CODEX_HOME'])
 styles={'preserve':'openai','quota-reset':'openai','uncertain':'openai','disabled':'openai',
-        'held':'openai','unknown-quota':'retired','pending-question':'openai',
+        'held':'openai','old-interrupt':'openai','manual-release':'openai','explicit-legacy':'openai',
+        'unknown-quota':'retired','pending-question':'openai',
         'legacy-uncertain':'openai','outside-cohort':'openai','foreign-project':'openai'}
 if (home/'new-native-chats').exists():
  styles.update(dict.fromkeys(('first','later-page','old','changed','completed','held-new'),'openai'))
@@ -976,6 +977,11 @@ for line in sys.stdin:
       'completedAt':started+1 if kind=='failed' else None,'itemsView':'full','items':[item]}
  if kind=='failed':
   old['error']={'message':'quota','codexErrorInfo':'usageLimitExceeded'}
+ if target in ('old-interrupt','manual-release','explicit-legacy','held'):
+  # A later native userMessage has a caller-supplied clientId, including on automated input.
+  item['clientId']='input-'+target
+  old.update(status='failed',completedAt=started+1,
+             error={'codexErrorInfo':{'responseTooManyFailedAttempts':{'httpStatusCode':429}}})
  turns=[old]
  if starts and target!='uncertain':
   added={'id':'recovered-'+target,'status':'inProgress','startedAt':int(time.time()),
@@ -1045,9 +1051,10 @@ for line in sys.stdin:
   effective_model=p.get('model',model)
   v={'thread':dict(thread,modelProvider=loaded[target],model=effective_model,status={'type':'idle'}),
      'model':effective_model,'modelProvider':loaded[target],'cwd':cwd(target)}
- elif m=='turn/start' and target in loaded:
+ elif m=='turn/start' and target in styles:
   with (home/'send-order').open('a') as order: order.write(target+'\n')
   with sent.open('a') as out: out.write(p['clientUserMessageId']+'\n')
+  assert target in loaded
   v={'turn':{'id':'recovered-'+target,'status':'inProgress'}} if target!='uncertain' else {}
  else: raise RuntimeError('unexpected '+m)
  print(json.dumps({'id':r['id'],'result':v}),flush=True)
@@ -1068,7 +1075,7 @@ for line in sys.stdin:
     let mut provisioning = launch();
     let mut reader = BufReader::new(provisioning.stdout.take().unwrap());
     let cohort = ["preserve", "quota-reset", "uncertain", "disabled", "unknown-quota", "held",
-        "pending-question", "legacy-uncertain"];
+        "old-interrupt", "manual-release", "explicit-legacy", "pending-question", "legacy-uncertain"];
     for (id, target) in cohort.iter().chain([&"outside-cohort"])
         .filter(|&&target| !instance_wide && target != "preserve" && (!workspaces || target == "outside-cohort")).enumerate() {
         let input = provisioning.stdin.as_mut().unwrap();
@@ -1107,11 +1114,32 @@ for line in sys.stdin:
     let questions = f.root.join("human-requests.json");
     let choices = f.root.join("choices.json");
     let unfinished = f.root.join("unfinished-sessions.json");
-    fs::write(
-        &stops,
-        r#"{"version":1,"sessions":[{"harness":"codex","id":"held-new","active":true}]}"#,
-    )
-    .unwrap();
+    let write_stops = |interrupt_active: bool| {
+        let mut rows = vec![
+            json!({"harness":"codex","id":"held-new","active":true}),
+            json!({"harness":"codex","id":"explicit-legacy","active":true,"ignoredStopIds":[],
+                "stop":{"id":"explicit-stop:fixture","reason":"explicit-stop","turnId":"stopped-explicit-legacy",
+                        "at":"2000-01-01T00:00:00Z"}}),
+        ];
+        for (target, cleared_by) in [
+            ("old-interrupt", "new-user-prompt"),
+            ("manual-release", "explicit-resume"),
+            ("held", "explicit-resume"),
+        ] {
+            let turn = format!("stopped-{target}");
+            let mut row = json!({"harness":"codex","id":target,"active":interrupt_active,"ignoredStopIds":[],
+                "stop":{"id":turn,"reason":"interrupted","turnId":turn,"at":"2000-01-01T00:00:00Z"}});
+            if !interrupt_active {
+                // Model the release as persisted by the legacy writer.
+                row["clearedBy"] = json!(cleared_by);
+                row["clearedAt"] = json!(chrono::DateTime::<chrono::Utc>::from(SystemTime::now()).to_rfc3339());
+                row["ignoredStopIds"] = json!([turn]);
+            }
+            rows.push(row);
+        }
+        fs::write(&stops, json!({"version":1,"sessions":rows}).to_string()).unwrap();
+    };
+    write_stops(true);
     fs::write(&choices, r#"{"version":1,"requests":[]}"#).unwrap();
     fs::write(&questions, json!({"version":1,"requests":[
         {"target":{"agent":"codex","sessionId":"pending-question"},"status":"pending"}
@@ -1265,7 +1293,17 @@ for line in sys.stdin:
     let recovered = launch();
     wait_for(if instance_wide { 2 } else { 3 });
     close(recovered);
+    if scope == CodexHandoff::Cohort {
+        for target in ["old-interrupt", "manual-release", "explicit-legacy", "held"] {
+            assert!(!f.root.join(format!("attach-{target}")).exists(), "{target} resumed while held");
+            assert!(!f.root.join(format!("sent-{target}")).exists(), "{target} started while held");
+        }
+        write_stops(false);
+    }
     let rerun = launch();
+    if scope == CodexHandoff::Cohort {
+        wait_for(5);
+    }
     // Wait for at least one normal owner tick against the same durable state.
     thread::sleep(Duration::from_secs(3));
     close(rerun);
@@ -1285,7 +1323,7 @@ for line in sys.stdin:
         assert_eq!(registered, ["changed", "first", "later-page"]);
         return;
     }
-    for target in ["preserve", "quota-reset", "uncertain"] {
+    for target in ["preserve", "quota-reset", "uncertain", "old-interrupt", "manual-release"] {
         let sends = fs::read_to_string(f.root.join(format!("sent-{target}"))).unwrap();
         assert_eq!(sends.lines().count(), 1, "{target}");
         assert!(sends.starts_with("codex-recovery:"));
@@ -1296,7 +1334,7 @@ for line in sys.stdin:
         assert!(params.get("modelProvider").is_none(), "{params}");
         assert!(params.get("model").is_none(), "{params}");
     }
-    for target in ["disabled", "held", "unknown-quota", "pending-question", "legacy-uncertain",
+    for target in ["disabled", "held", "explicit-legacy", "unknown-quota", "pending-question", "legacy-uncertain",
         "outside-cohort"] {
         assert!(!f.root.join(format!("sent-{target}")).exists(), "{target}");
         assert!(!f.root.join(format!("attach-{target}")).exists(), "{target}");
@@ -1314,7 +1352,13 @@ for line in sys.stdin:
         "SELECT b.native_session_id FROM intents i JOIN session_bindings b ON b.session_ref=i.target
          WHERE i.request_key LIKE 'codex-recovery:%' AND i.native_receipt IS NOT NULL ORDER BY b.native_session_id",
     ).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
-    assert_eq!(ids, ["preserve", "quota-reset"]);
+    assert_eq!(ids, ["manual-release", "old-interrupt", "preserve", "quota-reset"]);
+    let held: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM humanstop_holds h JOIN session_bindings b
+         ON h.scope_ref='session:'||b.session_ref WHERE b.native_session_id='held'
+         AND h.reason='mcp_stop' AND h.released_at IS NULL)", [], |row| row.get(0),
+    ).unwrap();
+    assert!(held, "legacy release must preserve the explicit Rust session stop");
 }
 
 #[test]
