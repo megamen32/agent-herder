@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
 
@@ -687,6 +688,39 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     return migration
 
 
+def check_codex_autopilot(config, recovery):
+    if not isinstance(config, dict) or set(config) - {"state_dir", "policy_file", "holds", "judge"}:
+        raise ValueError("invalid Codex autopilot profile")
+    for key in ("state_dir", "policy_file"):
+        if key == "state_dir" or config.get(key) is not None:
+            path = config.get(key)
+            if not isinstance(path, str) or not Path(path).is_absolute() or ".." in Path(path).parts:
+                raise ValueError("invalid Codex autopilot state path")
+    holds = config.get("holds")
+    if not isinstance(holds, dict) or set(holds) != {"human_stops", "human_requests", "choices", "unfinished_sessions"}:
+        raise ValueError("incomplete Codex autopilot holds")
+    handoff = (recovery or {}).get("legacy_handoff")
+    for key, path in holds.items():
+        if not isinstance(path, str) or handoff is not None and handoff.get(key) != path:
+            raise ValueError("Codex autopilot must use the installed hold registries")
+        private_file(path)
+    judge = config.get("judge")
+    if not isinstance(judge, dict) or set(judge) - {"base_url", "model", "token_file"}:
+        raise ValueError("invalid Codex autopilot judge")
+    model, url = judge.get("model"), judge.get("base_url")
+    if not isinstance(model, str) or not model.strip() or len(model.encode()) > 256 or not isinstance(url, str):
+        raise ValueError("invalid Codex autopilot judge model or URL")
+    endpoint = urlsplit(url)
+    if (not endpoint.hostname or endpoint.port == 0 or endpoint.username is not None or endpoint.password is not None
+            or endpoint.query or endpoint.fragment or not (
+                endpoint.scheme == "https" or endpoint.scheme == "http" and endpoint.hostname in {"localhost", "127.0.0.1", "::1"})):
+        raise ValueError("Codex autopilot requires an HTTPS or loopback judge")
+    if judge.get("token_file") is not None:
+        if not isinstance(judge["token_file"], str):
+            raise ValueError("invalid Codex autopilot judge token file")
+        private_file(judge["token_file"])
+
+
 def check_recovery_scope(kind, handoff):
     wide = handoff.get("instance_wide", False)
     if not isinstance(wide, bool) or (wide and ("native_sessions" in handoff or "workspaces" in handoff)):
@@ -722,7 +756,7 @@ def check_recovery_scope(kind, handoff):
 
 
 def recovery_profile_payload(previous, changed, *, installed=False):
-    """Stage the shared Codex socket or an inactive recovery handoff."""
+    """Stage a reviewed native socket, recovery handoff, or semantic autopilot binding."""
     expected = strict_json(previous)
     actual = strict_json(changed)
     owner, new = expected["owner"], actual["owner"]
@@ -745,8 +779,11 @@ def recovery_profile_payload(previous, changed, *, installed=False):
             raise ValueError("OpenCode recovery requires the existing native HTTP profile")
     else:
         raise ValueError("unsupported native recovery profile kind")
-    if not socket_only:
-        recovery = new.get(kind + "_recovery")
+    recovery = new.get(kind + "_recovery")
+    recovery_changed = recovery != owner.get(kind + "_recovery")
+    autopilot_changed = kind == "codex" and owner.get("codex_autopilot") != new.get("codex_autopilot")
+    # A change confined to the semantic rule binding keeps the active recovery marker.
+    if not socket_only and (recovery_changed or not autopilot_changed):
         if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
             raise ValueError("installed recovery requires an explicit compatibility handoff")
         handoff = recovery["legacy_handoff"]
@@ -758,6 +795,11 @@ def recovery_profile_payload(previous, changed, *, installed=False):
         for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
             private_file(handoff[field])
         owner[kind + "_recovery"] = recovery
+    if kind == "codex" and "codex_autopilot" in new and (autopilot_changed or recovery_changed):
+        check_codex_autopilot(new["codex_autopilot"], recovery)
+        owner["codex_autopilot"] = new["codex_autopilot"]
+    elif autopilot_changed:
+        del owner["codex_autopilot"]
     if actual != expected or len(changed) > 16384:
         raise ValueError("native recovery changes protected profile fields or exceeds the native limit")
     return changed
@@ -1529,8 +1571,8 @@ def main():
                    help="explicit reviewed AHAP update; may be repeated once per kind")
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
-    b.add_argument("--native-recovery-profile", action="append", default=[], type=Path,
-                   help="protected successor profile with a new shared Codex socket or inactive recovery handoff")
+    b.add_argument("--native-recovery-profile", "--native-autopilot-profile", action="append", default=[], type=Path,
+                   help="reviewed successor profile for a shared Codex socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed direct-CDP binding for a selected legacy browser")
     c = sub.add_parser("check")

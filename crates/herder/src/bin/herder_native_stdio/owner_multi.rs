@@ -191,9 +191,14 @@ impl ServerHandler for MultiOwner {
         // adapter request or native session probe is used for this routing.
         if request.name.as_ref()=="automation" {
             if let Some(rule_ref)=args.and_then(|a|a.get("rule_ref")).and_then(Value::as_str) {
-                if rule_ref.starts_with("process-rule:") || rule_ref.starts_with("wait-rule:") {
+                if rule_ref.starts_with("process-rule:") || rule_ref.starts_with("wait-rule:") || rule_ref.starts_with("autopilot-rule:") {
                     let mut selected=None;
                     for binding in &self.bindings {
+                        if let Some(pilot)=&binding.autopilot
+                            && pilot.owns_rule(rule_ref).map_err(|_|unavailable())? {
+                            if selected.is_some(){return Ok(denied("ambiguous_automation_rule"))}
+                            selected=Some(binding);
+                        }
                         if rule_ref.starts_with("wait-rule:") && binding.waits.owns_rule(&binding.policy.principal.0,rule_ref).map_err(|_|unavailable())?{
                             if selected.is_some(){return Ok(denied("ambiguous_automation_rule"))}
                             selected=Some(binding);

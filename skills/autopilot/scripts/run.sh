@@ -33,15 +33,9 @@ payload=$(/usr/bin/jq -nc \
   --arg cwd "$PWD" \
   '{command:$command,harness:$harness,sessionId:$sessionId,cwd:$cwd}')
 result=$(PLUGIN_ROOT="$plugin_root" bash "$plugin_root/scripts/autopilot-command-launcher.sh" "$payload")
-enabled=$(printf '%s' "$result" | /usr/bin/jq -r '.enabled')
-case "$action" in
-  on) echo "Autopilot включён для текущей ${harness_label}-сессии ($session_id)." ;;
-  off) echo "Autopilot выключен для текущей ${harness_label}-сессии ($session_id)." ;;
-  status)
-    if [ "$enabled" = true ]; then
-      echo "Autopilot включён для текущей ${harness_label}-сессии ($session_id)."
-    else
-      echo "Autopilot выключен для текущей ${harness_label}-сессии ($session_id)."
-    fi
-    ;;
+enabled=$(printf '%s' "$result" | /usr/bin/jq -r 'select(.ok != false) | .enabled')
+case "$enabled" in
+  true) echo "Autopilot включён для текущей ${harness_label}-сессии ($session_id)." ;;
+  false) echo "Autopilot выключен для текущей ${harness_label}-сессии ($session_id)." ;;
+  *) echo "Не удалось подтвердить состояние Autopilot для $session_id." >&2; exit 1 ;;
 esac

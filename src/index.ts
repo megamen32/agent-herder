@@ -10,7 +10,8 @@ import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.
 import { ChatCommandPipeline } from "./autopilot/chat-commands.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
-import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { nativeAutopilotCommand } from "./autopilot/native-command.js";
+import { evaluateAutopilotStop, legacyAutopilotStatus, runAutopilotCommand } from "./autopilot-runner.js";
 import { selfJudgeEvaluate } from "./autopilot/self-judge.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
@@ -701,6 +702,7 @@ function sameNotice(left: Parameters<ReturnType<typeof createNoticePlaceSink>["s
 /** Autopilot needs an absolute cwd; prefer the native session, then the store. */
 async function autopilotSessionCommand(
   input: { command: "on" | "off" | "status"; harness: string; sessionId: string; cwd?: string },
+  canonicalClient?: CanonicalAutomationClient,
 ): Promise<Record<string, unknown>> {
   const harness = input.harness as AutopilotHarness;
   const explicit = input.cwd?.trim();
@@ -711,7 +713,8 @@ async function autopilotSessionCommand(
   if (!cwd || !cwd.startsWith("/")) {
     return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
   }
-  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd });
+  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd },
+    (command, target, store, policy) => nativeAutopilotCommand(canonicalClient, command, target, store, policy));
 }
 
 function registerTools(
@@ -744,7 +747,7 @@ function registerTools(
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
   registerUserIoDotTools(server, userioDot);
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
+  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 
@@ -1273,7 +1276,7 @@ async function main() {
     held: (harness, id) => humanStopStore.isHeld(harness, id),
     allowed: async input => {
       stopPendingQuestions.invalidate();
-      const status = await runAutopilotCommand({ ...input, command: "status" });
+      const status = await legacyAutopilotStatus(input);
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: async (input, goal, inputId) => {
@@ -1326,7 +1329,7 @@ async function main() {
       const observer = new NativeTurnAutopilotObserver({
         harness,
         adapter,
-        enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+        enabled: async (input) => (await legacyAutopilotStatus(input)).enabled === true,
         submit: (input) => backgroundAutopilotStop!.submit(input),
         resolveCwd: async (sessionId) => (await adapter.getSession(sessionId))?.cwd,
         onError: (message) => console.error(`[agent-herder] ${message}`),
@@ -1353,7 +1356,7 @@ async function main() {
     ? createNoticePlaceSink({ eventUrl: chatCommandNotifyEventUrl, token: chatCommandNotifyToken })
     : undefined;
   const chatCommandPipeline = new ChatCommandPipeline({
-    run: (input) => autopilotSessionCommand(input),
+    run: (input) => autopilotSessionCommand(input, canonicalClient),
     reply: (harness, sessionId, text, inputId) => processSupervisor.sendMessage(harness, sessionId, {
       message: text,
       origin: "automation",
@@ -1526,6 +1529,7 @@ async function main() {
     const webServer = createWebServer({
       adapters,
       sessionImageStore,
+      canonicalClient,
       canonicalRuntimeStatus: createCanonicalRuntimeStatus(resumeAfterRuntime.service),
       hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,

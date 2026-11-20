@@ -219,6 +219,64 @@ class AdapterMigrationContracts(MigrationFixture):
         with self.assertRaisesRegex(ValueError, "cannot change the existing Codex socket"):
             candidate.recovery_profile_payload(candidate.encoded(successor), candidate.encoded(changed))
 
+    def test_semantic_autopilot_stages_on_the_active_codex_profile(self):
+        old = json.loads(self.old_profiles[str(self.root / "profile-codex.json")])
+        old["owner"]["ahap_env"] = {
+            "AHAP_CODEX_BIN": self.base["node"], "CODEX_HOME": str(self.root),
+            "AHAP_CODEX_CWD": str(self.root), "AHAP_CODEX_SOCKET": str(self.root / "codex.sock"),
+        }
+        marker = self.root / "active.json"
+        candidate.create(marker, b"true\n")
+        holds = {}
+        for name in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            path = self.root / (name + ".json")
+            candidate.create(path, b"{}\n")
+            holds[name] = str(path)
+        old["owner"]["codex_recovery"] = {"autopilot_state_dir": str(self.root), "legacy_handoff": {
+            **holds, "native_sessions": ["existing-session"], "activation_file": str(marker)}}
+        old_path = self.root / "active-profile.json"
+        before = candidate.encoded(old)
+        candidate.create(old_path, before)
+        selection = {**self.selection, "profiles": [str(old_path), str(self.remote_profile)]}
+        selector = self.root / "autopilot-base.json"
+        candidate.create(selector, candidate.encoded(selection))
+        successor = copy.deepcopy(old)
+        config = {"state_dir": str(self.root), "holds": holds,
+                  "judge": {"base_url": "http://127.0.0.1:20128/v1", "model": "fixture-judge"}}
+        successor["owner"]["codex_autopilot"] = config
+        after = candidate.encoded(successor)
+        reviewed = self.root / "reviewed-autopilot.json"
+        candidate.create(reviewed, after)
+
+        migration, manifest, new = self.stage_recovery(selection, selector, self.root / "autopilot-candidate", reviewed)
+        [row] = migration["profiles"]
+        new["profiles"] = [row["path"], str(self.remote_profile)]
+        self.assertEqual(candidate.native_profile_transition(selection, new, self.base, manifest), migration)
+        self.assertEqual(Path(row["payload"]).read_bytes(), after)
+        self.assertEqual(old_path.read_bytes(), before)
+        self.assertEqual(marker.read_bytes(), b"true\n")
+        self.assertEqual(candidate.recovery_profile_payload(after, before), before)
+
+        combined = copy.deepcopy(successor)
+        new_handoff = combined["owner"]["codex_recovery"]["legacy_handoff"]
+        new_handoff.update(native_sessions=["existing-session", "handed-over-session"],
+                           activation_file=str(self.root / "next-activation.json"))
+        combined_bytes = candidate.encoded(combined)
+        self.assertEqual(candidate.recovery_profile_payload(before, combined_bytes), combined_bytes)
+
+        for name, edit in (
+                ("foreign provider", lambda p: p["owner"].update(principal="another-owner")),
+                ("different holds", lambda p: p["owner"]["codex_autopilot"]["holds"].update(human_stops=holds["choices"])),
+                ("expanded cohort", lambda p: p["owner"]["codex_recovery"]["legacy_handoff"].update(instance_wide=True)),
+                ("inline secret", lambda p: p["owner"]["codex_autopilot"]["judge"].update(token="fixture")),
+                ("unencrypted judge", lambda p: p["owner"]["codex_autopilot"]["judge"].update(base_url="http://example.test/v1")),
+                ("invalid judge port", lambda p: p["owner"]["codex_autopilot"]["judge"].update(base_url="https://example.test:invalid/v1"))):
+            with self.subTest(change=name):
+                invalid = copy.deepcopy(successor)
+                edit(invalid)
+                with self.assertRaises(ValueError):
+                    candidate.recovery_profile_payload(before, candidate.encoded(invalid))
+
     def test_native_recovery_stages_only_the_explicit_existing_profile(self):
         old_path = self.root / "native-codex-profile.json"
         old = json.loads(self.old_profiles[str(self.root / "profile-codex.json")])

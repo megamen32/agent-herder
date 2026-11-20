@@ -27,6 +27,16 @@ async function fixture(root:string) {
  return source;
 }
 describe('native legacy projection without losing portable plugin',()=>{
+ it('packages the shared registration used by the current Codex plugin', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'herder-shared-plugin-'));
+  try {
+   const source = await fixture(root);
+   const registration = await readFile(join(process.cwd(), '.mcp.json'));
+   await writeFile(join(source, '.mcp.json'), registration);
+   await prepareCodexNativeProjection(source, join(root, 'plugin'), '0.2.6');
+   expect(await readFile(join(root, 'plugin/.mcp.json'))).toEqual(registration);
+  } finally { await rm(root, {recursive: true, force: true}); }
+ });
  it('builds a deterministic native package with exact hooks/HTTP/skills/dependencies and no root AgentPlugin',async()=>{
   const root=await mkdtemp(join(tmpdir(),'herder-codex-projection-'));
   try{

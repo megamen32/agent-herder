@@ -16,6 +16,8 @@ use serde_json::{Map, Value, json};
 use super::{CodexConnection, CodexControl, RpcError, map_rpc_error};
 #[path = "recovery_lineage.rs"]
 mod lineage;
+#[path = "autopilot.rs"]
+pub(super) mod autopilot;
 use lineage::{ThreadLineage, is_unarchived, read_ancestors, read_thread, thread_lineage};
 
 use crate::domain::{

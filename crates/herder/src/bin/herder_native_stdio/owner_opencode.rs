@@ -415,6 +415,7 @@ impl ApplicationPort for App {
     }
 }
 pub struct BoundOwner {
+    pub autopilot: Option<Arc<herder::application::scoped_stop::session_autopilot::SessionAutopilot>>,
     pub harness: String,
     pub session_recovery: Option<Arc<dyn AutomationTick>>,
     pub process: Option<Arc<ProcessAutomationApplication>>,
@@ -732,6 +733,7 @@ pub fn build_with_registry(
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(BoundOwner {
+        autopilot: None,
         session_recovery: None,
         server,
         policy,
@@ -753,6 +755,9 @@ impl BoundOwner {
         modules.push(self.waits.clone());
         if let Some(recovery) = &self.session_recovery {
             modules.push(recovery.clone());
+        }
+        if let Some(autopilot) = &self.autopilot {
+            modules.push(autopilot.clone());
         }
         AutomationOwner::new(self.identity.clone(), modules)
     }
