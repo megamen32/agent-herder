@@ -239,11 +239,30 @@ class AdapterMigrationContracts(unittest.TestCase):
         self.assertEqual(old_path.read_bytes(), raw)
         self.assertFalse(Path(row["path"]).exists())
 
+        wide = copy.deepcopy(recovery)
+        scope = wide["owner"]["codex_recovery"]["legacy_handoff"]
+        del scope["native_sessions"]
+        scope["instance_wide"] = True
+        wide_raw = candidate.encoded(wide)
+        self.assertEqual(candidate.recovery_profile_payload(raw, wide_raw), wide_raw)
+        for invalid in ({}, {"instance_wide": False}, {"instance_wide": 1}, {"instance_wide": "true"},
+                        {"instance_wide": True, "native_sessions": []},
+                        {"instance_wide": True, "native_sessions": ["known-session"]}):
+            with self.subTest(scope=invalid):
+                bad = copy.deepcopy(wide)
+                bad_scope = bad["owner"]["codex_recovery"]["legacy_handoff"]
+                del bad_scope["instance_wide"]
+                bad_scope.update(invalid)
+                with self.assertRaises(ValueError):
+                    candidate.recovery_profile_payload(raw, candidate.encoded(bad))
+
         changed = copy.deepcopy(recovery)
         changed["owner"]["ahap_env"]["CODEX_HOME"] = "/foreign-home"
         with self.assertRaisesRegex(ValueError, "changes protected profile"):
             candidate.recovery_profile_payload(raw, candidate.encoded(changed))
         candidate.create(Path(handoff["activation_file"]), b"true")
+        with self.assertRaisesRegex(ValueError, "fresh private activation"):
+            candidate.recovery_profile_payload(raw, wide_raw)
         with self.assertRaisesRegex(ValueError, "fresh private activation"):
             candidate.native_profile_transition(selection, new, self.base, manifest)
 

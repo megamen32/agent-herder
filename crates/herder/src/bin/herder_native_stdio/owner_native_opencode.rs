@@ -25,7 +25,7 @@ use herder::{
             mcp_stop::ScopedStopApplication,
             mcp_task_server::ScopedTaskServer,
             registration::BoundedSessionProbe,
-            session_recovery::SessionRecovery,
+            session_recovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage, SessionRecovery},
             task_reconcile::ScopedReceiptReconciler,
             wait_automation::{DependencyRegistry, DependencySource, WaitAutomationApplication},
         },
@@ -168,6 +168,31 @@ impl BoundedSessionProbe for NativeControl {
             reader.snapshot(&target).await
         })
         .map_err(|_| ())
+    }
+}
+
+impl RecoveryListing for NativeControl {
+    fn confirms_absence(&self, native_id: &str) -> bool {
+        let reader = OpenCodeSessionReader::new(self.control.connection().clone());
+        let native_id = native_id.to_owned();
+        thread_block_on(async move { reader.confirms_missing_session(&native_id).await })
+    }
+
+    fn list_recent(&self, cursor: Option<&str>, limit: u32) -> Result<RecoveryPage, ReadError> {
+        let reader = OpenCodeSessionReader::new(self.control.connection().clone());
+        let page =
+            self.block(reader.list_recent_sessions("herder-owner-recovery-list", cursor, limit))?;
+        Ok(RecoveryPage {
+            sessions: page
+                .sessions
+                .into_iter()
+                .filter(|s| {
+                    s.time.archived.is_none() && s.time.updated.is_finite() && s.time.updated > 0.
+                })
+                .map(|s| (s.address.native_session_id, s.time.updated as u64))
+                .collect(),
+            next_cursor: page.next,
+        })
     }
 }
 
@@ -571,7 +596,7 @@ pub async fn build(
             policy.clone(),
         )
         .with_automatic_continuation(false)
-        .with_recovery_handoff(handoff),
+        .with_recovery_handoff(handoff, control.clone()),
     );
     let session_recovery = profile.map(|profile| {
         Arc::new(SessionRecovery::new(
@@ -581,6 +606,7 @@ pub async fn build(
             waits.clone(),
             reconciler.clone(),
             profile,
+            RecoveryDiscovery::new(control.clone(), grants.clone()),
         )) as Arc<dyn AutomationTick>
     });
     let messages = Arc::new(Mutex::new((*reader).clone()));

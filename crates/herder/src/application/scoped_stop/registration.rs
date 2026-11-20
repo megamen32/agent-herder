@@ -580,7 +580,7 @@ impl ScopedAuthority {
     /// Observe once through the configured adapter, then atomically retain one
     /// distinct registration proof with immutable route and sealed stop scopes.
     /// An existing valid create/registration route is reused verbatim.
-    pub fn register_existing<P: BoundedSessionProbe>(
+    pub fn register_existing<P: BoundedSessionProbe + ?Sized>(
         &self,
         identity: &ConnectionIdentity,
         grants: &[Grant],

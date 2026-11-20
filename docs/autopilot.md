@@ -144,19 +144,22 @@ single owner, so a second retry loop cannot bypass these settings.
 
 ### Native Rust Codex owner
 
-The Rust owner can recover its registered Codex threads through the existing
-automation driver. In its trusted owner profile, set `owner.codex_recovery`
+The Rust owner uses the existing automation driver to continue interrupted
+turns in their original Codex threads. In its trusted owner profile, set `owner.codex_recovery`
 with `autopilot_state_dir` pointing to the owner's existing
 `session-autostart.json` and `codex-quota-guard.json` directory. Set this
 binding where this owner controls the Codex runtime. For a shared Codex
 app-server, bind the existing socket through `owner.ahap_env.AHAP_CODEX_SOCKET`
 to observe its active and queued turns.
 
-For a compatibility handoff, set `legacy_handoff.native_sessions` to the
-reviewed set of registered threads and bind the existing `human_stops`,
-`human_requests`, `choices` and `unfinished_sessions` files. Start with the
-private `activation_file` absent. The Rust wait status blocks automatic
-compatibility clients for the mapped cohort with `rust_recovery_handoff`.
+For a staged handoff, set `legacy_handoff.native_sessions` to the exact
+thread IDs being transferred. Once every project on the instance has been
+handed over, `legacy_handoff.instance_wide: true` enables discovery for the
+whole instance. The owner reads recent native sessions in descending order
+of activity and follows the cursor across polling cycles. Bind the existing
+`human_stops`, `human_requests`, `choices` and `unfinished_sessions` files.
+Start with the private `activation_file` absent. A wait-status decision of
+`rust_recovery_handoff` fences the compatibility writer for that thread.
 Stage the profile with the release coordinator's
 `process-leases-candidate.py build --native-recovery-profile` option. This
 build reuses the installed remote bridge pin and compiles the Rust binaries.
@@ -182,8 +185,8 @@ against the same native thread using the stored request key.
 ### Native Rust OpenCode owner
 
 Set `owner.opencode_recovery` on a trusted OpenCode v2 HTTP profile with
-the same settings and optional handoff fields. Register existing sessions
-through the native owner before activating recovery. Rust checks the native
+the same settings and optional handoff fields. Verify the handoff for
+the selected OpenCode sessions through the installed wait gate. Rust checks the native
 active list, inbox, forms and permissions before it submits a continuation.
 For an approved alternate route, it selects the model in the existing
 session and verifies the selection and account quota before enqueueing.

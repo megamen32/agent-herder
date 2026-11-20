@@ -54,6 +54,9 @@ pub struct NativeThread {
     pub id: String,
     pub cwd: Option<String>,
     pub status: Option<Value>,
+    /// Native last-activity time in Unix seconds.
+    #[serde(skip)]
+    pub updated_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -192,16 +195,41 @@ impl CodexReader {
         cursor: Option<&str>,
         limit: u32,
     ) -> Result<NativeThreadPage, CodexReadError> {
+        self.thread_page(json!({"cursor": cursor, "limit": limit}), limit)
+    }
+
+    pub fn list_recent_threads(
+        &mut self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<NativeThreadPage, CodexReadError> {
+        self.thread_page(
+            json!({
+                "cursor": cursor, "limit": limit, "archived": false,
+                "sortKey": "updated_at", "sortDirection": "desc", "modelProviders": [],
+                "sourceKinds": ["cli", "vscode", "appServer", "exec", "subAgentThreadSpawn"],
+                "useStateDbOnly": true,
+            }),
+            limit,
+        )
+    }
+
+    fn thread_page(
+        &mut self,
+        params: Value,
+        limit: u32,
+    ) -> Result<NativeThreadPage, CodexReadError> {
         if limit == 0 {
             return Err(CodexReadError::InvalidThreadList(
                 "limit must be positive".into(),
             ));
         }
-        let params = json!({"cursor": cursor, "limit": limit});
-        let result = match self.connection.request("thread/list", params, self.timeout) {
-            Ok(result) => result,
-            Err(error) => return Err(error.into()),
-        };
+        if self.shared_connection_closed() {
+            self.reopen()?;
+        }
+        let result = self
+            .connection
+            .request("thread/list", params, self.timeout)?;
         let rows = result
             .get("data")
             .and_then(Value::as_array)
@@ -218,6 +246,7 @@ impl CodexReader {
                 id,
                 cwd: row.get("cwd").and_then(Value::as_str).map(str::to_owned),
                 status: row.get("status").cloned(),
+                updated_at: row.get("updatedAt").and_then(Value::as_u64),
             });
         }
         Ok(NativeThreadPage {
