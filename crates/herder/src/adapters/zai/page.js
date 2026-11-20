@@ -1,6 +1,6 @@
 // Evaluated by value on the already-bound CDP target. Credentials and raw
 // account identifiers stay in the page. Each invocation performs one operation.
-async function zaiPage({op, expected, args}) {
+async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
     const origin = location.origin;
     const failure = (error, extra = {}) => ({origin, error, ...extra});
     if (origin !== 'https://chat.z.ai') {
@@ -59,32 +59,35 @@ async function zaiPage({op, expected, args}) {
     const visible = element => element.getClientRects().length > 0 &&
         getComputedStyle(element).visibility === 'visible';
     const elements = selector => Array.from(document.querySelectorAll(selector)).filter(visible);
-    const composerSelector = 'textarea[placeholder="Send a Message"]';
+    const composerSelector = 'textarea[placeholder="Send a Message"], textarea#chat-input';
     const messageSelector = '[data-message-author-role], .user-message, .assistant-message';
     const chipSelector = '[data-file-chip], [data-file-id], [data-attachment-id], .file-chip, .attachment-chip, ' +
         '[data-testid*="file-chip"], [data-testid*="attachment-chip"], [data-testid="file-preview"], ' +
-        '[aria-label^="Remove file" i], [aria-label^="Remove attachment" i]';
+        '[aria-label^="Remove file" i], [aria-label^="Remove attachment" i], ' +
+        '._upload-files-scope > :not(style)';
+    const files = zaiFiles({abort, hash, isObject, maxBytes, signal, messageSelector, chipSelector});
     const busyStatus = status => ['running', 'pending', 'in_progress'].includes(status);
     function controls() {
         const editors = elements(composerSelector);
         const buttons = elements('button#send-message-button');
-        const stops = elements('button').filter(el =>
-            el.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted'));
         const blocked = elements('dialog[open], [aria-modal="true"]').length > 0;
         const editor = editors.length === 1 && !editors[0].disabled && !editors[0].readOnly ? editors[0] : null;
-        const button = buttons.length === 1 ? buttons[0] : null;
+        const form = editors.length === 1 ? editors[0].form : null;
+        const stops = elements('button').filter(el =>
+            el.querySelector(':scope > span.block.size-3.rounded-xs.bg-text-inverted') ||
+            (form && form === el.form && el.getAttribute('aria-label') === 'Stop'));
+        const button = buttons.length === 1 && (!form || form === buttons[0].form) ? buttons[0] : null;
+        const stop = !blocked && editors.length === 1 && stops.length === 1 && !stops[0].disabled &&
+            stops[0].getAttribute('aria-disabled') !== 'true' && (!form || stops[0].form === form)
+            ? stops[0] : null;
         const phase = stops.length ? 'busy' : editor && button && !blocked ? 'idle' : 'unknown';
         const mounting = !stops.length && !blocked && buttons.length <= 1 &&
             (editors.length === 0 || (editor && !editor.value && !button));
-        return {editor, button, phase, mounting};
+        return {editor, button, stop, phase, mounting};
     }
     function cleanRoute(id, editor) {
         if (!at(id) || (id == null && document.querySelector(messageSelector))) return false;
-        if (Array.from(document.querySelectorAll('input[type=file]')).some(input => input.files?.length)) return false;
-        // Uploaded files can outlive the native file selection. Exclude chips on
-        // earlier messages when the composer has no enclosing form.
-        const composer = editor?.form ?? document;
-        return !Array.from(composer.querySelectorAll(chipSelector)).some(chip => !chip.closest(messageSelector));
+        return files.selectionReady(editor, null);
     }
     function ready(id, draft) {
         const {editor, button, phase} = controls();
@@ -107,6 +110,7 @@ async function zaiPage({op, expected, args}) {
     }
 
     let clicked = false;
+    let attemptState;
     try {
         // Inspect the exact route again after awaited provider operations and
         // immediately before any focus, input, navigation or click.
@@ -119,6 +123,33 @@ async function zaiPage({op, expected, args}) {
         const verified = (fields = {}) => ({origin, scope, scope_verified: true, chat_id: id, ...fields});
         if (op === 'account') return verified();
         if (op === 'blank') return verified({ready: blankReady()});
+        if (op === 'cancel') {
+            const cancelled = await zaiStop({id, input: params.input, user, at, controls, detail, batch,
+                currentUser, abort, validId, busyStatus});
+            return verified({input: params.input, cancelled});
+        }
+        if (op === 'attachment') {
+            // The pinned read target may display another conversation. Resolve
+            // the original only through the addressed chat and message.
+            const page = location.href;
+            const chat = await detail(id, user);
+            const key = params.message;
+            if (!historyIds(chat).includes(key)) abort('unknown_message');
+            const rows = await batch(id, [key], user);
+            const row = rows[key];
+            if (!Object.hasOwn(rows, key) || row?.id !== key || !['user', 'assistant'].includes(row.role)) {
+                abort('message_mismatch');
+            }
+            const file = (await files.messageFiles(row)).find(f => f.id === params.file);
+            if (!file) abort('unknown_file');
+            if (await currentUser() !== user) abort('account_mismatch');
+            if (location.href !== page) abort('route_changed');
+            const {data} = await files.original(file, maxBytes);
+            if (await currentUser() !== user) abort('account_mismatch');
+            if (location.href !== page) abort('route_changed');
+            return verified({message: key, file: file.id,
+                attachment: {name: file.name, mime_type: file.mime_type, data_base64: data}});
+        }
 
         if (op === 'activity') {
             // Z.ai also publishes last_run in its lightweight list. Prove an
@@ -154,13 +185,16 @@ async function zaiPage({op, expected, args}) {
                     if (!Object.hasOwn(raw, key) || !msg) continue;
                     if (msg.id !== key) abort('message_mismatch');
                     if (msg.role !== 'user' && msg.role !== 'assistant') continue;
-                    const projected = {id: key, role: msg.role};
+                    const projected = {id: key, role: msg.role,
+                        attachments: (await files.messageFiles(msg)).map(files.metadata)};
                     if (typeof msg.content === 'string') projected.content = msg.content;
                     if (Array.isArray(msg.content_blocks)) {
                         if (msg.content_blocks.length > 1024) abort('projection_too_large');
                         projected.content_blocks = msg.content_blocks.map(block => ({
                             type: typeof block?.type === 'string' ? block.type : undefined,
-                            content: typeof block?.content === 'string' ? block.content : undefined,
+                            content: typeof block?.content === 'string' &&
+                                !(['image', 'file', 'image_url', 'file_url'].includes(block.type) && block.content.startsWith('data:'))
+                                ? block.content : undefined,
                         }));
                     }
                     if (typeof msg.model === 'string') projected.model = msg.model;
@@ -177,6 +211,7 @@ async function zaiPage({op, expected, args}) {
 
         if (op === 'open') {
             await detail(id, user);
+            if (await currentUser() !== user) abort('account_mismatch');
             const blank = ready(null, '');
             if (!blank) abort('not_blank');
             const selected = document.querySelector('button[data-selected="true"]');
@@ -214,6 +249,8 @@ async function zaiPage({op, expected, args}) {
             }
             const ui = ready(id, '');
             if (!ui) abort('not_ready');
+            const previous = globalThis[stateKey];
+            if (previous?.started && (!previous.spent || previous.id == null || previous.id === id)) abort('submission_changed');
             const ticket = crypto.randomUUID();
             globalThis[stateKey] = {ticket, editor: ui.editor, id, count, prefix, known};
             return verified({ticket});
@@ -222,12 +259,28 @@ async function zaiPage({op, expected, args}) {
         const saved = globalThis[stateKey];
         if (!saved || saved.ticket !== params?.ticket) abort('submission_changed');
         if (op === 'click') {
-            if (saved.spent || saved.id !== id) abort('submission_changed');
-            const {text} = params;
+            if (saved.started || saved.id !== id) abort('submission_changed');
+            saved.started = true;
+            attemptState = saved;
+            const {text, files: attachments} = params;
+            saved.files = await Promise.all(attachments.map(async file => ({
+                name: file.name, type: file.mime_type.toLowerCase(), digest: await hash(file.data_base64),
+            })));
+            if (await currentUser() !== user) abort('account_mismatch');
             const ui = ready(id, '');
             if (!ui || ui.editor !== saved.editor) abort('not_ready');
+            const selection = attachments.length ? files.selectFiles(ui.editor, attachments) : null;
+            function checkEditor(draft) {
+                const current = controls();
+                if (!at(id) || (id == null && document.querySelector(messageSelector)) ||
+                    saved !== globalThis[stateKey] || current.phase !== 'idle' ||
+                    current.editor !== ui.editor || current.editor.value !== draft) abort('composer_changed');
+                return current;
+            }
+            checkEditor('');
             ui.editor.focus({preventScroll: true});
-            if (document.activeElement !== ui.editor || ready(id, '')?.editor !== ui.editor) abort('focus_changed');
+            checkEditor('');
+            if (document.activeElement !== ui.editor || (!selection && !ready(id, ''))) abort('focus_changed');
             // Chrome's native textarea edit emits the normal input event in the
             // same JS task as the route/focus check. It cannot type into a
             // different document between two CDP commands.
@@ -240,13 +293,22 @@ async function zaiPage({op, expected, args}) {
                 ui.editor.removeEventListener('input', onInput);
             }
             await Promise.resolve(); // allow the client to update its Send button
-            const filled = ready(id, text);
-            if (!inputSeen || !filled || filled.editor !== ui.editor || filled.button.disabled ||
-                filled.button.getAttribute('aria-disabled') === 'true') abort('input_unconfirmed');
+            if (!inputSeen) abort('input_unconfirmed');
+            const sendReady = () => {
+                const {button} = checkEditor(text);
+                return files.selectionReady(ui.editor, selection) && !button.disabled &&
+                    button.getAttribute('aria-disabled') !== 'true' ? button : null;
+            };
+            for (let i = 0; selection && !sendReady() && i < 64; i++) {
+                await new Promise(resolve => setTimeout(resolve, 125));
+            }
+            if (await currentUser() !== user) abort('account_mismatch');
+            const button = sendReady();
+            if (!button) abort('input_unconfirmed');
             saved.spent = true;
             saved.editor = null;
             clicked = true;
-            filled.button.click();
+            button.click();
             return verified({clicked: true});
         }
 
@@ -256,6 +318,7 @@ async function zaiPage({op, expected, args}) {
             if (!found || !at(found) || (id != null && found !== id) ||
                 (saved.id != null && found !== saved.id) || saved.known?.has(found)) abort('route_changed');
             const chat = await detail(found, user);
+            saved.id = found;
             const ids = historyIds(chat);
             if (ids.length < saved.count || (saved.prefix !== null &&
                 await hash(JSON.stringify(ids.slice(0, saved.count))) !== saved.prefix)) abort('history_changed');
@@ -270,8 +333,28 @@ async function zaiPage({op, expected, args}) {
                     if (msg.id !== key || typeof msg.role !== 'string') abort('message_mismatch');
                     if (msg.role !== 'user') continue;
                     const text = typeof msg.content === 'string' ? msg.content :
-                        msg.content_blocks?.filter(b => ['text', 'markdown'].includes(b.type)).map(b => b.content).join('\n');
+                        msg.content_blocks?.filter(b => ['text', 'markdown'].includes(b.type)).map(b => b.content).join('\n') ?? '';
                     if (messageId !== null || text !== params.text) abort('ambiguous_user');
+                    const originals = await files.messageFiles(msg, true);
+                    if (originals.length !== saved.files.length) {
+                        abort('attachment_mismatch');
+                    }
+                    if (originals.length) {
+                        if (await currentUser() !== user) abort('account_mismatch');
+                        if (!at(found)) abort('route_changed');
+                        const expectedFiles = saved.files.slice();
+                        let remaining = maxBytes;
+                        for (const file of originals) {
+                            const {data, size, type} = await files.original(file, remaining);
+                            remaining -= size;
+                            const digest = await hash(data);
+                            const index = expectedFiles.findIndex(f => f.name === file.name && f.digest === digest &&
+                                (f.type === type || f.type === 'application/octet-stream' ||
+                                    (type === 'application/octet-stream' && (!file.image || f.type.startsWith('image/')))));
+                            if (index < 0) abort('attachment_mismatch');
+                            expectedFiles.splice(index, 1);
+                        }
+                    }
                     messageId = key;
                 }
             }
@@ -286,7 +369,10 @@ async function zaiPage({op, expected, args}) {
         abort('invalid_operation');
     } catch (e) {
         const result = e?.status ? {origin, status: e.status} : failure(e?.error || 'unavailable');
-        if (op === 'click' && !clicked) result.clicked = false;
+        if (op === 'click' && !clicked) {
+            if (attemptState && globalThis[stateKey] === attemptState) delete globalThis[stateKey];
+            result.clicked = false;
+        }
         return result;
     }
 }

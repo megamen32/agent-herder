@@ -1,4 +1,5 @@
 //! Strict v1 tool catalog and typed input dispatch. No operation is executed here.
+use crate::domain::attachment::InlineAttachment;
 use crate::domain::resource::{Attachment, ResourceKind, ResourceRef, ResourceScope};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,7 @@ pub struct DeliveryEnvelope {
     pub sender: DeliveryPeer,
     pub input_id: String,
     pub message: String,
+    pub attachments: Option<Vec<InlineAttachment>>,
 }
 
 fn delivery_schema(mut schema: serde_json::Value) -> serde_json::Value {
@@ -60,6 +62,7 @@ macro_rules! catalog {
                         sender: envelope.sender,
                         input_id: envelope.input_id,
                         message: envelope.message,
+                        attachments: envelope.attachments,
                     }),
                     access: Access::Mutate,
                 });
@@ -107,7 +110,7 @@ pub enum DispatchError {
 catalog! {
     "discover" => Discover(Discover) { read: ["nodes", "instances", "models", "projects"], mutate: [] },
     "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
-    "session" => Session(Session) { read: ["recent", "context", "messages", "resolve"], mutate: ["archive", "register", "workspace"] },
+    "session" => Session(Session) { read: ["recent", "context", "messages", "attachment", "resolve"], mutate: ["archive", "register", "workspace"] },
     "create" => Create(Create) { read: [], mutate: ["create"] },
     "deliver" => Deliver(Deliver) { read: ["receipt"], mutate: ["session", "reply_to"] },
     "resume" => Resume(Resume) { read: [], mutate: ["resume"] },
@@ -213,11 +216,12 @@ actions!(Session {
     Recent { session_ref: String, cursor: Option<String> },
     Context { session_ref: Option<String> },
     Messages { session_ref: String, cursor: Option<String> },
+    Attachment { session_ref: String, message_id: String, attachment_id: String },
     Register { instance_ref: String, native_session_id: String, workspace: Option<SessionWorkspace>, request_key: String },
     Workspace { session_ref: String, workspace: Option<SessionWorkspace>, request_key: String },
 });
 actions!(Create {
-    Create { instance_ref: String, project_ref: Option<String>, prompt: String, request_key: String },
+    Create { instance_ref: String, project_ref: Option<String>, prompt: String, attachments: Option<Vec<InlineAttachment>>, request_key: String },
 });
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -228,9 +232,9 @@ pub enum DeliveryMode {
 }
 actions!(Deliver {
     Receipt { session_ref: String, request_key: String },
-    Session { session_ref: String, message: String, mode: DeliveryMode, request_key: String, sender: Option<DeliveryPeer> },
+    Session { session_ref: String, message: String, attachments: Option<Vec<InlineAttachment>>, mode: DeliveryMode, request_key: String, sender: Option<DeliveryPeer> },
     ReplyTo { reply_to: String, message: String, mode: DeliveryMode, request_key: String },
-    Envelope { target: DeliveryPeer, sender: DeliveryPeer, input_id: String, message: String },
+    Envelope { target: DeliveryPeer, sender: DeliveryPeer, input_id: String, message: String, attachments: Option<Vec<InlineAttachment>> },
 });
 actions!(Resume { Resume { session_ref: String, request_key: String } });
 actions!(Stop { Stop { session_ref: String, request_key: String } });
@@ -447,6 +451,11 @@ mod tests {
             (
                 "session",
                 json!({"action":"messages","session_ref":"s"}),
+                Access::Read,
+            ),
+            (
+                "session",
+                json!({"action":"attachment","session_ref":"s","message_id":"m","attachment_id":"file"}),
                 Access::Read,
             ),
             (
@@ -827,6 +836,26 @@ mod tests {
     }
 
     #[test]
+    fn attachments_are_typed_on_create_session_delivery_and_public_envelope() {
+        let peer = json!({"hostId":"node","harness":"chatgpt","nativeSessionId":"native"});
+        let tools = discovery();
+        for (tool, mut args) in [
+            ("create", json!({"action":"create","instance_ref":"i","prompt":"","request_key":"k"})),
+            ("deliver", json!({"action":"session","session_ref":"s","message":"","mode":"queue","request_key":"k"})),
+            ("deliver", json!({"target":peer,"sender":peer,"inputId":"k","message":""})),
+        ] {
+            args["attachments"] = json!([{"name":"file","mime_type":"text/plain","data_base64":"YQ=="}]);
+            let schema = &tools.iter().find(|definition| definition.name == tool).unwrap().input_schema;
+            let validator = jsonschema::validator_for(schema).unwrap();
+            assert!(validator.is_valid(&args));
+            assert_eq!(dispatch(tool, args.clone()).unwrap().access, Access::Mutate);
+            args["attachments"][0]["path"] = json!("/local/file");
+            assert!(!validator.is_valid(&args));
+            assert!(dispatch(tool, args).is_err());
+        }
+    }
+
+    #[test]
     fn exact_delivery_envelope_is_typed_and_uses_input_id_as_request_key() {
         let input = json!({
             "target": {"hostId":"roomhacker-server-100","harness":"opencode","nativeSessionId":"native-target"},
@@ -837,13 +866,14 @@ mod tests {
         let parsed = dispatch("deliver", input.clone()).expect("exact envelope dispatches");
         assert_eq!(parsed.access, Access::Mutate);
         match parsed.request {
-            Request::Deliver(Deliver::Envelope { target, sender, input_id, message }) => {
+            Request::Deliver(Deliver::Envelope { target, sender, input_id, message, attachments }) => {
                 assert_eq!(target.host_id, "roomhacker-server-100");
                 assert_eq!(target.harness, "opencode");
                 assert_eq!(target.native_session_id, "native-target");
                 assert_eq!(sender.host_id, "server-44");
                 assert_eq!(input_id, "stable-input-1");
                 assert_eq!(message, "bounded work delta");
+                assert!(attachments.is_none());
             }
             other => panic!("unexpected request: {other:?}"),
         }

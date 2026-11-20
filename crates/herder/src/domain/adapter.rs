@@ -3,6 +3,85 @@
 //! A decision is based on a snapshot, not a lock: the application must recheck
 //! the hold at admission and the native connection must enforce expected_turn.
 use super::address::{Authorization, Availability, Capability, SessionAddress, Support};
+use super::attachment::{InlineAttachment, validate_attachments};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+/// Transient native send input. Only the content binding crosses into the ledger.
+#[derive(Clone, Copy)]
+pub struct SendPayload<'a> {
+    pub text: &'a str,
+    attachments: &'a [InlineAttachment],
+    attachments_sha256: Option<[u8; 32]>,
+}
+
+impl<'a> From<&'a str> for SendPayload<'a> {
+    fn from(text: &'a str) -> Self {
+        Self {
+            text,
+            attachments: &[],
+            attachments_sha256: None,
+        }
+    }
+}
+
+impl<'a> From<&'a String> for SendPayload<'a> {
+    fn from(text: &'a String) -> Self {
+        text.as_str().into()
+    }
+}
+
+impl<'a> SendPayload<'a> {
+    pub fn new(text: &'a str, attachments: &'a [InlineAttachment]) -> Result<Self, &'static str> {
+        if attachments.is_empty() {
+            return Ok(text.into());
+        }
+        validate_attachments(attachments)?;
+        // Base64 is canonical after validation. Prefix each field with its byte
+        // length so file order and field boundaries survive hashing.
+        let mut digest = Sha256::new();
+        for file in attachments {
+            for field in [&file.name, &file.mime_type, &file.data_base64] {
+                digest.update((field.len() as u64).to_be_bytes());
+                digest.update(field.as_bytes());
+            }
+        }
+        Ok(Self {
+            text,
+            attachments,
+            attachments_sha256: Some(digest.finalize().into()),
+        })
+    }
+
+    pub fn attachments(self) -> &'a [InlineAttachment] {
+        self.attachments
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.text.is_empty() && self.attachments.is_empty()
+    }
+
+    /// A plain request retains its historical JSON string representation. A
+    /// multipart request binds a distinct JSON shape that no string can encode.
+    pub(crate) fn binding(self) -> impl Serialize + 'a {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Binding<'a> {
+            Text(&'a str),
+            WithAttachments {
+                text: &'a str,
+                attachments_sha256: [u8; 32],
+            },
+        }
+        match self.attachments_sha256 {
+            Some(attachments_sha256) => Binding::WithAttachments {
+                text: self.text,
+                attachments_sha256,
+            },
+            None => Binding::Text(self.text),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterKind {

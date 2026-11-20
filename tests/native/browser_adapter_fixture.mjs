@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { json as readJson } from "node:stream/consumers";
+import { buffer as readBytes, json as readJson } from "node:stream/consumers";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright-core");
 const [harness, originPort, evidenceDir] = process.argv.slice(2);
@@ -26,7 +26,13 @@ const accountName = "local-" + harness + "-fixture";
 let account = accountName;
 const chats = new Map();
 const sends = [];
-let withholdReceipt = false;
+const files = new Map();
+const uploads = [];
+const downloads = [];
+const stops = [];
+const active = new Map();
+let holdNext = false;
+let withholdAfter = null;
 const requests = {};
 const documents = [];
 const unexpected = [];
@@ -36,11 +42,28 @@ for (const [i, seed] of seeds.entries()) {
   })));
 }
 
+function storeFile(name, mime_type, bytes) {
+  const id = (harness === "chatgpt" ? "file-" : "") + randomUUID();
+  const meta = { id, name, mime_type, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  files.set(id, { meta, bytes });
+  return meta;
+}
+
+// These originals exist only at the provider. A local cache of sent inputs
+// cannot satisfy a download from the assistant's message.
+const replyOriginals = [
+  { name: "answer.png", mime_type: "image/png",
+    data_base64: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGNwOWMMRAAI/gKHQDGqxAAAAABJRU5ErkJggg==" },
+  { name: "answer.bin", mime_type: "application/octet-stream",
+    data_base64: Buffer.from([0x80, 0, 0xde, 0xad, 0x0a, 0xff]).toString("base64") },
+];
+
 function inventory() {
   return [...chats.keys()].map((id, i) => ({
     id, title: "Fixture " + (i + 1), create_time: 1700000000 + i,
     update_time: 1700000000 + i, updated_at: 1700000000 + i,
-    ...(harness === "chatgpt" ? { async_status: 0 } : { last_run: { status: "completed" } }),
+    ...(harness === "chatgpt" ? { async_status: active.has(id) ? 1 : 0 }
+      : { last_run: { status: active.has(id) ? "running" : "completed" } }),
   }));
 }
 
@@ -49,54 +72,180 @@ function chatgptConversation(id, rows) {
   let parent = null;
   for (const [i, row] of rows.entries()) {
     if (parent) mapping[parent].children.push(row.id);
+    const attached = row.files ?? [];
+    const images = attached.filter(f => f.mime_type.startsWith("image/")).map(f => ({
+      content_type: "image_asset_pointer", asset_pointer: "file-service://" + f.id,
+      size_bytes: f.size, width: 2, height: 1,
+    }));
+    const running = row.role === "assistant" && active.get(id) === parent;
     mapping[row.id] = { id: row.id, parent, children: [], message: {
       id: row.id, author: { role: row.role }, create_time: 1700000000 + i,
-      content: { content_type: "text", parts: [row.text] },
-      status: "finished_successfully", end_turn: true, recipient: "all",
+      content: { content_type: images.length ? "multimodal_text" : "text", parts: [...images, row.text] },
+      metadata: { attachments: attached.map(({ id, name, mime_type, size }) => ({ id, name, mime_type, size })) },
+      status: running ? "in_progress" : "finished_successfully", end_turn: !running, recipient: "all",
     } };
     parent = row.id;
   }
-  return { id, conversation_id: id, title: "Fixture chat", current_node: parent, mapping };
+  return { id, conversation_id: id, title: "Fixture chat", current_node: parent, mapping,
+    is_generating: active.has(id) };
 }
 
-function zaiMessages(rows) {
-  return Object.fromEntries(rows.map((row, i) => [row.id, {
-    id: row.id, role: row.role, content: row.text, created_at: 1700000000 + i,
-    parentId: rows[i - 1]?.id ?? null, childrenIds: rows[i + 1] ? [rows[i + 1].id] : [],
-  }]));
+function zaiMessages(id, rows) {
+  return Object.fromEntries(rows.map((row, i) => {
+    const attached = row.files ?? [];
+    const inline = row.role === "assistant" ? attached.filter(f => f.mime_type.startsWith("image/")) : [];
+    const message = {
+      id: row.id, role: row.role, content: row.text, created_at: 1700000000 + i,
+      parentId: rows[i - 1]?.id ?? null, childrenIds: rows[i + 1] ? [rows[i + 1].id] : [],
+      done: !(row.role === "assistant" && active.get(id) === rows[i - 1]?.id),
+      files: attached.filter(f => !inline.includes(f)).map(f => ({
+        type: f.mime_type.startsWith("image/") ? "image" : "file", id: f.id, name: f.name,
+        url: "/api/v1/files/" + f.id + "/content", size: f.size,
+        file: { id: f.id, filename: f.name, meta: { name: f.name, content_type: f.mime_type, size: f.size } },
+      })),
+    };
+    if (inline.length) {
+      message.content_blocks = [{ type: "text", content: row.text }, ...inline.map(f => ({
+        type: "image_url", name: f.name,
+        image_url: { url: "data:" + f.mime_type + ";base64," + files.get(f.id).bytes.toString("base64") },
+      }))];
+    }
+    return [row.id, message];
+  }));
 }
 
-// This page only records a send when the browser submits its actual form.
-function renderPage(initialRows) {
+// Runs in Chrome. Only actual File objects from the picker's change event
+// reach the upload endpoint, and only form submission links them to a message.
+function installPage(harness, initialRows, activeInput) {
+  const form = document.querySelector("form");
+  const composer = form.querySelector("[contenteditable],textarea");
+  const picker = document.querySelector("input[type=file]");
+  const submit = form.querySelector("button[type=submit]");
+  const stop = form.querySelector("button[type=button]");
+  const chips = form.querySelector(".attachments");
+  const uploaded = [];
+  let pending = 0;
+  const chatId = () => location.pathname.split("/")[2] || null;
+  function controls() {
+    submit.hidden = Boolean(activeInput);
+    const hasText = Boolean((composer.value ?? composer.innerText).trim());
+    // Z.ai 1.2.21 requires a caption even after the upload has finished.
+    submit.disabled = pending > 0 || (!hasText && (harness === "zai" || !uploaded.length));
+    stop.hidden = !activeInput;
+  }
+  async function post(path, payload) {
+    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload) });
+    if (!response.ok) throw Error("fixture POST failed " + path);
+    return response.json();
+  }
+  function append(row) {
+    const node = document.createElement("article");
+    node.className = row.role + "-message";
+    node.dataset.messageAuthorRole = row.role;
+    node.dataset.messageId = row.id;
+    node.id = "message-" + row.id;
+    node.textContent = row.text;
+    for (const file of row.files ?? []) {
+      if (!file.mime_type.startsWith("image/")) {
+        const link = document.createElement("a");
+        link.textContent = file.name;
+        link.href = harness === "chatgpt" ? "/backend-api/files/" + file.id + "/download"
+          : "/api/v1/files/" + file.id + "/content";
+        node.append(link);
+        continue;
+      }
+      const img = document.createElement("img");
+      img.alt = file.name;
+      // The displayed thumbnail deliberately differs from every original.
+      img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+      node.append(img);
+    }
+    document.querySelector("main").append(node);
+  }
+  picker.onchange = async () => {
+    const selected = [...picker.files];
+    pending++;
+    controls();
+    try {
+      for (const file of selected) {
+        const query = new URLSearchParams({ name: file.name, mime_type: file.type });
+        const response = await fetch("/__fixture/upload?" + query, { method: "POST", body: file });
+        if (!response.ok) throw Error("fixture upload failed");
+        const meta = await response.json();
+        uploaded.push(meta.id);
+        const chip = document.createElement("span");
+        if (harness === "chatgpt") {
+          chip.dataset.fileId = meta.id;
+          chip.dataset.testid = "file-pill";
+          chip.textContent = file.name;
+        } else {
+          const label = document.createElement("span");
+          label.className = "truncate";
+          label.textContent = file.name;
+          chip.append(label);
+        }
+        chips.append(chip);
+      }
+    } finally {
+      picker.value = "";
+      pending--;
+      controls();
+    }
+  };
+  composer.oninput = controls;
+  submit.addEventListener("click", () => {
+    const count = Number(localStorage.getItem("fixtureSubmitClicks"));
+    localStorage.setItem("fixtureSubmitClicks", String(count + 1));
+  });
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (submit.disabled || activeInput) return;
+    const result = await post("/__fixture/send", {
+      id: chatId(), text: composer.value ?? composer.innerText, files: uploaded.slice(),
+    });
+    history.replaceState({}, "", "/c/" + result.id);
+    if ("value" in composer) composer.value = ""; else composer.textContent = "";
+    uploaded.length = 0;
+    chips.replaceChildren();
+    result.rows.forEach(append);
+    activeInput = result.activeInput;
+    controls();
+  };
+  stop.onclick = async () => {
+    await post("/__fixture/stop", { id: chatId(), inputMessageId: activeInput });
+    activeInput = null;
+    controls();
+  };
+  onpopstate = async () => {
+    const response = await fetch("/__fixture/view/" + chatId());
+    if (!response.ok) throw Error("fixture route not found");
+    const data = await response.json();
+    document.querySelector("main").replaceChildren();
+    data.rows.forEach(append);
+    activeInput = data.activeInput;
+    controls();
+  };
+  initialRows.forEach(append);
+  controls();
+}
+
+function renderPage(id) {
   const composer = harness === "chatgpt"
     ? '<div id="prompt-textarea" contenteditable="true" role="textbox" data-composer-markdown></div>'
     : '<textarea id="chat-input" placeholder="Send a Message"></textarea>';
+  const stop = harness === "chatgpt"
+    ? '<button type="button" data-testid="stop-button" aria-label="Stop generating" hidden>Stop</button>'
+    : '<button type="button" hidden><span class="block size-3 rounded-xs bg-text-inverted">■</span></button>';
+  const state = JSON.stringify([harness, chats.get(id) ?? [], active.get(id) ?? null]).replaceAll("<", "\\u003c");
+  const picker = harness === "chatgpt" ? '<input id="upload-files" type="file" multiple hidden>'
+    : '<input type="file" multiple hidden>';
   return `<!doctype html><meta charset="utf-8"><title>Local browser fixture</title>
     <nav id="chat-group-tab-zai-web"></nav><main></main>
-    <form>${composer}<button id="send-message-button" data-testid="send-button" aria-label="Send message" type="submit">Send</button></form>
-    <script>
-      const composer = document.querySelector('[contenteditable],textarea');
-      function append(row) {
-        const node = document.createElement('article');
-        node.dataset.messageAuthorRole = row.role;
-        node.dataset.messageId = row.id;
-        node.textContent = row.text;
-        document.querySelector('main').append(node);
-      }
-      ${JSON.stringify(initialRows).replaceAll("<", "\\u003c")}.forEach(append);
-      document.querySelector('form').onsubmit = async event => {
-        event.preventDefault();
-        const text = composer.value ?? composer.innerText;
-        const response = await fetch('/__fixture/send', {method: 'POST',
-          headers: {'content-type': 'application/json'},
-          body: JSON.stringify({id: location.pathname.split('/')[2] || null, text})});
-        if (!response.ok) throw Error('fixture submit failed');
-        const {id, rows} = await response.json();
-        history.replaceState({}, '', '/c/' + id);
-        if ('value' in composer) composer.value = ''; else composer.textContent = '';
-        rows.forEach(append);
-      };
-    </script>`;
+    ${harness === "zai" ? picker : ""}<form>${composer}${harness === "chatgpt" ? picker : ""}
+    <div class="attachments${harness === "zai" ? " _upload-files-scope" : ""}"></div>
+    <button id="send-message-button" data-testid="send-button" aria-label="Send message" type="submit">Send</button>${stop}</form>
+    <script>(${installPage})(...${state});</script>`;
 }
 
 async function serve(request, response) {
@@ -107,7 +256,7 @@ async function serve(request, response) {
   const json = (body, status = 200) =>
     response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
   const count = key => { requests[key] = (requests[key] ?? 0) + 1; };
-  const receiptUnavailable = id => withholdReceipt && id === sends[0]?.id;
+  const receiptUnavailable = id => withholdAfter !== null && id === sends[withholdAfter]?.id;
   const denyReceiptRead = () => {
     count("withheldReceipt");
     return json({ error: "fixture receipt unavailable" }, 503);
@@ -117,22 +266,67 @@ async function serve(request, response) {
       count("document");
       documents.push(path);
       return response.writeHead(200, { "content-type": "text/html; charset=utf-8" })
-        .end(renderPage(chats.get(path.slice(3)) ?? []));
+        .end(renderPage(path.slice(3)));
     }
     if (method === "GET" && path === "/favicon.ico") return response.writeHead(204).end();
+    if (method === "POST" && path === "/__fixture/upload") {
+      const file = storeFile(url.searchParams.get("name"), url.searchParams.get("mime_type"), await readBytes(request));
+      uploads.push(file);
+      return json(file);
+    }
+    if (method === "GET" && path.startsWith("/__fixture/view/")) {
+      const id = path.slice("/__fixture/view/".length);
+      return chats.has(id) ? json({ rows: chats.get(id), activeInput: active.get(id) ?? null }) : json({}, 404);
+    }
+    if (method === "POST" && path === "/__fixture/stop") {
+      const { id, inputMessageId } = await readJson(request);
+      const accepted = active.has(id) && active.get(id) === inputMessageId;
+      stops.push({ id, inputMessageId, accepted });
+      if (!accepted) return json({ error: "input is not generating" }, 409);
+      active.delete(id);
+      return json({ stopped: true });
+    }
     if (method === "POST" && path === "/__fixture/send") {
-      const { id: addressed, text } = await readJson(request);
+      count("submit");
+      const { id: addressed, text, files: selected } = await readJson(request);
       const id = addressed ?? randomUUID();
+      if (addressed && !chats.has(id)) return json({ error: "unknown conversation" }, 404);
+      if (active.has(id)) return json({ error: "chat is generating" }, 409);
       const turn = sends.length + 1;
+      const attached = selected.map(key => files.get(key).meta);
+      if (!text.trim() && (harness === "zai" || !attached.length)) return json({ error: "empty submit" }, 400);
+      const replyFiles = !addressed && attached.length
+        ? replyOriginals.map(f => storeFile(f.name, f.mime_type, Buffer.from(f.data_base64, "base64"))) : [];
       const rows = [
-        { id: randomUUID(), role: "user", text },
-        { id: randomUUID(), role: "assistant", text: "Fixture answer " + turn },
+        { id: randomUUID(), role: "user", text, files: attached },
+        { id: randomUUID(), role: "assistant", text: "Fixture answer " + turn, files: replyFiles },
       ];
       sends.push({ id, addressed, account, rows });
       if (!addressed) chats.set(id, []);
-      if (!chats.has(id)) return json({ error: "unknown conversation" }, 404);
       chats.get(id).push(...rows);
-      return json({ id, rows });
+      if (holdNext) active.set(id, rows[0].id);
+      holdNext = false;
+      return json({ id, rows, activeInput: active.get(id) ?? null });
+    }
+    // Both download services identify the original by file ID alone. The
+    // adapter must prove chat/message membership before contacting one.
+    const downloadMatch = harness === "chatgpt" ? path.match(/^\/backend-api\/files\/([^/]+)\/download$/) : null;
+    if (method === "GET" && downloadMatch) {
+      const id = downloadMatch[1];
+      count("downloadLink");
+      if (!files.has(id)) return json({}, 404);
+      return json({ status: "success", file_name: files.get(id).meta.name,
+        download_url: origin + "/backend-api/estuary/content?id=" + id });
+    }
+    const original = harness === "chatgpt"
+      ? path === "/backend-api/estuary/content" && url.searchParams.get("id")
+      : path.match(/^\/api\/v1\/files\/([^/]+)\/content$/)?.[1];
+    if (method === "GET" && original) {
+      const entry = files.get(original);
+      if (!entry) return json({}, 404);
+      downloads.push({ id: entry.meta.id, sha256: entry.meta.sha256, account });
+      return response.writeHead(200, { "content-type": entry.meta.mime_type, "content-length": entry.bytes.length })
+        .end(entry.bytes);
     }
     if (harness === "chatgpt" && method === "GET") {
       if (path === "/api/auth/session") {
@@ -151,7 +345,7 @@ async function serve(request, response) {
         if (receiptUnavailable(id)) return denyReceiptRead();
         const conversation = chatgptConversation(id, chats.get(id));
         return endpoint === "conversation" ? json(conversation) : json({
-          conversation_id: id, messages: Object.values(conversation.mapping).map(n => n.message),
+          conversation_id: id, is_generating: active.has(id), messages: Object.values(conversation.mapping).map(n => n.message),
         });
       }
     }
@@ -168,7 +362,7 @@ async function serve(request, response) {
       if (match && (match[2] ? method === "POST" : method === "GET")) {
         const id = match[1];
         if (!chats.has(id)) return json({}, 404);
-        const data = zaiMessages(chats.get(id));
+        const data = zaiMessages(id, chats.get(id));
         if (match[2]) {
           count("batch");
           if (receiptUnavailable(id)) return denyReceiptRead();
@@ -176,7 +370,8 @@ async function serve(request, response) {
           return json({ chat_id: id, data: Object.fromEntries(ids.filter(k => k in data).map(k => [k, data[k]])) });
         }
         count("read");
-        return json({ id, user_id: account, title: "Fixture chat",
+        return json({ id, user_id: accountName, title: "Fixture chat",
+          last_run: { status: active.has(id) ? "running" : "completed" },
           chat: { history: { messages: data, currentId: chats.get(id).at(-1)?.id } } });
       }
     }
@@ -257,12 +452,15 @@ try {
     const { id, method, params } = JSON.parse(line);
     let result;
     switch (method) {
-      case "setup": result = { env, seedIds, version: product }; break;
-      case "snapshot": result = { sends, requests, documents, unexpected, pinnedRoute: new URL(page.url()).pathname }; break;
+      case "setup": result = { env, seedIds, version: product, replyOriginals }; break;
+      case "snapshot": result = { sends, requests, uploads, downloads, stops, active: Object.fromEntries(active),
+        chatIds: [...chats.keys()], submitClicks: await page.evaluate(() => Number(localStorage.getItem("fixtureSubmitClicks"))),
+        documents, unexpected, pinnedRoute: new URL(page.url()).pathname }; break;
       case "switchAccount": account = accountName + "-other"; result = true; break;
+      case "holdNext": holdNext = true; result = true; break;
       case "withholdReceipt":
         assert.equal(typeof params.enabled, "boolean");
-        withholdReceipt = params.enabled;
+        withholdAfter = params.enabled ? sends.length : null;
         result = true;
         break;
       case "screenshots":

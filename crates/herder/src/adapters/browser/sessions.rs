@@ -1,5 +1,5 @@
 use super::{
-    BrowserActivity, BrowserSubmitError, Config, Provider,
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, Config, Provider,
     drafts::{Draft, DraftState, DraftStore},
     port::Page,
     protocol::RpcError,
@@ -239,6 +239,72 @@ impl Sessions {
         }
     }
 
+    /// A pending draft has no provider conversation. An unsettled draft cannot
+    /// be inferred from the current tab, even when it happens to be busy.
+    fn bound_route(
+        &self,
+        provider: Provider,
+        id: &str,
+    ) -> Result<Option<(String, Option<String>)>, RpcError> {
+        match provider.parse_id(id)? {
+            SessionId::Remote(remote) => Ok(Some((remote.to_owned(), None))),
+            SessionId::Draft(key) => {
+                let draft = self.drafts.get(&key).map_err(stored_error)?;
+                match (draft.state, draft.remote_id) {
+                    (DraftState::Pending, None) => Ok(None),
+                    (DraftState::Admitted, Some(remote)) => Ok(Some((remote, draft.target_id))),
+                    _ => Err(RpcError::Unavailable),
+                }
+            }
+        }
+    }
+
+    pub(super) async fn attachment(
+        &mut self,
+        config: &Config,
+        id: &str,
+        message: &str,
+        file: &str,
+    ) -> Result<BrowserAttachment, RpcError> {
+        let (remote, _) = self
+            .bound_route(config.provider, id)?
+            .ok_or(RpcError::Missing)?;
+        self.anchor.attachment(&remote, message, file).await
+    }
+
+    pub(super) async fn cancel(
+        &mut self,
+        config: &Config,
+        id: &str,
+        input: &str,
+    ) -> Result<bool, RpcError> {
+        self.anchor.verify_scope(config).await?;
+        let Some((remote, saved_target)) = self.bound_route(config.provider, id)? else {
+            return Ok(false);
+        };
+        if let Some((route, page)) = &mut self.writer
+            && route == &remote
+        {
+            match page.on_route(config.provider, &remote).await {
+                Ok(true) => return page.cancel(&remote, input).await,
+                Ok(false) | Err(RpcError::Unavailable) => self.writer = None,
+                Err(error) => return Err(error),
+            }
+        }
+        if let Some(target) = saved_target.filter(|t| t != self.anchor.target())
+            && let Ok(mut page) = Page::attach(config, &target).await
+            && page.on_route(config.provider, &remote).await?
+        {
+            return page.cancel(&remote, input).await;
+        }
+        if self.anchor.on_route(config.provider, &remote).await? {
+            return self.anchor.cancel(&remote, input).await;
+        }
+        let target = self.anchor.existing_target(config, &remote).await?;
+        let mut page = Page::attach(config, &target).await?;
+        page.cancel(&remote, input).await
+    }
+
     /// Never navigate a pinned or reattached tab. Only a newly created private
     /// working tab can be opened on an off-screen conversation.
     async fn writer_for(
@@ -291,6 +357,7 @@ impl Sessions {
         config: &Config,
         key: &str,
         text: &str,
+        files: &[BrowserAttachment],
     ) -> Result<String, BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         // A reserved draft stays uncertain across a crash or a missing receipt.
@@ -302,7 +369,7 @@ impl Sessions {
                 return Err(BeforeSend);
             }
         };
-        match fresh.submit(None, text).await {
+        match fresh.submit(None, text, files).await {
             Ok((remote, message)) if valid_route(&remote) && super::valid_label(&message) => {
                 self.drafts
                     .bind(key, &remote, &message, fresh.target())
@@ -327,6 +394,7 @@ impl Sessions {
         config: &Config,
         id: &str,
         text: &str,
+        files: &[BrowserAttachment],
     ) -> Result<String, BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         let session = config.provider.parse_id(id).map_err(|_| BeforeSend)?;
@@ -340,7 +408,9 @@ impl Sessions {
             SessionId::Draft(key) => {
                 draft = self.drafts.get(&key).map_err(|_| BeforeSend)?;
                 match (&draft.state, draft.remote_id.as_deref()) {
-                    (DraftState::Pending, None) => return self.first(config, &key, text).await,
+                    (DraftState::Pending, None) => {
+                        return self.first(config, &key, text, files).await;
+                    }
                     (DraftState::Admitted, Some(remote)) => (remote, draft.target_id.as_deref()),
                     _ => return Err(Unknown),
                 }
@@ -350,7 +420,7 @@ impl Sessions {
             .writer_for(config, remote, target)
             .await
             .map_err(|_| BeforeSend)?;
-        let (confirmed, message) = writer.submit(Some(remote), text).await?;
+        let (confirmed, message) = writer.submit(Some(remote), text, files).await?;
         if confirmed != remote || !super::valid_label(&message) {
             return Err(Unknown);
         }

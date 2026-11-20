@@ -1,17 +1,26 @@
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::HashSet,
+    hash::{BuildHasher, RandomState},
+    time::Duration,
+};
 
 use serde_json::{Value, json};
 use tokio::time::{sleep, timeout};
 
 use super::{CdpError, ChatGptReadError, ChatGptReader, NormalizeError, NormalizedMessage};
-use crate::adapters::browser::{BrowserActivity, BrowserSubmitError};
+use crate::adapters::browser::{
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES,
+    validate_attachments,
+};
 
 const NATIVE: &str = include_str!("native.js");
 const READ: &str = include_str!("read.js");
 const COMPOSER: &str = include_str!("composer.js");
+const CANCEL: &str = include_str!("cancel.js");
+const DOWNLOAD: &str = include_str!("download.js");
 const ORIGIN: &str = "https://chatgpt.com";
 
-fn native_id(id: &str) -> bool {
+pub(super) fn native_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && id
@@ -29,6 +38,8 @@ impl ChatGptReader {
     async fn native(&mut self, op: &str, mut args: Value) -> Result<Value, ChatGptReadError> {
         let operation = match op {
             "list" | "read" | "activity" => READ,
+            "cancel" => CANCEL,
+            "download" => DOWNLOAD,
             _ => COMPOSER,
         };
         args["op"] = json!(op);
@@ -67,6 +78,7 @@ impl ChatGptReader {
                 NormalizeError::ConversationMismatch,
             )),
             Some("mapping") => Err(ChatGptReadError::Normalize(NormalizeError::MissingMapping)),
+            Some("missing") => Err(ChatGptReadError::ProviderStatus(404)),
             Some("context_too_large") => {
                 Err(ChatGptReadError::Normalize(NormalizeError::ContextTooLarge))
             }
@@ -121,6 +133,54 @@ impl ChatGptReader {
         }
     }
 
+    pub async fn cancel_turn(
+        &mut self,
+        remote: &str,
+        input_message_id: &str,
+    ) -> Result<bool, ChatGptReadError> {
+        check_id(remote)?;
+        check_id(input_message_id)?;
+        let value = self
+            .native(
+                "cancel",
+                json!({"id": remote, "inputMessageId": input_message_id}),
+            )
+            .await?;
+        if value["id"].as_str() != Some(remote)
+            || value["inputMessageId"].as_str() != Some(input_message_id)
+        {
+            return Err(ChatGptReadError::InvalidResponse);
+        }
+        value["stopped"]
+            .as_bool()
+            .ok_or(ChatGptReadError::InvalidResponse)
+    }
+
+    pub async fn read_attachment(
+        &mut self,
+        remote: &str,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> Result<BrowserAttachment, ChatGptReadError> {
+        check_id(remote)?;
+        check_id(message_id)?;
+        check_id(attachment_id)?;
+        let mut value = self.native("download", json!({
+            "id": remote, "messageId": message_id, "attachmentId": attachment_id, "maxBytes": MAX_ATTACHMENT_BYTES
+        })).await?;
+        if value["id"].as_str() != Some(remote)
+            || value["messageId"].as_str() != Some(message_id)
+            || value["attachmentId"].as_str() != Some(attachment_id)
+        {
+            return Err(ChatGptReadError::InvalidResponse);
+        }
+        let file: BrowserAttachment = serde_json::from_value(value["attachment"].take())
+            .map_err(|_| ChatGptReadError::InvalidResponse)?;
+        file.validate()
+            .map_err(|_| ChatGptReadError::InvalidResponse)?;
+        Ok(file)
+    }
+
     /// The initial blank target can be navigated once. An attached page
     /// (including an attached blank page) can never be repurposed.
     pub async fn open_conversation(&mut self, id: &str) -> Result<(), ChatGptReadError> {
@@ -166,15 +226,29 @@ impl ChatGptReader {
         conversation_id: Option<&str>,
         text: &str,
     ) -> Result<(String, String), BrowserSubmitError> {
+        self.submit_with_attachments(conversation_id, text, &[])
+            .await
+    }
+
+    pub async fn submit_with_attachments(
+        &mut self,
+        conversation_id: Option<&str>,
+        text: &str,
+        attachments: &[BrowserAttachment],
+    ) -> Result<(String, String), BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
-        if text.trim().is_empty()
+        if (text.trim().is_empty() && attachments.is_empty())
             || text.len() > 16_000
             || conversation_id.is_some_and(|id| !native_id(id))
             || (conversation_id.is_none() && !(self.fresh_blank && self.cdp.owns_target()))
         {
             return Err(BeforeSend);
         }
-        let args = json!({"id": conversation_id, "text": text});
+        validate_attachments(attachments).map_err(|_| BeforeSend)?;
+        // Independent readers can share a Chrome target. Bind all stages to
+        // this invocation, including two submissions with identical content.
+        let ticket = RandomState::new().hash_one(()).to_string();
+        let args = json!({"id": conversation_id, "text": text, "ticket": ticket});
         let value = self
             .native("baseline", args.clone())
             .await
@@ -186,13 +260,15 @@ impl ChatGptReader {
         {
             return Err(BeforeSend);
         }
-        if self
-            .native("fill", args.clone())
-            .await
-            .map_err(|_| BeforeSend)?
-            != true
-        {
-            return Err(BeforeSend);
+        let mut fill = args.clone();
+        fill["attachments"] = json!(attachments);
+        match self.native("fill", fill).await {
+            Ok(Value::Bool(true)) => {}
+            Ok(Value::String(status)) if status == "unknown" => {
+                self.fresh_blank = false;
+                return Err(Unknown);
+            }
+            _ => return Err(BeforeSend),
         }
         let fresh = self.fresh_blank;
         self.fresh_blank = false;
@@ -214,7 +290,7 @@ impl ChatGptReader {
                     sleep(Duration::from_millis(200 * attempt)).await;
                 }
                 let value = self.native("receipt", json!({
-                    "id": conversation_id, "observedId": observed, "before": before, "text": text,
+                    "id": conversation_id, "observedId": observed, "before": before, "text": text, "ticket": ticket,
                 })).await.map_err(|_| Unknown)?;
                 match value.get("id") {
                     Some(Value::String(id))

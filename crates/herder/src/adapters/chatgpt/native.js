@@ -36,19 +36,23 @@ async function chatGptNative(operation, request) {
     if (location.origin !== origin) fail('origin');
     return data;
   };
-  const conversation = async (id, turns, legacy = false) => {
-    if (!validId(id)) fail('invalid');
-    const encoded = encodeURIComponent(id);
-    let data;
-    try {
-      data = await get('/backend-api/conversations/' + encoded +
-        '?num_turns=' + turns + '&include_has_versions=true');
-    } catch (error) {
-      if (!legacy || !(error instanceof ReadFailure) || ![404, 405].includes(error.status)) throw error;
-      data = await get('/backend-api/conversation/' + encoded);
-    }
+  const identified = (id, data) => {
     if (data?.conversation_id !== id) fail('identity');
     return data;
+  };
+  const fullConversation = async id => {
+    if (!validId(id)) fail('invalid');
+    return identified(id, await get('/backend-api/conversation/' + encodeURIComponent(id)));
+  };
+  const conversation = async (id, turns, legacy = false) => {
+    if (!validId(id)) fail('invalid');
+    try {
+      return identified(id, await get('/backend-api/conversations/' + encodeURIComponent(id) +
+        '?num_turns=' + turns + '&include_has_versions=true'));
+    } catch (error) {
+      if (!legacy || !(error instanceof ReadFailure) || ![404, 405].includes(error.status)) throw error;
+      return fullConversation(id);
+    }
   };
   const list = async (offset, limit) => {
     const data = await get('/backend-api/conversations?offset=' + offset + '&limit=' + limit + '&order=updated');
@@ -57,9 +61,9 @@ async function chatGptNative(operation, request) {
   };
   // The plural endpoint supplies the current branch in display order. The
   // legacy mapping can contain siblings and private tool/analysis branches.
-  function* newestFirst(data) {
+  function* newestFirst(data, limit = 1024) {
     if (Array.isArray(data.messages)) {
-      const floor = Math.max(0, data.messages.length - 1024);
+      const floor = Math.max(0, data.messages.length - limit);
       for (let i = data.messages.length - 1; i >= floor; --i) yield data.messages[i];
       return;
     }
@@ -75,8 +79,8 @@ async function chatGptNative(operation, request) {
       cursor = tips[0];
     }
     const seen = new Set();
-    while (cursor && seen.size < 1024) {
-      if (!Object.hasOwn(mapping, cursor) || seen.has(cursor)) fail('mapping');
+    while (cursor && seen.size < limit) {
+      if (typeof cursor !== 'string' || !Object.hasOwn(mapping, cursor) || seen.has(cursor)) fail('mapping');
       seen.add(cursor);
       const node = mapping[cursor];
       yield node.message;
@@ -89,17 +93,55 @@ async function chatGptNative(operation, request) {
     if (typeof part?.content === 'string') return part.content;
     return ['image', 'image_asset_pointer'].includes(part?.content_type) ? '[Изображение]' : '';
   };
-  const messageText = message => Array.isArray(message.content?.parts)
-    ? message.content.parts.map(partText).join('\n') : (message.content?.text ?? '');
+  const assetPart = part => ['image_asset_pointer', 'image'].includes(part?.content_type);
+  const messageText = (message, includeImageLabels = true) => Array.isArray(message.content?.parts)
+    ? message.content.parts.filter(part => includeImageLabels || !assetPart(part)).map(partText).join('\n')
+    : (message.content?.text ?? '');
+  const publicMessage = m => validId(m?.id) && !m.metadata?.is_visually_hidden_from_conversation &&
+    (m.author?.role === 'user' || (m.author?.role === 'assistant' &&
+      (!m.channel || ['final', 'commentary'].includes(m.channel)) && (!m.recipient || m.recipient === 'all')));
+  const validName = name => typeof name === 'string' && !!name.trim() && !['.', '..'].includes(name) &&
+    encoder.encode(name).length <= 255 && !/[\\/\p{Cc}]/u.test(name);
+  const validMime = mime => typeof mime === 'string' && mime.length <= 255 &&
+    /^[a-zA-Z0-9!#$%&'+.^_`|~-]+\/[a-zA-Z0-9!#$%&'+.^_`|~-]+$/.test(mime);
+  const filesOf = m => {
+    const files = new Map();
+    const add = (id, raw, image = false) => {
+      if (!validId(id)) return;
+      const previous = files.get(id);
+      if (previous) {
+        previous.image ||= image;
+        return;
+      }
+      const declaredName = raw.name ?? raw.filename ?? raw.metadata?.name ?? raw.metadata?.filename;
+      const name = declaredName ?? id;
+      const declaredMime = raw.mimeType ?? raw.mime_type ?? raw.metadata?.mimeType ?? raw.metadata?.mime_type;
+      const mime = declaredMime ?? 'application/octet-stream';
+      if (!validName(name) || !validMime(mime)) return;
+      files.set(id, {id, name, mime_type: mime, image, declaredName, declaredMime,
+        size: Number.isSafeInteger(raw.size ?? raw.size_bytes) ? (raw.size ?? raw.size_bytes) : undefined});
+    };
+    if (Array.isArray(m.metadata?.attachments)) {
+      for (const file of m.metadata.attachments) add(file?.id ?? file?.file_id, file);
+    }
+    if (Array.isArray(m.content?.parts)) {
+      for (const part of m.content.parts) {
+        if (!assetPart(part) || typeof part.asset_pointer !== 'string') continue;
+        const match = /^(?:file-service|sediment):\/\/([a-zA-Z0-9_-]{1,128})$/.exec(part.asset_pointer);
+        if (match) add(match[1], part, true);
+      }
+    }
+    return [...files.values()];
+  };
   const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility === 'visible';
   const composerSelector = '[contenteditable="true"][role="textbox"][data-composer-markdown],#prompt-textarea[contenteditable="true"],textarea#prompt-textarea';
   const surface = () => {
     const editors = Array.from(document.querySelectorAll(composerSelector)).filter(visible);
     const editor = editors.length === 1 ? editors[0] : null;
     const buttons = Array.from(document.querySelectorAll('button')).filter(visible);
-    const busy = buttons.some(b => b.getAttribute('data-testid') === 'stop-button' ||
+    const stops = buttons.filter(b => b.getAttribute('data-testid') === 'stop-button' ||
       /^(Stop generating|Stop response|Остановить генерацию|Остановить ответ|Остановить)$/i.test(b.getAttribute('aria-label') || ''));
-    return {editor, busy, buttons};
+    return {editor, busy: stops.length > 0, buttons, stops};
   };
   const nativeActivity = entry => {
     const status = entry?.async_status;
@@ -108,7 +150,7 @@ async function chatGptNative(operation, request) {
     if (entry?.is_generating === false || status === 0 || ['idle', 'completed'].includes(status)) return 'idle';
     return 'unknown';
   };
-  const activity = async (id, detail) => {
+  const activity = async (id, detail, inferIdleFromEditor = true) => {
     if (nativeActivity(detail) === 'busy') return 'busy';
     const rows = (await list(0, 100)).items.filter(row => row?.id === id);
     if (rows.length > 1) fail('invalid');
@@ -119,14 +161,14 @@ async function chatGptNative(operation, request) {
     if (state === 'busy') return 'busy';
     if (exact(id) && document.readyState !== 'loading') {
       const {busy, editor} = surface();
-      if (busy || editor) return busy ? 'busy' : 'idle';
+      if (busy || (editor && inferIdleFromEditor)) return busy ? 'busy' : 'idle';
     }
     return state === 'idle' ? state : listed;
   };
   try {
     const sameAccount = async () => (await loadSession())?.account?.id === account;
-    const value = await operation(request, {list, activity, conversation, newestFirst, messageText, sameAccount,
-      validId, fail, exact, surface});
+    const value = await operation(request, {get, list, activity, conversation, fullConversation, newestFirst, messageText, sameAccount,
+      validId, validName, validMime, publicMessage, filesOf, fail, exact, surface, visible});
     return {origin, scope, value};
   } catch (error) {
     if (!(error instanceof ReadFailure)) throw error;

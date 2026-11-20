@@ -14,7 +14,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const ADAPTER: &str = r##"import json,os,sys
+const ADAPTER: &str = r##"import base64,hashlib,json,os,sys
 harness=os.environ['AHAP_HARNESS']
 profile=os.environ['AHAP_BROWSER_PAGE_ID']
 home=os.environ['HOME']
@@ -34,22 +34,29 @@ for line in sys.stdin:
  row={'method':method,'harness':harness,'profile':profile,'id':p.get('id')}
  if method=='initialize':
   value={'harness':harness,'capabilities':{'methods':['init','getSession','listSessions','getSessionMessages','sendMessage','createSession'],'deliveryModes':['queue']}}
+  if profile in ('uploads','direct-only'): value['capabilities']['nativeProtocol']='direct-cdp'
+  if profile in ('uploads','flag-only'): value['capabilities']['browserFeatures']={'attachments':True}
  elif method=='init': value=None
  elif method=='getSession': value=session(p['id'])
  elif method=='listSessions': value=[session('existing-native')]
  elif method=='getSessionMessages': value=messages(p['id'])
  elif method=='sendMessage':
-  assert p['id']=='existing-native'
+  assert p['id']=='existing-native' or (profile=='uploads' and p['id']=='created-native')
   assert p['options']['queue'] is True and p['options']['activeTurnOnly'] is False
   assert p['options']['inputId']
   mid=profile+'-message-'+str(len(messages(p['id'])))
   row['message']={'id':mid,'role':'user','text':p['options']['message']}
+  if 'attachments' in p['options']:
+   assert profile=='uploads'
+   row['files']=[[f['name'],f['mime_type'],hashlib.sha256(base64.b64decode(f['data_base64'],validate=True)).hexdigest()] for f in p['options']['attachments']]
   value={'ok':True,'admitted':True,'nativeInputMessageId':mid,
          'inputId':p['options']['inputId'],'sessionId':p['id'],'harness':harness}
  elif method=='createSession':
-  raise AssertionError('Registration must not create a native conversation')
+  assert profile=='uploads' and 'attachments' not in p['options']
+  value={'id':'created-native','harness':harness}
  else: raise AssertionError('Unexpected AHAP method '+method)
  with open(trace,'a') as stream: stream.write(json.dumps(row)+'\n')
+ if method=='sendMessage' and p['options']['message']=='lose receipt': sys.exit(0)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':value}),flush=True)
 "##;
 
@@ -311,6 +318,174 @@ fn expect_error(response: &Value) {
         response.get("error").is_some() || response["result"]["isError"] == true,
         "{response}"
     );
+}
+
+fn files() -> Value {
+    json!([
+        {"name":"note.txt","mime_type":"text/plain","data_base64":"cHJpdmF0ZS10ZXN0LWF0dGFjaG1lbnQ="},
+        {"name":"raw.bin","mime_type":"application/octet-stream","data_base64":"AP8="}
+    ])
+}
+
+fn task_id(response: &Value) -> &str {
+    response["result"]["taskId"].as_str().unwrap_or_else(|| panic!("expected a task: {response}"))
+}
+
+fn task_body(client: &mut Wire, task: &str) -> Value {
+    let response = client.rpc("tasks/get", json!({"taskId":task}));
+    assert_eq!(response["result"]["status"], "completed", "{response}");
+    response["result"]["result"]["structuredContent"].clone()
+}
+
+#[test]
+fn attachments_reach_first_prompt_action_and_envelope_with_exact_replay() {
+    let fixture = Fixture::new();
+    let profile = fixture.profile("chatgpt", "uploads");
+    let mut wire = Wire::open(&profile);
+    let create = json!({"action":"create","instance_ref":"uploads","prompt":"","attachments":files(),"request_key":"first"});
+    let parent = task_id(&wire.call("create", create.clone())).to_owned();
+    let created = task_body(&mut wire, &parent);
+    assert_eq!(created["prompt"]["outcome"], "confirmed", "{created}");
+    let session = &created["create"]["session_ref"];
+    let action = json!({"action":"session","session_ref":session,"mode":"queue","request_key":"next","message":"caption","attachments":files()});
+    let child = task_id(&wire.call("deliver", action.clone())).to_owned();
+    assert_eq!(task_body(&mut wire, &child)["outcome"], "confirmed");
+    let sender = json!({"hostId":"peer","harness":"codex","nativeSessionId":"caller"});
+    let envelope = json!({"target":{"hostId":"browser-node","harness":"chatgpt","nativeSessionId":"created-native"},
+        "sender":sender,"inputId":"envelope","message":"","attachments":files()});
+    let envelope_task = task_id(&wire.call("deliver", envelope.clone())).to_owned();
+    assert_eq!(task_body(&mut wire, &envelope_task)["outcome"], "confirmed");
+    drop(wire);
+
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("create", create.clone())), parent);
+    assert_eq!(task_id(&wire.call("deliver", action.clone())), child);
+    assert_eq!(task_id(&wire.call("deliver", envelope)), envelope_task);
+    let receipt = wire.call("deliver", json!({"action":"receipt","session_ref":session,"request_key":"envelope"}));
+    assert_eq!(content(&receipt)["native_receipt"]["sender"], sender);
+    for (field, change) in [("name", "renamed.txt"), ("data_base64", "UQ=="), ("mime_type", "text/csv")] {
+        let mut different = create.clone();
+        different["attachments"][0][field] = json!(change);
+        let conflict = wire.call("create", different);
+        assert_eq!(task_body(&mut wire, task_id(&conflict))["code"], "idempotency_conflict");
+        let mut different = action.clone();
+        different["attachments"][0][field] = json!(change);
+        assert_eq!(wire.call("deliver", different)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    }
+    let mut reversed = action.clone();
+    reversed["attachments"].as_array_mut().unwrap().reverse();
+    assert_eq!(wire.call("deliver", reversed)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    let mut text_only = action;
+    text_only.as_object_mut().unwrap().remove("attachments");
+    assert_eq!(wire.call("deliver", text_only)["result"]["structuredContent"]["code"], "idempotency_conflict");
+
+    let sends = fixture.native_calls("sendMessage");
+    assert_eq!(fixture.native_calls("createSession").len(), 1);
+    assert_eq!(sends.len(), 3);
+    for (send, caption) in sends.iter().zip(["", "caption", ""]) {
+        assert_eq!(send["id"], "created-native");
+        assert_eq!(send["message"]["text"], caption);
+        assert_eq!(send["files"], json!([
+            ["note.txt","text/plain","3d6124c0105928e47dd1a8dcdacb48e9a0b229a4ad56e7b97b3bebd2b0340c28"],
+            ["raw.bin","application/octet-stream","06eb7d6a69ee19e5fbdf749018d3d2abfa04bcbd1365db312eb86dc7169389b8"]
+        ]));
+    }
+    let db = Connection::open(&fixture.db).unwrap();
+    for marker in ["data_base64", "note.txt", files()[0]["data_base64"].as_str().unwrap()] {
+        let persisted: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tasks WHERE instr(result_json, ?1)>0) OR EXISTS(SELECT 1 FROM intents WHERE instr(payload_hash, ?1)>0 OR instr(native_receipt, ?1)>0)",
+            [marker], |r| r.get(0),
+        ).unwrap();
+        assert!(!persisted, "attachment material in the generic ledger");
+    }
+}
+
+#[test]
+fn attachments_lost_receipt_is_never_resubmitted_on_restart() {
+    let fixture = Fixture::new();
+    let profile = fixture.profile("zai", "uploads");
+    let create = json!({"action":"create","instance_ref":"uploads","prompt":"lose receipt","attachments":files(),"request_key":"lost-first"});
+    let mut wire = Wire::open(&profile);
+    let parent = task_id(&wire.call("create", create.clone())).to_owned();
+    drop(wire);
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("create", create)), parent);
+    let body = task_body(&mut wire, &parent);
+    assert_eq!(body["prompt"]["effect"], "unknown", "{body}");
+    let mut action = json!({"action":"session","session_ref":body["create"]["session_ref"],"mode":"queue","request_key":"lost-next","message":"lose receipt","attachments":files()});
+    let held = wire.call("deliver", action.clone());
+    assert_eq!(held["result"]["structuredContent"]["code"], "delivery_blocked", "{held}");
+    // The unresolved first prompt fences that session. Exercise a lost
+    // ordinary delivery on an independently authorized native session.
+    let registered = wire.call("session", json!({"action":"register","instance_ref":"uploads","native_session_id":"existing-native","request_key":"register"}));
+    action["session_ref"] = content(&registered)["session_ref"].clone();
+    let child = task_id(&wire.call("deliver", action.clone())).to_owned();
+    drop(wire);
+    let mut wire = Wire::open(&profile);
+    assert_eq!(task_id(&wire.call("deliver", action.clone())), child);
+    assert_eq!(task_body(&mut wire, &child)["effect"], "unknown");
+    let mut changed = action;
+    changed["attachments"][0]["data_base64"] = json!("UQ==");
+    assert_eq!(wire.call("deliver", changed)["result"]["structuredContent"]["code"], "idempotency_conflict");
+    assert_eq!(fixture.native_calls("createSession").len(), 1);
+    let sends = fixture.native_calls("sendMessage");
+    assert_eq!(sends.iter().map(|send| send["id"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["created-native", "existing-native"]);
+}
+
+#[test]
+fn attachments_aggregate_limit_survives_the_stdio_and_ahap_frames() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use herder::domain::attachment::MAX_ATTACHMENT_BYTES;
+
+    let fixture = Fixture::new();
+    let mut wire = Wire::open(&fixture.profile("chatgpt", "uploads"));
+    let registered = wire.call("session", json!({"action":"register","instance_ref":"uploads","native_session_id":"existing-native","request_key":"register"}));
+    let mut send = json!({
+        "action":"session","session_ref":content(&registered)["session_ref"],"mode":"queue","message":"","request_key":"size",
+        "attachments":[
+            {"name":"limit.bin","mime_type":"application/octet-stream","data_base64":STANDARD.encode(vec![0xff; MAX_ATTACHMENT_BYTES])},
+            {"name":"extra.bin","mime_type":"application/octet-stream","data_base64":"eA=="}
+        ]
+    });
+    let refused = wire.call("deliver", send.clone());
+    assert_eq!(refused["result"]["structuredContent"]["code"], "invalid_attachments", "{refused}");
+    assert!(fixture.native_calls("sendMessage").is_empty());
+    send["attachments"].as_array_mut().unwrap().pop();
+    let admitted = wire.call("deliver", send);
+    assert_eq!(task_body(&mut wire, task_id(&admitted))["outcome"], "confirmed");
+    assert_eq!(fixture.native_calls("sendMessage").len(), 1);
+}
+
+#[test]
+fn attachments_need_valid_bytes_both_capability_markers_and_session_grants() {
+    for instance in ["uploads", "flag-only", "direct-only"] {
+        let fixture = Fixture::new();
+        let mut wire = Wire::open(&fixture.profile("chatgpt", instance));
+        let mut input = files();
+        let code = if instance == "uploads" {
+            input[0]["data_base64"] = json!("invalid!");
+            "invalid_attachments"
+        } else {
+            "attachments_unsupported"
+        };
+        let create = wire.call("create", json!({"action":"create","instance_ref":instance,"prompt":"caption","attachments":input,"request_key":"refused"}));
+        assert_eq!(create["result"]["structuredContent"]["code"], code, "{create}");
+        let registered = wire.call("session", json!({"action":"register","instance_ref":instance,"native_session_id":"existing-native","request_key":"registration"}));
+        let mut send = json!({"action":"session","session_ref":content(&registered)["session_ref"],"mode":"queue","message":"caption","attachments":input,"request_key":"refused"});
+        let refused = wire.call("deliver", send.clone());
+        assert_eq!(refused["result"]["structuredContent"]["code"], code, "{refused}");
+        send["attachments"] = files();
+        send["session_ref"] = json!("foreign-session");
+        let denied = wire.call("deliver", send);
+        assert_eq!(denied["result"]["structuredContent"]["code"], "session_grant_required", "{denied}");
+        assert!(fixture.native_calls("createSession").is_empty());
+        assert!(fixture.native_calls("sendMessage").is_empty());
+        let intents: i64 = Connection::open(&fixture.db).unwrap().query_row(
+            "SELECT count(*) FROM intents WHERE request_key='refused'", [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(intents, 0);
+    }
 }
 
 #[test]

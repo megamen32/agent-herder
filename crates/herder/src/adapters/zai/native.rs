@@ -1,16 +1,22 @@
 //! Rust side of the scoped Z.ai page operations and the one-click boundary.
 
 use super::{ZaiReadError, ZaiReader, valid_chat_id};
-use crate::adapters::browser::{BrowserActivity, BrowserSubmitError};
+use crate::adapters::browser::{
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES,
+    validate_attachments,
+};
+use crate::domain::attachment::has_browser_caption;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration;
 
 const PAGE: &str = include_str!("page.js");
+const FILES: &str = include_str!("files.js");
+const STOP: &str = include_str!("stop.js");
 
 pub(super) fn expression(op: &str, scope: Option<&str>, args: Value) -> String {
-    let args = json!({"op": op, "expected": scope, "args": args});
-    format!("({PAGE})({args})")
+    let args = json!({"op": op, "expected": scope, "args": args, "maxBytes": MAX_ATTACHMENT_BYTES});
+    format!("({PAGE})({args}, ({FILES}), ({STOP}))")
 }
 
 pub(super) fn verified_scope(value: &Value) -> Result<&str, ZaiReadError> {
@@ -111,6 +117,54 @@ impl ZaiReader {
         })
     }
 
+    pub async fn cancel_turn(
+        &mut self,
+        remote: &str,
+        input_message_id: &str,
+    ) -> Result<bool, ZaiReadError> {
+        if !valid_message_id(input_message_id) {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        let result = self
+            .native_read("cancel", Some(remote), json!({"input": input_message_id}))
+            .await?;
+        if result["input"].as_str() != Some(input_message_id) {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        result["cancelled"]
+            .as_bool()
+            .ok_or(ZaiReadError::InvalidResponse)
+    }
+
+    pub async fn read_attachment(
+        &mut self,
+        remote: &str,
+        message_id: &str,
+        attachment_id: &str,
+    ) -> Result<BrowserAttachment, ZaiReadError> {
+        if !valid_message_id(message_id) || !valid_message_id(attachment_id) {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        let mut result = self
+            .native_read(
+                "attachment",
+                Some(remote),
+                json!({"message": message_id, "file": attachment_id}),
+            )
+            .await?;
+        if result["message"].as_str() != Some(message_id)
+            || result["file"].as_str() != Some(attachment_id)
+        {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        let attachment: BrowserAttachment = serde_json::from_value(result["attachment"].take())
+            .map_err(|_| ZaiReadError::InvalidResponse)?;
+        attachment
+            .validate()
+            .map_err(|_| ZaiReadError::InvalidResponse)?;
+        Ok(attachment)
+    }
+
     // Only newly owned blank targets can be hydrating. Retry the read-only
     // observation, never a router action, input event or click.
     async fn wait_for_blank(&mut self) -> Result<(), ZaiReadError> {
@@ -148,13 +202,24 @@ impl ZaiReader {
         conversation_id: Option<&str>,
         text: &str,
     ) -> Result<(String, String), BrowserSubmitError> {
+        self.submit_with_attachments(conversation_id, text, &[])
+            .await
+    }
+
+    pub async fn submit_with_attachments(
+        &mut self,
+        conversation_id: Option<&str>,
+        text: &str,
+        attachments: &[BrowserAttachment],
+    ) -> Result<(String, String), BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
-        if text.trim().is_empty()
-            || text.len() > 8_000
+        if text.len() > 8_000
+            || !has_browser_caption(text)
             || conversation_id.is_none() && !(self.cdp.owns_target() && self.fresh_blank)
         {
             return Err(BeforeSend);
         }
+        validate_attachments(attachments).map_err(|_| BeforeSend)?;
         if conversation_id.is_none() {
             self.wait_for_blank().await.map_err(|_| BeforeSend)?;
         }
@@ -169,7 +234,7 @@ impl ZaiReader {
         // From dispatch of this evaluation onward only an explicit pre-click refusal
         // is replay-safe. Every subsequent evaluation is read-only.
         self.fresh_blank = false;
-        let params = json!({"ticket":prepared.ticket, "text":text});
+        let params = json!({"ticket":prepared.ticket, "text":text, "files":attachments});
         let value = self
             .eval_native("click", conversation_id, params)
             .await

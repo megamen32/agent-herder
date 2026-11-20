@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, time::Duration};
 
+use super::browser::{BrowserAttachment, BrowserFile};
 use super::cdp::{
     CdpConnection, CdpCreateError, CdpError, CdpTargetIdentity, create_page_target_with_origin_port,
 };
@@ -22,6 +23,8 @@ pub struct NormalizedMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    #[serde(default)]
+    pub attachments: Vec<BrowserFile>,
     pub create_time: Option<f64>,
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -372,31 +375,108 @@ struct Author {
 #[derive(Debug, Deserialize)]
 struct Metadata {
     model_slug: Option<String>,
+    is_visually_hidden_from_conversation: Option<bool>,
+    attachments: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Content {
-    parts: Option<Vec<Part>>,
+    parts: Option<Vec<Value>>,
     text: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Part {
-    Text(String),
-    Object { text: Option<String>, content: Option<String>, content_type: Option<String> },
-    Other(serde::de::IgnoredAny),
+fn image_part(part: &Value) -> bool {
+    matches!(
+        part["content_type"].as_str(),
+        Some("image" | "image_asset_pointer")
+    )
 }
 
-impl Part {
-    fn text(&self) -> &str {
-        match self {
-            Self::Text(text) => text,
-            Self::Object { text: Some(text), .. } | Self::Object { content: Some(text), .. } => text,
-            Self::Object { content_type: Some(kind), .. } if matches!(kind.as_str(), "image" | "image_asset_pointer") => "[Изображение]",
-            _ => "",
+fn part_text(part: &Value) -> &str {
+    part.as_str()
+        .or_else(|| part["text"].as_str())
+        .or_else(|| part["content"].as_str())
+        .unwrap_or_else(|| {
+            if image_part(part) {
+                "[Изображение]"
+            } else {
+                ""
+            }
+        })
+}
+
+fn project_files(message: &Message) -> Vec<BrowserFile> {
+    let mut files = Vec::<BrowserFile>::new();
+    let mut positions = HashMap::<String, usize>::new();
+    let mut add = |id: &str, raw: &Value, image: bool| {
+        if !native::native_id(id) {
+            return;
+        }
+        if let Some(&i) = positions.get(id) {
+            files[i].image |= image;
+            return;
+        }
+        let meta = &raw["metadata"];
+        let name = [
+            &raw["name"],
+            &raw["filename"],
+            &meta["name"],
+            &meta["filename"],
+        ]
+        .into_iter()
+        .find(|v| !v.is_null())
+        .map_or(Some(id), Value::as_str);
+        let mime = [
+            &raw["mimeType"],
+            &raw["mime_type"],
+            &meta["mimeType"],
+            &meta["mime_type"],
+        ]
+        .into_iter()
+        .find(|v| !v.is_null())
+        .map_or(Some("application/octet-stream"), Value::as_str);
+        let (Some(name), Some(mime)) = (name, mime) else {
+            return;
+        };
+        let metadata = BrowserAttachment {
+            name: name.into(),
+            mime_type: mime.into(),
+            data_base64: String::new(),
+        };
+        if metadata.validate().is_ok() {
+            positions.insert(id.to_owned(), files.len());
+            files.push(BrowserFile {
+                id: id.into(),
+                name: metadata.name,
+                mime_type: metadata.mime_type,
+                image,
+            });
+        }
+    };
+    if let Some(records) = message
+        .metadata
+        .as_ref()
+        .and_then(|m| m.attachments.as_ref())
+        .and_then(Value::as_array)
+    {
+        for raw in records {
+            if let Some(id) = raw["id"].as_str().or_else(|| raw["file_id"].as_str()) {
+                add(id, raw, false);
+            }
         }
     }
+    if let Some(parts) = message.content.as_ref().and_then(|c| c.parts.as_ref()) {
+        for part in parts.iter().filter(|p| image_part(p)) {
+            if let Some(id) = part["asset_pointer"].as_str().and_then(|pointer| {
+                pointer
+                    .strip_prefix("file-service://")
+                    .or_else(|| pointer.strip_prefix("sediment://"))
+            }) {
+                add(id, part, true);
+            }
+        }
+    }
+    files
 }
 
 /// Validate identity and project only the selected conversation branch.
@@ -468,7 +548,13 @@ pub fn normalize_conversation(
 
 fn project_message(message: &Message) -> Option<NormalizedMessage> {
     let id = message.id.as_ref()?.trim();
-    if id.is_empty() {
+    if id.is_empty()
+        || message
+            .metadata
+            .as_ref()
+            .and_then(|m| m.is_visually_hidden_from_conversation)
+            == Some(true)
+    {
         return None;
     }
     let role = match message.author.as_ref()?.role.as_deref()? {
@@ -492,18 +578,20 @@ fn project_message(message: &Message) -> Option<NormalizedMessage> {
     let content = message.content.as_ref();
     let text = content
         .and_then(|content| content.parts.as_ref())
-        .map(|parts| parts.iter().map(Part::text).collect::<Vec<_>>().join("\n"))
+        .map(|parts| parts.iter().map(part_text).collect::<Vec<_>>().join("\n"))
         .or_else(|| content.and_then(|content| content.text.clone()))
         .unwrap_or_default()
         .trim()
         .to_owned();
-    if text.is_empty() {
+    let attachments = project_files(message);
+    if text.is_empty() && attachments.is_empty() {
         return None;
     }
     Some(NormalizedMessage {
         id: id.to_owned(),
         role,
         text,
+        attachments,
         create_time: message.create_time,
         phase: message.channel.clone(),
         completion_status: message.status.clone(),
@@ -678,6 +766,38 @@ mod tests {
         assert_eq!(messages[1].role, Role::Assistant);
         assert_eq!(messages[1].text, "fixture answer");
         assert_eq!(messages[1].model.as_deref(), Some("fixture-model"));
+    }
+
+    #[test]
+    fn projects_files_and_pointer_only_images_without_following_text_links() {
+        let data = serde_json::json!({"conversation_id":"chat", "messages":[
+            {"id":"u", "author":{"role":"user"}, "metadata":{"attachments":[
+                {"id":"file-bin", "name":"data.bin", "mimeType":"application/octet-stream"},
+                {"id":"../host", "name":"bad", "mimeType":"text/plain"}]}},
+            {"id":"a", "author":{"role":"assistant"},
+             "metadata":{"attachments":[{"id":"file-image", "name":"render.webp", "mimeType":"image/webp"}]},
+             "content":{"parts":[
+                {"content_type":"image_asset_pointer", "asset_pointer":"file-service://file-image",
+                 "metadata":{"filename":"render.webp", "mime_type":"image/webp"}},
+                {"content_type":"image_asset_pointer", "asset_pointer":"sediment://file-unknown"},
+                "[report](sandbox:/mnt/data/report.pdf)"]}},
+            {"id":"hidden", "author":{"role":"assistant"}, "channel":"analysis",
+             "metadata":{"attachments":[{"id":"private"}]}}
+        ]});
+        let rows = normalize_conversation("chat", &data.to_string()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].text.is_empty());
+        assert_eq!(rows[0].attachments.len(), 1);
+        assert_eq!(rows[0].attachments[0].id, "file-bin");
+        assert!(!rows[0].attachments[0].image);
+        let files = &rows[1].attachments;
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "render.webp");
+        assert_eq!(files[0].mime_type, "image/webp");
+        assert!(files[0].image);
+        assert_eq!(files[1].name, "file-unknown");
+        assert_eq!(files[1].mime_type, "application/octet-stream");
+        assert!(files[1].image);
     }
 
     #[test]

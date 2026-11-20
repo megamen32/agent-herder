@@ -31,12 +31,12 @@ use crate::{
     application::{
         reconcile::{
             DurableDispatch, ReceiptBinding, StoreReceipt, StoredReceipt,
-            dispatch_payload_binding_with_sender, load_native_receipt,
+            create_payload_binding, dispatch_payload_binding_with_sender, load_native_receipt,
             store_native_receipt_with_sender,
         },
         target_gate::{PinnedTargetGateGuard, acquire_pinned, acquire_pinned_wait},
     },
-    domain::adapter::{Admission, DispatchPlan, RequestKey, SubmitError},
+    domain::adapter::{Admission, DispatchPlan, RequestKey, SendPayload, SubmitError},
     store::Writer,
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
@@ -49,12 +49,53 @@ use std::{
 /// this call has no surviving delegated writer. A timeout/disconnect after a
 /// possible write is UNKNOWN; no retry. Only trusted adapters may implement it.
 pub trait BoundedNativeHandoff {
+    /// Read the initialized instance's upload capability before reserving a
+    /// delivery key or creating a session. This check performs no native I/O.
+    fn supports_attachments(&self) -> bool {
+        false
+    }
+
+    fn requires_attachment_caption(&self) -> bool {
+        false
+    }
+
+    fn check_attachment_support(&self, payload: SendPayload<'_>) -> Result<(), GateError> {
+        if payload.attachments().is_empty() {
+            return Ok(());
+        }
+        if !self.supports_attachments() {
+            return Err(GateError::AttachmentsUnsupported);
+        }
+        if self.requires_attachment_caption()
+            && !crate::domain::attachment::has_browser_caption(payload.text)
+        {
+            return Err(GateError::InvalidAttachments(
+                "the provider requires nonempty text with attachments",
+            ));
+        }
+        Ok(())
+    }
+
     fn submit_bounded(
         &self,
         plan: DispatchPlan,
         message: &str,
         key: &RequestKey,
     ) -> Result<Admission, SubmitError>;
+
+    fn submit_bounded_payload(
+        &self,
+        plan: DispatchPlan,
+        payload: SendPayload<'_>,
+        key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        if !payload.attachments().is_empty() {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "attachments unsupported by native adapter".into(),
+            });
+        }
+        self.submit_bounded(plan, payload.text, key)
+    }
 }
 
 /// An exact, bounded interrupt for the known native turn. Failure, including a
@@ -135,6 +176,9 @@ pub enum GateError {
     Unavailable,
     Busy,
     Invalid,
+    InvalidAttachments(&'static str),
+    AttachmentsUnsupported,
+    IdempotencyConflict,
     Store,
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -229,11 +273,28 @@ impl ScopedAuthority {
         generations: &G,
         request: crate::application::target::CreateRequest<'_>,
     ) -> Result<crate::application::target::CreateResult, GateError> {
+        self.create_bound_root(identity, grants, control, issuer, generations, &request.into_payload_request())
+    }
+
+    // Only the composite create path can introduce attachments, after checking
+    // its exact delivery adapter. The native root operation receives text only.
+    fn create_bound_root<
+        C: BoundedFreshRootCreate,
+        I: crate::application::target::SessionRefIssuer,
+        G: ScopeGenerationIssuer,
+    >(
+        &self,
+        identity: &ConnectionIdentity,
+        grants: &[Grant],
+        control: &C,
+        issuer: &I,
+        generations: &G,
+        request: &crate::application::target::CreateRequest<'_, SendPayload<'_>>,
+    ) -> Result<crate::application::target::CreateResult, GateError> {
         use crate::{
             application::target::CreateResult,
             store::{intents::PrepareResult, lineage::NewCreateLineageIntent},
         };
-        use sha2::{Digest, Sha256};
         let instance = control.instance();
         let target = serde_json::to_string(instance).map_err(|_| GateError::Invalid)?;
         identity
@@ -246,7 +307,8 @@ impl ScopedAuthority {
         let Caller::Principal(principal) = identity.caller() else {
             return Err(GateError::Invalid);
         };
-        if request.request_key.is_empty() || request.specification.is_empty() {
+        let specification = request.specification;
+        if request.request_key.is_empty() || specification.is_empty() {
             return Err(GateError::Invalid);
         }
         let (gate, mut writer) = self.lock()?;
@@ -254,15 +316,7 @@ impl ScopedAuthority {
         if held {
             return Err(GateError::Invalid);
         }
-        let bytes = serde_json::to_vec(&(1u8, instance, request.specification))
-            .map_err(|_| GateError::Invalid)?;
-        let payload = format!(
-            "create-v1:{}",
-            Sha256::digest(bytes)
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect::<String>()
-        );
+        let payload = create_payload_binding(instance, specification);
         // Recovery of an existing exact request is observational. Quarantine
         // must prevent a fresh intent and native creation, never replay one.
         let existing: Option<String> = writer.connection().query_row(
@@ -270,7 +324,7 @@ impl ScopedAuthority {
             params![principal.id.0, target, request.request_key], |r| r.get(0),
         ).optional().map_err(|_| GateError::Store)?;
         if let Some(existing) = existing {
-            return if existing == payload { Ok(CreateResult::Existing) } else { Err(GateError::Invalid) };
+            return if existing == payload { Ok(CreateResult::Existing) } else { Err(GateError::IdempotencyConflict) };
         }
         if migration_quarantine::check_locked(
             writer.connection(), &self.generation, self.migration_epoch.as_deref(),
@@ -294,7 +348,7 @@ impl ScopedAuthority {
         {
             PrepareResult::Created { .. } => (),
             PrepareResult::Existing { .. } => return Ok(CreateResult::Existing),
-            PrepareResult::Conflict { .. } => return Err(GateError::Invalid),
+            PrepareResult::Conflict { .. } => return Err(GateError::IdempotencyConflict),
         }
         let session = issuer.issue().map_err(|_| GateError::Unavailable)?;
         let generation = generations.issue().map_err(|_| GateError::Unavailable)?;
@@ -329,7 +383,7 @@ impl ScopedAuthority {
         {
             return Ok(CreateResult::Existing);
         }
-        let address = match control.create_root_bounded(request.request_key, request.specification)
+        let address = match control.create_root_bounded(request.request_key, specification.text)
         {
             Err(SubmitError::DefinitelyNotSent { reason }) => {
                 writer
@@ -488,14 +542,14 @@ impl ScopedAuthority {
         )
     }
 
-    pub fn prepare_with_sender(
+    pub fn prepare_with_sender<'a>(
         &self,
         identity: &ConnectionIdentity,
         grants: &[Grant],
         b: &ReceiptBinding<'_>,
         scope_generation: &str,
         plan: &DispatchPlan,
-        message: &str,
+        message: impl Into<SendPayload<'a>>,
         task_id: &str,
         now: &str,
         retain_until: &str,
@@ -544,14 +598,14 @@ impl ScopedAuthority {
         self.claim_with_sender(identity, grants, b, generation, plan, message, now, None)
     }
 
-    pub fn claim_with_sender(
+    pub fn claim_with_sender<'a>(
         &self,
         identity: &ConnectionIdentity,
         grants: &[Grant],
         b: &ReceiptBinding<'_>,
         generation: &str,
         plan: &DispatchPlan,
-        message: &str,
+        message: impl Into<SendPayload<'a>>,
         now: &str,
         sender: Option<&crate::mcp::catalog::DeliveryPeer>,
     ) -> Result<bool, GateError> {
@@ -587,18 +641,19 @@ impl ScopedAuthority {
         self.handoff_with_sender(identity, grants, b, generation, plan, message, now, None, control)
     }
 
-    pub fn handoff_with_sender<C: BoundedNativeHandoff>(
+    pub fn handoff_with_sender<'a, C: BoundedNativeHandoff>(
         &self,
         identity: &ConnectionIdentity,
         grants: &[Grant],
         b: &ReceiptBinding<'_>,
         generation: &str,
         plan: DispatchPlan,
-        message: &str,
+        message: impl Into<SendPayload<'a>>,
         now: &str,
         sender: Option<&crate::mcp::catalog::DeliveryPeer>,
         control: &C,
     ) -> Result<DurableDispatch, GateError> {
+        let message = message.into();
         authorize_session(identity, grants, b)?;
         let (_gate, mut writer) = self.lock()?;
         {
@@ -659,7 +714,7 @@ impl ScopedAuthority {
             }
             tx.commit().map_err(|_| GateError::Store)?;
         }
-        let outcome = control.submit_bounded(plan, message, &RequestKey(b.request_key.into()));
+        let outcome = control.submit_bounded_payload(plan, message, &RequestKey(b.request_key.into()));
         if let Err(SubmitError::DefinitelyNotSent { reason }) = &outcome {
             let diagnostic = serde_json::json!({"outcome": "rejected", "native_submit": "definitely_not_sent", "reason": reason}).to_string();
             let tx = writer

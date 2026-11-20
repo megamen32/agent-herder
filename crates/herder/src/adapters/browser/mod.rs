@@ -10,6 +10,10 @@ mod protocol;
 mod sessions;
 
 use crate::adapters::cdp::CdpTargetIdentity;
+pub use crate::domain::attachment::{
+    AttachmentMetadata as BrowserFile, InlineAttachment as BrowserAttachment, MAX_ATTACHMENT_BYTES,
+    validate_attachments,
+};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 /// After a possibly accepted click only a provider receipt can settle delivery.
@@ -33,6 +37,10 @@ enum Provider {
 }
 
 impl Provider {
+    fn requires_attachment_caption(self) -> bool {
+        matches!(self, Self::Zai)
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::ChatGpt => "chatgpt",

@@ -1,4 +1,4 @@
-async function readChatGpt(request, {list, activity, conversation, newestFirst, messageText, validId, fail}) {
+async function readChatGpt(request, {list, activity, conversation, newestFirst, messageText, validId, publicMessage, filesOf, sameAccount, fail}) {
   if (request.op === 'list') {
     const ids = new Set();
     const size = Math.min(100, request.limit);
@@ -30,12 +30,12 @@ async function readChatGpt(request, {list, activity, conversation, newestFirst, 
   let count = 0;
   for (const m of newestFirst(data)) {
     const role = m?.author?.role;
-    if (!validId(m?.id) || !['user', 'assistant'].includes(role)) continue;
-    if (role === 'assistant' && ((m.channel && !['final', 'commentary'].includes(m.channel)) ||
-      (m.recipient && m.recipient !== 'all'))) continue;
+    if (!publicMessage(m)) continue;
     const raw = messageText(m);
-    if (typeof raw !== 'string' || !raw.trim()) continue;
-    const message = {id: m.id, role, text: raw.trim(), create_time: Number.isFinite(m.create_time) ? m.create_time : null,
+    const text = typeof raw === 'string' ? raw.trim() : '';
+    const attachments = filesOf(m).map(({id, name, mime_type, image}) => ({id, name, mime_type, ...(image && {image})}));
+    if (!text && !attachments.length) continue;
+    const message = {id: m.id, role, text, attachments, create_time: Number.isFinite(m.create_time) ? m.create_time : null,
       model: typeof m.metadata?.model_slug === 'string' ? m.metadata.model_slug : null};
     if (typeof m.channel === 'string') message.phase = m.channel;
     if (typeof m.status === 'string') message.completionStatus = m.status;
@@ -58,5 +58,6 @@ async function readChatGpt(request, {list, activity, conversation, newestFirst, 
     messages.push(item);
   }
   messages.sort((a, b) => b.order - a.order);
+  if (!await sameAccount()) fail('account');
   return {id, messages: messages.map(item => item.message)};
 }

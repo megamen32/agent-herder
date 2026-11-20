@@ -56,6 +56,7 @@ pub mod cli;
 pub mod domain {
     pub mod adapter;
     pub mod address;
+    pub mod attachment;
     pub mod completion;
     pub mod resource;
     pub mod transcript;

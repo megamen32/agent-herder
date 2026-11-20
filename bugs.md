@@ -14,3 +14,7 @@
 ## 2026-11-20 — периодический отказ запуска фикстуры Codex при параллельных тестах
 
 При запуске `cargo test --locked --offline --manifest-path crates/herder/Cargo.toml -j 5` на Linux тест `adapters::codex::create::tests::invalid_key_is_definitely_not_sent_by_both_ports` однажды завершился с `ExecutableFileBusy (ETXTBSY)`. Сбой возник в `fake_create_control` в `crates/herder/src/adapters/codex/create.rs` при запуске только что записанного `fake-codex`, до проверки пустого ключа. На том же рабочем дереве тест проходил и раньше. Детерминированного воспроизведения пока нет.
+
+## 2026-11-20 — Git не читает историю по всем ссылкам в checkout Agent Herder
+
+При проверке браузерных адаптеров команда `git log --all -1 --oneline` дважды завершилась с `fatal: bad object refs/codex/turn-diffs/captures/1795141019370/51b4951b-d158-446b-b18d-24ed902d0229/base`. В том же рабочем дереве команда `git log -1 --oneline HEAD` прочитала текущий коммит.

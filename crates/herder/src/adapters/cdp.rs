@@ -240,7 +240,7 @@ impl CdpConnection {
         if !self.browser_endpoint {
             return Err(CdpError::InvalidIdentity);
         }
-        let value = self.command("Target.getTargets", json!({})).await?;
+        let value = self.command_scoped("Target.getTargets", json!({}), false).await?;
         serde_json::from_value(value.get("targetInfos").cloned().unwrap_or(Value::Null))
             .map_err(|_| CdpError::Protocol)
     }

@@ -9,9 +9,11 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, time::Duration};
 
+use crate::adapters::browser::BrowserFile;
 use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent};
 use crate::domain::{
     address::{InstanceRef, NodeRef, SessionAddress},
+    attachment::has_browser_caption,
     transcript::{
         RawTranscriptBlock, TranscriptBlock, TranscriptBlockKind, TranscriptPage,
         TranscriptSourceRef, normalize_transcript_blocks,
@@ -34,6 +36,7 @@ pub struct NormalizedMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    pub attachments: Vec<BrowserFile>,
     /// Provider timestamp kept in its original numeric unit.
     pub timestamp: Option<u64>,
     pub model: Option<String>,
@@ -359,7 +362,7 @@ impl ZaiReader {
         text: &str,
         expected_response_marker: &str,
     ) -> Result<ZaiSendReceipt, ZaiSendError> {
-        if text.trim().is_empty()
+        if !has_browser_caption(text)
             || text.len() > 8_000
             || expected_response_marker.trim().is_empty()
         {
@@ -425,6 +428,14 @@ const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async(authenticateEmpty = false)=>{
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(owner)));
   const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
   if(scope!==expected)return {origin:location.origin,error:'account_mismatch',scope,scope_verified:true};
+  // A cached owned chat can still be readable after the browser switches
+  // accounts. The native inventory also proves the current login.
+  if(authenticateEmpty&&!empty){
+    const auth=await fetch('/api/v1/auths/',options);
+    if(!auth.ok)return {origin:location.origin,status:auth.status};
+    let session;try{session=await auth.json()}catch{return unverified};
+    if(typeof session?.id!=='string'||session.id!==String(owner))return {origin:location.origin,error:'account_mismatch'};
+  }
   return {origin:location.origin,chats,scope,scope_verified:true};
 })(/* authenticateEmpty */)"#;
 
@@ -440,6 +451,8 @@ struct RawMessage {
     role: Option<String>,
     content: Option<Value>,
     content_blocks: Option<Vec<ContentBlock>>,
+    #[serde(default)]
+    attachments: Vec<BrowserFile>,
     created_at: Option<Value>,
     timestamp: Option<Value>,
     model: Option<String>,
@@ -453,7 +466,7 @@ struct ContentBlock {
 }
 
 /// Validate the chat and preserve caller supplied message ordering.
-/// Unknown roles, absent requested messages and empty text are omitted.
+/// Unknown roles, absent requested messages and empty messages are omitted.
 pub fn normalize_batch(
     expected_chat_id: &str,
     requested_ids: &[&str],
@@ -674,7 +687,7 @@ fn project_message(requested_id: &str, message: &RawMessage) -> Option<Normalize
         .unwrap_or_default()
         .trim()
         .to_owned();
-    if text.is_empty() {
+    if text.is_empty() && message.attachments.is_empty() {
         return None;
     }
     let timestamp = message
@@ -686,6 +699,7 @@ fn project_message(requested_id: &str, message: &RawMessage) -> Option<Normalize
         id: id.to_owned(),
         role,
         text,
+        attachments: message.attachments.clone(),
         timestamp,
         model: message.model.clone(),
     })
@@ -705,7 +719,7 @@ mod tests {
     const RECENT_TWO_CHATS: &str =
         include_str!("../../../../../acceptance/native/z-ai/recent-two-chats.json");
 
-    async fn fake_cdp(listed_scope: Option<String>) -> (String, tokio::task::JoinHandle<()>) {
+    async fn fake_cdp(listed_scope: Option<String>) -> (String, tokio::task::JoinHandle<usize>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let endpoint = format!("ws://{address}/devtools/page/target-1");
@@ -714,7 +728,11 @@ mod tests {
             let mut socket = accept_async(stream).await.unwrap();
             let attached_scope = "a".repeat(64);
             let mut account_checked = false;
+            let mut commands_after_account_check = 0;
             while let Some(Ok(Message::Text(text))) = socket.next().await {
+                if account_checked {
+                    commands_after_account_check += 1;
+                }
                 let request: Value = serde_json::from_str(&text).unwrap();
                 let id = request.get("id").and_then(Value::as_u64).unwrap();
                 let method = request.get("method").and_then(Value::as_str).unwrap();
@@ -760,6 +778,7 @@ mod tests {
                     .await
                     .unwrap();
             }
+            commands_after_account_check
         });
         (endpoint, task)
     }
@@ -771,6 +790,31 @@ mod tests {
             browser_context_id: "context-1".into(),
             target_id: "target-1".into(),
         }
+    }
+
+    #[tokio::test]
+    async fn blank_attachment_captions_are_refused_without_a_cdp_command() {
+        use crate::adapters::browser::{BrowserAttachment, BrowserSubmitError};
+
+        let (endpoint, server) = fake_cdp(None).await;
+        let mut reader = ZaiReader::attach(&endpoint, fake_identity(), &"a".repeat(64))
+            .await
+            .unwrap();
+        let files = [BrowserAttachment {
+            name: "note.txt".into(),
+            mime_type: "text/plain".into(),
+            data_base64: "QQ==".into(),
+        }];
+        for caption in ["", " \t\r\n", "\u{a0}\u{feff}\u{2029}"] {
+            assert_eq!(
+                reader
+                    .submit_with_attachments(Some("aaaa000000000001"), caption, &files)
+                    .await,
+                Err(BrowserSubmitError::BeforeSend),
+            );
+        }
+        reader.close().await;
+        assert_eq!(server.await.unwrap(), 0);
     }
 
     #[test]

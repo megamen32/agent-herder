@@ -1,4 +1,8 @@
-use super::{BrowserSubmitError, Config, Provider, sessions::Sessions};
+use super::{
+    BrowserAttachment, BrowserSubmitError, Config, Provider, sessions::Sessions,
+    validate_attachments,
+};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, Read, Write},
@@ -6,13 +10,15 @@ use std::{
 };
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
-const METHODS: [&str; 6] = [
+const METHODS: [&str; 8] = [
     "init",
     "listSessions",
     "getSession",
     "getSessionMessages",
     "createSession",
     "sendMessage",
+    "cancelTurn",
+    "getMessageAttachment",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,8 +52,10 @@ impl RpcError {
 fn capabilities(provider: Provider) -> Value {
     json!({"harness":provider.name(),"name":match provider { Provider::ChatGpt => "ChatGPT", Provider::Zai => "Z.ai" },
         "capabilities":{"nativeProtocol":"direct-cdp","methods":METHODS,"deliveryModes":["queue"],
-        "controlCapabilities":{"cancelTurn":false,"permissionReply":false,"steer":false},
-        "browserFeatures":{"projects":false,"modelSwitch":false}}})
+        "controlCapabilities":{"cancelTurn":true,"permissionReply":false,"steer":false},
+        "browserFeatures":{"projects":false,"modelSwitch":false,"attachments":true,
+            "attachmentCaptionRequired":provider.requires_attachment_caption(),
+            "maxAttachments":crate::domain::attachment::MAX_ATTACHMENTS,"maxAttachmentBytes":super::MAX_ATTACHMENT_BYTES}}})
 }
 
 fn limit(value: Option<&Value>, default: usize, cap: usize) -> Result<usize, RpcError> {
@@ -68,12 +76,22 @@ fn session_id(params: &Value) -> Result<&str, RpcError> {
         .ok_or(RpcError::Invalid)
 }
 
-fn send_options(options: &Value) -> Result<(&str, &str), RpcError> {
+fn native_id<'a>(params: &'a Value, key: &str) -> Result<&'a str, RpcError> {
+    params[key]
+        .as_str()
+        .filter(|s| super::valid_label(s) && s.trim() == *s)
+        .ok_or(RpcError::Invalid)
+}
+
+fn send_options(
+    provider: Provider,
+    options: &Value,
+) -> Result<(&str, &str, Vec<BrowserAttachment>), RpcError> {
     let options = options.as_object().ok_or(RpcError::Invalid)?;
     if options.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "message" | "inputId" | "queue" | "activeTurnOnly" | "steer" | "start"
+            "message" | "attachments" | "inputId" | "queue" | "activeTurnOnly" | "steer" | "start"
         )
     }) || ["activeTurnOnly", "start", "steer"].iter().any(|key| {
         options
@@ -85,17 +103,30 @@ fn send_options(options: &Value) -> Result<(&str, &str), RpcError> {
     {
         return Err(RpcError::Invalid);
     }
+    let files = options
+        .get("attachments")
+        .map(Vec::<BrowserAttachment>::deserialize)
+        .transpose()
+        .map_err(|_| RpcError::Invalid)?
+        .unwrap_or_default();
+    validate_attachments(&files).map_err(|_| RpcError::Invalid)?;
     let text = options
         .get("message")
         .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty() && s.len() <= 8_000)
+        .filter(|s| {
+            s.len() <= 8_000
+                && match provider {
+                    Provider::Zai => crate::domain::attachment::has_browser_caption(s),
+                    Provider::ChatGpt => !files.is_empty() || !s.trim().is_empty(),
+                }
+        })
         .ok_or(RpcError::Invalid)?;
     let input = options
         .get("inputId")
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty() && s.len() <= 4096 && !s.chars().any(char::is_control))
         .ok_or(RpcError::Invalid)?;
-    Ok((text, input))
+    Ok((text, input, files))
 }
 
 struct Runner {
@@ -181,12 +212,29 @@ impl Runner {
                 }
                 sessions.create(config, title).await
             }
+            "cancelTurn" => {
+                let id = session_id(params)?;
+                let input = native_id(params, "inputMessageId")?;
+                let cancelled = sessions.cancel(config, id, input).await?;
+                Ok(json!({"sessionId":id,"inputMessageId":input,"cancelled":cancelled}))
+            }
+            "getMessageAttachment" => {
+                let id = session_id(params)?;
+                let message = native_id(params, "messageId")?;
+                let file = native_id(params, "attachmentId")?;
+                let data = sessions.attachment(config, id, message, file).await?;
+                data.validate().map_err(|_| RpcError::Unavailable)?;
+                Ok(
+                    json!({"sessionId":id,"messageId":message,"attachmentId":file,
+                    "name":data.name,"mime_type":data.mime_type,"data_base64":data.data_base64}),
+                )
+            }
             "sendMessage" => {
                 let id = session_id(params)?;
-                let (text, key) = send_options(&params["options"])?;
+                let (text, key, files) = send_options(config.provider, &params["options"])?;
                 let mut result =
                     json!({"inputId":key,"sessionId":id,"harness":config.provider.name()});
-                let admission = match sessions.send(config, id, text).await {
+                let admission = match sessions.send(config, id, text, &files).await {
                     Ok(native) => {
                         result["nativeInputMessageId"] = Value::String(native);
                         result["ok"] = Value::Bool(true);
@@ -386,11 +434,31 @@ mod tests {
                 .as_object_mut()
                 .unwrap()
                 .extend(incompatible.as_object().unwrap().clone());
-            assert_eq!(send_options(&options), Err(RpcError::Invalid));
+            assert_eq!(
+                send_options(Provider::ChatGpt, &options),
+                Err(RpcError::Invalid)
+            );
         }
         assert_eq!(
-            send_options(&json!({"inputId":"key","message":"  exact text  ","queue":true})),
-            Ok(("  exact text  ", "key"))
+            send_options(
+                Provider::ChatGpt,
+                &json!({"inputId":"key","message":"  exact text  ","queue":true})
+            ),
+            Ok(("  exact text  ", "key", vec![]))
+        );
+    }
+
+    #[test]
+    fn attachment_only_input_respects_the_native_composer() {
+        let value = json!({"message":"","queue":true,"inputId":"file-only",
+            "attachments":[{"name":"data.bin","mime_type":"application/octet-stream","data_base64":"AP8="}]});
+        assert_eq!(send_options(Provider::Zai, &value), Err(RpcError::Invalid));
+        let (text, key, files) = send_options(Provider::ChatGpt, &value).unwrap();
+        assert_eq!((text, key), ("", "file-only"));
+        assert_eq!(files[0].data_base64, "AP8=");
+        assert_eq!(
+            send_options(Provider::ChatGpt, &json!({"message":"","inputId":"empty"})),
+            Err(RpcError::Invalid)
         );
     }
 }

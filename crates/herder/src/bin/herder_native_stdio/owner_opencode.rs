@@ -44,6 +44,15 @@ impl ScopedMessageReader for Messages {
         // This legacy API is a bounded tail and has no completeness cursor.
         Ok(serde_json::json!({"messages":messages,"next_cursor":null,"complete":false}))
     }
+
+    fn read_attachment(
+        &mut self,
+        address: &SessionAddress,
+        message: &str,
+        file: &str,
+    ) -> Result<herder::domain::attachment::InlineAttachment, ()> {
+        self.0.attachment(address, message, file).map_err(|_| ())
+    }
 }
 
 fn canonical_host_id(value: &str) -> &str {
@@ -179,7 +188,8 @@ impl ApplicationPort for App {
                 sender,
                 input_id,
                 message,
-            }) = &request
+                attachments,
+            }) = request
             {
                 // The envelope target selects this owner, but sender is only
                 // attribution. Trust still comes from the configured owner,
@@ -201,8 +211,8 @@ impl ApplicationPort for App {
                     .call(
                         identity,
                         catalog::Request::Session(catalog::Session::Resolve {
-                            harness: target.harness.clone(),
-                            native_session_id: target.native_session_id.clone(),
+                            harness: target.harness,
+                            native_session_id: target.native_session_id,
                             node_ref: Some(target_host),
                         }),
                     )
@@ -241,10 +251,11 @@ impl ApplicationPort for App {
                         identity,
                         catalog::Request::Deliver(catalog::Deliver::Session {
                             session_ref,
-                            message: message.clone(),
+                            message,
+                            attachments,
                             mode,
-                            request_key: input_id.clone(),
-                            sender: Some(sender.clone()),
+                            request_key: input_id,
+                            sender: Some(sender),
                         }),
                     )
                     .await;
@@ -332,6 +343,7 @@ impl ApplicationPort for App {
             let session = match &request {
                 catalog::Request::Session(
                     catalog::Session::Messages { session_ref, .. }
+                    | catalog::Session::Attachment { session_ref, .. }
                     | catalog::Session::Archive { session_ref, .. },
                 )
                 | catalog::Request::Stop(catalog::Stop::Stop { session_ref, .. })
@@ -429,6 +441,13 @@ impl ApplicationPort for App {
                     Err(_) => None,
                 },
                 catalog::Request::Stop(_) => match authority() {
+                    Ok(a) if self.adapter.supports_browser_interrupt() => {
+                        ScopedStopApplication::new_with_browser_interrupt(
+                            a, self.instance.clone(), grants, self.adapter.clone(),
+                        )
+                        .call(identity, request)
+                        .await
+                    }
                     Ok(a) => {
                         ScopedStopApplication::new(a, self.instance.clone(), grants)
                             .call(identity, request)

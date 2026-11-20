@@ -1,4 +1,7 @@
-use super::{BrowserActivity, BrowserSubmitError, Config, Provider, protocol::RpcError};
+use super::{
+    BrowserActivity, BrowserAttachment, BrowserFile, BrowserSubmitError, Config, Provider,
+    protocol::RpcError,
+};
 use crate::adapters::{
     cdp::CdpConnection,
     chatgpt::{ChatGptReadError, ChatGptReader, Role as ChatGptRole},
@@ -126,6 +129,34 @@ impl Page {
             == Some(id))
     }
 
+    /// Recover a pre-existing chat tab after the subprocess restarts. Never
+    /// navigate a tab for cancellation or choose between duplicate chat tabs.
+    pub(super) async fn existing_target(
+        &mut self,
+        config: &Config,
+        remote: &str,
+    ) -> Result<String, RpcError> {
+        let route = format!("/c/{remote}");
+        let targets = self
+            .connection()
+            .list_targets()
+            .await
+            .map_err(|_| RpcError::Unavailable)?;
+        let mut matches = targets.into_iter().filter(|t| {
+            t.target_type == "page"
+                && t.browser_context_id.as_deref() == Some(&config.identity.browser_context_id)
+                && reqwest::Url::parse(&t.url).is_ok_and(|u| {
+                    u.origin().ascii_serialization() == config.provider.origin()
+                        && u.path() == route
+                })
+        });
+        let target = matches.next().ok_or(RpcError::Unavailable)?;
+        if matches.next().is_some() {
+            return Err(RpcError::Unavailable);
+        }
+        Ok(target.target_id)
+    }
+
     pub(super) async fn open_conversation(&mut self, id: &str) -> Result<(), RpcError> {
         match self {
             Self::ChatGpt(page) => Ok(page.open_conversation(id).await?),
@@ -171,7 +202,7 @@ impl Page {
                             ChatGptRole::User => "user",
                             ChatGptRole::Assistant => "assistant",
                         };
-                        let mut row = message(session, m.id, role, m.text, m.model);
+                        let mut row = message(session, m.id, role, m.text, m.model, m.attachments);
                         if let Some(t) = m.create_time.and_then(|s| {
                             chrono::DateTime::from_timestamp_millis((s * 1000.0) as i64)
                         }) {
@@ -191,7 +222,7 @@ impl Page {
                             ZaiRole::User => "user",
                             ZaiRole::Assistant => "assistant",
                         };
-                        let mut row = message(session, m.id, role, m.text, m.model);
+                        let mut row = message(session, m.id, role, m.text, m.model, m.attachments);
                         if let Some(t) = m.timestamp {
                             row["nativeTimestamp"] = json!(t);
                         }
@@ -207,17 +238,54 @@ impl Page {
         &mut self,
         remote: Option<&str>,
         text: &str,
+        files: &[BrowserAttachment],
     ) -> Result<(String, String), BrowserSubmitError> {
         match self {
-            Self::ChatGpt(page) => page.submit_message(remote, text).await,
-            Self::Zai(page) => page.submit_message(remote, text).await,
+            Self::ChatGpt(page) => page.submit_with_attachments(remote, text, files).await,
+            Self::Zai(page) => page.submit_with_attachments(remote, text, files).await,
+        }
+    }
+
+    pub(super) async fn cancel(&mut self, remote: &str, input: &str) -> Result<bool, RpcError> {
+        match self {
+            Self::ChatGpt(page) => Ok(page.cancel_turn(remote, input).await?),
+            Self::Zai(page) => Ok(page.cancel_turn(remote, input).await?),
+        }
+    }
+
+    pub(super) async fn attachment(
+        &mut self,
+        remote: &str,
+        message: &str,
+        attachment: &str,
+    ) -> Result<BrowserAttachment, RpcError> {
+        match self {
+            Self::ChatGpt(page) => Ok(page.read_attachment(remote, message, attachment).await?),
+            Self::Zai(page) => Ok(page.read_attachment(remote, message, attachment).await?),
         }
     }
 }
 
-fn message(session: &str, id: String, role: &str, text: String, model: Option<String>) -> Value {
+fn message(
+    session: &str,
+    id: String,
+    role: &str,
+    text: String,
+    model: Option<String>,
+    files: Vec<BrowserFile>,
+) -> Value {
+    let parts: Vec<_> = (!text.is_empty())
+        .then(|| json!({"type":"text","text":text}))
+        .into_iter()
+        .chain(files.into_iter().map(|file| {
+            json!({
+            "type": if file.image || file.mime_type.starts_with("image/") { "image" } else { "file" },
+                "attachment_id":file.id,"name":file.name,"mime_type":file.mime_type
+            })
+        }))
+        .collect();
     let mut row = json!({"id":id,"nativeMessageId":id,"role":role,"sessionId":session,
-        "text":text,"parts":[{"type":"text","text":text}]});
+        "text":text,"parts":parts});
     if let Some(model) = model {
         row["model"] = Value::String(model);
     }
