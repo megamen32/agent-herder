@@ -272,6 +272,12 @@ def check_selector(selector, launcher, require_worker=True):
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     argv, env, receipt = module.prepare(str(selector))
+    if "native_profile_migration" in manifest or "adapter_migration" in manifest:
+        expected_argv = [manifest["compat"]]
+        for path in selection["profiles"]:
+            expected_argv.extend(["--trusted-owner-profile", path])
+        if argv != expected_argv:
+            raise ValueError("launcher does not pass the exact reviewed owner profiles")
     migration = canonical_migration_identity(manifest)
     expected_epoch = migration["epoch"] if migration is not None else None
     if env.get("AGENT_HERDER_MIGRATION_EPOCH") != expected_epoch or receipt.get("canonical_migration") != migration:
@@ -355,7 +361,8 @@ def compose_manifest(base, output, source_sha, base_path, base_hash, hashes, bui
 
 
 ADAPTER_UPDATES = {"opencode", "zcode", "codex"}
-NATIVE_PROFILE_UPDATES = {"opencode"}
+BROWSER_KINDS = {"chatgpt", "zai"}
+NATIVE_PROFILE_UPDATES = {"opencode"} | BROWSER_KINDS
 
 
 def strict_json(raw):
@@ -371,135 +378,69 @@ def strict_json(raw):
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
 
 
-def profile_payload(raw, previous, replacement):
-    """Replace one JSON string token; every other byte remains identical."""
-    before = strict_json(raw)
-    if before["owner"]["ahap_script"] != previous:
-        raise ValueError("profile does not use the reviewed previous adapter")
-    text = raw.decode("utf-8")
+def member_span(text, start, name, *, remove=False):
+    """Locate a value, or the whole member and one separator, in strict JSON."""
     decoder = json.JSONDecoder()
-    def span(start, name):
-        pos = start
-        while text[pos].isspace():
-            pos += 1
-        if text[pos] != "{":
-            raise ValueError("expected a JSON object")
-        pos += 1
-        while True:
-            while text[pos].isspace() or text[pos] == ",":
-                pos += 1
-            if text[pos] == "}":
-                raise ValueError("missing protected profile member")
-            key, pos = decoder.raw_decode(text, pos)
-            while text[pos].isspace():
-                pos += 1
-            if text[pos] != ":":
-                raise ValueError("invalid JSON member")
-            pos += 1
-            while text[pos].isspace():
-                pos += 1
-            begin = pos
-            _, pos = decoder.raw_decode(text, pos)
-            if key == name:
-                return begin, pos
-    owner_start, _ = span(0, "owner")
-    begin, end = span(owner_start, "ahap_script")
-    result = (text[:begin] + json.dumps(replacement) + text[end:]).encode("utf-8")
-    expected = copy.deepcopy(before)
-    expected["owner"]["ahap_script"] = replacement
-    if strict_json(result) != expected or len(result) > 16384:
+    skip = json.decoder.WHITESPACE.match
+    start = skip(text, start).end()
+    if text[start] != "{":
+        raise ValueError("expected a protected profile object")
+    pos = skip(text, start + 1).end()
+    comma = None
+    while text[pos] != "}":
+        key, end = decoder.raw_decode(text, pos)
+        colon = skip(text, end).end()
+        begin = skip(text, colon + 1).end()
+        _, end = decoder.raw_decode(text, begin)
+        sep = skip(text, end).end()
+        if key == name:
+            if not remove:
+                return begin, end
+            if comma is None:
+                return start + 1, sep + 1 if text[sep] == "," else end
+            return comma, end
+        if text[sep] != ",":
+            break
+        comma = sep
+        pos = skip(text, sep + 1).end()
+    raise ValueError("missing protected profile member")
+
+
+def edit_owner(raw, replacements, *, remove_script=False):
+    expected = strict_json(raw)
+    text = raw.decode("utf-8")
+    owner_start, _ = member_span(text, 0, "owner")
+    edits = []
+    for key, value in replacements.items():
+        begin, end = member_span(text, owner_start, key)
+        edits.append((begin, end, json.dumps(value, sort_keys=True)))
+        expected["owner"][key] = value
+    if remove_script:
+        begin, end = member_span(text, owner_start, "ahap_script", remove=True)
+        edits.append((begin, end, ""))
+        del expected["owner"]["ahap_script"]
+    for begin, end, replacement in sorted(edits, reverse=True):
+        text = text[:begin] + replacement + text[end:]
+    payload = text.encode("utf-8")
+    if len(payload) > 16384 or strict_json(payload) != expected:
         raise ValueError("profile migration changes protected fields or exceeds native limit")
-    return result
+    return payload
+
+
+def profile_payload(raw, previous, replacement):
+    if strict_json(raw)["owner"]["ahap_script"] != previous:
+        raise ValueError("profile does not use the reviewed previous adapter")
+    return edit_owner(raw, {"ahap_script": replacement})
 
 
 def native_profile_payload(raw):
     """Remove only the legacy OpenCode runner member from a trusted profile."""
-    before = strict_json(raw)
-    owner = before["owner"]
+    owner = strict_json(raw)["owner"]
     if owner.get("kind") != "opencode" or not isinstance(owner.get("ahap_script"), str):
         raise ValueError("profile is not a legacy OpenCode owner profile")
     if not isinstance(owner.get("ahap_base_url"), str) or not owner["ahap_base_url"].strip():
         raise ValueError("native OpenCode profile requires an endpoint")
-    text = raw.decode("utf-8")
-    decoder = json.JSONDecoder()
-
-    def member_removal(start, name):
-        pos = start
-        while text[pos].isspace():
-            pos += 1
-        if text[pos] != "{":
-            raise ValueError("expected a JSON object")
-        pos += 1
-        first = True
-        separator = None
-        while True:
-            while text[pos].isspace():
-                pos += 1
-            if text[pos] == "}":
-                raise ValueError("missing protected profile member")
-            key_start = pos
-            key, pos = decoder.raw_decode(text, pos)
-            if not isinstance(key, str):
-                raise ValueError("profile member name is not a string")
-            while text[pos].isspace():
-                pos += 1
-            if text[pos] != ":":
-                raise ValueError("invalid JSON member")
-            pos += 1
-            while text[pos].isspace():
-                pos += 1
-            _, value_end = decoder.raw_decode(text, pos)
-            next_pos = value_end
-            while text[next_pos].isspace():
-                next_pos += 1
-            if key == name:
-                if first:
-                    end = next_pos + 1 if text[next_pos:next_pos + 1] == "," else value_end
-                    return start + 1, end
-                return separator, value_end
-            if text[next_pos:next_pos + 1] == ",":
-                separator = next_pos
-                pos = next_pos + 1
-                first = False
-                continue
-            if text[next_pos:next_pos + 1] == "}":
-                raise ValueError("protected profile member not found")
-            raise ValueError("invalid JSON object separator")
-
-    # Reuse the protected-object scanner used by profile_payload without
-    # serializing the profile and changing unrelated bytes.
-    pos = 0
-    while text[pos].isspace():
-        pos += 1
-    if text[pos] != "{":
-        raise ValueError("expected a JSON object")
-    pos += 1
-    while True:
-        while text[pos].isspace() or text[pos] == ",":
-            pos += 1
-        if text[pos] == "}":
-            raise ValueError("owner member not found")
-        key, value_start = decoder.raw_decode(text, pos)
-        while text[value_start].isspace():
-            value_start += 1
-        if text[value_start] != ":":
-            raise ValueError("invalid JSON member")
-        value_start += 1
-        while text[value_start].isspace():
-            value_start += 1
-        _, value_end = decoder.raw_decode(text, value_start)
-        if key == "owner":
-            owner_start = value_start
-            break
-        pos = value_end
-
-    begin, end = member_removal(owner_start, "ahap_script")
-    result = (text[:begin] + text[end:]).encode("utf-8")
-    expected = copy.deepcopy(before)
-    del expected["owner"]["ahap_script"]
-    if strict_json(result) != expected or len(result) > 16384:
-        raise ValueError("native profile migration changes protected fields or exceeds native limit")
-    return result
+    return edit_owner(raw, {}, remove_script=True)
 
 
 def protected_profile(path):
@@ -513,6 +454,14 @@ def protected_profile(path):
         if private_file(profile[key]).parent != path.parent:
             raise ValueError("profile must be a sibling of its existing database and gate")
     return profile, raw
+
+
+def authority_parent(path, profile):
+    # Rust compares the lexical parents, even for a protected directory alias.
+    parent = Path(profile["database"]).parent
+    if parent != Path(profile["gate"]).parent or parent.resolve(strict=True) != path.parent:
+        raise ValueError("profile requires one existing authority directory")
+    return parent
 
 
 def adapter_source(manifest, kind):
@@ -647,21 +596,17 @@ def bundle_process_remote_bridge(repo, output, source, base, compilation=None):
     return {"path": str(shipped), "sha256": digest(shipped), "build": evidence}
 
 
-def uses_reviewed_local_adapter(profile, manifest, updates):
-    """Preserve an exact per-instance remote wrapper when its local kind updates."""
-    owner = profile["owner"]
+def retained_remote_wrapper(owner, manifest):
     kind = owner["kind"]
-    if kind not in updates:
-        return False
-    if owner["ahap_script"] == manifest["adapters"][kind]:
-        return True
     wrappers = manifest.get("remote_ahap_wrappers", [])
     fields = {"node", "instance", "kind", "script", "script_sha256", "config_sha256"}
     if not isinstance(wrappers, list) or any(not isinstance(item, dict) or set(item) != fields for item in wrappers):
         raise ValueError("invalid retained remote wrapper")
     identity = (owner.get("node"), owner.get("instance"), kind)
     matches = [item for item in wrappers if (item["node"], item["instance"], item["kind"]) == identity]
-    if len(matches) != 1 or matches[0]["script"] != owner["ahap_script"]:
+    if not matches:
+        return False
+    if len(matches) != 1 or matches[0]["script"] != owner.get("ahap_script"):
         raise ValueError("profile is neither the reviewed local adapter nor an exact retained remote wrapper")
     wrapper = matches[0]
     script = canonical(wrapper["script"])
@@ -670,7 +615,20 @@ def uses_reviewed_local_adapter(profile, manifest, updates):
     if (digest(script) != wrapper["script_sha256"] or digest(companion) != wrapper["config_sha256"]
             or config.get("nodeRef") != owner.get("node") or config.get("kind") != kind):
         raise ValueError("retained remote wrapper identity or digest changed")
-    return False
+    return True
+
+
+def uses_reviewed_local_adapter(profile, manifest, updates):
+    """Preserve an exact per-instance remote wrapper when its local kind updates."""
+    owner = profile["owner"]
+    kind = owner["kind"]
+    if kind not in updates or retained_remote_wrapper(owner, manifest):
+        return False
+    if owner.get("ahap_script") == manifest["adapters"][kind]:
+        return True
+    if kind == "opencode" and owner.get("ahap_script") is None and owner.get("ahap_base_url"):
+        return False
+    raise ValueError("profile is neither the reviewed local adapter nor an exact retained remote wrapper")
 
 
 def stage_adapter_migration(base, manifest, selection, selector, output, source, adapters, build):
@@ -680,10 +638,9 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     payload_dir = output / "profile-payloads"
     payload_dir.mkdir(mode=0o700)
     profiles = []
-    all_hashes = {}
-    for path in selection["profiles"]:
-        path = private_file(path)
-        all_hashes[str(path)] = digest(path)
+    all_hashes, native = native_profile_plan(base, manifest, selection, output, source, [], {})
+    for selected in selection["profiles"]:
+        path = private_file(selected)
         profile = strict_json(path.read_bytes())
         kind = profile["owner"]["kind"]
         if not uses_reviewed_local_adapter(profile, base, adapters):
@@ -691,18 +648,20 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
         profile, raw = protected_profile(path)
         payload = profile_payload(raw, base["adapters"][kind], adapters[kind]["path"])
         after_hash = hashlib.sha256(payload).hexdigest()
-        target = path.parent / ("profile-process-leases-" + source[:12] + "-" + after_hash[:20] + ".json")
+        parent = authority_parent(path, profile)
+        target = parent / ("profile-process-leases-" + source[:12] + "-" + after_hash[:20] + ".json")
         if os.path.lexists(target):
             raise FileExistsError("new protected profile destination already exists")
         staged = payload_dir / (after_hash + ".json")
         if not staged.exists():
             create(staged, payload, 0o400)
-        profiles.append({"kind": kind, "previous_path": str(path), "previous_sha256": digest(path),
+        profiles.append({"kind": kind, "previous_path": selected, "previous_sha256": all_hashes[selected],
                          "path": str(target), "sha256": after_hash,
                          "payload": str(staged), "payload_sha256": digest(staged)})
     if {row["kind"] for row in profiles} != set(adapters):
         raise ValueError("every reviewed adapter update must have an exact selected profile")
-    migration = {"schema": 1, "type": "herder-ahap-profile-rebind", "source_commit": source,
+    profiles.extend(stage_native_payloads(native))
+    migration = {"schema": 2 if native else 1, "type": "herder-ahap-profile-rebind", "source_commit": source,
                  "base_selector": str(selector), "base_selector_sha256": digest(selector),
                  "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
                  "adapters": adapters, "profiles": profiles, "profile_sha256": all_hashes,
@@ -722,53 +681,194 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
     manifest["process_leases_build"]["unchanged_components"].remove("adapters")
     manifest["process_leases_build"]["unchanged_adapter_kinds"] = sorted(set(base["adapters"]) - set(adapters))
     manifest["composition"]["process_leases"]["scope"] = (
-        "native core and selected AHAP adapters updated; profile copies change only owner.ahap_script; authority retained")
+        "native core and selected AHAP adapters updated; protected owner bindings retained")
     manifest["build_inputs"]["source_commit_role"] = "clean native core and explicitly reviewed adapters; all other pins retained"
     payload_dir.chmod(0o500)
     return migration
 
 
-def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds):
-    """Stage the reviewed OpenCode profile transition to the Rust owner path."""
-    if not kinds or not set(kinds) <= NATIVE_PROFILE_UPDATES:
-        raise ValueError("only native OpenCode profile update is supported")
-    payload_dir = output / "profile-payloads"
-    payload_dir.mkdir(mode=0o700)
-    profiles = []
-    all_hashes = {}
-    for selected_path in selection["profiles"]:
-        path = private_file(selected_path)
-        all_hashes[str(selected_path)] = digest(path)
-        profile = strict_json(path.read_bytes())
-        owner = profile["owner"]
-        if owner.get("kind") not in kinds or owner.get("ahap_script") != base["adapters"].get(owner.get("kind")):
+BROWSER_SCOPE = "AHAP_BROWSER_ACCOUNT_SCOPE"
+USERIO_SCOPE = "AHAP_USERIO_ACCOUNT_SCOPE"
+CDP_FIELDS = {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT", "AHAP_BROWSER_CDP_WS_URL",
+              "AHAP_BROWSER_CDP_CONTEXT_ID", "AHAP_BROWSER_CDP_TARGET_ID"}
+ORIGIN_PORT = "AHAP_BROWSER_CDP_ORIGIN_PORT"
+# Only transport settings understood by the legacy profile may be retired.
+LEGACY_BROWSER_FIELDS = {
+    "userio": {USERIO_SCOPE, "AHAP_USERIO_ENDPOINT", "AHAP_USERIO_AGENT_ID", "AHAP_USERIO_INSTANCE_ID",
+               "AHAP_USERIO_ACCESS_TOKEN_FILE", "AHAP_USERIO_TOKEN_FILE", "AHAP_USERIO_CONNECTION_ID",
+               "AHAP_USERIO_PRINCIPAL_ID"},
+    "mac-mini": {"AHAP_BROWSER_PAGE_ID", "AGENT_HERDER_MAC_MINI_SSH_TARGET",
+                 "AGENT_HERDER_MAC_MINI_CHROME_GATEWAY_SCRIPT", "AGENT_HERDER_MAC_MINI_CHROME_GATEWAY_URL"},
+    "vibe": {"AHAP_BROWSER_PAGE_ID", "AHAP_BROWSER_VIBE_TARGET", "AHAP_BROWSER_VIBE_SESSION_ID",
+             "AHAP_BROWSER_VIBE_RELAY_PORT", "AHAP_BROWSER_VIBE_STATE_DIR", "AGENT_HERDER_VIBE_MAC_SSH_TARGET",
+             "AGENT_HERDER_VIBE_MAC_NODE_PATH", "AGENT_HERDER_VIBE_MAC_CLI_PATH", "AGENT_HERDER_VIBE_SERVER_CLI_PATH"},
+}
+
+
+def validate_direct_cdp(env):
+    """Match the protected Rust native browser contract without contacting Chrome."""
+    if (not isinstance(env, dict) or set(env) not in (CDP_FIELDS, CDP_FIELDS | {ORIGIN_PORT})
+            or not all(isinstance(v, str) for v in env.values())
+            or env["AHAP_BROWSER_TRANSPORT"] != "direct-cdp"
+            or not re.fullmatch(r"[a-f0-9]{64}", env[BROWSER_SCOPE])):
+        raise ValueError("invalid native browser binding fields or scope")
+    for key in ("AHAP_BROWSER_CDP_CONTEXT_ID", "AHAP_BROWSER_CDP_TARGET_ID"):
+        value = env[key]
+        if not value.strip() or len(value.encode("utf-8")) > 256 or re.search(r"[\x00-\x1f\x7f-\x9f]", value):
+            raise ValueError("invalid native browser context or target")
+    endpoint = re.fullmatch(r"ws://(?:127\.0\.0\.1|localhost|\[::1\])(?::([0-9]{1,5}))?"
+                            r"/devtools/browser/[a-zA-Z0-9_-]{1,128}", env["AHAP_BROWSER_CDP_WS_URL"])
+    if not endpoint or (endpoint[1] and not 0 < int(endpoint[1]) <= 65535):
+        raise ValueError("invalid loopback browser WebSocket endpoint")
+    if ORIGIN_PORT in env and (not re.fullmatch(r"[0-9]{1,5}", env[ORIGIN_PORT])
+                               or not 0 < int(env[ORIGIN_PORT]) <= 65535):
+        raise ValueError("invalid native browser origin port")
+
+
+def read_browser_binding(pin, bundle, kind, profile_hash):
+    """Authenticate independent operator input. Receipts contain only the file pin."""
+    if (not isinstance(pin, dict) or set(pin) != {"path", "sha256"}
+            or not isinstance(pin["path"], str) or not isinstance(pin["sha256"], str)
+            or not re.fullmatch(r"[a-f0-9]{64}", pin["sha256"])):
+        raise ValueError("invalid private browser binding pin")
+    path = canonical(pin["path"])
+    if path.is_relative_to(bundle):
+        raise ValueError("browser binding must be independent of the candidate")
+    private_directory(path.parent)
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
+                or info.st_nlink != 1 or info.st_size > 16384):
+            raise ValueError("expected a private owner-controlled browser binding")
+        raw = stream.read(16385)
+    if len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != pin["sha256"]:
+        raise ValueError("private browser binding digest mismatch")
+    binding = strict_json(raw)
+    if (not isinstance(binding, dict) or set(binding) != {"kind", "profile_sha256", "ahap_env"}
+            or binding["kind"] != kind or binding["profile_sha256"] != profile_hash):
+        raise ValueError("private browser binding does not select this provider and protected profile")
+    return binding["ahap_env"]
+
+
+def browser_profile_payload(raw, owner, core, binding):
+    env = owner.get("ahap_env")
+    if (not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values())
+            or owner.get("ahap_base_url") is not None):
+        raise ValueError("invalid previous browser profile transport")
+    legacy = owner.get("ahap_script") is not None
+    transport = env.get("AHAP_BROWSER_TRANSPORT")
+    if transport == "direct-cdp":
+        new_env = env.copy()
+        if legacy:
+            new_env.pop("AHAP_BROWSER_PAGE_ID", None)  # The old runner's numeric display hint.
+    else:
+        if (not legacy or transport not in LEGACY_BROWSER_FIELDS
+                or set(env) - LEGACY_BROWSER_FIELDS[transport] - {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT"}):
+            raise ValueError("unsupported previous browser transport or fields")
+        if binding is None:
+            raise ValueError("legacy browser transport requires a reviewed private browser binding")
+        new_env = binding
+    validate_direct_cdp(new_env)
+    scopes = [env[key] for key in (BROWSER_SCOPE, USERIO_SCOPE) if key in env]
+    grants = owner.get("existing_sessions", [])
+    if (not scopes or any(scope != new_env[BROWSER_SCOPE] for scope in scopes)
+            or not isinstance(grants, list)
+            or any(not isinstance(grant, dict) or grant.get("account_scope") != new_env[BROWSER_SCOPE]
+                   for grant in grants)):
+        raise ValueError("native browser scope differs from protected profile or grants")
+    changes = {"executable": core}
+    if new_env != env:
+        changes["ahap_env"] = new_env
+    return edit_owner(raw, changes, remove_script=legacy)
+
+
+def native_profile_plan(base, manifest, selection, output, source, kinds, bindings):
+    """Derive every sibling again from the old selector and independent pins."""
+    if (not isinstance(kinds, (list, set, tuple)) or not all(isinstance(k, str) for k in kinds)
+            or len(set(kinds)) != len(kinds) or not set(kinds) <= NATIVE_PROFILE_UPDATES
+            or not isinstance(bindings, dict) or not set(bindings) <= set(kinds) & BROWSER_KINDS):
+        raise ValueError("invalid native profile selection or browser binding providers")
+    snapshots, planned, used_bindings = {}, [], set()
+    for selected in selection["profiles"]:
+        path = private_file(selected)
+        raw = path.read_bytes()
+        snapshots[selected] = profile_hash = hashlib.sha256(raw).hexdigest()
+        owner = strict_json(raw)["owner"]
+        kind = owner.get("kind")
+        script = owner.get("ahap_script")
+        native_browser = kind in BROWSER_KINDS and script is None
+        if kind not in kinds and not native_browser:
             continue
-        payload = native_profile_payload(path.read_bytes())
+        if retained_remote_wrapper(owner, base):
+            continue
+        if script is None and kind == "opencode":
+            continue  # The native OpenCode owner retains the Node and endpoint pins.
+        if owner.get("executable") != base["core" if native_browser else "node"]:
+            raise ValueError("previous owner does not select the exact installed executable")
+        if not native_browser and (not isinstance(script, str) or script != base["adapters"].get(kind)):
+            raise ValueError("previous owner does not select the reviewed local runner")
+        profile, checked = protected_profile(path)
+        if checked != raw:
+            raise ValueError("protected profile changed during migration")
+        if kind == "opencode":
+            payload = native_profile_payload(raw)
+        else:
+            binding = None
+            env = owner.get("ahap_env")
+            if (not native_browser and kind in bindings and isinstance(env, dict)
+                    and env.get("AHAP_BROWSER_TRANSPORT") != "direct-cdp"):
+                binding = read_browser_binding(bindings[kind], output, kind, profile_hash)
+                used_bindings.add(kind)
+            payload = browser_profile_payload(raw, owner, manifest["core"], binding)
         after_hash = hashlib.sha256(payload).hexdigest()
-        target = path.parent / ("profile-process-leases-native-" + source[:12] + "-" + after_hash[:20] + ".json")
-        if os.path.lexists(target):
+        parent = authority_parent(path, profile)
+        target = parent / ("profile-process-leases-native-" + source[:12] + "-" + after_hash[:20] + ".json")
+        row = {"kind": kind, "previous_path": selected, "previous_sha256": profile_hash,
+               "path": str(target), "sha256": after_hash, "payload_sha256": after_hash,
+               "payload": str(output / "profile-payloads" / (after_hash + ".json"))}
+        if kind in BROWSER_KINDS:
+            row["authority_directory"] = str(path.parent)
+        planned.append((row, payload))
+    if not set(kinds) <= {row["kind"] for row, _ in planned} or used_bindings != set(bindings):
+        raise ValueError("each selected native update and private binding must match a profile")
+    if len({Path(row["path"]).resolve() for row, _ in planned}) != len(planned):
+        raise ValueError("native profile migration requires distinct sibling destinations")
+    return snapshots, planned
+
+
+def stage_native_payloads(planned):
+    profiles = []
+    for row, payload in planned:
+        if os.path.lexists(row["path"]):
             raise FileExistsError("new protected profile destination already exists")
-        staged = payload_dir / (after_hash + ".json")
+        staged = Path(row["payload"])
         if not staged.exists():
             create(staged, payload, 0o400)
-        profiles.append({"kind": owner["kind"], "previous_path": str(selected_path),
-                         "previous_sha256": digest(path), "path": str(target),
-                         "sha256": after_hash, "payload": str(staged),
-                         "payload_sha256": digest(staged)})
-    if {row["kind"] for row in profiles} != set(kinds):
-        raise ValueError("every native profile update must have an exact selected profile")
-    migration = {"schema": 1, "type": "herder-native-profile-rebind", "source_commit": source,
-                 "kind": "opencode", "base_selector": str(selector),
-                 "base_selector_sha256": digest(selector), "base_manifest": selection["manifest"],
-                 "base_manifest_sha256": selection["manifest_sha256"], "profile_sha256": all_hashes,
-                 "profiles": profiles}
+        profiles.append(row)
+    return profiles
+
+
+def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds, bindings=None):
+    bindings = {} if bindings is None else bindings
+    snapshots, planned = native_profile_plan(base, manifest, selection, output, source, kinds, bindings)
+    if not planned:
+        return None
+    payload_dir = output / "profile-payloads"
+    payload_dir.mkdir(mode=0o700)
+    profiles = stage_native_payloads(planned)
+    # Preserve the existing on-disk OpenCode contract.
+    version = ({"schema": 1, "kind": "opencode"} if all(row["kind"] == "opencode" for row in profiles)
+               else {"schema": 2, "kinds": sorted(kinds), "bindings": bindings})
+    migration = {**version, "type": "herder-native-profile-rebind", "source_commit": source,
+                 "base_selector": str(selector), "base_selector_sha256": digest(selector),
+                 "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
+                 "profile_sha256": snapshots, "profiles": profiles}
     path = output / "native-profile-migration.json"
     create(path, encoded(migration), 0o400)
     manifest["native_profile_migration"] = str(path)
     manifest["sha256"]["native_profile_migration"] = digest(path)
-    manifest["composition"]["process_leases"]["scope"] = (
-        "native core and OpenCode owner profile updated; legacy AHAP runner removed from the selected profile")
-    manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native OpenCode profile; all other pins retained"
+    manifest["composition"]["process_leases"]["scope"] = "native core and reviewed protected owner profiles updated"
+    manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native owner profiles"
     payload_dir.chmod(0o500)
     return migration
 
@@ -783,7 +883,7 @@ def adapter_transition(before, after):
         migration = strict_json(path.read_bytes())
         fields = {"schema", "type", "source_commit", "base_selector", "base_selector_sha256",
                   "base_manifest", "base_manifest_sha256", "adapters", "profiles", "profile_sha256", "build"}
-        if (set(migration) != fields or migration["schema"] != 1
+        if (set(migration) != fields or type(migration["schema"]) is not int or migration["schema"] not in (1, 2)
                 or migration["type"] != "herder-ahap-profile-rebind"
                 or migration["source_commit"] != after.get("process_leases_build", {}).get("source_commit")
                 or migration["source_commit"] != after.get("source_commit")
@@ -841,63 +941,63 @@ def adapter_transition(before, after):
     return migration
 
 
-def native_profile_transition(old, new, before, after, *, installed=False):
-    migration_path = private_file(after["native_profile_migration"])
-    if digest(migration_path) != after["sha256"].get("native_profile_migration"):
-        raise ValueError("native profile migration digest mismatch")
-    migration = strict_json(migration_path.read_bytes())
-    fields = {"schema", "type", "source_commit", "kind", "base_selector", "base_selector_sha256",
-              "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
-    if (set(migration) != fields or migration["schema"] != 1
-            or migration["type"] != "herder-native-profile-rebind"
-            or migration["kind"] != "opencode"
-            or migration["source_commit"] != after.get("source_commit")
-            or not re.fullmatch(r"[a-f0-9]{40}", migration["source_commit"])):
-        raise ValueError("invalid native profile migration")
-    if (digest(private_file(migration["base_manifest"])) != migration["base_manifest_sha256"]
-            or read_json(migration["base_manifest"]) != before):
-        raise ValueError("native profile migration baseline mismatch")
-    if (before["adapters"] != after["adapters"]
-            or before["sha256"]["adapters"] != after["sha256"]["adapters"]
-            or before.get("adapter") != after.get("adapter")
-            or before.get("remote_ahap_wrappers", []) != after.get("remote_ahap_wrappers", [])):
-        raise ValueError("native profile migration changed adapter pins")
-    snapshots = migration["profile_sha256"]
-    if not isinstance(snapshots, dict) or set(snapshots) != set(old["profiles"]):
-        raise ValueError("native profile snapshot is incomplete")
-    rows, by_old, destinations = migration["profiles"], {}, set()
-    bundle = migration_path.parent
-    for item in rows:
-        if set(item) != {"kind", "previous_path", "previous_sha256", "path", "sha256", "payload", "payload_sha256"}:
-            raise ValueError("unexpected native profile transition fields")
-        previous_key = item["previous_path"]
-        previous, target = private_file(previous_key), planned_path(item["path"])
-        if (previous_key in by_old or target in destinations or target == previous
-                or previous.parent != target.parent or previous_key not in snapshots
-                or item["previous_sha256"] != snapshots[previous_key]):
-            raise ValueError("native profile migration must use distinct siblings")
-        profile, raw = protected_profile(previous)
-        if profile["owner"].get("kind") != item["kind"] or item["kind"] != "opencode":
-            raise ValueError("native profile kind does not match reviewed transition")
-        payload = private_file(item["payload"])
-        if payload.parent != bundle / "profile-payloads":
-            raise ValueError("native profile payload is not inside the candidate")
-        wanted = native_profile_payload(raw)
-        if (payload.read_bytes() != wanted or digest(payload) != item["payload_sha256"]
-                or item["sha256"] != item["payload_sha256"]):
+def checked_native_rows(rows, planned, installed):
+    if rows != [row for row, _ in planned]:
+        raise ValueError("native migration differs from the exact reviewed profile bindings")
+    rebound = {}
+    for row, wanted in planned:
+        payload = Path(row["payload"])
+        private_directory(payload.parent)
+        if private_file(payload).read_bytes() != wanted:
             raise ValueError("native profile migration changes protected fields")
-        if installed and private_file(target).read_bytes() != wanted:
-            raise ValueError("installed native profile differs from reviewed payload")
-        by_old[previous_key] = item
-        destinations.add(target)
-    affected = {path for path in old["profiles"]
-                if strict_json(private_file(path).read_bytes())["owner"].get("kind") == "opencode"
-                and strict_json(private_file(path).read_bytes())["owner"].get("ahap_script") == before["adapters"]["opencode"]}
-    if set(by_old) != affected or {item["kind"] for item in rows} != {"opencode"}:
-        raise ValueError("native profile migration omits or adds selected profile bindings")
+        target = Path(row["path"])
+        if installed:
+            if private_file(target).read_bytes() != wanted:
+                raise ValueError("installed native profile differs from reviewed payload")
+        elif os.path.lexists(target):
+            raise FileExistsError("new protected profile destination already exists")
+        rebound[row["previous_path"]] = row
+    return rebound
+
+
+def native_profile_transition(old, new, before, after, *, installed=False):
+    bundle = private_file(new["manifest"]).parent
+    migration_path = private_file(after["native_profile_migration"])
+    if (migration_path != bundle / "native-profile-migration.json"
+            or digest(migration_path) != after["sha256"].get("native_profile_migration")):
+        raise ValueError("native profile migration path or digest mismatch")
+    migration = strict_json(migration_path.read_bytes())
+    fields = {"schema", "type", "source_commit", "base_selector", "base_selector_sha256",
+              "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
+    if not isinstance(migration, dict) or type(migration.get("schema")) is not int:
+        raise ValueError("invalid native profile migration")
+    if migration["schema"] == 1 and migration.get("kind") == "opencode":
+        fields.add("kind")
+        kinds, bindings = ["opencode"], {}
+    elif migration["schema"] == 2:
+        fields.update(("kinds", "bindings"))
+        kinds, bindings = migration.get("kinds"), migration.get("bindings")
+    else:
+        raise ValueError("unsupported native profile migration")
+    source = after.get("source_commit")
+    if (set(migration) != fields or migration["type"] != "herder-native-profile-rebind"
+            or migration["source_commit"] != source or source != after.get("source_sha")
+            or source != after["process_leases_build"]["source_commit"]
+            or not isinstance(source, str) or not re.fullmatch(r"[a-f0-9]{40}", source)):
+        raise ValueError("invalid native profile migration")
+    if (migration["base_manifest"] != old["manifest"] or migration["base_manifest_sha256"] != old["manifest_sha256"]
+            or digest(private_file(old["manifest"])) != old["manifest_sha256"] or read_json(old["manifest"]) != before):
+        raise ValueError("native profile migration baseline mismatch")
+    adapter_transition(before, after)
+    snapshots, planned = native_profile_plan(before, after, old, bundle, source, kinds, bindings)
+    if snapshots != migration["profile_sha256"]:
+        raise ValueError("previous protected profile changed or snapshot is incomplete")
+    if not planned or (migration["schema"] == 1 and any(row["kind"] != "opencode" for row, _ in planned)):
+        raise ValueError("invalid native profile migration coverage")
+    rebound = checked_native_rows(migration["profiles"], planned, installed)
     expected = copy.deepcopy(old)
     expected.update(manifest=new["manifest"], manifest_sha256=new["manifest_sha256"])
-    expected["profiles"] = [by_old[path]["path"] if path in by_old else path for path in old["profiles"]]
+    expected["profiles"] = [rebound[path]["path"] if path in rebound else path for path in old["profiles"]]
     if expected != new:
         raise ValueError("selector differs from exact native profile transition")
     return migration
@@ -922,22 +1022,30 @@ def profile_transition(old, new, before, after, *, installed=False):
     snapshots = migration["profile_sha256"]
     if not isinstance(snapshots, dict) or set(snapshots) != set(old["profiles"]):
         raise ValueError("adapter migration profile snapshot is incomplete")
-    for path, value in snapshots.items():
-        if digest(private_file(path)) != value:
-            raise ValueError("previous protected profile changed")
     rows = migration["profiles"]
     by_old = {}
     destinations = set()
     bundle = Path(after["adapter_migration"]).parent
+    # AHAP updates may carry only an existing native browser's exact core rebind.
+    actual, planned = native_profile_plan(before, after, old, bundle, migration["source_commit"], [], {})
+    if snapshots != actual:
+        raise ValueError("previous protected profile changed")
+    if bool(planned) != (migration["schema"] == 2):
+        raise ValueError("adapter migration differs from the required native browser core rebinds")
+    native = checked_native_rows([row for row in rows if row["kind"] in BROWSER_KINDS], planned, installed)
+    rows = [row for row in rows if row["kind"] not in BROWSER_KINDS]
+    destinations.update(Path(row["path"]).resolve() for row in native.values())
     for item in rows:
         if set(item) != {"kind", "previous_path", "previous_sha256", "path", "sha256", "payload", "payload_sha256"}:
             raise ValueError("unexpected profile transition fields")
-        previous, target = private_file(item["previous_path"]), planned_path(item["path"])
-        if (str(previous) in by_old or target in destinations or target == previous
-                or previous.parent != target.parent or str(previous) not in snapshots
-                or item["previous_sha256"] != snapshots[str(previous)]):
-            raise ValueError("profile migration must use distinct siblings in the existing authority")
+        selected = item["previous_path"]
+        previous, target = private_file(selected), Path(item["path"])
         profile, raw = protected_profile(previous)
+        destination = planned_path(previous.parent / target.name)
+        if (selected in by_old or destination in destinations or destination == previous
+                or target.parent != authority_parent(previous, profile) or selected not in snapshots
+                or item["previous_sha256"] != snapshots[selected]):
+            raise ValueError("profile migration must use distinct siblings in the existing authority")
         kind = profile["owner"]["kind"]
         if kind != item["kind"] or kind not in migration["adapters"]:
             raise ValueError("profile kind does not match reviewed adapter")
@@ -953,12 +1061,13 @@ def profile_transition(old, new, before, after, *, installed=False):
                 raise ValueError("installed sibling profile differs from the reviewed payload")
         elif os.path.lexists(target):
             raise FileExistsError("new protected profile destination already exists")
-        by_old[str(previous)] = item
-        destinations.add(target)
+        by_old[selected] = item
+        destinations.add(destination)
     affected = {path for path in old["profiles"]
                 if uses_reviewed_local_adapter(strict_json(private_file(path).read_bytes()), before, migration["adapters"])}
     if set(by_old) != affected or {item["kind"] for item in rows} != set(migration["adapters"]):
         raise ValueError("adapter migration omits or adds selected profile bindings")
+    by_old.update(native)
     expected["profiles"] = [by_old[path]["path"] if path in by_old else path for path in old["profiles"]]
     if expected != new:
         raise ValueError("selector differs from the exact reviewed profile transition")
@@ -970,8 +1079,14 @@ def check_candidate(selector, launcher):
     manifest = read_json(selection["manifest"])
     if "adapter_migration" not in manifest and "native_profile_migration" not in manifest:
         return check_selector(selector, launcher)
-    bundle = Path(selector).parent
+    bundle = private_file(selector).parent
     receipt = read_json(bundle / "process-leases-build.json")
+    if private_file(selection["manifest"]) != bundle / "manifest.json" or digest(private_file(launcher)) != receipt["launcher_sha256"]:
+        raise ValueError("candidate manifest or launcher differs from the reviewed build")
+    key = "native_profile_migration" if "native_profile_migration" in manifest else "adapter_migration"
+    migration_hash = manifest["sha256"][key]
+    if receipt.get("profile_migration_sha256", receipt.get("adapter_migration_sha256")) != migration_hash:
+        raise ValueError("profile migration differs from the build receipt")
     baseline = read_json(receipt["base_selector"])
     if (digest(private_file(receipt["base_selector"])) != receipt["base_selector_sha256"]
             or digest(private_file(selector)) != receipt["candidate_selector_sha256"]
@@ -993,7 +1108,7 @@ def check_candidate(selector, launcher):
         raise ValueError("staged selector does not match the exact reviewed payloads")
     checked = check_selector(staged, launcher)
     return {**checked, "selector": str(selector), "selector_sha256": digest(selector),
-            "profile_migration_sha256": manifest["sha256"].get("adapter_migration", manifest["sha256"].get("native_profile_migration")),
+            "profile_migration_sha256": migration_hash,
             "profile_validation": "staged_payloads_not_installed"}
 
 
@@ -1028,6 +1143,11 @@ def build(args):
         raise ValueError("select each reviewed native profile update once")
     if updates and native_updates:
         raise ValueError("adapter and native profile migrations cannot be combined")
+    browser_bindings = {}
+    for kind, path, sha256 in getattr(args, "browser_binding", []):
+        if kind not in BROWSER_KINDS or kind not in native_updates or kind in browser_bindings:
+            raise ValueError("supply one private binding per explicitly selected browser provider")
+        browser_bindings[kind] = {"path": path, "sha256": sha256}
     canonical_config = getattr(args, "canonical_config", None)
     canonical_hash = getattr(args, "canonical_config_sha256", None)
     if (canonical_config is None) != (canonical_hash is None):
@@ -1100,8 +1220,9 @@ def build(args):
     if updates:
         adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
-    if native_updates:
-        migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha, native_updates)
+    else:
+        migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha,
+                                                  native_updates, browser_bindings)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]
             or any(digest(private_file(path)) != value for path, value in profile_hashes.items())):
@@ -1200,10 +1321,16 @@ def install(args, *, guard=None):
             # overwrite or adopt pre-existing siblings on a repeated attempt.
             for item in migration["profiles"]:
                 require_mutation_guard(guard, selector, "install")
-                if digest(private_file(item["previous_path"])) != item["previous_sha256"]:
+                previous = private_file(item["previous_path"])
+                if digest(previous) != item["previous_sha256"]:
                     raise ValueError("previous profile changed before sibling creation")
-                create(Path(item["path"]), private_file(item["payload"]).read_bytes(), 0o400)
-                sync_dir(Path(item["path"]).parent)
+                target = Path(item["path"])
+                if (target.parent.resolve(strict=True) != previous.parent
+                        or item.get("authority_directory", str(previous.parent)) != str(previous.parent)):
+                    raise ValueError("profile authority directory changed before sibling creation")
+                target = previous.parent / target.name
+                create(target, private_file(item["payload"]).read_bytes(), 0o400)
+                sync_dir(target.parent)
             profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             check_selector(candidate, candidate_launcher)
             receipt["status"] = "profiles_prepared"
@@ -1263,6 +1390,8 @@ def main():
                    help="explicit reviewed AHAP update; may be repeated once per kind")
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
+    b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
+                   help="pin a private operator-reviewed direct-CDP binding for a selected legacy browser")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)
