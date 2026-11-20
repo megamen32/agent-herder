@@ -66,6 +66,27 @@ class LaunchTests(unittest.TestCase):
         data=json.loads(self.marker.read_text())
         self.assertEqual(data['argv'],[self.paths['compat'],'--trusted-owner-profile',self.profiles[0],'--trusted-owner-profile',self.profiles[1]])
         self.assertEqual(data['core'],self.paths['core'])
+    def test_native_browser_profiles_select_the_pinned_core(self):
+        self.manifest['adapters']['zai'] = self.paths['chatgpt']
+        self.manifest['sha256']['adapters']['zai'] = self.hash(self.paths['chatgpt'])
+        self.manifest_path.write_text(json.dumps(self.manifest))
+        profile = Path(self.profiles[1])
+        self.write_selector()
+        for kind in ('chatgpt', 'zai'):
+            with self.subTest(kind=kind):
+                owner = {'kind': kind, 'executable': self.paths['core'], 'ahap_env': {
+                    'AHAP_BROWSER_TRANSPORT': 'direct-cdp', 'AHAP_BROWSER_ACCOUNT_SCOPE': 'a' * 64,
+                    'AHAP_BROWSER_CDP_WS_URL': 'ws://127.0.0.1:9222/devtools/browser/fixture',
+                    'AHAP_BROWSER_CDP_CONTEXT_ID': 'context', 'AHAP_BROWSER_CDP_TARGET_ID': 'target'}}
+                self.write_private(profile, {'owner': owner})
+                check = self.run_launcher('--check')
+                self.assertEqual(check.returncode, 0, check.stderr)
+                self.assertEqual(json.loads(check.stdout)['profiles'], self.profiles)
+                for change in ({'executable': self.paths['node']}, {'ahap_script': self.paths['chatgpt']},
+                               {'ahap_env': {'AHAP_BROWSER_TRANSPORT': 'userio'}},
+                               {'ahap_base_url': 'http://localhost'}):
+                    self.write_private(profile, {'owner': {**owner, **change}})
+                    self.rejected('--check')
     def test_selector_must_be_private_regular_canonical_single_link(self):
         self.selector.chmod(0o644);self.rejected()
         self.selector.chmod(0o600)

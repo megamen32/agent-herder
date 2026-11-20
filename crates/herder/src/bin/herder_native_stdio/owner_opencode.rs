@@ -1,4 +1,4 @@
-//! Trusted owner composition for one pinned legacy adapter AHAP subprocess.
+//! Trusted owner composition for one pinned AHAP subprocess.
 use super::{
     owner_launch::Ids,
     owner_policy::OwnerPolicy,
@@ -468,11 +468,16 @@ pub(super) fn open_adapter(
     owner: &OwnerProfile,
     instance: &InstanceRef,
 ) -> Result<(Arc<AhapOpenCode>, SendMode), Box<dyn std::error::Error>> {
-    let script = owner
-        .ahap_script
-        .clone()
-        .ok_or("missing trusted AHAP script")?;
     let harness = owner.kind.clone();
+    let args = match &owner.ahap_script {
+        Some(script) => vec![script.to_string_lossy().into_owned()],
+        None if owner.has_ahap_runner() => vec![
+            "--harness".into(), harness.clone(),
+            "--node".into(), instance.node.0.clone(),
+            "--instance".into(), instance.instance_id.clone(),
+        ],
+        None => return Err("missing trusted AHAP runner".into()),
+    };
     let mut env = vec![
         (
             "HOME".into(),
@@ -499,7 +504,7 @@ pub(super) fn open_adapter(
         instance_id: instance.instance_id.clone(),
         harness: harness.clone(),
         executable: owner.executable.clone(),
-        args: vec![script.to_string_lossy().into_owned()],
+        args,
         cwd: owner.cwd.clone(),
         env,
         // Browser operations compose several existing 30-second transport calls

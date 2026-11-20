@@ -313,7 +313,7 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
         let native_binding = owner_launch::has_native_codex_binding(&profile.owner)
             || owner_launch::has_native_opencode_binding(&profile.owner);
         if &profile.owner.principal != principal
-            || (!native_binding && profile.owner.ahap_script.is_none())
+            || (!native_binding && !profile.owner.has_ahap_runner())
             || !instances.insert(profile.owner.instance.clone()) {
             return Err("multi-owner requires one principal and distinct AHAP instance refs".into());
         }

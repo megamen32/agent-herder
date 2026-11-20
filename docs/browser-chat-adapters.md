@@ -1,5 +1,39 @@
 # Browser chat providers
 
+## Native Rust owner profiles
+
+The native MCP server can run either browser adapter over direct Chrome CDP.
+Use a protected owner profile with `kind` set to `chatgpt` or `zai`, omit
+`ahap_script`, and point `executable` at the installed `herder_native_stdio`.
+The standalone `herder-browser` executable implements the same AHAP 0.1
+JSONL interface. Each owner uses its own explicit browser binding.
+
+| Field in `owner.ahap_env` | Value |
+| --- | --- |
+| `AHAP_BROWSER_TRANSPORT` | `direct-cdp` |
+| `AHAP_BROWSER_CDP_WS_URL` | Browser-level loopback URL, for example `ws://127.0.0.1:9222/devtools/browser/<browser-id>` |
+| `AHAP_BROWSER_CDP_CONTEXT_ID` | Exact Chrome browser context |
+| `AHAP_BROWSER_CDP_TARGET_ID` | Exact signed-in site tab in that context |
+| `AHAP_BROWSER_ACCOUNT_SCOPE` | Lowercase SHA-256 of the provider's account ID |
+| `AHAP_BROWSER_CDP_ORIGIN_PORT` | Optional remote Chrome origin port when the loopback tunnel uses a different port |
+
+In a V1 installation, select the profile in the usual private launcher
+selector. Set `owner.executable` to the exact `core` path from its pinned
+manifest. To run the core directly, use `--trusted-owner-profile PATH`.
+The native path supports
+session discovery, exact session lookup, recent text history, draft creation
+and delivery. Create saves a local account-scoped draft. Its first send binds
+the stable draft ID to the new conversation. A confirmed send carries the
+provider's new user-message ID. Herder persists the delivery receipt and
+handles request-key replay across restarts. Inspect `initialize.capabilities`
+for the operations available through this adapter.
+
+The reproducible browser acceptance test starts a private Chrome context,
+serves local fixtures for each origin, and exercises both the standalone and
+owner MCP interfaces. See [browser_adapter_smoke.py](../tests/native/browser_adapter_smoke.py).
+
+## TypeScript compatibility profiles
+
 ChatGPT and Z.ai are **two separate Agent Herder adapters** with one shared
 implementation: `BrowserChatAdapter`. The adapter registry, UI, harness
 routing, lifecycle, capabilities and enabled setting belong to each provider,

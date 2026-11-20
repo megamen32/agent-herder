@@ -1,5 +1,4 @@
-//! Registration acceptance through the actual Rust stdio launcher and an
-//! isolated AHAP subprocess. No browser, account, or real conversation is used.
+//! Owner registration through the Rust stdio launcher and isolated adapter profiles.
 #![cfg(target_os = "linux")]
 
 use herder::{application::target_gate::acquire_pinned, store::Writer};
@@ -134,17 +133,39 @@ impl Fixture {
     }
 
     fn profile(&self, provider: &str, instance: &str) -> PathBuf {
+        self.write_profile(
+            provider, instance, &fs::canonicalize("/usr/bin/python3").unwrap(), Some(&self.script),
+            json!({"AHAP_BROWSER_PAGE_ID":instance}),
+        )
+    }
+
+    fn native_profile(&self, provider: &str, instance: &str, binary: &Path, env: Value) -> PathBuf {
+        // Cargo's target directory can be under /tmp; provision the actual
+        // compiled artifact inside this owner's protected directory.
+        let executable = self.root.join(binary.file_name().unwrap());
+        if !executable.exists() {
+            fs::copy(binary, &executable).unwrap();
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        self.write_profile(provider, instance, &executable, None, env)
+    }
+
+    fn write_profile(
+        &self, provider: &str, instance: &str, executable: &Path, script: Option<&Path>, env: Value,
+    ) -> PathBuf {
         let path = self.root.join(format!("{provider}-{instance}.json"));
+        let mut owner = json!({
+            "kind":provider,"principal":"owner","node":"browser-node","instance":instance,
+            "executable":executable,"code_home":self.root,"cwd":self.root,"ahap_env":env,
+        });
+        if let Some(script) = script {
+            owner["ahap_script"] = json!(script);
+        }
         write_private(
             &path,
             json!({
                 "database":self.db,"gate":self.gate,"generation":"registration-test",
-                "owner":{
-                    "kind":provider,"principal":"owner","node":"browser-node",
-                    "instance":instance,"executable":fs::canonicalize("/usr/bin/python3").unwrap(),
-                    "ahap_script":self.script,"code_home":self.root,"cwd":self.root,
-                    "ahap_env":{"AHAP_BROWSER_PAGE_ID":instance}
-                }
+                "owner":owner
             })
             .to_string(),
         );
@@ -186,7 +207,11 @@ struct Wire {
 
 impl Wire {
     fn open(profile: &Path) -> Self {
-        let stderr = profile.with_extension(format!(
+        Self::open_many(&[profile])
+    }
+
+    fn open_many(profiles: &[&Path]) -> Self {
+        let stderr = profiles[0].with_extension(format!(
             "{}.stderr",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -199,9 +224,11 @@ impl Wire {
             .mode(0o600)
             .open(&stderr)
             .unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
-            .arg("--trusted-owner-profile")
-            .arg(profile)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"));
+        for profile in profiles {
+            command.arg("--trusted-owner-profile").arg(profile);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(log))
@@ -284,6 +311,63 @@ fn expect_error(response: &Value) {
         response.get("error").is_some() || response["result"]["isError"] == true,
         "{response}"
     );
+}
+
+#[test]
+fn native_owner_single_and_mixed_multi_route_to_the_profile_selected_runner() {
+    let fixture = Fixture::new();
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let address = socket.local_addr().unwrap();
+    let binding = |kind: &str| json!({
+        "AHAP_BROWSER_TRANSPORT":"direct-cdp",
+        "AHAP_BROWSER_CDP_WS_URL":format!("ws://{address}/devtools/browser/fixture"),
+        "AHAP_BROWSER_CDP_CONTEXT_ID":format!("{kind}-context"),
+        "AHAP_BROWSER_CDP_TARGET_ID":format!("{kind}-target"),
+        "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64),
+    });
+    let mut native = Vec::new();
+    for (kind, binary) in [
+        ("chatgpt", env!("CARGO_BIN_EXE_herder_native_stdio")),
+        ("zai", env!("CARGO_BIN_EXE_herder-browser")),
+    ] {
+        let instance = format!("{kind}-rust");
+        let path = fixture.native_profile(kind, &instance, Path::new(binary), binding(kind));
+        let mut client = Wire::open(&path);
+        let instances = client.call("discover", json!({"action":"instances"}));
+        let rows = content(&instances)["instances"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["instance_ref"], instance);
+        assert_eq!(rows[0]["node_ref"], "browser-node");
+        assert_eq!(rows[0]["harness"], kind);
+        assert_eq!(rows[0]["capabilities"]["nativeProtocol"], "direct-cdp");
+        expect_error(&client.call("session", json!({"action":"messages","session_ref":"unregistered"})));
+        native.push(path);
+    }
+    let mut legacy_env = binding("legacy");
+    legacy_env["AHAP_BROWSER_PAGE_ID"] = json!("1");
+    let legacy = fixture.write_profile("chatgpt", "legacy", &fs::canonicalize("/usr/bin/python3").unwrap(),
+        Some(&fixture.script), legacy_env);
+    let mut multi = Wire::open_many(&[&native[0], &legacy, &native[1]]);
+    let instances = multi.call("discover", json!({"action":"instances","node_ref":"browser-node"}));
+    let rows = content(&instances)["instances"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        match row["instance_ref"].as_str().unwrap() {
+            "chatgpt-rust" | "zai-rust" => assert_eq!(row["capabilities"]["nativeProtocol"], "direct-cdp"),
+            "legacy" => assert!(row["capabilities"].get("nativeProtocol").is_none()),
+            other => panic!("unexpected instance {other}"),
+        }
+    }
+    let registered = multi.call("session", json!({"action":"register","instance_ref":"legacy",
+        "native_session_id":"existing-native","request_key":"legacy-owner-proof"}));
+    let session = &content(&registered)["session_ref"];
+    let messages = multi.call("session", json!({"action":"messages","session_ref":session}));
+    assert_eq!(content(&messages)["page"]["messages"], json!([]));
+    assert_eq!(fixture.native_calls("getSessionMessages")[0]["profile"], "1");
+    assert_eq!(fixture.binding_count(), 1);
+    // Discovery and refused reads must not even open a CDP connection.
+    assert_eq!(socket.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
 }
 
 fn registration(provider: &str) {

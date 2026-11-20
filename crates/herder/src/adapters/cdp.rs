@@ -232,6 +232,10 @@ impl CdpConnection {
         &self.identity
     }
 
+    pub fn owns_target(&self) -> bool {
+        self.owns_target
+    }
+
     pub async fn list_targets(&mut self) -> Result<Vec<CdpTargetInfo>, CdpError> {
         if !self.browser_endpoint {
             return Err(CdpError::InvalidIdentity);
@@ -367,11 +371,11 @@ impl CdpConnection {
         if use_session && let Some(session_id) = self.session_id.as_deref() {
             request["sessionId"] = Value::String(session_id.to_owned());
         }
-        self.socket
-            .send(Message::Text(request.to_string().into()))
-            .await
-            .map_err(|_| CdpError::OutcomeUnknown { request_id: id })?;
-        let response = timeout(self.request_timeout, async {
+        let mut response = timeout(self.request_timeout, async {
+            self.socket
+                .send(Message::Text(request.to_string().into()))
+                .await
+                .ok()?;
             loop {
                 match self.socket.next().await {
                     Some(Ok(Message::Text(text))) => {
@@ -401,13 +405,13 @@ impl CdpConnection {
         if response.get("error").is_some() {
             return Err(CdpError::Protocol);
         }
-        Ok(response.get("result").cloned().unwrap_or(Value::Null))
+        Ok(response.get_mut("result").map(Value::take).unwrap_or(Value::Null))
     }
 
     /// Evaluate a promise in the identity-checked page and return only its
     /// by-value result. Provider credentials stay in the browser context.
     pub async fn evaluate(&mut self, expression: &str) -> Result<Value, CdpError> {
-        let result = self
+        let mut result = self
             .command(
                 "Runtime.evaluate",
                 json!({"expression":expression,"awaitPromise":true,"returnByValue":true,"userGesture":false}),
@@ -417,9 +421,8 @@ impl CdpConnection {
             return Err(CdpError::Protocol);
         }
         Ok(result
-            .get("result")
-            .and_then(|remote| remote.get("value"))
-            .cloned()
+            .pointer_mut("/result/value")
+            .map(Value::take)
             .unwrap_or(Value::Null))
     }
 
