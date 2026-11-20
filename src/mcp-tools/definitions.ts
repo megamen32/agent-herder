@@ -93,6 +93,7 @@ export const MeshSenderSchema = z.object({
 }).strict();
 
 export const SendMessageSchema = z.object({
+  attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
   sessionId: z.string().describe("Target session ID."),
@@ -133,6 +134,7 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 });
 
 export const DeliverSchema = z.object({
+  attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),

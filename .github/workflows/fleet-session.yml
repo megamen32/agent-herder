@@ -54,6 +54,9 @@ jobs:
         run: npx vitest run --root . --config vitest.config.ts tests/harness-mesh-fleet-owner-http-transport.test.ts tests/harness-mesh-fleet-transport.test.ts tests/harness-mesh-fleet-node-generation.test.ts
       - name: Verify Rust-first cross-host fake OpenCode delivery
         run: npx vitest run --root . --config vitest.config.ts tests/harness-mesh-cross-host-opencode.test.ts tests/harness-mesh-exact-route.test.ts tests/harness-mesh-remote-notes.test.ts tests/remote-workspaces.test.ts
+      - name: Verify browser delivery through the Linux owner
+        if: runner.os == 'Linux'
+        run: npx vitest run --root . --config vitest.config.ts tests/harness-mesh-browser-delivery.test.ts
       - name: Verify portable native configuration and V1 release report gate
         run: |
           python3 -m unittest discover -s tests/native -p test_runner_config.py

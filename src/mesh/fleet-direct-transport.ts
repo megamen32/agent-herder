@@ -7,7 +7,8 @@ import {hostname,userInfo} from 'node:os';
 import type {GptAdminTransport} from './gptadmin.js';
 import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-resources.js';
 import {FLEET_DIRECT_TOOLS} from './fleet-tool-allowlist.js';
-import {unwrapResult} from './protocol.js';
+import {meshDeliverySchema} from './delivery-schema.js';
+import {isBrowserMeshHarness,unwrapResult} from './protocol.js';
 import {FleetGptAdminTransport} from './fleet-gptadmin-transport.js';
 import {meshFleetTarget,meshNodeOf,readFleetMeshBinding} from './fleet-mesh-binding.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
@@ -58,7 +59,7 @@ const quote=(s:string)=>"'"+s.replace(/'/g,"'\"'\"'")+"'";
 const peerFailure=(stderr:string):string=>{
  if(/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/.test(stderr))return 'direct_ssh_host_key_unverified';
  if(stderr.includes('native_owner_identity_mismatch'))return 'native_owner_identity_mismatch';
- for(const reason of ['direct_mcp_credential_missing','direct_mcp_credential_unverified','direct_mcp_unauthorized','direct_mcp_forbidden','direct_mcp_http_error','direct_rpc_failed'])if(stderr.includes(reason))return reason;
+ for(const reason of ['direct_mcp_credential_missing','direct_mcp_credential_unverified','direct_mcp_unauthorized','direct_mcp_forbidden','direct_mcp_http_error','direct_rpc_failed','direct_request_limit'])if(stderr.includes(reason))return reason;
  if(/ssh: connect to host .*Connection refused/.test(stderr))return 'direct_ssh_refused';
  if(/Connection timed out|Operation timed out/.test(stderr))return 'direct_ssh_connect_timeout';
  if(/ConnectionRefusedError|URLError.*Connection refused/.test(stderr))return 'direct_native_listener_unavailable';
@@ -67,11 +68,24 @@ const peerFailure=(stderr:string):string=>{
 };
 const macSessionReadTimeoutMs=20_000;
 const macSessionReadTools=new Set(['fleet_node_info','agent_info']);
+const directRequestBytes=16*1024;
+// Fits 2 MiB of originals in padded base64 plus the bounded delivery envelope.
+const inlineDeliveryFrameBytes=3*1024*1024;
 const bridge=String.raw`import sys,json,socket,pwd,os,time,urllib.request,urllib.parse,urllib.error,uuid,signal,stat,re,shlex,hashlib
-body=sys.stdin.buffer.read(16385)
-if len(body)>16384:raise RuntimeError('request_limit')
+inline_delivery=sys.argv[1:]==['--inline-delivery']
+request_limit=3*1024*1024 if inline_delivery else 16*1024
+body=sys.stdin.buffer.read(request_limit+1)
+if len(body)>request_limit:raise RuntimeError('direct_request_limit')
 r=json.loads(body)
 if socket.gethostname()!=r['hostId'] or pwd.getpwuid(os.getuid()).pw_name!=r['nativeUser']:raise RuntimeError('native_owner_identity_mismatch')
+if inline_delivery:
+ params=r['params']
+ arguments=params.get('arguments',{})
+ target=arguments.get('target',{})
+ files=arguments.get('attachments')
+ if (r['method']!='tools/call' or params.get('name')!='deliver' or target.get('hostId')!=r['hostId']
+     or target.get('harness') not in ('chatgpt','zai') or not isinstance(files,list) or not 1<=len(files)<=16):
+  raise RuntimeError('direct_request_limit')
 deadline=time.monotonic()+r['timeoutMs']/1000
 def deadline_expired(signum,frame):raise TimeoutError('direct_deadline')
 signal.signal(signal.SIGALRM,deadline_expired)
@@ -318,12 +332,15 @@ export class FleetDirectTransport implements GptAdminTransport {
   return {servers:this.peers.flatMap(p=>[{server_id:`shell:${p.hostId}`,kind:'virtual_shell',status:'configured'},{server_id:`mcp:shell:${p.hostId}:AgentHerder`,kind:'child_mcp',status:'configured'}])};
  }
  private peer(target:string){const p=this.peers.find(p=>target===`mcp:shell:${p.hostId}:AgentHerder`);if(!p)throw new Error('direct_target_not_authorized');return p;}
- private rpc(peer:DirectPeer,method:string,params:Record<string,unknown>,timeoutMs:number):Promise<unknown>{
-  const request=JSON.stringify({...peer,method,params,timeoutMs});if(Buffer.byteLength(request)>16384)throw new Error('direct_request_limit');
+ private rpc(peer:DirectPeer,method:string,params:Record<string,unknown>,timeoutMs:number,inlineDelivery=false):Promise<unknown>{
+  const request=JSON.stringify({...peer,method,params,timeoutMs});
+  const bytes=Buffer.byteLength(request);
+  if(bytes>(inlineDelivery?inlineDeliveryFrameBytes:directRequestBytes))throw new Error('direct_request_limit');
   const local=peer.hostId===hostname()&&peer.nativeUser===userInfo().username;
   const executable=local?peer.python:'/usr/bin/ssh';
   const reverseVia100=peer.hostId==='MacBook-Pro-User.local'&&peer.sshHost==='127.0.0.1'&&hostname()!=='roomhacker-server-100';
-  const args=local?['-I','-S','-B','-c',bridge]:['-T',...sshMultiplexOptions(peer),'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,`${quote(peer.python)} -I -S -B -c ${quote(bridge)}`];
+  const pythonArgs=['-I','-S','-B','-c',bridge,...(bytes>directRequestBytes?['--inline-delivery']:[])];
+  const args=local?pythonArgs:['-T',...sshMultiplexOptions(peer),'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=3','-o','ConnectionAttempts=1','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=1',...(reverseVia100?['-J','roomhacker@192.168.2.100']:[]),...(peer.sshPort?['-p',String(peer.sshPort)]:[]),'-l',peer.nativeUser,peer.sshHost,[peer.python,...pythonArgs].map(quote).join(' ')];
   return new Promise((resolve,reject)=>{
    const child=spawn(executable,args,{stdio:['pipe','pipe','pipe']});let size=0;const chunks:Buffer[]=[];let failure:Error|undefined;let stderr='';
    const timer=setTimeout(()=>{failure=new Error('direct_deadline');child.kill('SIGKILL');},timeoutMs+500);
@@ -409,8 +426,22 @@ export class FleetDirectTransport implements GptAdminTransport {
    const known=peerAvailability.get(key);
    if(known&&Date.now()<known.until)throw new Error(known.error);
   }
+  const mesh=await this.meshFor(peer).catch(()=>undefined);
+  let inlineDelivery=false;
+  if(!mesh&&tool==='deliver'&&Object.hasOwn(args,'attachments')){
+   // A local refusal precedes SSH and can be bound to the caller's inputId.
+   const parsed=meshDeliverySchema.safeParse(args);
+   if(!parsed.success||parsed.data.sender.hostId!==hostname()||parsed.data.target.hostId!==peer.hostId
+      ||(parsed.data.attachments?.length&&!isBrowserMeshHarness(parsed.data.target.harness))){
+    const reason='direct_attachment_delivery_invalid';
+    if(typeof args.inputId!=='string'||!args.inputId.trim()||args.inputId.length>256)throw new Error(reason);
+    return {state:'not_attempted',inputId:args.inputId,retryable:false,reason};
+   }
+   args=parsed.data;
+   inlineDelivery=Boolean(parsed.data.attachments?.length);
+  }
   try{
-   const result=await this.dispatch(peer,tool,args,idempotencyKey);
+   const result=await this.dispatch(peer,mesh,tool,args,inlineDelivery,idempotencyKey);
    peerAvailability.delete(key);
    return result;
   }catch(error){
@@ -418,8 +449,7 @@ export class FleetDirectTransport implements GptAdminTransport {
    throw error;
   }
  }
- private async dispatch(peer:DirectPeer,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  const mesh=await this.meshFor(peer).catch(()=>undefined);
+ private async dispatch(peer:DirectPeer,mesh:GptAdminTransport|undefined,tool:string,args:Record<string,unknown>,inlineDelivery:boolean,idempotencyKey?:string):Promise<unknown>{
   if(mesh){
    // The mesh lane speaks the child tools directly: no SSH bridge, no
    // per-call python handshake, the hub relay owns the connection.
@@ -437,6 +467,6 @@ export class FleetDirectTransport implements GptAdminTransport {
    return this.rpc(peer,'tools/call',{name:'create_session',arguments:{...args,variant:'fleet',inputId:idempotencyKey}},30000);
   }
   const readDeadline=this.readDeadline(peer,'tool',tool);
-  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):readDeadline);
+  return this.rpc(peer,'tools/call',{name:tool,arguments:args},tool==='mesh_snapshot'?Math.max(this.deadlineMs,meshDiscoveryTimeoutMs()+5000):readDeadline,inlineDelivery);
  }
 }

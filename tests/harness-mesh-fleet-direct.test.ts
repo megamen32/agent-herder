@@ -1,5 +1,6 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -7,7 +8,7 @@ import type {IncomingMessage} from 'node:http';
 const state=vi.hoisted(()=>({home:'',spawns:[] as any[],reply:{tools:[]},mode:'ok',auth:false,host:'server-44',stderr:'',exitCode:255,exitSignal:undefined as string|undefined}));
 vi.mock('../src/web/fleet-owner-auth.js',()=>({verifyFleetOwnerCookie:vi.fn(async()=>state.auth)}));
 vi.mock('node:os',()=>({hostname:()=> state.host,userInfo:()=>({username:'roomhacker'}),homedir:()=>state.home,platform:()=> 'linux'}));
-vi.mock('node:child_process',()=>({spawn:(bin:string,args:string[])=>{
+vi.mock('node:child_process',()=>({execFile:()=>{throw new Error('unexpected execFile in direct transport fixture');},spawn:(bin:string,args:string[])=>{
  const child=new EventEmitter() as any;
  child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=vi.fn(()=>queueMicrotask(()=>child.emit('close',137,'SIGKILL')));
  child.stdin=new EventEmitter();child.stdin.end=(body:string)=>{const parsed=JSON.parse(body);state.spawns.push({bin,args,body:parsed,child});queueMicrotask(()=>{if(state.mode==='exit'){state.stderr&&child.stderr.emit('data',Buffer.from(state.stderr));return child.emit('close',state.exitCode,state.exitSignal);}if(state.mode==='huge')child.stdout.emit('data',Buffer.alloc(1048577));else child.stdout.emit('data',Buffer.from(JSON.stringify(parsed.params?.name==='model_quotas'?{structuredContent:{checkedAt:new Date().toISOString(),providers:[{provider:'codex',state:'reported',checkedAt:new Date().toISOString(),details:{primary_used:10,secondary_used:10,allowed:true,limit_reached:false}}]}}:state.reply)));child.emit('close',0);});};
@@ -264,5 +265,143 @@ exec(compile(source,'owned-http-bridge','exec'))`;
   expect(runtime.validateReadiness).toHaveBeenCalledOnce();
   expect(create).toHaveBeenCalledWith({inputId:input.inputId,name:input.name,cwd:input.cwd,project:input.project,harness:input.harness,projectReadinessContract:input.projectReadinessContract,projectReadiness:input.projectReadiness});
   expect(JSON.parse(result.content[0].text)).toMatchObject({ok:true,sessionId:'scoped-native',cwd:'/configured/root'});
+ });
+});
+
+describe('Fleet Direct SSH attachment frames', () => {
+ const receiver = {hostId:'attachment-peer', sshHost:'fixture.invalid', nativeUser:'fixture-owner', port:1, python:'/usr/bin/python3'};
+ const target = 'mcp:shell:attachment-peer:AgentHerder';
+ const transport = () => new FleetDirectTransport([receiver], 10000, null);
+ const attachment = (bytes:Buffer, index=0) => ({
+  name:`вложение-"${index}".bin`, mime_type:'application/octet-stream', data_base64:bytes.toString('base64'),
+ });
+ const delivery = (harness:string, files:ReturnType<typeof attachment>[]) => ({
+  target:{hostId:receiver.hostId, harness, nativeSessionId:'recipient'},
+  sender:{hostId:state.host, harness:'codex', nativeSessionId:'sender'},
+  inputId:'attachment-input', message:harness==='chatgpt'?'':'Тестовое сообщение', attachments:files,
+ });
+
+ // Run the exact Python command selected by the SSH transport. Its only HTTP
+ // peer is an in-memory opener which acknowledges the received file hashes.
+ async function runBridge(command:string, body:string) {
+  const {spawnSync} = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const fixture = String.raw`import base64,hashlib,io,json,pwd,shlex,socket,sys,types,urllib.request
+command=shlex.split(sys.argv[1]);source=command[command.index('-c')+1];sys.argv=['-c']+command[command.index('-c')+2:]
+socket.gethostname=lambda:'attachment-peer'
+pwd.getpwuid=lambda uid:types.SimpleNamespace(pw_name='fixture-owner',pw_dir='/nonexistent')
+stream=sys.stdin.buffer
+class Frame:
+ def read(self,n):
+  assert 0<n<=3*1024*1024+1
+  return stream.read(n)
+sys.stdin=types.SimpleNamespace(buffer=Frame())
+class Response:
+ def __init__(self,data):self.body=io.BytesIO(json.dumps(data).encode());self.headers={'Content-Type':'application/json'}
+ def __enter__(self):return self
+ def __exit__(self,*args):return False
+ def read1(self,n):return self.body.read(n)
+class Opener:
+ def open(self,request,timeout):
+  print('fixture-http',file=sys.stderr)
+  assert request.full_url=='http://127.0.0.1:1/mcp' and request.get_header('Authorization')=='Bearer fixture-only'
+  rpc=json.loads(request.data);params=rpc['params'];result={}
+  if rpc['method']=='tools/call':
+   args=params['arguments']
+   result={'tool':params['name'],'message':args.get('message'),'files':[
+    [f['name'],f['mime_type'],hashlib.sha256(base64.b64decode(f['data_base64'],validate=True)).hexdigest()] for f in args.get('attachments',[])]}
+  return Response({'id':rpc.get('id'),'result':result})
+urllib.request.build_opener=lambda *args:Opener()
+exec(compile(source,'fleet-direct-bridge','exec'))`;
+  return spawnSync('/usr/bin/python3', ['-I','-S','-B','-c',fixture,command], {
+   input:body, encoding:'utf8', timeout:5000, maxBuffer:65536, env:{AGENT_HERDER_HTTP_TOKEN:'fixture-only'},
+  });
+ }
+
+ it.each(['chatgpt','zai'])('carries 16 files totalling exactly 2 MiB through stdin to %s', async harness => {
+  const originals = Array.from({length:16}, (_,i) => Buffer.alloc(128*1024, i+1));
+  const args = delivery(harness, originals.map((bytes,i)=>attachment(bytes,i)));
+  await transport().call(target, 'deliver', args);
+  expect(state.spawns).toHaveLength(1);
+  const call = state.spawns[0];
+  expect(call.bin).toBe('/usr/bin/ssh');
+  expect(call.args).toEqual(expect.arrayContaining(['BatchMode=yes','StrictHostKeyChecking=yes',receiver.sshHost]));
+  const argv = call.args.join(' ');
+  for (const file of args.attachments) {
+   expect(argv).not.toContain(file.name);
+   expect(argv).not.toContain(file.data_base64.slice(0,48));
+  }
+  const result = await runBridge(call.args.at(-1), JSON.stringify(call.body));
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({tool:'deliver', message:args.message, files:originals.map((bytes,i)=>[
+   args.attachments[i]!.name, args.attachments[i]!.mime_type, createHash('sha256').update(bytes).digest('hex'),
+  ])});
+ });
+
+ it('checks the extended frame ceiling, addressed tool and native owner before HTTP', async () => {
+  const args = delivery('chatgpt',[attachment(Buffer.alloc(16384))]);
+  await transport().call(target,'deliver',args);
+  const {body,args:argv} = state.spawns[0];
+  for (const [input,reason] of [
+   [' '.repeat(3*1024*1024+1),'direct_request_limit'],
+   [JSON.stringify({...body,params:{name:'mesh_deliver',arguments:args}}),'direct_request_limit'],
+   [JSON.stringify({...body,params:{name:'deliver',arguments:{...args,target:{...args.target,hostId:'foreign'}}}}),'direct_request_limit'],
+   [JSON.stringify({...body,nativeUser:'foreign'}),'native_owner_identity_mismatch'],
+  ] as const) {
+   const result = await runBridge(argv.at(-1),input);
+   expect(result.status).not.toBe(0);
+   expect(result.stderr).toContain(reason);
+   expect(result.stderr).not.toContain('fixture-http');
+  }
+ });
+
+ it('refuses invalid attachment deliveries before spawning a peer', async () => {
+  const t = transport();
+  const args = delivery('zai', [attachment(Buffer.from([1]))]);
+  for (const invalid of [
+   {...args, attachments:[{...args.attachments[0], data_base64:'AB=='}]},
+   {...args, attachments:Array(17).fill(attachment(Buffer.alloc(0)))},
+   {...args, attachments:[attachment(Buffer.alloc(2*1024*1024)), attachment(Buffer.alloc(1))]},
+   {...args, target:{...args.target, harness:'codex'}},
+   {...args, target:{...args.target, hostId:'another-peer'}},
+   {...args, message:''},
+   {...args, extra:'x'.repeat(17000)},
+  ]) {
+   expect(await t.call(target,'deliver',invalid)).toMatchObject({state:'not_attempted',inputId:args.inputId,retryable:false});
+  }
+  await expect(t.call(target,'deliver',{...args,sender:{...args.sender,hostId:'foreign'}})).rejects.toThrow('direct_sender_host_mismatch');
+  await expect(t.call('mcp:shell:foreign:AgentHerder','deliver',args)).rejects.toThrow('direct_target_not_authorized');
+  await expect(t.call(target,'shell_exec',args)).rejects.toThrow('direct_tool_not_authorized');
+  expect(state.spawns).toHaveLength(0);
+ });
+
+ it('keeps the 16 KiB limit for ordinary and compatibility calls on both ends', async () => {
+  const t = transport();
+  const args = {label:''};
+  const frame = { ...receiver, method:'tools/call', params:{name:'workspace_probe',arguments:args}, timeoutMs:10000 };
+  args.label = 'x'.repeat(16384 - Buffer.byteLength(JSON.stringify(frame)));
+  await t.call(target,'workspace_probe',args);
+  const command = state.spawns[0].args.at(-1);
+  expect((await runBridge(command,JSON.stringify(frame))).status).toBe(0);
+  args.label += 'x';
+  await expect(t.call(target,'workspace_probe',args)).rejects.toThrow('direct_request_limit');
+  const rejected = await runBridge(command,JSON.stringify(frame));
+  expect(rejected.status).not.toBe(0);
+  expect(rejected.stderr).not.toContain('fixture-http');
+  const files = delivery('zai',[attachment(Buffer.alloc(16384))]);
+  for (const tool of ['mesh_deliver','send_message']) {
+   await expect(t.call(target,tool,files)).rejects.toThrow('direct_request_limit');
+  }
+  const escapedCaption = 'x'+'\u0001'.repeat(3999);
+  await expect(t.call(target,'deliver',{...files,message:escapedCaption,attachments:[]})).rejects.toThrow('direct_request_limit');
+  expect(state.spawns).toHaveLength(1);
+ });
+
+ it('does not replay a rejected call on SSH when the regular mesh was selected', async () => {
+  const args = delivery('zai',[attachment(Buffer.alloc(65536))]);
+  const mesh = {discover:vi.fn(),schema:vi.fn(),call:vi.fn().mockRejectedValue(new Error('fixture exec limit'))};
+  const t = new FleetDirectTransport([receiver],10000,mesh);
+  await expect(t.call(target,'deliver',args)).rejects.toThrow('fixture exec limit');
+  expect(mesh.call).toHaveBeenCalledOnce();
+  expect(state.spawns).toHaveLength(0);
  });
 });

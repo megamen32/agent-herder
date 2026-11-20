@@ -2,9 +2,12 @@ import { sessionShortId } from "../session-short-id.js";
 
 /** Stable native address. Project is observed state, never an address component. */
 export interface MeshAddress { hostId: string; harness: string; nativeSessionId: string }
+export function isBrowserMeshHarness(harness: unknown): harness is "chatgpt" | "zai" {
+  return harness === "chatgpt" || harness === "zai";
+}
 export interface ProjectObservation { launchCwd: string | null; currentCwd: string | null; source: string; hostId?: string; expiresAt?: string }
 export interface MeshSession { address: MeshAddress; project: ProjectObservation; status: string; title: string; lastActivity: string; createdAt?: string; model?: string; shortId?: string }
-export interface NativeReceipt { state: "queued" | "admitted" | "not_attempted" | "unknown"; inputId: string; jobId?:string; turnId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
+export interface NativeReceipt { state: "queued" | "admitted" | "not_attempted" | "unknown"; inputId: string; jobId?:string; turnId?: string; nativeReceiptId?: string; retryable: boolean; reason?:string; retryAfterMs?:number }
 /** Receipt of one native stop. An unproven stop is never replayed. */
 export interface NativeStopReceipt extends NativeReceipt { hostId: string; harness: string; nativeSessionId: string; /** The manual stop of the session was recorded on this host. */
   held?: boolean }

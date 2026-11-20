@@ -1,6 +1,7 @@
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {randomUUID} from 'node:crypto';
-import {unwrapResult} from './protocol.js';
+import {isBrowserMeshHarness,unwrapResult,type MeshAddress} from './protocol.js';
+import {FleetAttachmentFrameTooLarge,meshDeliverySchema} from './delivery-schema.js';
 import type {GptAdminTransport} from './gptadmin.js';
 export interface FleetFacadeOptions {
  endpoint:string;
@@ -84,6 +85,9 @@ export class FleetGptAdminTransport implements GptAdminTransport {
   // and mutation idempotency stays with the native inputId admission.
   const deadline=Date.now()+(tool==='create_session'?this.options.createDeadlineMs??30000:this.options.readDeadlineMs??10000);
   const code=`return await mcp.call(${JSON.stringify(target)},${JSON.stringify(tool)},${JSON.stringify(args)});`;
+  if(tool==='deliver'&&Array.isArray(args.attachments)&&args.attachments.length&&Buffer.byteLength(code)>65_536){
+   throw new FleetAttachmentFrameTooLarge();
+  }
   return this.facade('exec',{code,timeout_ms:Math.min(60000,Math.max(1,deadline-Date.now())),max_output_bytes:65536},deadline);
  }
 }
@@ -92,11 +96,21 @@ export class FleetGptAdminTransport implements GptAdminTransport {
 function assertNativeHerderCall(tool:string,args:Record<string,unknown>):void{
  const exact=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=4096&&value.trim()===value&&!/[\x00-\x1f\x7f]/.test(value);
  const keys=(required:string[],optional:string[]=[]):boolean=>required.every(key=>Object.hasOwn(args,key))&&Object.keys(args).every(key=>required.includes(key)||optional.includes(key));
+ const peer=(value:unknown):value is MeshAddress=>{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const row=value as Record<string,unknown>;
+  return Object.keys(row).length===3&&exact(row.hostId)&&row.hostId.length<=512
+   &&exact(row.harness)&&row.harness.length<=64&&exact(row.nativeSessionId)&&row.nativeSessionId.length<=512;
+ };
  const revision=()=>Number.isSafeInteger(args.revision)&&Number(args.revision)>0;
  let valid=false;
  if(tool==='session'&&args.action==='resolve')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
  if(tool==='deliver'&&args.action==='receipt')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
  if(tool==='deliver'&&args.action==='session')valid=keys(['action','session_ref','request_key','message','mode'])&&exact(args.session_ref)&&exact(args.request_key)&&typeof args.message==='string'&&args.message.length>0&&args.message.length<=1024*1024&&['queue','start'].includes(String(args.mode));
+ if(tool==='deliver'&&keys(['target','sender','inputId','message'],['attachments'])){
+  valid=peer(args.target)&&isBrowserMeshHarness(args.target.harness)&&peer(args.sender)
+   &&exact(args.inputId)&&meshDeliverySchema.safeParse(args).success;
+ }
  if(tool==='compat_task'&&args.action==='get')valid=keys(['action','task_ref'])&&exact(args.task_ref);
  if(tool==='automation'){
   if(args.action==='list')valid=keys(['action']);

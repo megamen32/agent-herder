@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { HarnessAdapter, MessageAdmissionResult, SendMessageResult } from "./types/index.js";
 import { ResumeAfterService, type ResumeAfterWait, type SessionRef } from "./resume-after.js";
 import { readExactCodexActiveSession } from "./adapters/codex-active-runtime.js";
-import { canonicalMode, createCanonicalAutomationClient } from "./canonical-herder.js";
+import { canonicalMode, createCanonicalAutomationClient, type CanonicalAutomationClient } from "./canonical-herder.js";
 import { createCanonicalResumeAfterRuntime } from "./resume-after-canonical.js";
 import type { ResumeAfterBackend } from "./resume-after.js";
 
@@ -134,9 +134,9 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
 
 /** Select one backend at startup; a broken canonical binding never falls back. */
 export async function createConfiguredResumeAfterRuntime(...args: Parameters<typeof createResumeAfterRuntime>): Promise<{
-  service: ResumeAfterBackend; start(): Promise<() => void>;
+  service: ResumeAfterBackend; canonicalClient?: CanonicalAutomationClient; start(): Promise<() => void>;
 }> {
   const client = await createCanonicalAutomationClient();
-  if (client) return createCanonicalResumeAfterRuntime(client);
+  if (client) return { ...createCanonicalResumeAfterRuntime(client), canonicalClient: client };
   return createResumeAfterRuntime(...args);
 }

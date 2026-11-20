@@ -5,6 +5,7 @@ import {
 } from "../canonical-herder.js";
 import type { ResumeReceipt, ResumeTransport, ResumeTransportRequest } from "../resume-transport.js";
 import { readRetainedResumeReceipts, retainedResumeReceipt } from "./canonical-receipts.js";
+import type { MeshInlineAttachment } from "../mesh/delivery-schema.js";
 
 export interface CanonicalResumeTransport extends ResumeTransport {
   queryReceipt(request: ResumeTransportRequest): Promise<ResumeReceipt>;
@@ -39,10 +40,24 @@ export function canonicalResumeMessage(request: ResumeTransportRequest): string 
 }
 
 /** Byte-compatible with Rust dispatch_payload_binding; native mode is authority-owned. */
-export function canonicalResumePayloadHash(target: CanonicalSessionRef, mode: "queue" | "start", message: string): string {
+export function canonicalResumePayloadHash(target: CanonicalSessionRef, mode: "queue" | "start", message: string,
+  attachments?: readonly MeshInlineAttachment[]): string {
+  // Rust SendPayload binds the byte length of each UTF-8 field in network order.
+  let payload: string | { text: string; attachments_sha256: number[] } = message;
+  if (attachments?.length) {
+    const digest = createHash("sha256");
+    const length = Buffer.alloc(8);
+    for (const file of attachments) {
+      for (const field of [file.name, file.mime_type, file.data_base64]) {
+        length.writeBigUInt64BE(BigInt(Buffer.byteLength(field)));
+        digest.update(length).update(field);
+      }
+    }
+    payload = { text: message, attachments_sha256: Array.from(digest.digest()) };
+  }
   return "sha256-dispatch-v1:" + sha(JSON.stringify([1, {
     instance: { node: target.nodeRef, instance_id: target.instanceRef }, native_session_id: target.nativeSessionId,
-  }, mode, null, message]));
+  }, mode, null, payload]));
 }
 
 function outcome(request: ResumeTransportRequest, status: "ambiguous" | "rejected", reason: string, detail?: string): ResumeReceipt {
