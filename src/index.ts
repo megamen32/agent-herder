@@ -702,6 +702,7 @@ function sameNotice(left: Parameters<ReturnType<typeof createNoticePlaceSink>["s
 /** Autopilot needs an absolute cwd; prefer the native session, then the store. */
 async function autopilotSessionCommand(
   input: { command: "on" | "off" | "status"; harness: string; sessionId: string; cwd?: string },
+  canonicalClient?: CanonicalAutomationClient,
 ): Promise<Record<string, unknown>> {
   const harness = input.harness as AutopilotHarness;
   const explicit = input.cwd?.trim();
@@ -712,7 +713,8 @@ async function autopilotSessionCommand(
   if (!cwd || !cwd.startsWith("/")) {
     return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
   }
-  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd }, nativeAutopilotCommand);
+  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd },
+    (command, target, store, policy) => nativeAutopilotCommand(canonicalClient, command, target, store, policy));
 }
 
 function registerTools(
@@ -745,7 +747,7 @@ function registerTools(
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
   registerUserIoDotTools(server, userioDot);
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
+  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 
@@ -1354,7 +1356,7 @@ async function main() {
     ? createNoticePlaceSink({ eventUrl: chatCommandNotifyEventUrl, token: chatCommandNotifyToken })
     : undefined;
   const chatCommandPipeline = new ChatCommandPipeline({
-    run: (input) => autopilotSessionCommand(input),
+    run: (input) => autopilotSessionCommand(input, canonicalClient),
     reply: (harness, sessionId, text, inputId) => processSupervisor.sendMessage(harness, sessionId, {
       message: text,
       origin: "automation",
@@ -1527,6 +1529,7 @@ async function main() {
     const webServer = createWebServer({
       adapters,
       sessionImageStore,
+      canonicalClient,
       canonicalRuntimeStatus: createCanonicalRuntimeStatus(resumeAfterRuntime.service),
       hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,

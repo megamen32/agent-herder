@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -8,33 +8,62 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AutopilotPolicyStore } from "../src/autopilot/policy-store.js";
 import { createDefaultAutopilotPolicy } from "../src/autopilot/policy.js";
 import { AutopilotSessionStore } from "../src/autopilot/session-store.js";
+import { nativeAutopilotCommand } from "../src/autopilot/native-command.js";
 import { createWebServer } from "../src/web/server.js";
+import { canonicalFixture } from "./helpers/canonical-herder-fixture.js";
+import { createCanonicalAutomationClient, unwrapCanonicalResult } from "../src/canonical-herder.js";
+import { FleetGptAdminTransport } from "../src/mesh/fleet-gptadmin-transport.js";
+import { registeredTransport } from "./fixtures/autopilot-command-owner.mjs";
 
 const execute = promisify(execFile);
 const id = "exact-thread";
 let root: string, state: string, store: AutopilotSessionStore, policy: AutopilotPolicyStore;
-let server: Server, base: string;
+let server: Server, base: string, registeredSelector: string;
+let fixture: Awaited<ReturnType<typeof canonicalFixture>>;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "herder-rule-client-"));
   state = join(root, "state");
   await mkdir(state);
   vi.stubEnv("HOME", root);
-  vi.stubEnv("HERDER_V1_ENTRY", join(root, "selector.json"));
+  vi.stubEnv("HERDER_V1_ENTRY", undefined);
   vi.stubEnv("AGENT_HERDER_AUTOPILOT_STATE_DIR", state);
   vi.stubEnv("AGENT_HERDER_HUMAN_STOP_STORE", join(state, "human-stops.json"));
   vi.resetModules();
   const launcher = join(root, ".local/bin/agent-herder-v1");
   await mkdir(dirname(launcher), { recursive: true });
-  await copyFile(new URL("./fixtures/autopilot-command-owner.mjs", import.meta.url), launcher);
-  await chmod(launcher, 0o700);
-  await writeFile(join(root, "selector.json"), JSON.stringify({ profiles: [join(root, "owner.json")] }), { mode: 0o600 });
-  await writeFile(join(root, "owner.json"), JSON.stringify({ owner: { kind: "codex", node: "local", instance: "codex-local",
-    codex_autopilot: { state_dir: state } } }), { mode: 0o600 });
+  await writeFile(launcher, '#!/bin/sh\necho writer-start >> "' + join(root, "unexpected-spawn") + '"\nexit 93\n', {mode: 0o700});
+  const config = join(root, ".config/agent-herder");
+  await mkdir(config, { recursive: true });
+  registeredSelector = join(config, "gptadmin-entry.json");
+  await writeFile(registeredSelector, JSON.stringify({ profiles: [join(root, "owner.json")] }), {mode: 0o600});
+  await writeFile(join(config, "v1-entry.json"), JSON.stringify({ profiles: [join(root, "decoy.json")] }), {mode: 0o600});
+  for (const [file, instance] of [["owner.json","codex-local"], ["decoy.json","codex-decoy"]]) {
+    await writeFile(join(root,file), JSON.stringify({owner:{kind:"codex", node:"local", instance,
+      codex_autopilot:{state_dir:state}}}), {mode:0o600});
+  }
+  fixture = await canonicalFixture();
+  const authority = fixture.config.authority;
+  const registered = registeredTransport(root, registeredSelector, authority);
+  const transport = new FleetGptAdminTransport({ endpoint: "http://127.0.0.1/fixture-hub", nativeHerderAuthority: authority,
+    headersProvider: () => ({}), unwrapResponse: unwrapCanonicalResult, fetch: async (_url, options) => {
+      const frame = JSON.parse(String(options?.body));
+      if (frame.method === "notifications/initialized") return new Response(null, {status: 204});
+      let result = {};
+      if (frame.method === "tools/call") {
+        expect(frame.params.name).toBe("exec");
+        const code = /^return await mcp\.call\((.*)\);$/.exec(frame.params.arguments.code);
+        if (!code) throw new Error("unexpected canonical request");
+        const [target, tool, args] = JSON.parse("[" + code[1] + "]");
+        result = await registered.call(target, tool, args);
+      }
+      return Response.json({jsonrpc: "2.0", id: frame.id, result});
+    } });
+  const canonicalClient = await createCanonicalAutomationClient({env: fixture.env, transportFactory: async () => transport});
   store = new AutopilotSessionStore(join(state, "sessions.json"));
   policy = new AutopilotPolicyStore(join(state, "autopilot-policy.json"));
   server = createWebServer({ adapters: new Map(), converter: { async convert() { throw new Error("unused"); } },
-    autopilotSessionStore: store, autopilotPolicyStore: policy });
+    autopilotSessionStore: store, autopilotPolicyStore: policy, canonicalClient, mcpAuthToken: "stand-operator" });
   await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("missing test listener");
@@ -44,8 +73,11 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   if (server) await new Promise<void>(done => server.close(() => done()));
+  const spawned = await readFile(join(root, "unexpected-spawn"), "utf8").catch(() => "");
+  await fixture.cleanup();
   vi.unstubAllEnvs();
   await rm(root, { recursive: true, force: true });
+  expect(spawned, "autopilot started the alternate Rust writer").toBe("");
 });
 
 async function cli(command: "on" | "status" | "off" | "stop") {
@@ -152,13 +184,14 @@ it("returns the saved legacy status and refuses a human-stopped on from either s
     { id: "stop", reason: "operator", at: new Date().toISOString(), turnId: "turn" });
   expect(await cli("on")).toMatchObject({ enabled: false, human_stop_held: true });
   expect(await inspector(true)).toMatchObject({ enabled: false, human_stop_held: true });
-  await expect(readFile(join(root, "calls.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
+  const log = await readFile(join(root,"calls.jsonl"),"utf8").catch(() => "");
+  expect(log.trim().split("\n").filter(Boolean).every(line => JSON.parse(line).action === "resolve")).toBe(true);
 });
 
 it("uses the exact registered instance when several Codex owners share the state directory", async () => {
   const second = join(root, "second.json");
   await writeFile(second, JSON.stringify({ owner: { kind: "codex", node: "other", instance: "codex-2", codex_autopilot: { state_dir: state } } }), { mode: 0o600 });
-  await writeFile(join(root, "selector.json"), JSON.stringify({ profiles: [join(root, "owner.json"), second] }));
+  await writeFile(registeredSelector, JSON.stringify({ profiles: [join(root, "owner.json"), second] }));
   await expect(cli("on")).rejects.toThrow("Exact Codex instance required");
   expect(await store.get("codex", id)).toBeNull();
   await writeFile(join(root, "registered"), "");
@@ -186,4 +219,57 @@ it("preserves foreign harness rows and another Rust rule's exact policy timestam
   expect(await cli("status")).toMatchObject({ enabled: false });
   await store.set({ harness: "codex", sessionId: id, cwd: root }, false);
   expect(JSON.parse(await readFile(path, "utf8")).sessions).toEqual(expect.arrayContaining([foreign, otherRule]));
+});
+
+it("never starts the default selector or takes over after a registered transport failure", async () => {
+  await writeFile(join(root, "transport-down"), "");
+  await expect(cli("on")).rejects.toThrow("registered_transport_unavailable");
+  expect(await store.get("codex", id)).toBeNull();
+  await rm(join(root, "transport-down"));
+  expect(await cli("on")).toMatchObject({ executor: "rust", enabled: true, revision: 1 });
+  const row = await store.get("codex", id);
+  await writeFile(join(root,"transport-down"), "");
+  await expect(cli("status")).rejects.toThrow("registered_transport_unavailable");
+  await expect(cli("on")).rejects.toThrow("registered_transport_unavailable");
+  expect(await store.get("codex", id)).toEqual(row);
+  await expect(cli("off")).rejects.toThrow("registered_transport_unavailable");
+  expect(await store.get("codex", id)).toMatchObject({ executor:"rust", enabled:false });
+  expect((await fetch(base + "?cwd=" + encodeURIComponent(root))).status).toBe(503);
+});
+
+it("rejects incorrect panel credentials before changing a session", async () => {
+  vi.stubEnv("AGENT_HERDER_HTTP_TOKEN", "wrong-stand-token");
+  await expect(cli("on")).rejects.toThrow();
+  expect(await store.get("codex",id)).toBeNull();
+  vi.stubEnv("AGENT_HERDER_HTTP_TOKEN", "stand-operator");
+  expect(await cli("on")).toMatchObject({executor:"rust",enabled:true});
+});
+
+it("rejects fields outside the registered autopilot protocol before contacting the hub", async () => {
+  const authority = fixture.config.authority;
+  const send = vi.fn(async () => { throw new Error("unexpected outbound call"); });
+  const transport = new FleetGptAdminTransport({endpoint: "http://127.0.0.1/fixture-hub", headersProvider: () => ({}),
+    nativeHerderAuthority: authority, fetch: send});
+  const rule = {kind: "autopilot", instructions: "Check the last turn"};
+  const update = {action: "update", revision: 2, rule_ref: "rule", rule};
+  for (const [tool, args] of [
+    ["discover", {action: "instances", profiles: ["wrong"]}],
+    ["session", {action: "register", native_session_id: id, instance_ref: "instance", request_key: "key", message: "extra"}],
+    ["automation", {action: "list", session_ref: ""}],
+    ["automation", {...update, revision: 0}],
+    ["automation", {...update, rule: {...rule, kind: "timer"}}],
+    ["automation", {...update, rule: {...rule, instructions: " "}}],
+    ["automation", {...update, rule: {...rule, instructions: "я".repeat(2049)}}],
+    ["automation", {action: "create", session_ref: "s", request_key: "key", rule: {...rule, target: "other"}}],
+  ] as const) await expect(transport.call(authority, tool, args)).rejects.toThrow("native_herder_call_not_allowed");
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("keeps a saved Rust pause effective when the panel restarts without its canonical client", async () => {
+  const target = {harness: "codex" as const, sessionId: id, cwd: root};
+  await cli("on");
+  await expect(nativeAutopilotCommand(undefined, "off", target, store, policy)).rejects.toThrow("owner unavailable");
+  expect(await store.get("codex", id)).toMatchObject({executor: "rust", enabled: false});
+  await policy.replacePolicy({...createDefaultAutopilotPolicy(), judgeMode: "self"}, null);
+  expect(await nativeAutopilotCommand(undefined, "status", target, store, policy)).toBeUndefined();
 });

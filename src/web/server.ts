@@ -71,11 +71,12 @@ import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { HarnessRuntimeSettingsError, HarnessRuntimeSettingsStore, harnessRuntimeView, type HarnessRuntimeView } from "../harness-runtime-settings.js";
 import { AutopilotSessionStore, isAutopilotHarness, parseNoticeAttempt, readGoalSnapshot, type AutopilotHarness } from "../autopilot/session-store.js";
 import { GoalStore } from "../autopilot/goal-store.js";
+import type { CanonicalAutomationClient } from "../canonical-herder.js";
 import { nativeAutopilotCommand } from "../autopilot/native-command.js";
 import { parseChatCommand, type ChatCommandPipeline } from "../autopilot/chat-commands.js";
 import { browserChatInventorySummary } from "../adapters/browser-chat-inventory-cache.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
-import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
+import { isMcpConnectionOwnerRequest as isPanelOwnerRequest } from "./fleet-wiring.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
@@ -168,6 +169,7 @@ export interface WebDependencies {
   allowOwnerLoopbackMcp?: boolean;
   /** Read-only proof from the process-owned canonical scheduler and wait gate. */
   canonicalRuntimeStatus?: CanonicalRuntimeStatusSource;
+  canonicalClient?: CanonicalAutomationClient;
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
@@ -1233,7 +1235,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus, dependencies.resumeAfter, dependencies.cadence);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus, dependencies.resumeAfter, dependencies.cadence, dependencies.canonicalClient);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1690,7 +1692,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource, resumeAfter?: ResumeAfterBackend, cadence?: CadenceScheduler): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource, resumeAfter?: ResumeAfterBackend, cadence?: CadenceScheduler, canonicalClient?: CanonicalAutomationClient): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (await handleMcpOAuthRequest(request, response, { store: mcpOAuthTokenStore })) return;
   if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
@@ -2293,7 +2295,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const goalMatch = url.pathname.match(/^\/api\/autopilot\/goals\/([^/]+)\/([^/]+)$/);
   if (goalMatch && (request.method === "GET" || request.method === "PUT")) {
-    if (!await isGoalControlOwnerRequest(request)) return sendJson(response, 401, { available: false, error: "Управление целью доступно владельцу выбранной сессии." });
+    if (!await isPanelOwnerRequest(request)) return sendJson(response, 401, { available: false, error: "Управление целью доступно владельцу выбранной сессии." });
     const body = request.method === "PUT" ? await readJson(request) : undefined;
     const harness = decodeURIComponent(goalMatch[1]);
     const sessionId = decodeURIComponent(goalMatch[2]);
@@ -2321,11 +2323,17 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 400, { error: "enabled and cwd are required" });
     let resetNative = false;
     if (harness === "codex" && body.noticeIncident === undefined && body.noticeAttempt === undefined) {
+      if (canonicalClient) {
+        const authorized = request.headers.authorization
+          ? !!mcpAuthToken && sameSecret(request.headers.authorization, "Bearer " + mcpAuthToken)
+          : await isPanelOwnerRequest(request);
+        if (!authorized) return sendJson(response, 401, { error: "Autopilot session control requires the panel owner" });
+      }
       const command = request.method === "GET" ? "status" : request.method === "DELETE" ? "reset" : body.enabled ? "on" : "off";
       try {
         if (command === "on" && await getHumanStopStore().isHeld(harness, sessionId))
           return sendJson(response, 200, { harness, sessionId, enabled: false, source: "session", human_stop_held: true });
-        const result = await nativeAutopilotCommand(command, { harness, sessionId, cwd: body.cwd }, autopilotSessionStore, autopilotPolicyStore);
+        const result = await nativeAutopilotCommand(canonicalClient, command, { harness, sessionId, cwd: body.cwd }, autopilotSessionStore, autopilotPolicyStore);
         if (result && command !== "reset") return sendJson(response, 200, result);
         resetNative = !!result;
       } catch (error) {

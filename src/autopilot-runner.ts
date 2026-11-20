@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import { notifyAutopilotStop } from "./autopilot/stop-notify.js";
 import { harnessRuntimeCapabilities } from "./types/harness-runtime.js";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -85,23 +84,19 @@ type SessionControl = (command: "on" | "off" | "status", target: AutopilotRunner
   store: AutopilotSessionStore, policy: AutopilotPolicyStore) => Promise<Record<string, unknown> | undefined>;
 
 /** Installed Codex plugins share the inspector's session endpoint, independent of plugin cache version. */
-const inspectorCommand: SessionControl = async (command, target, store) => {
+const inspectorCommand: SessionControl = async (command, target) => {
   if (target.harness !== "codex") return;
   const endpoint = process.env.AGENT_HERDER_URL;
-  if (!endpoint && !process.env.HERDER_V1_ENTRY) {
-    try { await access(join(homedir(), ".local/bin/agent-herder-v1")); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if ((await store.get(target.harness, target.sessionId))?.executor !== "rust") return; // Standalone legacy installation.
-    }
-  }
   const base = new URL(endpoint || "http://127.0.0.1:18787");
   if (base.protocol !== "http:" || !["127.0.0.1", "[::1]", "localhost"].includes(base.hostname) || base.username || base.password)
     throw new Error("Codex autopilot requires the local Herder inspector");
   const url = new URL("/api/autopilot/sessions/codex/" + encodeURIComponent(target.sessionId), base);
   url.searchParams.set("cwd", resolve(target.cwd));
-  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(30_000),
-    ...(command === "status" ? {} : { method: "PUT", headers: { "content-type": "application/json" },
+  const headers = new Headers();
+  if (process.env.AGENT_HERDER_HTTP_TOKEN) headers.set("authorization", "Bearer " + process.env.AGENT_HERDER_HTTP_TOKEN);
+  if (command !== "status") headers.set("content-type", "application/json");
+  const response = await fetch(url, { headers, redirect: "error", signal: AbortSignal.timeout(30_000),
+    ...(command === "status" ? {} : { method: "PUT",
       body: JSON.stringify({ enabled: command === "on", cwd: resolve(target.cwd) }) }) });
   const result = await response.json();
   if (!response.ok || result.harness !== "codex" || result.sessionId !== target.sessionId || typeof result.enabled !== "boolean")
@@ -109,7 +104,7 @@ const inspectorCommand: SessionControl = async (command, target, store) => {
   return { ...result, ok: true, command, session_id: target.sessionId, source: result.command_source ?? result.source };
 };
 
-export async function runAutopilotCommand(input: AutopilotRunnerInput, control: SessionControl = inspectorCommand): Promise<Record<string, unknown>> {
+export async function runAutopilotCommand(input: AutopilotRunnerInput, control?: SessionControl): Promise<Record<string, unknown>> {
   if (input.command === "stop") {
     const status = await legacyAutopilotStatus(input);
     if (status.executor === "rust") return { ...status, command: "stop", decision: "rust-executor" };
@@ -136,6 +131,9 @@ async function evaluateAutopilotCommand(input: AutopilotRunnerInput, background 
   const store = new AutopilotSessionStore(join(stateDir, "sessions.json"));
   const goalStore = new GoalStore(stateDir);
   const policyStore = new AutopilotPolicyStore(resolveAutopilotPolicyStorePath(stateDir));
+  if (!background && !control && command !== "stop" && input.harness === "codex"
+    && (process.env.AGENT_HERDER_URL || process.env.AGENT_HERDER_CANONICAL_MODE === "canonical"
+      || (await store.get("codex", input.sessionId))?.executor === "rust")) control = inspectorCommand;
   if (control && command !== "stop") {
     const result = await control(command, input, store, policyStore);
     if (result) return result;
@@ -645,7 +643,7 @@ function readInteger(value: string | undefined, fallback: number): number {
 async function main() {
   const raw = process.argv[2];
   const input = raw ? JSON.parse(raw) as AutopilotRunnerInput : JSON.parse(await readStdin()) as AutopilotRunnerInput;
-  process.stdout.write(`${JSON.stringify(await runAutopilotCommand(input))}\n`);
+  process.stdout.write(`${JSON.stringify(await runAutopilotCommand(input, inspectorCommand))}\n`);
 }
 
 async function readStdin(): Promise<string> {
