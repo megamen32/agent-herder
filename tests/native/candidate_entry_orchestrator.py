@@ -23,7 +23,7 @@ RUN = Path("/srv/storage/builds/herder/ci-runs/rust-browser-mesh-rollout-bRJcQC"
 QA = RUN / "candidate-qa"
 ENTRY = QA / "entry"
 CANDIDATE = RUN / "candidate-entry-95efa8bd"
-WORK = Path("/tmp/opencode/candidate-entry")
+WORK = Path(f"/tmp/opencode/candidate-entry-{os.getpid()}")
 ORIGIN_PORT = "9222"
 
 
