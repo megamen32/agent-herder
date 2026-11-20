@@ -1,10 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
+import { createHash } from "node:crypto";
 import lockfile from "proper-lockfile";
-import { GoalStore } from "./goal-store.js";
+import { GoalStore, type GoalIdentity } from "./goal-store.js";
+import { AUTOPILOT_HARNESSES } from "./policy.js";
 import { isHealthPlanId, parseNoticeIncident, type HealthPlanId, type NoticeIncidentBinding } from "./notice-incident.js";
 
 export type AutopilotHarness = "codex" | "opencode" | "claude" | "hermes" | "zcode" | "chatgpt" | "zai";
+export function isAutopilotHarness(value: unknown): value is AutopilotHarness {
+  return AUTOPILOT_HARNESSES.some(harness => harness === value);
+}
 export type NoticeAttempt = { incidentId: string; attemptId: string };
 export function parseNoticeAttempt(value: unknown): NoticeAttempt {
   const input = value as Record<string, unknown> | null;
@@ -21,6 +26,7 @@ export type AutopilotSessionOverride = {
   cwd: string;
   /** Absent after reset: inherit policy while retaining original incident identity. */
   enabled?: boolean;
+  executor?: "rust" | "typescript";
   updatedAt: string;
   noticeIncident?: NoticeIncidentBinding;
   /** Current delivery, distinct from the immutable first incident of a coalesced session. */
@@ -36,9 +42,17 @@ export type AutopilotSessionOverride = {
  * call of the same session: the arming call carries the incident id only, so
  * a plan kept in the process memory alone would be lost with the process.
  */
-type SessionFile = { version: 1; sessions: AutopilotSessionOverride[]; launchPlans?: Record<string, HealthPlanId> };
+type SessionFile = { version: 1; sessions: AutopilotSessionOverride[]; foreignSessions?: unknown[]; launchPlans?: Record<string, HealthPlanId> };
 
 const MAX_TEXT = 512;
+
+export async function readGoalSnapshot(store: GoalStore, identity: GoalIdentity) {
+  try { return await store.snapshot(identity); }
+  catch (error) {
+    if (error instanceof Error && error.message === "goal is not armed for this session") return undefined;
+    throw error;
+  }
+}
 
 /** Durable per-harness session switches shared by slash commands and lifecycle adapters. */
 export class AutopilotSessionStore {
@@ -47,6 +61,18 @@ export class AutopilotSessionStore {
 
   constructor(private readonly path: string) {
     this.lockTarget = `${path}.lock`;
+  }
+
+  get stateDir(): string { return dirname(this.path); }
+
+  /** Serialize a native rule change with its personal switch across CLI and HTTP processes. */
+  async withNativeCommand<T>(sessionId: string, command: () => Promise<T>): Promise<T> {
+    await mkdir(this.stateDir, { recursive: true });
+    const key = createHash("sha256").update(sessionId).digest("hex");
+    const release = await lockfile.lock(this.path + ".codex-" + key, {
+      realpath: false, retries: { retries: 60, minTimeout: 25, maxTimeout: 200 },
+    });
+    try { return await command(); } finally { await release(); }
   }
 
   /** Every remembered session override, including enabled, disabled and
@@ -65,7 +91,7 @@ export class AutopilotSessionStore {
   }
 
   async set(
-    target: { harness: AutopilotHarness; sessionId: string; cwd: string; noticeIncident?: NoticeIncidentBinding; noticeAttempt?: NoticeAttempt },
+    target: { harness: AutopilotHarness; sessionId: string; cwd: string; executor?: AutopilotSessionOverride["executor"]; noticeIncident?: NoticeIncidentBinding; noticeAttempt?: NoticeAttempt },
     enabled: boolean,
   ): Promise<AutopilotSessionOverride> {
     const normalized = normalizeTarget(target);
@@ -100,9 +126,11 @@ export class AutopilotSessionStore {
           ...requested,
           ...(requested.planId || !previousBinding?.planId ? {} : { planId: previousBinding.planId }),
         };
+      const executor = target.executor ?? previous?.executor;
       const next: AutopilotSessionOverride = {
         ...normalized,
         enabled,
+        ...(executor && { executor }),
         ...(noticeIncident ? { noticeIncident } : {}),
         ...((target.noticeAttempt ?? previous?.noticeAttempt) ? { noticeAttempt: parseNoticeAttempt(target.noticeAttempt ?? previous?.noticeAttempt) } : {}),
         updatedAt: new Date().toISOString(),
@@ -189,6 +217,11 @@ export class AutopilotSessionStore {
     }
   }
 
+  async resumeGoalIfPresent(target: GoalIdentity): Promise<void> {
+    const goals = new GoalStore(this.stateDir);
+    if (await readGoalSnapshot(goals, target)) await goals.resume(target);
+  }
+
   private async stopGoalIfPresent(target: { harness: AutopilotHarness; sessionId: string; cwd: string }): Promise<void> {
     const goals = new GoalStore(dirname(this.path));
     try {
@@ -217,7 +250,8 @@ export class AutopilotSessionStore {
         const file = await this.read();
         const result = await update(file);
         const temporary = `${this.path}.${process.pid}.tmp`;
-        await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+        const { foreignSessions = [], ...document } = file;
+        await writeFile(temporary, `${JSON.stringify({ ...document, sessions: [...file.sessions, ...foreignSessions] }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
         await rename(temporary, this.path);
         return result;
       } finally {
@@ -234,9 +268,13 @@ function parseFile(value: unknown): SessionFile {
   const object = value as Record<string, unknown>;
   if (object.version !== 1 || !Array.isArray(object.sessions)) throw new Error("invalid autopilot session state");
   const launchPlans = parseLaunchPlans(object.launchPlans);
+  // Another version of the plugin can share this file and support additional harnesses.
+  const foreign = (item: unknown): boolean => !!item && typeof item === "object" && "harness" in item
+    && typeof item.harness === "string" && !!item.harness.trim() && !isAutopilotHarness(item.harness);
   return {
     version: 1,
-    sessions: object.sessions.map((item) => {
+    foreignSessions: object.sessions.filter(foreign),
+    sessions: object.sessions.filter(item => !foreign(item)).map((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("invalid autopilot session entry");
       const record = item as Record<string, unknown>;
       if ((record.enabled !== undefined && typeof record.enabled !== "boolean")
@@ -247,7 +285,9 @@ function parseFile(value: unknown): SessionFile {
       return {
         ...normalizeTarget({ harness: record.harness as AutopilotHarness, sessionId: record.sessionId as string, cwd: record.cwd as string }),
         ...(record.enabled === undefined ? {} : { enabled: record.enabled }),
-        updatedAt: new Date(record.updatedAt).toISOString(),
+        ...(record.executor === "rust" || record.executor === "typescript" ? { executor: record.executor } : {}),
+        // The Rust rule fences its baseline with the exact persisted timestamp.
+        updatedAt: record.executor === "rust" ? record.updatedAt : new Date(record.updatedAt).toISOString(),
         ...(record.noticeIncident === undefined ? {} : { noticeIncident: parseNoticeIncident(record.noticeIncident) }),
         ...(record.noticeAttempt === undefined ? {} : { noticeAttempt: parseNoticeAttempt(record.noticeAttempt) }),
       };
@@ -292,7 +332,7 @@ function reportUnknownLaunchPlan(key: string): void {
 }
 
 function normalizeTarget(target: { harness: AutopilotHarness; sessionId: string; cwd: string }) {
-  if (!(["codex", "opencode", "claude", "hermes", "zcode", "chatgpt", "zai"] as string[]).includes(target.harness)) throw new Error("unsupported autopilot harness");
+  if (!isAutopilotHarness(target.harness)) throw new Error("unsupported autopilot harness");
   const sessionId = boundedText(target.sessionId, "sessionId");
   const cwd = boundedText(target.cwd, "cwd");
   return { harness: target.harness, sessionId, cwd: normalize(cwd) };

@@ -850,8 +850,8 @@ def inside(parent_namespace, same_route_only=False, quota_profile=False):
     print(json.dumps(proof, sort_keys=True), flush=True)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(script=__file__, description=__doc__):
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--codex", type=Path, required=True)
     parser.add_argument("--owner", type=Path, required=True)
     parser.add_argument("--same-route-429", action="store_true",
@@ -877,7 +877,7 @@ def main():
         "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", "/stand", "--chdir", "/stand",
         "--ro-bind", str(tests), "/fixture/native", "--ro-bind", str(store), "/fixture/store",
         "--ro-bind", str(codex), "/fixture/codex", "--ro-bind", str(owner), "/fixture/owner",
-        "--", "/usr/bin/python3", "-uB", f"/fixture/native/{Path(__file__).name}", "--inside", namespace(),
+        "--", "/usr/bin/python3", "-uB", f"/fixture/native/{Path(script).name}", "--inside", namespace(),
     ]
     if args.same_route_429 or args.same_route_quota:
         command.append("--same-route-429")

@@ -1,3 +1,4 @@
+import { installedLocalRecovery } from "../host-local-recovery.js";
 import { processWaitBlocks, type ProcessWaitSource } from "../process-wait-gate.js";
 import { probeRecoveryModelQuota, type RecoveryModelQuota } from "../model-quota.js";
 import { normalizeSendAdmission } from "../adapters/quota-failure.js";
@@ -3453,6 +3454,7 @@ export class UnfinishedSessionLauncher {
   }
 
   recoverPending(): Promise<void> {
+    installedLocalRecovery?.maintain();
     if (this.recovering) return this.recovering;
     this.recovering = this.runRecovery().finally(() => {
       this.recovering = null;

@@ -1,3 +1,4 @@
+import * as waitGate from "../src/process-wait-gate.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -323,6 +324,27 @@ async function httpServer(observe?: (request: { challenge: string }) => Promise<
 }
 
 describe("authenticated runtime proof HTTP route", () => {
+  it("authenticates and echoes the exact local scheduler readback from this process", async () => {
+    const observe = vi.spyOn(waitGate, "observeInstalledRecoveryWait").mockResolvedValue({
+      blocked: true, reason: "rust_recovery_handoff", recoveryOwner: "rust",
+    });
+    try {
+      const endpoint = new URL(await httpServer(vi.fn()));
+      endpoint.pathname = waitGate.LOCAL_RECOVERY_WAIT_PATH;
+      endpoint.search = new URLSearchParams({ challenge, harness: "codex", nativeSessionId: "exact", nodeRef: "server-44" }).toString();
+      expect((await fetch(endpoint)).status).toBe(401);
+      expect(observe).not.toHaveBeenCalled();
+      const headers = { authorization: "Bearer fixture-runtime-token" };
+      const response = await fetch(endpoint, { headers });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ challenge, pid: process.pid,
+        decision: { blocked: true, reason: "rust_recovery_handoff", recoveryOwner: "rust" } });
+      expect(observe).toHaveBeenCalledWith({ harness: "codex", nativeSessionId: "exact", nodeRef: "server-44" });
+      expect((await fetch(endpoint, { method: "POST", headers })).status).toBe(405);
+      expect(observe).toHaveBeenCalledTimes(1);
+    } finally { observe.mockRestore(); }
+  });
+
   it("does not observe runtime before the existing owner bearer boundary", async () => {
     const observe = vi.fn(async (request: { challenge: string }) => ({ challenge: request.challenge, migration_ready: true }));
     const url = await httpServer(observe);
