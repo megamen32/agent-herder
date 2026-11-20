@@ -459,6 +459,22 @@ class ComponentAncestry(unittest.TestCase):
         self.assertEqual(checked[0]["previous_source"], self.core)
         self.assertNotEqual(self.adapter, self.core)
 
+    def test_only_native_recovery_can_retain_the_unchanged_scheduler(self):
+        receipt = {"response": {"runtime": {"source_commit": self.new}}}
+        native = self.repo / "crates/herder"
+        native.mkdir(parents=True)
+        (native / "fix.rs").write_text("// Native-only change\n")
+        self.git(["add", "crates"])
+        self.git(["commit", "-q", "-m", "native fix"])
+        native_source = self.git(["rev-parse", "HEAD"])
+        self.after["process_leases_build"]["source_commit"] = native_source
+        git_dir = self.repo / ".git"
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, {"kind": "recovery"}, receipt), self.new)
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, None, receipt), native_source)
+        self.after["process_leases_build"]["source_commit"] = self.commit("changed scheduler input")
+        with self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
+            rollout.scheduler_source(git_dir, self.after, {"kind": "recovery"}, receipt)
+
     def test_new_unmerged_core_is_refused(self):
         unmerged = self.commit("unmerged")
         self.after["process_leases_build"]["source_commit"] = unmerged
