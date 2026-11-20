@@ -1,14 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { recordProjectLifecycle, integrationProject, resumePendingProjectIntegrations } from "../src/project-integration.js";
 import { ProjectReleaseLeaseStore } from "../src/project-release-lease.js";
+import { emptyHarnessRuntimeSettings, setHarnessRuntimeSettingsPathForTests } from "../src/harness-runtime-settings.js";
 const dirs:string[]=[];
-afterEach(async()=>{await Promise.all(dirs.splice(0).map(d=>rm(d,{recursive:true,force:true})));});
+afterEach(async()=>{
+ setHarnessRuntimeSettingsPathForTests(undefined);
+ await Promise.all(dirs.splice(0).map(d=>rm(d,{recursive:true,force:true})));
+});
 async function setup(){
  const dir=await mkdtemp(join(tmpdir(),"integration-hook-"));dirs.push(dir);
+ const settings = join(dir, "harness-runtime-settings.json");
+ await writeFile(settings, JSON.stringify({ ...emptyHarnessRuntimeSettings(), releaseOccupancyEnabled: true }));
+ setHarnessRuntimeSettingsPathForTests(settings);
  const repo=join(dir,"repo");
  execFileSync("git",["init","-b","main",repo],{stdio:"ignore"});
  execFileSync("git",["-C",repo,"-c","user.name=Test","-c","user.email=test@example.invalid","commit","--allow-empty","-m","init"],{stdio:"ignore"});

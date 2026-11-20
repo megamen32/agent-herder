@@ -8,11 +8,14 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("joint_release_gate", ROOT / "deploy/fleet/release_gate.py")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+import rotate_canonical_bridge as rotation
+from apply_canonical_release_cutover import process_identity
 BRIDGE = os.environ.get("HERDER_RESOURCE_BRIDGE_BIN")
 
 
@@ -25,7 +28,7 @@ class CanonicalBridgeIntegrationTest(unittest.TestCase):
         # Cargo cache may be group writable under the developer's umask.
         self.bridge = self.root / "herder_resource_bridge"
         shutil.copyfile(Path(BRIDGE).resolve(strict=True), self.bridge)
-        self.bridge.chmod(0o755)
+        self.bridge.chmod(0o700)
         self.authority = self.root / "resources"
         self.resource = self.authority / "resources" / "fixture-release"
         self.project = self.root / "repo" / ".git"
@@ -45,13 +48,22 @@ class CanonicalBridgeIntegrationTest(unittest.TestCase):
              "root": str(self.authority), "schema": "v1", "route": {"type": "local"}}, "administrators": ["alice"]})
         self.config = self.root / "compat.json"
         self.ledger = self.root / "ledger.json"
+        settings = self.root / "settings.json"
+        self.write(settings, {"version": 1, "releaseOccupancyEnabled": True})
+        env = patch.dict(os.environ, {"AGENT_HERDER_RUNTIME_SETTINGS_PATH": str(settings)})
+        env.start()
+        self.addCleanup(env.stop)
         self.target = {"fleetDir": str(self.fleet), "unit": "fixture.service"}
         self.write(self.config, {"version": 1, "process_config": str(self.process_config), "ledger": str(self.ledger), "seal_id": "fixture-reviewed-seal",
              "principal_ref": "alice", "mappings": [{"project": str(self.project), "resource_ref": "fixture-release", "revision": 1,
              "previous_fence": 118, "deployment_target": self.target}]})
         self.write(self.ledger, {"version": 2, "canonical": {"version": 1, "config": str(self.config), "bridge": str(self.bridge), "seal_id": "fixture-reviewed-seal"},
                                  "projects": {str(self.project): {"fence": 118}}})
-        self.owner = {"hostId": socket.gethostname(), "harness": "fixture", "nativeSessionId": "fixture-session"}
+        identity = process_identity(Path("/proc"), os.getpid())
+        if identity is None:
+            self.skipTest("the Linux release authority fixture requires procfs")
+        self.owner = {"hostId": socket.gethostname(), "harness": "fixture", "nativeSessionId": "fixture-session",
+                      "process": {"pid": identity["pid"], "bootId": identity["boot_id"], "startTicks": identity["start_ticks"]}}
         acquired = self.call({"action": "acquire", "project": str(self.project), "owner": self.owner, "ttlSeconds": 30,
                               "token": "a" * 64, "deploymentTarget": self.target})
         self.assertTrue(acquired["acquired"])
@@ -105,14 +117,54 @@ class CanonicalBridgeIntegrationTest(unittest.TestCase):
         self.assertGreater(next_owner["lease"]["fence"], 119)
         self.assertEqual(self.ledger.read_bytes(), before)
 
-    def test_eof_leaves_durable_unknown_and_blocks_takeover_after_expiry(self):
+    def test_eof_blocks_live_takeover_and_quarantines_unknown_after_expiry(self):
         with self.assertRaisesRegex(RuntimeError, "simulated unknown effect"):
             with MODULE.ReleaseGate(self.proof_path, self.ledger, target=self.target):
                 raise RuntimeError("simulated unknown effect")
-        self.expire()
         binding = json.loads((self.resource / "execution-binding.json").read_text())
         self.assertIsNone(binding["resolved_receipt"])
         self.assertFalse(self.successor()["acquired"])
+        self.expire()
+        self.assertEqual(self.call({"action": "status", "project": str(self.project)})["occupancyState"], "stale_unknown")
+        self.assertGreater(self.successor()["lease"]["fence"], 119)
+        archive = self.resource / "unresolved-executions" / (binding["claim_id"] + ".json")
+        self.assertEqual(json.loads(archive.read_bytes())["claim_id"], binding["claim_id"])
+
+    def test_rotating_the_seal_preserves_a_running_guard_and_concurrent_ledger_updates(self):
+        original = self.ledger.read_bytes()
+        expected = rotation.digest(self.ledger)
+        proposed = self.root / "proposal.json"
+        self.write(proposed, {**json.loads(self.config.read_bytes()), "version": 2})
+
+        def rotate(name):
+            return rotation.rotate(self.ledger, self.config, self.bridge, self.root/name,
+                                   expected, str(self.project), proposed)
+
+        with MODULE.ReleaseGate(self.proof_path, self.ledger, target=self.target) as gate:
+            with self.assertRaisesRegex(RuntimeError, "active deployment"):
+                rotate("during-guard")
+            self.assertEqual(self.ledger.read_bytes(), original)
+            self.assertEqual(gate.check()["fence"], 119)
+
+        probe = rotation.bridge_status
+        def record_concurrent_update(*args):
+            result = probe(*args)
+            state = json.loads(self.ledger.read_bytes())
+            state["projects"][str(self.project)]["sessions"] = {}
+            self.write(self.ledger, state)
+            return result
+
+        with patch.object(rotation, "bridge_status", side_effect=record_concurrent_update):
+            with self.assertRaisesRegex(RuntimeError, "CAS failed"):
+                rotate("during-update")
+        updated = json.loads(self.ledger.read_bytes())
+        self.assertIn("sessions", updated["projects"][str(self.project)])
+        self.assertEqual(updated["canonical"], json.loads(original)["canonical"])
+        expected = rotation.digest(self.ledger)
+        self.assertTrue(rotate("idle")["rotated"])
+        self.assertEqual(json.loads(self.ledger.read_bytes())["projects"], updated["projects"])
+        with MODULE.ReleaseGate(self.proof_path, self.ledger, target=self.target) as gate:
+            self.assertEqual(gate.check()["fence"], 119)
 
 
 if __name__ == "__main__":

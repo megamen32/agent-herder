@@ -68,15 +68,19 @@ describe("offline release authority route", () => {
     } finally { await rm(base, { recursive: true, force: true }); }
   });
 
-  it("rolls back the acquired project on proof-write failure even after cwd disappears", async () => {
+  it.each([false, true])("rolls back the acquired project on proof-write failure after cwd disappears (explicit target: %s)", async explicit => {
     const base = await realpath(await mkdtemp(join(tmpdir(), "release-admin-rollback-")));
     const repo = join(base, "repo"), ledger = join(base, "ledger.json");
     const proofOut = join(base, "proof.json");
     const owner = { hostId: hostname(), harness: "test", nativeSessionId: "rollback" };
     const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const release = vi.spyOn(ProjectReleaseLeaseStore.prototype, "release");
     try {
       execFileSync("git", ["init", "-q", repo]);
       const project = await realpath(join(repo, ".git"));
+      const alias = join(base, "fleet-link");
+      await symlink(repo, alias);
+      const selector = explicit ? { deploymentTarget: { fleetDir: alias, unit: "secondary.service" } } : {};
       await writeFile(ledger, JSON.stringify({ version: 1, projects: {} }), { mode: 0o600 });
       vi.mocked(open).mockImplementationOnce(async (...args) => {
         const handle = await actual.open(...args);
@@ -87,12 +91,16 @@ describe("offline release authority route", () => {
         return handle;
       });
       await expect(runReleaseAdmin({ ledger, authorityHost: hostname(), proofOut,
-        request: { action: "acquire", cwd: repo, owner } }))
+        request: { action: "acquire", cwd: repo, owner, ...selector } }))
         .rejects.toThrow("injected_proof_write_failure");
+      expect(release.mock.calls.map(([key, proof]) => [key, proof.deploymentTarget])).toEqual([
+        [project, explicit ? { fleetDir: repo, unit: "secondary.service" } : undefined],
+      ]);
       const state = JSON.parse(await readFile(ledger, "utf8"));
       expect(state.projects[project].lease).toBeUndefined();
       await expect(stat(proofOut)).rejects.toThrow();
     } finally {
+      release.mockRestore();
       vi.mocked(open).mockReset();
       vi.mocked(open).mockImplementation(actual.open);
       await rm(base, { recursive: true, force: true });

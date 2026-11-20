@@ -114,6 +114,20 @@ pub struct ProjectMapping {
     pub revision: u64,
     pub previous_fence: u64,
     pub deployment_target: Option<DeploymentTarget>,
+    /// Version 2 only. A singleton is already its project's implicit default.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "mapping_default"
+    )]
+    pub default_for_project: Option<bool>,
+}
+
+// Absent is the legacy spelling. An explicit null is not a boolean opt-in.
+fn mapping_default<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<bool>, D::Error> {
+    bool::deserialize(d).map(Some)
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -251,7 +265,7 @@ impl Bridge {
     fn open_registered(config_path: &Path, executable: &Path) -> Result<Self> {
         let path = canonical_path(config_path).map_err(|_| config_error())?;
         let config: BridgeConfig = read_private(&path, true).map_err(|_| config_error())?;
-        if config.version != 1
+        if !matches!(config.version, 1 | 2)
             || config.seal_id.is_empty()
             || config.seal_id.len() > 256
             || config.principal_ref.is_empty()
@@ -291,14 +305,26 @@ impl Bridge {
         {
             return Err(config_error());
         }
-        let mut projects = HashSet::new();
+        let mut routes = HashSet::new();
+        let mut defaults = HashSet::new();
         let mut resources: HashMap<ResourceRef, (u64, Option<DeploymentTarget>)> = HashMap::new();
         let mut units: HashMap<String, (ResourceRef, DeploymentTarget)> = HashMap::new();
         for mapping in &config.mappings {
             project_identity(&mapping.project, false).map_err(|_| config_error())?;
+            // V1 has exactly one entry per project and must reject V2 metadata
+            // even if someone changes only the version number.
+            let route_target = if config.version == 1 {
+                if mapping.default_for_project.is_some() {
+                    return Err(config_error());
+                }
+                None
+            } else {
+                mapping.deployment_target.as_ref()
+            };
             if mapping.revision == 0
                 || mapping.previous_fence >= MAX_FENCE
-                || !projects.insert(mapping.project.clone())
+                || !routes.insert((&mapping.project, route_target))
+                || (mapping.default_for_project == Some(true) && !defaults.insert(&mapping.project))
             {
                 return Err(config_error());
             }
@@ -408,22 +434,15 @@ impl Bridge {
             return Err(invalid());
         }
         let mapping = self.mapping(&request)?.clone();
-        self.validate_target_request(&mapping, request.deployment_target.as_ref())?;
         self.validate_revision(&mapping)?;
-        if !self.release_occupancy_enabled() {
+        let explicit_only = self.config.version == 2
+            && mapping.default_for_project != Some(true)
+            && self.config.mappings.iter().any(|other| {
+                other.project == mapping.project && other.resource_ref != mapping.resource_ref
+            });
+        let enabled = self.release_occupancy_enabled();
+        if !enabled && request.action != BridgeAction::Status {
             return match request.action {
-                BridgeAction::Status => Ok(json!({
-                    "releaseOccupancyEnabled": false,
-                    "disabled": true,
-                    "reason": "release_occupancy_disabled",
-                    "resourceRef": mapping.resource_ref,
-                    "revision": mapping.revision,
-                    "deploymentInProgress": false,
-                    "lease": Value::Null,
-                    "remainingSeconds": 0,
-                    "nextFence": 0,
-                    "contact": Value::Null,
-                })),
                 BridgeAction::Acquire => Ok(json!({
                     "acquired": false,
                     "disabled": true,
@@ -431,6 +450,8 @@ impl Bridge {
                     "lease": Value::Null,
                     "remainingSeconds": 0,
                 })),
+                // Only an explicit secondary route opts into real guards.
+                _ if explicit_only => Err(BridgeError("release_occupancy_disabled")),
                 BridgeAction::Guard => {
                     self.disabled_guard = true;
                     Ok(json!({"guarded":true,"bypassed":true,"releaseOccupancyEnabled":false}))
@@ -438,12 +459,26 @@ impl Bridge {
                 BridgeAction::Check | BridgeAction::Renew | BridgeAction::Release => {
                     Ok(json!({"bypassed":true,"releaseOccupancyEnabled":false}))
                 }
-                BridgeAction::Finished => Err(invalid()),
+                BridgeAction::Status | BridgeAction::Finished => Err(invalid()),
             };
         }
         match request.action {
             BridgeAction::Acquire => self.acquire(&mapping, &request),
-            BridgeAction::Status => self.status(&mapping),
+            BridgeAction::Status => {
+                let mut status = if enabled {
+                    self.status(&mapping)?
+                } else {
+                    json!({"releaseOccupancyEnabled": false, "disabled": true,
+                        "reason": "release_occupancy_disabled", "resourceRef": mapping.resource_ref,
+                        "revision": mapping.revision, "deploymentInProgress": false, "lease": Value::Null,
+                        "remainingSeconds": 0, "nextFence": 0, "contact": Value::Null})
+                };
+                if explicit_only {
+                    status["deploymentTarget"] = json!(mapping.deployment_target);
+                    status["releaseOccupancyEnabled"] = json!(enabled);
+                }
+                Ok(status)
+            }
             BridgeAction::Check => {
                 let (current, _) = self.verify(&mapping, &request, true)?;
                 self.lease(&mapping, &current)
@@ -494,11 +529,19 @@ impl Bridge {
             }
             Err(_) => return Err(BridgeError("project_unmapped")),
         };
-        self.config
-            .mappings
-            .iter()
-            .find(|m| m.project == identity)
-            .ok_or(BridgeError("project_unmapped"))
+        let mut routes = self.config.mappings.iter().filter(|m| m.project == identity);
+        let mut probe = routes.clone();
+        let first = probe.next().ok_or(BridgeError("project_unmapped"))?;
+        if let Some(target) = &request.deployment_target {
+            let actual = validate_target(target, false)?;
+            return routes.find(|m| m.deployment_target.as_ref() == Some(&actual))
+                .ok_or_else(proof_error);
+        }
+        if probe.next().is_none() {
+            return Ok(first);
+        }
+        routes.find(|m| m.default_for_project == Some(true))
+            .ok_or(BridgeError("deployment_target_required"))
     }
     fn validate_revision(&self, mapping: &ProjectMapping) -> Result<()> {
         let descriptor =
@@ -508,6 +551,7 @@ impl Bridge {
         }
         Ok(())
     }
+    #[cfg(target_os = "linux")]
     fn validate_target_request(
         &self,
         mapping: &ProjectMapping,
@@ -545,6 +589,9 @@ impl Bridge {
         owner.validate()?;
         let token = request.token.as_deref().ok_or_else(invalid)?;
         let nonce = token_claim_id(token)?;
+        if peer_intent_exists(&self.peer_dirs(mapping)?, &format!("{nonce}.json"))? {
+            return Err(proof_error());
+        }
         let fence = request
             .fence
             .filter(|v| *v > 0 && *v <= MAX_FENCE)
@@ -568,6 +615,9 @@ impl Bridge {
     }
     fn lease(&self, mapping: &ProjectMapping, current: &ResourceClaim) -> Result<Value> {
         let purpose = self.purpose(current)?;
+        if purpose.deployment_target != mapping.deployment_target || purpose.revision != mapping.revision {
+            return Err(proof_error());
+        }
         let acquired = claim::parse_expiry_seconds(&current.acquired_at).map_err(unavailable)?;
         let expiry = current
             .expires_at
@@ -628,10 +678,18 @@ impl Bridge {
                 return Ok(true);
             }
         }
-        match TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH) {
-            Ok(_) => Ok(false),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(true),
-            Err(e) => Err(unavailable(e)),
+        self.execution_lock_held(mapping)
+    }
+
+    fn execution_lock_held(&self, mapping: &ProjectMapping) -> Result<bool> {
+        let path = self.resource_dir(mapping)?.join("execution.lock");
+        let Some(file) = existing_private_lock(&path).map_err(unavailable)? else {
+            return Ok(false);
+        };
+        match file.try_lock_shared() {
+            Ok(()) => Ok(false),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+            Err(std::fs::TryLockError::Error(e)) => Err(unavailable(e)),
         }
     }
 
@@ -642,11 +700,7 @@ impl Bridge {
         if claim::ensure_live_at(&current, claim::now_seconds().map_err(unavailable)?).is_ok() {
             return Ok(false);
         }
-        match TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH) {
-            Ok(_) => Ok(true),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(false),
-            Err(error) => Err(unavailable(error)),
-        }
+        Ok(!self.execution_lock_held(mapping)?)
     }
 
     fn quarantine_stale_binding(&self, mapping: &ProjectMapping) -> Result<bool> {
@@ -667,8 +721,23 @@ impl Bridge {
     }
     fn status(&self, mapping: &ProjectMapping) -> Result<Value> {
         let dir = self.resource_dir(mapping)?;
-        let _gate = compat_lock(&dir).map_err(unavailable)?;
-        let counter = self.counter(mapping, &dir)?;
+        let path = dir.join("compat.lock");
+        loop {
+            let reader = existing_private_lock(&path).map_err(unavailable)?;
+            if let Some(file) = &reader {
+                file.lock_shared().map_err(unavailable)?;
+            }
+            let snapshot = self.read_status(mapping, &dir)?;
+            // If the first writer appeared during an unlocked read, take its
+            // lock and read again. A status probe never creates lock files.
+            if reader.is_some() || !path.try_exists().map_err(unavailable)? {
+                return Ok(snapshot);
+            }
+        }
+    }
+
+    fn read_status(&self, mapping: &ProjectMapping, dir: &Path) -> Result<Value> {
+        let counter = self.counter(mapping, dir)?;
         let current = claim::read_current(&self.authority, &mapping.resource_ref, AUTH)
             .map_err(unavailable)?;
         let now = claim::now_seconds().map_err(unavailable)?;
@@ -712,6 +781,27 @@ impl Bridge {
             "revision":mapping.revision,"canonicalBusy":canonical_busy,"currentClaim":current_claim,"migrationQuarantine":migration}),
         )
     }
+    // A request through a singleton alias of a shared resource must observe
+    // the same reservations as a request through its multi-target project.
+    fn peer_dirs(&self, mapping: &ProjectMapping) -> Result<Vec<PathBuf>> {
+        if self.config.version == 1 {
+            return Ok(Vec::new());
+        }
+        let projects: HashSet<_> = self.config.mappings.iter()
+            .filter(|m| m.resource_ref == mapping.resource_ref)
+            .map(|m| &m.project)
+            .collect();
+        let mut seen = HashSet::new();
+        self.config.mappings.iter()
+            .filter(|m| {
+                m.resource_ref != mapping.resource_ref
+                    && projects.contains(&m.project)
+                    && seen.insert(&m.resource_ref)
+            })
+            .map(|m| self.resource_dir(m))
+            .collect()
+    }
+
     fn acquire(&self, mapping: &ProjectMapping, request: &BridgeRequest) -> Result<Value> {
         let owner = request.owner.clone().ok_or_else(invalid)?;
         owner.validate()?;
@@ -741,10 +831,23 @@ impl Bridge {
             deployment_target: mapping.deployment_target.clone(),
         };
         let dir = self.resource_dir(mapping)?;
-        let _gate = compat_lock(&dir).map_err(unavailable)?;
+        let peers = self.peer_dirs(mapping)?;
+        let name = format!("{nonce}.json");
+        // Serialize only the participating resources, in a consistent order.
+        // Singleton projects retain their ordinary one-resource admission.
+        let mut dirs: Vec<_> = std::iter::once(&dir).chain(&peers).collect();
+        dirs.sort_unstable();
+        let _locks = dirs.into_iter().map(|d| compat_lock(d))
+            .collect::<io::Result<Vec<_>>>().map_err(unavailable)?;
+        // Negative reservations keep a secondary nonce off its former siblings
+        // after config rollback. They cannot grant ownership or consume a fence.
+        if entry_exists(&dir.join("compat-excluded-nonces").join(&name))?
+            || peer_intent_exists(&peers, &name)?
+        {
+            return Err(BridgeError("idempotency_conflict"));
+        }
         let intent_dir = dir.join("compat-intents");
-        create_private_directory(&intent_dir).map_err(unavailable)?;
-        let path = intent_dir.join(format!("{nonce}.json"));
+        let path = intent_dir.join(&name);
         let intent = match read_private::<AcquireIntent>(&path, false) {
             Ok(intent) => {
                 if intent.version != 1 || intent.claim_id != nonce || intent.payload != payload {
@@ -772,6 +875,15 @@ impl Bridge {
                 if fence >= MAX_FENCE {
                     return Err(BridgeError("fence_exhausted"));
                 }
+                // Write the exclusions before the issuing intent. After a crash
+                // its own issuer can retry, while siblings still fail closed.
+                for peer in &peers {
+                    let excluded = peer.join("compat-excluded-nonces");
+                    create_private_directory(&excluded).map_err(unavailable)?;
+                    atomic_json(&excluded.join(&name), &true).map_err(unavailable)?;
+                    File::open(peer).and_then(|dir| dir.sync_all()).map_err(unavailable)?;
+                }
+                create_private_directory(&intent_dir).map_err(unavailable)?;
                 counter.next_fence += 1;
                 // A crash can consume a fence, but cannot reuse one.
                 atomic_json(&dir.join("compat-fence.json"), &counter).map_err(unavailable)?;
@@ -861,10 +973,13 @@ impl Bridge {
             "canonicalBusy":generic,"currentClaim":if generic {current.map(public_claim).unwrap_or(Value::Null)}else{Value::Null}}))
     }
     fn begin_guard(&mut self, mapping: ProjectMapping, request: &BridgeRequest) -> Result<Value> {
-        let lock = TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH)
-            .map_err(claim_error)?;
+        if self.execution_lock_held(&mapping)? {
+            return Err(BridgeError("resource_busy"));
+        }
         let (current, purpose) = self.verify(&mapping, request, true)?;
         self.require_live_owner_process(&purpose.owner)?;
+        let lock = TargetExecutionLock::try_acquire(&self.authority, &mapping.resource_ref, AUTH)
+            .map_err(claim_error)?;
         lock.verify_owned_claim(
             &self.authority,
             AUTH,
@@ -959,7 +1074,11 @@ impl Bridge {
                 .map_err(claim_error)?
         };
         let purpose = self.purpose(&current)?;
-        if purpose.owner != guard.purpose.owner || purpose.fence != guard.purpose.fence {
+        if purpose.owner != guard.purpose.owner
+            || purpose.fence != guard.purpose.fence
+            || purpose.revision != guard.mapping.revision
+            || purpose.deployment_target != guard.mapping.deployment_target
+        {
             return Err(proof_error());
         }
         let binding =
@@ -1227,17 +1346,47 @@ fn create_private_directory(path: &Path) -> io::Result<()> {
     }
     canonical_directory(path)
 }
+fn entry_exists(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(unavailable(e)),
+    }
+}
+
+fn peer_intent_exists(peers: &[PathBuf], name: &str) -> Result<bool> {
+    for dir in peers {
+        if entry_exists(&dir.join("compat-intents").join(name))? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn compat_lock(dir: &Path) -> io::Result<File> {
-    let path = dir.join("compat.lock");
+    let file = open_private_lock(&dir.join("compat.lock"), true)?;
+    file.lock()?;
+    Ok(file)
+}
+
+fn existing_private_lock(path: &Path) -> io::Result<Option<File>> {
+    match open_private_lock(path, false) {
+        Ok(file) => Ok(Some(file)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn open_private_lock(path: &Path, create: bool) -> io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
-        .write(true)
-        .create(true)
+        .write(create)
+        .create(create)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(&path)?;
+        .open(path)?;
     let m = file.metadata()?;
-    let named = fs::symlink_metadata(&path)?;
+    let named = fs::symlink_metadata(path)?;
     if !m.is_file()
         || m.nlink() != 1
         || m.uid() != unsafe { libc::geteuid() }
@@ -1246,7 +1395,6 @@ fn compat_lock(dir: &Path) -> io::Result<File> {
     {
         return Err(io::Error::from(io::ErrorKind::PermissionDenied));
     }
-    file.lock()?;
     Ok(file)
 }
 fn atomic_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
