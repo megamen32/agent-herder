@@ -729,11 +729,12 @@ def stage_adapter_migration(base, manifest, selection, selector, output, source,
 
 
 def recovery_profile_payload(previous, changed, *, installed=False):
-    """Allow an exact native recovery binding on an already selected owner."""
+    """Stage the shared Codex socket or an inactive recovery handoff."""
     expected = strict_json(previous)
     actual = strict_json(changed)
     owner, new = expected["owner"], actual["owner"]
     kind = owner.get("kind")
+    socket_only = False
     if kind == "codex":
         binding = owner.get("ahap_env", {})
         if not all(binding.get(key) for key in ("AHAP_CODEX_BIN", "AHAP_CODEX_CWD", "CODEX_HOME")):
@@ -741,30 +742,33 @@ def recovery_profile_payload(previous, changed, *, installed=False):
         socket = new.get("ahap_env", {}).get("AHAP_CODEX_SOCKET")
         if not isinstance(socket, str) or not Path(socket).is_absolute() or ".." in Path(socket).parts:
             raise ValueError("Codex recovery requires the exact shared app-server socket")
-        if binding.get("AHAP_CODEX_SOCKET") not in (None, socket):
+        prior_socket = binding.get("AHAP_CODEX_SOCKET")
+        if prior_socket not in (None, socket):
             raise ValueError("native recovery cannot change the existing Codex socket")
+        socket_only = prior_socket is None and "codex_recovery" not in owner and "codex_recovery" not in new
         binding["AHAP_CODEX_SOCKET"] = socket
     elif kind == "opencode":
         if owner.get("ahap_script") is not None or not owner.get("ahap_base_url"):
             raise ValueError("OpenCode recovery requires the existing native HTTP profile")
     else:
         raise ValueError("unsupported native recovery profile kind")
-    recovery = new.get(kind + "_recovery")
-    if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
-        raise ValueError("installed recovery requires an explicit compatibility handoff")
-    handoff = recovery["legacy_handoff"]
-    native_sessions = handoff.get("native_sessions")
-    if not isinstance(native_sessions, list) or not native_sessions or len(native_sessions) > 128 \
-            or any(not isinstance(value, str) or not value.strip() for value in native_sessions) \
-            or len(set(native_sessions)) != len(native_sessions):
-        raise ValueError("installed recovery requires an exact unique session cohort")
-    activation = handoff.get("activation_file")
-    if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
-            or not installed and os.path.lexists(activation):
-        raise ValueError("stage recovery with a fresh private activation path")
-    for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
-        private_file(handoff[field])
-    owner[kind + "_recovery"] = recovery
+    if not socket_only:
+        recovery = new.get(kind + "_recovery")
+        if not isinstance(recovery, dict) or not isinstance(recovery.get("legacy_handoff"), dict):
+            raise ValueError("installed recovery requires an explicit compatibility handoff")
+        handoff = recovery["legacy_handoff"]
+        native_sessions = handoff.get("native_sessions")
+        if not isinstance(native_sessions, list) or not native_sessions or len(native_sessions) > 128 \
+                or any(not isinstance(value, str) or not value.strip() for value in native_sessions) \
+                or len(set(native_sessions)) != len(native_sessions):
+            raise ValueError("installed recovery requires an exact unique session cohort")
+        activation = handoff.get("activation_file")
+        if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
+                or not installed and os.path.lexists(activation):
+            raise ValueError("stage recovery with a fresh private activation path")
+        for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            private_file(handoff[field])
+        owner[kind + "_recovery"] = recovery
     if actual != expected or len(changed) > 16384:
         raise ValueError("native recovery changes protected profile fields or exceeds the native limit")
     return changed
@@ -832,7 +836,7 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
     manifest["native_profile_migration"] = str(path)
     manifest["sha256"]["native_profile_migration"] = digest(path)
     manifest["composition"]["process_leases"]["scope"] = (
-        "native core and exact recovery bindings on selected profiles" if recovery_profiles else
+        "native core and exact native bindings on selected profiles" if recovery_profiles else
         "native core and OpenCode owner profile updated; legacy AHAP runner removed from the selected profile")
     manifest["build_inputs"]["source_commit_role"] = "clean native core and reviewed native profiles; all other pins retained"
     payload_dir.chmod(0o500)
@@ -1339,7 +1343,7 @@ def main():
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
     b.add_argument("--native-recovery-profile", action="append", default=[], type=Path,
-                   help="protected successor profile for one existing native owner, with recovery inactive")
+                   help="protected successor profile with a new shared Codex socket or inactive recovery handoff")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)

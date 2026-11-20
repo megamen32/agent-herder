@@ -52,6 +52,10 @@ use std::{
 /// this call has no surviving delegated writer. A timeout/disconnect after a
 /// possible write is UNKNOWN; no retry. Only trusted adapters may implement it.
 pub trait BoundedNativeHandoff {
+    fn recovery_ancestors(&self) -> &[crate::domain::recovery::RecoveryAncestor] {
+        &[]
+    }
+
     fn requires_clear_waits(&self) -> bool {
         false
     }
@@ -612,6 +616,7 @@ impl ScopedAuthority {
             && !wait_automation::WaitAutomationApplication::blocking_rules_locked(
                 &writer, b.principal, b.target_ref, &b.address.instance,
             ).map_err(|_| GateError::Store)?.is_empty();
+        let ancestor_held = self.recovery_ancestors_held(&writer, b, control.recovery_ancestors())?;
         {
             let tx = writer
                 .connection_mut()
@@ -652,7 +657,7 @@ impl ScopedAuthority {
                 tx.commit().map_err(|_| GateError::Store)?;
                 return Ok(DurableDispatch::StoppedBeforeHandoff);
             }
-            if pending_wait || scope_held(&tx, b)? {
+            if pending_wait || ancestor_held || scope_held(&tx, b)? {
                 tx.execute("UPDATE intents SET state='rejected',updated_at=?2 WHERE intent_id=?1 AND state='dispatching'", params![b.intent_id,now]).map_err(|_|GateError::Store)?;
                 tx.execute("UPDATE humanstop_dispatches SET phase='stopped',updated_at=?2 WHERE intent_id=?1 AND phase='claimed'",params![b.intent_id,now]).map_err(|_|GateError::Store)?;
                 let result = if pending_wait {

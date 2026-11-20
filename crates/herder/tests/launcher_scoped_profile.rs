@@ -751,7 +751,8 @@ for line in sys.stdin:
   v={'data':[{'id':x,'cwd':cwd(x),'source':'cli','status':{'type':'idle' if x in loaded else 'notLoaded'}}
              for x in styles if cwd(x)==p.get('cwd')],
      'nextCursor':None}
- elif m=='thread/turns/list' and target in styles: v={'data':[turns[-1]],'nextCursor':None}
+ elif m=='thread/turns/list' and target in styles: v={'data':[dict(turns[-1],itemsView=p.get('itemsView','summary'))],'nextCursor':None}
+ elif m=='thread/goal/get' and target in styles: v={'goal':None}
  elif m=='thread/queue/list' and target in styles: v={'data':[],'nextCursor':None}
  elif m=='thread/loaded/list': v={'data':list(loaded),'nextCursor':None}
  elif m=='thread/items/list' and target in styles:

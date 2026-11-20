@@ -4,7 +4,9 @@ use super::{
     automation_driver::AutomationTick,
     create_prompt::FreshSessionGrantPolicy,
     mcp_deliver::utc_now,
-    recovery_handoff::{LegacyRecoveryHandoff, notice_attempt_held, private_json},
+    recovery_handoff::{
+        LegacyRecoveryHandoff, automation_disarm_held, notice_attempt_held, private_json,
+    },
     recovery_omniroute,
     task_reconcile::TaskReconciler,
     wait_automation::WaitAutomationApplication,
@@ -16,8 +18,8 @@ use crate::{
         adapter::{Admission, DispatchPlan, RequestKey, SubmitError},
         address::{InstanceRef, SessionAddress, SessionRef},
         recovery::{
-            RecoveryBoundary, RecoveryControl, RecoveryCredential, RecoveryFailure, RecoveryPermit,
-            RecoveryQuotaProof, RecoveryRoute,
+            RecoveryAncestor, RecoveryBoundary, RecoveryControl, RecoveryCredential,
+            RecoveryFailure, RecoveryPermit, RecoveryQuotaProof, RecoveryRoute,
         },
     },
 };
@@ -121,6 +123,16 @@ impl RecoveryProfile {
             .is_some_and(|handoff| !handoff.owns(native_id) || handoff.held(harness, native_id))
             || (harness == "opencode"
                 && notice_attempt_held(&self.autopilot_state_dir.join("sessions.json"), native_id))
+    }
+
+    fn automation_disarmed(&self, harness: &str, boundary: &RecoveryBoundary) -> bool {
+        automation_disarm_held(&self.autopilot_state_dir, harness, Path::new(&boundary.cwd))
+            || boundary.ancestors.iter().any(|ancestor| {
+                automation_disarm_held(&self.autopilot_state_dir, harness, Path::new(&ancestor.cwd))
+                    || self.legacy_handoff.as_ref().is_some_and(|handoff| {
+                        handoff.held(harness, &ancestor.address.native_session_id)
+                    })
+            })
     }
 
     fn router(&self, provider: &str, model: Option<&str>, cwd: &str) -> Option<&OmniRouteQuota> {
@@ -254,9 +266,13 @@ impl Autostart {
         (wait, fallback)
     }
 
-    fn admits(&self, harness: &str, id: &str, failure: &RecoveryFailure) -> bool {
+    fn admits(&self, harness: &str, id: &str, boundary: &RecoveryBoundary) -> bool {
         self.enabled(harness, id)
-            && match failure {
+            && boundary
+                .ancestors
+                .iter()
+                .all(|ancestor| self.enabled(harness, &ancestor.address.native_session_id))
+            && match boundary.failure {
                 RecoveryFailure::Interrupted => self.recover_on_disconnect,
                 _ => self.recover_on_failure,
             }
@@ -322,7 +338,9 @@ fn select_route(
     let (wait, fallback) = settings.quota_options(native.harness(), id);
     let reserve = quota_policy.min_remaining_percent.ceil() as u8;
     let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
+    let throttled = boundary.failure == RecoveryFailure::Throttled;
     let needs_primary_quota = from_quota_failure
+        || throttled
         || (quota_policy.enabled
             && (native.harness() == "codex" && boundary.provider == "openai"
                 || profile
@@ -345,21 +363,17 @@ fn select_route(
     } else {
         primary.unwrap_or(quota_policy.on_unknown == UnknownQuota::Allow)
     };
-    if same_route {
-        return Some(RecoveryRoute {
-            provider: boundary.provider.clone(),
-            model: boundary.model.clone(),
-        });
-    }
-    if !fallback || (!from_quota_failure && primary != Some(false)) {
-        return None;
-    }
-
-    profile
-        .fallback_routes
-        .iter()
-        .find(|route| {
-            route.provider != boundary.provider
+    if fallback && (throttled || !same_route && (from_quota_failure || primary == Some(false))) {
+        let target = SessionAddress {
+            instance: native.instance().clone(),
+            native_session_id: id.into(),
+        };
+        for route in &profile.fallback_routes {
+            let candidate = RecoveryRoute {
+                provider: route.provider.clone(),
+                model: Some(route.model.clone()),
+            };
+            if route.provider != boundary.provider
                 && route.workspace == Path::new(&boundary.cwd)
                 && profile.quota(
                     native,
@@ -368,11 +382,16 @@ fn select_route(
                     &boundary.cwd,
                     reserve,
                 ) == Some(true)
-        })
-        .map(|route| RecoveryRoute {
-            provider: route.provider.clone(),
-            model: Some(route.model.clone()),
-        })
+                && native.supports_alternate(&target, boundary, &candidate)
+            {
+                return Some(candidate);
+            }
+        }
+    }
+    same_route.then(|| RecoveryRoute {
+        provider: boundary.provider.clone(),
+        model: boundary.model.clone(),
+    })
 }
 
 #[derive(Clone)]
@@ -506,7 +525,12 @@ impl SessionRecovery {
             .as_millis() as u64;
         if boundary.started_at_ms > now_ms
             || now_ms - boundary.started_at_ms > MAX_AGE_MS
-            || !settings.admits(harness, &address.native_session_id, &boundary.failure)
+            || !settings.admits(harness, &address.native_session_id, &boundary)
+            || self.profile.automation_disarmed(harness, &boundary)
+            || boundary
+                .ancestors
+                .iter()
+                .any(|ancestor| self.waits.recovery_blocked(identity, &ancestor.address))
         {
             return Ok(false);
         }
@@ -780,6 +804,10 @@ struct RecoveryHandoff<'a> {
 }
 
 impl BoundedNativeHandoff for RecoveryHandoff<'_> {
+    fn recovery_ancestors(&self) -> &[RecoveryAncestor] {
+        &self.boundary.ancestors
+    }
+
     fn requires_clear_waits(&self) -> bool {
         true
     }
@@ -804,11 +832,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             .ok()
             .zip(quota_policy(self.profile, harness))
             .filter(|(settings, _)| {
-                settings.admits(
-                    harness,
-                    &plan.target.native_session_id,
-                    &self.boundary.failure,
-                )
+                settings.admits(harness, &plan.target.native_session_id, &self.boundary)
             })
             .and_then(|(settings, policy)| {
                 let route = select_route(
@@ -838,6 +862,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                 &self.boundary.cwd,
             )
         });
+        let disarm_held = || self.profile.automation_disarmed(harness, &self.boundary);
         let still_available = || {
             router
                 .zip(credential.as_ref())
@@ -849,6 +874,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                 && !self
                     .profile
                     .recovery_held(harness, &plan.target.native_session_id)
+                && !disarm_held()
         };
         let quota_proof = credential.as_ref().map(|credential| RecoveryQuotaProof {
             credential,
@@ -863,17 +889,20 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                     .is_some_and(|settings| {
                         let (wait, fallback) =
                             settings.quota_options(harness, &plan.target.native_session_id);
-                        settings.admits(
-                            harness,
-                            &plan.target.native_session_id,
-                            &self.boundary.failure,
-                        ) && if self.route.provider != self.boundary.provider {
-                            fallback
-                        } else {
-                            self.boundary.failure != RecoveryFailure::Quota || wait
-                        }
+                        settings.admits(harness, &plan.target.native_session_id, &self.boundary)
+                            && if self.route.provider != self.boundary.provider {
+                                fallback
+                            } else {
+                                self.boundary.failure != RecoveryFailure::Quota || wait
+                            }
                     })
+                && !disarm_held()
         };
+        if disarm_held() {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "Owner automation disarm holds native recovery".into(),
+            });
+        }
         native.submit(
             &plan.target,
             &self.boundary,
@@ -886,5 +915,274 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             message,
             key,
         )
+    }
+}
+
+impl ScopedAuthority {
+    // Called under the same target gate that serializes native admission and
+    // owner stops. Parent bindings can be revoked between discovery and submit.
+    pub(super) fn recovery_ancestors_held(
+        &self,
+        writer: &crate::store::Writer,
+        child: &ReceiptBinding<'_>,
+        ancestors: &[RecoveryAncestor],
+    ) -> Result<bool, GateError> {
+        let db = writer.connection();
+        for ancestor in ancestors {
+            let address = &ancestor.address;
+            if address.instance != child.address.instance {
+                return Ok(true);
+            }
+            let mut stmt = db.prepare(
+                "SELECT b.session_ref, s.scope_generation FROM session_bindings b
+                 LEFT JOIN humanstop_sessions s ON s.session_ref=b.session_ref AND s.authority_generation=?4
+                 WHERE b.node_ref=?1 AND b.instance_id=?2 AND b.native_session_id=?3 LIMIT 2",
+            ).map_err(|_| GateError::Store)?;
+            let rows = stmt
+                .query_map(
+                    params![
+                        address.instance.node.0,
+                        address.instance.instance_id,
+                        address.native_session_id,
+                        self.generation
+                    ],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .map_err(|_| GateError::Store)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| GateError::Store)?;
+            let [(session, Some(generation))] = rows.as_slice() else {
+                return Ok(true);
+            };
+            let binding = ReceiptBinding {
+                target_ref: session,
+                address,
+                ..*child
+            };
+            if !super::scope_allowed(db, &binding, generation, &self.generation)?
+                || self
+                    .migration_for_address(db, address, child.request_key)?
+                    .blocked
+                || !WaitAutomationApplication::blocking_rules_locked(
+                    writer,
+                    child.principal,
+                    session,
+                    &address.instance,
+                )
+                .map_err(|_| GateError::Store)?
+                .is_empty()
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{
+        adapter::{ReadError, SendMode},
+        address::NodeRef,
+    };
+    use serde_json::{Value, json};
+    use std::{
+        fs,
+        os::unix::fs::{DirBuilderExt, PermissionsExt, symlink},
+    };
+
+    struct TestState(PathBuf);
+
+    impl TestState {
+        fn new() -> Self {
+            let stamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let dir =
+                std::env::temp_dir().join(format!("herder-disarm-{}-{stamp}", std::process::id()));
+            fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn write_disarm(&self, document: Value) {
+            let temporary = self.0.join("new-disarm.json");
+            fs::write(&temporary, document.to_string()).unwrap();
+            fs::rename(temporary, self.0.join("automation-disarm.json")).unwrap();
+        }
+    }
+
+    impl Drop for TestState {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn owner_disarm_prefers_narrow_scopes_and_matches_possible_works_by_realpath() {
+        let state = TestState::new();
+        let project = state.0.join("project");
+        let child = project.join("child");
+        let alias = state.0.join("alias");
+        fs::create_dir_all(child.join("deeper")).unwrap();
+        symlink(&project, &alias).unwrap();
+        let key = format!(
+            "codex\0{}\0the logical title",
+            alias.join("child").display()
+        );
+        state.write_disarm(json!({"version": 2, "disarmed": false, "records": [
+            {"scope": "*", "forbidden": true},
+            {"scope": alias, "forbidden": false},
+            {"scope": child, "forbidden": true, "workKeys": [key]},
+        ]}));
+        let held = |harness, cwd: &Path| automation_disarm_held(&state.0, harness, cwd);
+        assert!(held("codex", &state.0.join("project-sibling")));
+        assert!(!held("codex", &project));
+        assert!(!held("codex", &alias.join("future")));
+        assert!(held("codex", &child));
+        assert!(held("codex", &alias.join("child")));
+        assert!(!held("opencode", &child));
+        assert!(!held("codex", &child.join("deeper")));
+    }
+
+    #[test]
+    fn owner_disarm_reads_v1_and_fails_closed_except_for_absence() {
+        let state = TestState::new();
+        let path = state.0.join("automation-disarm.json");
+        let project = state.0.join("project");
+        let child = project.join("child");
+        let held = |cwd: &Path| automation_disarm_held(&state.0, "codex", cwd);
+        assert!(!held(&child));
+        state.write_disarm(json!({"version": 1, "disarmed": false, "blockedWorkKeys": [
+            format!("project\0{}", project.display()),
+        ]}));
+        assert!(held(&child));
+        assert!(!held(&state.0.join("project-sibling")));
+        state.write_disarm(json!({"version": 1, "disarmed": true}));
+        assert!(held(&state.0));
+        for invalid in [
+            "{",
+            r#"{"version": 3, "records": []}"#,
+            r#"{"version": 2, "disarmed": false}"#,
+            r#"{"version": 2, "records": [["*", false, []]]}"#,
+            r#"{"version": 2, "records": [{"scope": "*", "forbidden": false, "workKeys": null}]}"#,
+        ] {
+            fs::write(&path, invalid).unwrap();
+            assert!(held(&child), "{invalid}");
+        }
+        state.write_disarm(json!({"version": 2, "records": [], "disarmed": true}));
+        assert!(!held(&child));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o620)).unwrap();
+        assert!(held(&child));
+        let other = state.0.join("permitted.json");
+        fs::rename(&path, &other).unwrap();
+        fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).unwrap();
+        symlink(other, path).unwrap();
+        assert!(held(&child));
+    }
+
+    struct DisarmAtSubmit<'a> {
+        state: &'a TestState,
+        instance: InstanceRef,
+    }
+
+    impl RecoveryControl for DisarmAtSubmit<'_> {
+        fn harness(&self) -> &'static str {
+            "codex"
+        }
+        fn instance(&self) -> &InstanceRef {
+            &self.instance
+        }
+        fn mode(&self) -> SendMode {
+            SendMode::Start
+        }
+        fn read_boundary(&self, _: &SessionAddress) -> Result<Option<RecoveryBoundary>, ReadError> {
+            unreachable!()
+        }
+        fn quota(&self, _: &str, _: &str, _: u8) -> Option<bool> {
+            unreachable!()
+        }
+        fn credential(&self, _: &str, _: &str, _: &str) -> Option<RecoveryCredential> {
+            unreachable!()
+        }
+
+        fn submit(
+            &self,
+            _: &SessionAddress,
+            _: &RecoveryBoundary,
+            _: &RecoveryRoute,
+            permit: RecoveryPermit<'_>,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            assert!((permit.still_allowed)());
+            self.state.write_disarm(json!({"version": 2, "records": [
+                {"scope": self.state.0, "forbidden": true},
+            ]}));
+            assert!(!(permit.still_allowed)());
+            Err(SubmitError::DefinitelyNotSent {
+                reason: "held before native effect".into(),
+            })
+        }
+    }
+
+    #[test]
+    fn recovery_handoff_rereads_owner_disarm_in_native_permit() {
+        let state = TestState::new();
+        let profile = RecoveryProfile {
+            autopilot_state_dir: state.0.clone(),
+            legacy_handoff: None,
+            fallback_routes: Vec::new(),
+        };
+        let control = DisarmAtSubmit {
+            state: &state,
+            instance: InstanceRef {
+                node: NodeRef("test-node".into()),
+                instance_id: "test-owner".into(),
+            },
+        };
+        let settings_path = state.0.join("session-autostart.json");
+        fs::write(
+            &settings_path,
+            r#"{"version": 8, "enabled": true, "sessions": []}"#,
+        )
+        .unwrap();
+        let handoff = RecoveryHandoff {
+            control: &control,
+            boundary: RecoveryBoundary {
+                turn_id: "turn".into(),
+                input_item_id: "input".into(),
+                cwd: state.0.to_str().unwrap().into(),
+                provider: "test-provider".into(),
+                model: None,
+                started_at_ms: 0,
+                failure: RecoveryFailure::Interrupted,
+                ancestors: Vec::new(),
+            },
+            route: RecoveryRoute {
+                provider: "test-provider".into(),
+                model: None,
+            },
+            settings_path,
+            profile: &profile,
+        };
+        let plan = DispatchPlan {
+            target: SessionAddress {
+                instance: control.instance.clone(),
+                native_session_id: "test-session".into(),
+            },
+            mode: control.mode(),
+            expected_turn: None,
+        };
+        let key = RequestKey("test-recovery".into());
+        assert!(
+            matches!(handoff.submit_bounded(plan.clone(), RECOVERY_MESSAGE, &key),
+            Err(SubmitError::DefinitelyNotSent { reason }) if reason == "held before native effect")
+        );
+        assert!(
+            matches!(handoff.submit_bounded(plan, RECOVERY_MESSAGE, &key),
+            Err(SubmitError::DefinitelyNotSent { reason }) if reason == "Owner automation disarm holds native recovery")
+        );
     }
 }

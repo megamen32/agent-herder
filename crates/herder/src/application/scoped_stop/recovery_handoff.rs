@@ -1,11 +1,12 @@
-//! The exact existing-session cohort and read fences for a compatibility-owner handoff.
+//! Owner state and read fences for existing-session recovery.
 use serde::Deserialize;
+use serde_json::Value;
 use std::{
     collections::BTreeSet,
     fs::OpenOptions,
     io::{self, Read},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
@@ -130,6 +131,170 @@ pub(super) fn private_json<T: serde::de::DeserializeOwned>(path: &Path) -> io::R
         return Err(io::Error::other("recovery state exceeds the read bound"));
     }
     serde_json::from_slice(&bytes).map_err(io::Error::other)
+}
+
+pub(super) fn automation_disarm_held(state_dir: &Path, harness: &str, cwd: &Path) -> bool {
+    match private_json::<Value>(&state_dir.join("automation-disarm.json")) {
+        Ok(document) => disarm_decision(document, harness, cwd).unwrap_or(true),
+        Err(error) => error.kind() != io::ErrorKind::NotFound,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DisarmRecord {
+    scope: String,
+    forbidden: bool,
+    #[serde(default)]
+    work_keys: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ScopedDisarm {
+    records: Vec<DisarmRecord>,
+    // Validate the v2 mirror's shape. Only records make decisions.
+    #[serde(default, rename = "blockedWorkKeys")]
+    _blocked_work_keys: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlatDisarm {
+    disarmed: bool,
+    #[serde(default)]
+    blocked_work_keys: Vec<String>,
+}
+
+fn disarm_decision(document: Value, harness: &str, cwd: &Path) -> io::Result<bool> {
+    let records = match document.get("version").and_then(Value::as_u64) {
+        Some(2)
+            if document["records"]
+                .as_array()
+                .is_some_and(|records| records.iter().all(Value::is_object)) =>
+        {
+            serde_json::from_value::<ScopedDisarm>(document)
+                .map_err(io::Error::other)?
+                .records
+        }
+        Some(1) => {
+            let flat: FlatDisarm = serde_json::from_value(document).map_err(io::Error::other)?;
+            let mut records = vec![DisarmRecord {
+                scope: "*".into(),
+                forbidden: flat.disarmed,
+                work_keys: Vec::new(),
+            }];
+            for key in flat.blocked_work_keys {
+                let scope = WorkKey::parse(&key)?.directory.unwrap_or("*").to_owned();
+                records.push(DisarmRecord {
+                    scope,
+                    forbidden: true,
+                    work_keys: vec![key],
+                });
+            }
+            records
+        }
+        _ => return Err(io::Error::other("unsupported automation disarm state")),
+    };
+    if records.is_empty() {
+        return Ok(false);
+    }
+    let cwd = disarm_path(cwd)?;
+    let mut decision = None;
+    for record in records {
+        let depth = if record.scope == "*" {
+            0
+        } else {
+            let path = disarm_path(Path::new(&record.scope))?;
+            if !cwd.starts_with(&path) {
+                continue;
+            }
+            path.components().count()
+        };
+        let keyed = !record.work_keys.is_empty();
+        // A permission applies to its scope. Named prohibitions only apply
+        // when at least one named work could be this native session.
+        if record.forbidden && keyed {
+            let mut matches = false;
+            for key in record.work_keys {
+                if WorkKey::parse(&key)?.may_cover(harness, &cwd)? {
+                    matches = true;
+                    break;
+                }
+            }
+            if !matches {
+                continue;
+            }
+        }
+        // Deeper scopes win, then keyed records. Equal-scope conflicts after
+        // resolving aliases are held when both decisions could apply.
+        decision = decision.max(Some((depth, keyed, record.forbidden)));
+    }
+    Ok(decision.is_some_and(|(_, _, forbidden)| forbidden))
+}
+
+struct WorkKey<'a> {
+    harness: Option<&'a str>,
+    directory: Option<&'a str>,
+}
+
+impl<'a> WorkKey<'a> {
+    fn parse(key: &'a str) -> io::Result<Self> {
+        let mut parts = key.split('\0');
+        let (harness, directory) = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some("project"), Some(project), None, None) if !project.is_empty() => (None, project),
+            (Some(harness), Some(cwd), Some(_), None) if !harness.is_empty() => {
+                (Some(harness), cwd)
+            }
+            _ => return Err(io::Error::other("invalid automation disarm work key")),
+        };
+        Ok(Self {
+            harness,
+            directory: Path::new(directory).is_absolute().then_some(directory),
+        })
+    }
+
+    fn may_cover(&self, harness: &str, cwd: &Path) -> io::Result<bool> {
+        if self.harness.is_some_and(|expected| expected != harness) {
+            return Ok(false);
+        }
+        let Some(directory) = self.directory else {
+            // A name-only project key has no proven path beyond its record scope.
+            return Ok(true);
+        };
+        let directory = disarm_path(Path::new(directory))?;
+        // The boundary proves harness and cwd, but carries no logical name.
+        Ok(if self.harness.is_some() {
+            cwd == directory
+        } else {
+            cwd.starts_with(&directory)
+        })
+    }
+}
+
+fn disarm_path(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(io::Error::other("automation disarm scope must be absolute"));
+    }
+    match path.canonicalize() {
+        Err(error)
+            if error.kind() == io::ErrorKind::NotFound
+                && !path.components().any(|part| part == Component::ParentDir) =>
+        {
+            // A future directory can still have an existing aliased parent.
+            for parent in path.ancestors().skip(1) {
+                match parent.canonicalize() {
+                    Ok(parent_real) => {
+                        let suffix = path.strip_prefix(parent).map_err(io::Error::other)?;
+                        return Ok(parent_real.join(suffix));
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(error)
+        }
+        result => result,
+    }
 }
 
 pub(super) fn notice_attempt_held(path: &Path, native_id: &str) -> bool {

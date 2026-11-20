@@ -14,12 +14,22 @@ pub struct RecoveryBoundary {
     pub model: Option<String>,
     pub started_at_ms: u64,
     pub failure: RecoveryFailure,
+    /// Native parents, nearest first, verified against this turn's root.
+    pub ancestors: Vec<RecoveryAncestor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryAncestor {
+    pub address: SessionAddress,
+    pub cwd: String,
+    pub turn_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RecoveryFailure {
     Interrupted,
     Quota,
+    Throttled,
     Retryable,
 }
 
@@ -56,6 +66,14 @@ pub trait RecoveryControl: Send + Sync {
     -> Result<Option<RecoveryBoundary>, ReadError>;
     fn quota(&self, provider: &str, cwd: &str, reserve: u8) -> Option<bool>;
     fn credential(&self, provider: &str, model: &str, cwd: &str) -> Option<RecoveryCredential>;
+    fn supports_alternate(
+        &self,
+        _target: &SessionAddress,
+        _boundary: &RecoveryBoundary,
+        _route: &RecoveryRoute,
+    ) -> bool {
+        true
+    }
 
     /// Submit at most once. If admission is uncertain, the owner reconciles
     /// the same request key without calling submit again.

@@ -98,9 +98,11 @@ def model_fixture():
     return module
 
 
-def model_providers(source_token, fallback_token, module):
+def model_providers(source_token, fallback_token, module, *, throttled=False):
     class Source(module.Handler):
         statuses = []
+        expected_error = ({"responseTooManyFailedAttempts": {"httpStatusCode": 429}}
+                          if throttled else "usageLimitExceeded")
         crash_requests = 0
         crash_entered = threading.Event()
         crash_release = threading.Event()
@@ -120,6 +122,8 @@ def model_providers(source_token, fallback_token, module):
             self.statuses.append(status)
             error = {"error": {"type": "usage_limit_reached", "plan_type": "pro",
                                "message": "Isolated source quota exhausted"}}
+            if throttled:
+                error = {"error": {"message": "Too many requests"}}
             return self.reply(status, "application/json", json.dumps(error).encode())
 
     class Fallback(module.Handler):
@@ -284,7 +288,7 @@ def seed_failure(call, wait_for_turn, project, source):
     require(failed["status"] == "failed" and failed["completedAt"] >= failed["startedAt"],
             "terminal turn identity or timing mismatch")
     failure = failed["error"]["codexErrorInfo"]
-    require(failure == "usageLimitExceeded", f"unexpected Codex terminal failure: {failure}")
+    require(failure == source.expected_error, f"unexpected Codex terminal failure: {failure}")
     require(source.statuses == [429] and source.count == 1, "expected exactly one local HTTP 429")
     print(json.dumps({"phase": "terminal_429", "thread": thread, "turn": turn,
                       "native_error": failure, "http_status": 429}), flush=True)
@@ -615,6 +619,12 @@ def inside(parent_namespace):
         proof = exercise(root, codex, owner, primary_url, fallback_url, source,
                          fallback, module.ANSWER, source_token, fallback_token)
         proof.update(exercise_crash(root, codex, owner, source, fallback, module.ANSWER))
+    rate_limit = root / "generic-429"
+    rate_limit.mkdir(mode=0o700)
+    source, fallback = model_providers(source_token, fallback_token, module, throttled=True)
+    with http_fixture(source) as primary_url, http_fixture(fallback) as fallback_url:
+        proof["generic_429"] = exercise(rate_limit, codex, owner, primary_url, fallback_url, source,
+                                        fallback, module.ANSWER, source_token, fallback_token)
     proof.update({"codex_sha256": digest(codex), "owner_sha256": digest(owner), "network": "loopback-only"})
     print(json.dumps(proof, sort_keys=True), flush=True)
 

@@ -14,6 +14,10 @@ use std::{
 use serde_json::{Map, Value, json};
 
 use super::{CodexConnection, CodexControl, RpcError, map_rpc_error};
+#[path = "recovery_lineage.rs"]
+mod lineage;
+use lineage::{ThreadLineage, is_unarchived, read_ancestors, read_thread, thread_lineage};
+
 use crate::domain::{
     adapter::{Admission, NativeReceipt, ReadError, RequestKey, SendMode, SubmitError},
     address::{InstanceRef, SessionAddress},
@@ -25,7 +29,7 @@ use crate::domain::{
 
 const THREAD_PAGE_SIZE: usize = 100;
 const THREAD_PAGE_LIMIT: usize = 16;
-const TURN_ITEM_LIMIT: usize = 256;
+const RECOVERY_ITEM_PAGE_SIZE: usize = 32;
 const PROVIDER_ID_LIMIT: usize = 256;
 const MODEL_ID_LIMIT: usize = 256;
 
@@ -62,6 +66,28 @@ struct RecoveryObservation {
     unloaded: bool,
 }
 
+impl RecoveryObservation {
+    fn same_work(&self, other: &Self) -> bool {
+        self.boundary == other.boundary && self.root_turn_id == other.root_turn_id
+    }
+
+    fn matches_thread(&self, thread: &Value, thread_id: &str) -> bool {
+        let lineage = thread_lineage(thread, thread_id);
+        let ancestors = &self.boundary.ancestors;
+        match (ancestors.first(), ancestors.last()) {
+            (Some(parent), Some(root)) => {
+                lineage
+                    == Some(ThreadLineage::Spawned {
+                        parent: &parent.address.native_session_id,
+                        session: &root.address.native_session_id,
+                        depth: ancestors.len() as u64,
+                    })
+            }
+            _ => lineage == Some(ThreadLineage::Root),
+        }
+    }
+}
+
 impl RecoveryControl for CodexControl {
     fn harness(&self) -> &'static str {
         "codex"
@@ -94,7 +120,7 @@ impl RecoveryControl for CodexControl {
                     ReadError("Codex recovery could not reopen the shared app-server".into())
                 })?;
         }
-        Ok(read_boundary(&mut state.connection, target, deadline)?.map(|item| item.boundary))
+        Ok(read_observation(&mut state.connection, target, deadline)?.map(|item| item.boundary))
     }
 
     /// Read quota from this control's native ChatGPT-backed OpenAI account.
@@ -112,6 +138,28 @@ impl RecoveryControl for CodexControl {
         let mut state = self.state.try_lock().ok()?;
         let providers = read_recovery_providers(&mut state.connection, cwd, deadline)?;
         Some(static_responses_route(&providers[provider], provider)?.credential)
+    }
+
+    fn supports_alternate(
+        &self,
+        target: &SessionAddress,
+        boundary: &RecoveryBoundary,
+        route: &RecoveryRoute,
+    ) -> bool {
+        if validate_alternate_route(boundary, route).is_err() || target.instance != self.instance {
+            return false;
+        }
+        let (Ok(deadline), Ok(mut state)) =
+            (recovery_deadline(self.timeout), self.state.try_lock())
+        else {
+            return false;
+        };
+        let connection = &mut state.connection;
+        read_thread(connection, &target.native_session_id, deadline).is_ok_and(|thread| {
+            thread["status"]["type"] == "notLoaded" && thread["modelProvider"] == boundary.provider
+        }) && read_recovery_providers(connection, &boundary.cwd, deadline)
+            .is_some_and(|providers| plain_responses_provider(&providers[&boundary.provider]))
+            && provider_can_be_overridden(connection, &boundary.provider, deadline)
     }
 
     /// Start a single recovery turn. The caller owns the durable request key
@@ -193,7 +241,9 @@ impl RecoveryControl for CodexControl {
             }
         }
 
-        let Some(mut before) = read_boundary(connection, target, deadline).map_err(read_refusal)?
+        let child = !boundary.ancestors.is_empty();
+        let Some(mut before) =
+            read_observation(connection, target, deadline).map_err(read_refusal)?
         else {
             return Err(not_sent(
                 "Codex recovery boundary is unavailable before resume",
@@ -224,13 +274,19 @@ impl RecoveryControl for CodexControl {
                 deadline,
             )
             .ok_or_else(|| not_sent("Codex alternate route or available quota is unconfirmed"))?;
-            require_cold_thread(connection, target, boundary, deadline).map_err(read_refusal)?;
-            if !still_allowed() {
-                return Err(not_sent("Codex recovery is held before alternate resume"));
+            require_cold_thread(connection, target, &before, deadline).map_err(read_refusal)?;
+            if child {
+                let fresh = read_observation(connection, target, deadline).map_err(read_refusal)?;
+                if !fresh.is_some_and(|fresh| fresh.unloaded && before.same_work(&fresh)) {
+                    return Err(not_sent("Codex child recovery changed before cold resume"));
+                }
             }
             params["modelProvider"] = json!(boundary.provider);
             params["model"] = json!(expected_model);
             params["config"] = selected.overrides(&boundary.provider);
+        }
+        if (child || alternate) && !still_allowed() {
+            return Err(not_sent("Codex recovery is held before resume"));
         }
         let remaining = remaining_time(deadline).map_err(read_refusal)?;
         // An uncertain resume must stop the sequence. Its error remains UNKNOWN
@@ -251,9 +307,10 @@ impl RecoveryControl for CodexControl {
             || resumed["cwd"].as_str() != Some(boundary.cwd.as_str())
             || resumed_thread["modelProvider"].as_str() != Some(boundary.provider.as_str())
             || resumed["modelProvider"].as_str() != Some(boundary.provider.as_str())
-            || !is_recovery_root(resumed_thread, &target.native_session_id)
+            || !before.matches_thread(resumed_thread, &target.native_session_id)
             || !is_quiescent(resumed_thread)
             || (alternate && resumed_thread["status"]["type"] != "idle")
+            || (child && !accepts_child_input(resumed_thread))
             || expected_model.is_some_and(|model| resumed_model != model)
             || (!absent_or_null(resumed_thread, "model")
                 && resumed_thread["model"] != resumed_model)
@@ -263,23 +320,6 @@ impl RecoveryControl for CodexControl {
             ));
         }
 
-        // The route override retains the native provider ID and changes the
-        // model. All turn evidence must still match the pre-resume observation.
-        let Some(after) = read_boundary(connection, target, deadline).map_err(read_refusal)? else {
-            return Err(not_sent(
-                "Codex recovery boundary is unavailable after resume",
-            ));
-        };
-        // A formerly unknown model can become visible when the thread is loaded.
-        if alternate || boundary.model.is_some() || after.boundary.model.is_some() {
-            before.boundary.model = Some(resumed_model.to_owned());
-        }
-        if after.boundary != before.boundary
-            || after.root_turn_id != before.root_turn_id
-            || (alternate && after.unloaded)
-        {
-            return Err(not_sent("Codex recovery boundary changed after resume"));
-        }
         if (alternate || quota_proof.is_some())
             && confirmed_static_route(
                 connection,
@@ -301,24 +341,51 @@ impl RecoveryControl for CodexControl {
         {
             return Err(not_sent("Codex account quota changed after resume"));
         }
+
+        // Confirm the child's own boundary and current native ancestors after
+        // external quota reads, immediately before the owner's last check.
+        let Some(after) = read_observation(connection, target, deadline).map_err(read_refusal)?
+        else {
+            return Err(not_sent(
+                "Codex recovery boundary is unavailable after resume",
+            ));
+        };
+        // A formerly unknown model can become visible when the thread is loaded.
+        if alternate || boundary.model.is_some() || after.boundary.model.is_some() {
+            before.boundary.model = Some(resumed_model.to_owned());
+        }
+        if !after.same_work(&before) || ((alternate || child) && after.unloaded) {
+            return Err(not_sent("Codex recovery boundary changed after resume"));
+        }
         if !still_allowed() {
             return Err(not_sent("Codex recovery is held before turn start"));
         }
 
         let remaining = remaining_time(deadline).map_err(read_refusal)?;
+        let mut params = json!({
+            "threadId": target.native_session_id,
+            "input": [{"type": "text", "text": message}],
+            "clientUserMessageId": key.0,
+        });
+        if let Some(parent) = after.boundary.ancestors.first() {
+            params["parentTurnId"] = json!(parent.turn_id);
+            params["rootTurnId"] = json!(after.root_turn_id);
+        }
         let started = connection
-            .request(
-                "turn/start",
-                json!({
-                    "threadId": target.native_session_id,
-                    "input": [{"type": "text", "text": message}],
-                    "clientUserMessageId": key.0,
-                }),
-                remaining,
-            )
+            .request("turn/start", params, remaining)
             .map_err(map_rpc_error)?;
         let turn = &started["turn"];
-        let native_id = required_string(turn, "id").filter(|id| *id != boundary.turn_id);
+        let native_id = required_string(turn, "id").filter(|id| {
+            *id != boundary.turn_id
+                && after
+                    .boundary
+                    .ancestors
+                    .iter()
+                    .all(|parent| parent.turn_id != *id)
+                && (!child
+                    || (turn["rootTurnId"].as_str() == after.root_turn_id.as_deref()
+                        && Some(*id) != after.root_turn_id.as_deref()))
+        });
         if let Some(native_id) = native_id.filter(|_| turn["status"] == "inProgress") {
             return Ok(Admission {
                 receipt: NativeReceipt {
@@ -519,9 +586,10 @@ fn provider_can_be_overridden(
 fn require_cold_thread(
     connection: &mut CodexConnection,
     target: &SessionAddress,
-    boundary: &RecoveryBoundary,
+    observation: &RecoveryObservation,
     deadline: Instant,
 ) -> Result<(), ReadError> {
+    let boundary = &observation.boundary;
     let refusal =
         || ReadError("Codex alternate recovery requires a verified unloaded thread".into());
     let mut cursor: Option<String> = None;
@@ -556,7 +624,7 @@ fn require_cold_thread(
                 && thread["modelProvider"] == boundary.provider
                 && thread["model"].as_str() == boundary.model.as_deref()
                 && thread["status"]["type"] == "notLoaded"
-                && is_recovery_root(thread, &target.native_session_id)
+                && observation.matches_thread(thread, &target.native_session_id)
                 && is_quiescent(thread)
             {
                 return Ok(());
@@ -585,49 +653,45 @@ fn map_override_error(error: RpcError) -> SubmitError {
     }
 }
 
-fn read_boundary(
+fn read_observation(
     connection: &mut CodexConnection,
     target: &SessionAddress,
     deadline: Instant,
 ) -> Result<Option<RecoveryObservation>, ReadError> {
     let thread_id = target.native_session_id.as_str();
-    let response = read_rpc(
-        connection,
-        "thread/read",
-        json!({"threadId": thread_id, "includeTurns": false}),
-        deadline,
-    )?;
-    let thread = &response["thread"];
-    if thread["id"].as_str() != Some(thread_id) {
-        return Err(ReadError("Codex recovery thread identity mismatch".into()));
-    }
-    if !is_recovery_root(thread, thread_id) || !is_quiescent(thread) {
+    let thread = read_thread(connection, thread_id, deadline)?;
+    let Some(lineage) = thread_lineage(&thread, thread_id) else {
+        return Ok(None);
+    };
+    let child = lineage != ThreadLineage::Root;
+    let unloaded = thread["status"]["type"] == "notLoaded";
+    if !is_quiescent(&thread) || (child && !unloaded && !accepts_child_input(&thread)) {
         return Ok(None);
     }
-    let cwd = required_string(thread, "cwd")
+    let cwd = required_string(&thread, "cwd")
         .filter(|cwd| Path::new(cwd).is_absolute())
         .ok_or_else(|| ReadError("Codex recovery thread cwd is unavailable".into()))?;
-    let provider = required_string(thread, "modelProvider")
+    let provider = required_string(&thread, "modelProvider")
         .ok_or_else(|| ReadError("Codex recovery thread provider is unavailable".into()))?;
     let model = match thread.get("model") {
         None | Some(Value::Null) => None,
         Some(_) => Some(
-            required_string(thread, "model")
+            required_string(&thread, "model")
                 .ok_or_else(|| ReadError("Codex recovery thread model is invalid".into()))?,
         ),
     };
 
     // thread/read also returns archived threads. Prove membership in the
     // non-archived native index by exact ID, independently of the profile default provider.
-    if !is_unarchived(connection, thread_id, cwd, deadline)? {
+    if !is_unarchived(connection, thread_id, cwd, lineage, deadline, is_quiescent)? {
         return Ok(None);
     }
-    // A summary can hide commentary with pending questions. Request the
-    // complete item view of just the latest turn.
+    // The summary contains the original input. Inspect the tail of this turn
+    // separately, since the summary can omit work after an async question.
     let response = read_rpc(
         connection,
         "thread/turns/list",
-        json!({"threadId": thread_id, "limit": 1, "sortDirection": "desc", "itemsView": "full"}),
+        json!({"threadId": thread_id, "limit": 1, "sortDirection": "desc", "itemsView": "summary"}),
         deadline,
     )?;
     let turns = response["data"]
@@ -655,10 +719,9 @@ fn read_boundary(
             Some(id)
         }
     };
-    let Some(input_item_id) = input_item_id(turn, root_turn_id.is_some_and(|root| root != turn_id))
-    else {
+    if !goal_allows_recovery(connection, thread_id, deadline)? {
         return Ok(None);
-    };
+    }
     let queue = read_rpc(
         connection,
         "thread/queue/list",
@@ -671,81 +734,59 @@ fn read_boundary(
     if !queued.is_empty() || !absent_or_null(&queue, "nextCursor") {
         return Ok(None);
     }
+    let input_item_id = match read_input_item(
+        connection,
+        thread_id,
+        turn_id,
+        turn,
+        root_turn_id.is_some_and(|root| root != turn_id),
+        deadline,
+    )? {
+        Some(id) => id,
+        None if !child
+            && turn["status"] == "failed"
+            && turn["items"].as_array().is_some_and(Vec::is_empty) =>
+        {
+            let Some(id) = prior_retry_input(connection, &thread, turn, &response, deadline)?
+            else {
+                return Ok(None);
+            };
+            id
+        }
+        None => return Ok(None),
+    };
+    let Some(ancestors) =
+        read_ancestors(connection, target, lineage, turn_id, root_turn_id, deadline)?
+    else {
+        return Ok(None);
+    };
     Ok(Some(RecoveryObservation {
         boundary: RecoveryBoundary {
             turn_id: turn_id.to_owned(),
-            input_item_id: input_item_id.to_owned(),
+            input_item_id,
             cwd: cwd.to_owned(),
             provider: provider.to_owned(),
             model: model.map(str::to_owned),
             started_at_ms,
             failure,
+            ancestors,
         },
         root_turn_id: root_turn_id.map(str::to_owned),
-        unloaded: thread["status"]["type"] == "notLoaded",
+        unloaded,
     }))
 }
 
-fn is_unarchived(
-    connection: &mut CodexConnection,
-    thread_id: &str,
-    cwd: &str,
-    deadline: Instant,
-) -> Result<bool, ReadError> {
-    let mut cursor: Option<String> = None;
-    let mut seen_cursors = HashSet::new();
-    for _ in 0..THREAD_PAGE_LIMIT {
-        let page = read_rpc(
-            connection,
-            "thread/list",
-            json!({
-                "archived": false, "cwd": cwd, "cursor": cursor, "limit": THREAD_PAGE_SIZE,
-                "modelProviders": [], "sourceKinds": ["cli", "vscode", "appServer", "exec"],
-                "useStateDbOnly": true,
-            }),
-            deadline,
-        )?;
-        let rows = page["data"]
-            .as_array()
-            .filter(|rows| rows.len() <= THREAD_PAGE_SIZE)
-            .ok_or_else(|| ReadError("Codex recovery unarchived thread page is invalid".into()))?;
-        if let Some(row) = rows.iter().find(|row| row["id"] == thread_id) {
-            return Ok(row["cwd"] == cwd && is_recovery_root(row, thread_id) && is_quiescent(row));
-        }
-        if absent_or_null(&page, "nextCursor") {
-            return Ok(false);
-        }
-        let next = required_string(&page, "nextCursor")
-            .filter(|next| seen_cursors.insert((*next).to_owned()))
-            .ok_or_else(|| ReadError("Codex recovery unarchived page cursor is invalid".into()))?;
-        cursor = Some(next.to_owned());
-    }
-    Err(ReadError(
-        "Codex recovery unarchived page limit reached".into(),
-    ))
-}
-
-fn is_recovery_root(thread: &Value, id: &str) -> bool {
+fn accepts_child_input(thread: &Value) -> bool {
     matches!(
-        thread["source"].as_str(),
-        Some("cli" | "vscode" | "appServer" | "exec")
-    ) && (absent_or_null(thread, "sessionId") || thread["sessionId"] == id)
-        && matches!(thread.get("ephemeral"), None | Some(Value::Bool(false)))
-        && matches!(thread.get("archived"), None | Some(Value::Bool(false)))
-        && [
-            "parentThreadId",
-            "forkedFromId",
-            "attachedToThreadId",
-            "agentNickname",
-            "agentRole",
-        ]
-        .into_iter()
-        .all(|field| absent_or_null(thread, field))
+        thread["status"]["type"].as_str(),
+        Some("idle" | "systemError")
+    ) && thread["canAcceptDirectInput"] == true
 }
 
 fn is_quiescent(thread: &Value) -> bool {
     let status = &thread["status"];
-    matches!(status["type"].as_str(), Some("notLoaded" | "idle"))
+    (matches!(status["type"].as_str(), Some("notLoaded" | "idle"))
+        || (status["type"] == "systemError" && thread["canAcceptDirectInput"] == true))
         && status
             .get("activeFlags")
             .is_none_or(|flags| flags.as_array().is_some_and(Vec::is_empty))
@@ -756,46 +797,247 @@ fn is_quiescent(thread: &Value) -> bool {
         )
 }
 
-fn input_item_id(turn: &Value, has_continuation_root: bool) -> Option<&str> {
-    if turn["itemsView"] != "full" {
+fn goal_allows_recovery(
+    connection: &mut CodexConnection,
+    thread_id: &str,
+    deadline: Instant,
+) -> Result<bool, ReadError> {
+    let reply = read_rpc(
+        connection,
+        "thread/goal/get",
+        json!({"threadId":thread_id}),
+        deadline,
+    )?;
+    Ok(match reply.get("goal") {
+        Some(Value::Null) => true,
+        Some(goal) => goal["threadId"] == thread_id && goal["status"] == "active",
+        None => false,
+    })
+}
+
+// A native "retry interrupted task" can fail before its first model item.
+// The RPC projection omits its trigger. Read only the indexed task_started
+// record from the bound Codex home, then inspect the immediately preceding turn.
+fn is_native_retry(home: &Path, thread: &Value, turn: &str) -> Option<bool> {
+    use rusqlite::{Connection, OpenFlags, params};
+    use std::{
+        fs::File,
+        io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    };
+    let id = required_string(thread, "id")?;
+    let path = Path::new(thread["path"].as_str()?).canonicalize().ok()?;
+    if !path.starts_with(home.join("sessions").canonicalize().ok()?)
+        || !path
+            .file_name()?
+            .to_str()?
+            .ends_with(&format!("-{id}.jsonl"))
+    {
         return None;
     }
-    let items = turn["items"]
-        .as_array()
-        .filter(|items| items.len() <= TURN_ITEM_LIMIT)?;
-    let mut user = None;
-    let mut commentary = None;
-    for item in items {
-        let id = required_string(item, "id")?;
-        match required_string(item, "type")? {
-            "userMessage" => {
-                if user.replace(id).is_some() {
-                    return None;
-                }
-            }
-            "agentMessage" => {
-                // Unknown message phase can hide a final answer in older history.
-                if !absent_or_null(item, "questions")
-                    && !item["questions"].as_array().is_some_and(Vec::is_empty)
-                {
-                    return None;
-                }
-                match item["phase"].as_str() {
-                    Some("commentary") => commentary = Some(id),
-                    Some("partial_answer") => {}
-                    _ => return None,
-                }
-            }
-            _ => {}
+    let db = Connection::open_with_flags(
+        home.join("thread_history_1.sqlite"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    db.busy_timeout(Duration::from_millis(50)).ok()?;
+    let offset: u64 = db.query_row(
+        "SELECT rollout_byte_offset FROM thread_turns WHERE thread_id=?1 AND turn_id=?2 AND status='failed'",
+        params![id,turn], |row| row.get(0),
+    ).ok()?;
+    let mut file = File::open(path).ok()?;
+    file.seek(SeekFrom::Start(offset)).ok()?;
+    let mut line = Vec::new();
+    BufReader::new(file.take(16 * 1024))
+        .read_until(b'\n', &mut line)
+        .ok()?;
+    let event: Value = serde_json::from_slice(&line).ok()?;
+    let payload = &event["payload"];
+    let attribution = &payload["turn_attribution"];
+    Some(
+        event["type"] == "event_msg"
+            && payload["type"] == "task_started"
+            && payload["turn_id"] == turn
+            && attribution["turn_id"] == turn
+            && attribution["turn_trigger"] == "resume_interrupted_task",
+    )
+}
+
+fn prior_retry_input(
+    connection: &mut CodexConnection,
+    thread: &Value,
+    turn: &Value,
+    page: &Value,
+    deadline: Instant,
+) -> Result<Option<String>, ReadError> {
+    let Some(thread_id) = required_string(thread, "id") else {
+        return Ok(None);
+    };
+    let mut current = turn.clone();
+    let mut cursor = page["nextCursor"].clone();
+    let mut seen = HashSet::new();
+    loop {
+        let Some(id) = required_string(&current, "id") else {
+            return Ok(None);
+        };
+        if !current["items"].as_array().is_some_and(Vec::is_empty)
+            || is_native_retry(connection.code_home(), thread, id) != Some(true)
+            || !cursor.as_str().is_some_and(|s| seen.insert(s.to_owned()))
+        {
+            return Ok(None);
         }
+        let tail = read_rpc(
+            connection,
+            "thread/items/list",
+            json!({"threadId":thread_id,"turnId":id,"sortDirection":"desc","limit":1}),
+            deadline,
+        )?;
+        if !tail["data"].as_array().is_some_and(Vec::is_empty)
+            || tail.get("nextCursor") != Some(&Value::Null)
+        {
+            return Ok(None);
+        }
+        let previous = read_rpc(
+            connection,
+            "thread/turns/list",
+            json!({"threadId":thread_id,"limit":1,
+            "sortDirection":"desc","cursor":cursor,"itemsView":"summary"}),
+            deadline,
+        )?;
+        let Some([prior]) = previous["data"].as_array().map(Vec::as_slice) else {
+            return Ok(None);
+        };
+        let Some(prior_id) = required_string(prior, "id") else {
+            return Ok(None);
+        };
+        if prior_id == id
+            || prior["status"] != "failed"
+            || recovery_failure(prior).is_none()
+            || !prior["completedAt"]
+                .as_u64()
+                .zip(current["startedAt"].as_u64())
+                .is_some_and(|(a, b)| a <= b)
+        {
+            return Ok(None);
+        }
+        if let Some(anchor) = read_input_item(
+            connection,
+            thread_id,
+            prior_id,
+            prior,
+            required_string(prior, "rootTurnId").is_some_and(|root| root != prior_id),
+            deadline,
+        )? {
+            return Ok(Some(anchor));
+        }
+        current = prior.clone();
+        cursor = previous["nextCursor"].clone();
     }
-    user.or_else(|| {
-        if has_continuation_root {
-            commentary
+}
+
+enum RecoveryTail<'a> {
+    Earlier,
+    Hold,
+    Continue(&'a str),
+}
+
+fn tail_item<'a>(item: &'a Value, user: Option<&'a str>, continuation: bool) -> RecoveryTail<'a> {
+    let (Some(kind), Some(id)) = (required_string(item, "type"), required_string(item, "id"))
+    else {
+        return RecoveryTail::Hold;
+    };
+    if kind == "userMessage" {
+        return if user == Some(id) {
+            RecoveryTail::Continue(id)
         } else {
-            None
+            RecoveryTail::Hold
+        };
+    }
+    if kind != "agentMessage" {
+        return RecoveryTail::Earlier;
+    }
+    if !absent_or_null(item, "questions")
+        && !item["questions"].as_array().is_some_and(Vec::is_empty)
+    {
+        return RecoveryTail::Hold;
+    }
+    match item["phase"].as_str() {
+        Some("final_answer") if item["delivery"] == "async" => RecoveryTail::Earlier,
+        Some("commentary" | "partial_answer") => {
+            if item["text"]
+                .as_str()
+                .is_some_and(|text| !text.trim().is_empty())
+                && let Some(anchor) = user.or(continuation.then_some(id))
+            {
+                return RecoveryTail::Continue(anchor);
+            }
+            RecoveryTail::Earlier
         }
-    })
+        _ => RecoveryTail::Hold,
+    }
+}
+
+fn read_input_item(
+    connection: &mut CodexConnection,
+    thread_id: &str,
+    turn_id: &str,
+    turn: &Value,
+    continuation: bool,
+    deadline: Instant,
+) -> Result<Option<String>, ReadError> {
+    let Some(items) = turn["items"]
+        .as_array()
+        .filter(|_| turn["itemsView"] == "summary")
+    else {
+        return Ok(None);
+    };
+    // An inline final answer is terminal. Desktop also renders asynchronous
+    // notices as final answers while the same turn is still running.
+    if items.iter().any(|item| {
+        item["type"] == "agentMessage"
+            && item["phase"] == "final_answer"
+            && item["delivery"] != "async"
+    }) {
+        return Ok(None);
+    }
+    let mut users = items.iter().filter(|item| item["type"] == "userMessage");
+    let user = users.next().and_then(|item| required_string(item, "id"));
+    if users.next().is_some() || (user.is_none() && !continuation) {
+        return Ok(None);
+    }
+    let mut cursor = None::<String>;
+    let mut seen = HashSet::new();
+    loop {
+        let page = read_rpc(
+            connection,
+            "thread/items/list",
+            json!({
+                "threadId":thread_id, "turnId":turn_id, "cursor":cursor, "sortDirection":"desc",
+                "limit":RECOVERY_ITEM_PAGE_SIZE, "deferOutput":{"commandExecution":true,"mcpToolCall":true},
+            }),
+            deadline,
+        )?;
+        let rows = page["data"]
+            .as_array()
+            .filter(|rows| rows.len() <= RECOVERY_ITEM_PAGE_SIZE)
+            .ok_or_else(|| ReadError("Codex recovery item page is invalid".into()))?;
+        for row in rows {
+            if row["turnId"] != turn_id {
+                return Ok(None);
+            }
+            match tail_item(&row["item"], user, continuation) {
+                RecoveryTail::Hold => return Ok(None),
+                RecoveryTail::Continue(id) => return Ok(Some(id.to_owned())),
+                RecoveryTail::Earlier => {}
+            }
+        }
+        if page.get("nextCursor") == Some(&Value::Null) {
+            return Ok(None);
+        }
+        let next = required_string(&page, "nextCursor")
+            .filter(|next| !rows.is_empty() && seen.insert((*next).to_owned()))
+            .ok_or_else(|| ReadError("Codex recovery item cursor is invalid".into()))?;
+        cursor = Some(next.to_owned());
+    }
 }
 
 fn recovery_failure(turn: &Value) -> Option<RecoveryFailure> {
@@ -833,7 +1075,8 @@ fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
         Some("usageLimitExceeded" | "rateLimitExceeded") => {
             return Some(RecoveryFailure::Quota);
         }
-        Some("serverOverloaded" | "internalServerError" | "flexUnavailable") => {
+        Some("serverOverloaded") => return Some(RecoveryFailure::Throttled),
+        Some("internalServerError" | "flexUnavailable") => {
             return Some(RecoveryFailure::Retryable);
         }
         _ => {}
@@ -846,7 +1089,7 @@ fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
         .or_else(|| details.get("http_status_code"));
     match (variant.as_str(), http.and_then(Value::as_u64)) {
         ("responseTooManyFailedAttempts" | "response_too_many_failed_attempts", Some(429)) => {
-            Some(RecoveryFailure::Quota)
+            Some(RecoveryFailure::Throttled)
         }
         (
             "httpConnectionFailed"
@@ -1024,6 +1267,10 @@ fn read_refusal(error: ReadError) -> SubmitError {
 }
 
 #[cfg(test)]
+#[path = "recovery_lineage_tests.rs"]
+mod lineage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{adapters::codex::connection::CodexInstance, domain::address::NodeRef};
@@ -1035,6 +1282,43 @@ mod tests {
 
     const BASE_URL: &str = "http://127.0.0.1:19090/v1";
     const BEARER: &str = "synthetic-bearer-for-fixture";
+
+    #[test]
+    fn recovery_distinguishes_async_progress_from_an_unanswered_question() {
+        let mut items = vec![json!({"type":"userMessage","id":"original"})];
+        // The reported thread had 504 items in its fully hydrated latest turn.
+        for i in 0..500 {
+            items.push(json!({"type":"reasoning","id":format!("reasoning-{i}")}));
+        }
+        let question = json!({"type":"agentMessage","id":"ask","phase":"final_answer",
+            "delivery":"async","questions":[{"title":"Sign in?"}]});
+        items.push(question);
+        let check = |items: &[Value]| {
+            items
+                .iter()
+                .rev()
+                .find_map(|item| match tail_item(item, Some("original"), false) {
+                    RecoveryTail::Earlier => None,
+                    RecoveryTail::Continue(id) => Some(Some(id.to_owned())),
+                    RecoveryTail::Hold => Some(None),
+                })
+                .flatten()
+        };
+        assert_eq!(check(&items), None);
+        items.push(json!({"type":"reasoning","id":"tail"}));
+        assert_eq!(check(&items), None);
+        items.push(
+            json!({"type":"agentMessage","id":"progress","phase":"commentary",
+            "text":"Continuing the independent work","questions":null}),
+        );
+        assert_eq!(check(&items).as_deref(), Some("original"));
+
+        items.push(
+            json!({"type":"agentMessage","id":"done","phase":"final_answer",
+            "text":"Finished","delivery":null}),
+        );
+        assert_eq!(check(&items), None);
+    }
     const RPC_FIXTURE: &str = r#"
 import json, os, sys
 from pathlib import Path
@@ -1063,10 +1347,16 @@ for line in sys.stdin:
     elif method == "thread/loaded/list":
         result = {"data": ["saved-thread"] if loaded else [], "nextCursor": None}
     elif method == "thread/turns/list":
+        assert params["itemsView"] == "summary" and params["limit"] == 1
         result = {"data": [{"id": "old-turn", "status": "failed", "startedAt": 100,
-                            "completedAt": 101, "itemsView": "full",
+                            "completedAt": 101, "itemsView": "summary",
                             "error": {"codexErrorInfo": "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
+    elif method == "thread/goal/get":
+        result = {"goal": None}
+    elif method == "thread/items/list":
+        assert params["turnId"] == "old-turn" and params["sortDirection"] == "desc"
+        result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
     elif method == "thread/queue/list":
         result = {"data": []}
     elif method == "config/read":

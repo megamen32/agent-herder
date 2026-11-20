@@ -579,6 +579,7 @@ fn derive_observation(
         model: Some(source.id.clone()),
         started_at_ms: busy,
         failure,
+        ancestors: Vec::new(),
     };
     Some(Observation {
         boundary,
