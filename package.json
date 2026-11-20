@@ -17,7 +17,8 @@
     "agent-herder-cdp-chat-browserclaw": "dist/cdp-chat-browserclaw-main.js"
   },
   "scripts": {
-    "build": "npm run build:core && tsc && vite build --config vite.config.ts && cp -R dist/web-static/. dist/web/",
+    "build:codex-history": "rustup target add wasm32-wasip1 && cargo build --locked --release --target wasm32-wasip1 --manifest-path crates/codex-rollout-page/Cargo.toml --target-dir crates/codex-rollout-page/target && mkdir -p dist/codex-history && cp crates/codex-rollout-page/target/wasm32-wasip1/release/codex-rollout-page.wasm scripts/codex-rollout-page.mjs dist/codex-history/",
+    "build": "npm run build:core && npm run build:codex-history && tsc && vite build --config vite.config.ts && cp -R dist/web-static/. dist/web/",
     "test": "npm run build:core && npm run test:core && vitest run --root . --config vitest.config.ts",
     "start": "node dist/index.js",
     "dev": "tsc --watch",

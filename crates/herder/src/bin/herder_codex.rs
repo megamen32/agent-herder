@@ -108,12 +108,20 @@ async fn dispatch(
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or("params.id is required")?;
+            let direction = params
+                .get("sortDirection")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| "sortDirection must be asc or desc")?
+                .unwrap_or_default();
             let page = adapter
                 .reader
-                .list_messages(
+                .list_messages_in_order(
                     thread_id,
                     params.get("cursor").and_then(Value::as_str),
                     limit(params)?,
+                    direction,
                 )
                 .map_err(|e| e.to_string())?;
             Ok(json!(page))

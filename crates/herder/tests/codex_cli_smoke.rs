@@ -41,10 +41,19 @@ for line in sys.stdin:
     elif method == "thread/list":
         result = {"data": [{"id": "thread-existing", "cwd": "/fixture", "status": {"type": "idle"}}]}
     elif method == "thread/items/list":
-        result = {"data": [
-            {"turnId": "turn-existing", "item": {"type": "userMessage", "id": "item-user", "content": [{"type": "text", "text": "hello"}]}},
-            {"turnId": "turn-existing", "item": {"type": "agentMessage", "id": "item-assistant", "text": "world"}},
-        ]}
+        p = request["params"]
+        if p["sortDirection"] == "desc":
+            assert p["threadId"] == "thread-existing" and p["limit"] == 100
+            end = {"older /+": 105, "oldest": 5}[p["cursor"]] if p.get("cursor") else 205
+            start = max(0, end - 100)
+            result = {"data": [{"turnId": "turn-existing", "item": {"type": "agentMessage", "id": str(i), "text": str(i)}} for i in reversed(range(start, end))],
+                      "nextCursor": {105: "older /+", 5: "oldest", 0: None}[start], "backwardsCursor": "native-reverse"}
+        else:
+            assert p["sortDirection"] == "asc" and p["limit"] == 10
+            result = {"data": [
+                {"turnId": "turn-existing", "item": {"type": "userMessage", "id": "item-user", "content": [{"type": "text", "text": "hello"}]}},
+                {"turnId": "turn-existing", "item": {"type": "agentMessage", "id": "item-assistant", "text": "world"}},
+            ]}
     elif method == "thread/start":
         result = {"thread": {"id": "thread-created"}}
     elif method == "turn/start":
@@ -79,6 +88,9 @@ fn run_cli(root: &PathBuf, attachment: &PathBuf) -> (Vec<Value>, std::process::E
         json!({"id":"create","method":"createThread","params":{"request_key":"create-1"}}),
         json!({"id":"deliver","method":"deliver","params":{"id":"thread-created","message":"read it","request_key":"deliver-1","attachments":[{"kind":"file","file_name":"notes.txt","path":attachment}]}}),
         json!({"id":"stop","method":"stop","params":{"id":"thread-created","turn_id":"turn-started"}}),
+        json!({"id":"latest","method":"getMessages","params":{"id":"thread-existing","sortDirection":"desc","limit":100}}),
+        json!({"id":"older","method":"getMessages","params":{"id":"thread-existing","sortDirection":"desc","limit":100,"cursor":"older /+"}}),
+        json!({"id":"oldest","method":"getMessages","params":{"id":"thread-existing","sortDirection":"desc","limit":100,"cursor":"oldest"}}),
     ];
     let input = requests
         .iter()
@@ -132,7 +144,18 @@ fn compiled_cli_runs_full_codex_consumer_surface() {
     fs::write(&attachment, "fixture attachment").unwrap();
     let (responses, status) = run_cli(&root, &attachment);
     assert!(status.success());
-    assert_eq!(responses.len(), 6);
+    assert_eq!(responses.len(), 9);
+    for (index, first, count, next) in [
+        (6, 204, 100, Some("older /+")),
+        (7, 104, 100, Some("oldest")),
+        (8, 4, 5, None),
+    ] {
+        let page = &responses[index]["result"];
+        assert_eq!(page["data"].as_array().unwrap().len(), count);
+        assert_eq!(page["data"][0]["id"], first.to_string());
+        assert_eq!(page["next_cursor"], json!(next));
+        assert_eq!(page["backwards_cursor"], "native-reverse");
+    }
     assert_eq!(responses[0]["result"]["readOnly"], false);
     assert_eq!(responses[0]["result"]["capabilities"]["files"], true);
     assert_eq!(responses[1]["result"]["data"][0]["id"], "thread-existing");

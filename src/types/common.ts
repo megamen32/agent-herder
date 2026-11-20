@@ -81,6 +81,17 @@ export interface SessionMessageView {
   parts: SessionMessagePart[];
 }
 
+/** A native item and its containing turn from thread/items/list. */
+export interface CodexHistoryItem {
+  turnId: string;
+  item: { id: string; type: string; [field: string]: unknown };
+  startedAtMs?: number | null;
+  completedAtMs?: number | null;
+}
+export type CodexHistoryPage =
+  | { data: CodexHistoryItem[]; nextCursor?: string | null }
+  | { events: Omit<import("../integrator-transcript.js").NativeTranscriptEvent, "sequence">[]; nextCursor: string | null };
+
 /** A native history page whose completeness is backed by its owner store. */
 export interface SessionMessageHistoryPage {
   sessionId: string;
@@ -543,6 +554,8 @@ export interface HarnessAdapter {
 
   /** Export adapter-owned source material for the canonical archive. */
   getRawTranscript?(id: string, signal?: AbortSignal): Promise<RawTranscriptExport | null>;
+  /** Newest-first native items or chronological rollout events. nextCursor always selects older history. */
+  getCodexHistoryPage?(id: string, limit: number, cursor?: string): Promise<CodexHistoryPage | null>;
 
   /** Get structured recent messages from the adapter-owned transport, when available. */
   getSessionMessages?(id: string, limit?: number): Promise<SessionMessageView[] | null>;

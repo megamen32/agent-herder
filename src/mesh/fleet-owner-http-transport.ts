@@ -1,3 +1,4 @@
+import {MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES} from "../integrator-transcript.js";
 import {meshDiscoveryTimeoutMs} from "./discovery-timeout.js";
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {request as httpsRequest,type RequestOptions} from 'node:https';
@@ -72,7 +73,8 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeout);
   try{return await run(state,controller.signal);}finally{clearTimeout(timer);state.inflight--;this.inflight--;}
  }
- private http(state:Connection,signal:AbortSignal,method:'GET'|'POST',path:string,payload?:string,id?:string):Promise<HttpResult>{
+ private http(state:Connection,signal:AbortSignal,method:'GET'|'POST',path:string,
+  {payload,id,maxResponseBytes=1024*1024}:{payload?:string;id?:string;maxResponseBytes?:number}={}):Promise<HttpResult>{
   signal.throwIfAborted();
   return new Promise((resolve,reject)=>{
    let req:ClientRequest|undefined,res:IncomingMessage|undefined,finished=false,length=0;
@@ -100,7 +102,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
      const sse=message.headers['content-type']?.includes('text/event-stream');
      message.on('data',(data:Buffer|string)=>{
       if(finished)return;const chunk=Buffer.isBuffer(data)?data:Buffer.from(data);length+=chunk.length;
-      if(length>1048576){finish(new Error('owner_http_response_limit'));return;}chunks.push(chunk);
+      if(length>maxResponseBytes){finish(new Error('owner_http_response_limit'));return;}chunks.push(chunk);
       if(sse&&id){const envelope=ownEnvelope(Buffer.concat(chunks).toString('utf8'),id);if(envelope)finish(undefined,envelope);}
      });
      message.once('end',()=>{
@@ -119,7 +121,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   const notify=method.startsWith('notifications/'),id=notify?undefined:randomUUID();
   const payload=JSON.stringify({jsonrpc:'2.0',...(id?{id}:{}),method,params});
   if(Buffer.byteLength(payload)>16384)throw new Error('owner_http_request_limit');
-  const response=await this.http(state,signal,'POST','/mcp',payload,id);
+  const response=await this.http(state,signal,'POST','/mcp',{payload,id});
   if(response.status<200||response.status>=300){
    if([401,404].includes(response.status)){state.initialized=false;state.sessionId=undefined;}
    throw new Error('owner_http_http_'+response.status);
@@ -184,11 +186,23 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
    let response:HttpResult;
    stage=captured.operation==='details'?'details':captured.operation==='message-status'?'message_status':'action';
    if(captured.operation==='details')response=await this.http(state,signal,'GET',path+'/details?limit=40&quick=1');
+   else if(captured.operation==='transcript'){
+    if(harness!=='codex')throw new Error('owner_http_session_invalid');
+    stage='transcript';
+    const query=new URLSearchParams({limit:String(captured.limit??100),order:'latest'});
+    if(captured.cursor!==undefined)query.set('cursor',captured.cursor);
+    response=await this.http(state,signal,'GET',path+'/transcript?'+query,{maxResponseBytes:MAX_NATIVE_TRANSCRIPT_SNAPSHOT_BYTES});
+    if(response.status===200){
+     const transcript=record(record(response.data)?.transcript),scope=record(transcript?.scope);
+     if(transcript?.order!=='latest'||scope?.hostId!==state.peer.hostId||scope.harness!==harness||scope.nativeSessionId!==sessionId)
+      throw new Error('owner_http_session_identity_mismatch');
+    }
+   }
    else if(captured.operation==='message-status')response=await this.http(state,signal,'GET',path+'/message-status?inputId='+encodeURIComponent(captured.inputId!));
    else {
     const body=JSON.stringify({humanRequested:true,...(captured.inputId?{inputId:captured.inputId}:{}),...(captured.message?{message:captured.message}:{}),...(captured.operation==='message'?{mode:captured.mode??'queue'}:{})});
     // Exactly one call to the existing owner API/UDM. Lost replies are not retried.
-    response=await this.http(state,signal,'POST',path+'/'+captured.operation,body);
+    response=await this.http(state,signal,'POST',path+'/'+captured.operation,{payload:body});
    }
    if(captured.operation==='details'&&response.status===200){const received=record(record(response.data)?.session);if(received?.id!==sessionId||received.harness!==harness)throw new Error('owner_http_session_identity_mismatch');}
    if(captured.operation==='message-status'&&response.status===200&&record(response.data)?.inputId!==captured.inputId)throw new Error('owner_http_input_identity_mismatch');

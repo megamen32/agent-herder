@@ -42,7 +42,7 @@ describe("local native transcript deferred updates", () => {
     // Match React's deferred state updater: the request is current when queued,
     // but the callback may run only after another session has committed.
     const queuedPageA = owner.isCurrent(tokenA)
-      ? (current: TranscriptView | undefined) => mergeTranscriptPageIfCurrent(current, pageA, owner, tokenA, true)
+      ? (current: TranscriptView | undefined) => mergeTranscriptPageIfCurrent(current, pageA, owner, tokenA, "replace")
       : undefined;
     const queuedErrorA = owner.isCurrent(tokenA)
       ? (current: string) => transcriptValueIfCurrent(current, "session A failed", owner, tokenA)
@@ -60,6 +60,23 @@ describe("local native transcript deferred updates", () => {
     expect(owner.finish(tokenB)).toBe(true);
   });
 
+  it("prepends older pages and preserves their cursor when the observed tail changes", () => {
+    const view = (ids: string[], nextCursor: string | null): TranscriptView => ({
+      ...page("local-host", "session-A", ids[0]), order: "latest", nextCursor, complete: nextCursor === null,
+      events: ids.map(id => page("local-host", "session-A", id).events[0]),
+    });
+    const tail = view(["3", "4"], "older");
+    const owner = new TranscriptRequestOwner(key(tail));
+    const token = owner.begin(key(tail))!;
+    const older = mergeTranscriptPageIfCurrent(tail, view(["1", "2", "3"], "oldest"), owner, token, "older")!;
+    expect(older.events.map(event => event.eventId)).toEqual(["1", "2", "3", "4"]);
+    const refreshed = mergeTranscriptPageIfCurrent(older, view(["4", "5"], "next-tail"), owner, token, "refresh")!;
+    expect(refreshed.events.map(event => event.eventId)).toEqual(["1", "2", "3", "4", "5"]);
+    expect(refreshed.nextCursor).toBe("oldest");
+    const separateTail = view(["8", "9"], "gap");
+    expect(mergeTranscriptPageIfCurrent(refreshed, separateTail, owner, token, "refresh")).toBe(separateTail);
+  });
+
   it("deduplicates a current continuation without dropping the newer cursor", () => {
     const firstPage = page("local-host", "session-A", "event-1");
     const secondPage: TranscriptView = {
@@ -74,7 +91,7 @@ describe("local native transcript deferred updates", () => {
     };
     const owner = new TranscriptRequestOwner(key(firstPage));
     const token = owner.begin(key(firstPage))!;
-    const merged = mergeTranscriptPageIfCurrent(firstPage, secondPage, owner, token, false)!;
+    const merged = mergeTranscriptPageIfCurrent(firstPage, secondPage, owner, token, "older")!;
     expect(merged.events.map(event => event.eventId)).toEqual(["event-1", "event-2"]);
     expect(merged.nextCursor).toBe("next-cursor");
     expect(owner.finish(token)).toBe(true);

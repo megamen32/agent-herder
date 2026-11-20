@@ -5,9 +5,17 @@ export function remoteSessionStorage(storage:Storage,scope:string,address:MeshAd
  const prefix='agent-herder.remote:'+JSON.stringify([scope,address.hostId,address.harness,address.nativeSessionId])+':';
  return {getItem:(key:string)=>storage.getItem(prefix+key),setItem:(key:string,value:string)=>storage.setItem(prefix+key,value),removeItem:(key:string)=>storage.removeItem(prefix+key)};
 }
+export function remoteReadQuery(address:MeshAddress,control:FleetSessionControl){
+ const query=remoteSessionQuery(address);
+ query.set('operation',control.operation);
+ if(control.inputId)query.set('inputId',control.inputId);
+ if(control.limit!==undefined)query.set('limit',String(control.limit));
+ if(control.cursor!==undefined)query.set('cursor',control.cursor);
+ return query;
+}
 export async function remoteSessionRequest(base:string,address:MeshAddress,control:FleetSessionControl){
- const query=remoteSessionQuery(address),read=['details','message-status'].includes(control.operation);
- if(read){query.set('operation',control.operation);if(control.inputId)query.set('inputId',control.inputId);}
+ const read=['details','transcript','message-status'].includes(control.operation);
+ const query=read?remoteReadQuery(address,control):remoteSessionQuery(address);
  const response=await fetch(base+'/control?'+query,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(read?20000:35000),...(!read?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(control)}:{})});
  return {status:response.status,body:await response.json()};
 }

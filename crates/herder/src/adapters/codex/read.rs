@@ -89,6 +89,14 @@ pub struct NativeMessagePage {
     pub backwards_cursor: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemSortDirection {
+    #[default]
+    Asc,
+    Desc,
+}
+
 pub struct CodexReader {
     connection: CodexConnection,
     instance: CodexInstance,
@@ -264,6 +272,16 @@ impl CodexReader {
         cursor: Option<&str>,
         limit: u32,
     ) -> Result<NativeMessagePage, CodexReadError> {
+        self.list_messages_in_order(thread_id, cursor, limit, ItemSortDirection::Asc)
+    }
+
+    pub fn list_messages_in_order(
+        &mut self,
+        thread_id: &str,
+        cursor: Option<&str>,
+        limit: u32,
+        direction: ItemSortDirection,
+    ) -> Result<NativeMessagePage, CodexReadError> {
         if thread_id.is_empty() || limit == 0 {
             return Err(CodexReadError::InvalidThreadList(
                 "thread_id and limit must be non-empty/positive".into(),
@@ -277,7 +295,7 @@ impl CodexReader {
             "threadId": thread_id,
             "cursor": cursor,
             "limit": limit,
-            "sortDirection": "asc",
+            "sortDirection": direction,
         });
         let result =
             match self

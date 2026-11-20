@@ -51,6 +51,22 @@ function fixture(){
 }
 afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();vi.mocked(hostname).mockReturnValue('roomhacker-server-100');});
 describe('owner cookie native HTTP transport (fast unit; expected2s/max25s)',()=>{
+ it('forwards large history pages and their opaque cursor with read-only session requests',async()=>{
+  const f=fixture(),session={id:'session/1',harness:'codex'};
+  const transcript={scope:{hostId:'server-44',harness:'codex',nativeSessionId:session.id},order:'latest',source:'codex-app-server',
+   items:[{turnId:'turn',item:{type:'agentMessage',id:'item',text:'a'.repeat(1024*1024)}}],complete:true,nextCursor:null};
+  f.setHandler(c=>{
+   if(c.options.method==='GET')return String(c.options.path).includes('/transcript?')?{session,transcript}:{session};
+   if(c.body.method==='initialize')return {protocolVersion:'2025-11-25',capabilities:{}};
+   return {structuredContent:{hostId:'server-44',nativeUser:'roomhacker'}};
+  });
+  const reply=await f.transport.requestSession(target44,'codex',session.id,{operation:'transcript',limit:100,cursor:'older /+'});
+  expect(reply.status).toBe(200);
+  expect((reply.body as {transcript:typeof transcript}).transcript.items[0].item.text).toHaveLength(1024*1024);
+  expect(f.calls.filter(c=>c.options.method==='GET').map(c=>c.options.path)).toEqual([
+   '/api/sessions/codex/session%2F1','/api/sessions/codex/session%2F1/transcript?limit=100&order=latest&cursor=older+%2F%2B',
+  ]);
+ });
  it('reads MiniMax details through the existing owner HTTP route',async()=>{
   const f=fixture();f.setHandler(call=>{
    if(call.options.method==='GET')return {session:{id:'mvs_existing',harness:'minimax-code'}};

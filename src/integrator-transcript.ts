@@ -371,6 +371,13 @@ function normalizeClaudeRecord(row: Record<string, unknown>, line: string, recor
   return events;
 }
 
+/** Rust selects these rows backwards by byte position. The absolute native
+ * sequence is unknown without scanning the earlier rollout. */
+export function projectCodexRolloutPage(rows: {offset: number; line: string}[], sessionId: string) {
+  const records = rows.map(({offset, line}) => ({recordIndex: offset, line})).reverse();
+  return parseJsonlRecords(records, sessionId).map(({sequence: _sequence, ...event}) => event);
+}
+
 type ParsedTranscriptPrefix = { events: NativeTranscriptEvent[]; byteLength: number };
 
 /** Return true only when EOF interrupts an otherwise valid UTF-8 sequence. */

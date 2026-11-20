@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import type { HarnessAdapter } from "./types/index.js";
-import { createRawTranscriptPageReader, readIntegratorTranscriptPage, type NativeTranscriptPageReader } from "./integrator-transcript.js";
+import { createRawTranscriptPageReader, readIntegratorTranscriptPage, type NativeTranscriptPageReader, type TranscriptSessionScope } from "./integrator-transcript.js";
 import { createZcodeTranscriptReader } from "./zcode-transcript-reader.js";
 import { createZaiTranscriptReader } from "./zai-transcript-reader.js";
 import { createChatgptTranscriptReader } from "./chatgpt-transcript-reader.js";
@@ -45,6 +45,28 @@ function readerFor(adapter: HarnessAdapter, harness: string, sessionId: string):
   return reader;
 }
 
+async function readLatestCodexPage(adapter: HarnessAdapter, scope: TranscriptSessionScope, limit: number, cursor?: string) {
+  const page = await adapter.getCodexHistoryPage!(scope.nativeSessionId, limit, cursor);
+  if (!page) throw new Error("Codex history is unavailable");
+  const rows = "events" in page ? page.events : page.data;
+  const nextCursor = page.nextCursor ?? null;
+  if (!Array.isArray(rows) || rows.length > limit || (nextCursor !== null && (
+    typeof nextCursor !== "string" || !nextCursor || nextCursor.length > 4096 || nextCursor === cursor || !rows.length))) {
+    throw new Error("Invalid Codex history page");
+  }
+  const envelope = { scope, order: "latest", nextCursor, complete: nextCursor === null };
+  if ("events" in page) return { ...envelope, events: page.events, source: "codex-rollout" };
+  if (page.data.some(row => !row || typeof row.turnId !== "string" || !row.turnId ||
+    typeof row.item?.id !== "string" || !row.item.id || typeof row.item.type !== "string" || !row.item.type)) {
+    throw new Error("Invalid native Codex history item");
+  }
+  // The chat exposes only the public reasoning summary recorded by Codex.
+  const items = page.data.map(row => row.item.type === "reasoning"
+    ? { ...row, item: { type: row.item.type, id: row.item.id, summary: row.item.summary } }
+    : row);
+  return { ...envelope, items, source: "codex-app-server" };
+}
+
 /** Handle the process-local paged history endpoint for an exact existing native session. */
 export async function handleIntegratorSessionTranscript(
   request: IncomingMessage,
@@ -59,22 +81,29 @@ export async function handleIntegratorSessionTranscript(
   if (!harness || !sessionId) { sendJson(response, 400, { error: "Invalid exact session path" }); return true; }
   const adapter = adapters.get(harness);
   if (!adapter || adapter.type !== harness) { sendJson(response, 404, { error: "Native session adapter not found" }); return true; }
-  if (!adapter.getRawTranscript) { sendJson(response, 501, { error: "Native adapter does not expose a supported complete transcript export" }); return true; }
-  const session = await adapter.getSession(sessionId);
-  if (!session || session.id !== sessionId || session.harness !== harness) { sendJson(response, 404, { error: "Exact native session not found" }); return true; }
+  const order = url.searchParams.get("order");
+  if (order !== null && (order !== "latest" || harness !== "codex")) {
+    sendJson(response, 400, { error: "Unsupported transcript order" }); return true;
+  }
+  const latest = order === "latest";
+  if (latest && !adapter.getCodexHistoryPage) { sendJson(response, 501, { error: "Codex history paging unavailable" }); return true; }
+  if (!latest && !adapter.getRawTranscript) { sendJson(response, 501, { error: "Native adapter does not expose a supported complete transcript export" }); return true; }
   const rawLimit = url.searchParams.get("limit");
-  const limit = rawLimit === null ? 50 : Number(rawLimit);
+  const limit = rawLimit === null ? (latest ? 100 : 50) : Number(rawLimit);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (rawLimit !== null && !/^\d+$/u.test(rawLimit))) {
     sendJson(response, 400, { error: "limit must be an integer from 1 to 100" }); return true;
   }
   const cursor = url.searchParams.has("cursor") ? url.searchParams.get("cursor")! : undefined;
+  if (latest && cursor !== undefined && (!cursor || cursor.length > 4096)) {
+    sendJson(response, 400, { error: "Invalid history cursor" }); return true;
+  }
+  const scope = { hostId: hostname(), harness, nativeSessionId: sessionId };
   try {
-    const page = await readIntegratorTranscriptPage({
-      scope: { hostId: hostname(), harness, nativeSessionId: sessionId },
-      ...(cursor === undefined ? {} : { cursor }),
-      limit,
-      reader: readerFor(adapter, harness, sessionId),
-    });
+    const session = latest ? await adapter.getSession(sessionId, { includeMetrics: false }) : await adapter.getSession(sessionId);
+    if (!session || session.id !== sessionId || session.harness !== harness) { sendJson(response, 404, { error: "Exact native session not found" }); return true; }
+    const page = latest
+      ? await readLatestCodexPage(adapter, scope, limit, cursor)
+      : await readIntegratorTranscriptPage({scope, cursor, limit, reader: readerFor(adapter, harness, sessionId)});
     sendJson(response, 200, {
       session: { id: session.id, harness: session.harness, status: session.status, lastActivity: session.lastActivity },
       transcript: page,
