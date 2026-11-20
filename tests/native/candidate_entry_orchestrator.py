@@ -22,7 +22,7 @@ FIXTURE = REPO / "tests/native/browser_adapter_fixture.mjs"
 RUN = Path("/srv/storage/builds/herder/ci-runs/rust-browser-mesh-rollout-bRJcQC")
 QA = RUN / "candidate-qa"
 ENTRY = QA / "entry"
-CANDIDATE = RUN / "candidate-95efa8bd"
+CANDIDATE = RUN / "candidate-entry-95efa8bd"
 WORK = Path("/tmp/opencode/candidate-entry")
 ORIGIN_PORT = "9222"
 
