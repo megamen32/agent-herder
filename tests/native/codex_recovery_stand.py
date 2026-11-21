@@ -685,9 +685,10 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
     private_write(root / "session-autostart.json", json.dumps({
         "version": 8, "enabled": True, "sessions": [], "recoverOnFailure": True,
     }))
-    warm, cold = "warm-model", "cold-model"
+    warm, cold, held = "warm-model", "cold-model", "human-stop-model"
     persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
-    requests = {warm: [], cold: [], persistent: []}
+    recoverable_models = (warm, cold, persistent)
+    requests = {model: [] for model in (*recoverable_models, held)}
 
     class Provider(module.Handler):
         def send_responses(self, request, sequence):
@@ -736,7 +737,7 @@ experimental_bearer_token = "{token}"
         read, wait_for_turn = stack.enter_context(native_client(endpoint, home))
         sessions = {}
         with owner_client(owner, profile, env) as provision:
-            for model in requests:
+            for model in recoverable_models:
                 thread, turn = cold_seed if model == cold else seed(read, wait_for_turn, model)
                 native_thread = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
                 statuses = ("notLoaded",) if model == cold else ("idle", "systemError")
@@ -747,6 +748,15 @@ experimental_bearer_token = "{token}"
                 sessions[model] = (thread, turn, ref)
                 print(json.dumps({"phase": "registered", "model": model, "status": native_thread["status"]["type"]}),
                       flush=True)
+            held_thread, held_turn = seed(read, wait_for_turn, held)
+            held_ref = session_tool(provision, action="register", instance_ref=INSTANCE,
+                                    native_session_id=held_thread, request_key="register-human-stop")["session_ref"]
+            stop = provision.request("tools/call", {
+                "_meta": MCP_META, "name": "stop",
+                "arguments": {"action": "stop", "session_ref": held_ref, "request_key": "fixture-human-stop"},
+            })
+            require(not stop.get("isError") and stop["structuredContent"]["hold"] == "active",
+                    "the owner did not record HumanStop for the fixture chat")
 
         data["owner"]["codex_recovery"] = {"autopilot_state_dir": str(root)}
         if quota_profile:
@@ -766,7 +776,7 @@ experimental_bearer_token = "{token}"
             require(all(n == 1 for n in early.values()) and not receipt_rows(database),
                     f"recovery admitted before cooldown; HTTP requests={early}, receipts={len(receipt_rows(database))}")
             try:
-                wait_for("missing same-route recovery", lambda: all(len(v) >= 2 for v in requests.values()),
+                wait_for("missing same-route recovery", lambda: all(len(requests[m]) >= 2 for m in recoverable_models),
                          seconds=68)
             except TimeoutError as error:
                 counts = {model: len(seen) for model, seen in requests.items()}
@@ -781,8 +791,7 @@ experimental_bearer_token = "{token}"
                 require(result["modelProvider"] == "opencodex" and result["model"] == model,
                         "resumed thread changed provider or model")
                 if model != persistent:
-                    require(module.ANSWER in json.dumps(session_tool(active, action="messages", session_ref=ref)),
-                            "owner could not read back the recovered answer")
+                    wait_for_transcript_answer(active, ref, module.ANSWER, "owner could not read back the recovered answer")
                 else:
                     require(current[1]["error"]["codexErrorInfo"] == current[0]["error"]["codexErrorInfo"],
                             "expected the recovery turn itself to hit the same 429")
@@ -808,9 +817,13 @@ experimental_bearer_token = "{token}"
         receipts = receipt_rows(database)
         with owner_client(owner, profile, env):
             time.sleep(34)  # Let the restarted owner recheck the failed recovery across two scans.
-        require(receipt_rows(database) == receipts and all(len(v) == 2 for v in requests.values())
+        require(receipt_rows(database) == receipts and all(len(requests[m]) == 2 for m in recoverable_models)
                 and all(len(turns(read, thread)) == 2 for thread, _, _ in sessions.values()),
                 "owner delivered another continuation after the first recovery")
+        held_history = turns(read, held_thread)
+        require(len(requests[held]) == 1 and len(held_history) == 1
+                and held_history[0]["id"] == held_turn and held_history[0]["status"] == "failed",
+                "the owner recovered a chat protected by HumanStop")
         require(digest(home / "config.toml") == config_hash, "native profile changed")
         proof = {
             "provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
@@ -818,7 +831,11 @@ experimental_bearer_token = "{token}"
             "receipts": {m: next(r[1] for r in receipts if r[0] == s[0]) for m, s in sessions.items()},
             "outcomes": {m: turns(read, s[0])[1]["status"] for m, s in sessions.items()},
             "http_requests": {model: len(seen) for model, seen in requests.items()},
-            "recheck_seconds": {model: round(seen[1] - seen[0], 1) for model, seen in requests.items()},
+            "recheck_seconds": {model: round(requests[model][1] - requests[model][0], 1)
+                                for model in recoverable_models},
+            "same_chat": {"thread": sessions[warm][0], "failed_turn": sessions[warm][1],
+                          "recovery_turn": turns(read, sessions[warm][0])[1]["id"], "model": warm},
+            "human_stop": {"thread": held_thread, "failed_turn": held_turn, "recovery_requests": 0},
             "owner_restart_repeat": 0,
         }
         proof["independent_followup"] = verify_independent_followup(

@@ -1,0 +1,23 @@
+[Unit]
+Description=Activate the registered Agent Herder Rust owner on server 100
+After=gptadmin-hub.service
+PartOf=gptadmin-hub.service
+StartLimitIntervalSec=5min
+StartLimitBurst=7
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -IB /usr/local/libexec/agent-herder-native-owner-boot.py
+TimeoutStartSec=18
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=gptadmin-hub.service
