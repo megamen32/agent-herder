@@ -880,7 +880,10 @@ def main() -> int:
             # staging, remote mutation, readiness and any guarded rollback.
             with ReleaseGate(arguments.release_proof, target=target, require_target_lease=bool(node.get("authorityGroup"))) as gate:
                 gate.candidate_descends_from(live_sha, arguments.sha)
-                run_native_candidate_preflight(release, arguments.sha, catalog, gate)
+                run_native_candidate_preflight(
+                    release, arguments.sha, catalog, gate,
+                    native_candidate_gate=manifest.get("nativeCandidateGate"),
+                )
                 ssh = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
                        "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10",
                        "-o", "ServerAliveCountMax=2", "-p", ssh_port, host]
