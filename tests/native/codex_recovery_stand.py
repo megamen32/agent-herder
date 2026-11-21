@@ -11,6 +11,7 @@ The profile and quota backups stay inside the sandbox.
 import argparse
 from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timedelta, timezone
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -640,7 +641,7 @@ def verify_crash(read, active, database, thread, interrupted, ref, original_prom
     return receipt
 
 
-def verify_independent_followup(read, wait_for_turn, owner, profile, env, database, thread, requests):
+def verify_independent_followup(read, wait_for_turn, owner, profile, env, database, thread, requests, activation):
     prior = turns(read, thread)
     old_recovery = prior[-1]["id"]
     old_row, = [row for row in receipt_rows(database) if row[0] == thread]
@@ -664,7 +665,30 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest()
     print(json.dumps({"phase": "independent_user_429", "old_recovery": old_recovery,
                       "old_receipt_state": old_row[1], "latest_user_turn": user_turn}), flush=True)
+    private_write(activation, "false")
     with recovery_service(owner, profile, env) as active:
+        lock = Path(env["CODEX_HOME"]) / ".agent-herder-codex-recovery.lock"
+
+        def locked():
+            require(active.poll() is None, "Codex recovery service exited with stdin closed")
+            try:
+                with lock.open("rb") as guard:
+                    fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            except FileNotFoundError:
+                pass
+            return False
+
+        wait_for("recovery service did not take its home lock", locked, seconds=8)
+        duplicate = subprocess.run(
+            [str(owner), "--run-codex-recovery", str(profile)], env=env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8,
+        )
+        require(duplicate.returncode != 0 and b"Codex recovery service is already running" in duplicate.stderr,
+                f"could not verify exclusive recovery ownership: {duplicate.stderr.decode(errors='replace')}")
+        private_write(activation, "true")
+
         def posted():
             require(active.poll() is None, "Codex recovery service exited with stdin closed")
             return len(requests) >= 4
@@ -692,12 +716,6 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
                     and any(r["native_id"] == new_recovery and r["request_key"] == new_key for r in confirmed))
 
         wait_for("missing durable receipts for the two distinct recoveries", exact_followup_receipts, seconds=45)
-        duplicate = subprocess.run(
-            [str(owner), "--run-codex-recovery", str(profile)], env=env,
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8,
-        )
-        require(duplicate.returncode != 0 and b"Codex recovery service is already running" in duplicate.stderr,
-                "the same Codex home admitted a second recovery service")
         admitted = receipt_rows(database)
     with recovery_service(owner, profile, env):
         time.sleep(34)
@@ -946,7 +964,7 @@ experimental_bearer_token = "{cold_token}"
         proof.update({case: {"thread": thread, "failed_turn": turn, "reason": reason, "recovery_requests": 0}
                       for case, (_, thread, turn, reason) in protected.items()})
         proof["independent_followup"] = verify_independent_followup(
-            read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent])
+            read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent], activation)
         require(all(len(requests[model]) == 1 for model, _, _, _ in protected.values()),
                 "recovery service sent input to a protected chat")
         return proof
