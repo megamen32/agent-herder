@@ -336,6 +336,70 @@ fn canonical_reconcile_rejects_stale_baseline_and_incomplete_pair() {
         f.assert_unresolved();
     }
 }
+fn retain_original_scheduler(f: &mut Recovery) -> PathBuf {
+    let scheduler = f.paired["successor_scheduler_identity"].clone();
+    f.state["scheduler_identity"] = scheduler.clone();
+    f.state["awaiting_restart_at_unix_ms"] = f.state["created_at_unix_ms"].clone();
+    f.state["scheduler_preflight_evidence"] = json!({"identity": scheduler});
+    f.paired["old_scheduler_identity"] = scheduler.clone();
+    let preflight = f.state_path.with_file_name("scheduler-preflight.json");
+    let identity = json!({
+        "process": scheduler["process"], "runtime": scheduler["runtime"],
+        "canonical": scheduler["canonical"],
+    });
+    write_private(&preflight, &json!({"stage": "preflight", "response": identity}));
+    f.state["scheduler_preflight_sha256"] = json!(digest(&preflight));
+    f.paired["original_scheduler_preflight"] = pin(&preflight);
+
+    let proof = f.state_path.with_file_name("scheduler-consumer.json");
+    let challenge = "a".repeat(64);
+    let mut response = identity;
+    response["challenge"] = json!(challenge);
+    response["readiness_scope"] = json!("operational");
+    response["migration_ready"] = json!(true);
+    response["probe"] = json!({"decision": {"complete": true}});
+    write_private(&proof, &json!({
+        "stage": "consumer", "job_id": f.state["job_id"],
+        "request": {"challenge": challenge}, "response": response,
+        "observed_at_unix_ms": instant_ms(),
+    }));
+    f.paired["scheduler_consumer"] = pin(&proof);
+    f.save_state();
+    proof
+}
+
+#[test]
+fn canonical_reconcile_can_settle_with_the_exact_live_original_scheduler() {
+    let mut f = Recovery::new();
+    retain_original_scheduler(&mut f);
+    assert_eq!(f.call()["result"]["reconciled"], true);
+}
+
+#[test]
+fn canonical_reconcile_requires_fresh_operational_evidence_for_the_original_scheduler() {
+    for field in ["stale", "wrong_challenge", "incomplete", "changed_identity", "replaced_preflight"] {
+        let mut f = Recovery::new();
+        let path = retain_original_scheduler(&mut f);
+        let mut proof: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        match field {
+            "stale" => proof["observed_at_unix_ms"] = json!(1),
+            "wrong_challenge" => proof["response"]["challenge"] = json!("b".repeat(64)),
+            "incomplete" => proof["response"]["probe"]["decision"]["complete"] = json!(false),
+            "changed_identity" => f.paired["successor_scheduler_identity"]["listener"] = json!({"port": 9}),
+            _ => {
+                let replacement = f.state_path.with_file_name("replacement-preflight.json");
+                fs::copy(f.state_path.with_file_name("scheduler-preflight.json"), &replacement).unwrap();
+                f.paired["original_scheduler_preflight"] = pin(&replacement);
+            }
+        }
+        write_private(&path, &proof);
+        f.paired["scheduler_consumer"] = pin(&path);
+        f.save_paired();
+        assert_eq!(f.call()["ok"], false, "must refuse {field}");
+        f.assert_unresolved();
+    }
+}
+
 #[test]
 fn canonical_reconcile_rejects_changed_state_binding_and_sealed_config() {
     for field in [

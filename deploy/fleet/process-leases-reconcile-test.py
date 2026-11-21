@@ -222,6 +222,25 @@ class Contracts(unittest.TestCase):
                 r.check_original(self.state)
         self.assertEqual(r.rollout.read_occupancy(self.selector)['phase'],'active')
 
+    def test_successful_reconciliation_can_keep_the_exact_original_scheduler(self):
+        birth = {'pid': 111, 'boot_id': self.state['coordinator']['boot_id'], 'start_ticks': '11100'}
+        old = self.state['scheduler_identity']
+        old['process'].update(birth)
+        old.update(tree={'sha': 'c'*64}, listener={'port': 18787},
+                   service={'unit': 'agent-herder.service', 'files': [],
+                            'canonical_environment_sha256': 'd'*64, 'exec_start_sha256': 'e'*64})
+        def process_state(process):
+            return 'live' if process['pid'] == birth['pid'] else 'dead'
+
+        with patch.object(r.rollout, 'identity_state', side_effect=process_state), \
+                patch.object(r.readiness, 'birth', return_value=birth), \
+                patch.object(r.readiness, 'observe', return_value=old) as observe:
+            self.assertEqual(r.successor(self.state, birth['pid'], [])[0], old)
+            observe.assert_called_once_with(old)
+            observe.return_value = {**old, 'listener': {'port': 9999}}
+            with self.assertRaisesRegex(ValueError, 'original scheduler.*changed'):
+                r.successor(self.state, birth['pid'], [])
+
     def test_service_delta_rejects_unreviewed_file_and_canonical_change(self):
         old={'unit':'agent-herder.service','canonical_environment_sha256':'a'*64,'exec_start_sha256':'b'*64,
              'files':[{'path':'/fixture/60-external-adapters.conf','sha256':'c'*64}]}
