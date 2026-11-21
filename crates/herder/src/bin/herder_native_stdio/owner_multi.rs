@@ -305,7 +305,7 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
     let mut instances = HashSet::new();
     // Validate the complete set before starting any adapter.
     for profile in &profiles {
-        let native_binding = owner_launch::has_native_codex_binding(&profile.owner)
+        let native_binding = profile.owner.has_native_codex_binding()
             || owner_launch::has_native_opencode_binding(&profile.owner);
         if &profile.owner.principal != principal
             || (!native_binding && !profile.owner.has_ahap_runner())
@@ -316,7 +316,7 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
     let registry=Arc::new(herder::application::scoped_stop::wait_automation::DependencyRegistry::new());
     let mut bindings = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        let binding = if owner_launch::has_native_codex_binding(&profile.owner) {
+        let binding = if profile.owner.has_native_codex_binding() {
             owner_launch::build_with_registry(profile, registry.clone())?
         } else if owner_launch::has_native_opencode_binding(&profile.owner) {
             owner_native_opencode::build(profile, registry.clone()).await?

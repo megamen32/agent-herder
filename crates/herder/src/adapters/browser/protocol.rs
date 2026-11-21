@@ -196,6 +196,17 @@ impl Runner {
                     return Err(RpcError::Invalid);
                 }
                 let size = limit(params.get("limit"), 200, 200)?;
+                if config.provider == Provider::Zai
+                    && let Some(key) = params.get("recoverInputId")
+                {
+                    let key = key
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 4096)
+                        .ok_or(RpcError::Invalid)?;
+                    return sessions
+                        .zai_receipt_messages(config, session_id(params)?, key, size)
+                        .await;
+                }
                 sessions.messages(config, session_id(params)?, size).await
             }
             "createSession" => {
@@ -234,7 +245,7 @@ impl Runner {
                 let (text, key, files) = send_options(config.provider, &params["options"])?;
                 let mut result =
                     json!({"inputId":key,"sessionId":id,"harness":config.provider.name()});
-                let admission = match sessions.send(config, id, text, &files).await {
+                let admission = match sessions.send(config, id, key, text, &files).await {
                     Ok(native) => {
                         result["nativeInputMessageId"] = Value::String(native);
                         result["ok"] = Value::Bool(true);

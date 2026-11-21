@@ -250,7 +250,7 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
             const ui = ready(id, '');
             if (!ui) abort('not_ready');
             const previous = globalThis[stateKey];
-            if (previous?.started && (!previous.spent || previous.id == null || previous.id === id)) abort('submission_changed');
+            if (previous?.started && !previous.receipt && (!previous.spent || previous.id == null || previous.id === id)) abort('submission_changed');
             const ticket = crypto.randomUUID();
             globalThis[stateKey] = {ticket, editor: ui.editor, id, count, prefix, known};
             return verified({ticket});
@@ -263,6 +263,7 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
             saved.started = true;
             attemptState = saved;
             const {text, files: attachments} = params;
+            saved.textDigest = await hash(text);
             saved.files = await Promise.all(attachments.map(async file => ({
                 name: file.name, type: file.mime_type.toLowerCase(), digest: await hash(file.data_base64),
             })));
@@ -317,8 +318,11 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
             const found = location.pathname.match(/^\/c\/([a-f\d-]{12,80})$/i)?.[1];
             if (!found || !at(found) || (id != null && found !== id) ||
                 (saved.id != null && found !== saved.id) || saved.known?.has(found)) abort('route_changed');
-            const chat = await detail(found, user);
             saved.id = found;
+            // Keep the proved native ID until the next prepare. The runner can
+            // lose its reply between the browser read and the durable bind.
+            if (saved.receipt) return verified({chat_id: found, user_message_id: saved.receipt});
+            const chat = await detail(found, user);
             const ids = historyIds(chat);
             if (ids.length < saved.count || (saved.prefix !== null &&
                 await hash(JSON.stringify(ids.slice(0, saved.count))) !== saved.prefix)) abort('history_changed');
@@ -334,7 +338,7 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
                     if (msg.role !== 'user') continue;
                     const text = typeof msg.content === 'string' ? msg.content :
                         msg.content_blocks?.filter(b => ['text', 'markdown'].includes(b.type)).map(b => b.content).join('\n') ?? '';
-                    if (messageId !== null || text !== params.text) abort('ambiguous_user');
+                    if (messageId !== null || await hash(text) !== saved.textDigest) abort('ambiguous_user');
                     const originals = await files.messageFiles(msg, true);
                     if (originals.length !== saved.files.length) {
                         abort('attachment_mismatch');
@@ -361,7 +365,7 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
             if (await currentUser() !== user) abort('account_mismatch');
             if (!at(found) || saved !== globalThis[stateKey]) abort('route_changed');
             if (messageId !== null && !missing) {
-                delete globalThis[stateKey];
+                saved.receipt = messageId;
                 return verified({chat_id: found, user_message_id: messageId});
             }
             return verified({chat_id: found, pending: true});

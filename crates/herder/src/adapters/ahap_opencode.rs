@@ -828,7 +828,16 @@ impl NativeSessionReader for AhapOpenCode {
         {
             return Err(ReadError("AHAP session identity mismatch".into()));
         }
-        let messages = self.messages(target, 200)?;
+        let messages = if self.policy.harness == "zai"
+            && self.capabilities()["nativeProtocol"] == "direct-cdp"
+        {
+            self.raw_call(
+                "getSessionMessages",
+                json!({"id":target.native_session_id, "limit":200, "recoverInputId":key.0}),
+            )?
+        } else {
+            self.messages(target, 200)?
+        };
         Ok(recovered_message_id(
             &messages,
             &target.native_session_id,

@@ -58,6 +58,13 @@ impl OwnerProfile {
     pub fn has_ahap_runner(&self) -> bool {
         self.ahap_script.is_some() || matches!(self.kind.as_str(), "chatgpt" | "zai")
     }
+
+    pub fn has_native_codex_binding(&self) -> bool {
+        self.kind == "codex"
+            && ["AHAP_CODEX_BIN", "CODEX_HOME", "AHAP_CODEX_CWD"]
+                .iter()
+                .all(|name| self.ahap_env.contains_key(*name))
+    }
 }
 
 /// Only adapter configuration crosses the process boundary. Process loader,
@@ -501,7 +508,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
         owner.kind != "codex" || !recovery.valid()
             || (owner.ahap_script.is_some() && !owner.ahap_env.contains_key("AHAP_CODEX_BIN"))
             || (recovery.runner == RecoveryRunner::Service
-                && (!super::owner_launch::has_native_codex_binding(&owner)
+                && (!owner.has_native_codex_binding()
                     || !owner.ahap_env.get("AHAP_CODEX_SOCKET")
                         .is_some_and(|socket| Path::new(socket).is_absolute())))
     }) {

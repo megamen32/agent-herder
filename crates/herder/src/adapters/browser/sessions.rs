@@ -239,6 +239,56 @@ impl Sessions {
         }
     }
 
+    /// Only the first send has a private tab, a pre-click ticket and a reserved
+    /// draft. Check the requested key before attaching to that tab.
+    pub(super) async fn zai_receipt_messages(
+        &mut self,
+        config: &Config,
+        id: &str,
+        input: &str,
+        limit: usize,
+    ) -> Result<Value, RpcError> {
+        let SessionId::Draft(key) = config.provider.parse_id(id)? else {
+            return Ok(json!([]));
+        };
+        let draft = self.drafts.get(&key).map_err(stored_error)?;
+        let Some(attempt) = draft.zai_attempt.filter(|a| a.matches(input)) else {
+            return Ok(json!([]));
+        };
+        self.anchor.verify_scope(config).await?;
+        let (remote, message) = match (draft.remote_id, draft.first_message) {
+            (Some(remote), Some(message)) => (remote, message),
+            (None, None) if matches!(draft.state, DraftState::Sending | DraftState::Uncertain) => {
+                let Page::Zai(mut page) = Page::attach(config, &attempt.target).await? else {
+                    return Err(RpcError::Identity);
+                };
+                let Some((remote, message)) = page.read_submission(None, &attempt.ticket).await?
+                else {
+                    return Ok(json!([]));
+                };
+                self.drafts
+                    .bind(&key, &remote, &message, &attempt.target)
+                    .map_err(stored_error)?;
+                (remote, message)
+            }
+            _ => return Err(RpcError::Unavailable),
+        };
+        let mut rows = self.anchor.messages(&remote, id, limit).await?;
+        let matched = rows.as_array_mut().ok_or(RpcError::Unavailable)?;
+        matched.retain(|row| {
+            row["role"] == "user"
+                && row["sessionId"] == id
+                && row["id"] == message
+                && row["nativeMessageId"] == message
+        });
+        if let [row] = matched.as_mut_slice() {
+            row["inputId"] = json!(input);
+        } else {
+            matched.clear();
+        }
+        Ok(rows)
+    }
+
     /// A pending draft has no provider conversation. An unsettled draft cannot
     /// be inferred from the current tab, even when it happens to be busy.
     fn bound_route(
@@ -356,6 +406,7 @@ impl Sessions {
         &mut self,
         config: &Config,
         key: &str,
+        input: &str,
         text: &str,
         files: &[BrowserAttachment],
     ) -> Result<String, BrowserSubmitError> {
@@ -369,7 +420,19 @@ impl Sessions {
                 return Err(BeforeSend);
             }
         };
-        match fresh.submit(None, text, files).await {
+        let submitted = match &mut fresh {
+            Page::Zai(page) => {
+                let target = page.identity().target_id.clone();
+                page.submit_with_ticket(None, text, files, |ticket| {
+                    self.drafts
+                        .arm_zai(key, input, &target, ticket)
+                        .map_err(|_| BeforeSend)
+                })
+                .await
+            }
+            page => page.submit(None, text, files).await,
+        };
+        match submitted {
             Ok((remote, message)) if valid_route(&remote) && super::valid_label(&message) => {
                 self.drafts
                     .bind(key, &remote, &message, fresh.target())
@@ -393,6 +456,7 @@ impl Sessions {
         &mut self,
         config: &Config,
         id: &str,
+        input: &str,
         text: &str,
         files: &[BrowserAttachment],
     ) -> Result<String, BrowserSubmitError> {
@@ -409,7 +473,7 @@ impl Sessions {
                 draft = self.drafts.get(&key).map_err(|_| BeforeSend)?;
                 match (&draft.state, draft.remote_id.as_deref()) {
                     (DraftState::Pending, None) => {
-                        return self.first(config, &key, text, files).await;
+                        return self.first(config, &key, input, text, files).await;
                     }
                     (DraftState::Admitted, Some(remote)) => (remote, draft.target_id.as_deref()),
                     _ => return Err(Unknown),

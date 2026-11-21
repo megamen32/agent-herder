@@ -551,18 +551,27 @@ def lost_receipt_case(rpc, start, fixture, setup, name, args, record):
     fixture.call("withholdReceipt", {"enabled": False})
     rpc = start()
     restored = wait_task(rpc, task_id)
-    exact(restored["result"], result, "durable UNKNOWN result after restart")
+    if record["harness"] == "zai" and name == "create":
+        recovered = task_delivery_receipt(restored)
+        check(recovered and recovered.get("outcome") == "confirmed", "late first-send receipt")
+        exact(receipt_reference(recovered["native_receipt_id"]), ("message", user[0]),
+              "original task's exact native input")
+        exact(wait_task(rpc, task_id)["result"], restored["result"], "stable terminal task read")
+        record["receipt_ids"] = [user[0]]
+    else:
+        exact(restored["result"], result, "durable UNKNOWN result after restart")
     after_restart = fixture.call("snapshot")["sends"]
     exact(after_restart, accepted, "fixture ledger after restart")
     record["submit_counts"]["after_restart"] = len(after_restart)
     replay, replay_id = timed(record, "unknown_replay", lambda: owner_task(rpc, name, args))
     exact(replay_id, task_id, "same-key task after restart")
-    exact(replay["result"], result, "replayed UNKNOWN result")
+    exact(replay["result"], restored["result"], "durable result on same-key replay")
     if files:
         conflict(rpc, name, changed_file(args))
     final = fixture.call("snapshot")
     after_replay = final["sends"]
     exact(after_replay, accepted, "fixture ledger after same-key replay")
+    exact(final["submitClicks"], snapshot["submitClicks"], "no second click")
     exact(final["uploads"], snapshot["uploads"], "no duplicate uploads after UNKNOWN or conflict")
     record["submit_counts"]["after_replay"] = len(after_replay)
     record["replay_task"] = replay_id

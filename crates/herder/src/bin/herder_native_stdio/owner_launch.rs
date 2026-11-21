@@ -345,7 +345,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     // Codex profiles may retain an AHAP field for older manifests, but their
     // exact native executable/profile binding is now consumed directly by the
     // Rust app-server adapter. Both forms of browser runner use the AHAP port.
-    if !has_native_codex_binding(&opened.owner) && opened.owner.has_ahap_runner() {
+    if !opened.owner.has_native_codex_binding() && opened.owner.has_ahap_runner() {
         return super::owner_opencode::serve(opened).await;
     }
     let binding = build(opened, RecoveryRunner::Mcp)?;
@@ -615,13 +615,6 @@ fn codex_process(
         cwd,
         socket_path: owner.ahap_env.get("AHAP_CODEX_SOCKET").map(Into::into),
     })
-}
-
-pub(super) fn has_native_codex_binding(owner: &super::scoped_profile::OwnerProfile) -> bool {
-    owner.kind == "codex"
-        && ["AHAP_CODEX_BIN", "CODEX_HOME", "AHAP_CODEX_CWD"]
-            .iter()
-            .all(|name| owner.ahap_env.contains_key(*name))
 }
 
 pub(super) fn has_native_opencode_binding(owner: &super::scoped_profile::OwnerProfile) -> bool {
