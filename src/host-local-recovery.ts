@@ -7,26 +7,33 @@ import { homedir, hostname } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import type { ProcessWaitDecision } from "./process-wait-gate.js";
 
-export interface ExactRecoveryOwner {
-  readonly nativeId: string;
+type RecoveryScope = { nativeId: string } | "instance" | "invalid";
+
+export interface LocalRecoveryOwner {
+  readonly scope: RecoveryScope;
   readonly nodeRef: string;
-  decision(): Promise<ProcessWaitDecision>;
+  decision(nativeId: string): Promise<ProcessWaitDecision | undefined>;
 }
 
 export const recoveryUnavailable = (): ProcessWaitDecision => ({
   blocked: true, reason: "native_recovery_ownership_unavailable",
 });
 
-export function nativeHandoff(reply: unknown, start: number, end: number): ProcessWaitDecision {
+export function nativeHandoff(reply: unknown, start: number, end: number, scope: RecoveryScope): ProcessWaitDecision | undefined {
   const r = reply as { isError?: boolean; structuredContent?: Record<string, unknown> } | null;
   const v = r?.structuredContent;
   const observed = typeof v?.observedAt === "string" ? Date.parse(v.observedAt) : NaN;
   if (r?.isError || !v || v.version !== 1 || v.complete !== true || v.configured !== true ||
-      typeof v.reason !== "string" || !v.reason || typeof v.mapped !== "boolean" || v.blocked !== true || v.recoveryOwner !== "rust" ||
+      typeof v.reason !== "string" || !v.reason || typeof v.mapped !== "boolean" ||
       !Number.isFinite(observed) || observed < start - 5000 || observed > end + 5000 ||
       !Array.isArray(v.sessionRefs) || !v.sessionRefs.every(i => typeof i === "string") ||
       !Array.isArray(v.ruleRefs) || !v.ruleRefs.every(i => typeof i === "string") ||
       (!v.mapped && (v.sessionRefs.length || v.ruleRefs.length))) return recoveryUnavailable();
+  // An instance-wide Rust owner probes native presence for every unmapped ID.
+  // Only its definitive absence permits the existing wait rules to decide.
+  if (scope === "instance" && !v.mapped && v.reason === "native_session_not_registered" &&
+      v.blocked === false && v.recoveryOwner === undefined) return undefined;
+  if (v.blocked !== true || v.recoveryOwner !== "rust") return recoveryUnavailable();
   return { blocked: true, recoveryOwner: "rust",
     reason: v.reason === "rust_recovery_handoff" ? v.reason : "native_recovery_held" };
 }
@@ -64,13 +71,13 @@ async function pinned(path: string, pin: string, limit: number, keepBytes = fals
   } finally { await file.close(); }
 }
 
-// Only the Fleet singleton enables this stdio child. Its current scheduler sweep
-// also reopens a dead child; queries in helper processes can only defer the exact ID.
-export class HostLocalRecovery implements ExactRecoveryOwner {
+// The Fleet scheduler owns and reopens the stdio child. Helper processes
+// defer matching IDs while the owner is unavailable.
+export class HostLocalRecovery implements LocalRecoveryOwner {
   private enabled = false;
   private client?: Client;
   private connecting?: Promise<Client>;
-  constructor(readonly nativeId: string, readonly nodeRef: string, private readonly env: NodeJS.ProcessEnv) {}
+  constructor(readonly scope: RecoveryScope, readonly nodeRef: string, private readonly env: NodeJS.ProcessEnv) {}
 
   start(): void { this.enabled = true; this.maintain(); }
   maintain(): void {
@@ -81,14 +88,14 @@ export class HostLocalRecovery implements ExactRecoveryOwner {
     const client = this.client ?? await this.connecting?.catch(() => undefined);
     if (client) await client.close();
   }
-  async decision(): Promise<ProcessWaitDecision> {
+  async decision(nativeId: string): Promise<ProcessWaitDecision | undefined> {
     try {
       const client = await this.connected();
       const start = Date.now();
       const reply = await client.callTool({ name: "automation", arguments: {
-        action: "wait_status", harness: "codex", node_ref: this.nodeRef, native_session_id: this.nativeId,
+        action: "wait_status", harness: "codex", node_ref: this.nodeRef, native_session_id: nativeId,
       } }, { timeout: 5000 });
-      return nativeHandoff(reply, start, Date.now());
+      return nativeHandoff(reply, start, Date.now(), this.scope);
     } catch { return recoveryUnavailable(); }
   }
   private async connected(): Promise<Client> {
@@ -99,7 +106,10 @@ export class HostLocalRecovery implements ExactRecoveryOwner {
   }
   private async open(): Promise<Client> {
     const e = this.env;
-    if (hostname() !== this.nodeRef) throw new Error("host-local recovery node mismatch");
+    if (this.scope === "invalid") throw new Error("invalid host-local recovery binding");
+    if (hostname() !== this.nodeRef || e.AGENT_HERDER_LOCAL_RECOVERY_NODE !== this.nodeRef) {
+      throw new Error("host-local recovery node mismatch");
+    }
     if ((e.AGENT_HERDER_CANONICAL_MODE ?? "legacy") !== "legacy" || e.AGENT_HERDER_CANONICAL_CONFIG ||
         e.AGENT_HERDER_PROCESS_WAIT_AUTHORITY || e.AGENT_HERDER_PROCESS_WAIT_SELECTOR ||
         e.AGENT_HERDER_PROCESS_WAIT_LAUNCHER || e.AGENT_HERDER_PROCESS_WAIT_NODE_REF || e.HERDER_V1_ENTRY) {
@@ -116,11 +126,13 @@ export class HostLocalRecovery implements ExactRecoveryOwner {
     const profile = JSON.parse((await pinned(path, e.AGENT_HERDER_LOCAL_RECOVERY_PROFILE_SHA256 ?? "", 16384, true)).toString("utf8"));
     const owner = profile.owner;
     const scope = owner?.codex_recovery?.legacy_handoff;
+    const matchesScope = this.scope === "instance"
+      ? scope?.instance_wide === true && scope.native_sessions === undefined
+      : Array.isArray(scope?.native_sessions) && scope.native_sessions.length === 1 &&
+        scope.native_sessions[0] === this.scope.nativeId && (scope.instance_wide === undefined || scope.instance_wide === false);
     if (owner?.node !== this.nodeRef || !this.nodeRef || owner.kind !== "codex" ||
         owner.instance !== e.AGENT_HERDER_LOCAL_RECOVERY_INSTANCE || !owner.instance ||
-        !owner.ahap_env?.AHAP_CODEX_SOCKET || !Array.isArray(scope?.native_sessions) ||
-        scope.native_sessions.length !== 1 || scope.native_sessions[0] !== this.nativeId ||
-        scope.instance_wide || scope.workspaces !== undefined || owner.opencode_recovery) throw new Error("host-local recovery scope mismatch");
+        !owner.ahap_env?.AHAP_CODEX_SOCKET || !matchesScope || scope.workspaces !== undefined || owner.opencode_recovery) throw new Error("host-local recovery scope mismatch");
     await pinned(core, e.AGENT_HERDER_LOCAL_RECOVERY_CORE_SHA256 ?? "", 128 * 1024 * 1024);
     const client = new Client({ name: "herder-local-recovery-gate", version: "1" },
       { versionNegotiation: { mode: { pin: "2026-07-28" } } });
@@ -138,6 +150,14 @@ export class HostLocalRecovery implements ExactRecoveryOwner {
   }
 }
 
-const exactId = process.env.AGENT_HERDER_LOCAL_RECOVERY_NATIVE_ID;
-export const installedLocalRecovery = exactId
-  ? new HostLocalRecovery(exactId, process.env.AGENT_HERDER_LOCAL_RECOVERY_NODE ?? "", process.env) : undefined;
+export function configuredLocalRecovery(env: NodeJS.ProcessEnv): HostLocalRecovery | undefined {
+  const nativeId = env.AGENT_HERDER_LOCAL_RECOVERY_NATIVE_ID;
+  const wide = env.AGENT_HERDER_LOCAL_RECOVERY_INSTANCE_WIDE;
+  if (nativeId === undefined && wide === undefined) return undefined;
+  let scope: RecoveryScope = "invalid";
+  if (wide === undefined && nativeId) scope = { nativeId };
+  if (wide === "true" && nativeId === undefined) scope = "instance";
+  return new HostLocalRecovery(scope, hostname(), env);
+}
+
+export const installedLocalRecovery = configuredLocalRecovery(process.env);
