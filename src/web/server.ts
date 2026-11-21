@@ -1,3 +1,4 @@
+import { LOCAL_RECOVERY_WAIT_PATH, observeInstalledRecoveryWait } from "../process-wait-gate.js";
 import { CANONICAL_RUNTIME_STATUS_PATH, CanonicalRuntimeStatusError, parseCanonicalRuntimeStatusRequest, type CanonicalRuntimeStatusSource } from "../canonical-runtime-status.js";
 import {incidentSessionPolicy} from '../automation/incident-session-router.js';
 import { recordProjectLifecycle, type IntegrationWake } from "../project-integration.js";
@@ -15,6 +16,7 @@ import type { AutopilotRunnerInput } from "../autopilot-runner.js";
 import { projectSessionInventory } from "./session-inventory.js";
 import { isRestrictedProjectPath } from "../web-ui/model-status.js";
 import { SessionImageStore } from "../session-images.js";
+import { validBrowserInputId } from "../adapters/canonical-browser-actions.js";
 import { getDefaultMcpClientTokenStore } from "../mcp/client-token-store.js";
 import { getDefaultMcpOAuthTokenStore, MCP_OAUTH_OWNER_SCOPE, type McpOAuthTokenStore } from "../mcp/oauth-token-store.js";
 import { MCP_OAUTH_ISSUER, MCP_OAUTH_PRM_URL, MCP_OAUTH_RESOURCE } from "../mcp/oauth-constants.js";
@@ -68,11 +70,14 @@ import { parseNoticeIncident, readIncidentBinding, NoticeIncidentBindingError, i
 import { noticeplaceAttemptOutcome } from '../automation/noticeplace-attempt-outcome.js';
 import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
 import { HarnessRuntimeSettingsError, HarnessRuntimeSettingsStore, harnessRuntimeView, type HarnessRuntimeView } from "../harness-runtime-settings.js";
-import { AutopilotSessionStore, parseNoticeAttempt, type AutopilotHarness } from "../autopilot/session-store.js";
+import { AutopilotSessionStore, isAutopilotHarness, parseNoticeAttempt, readGoalSnapshot, type AutopilotHarness } from "../autopilot/session-store.js";
+import { GoalStore } from "../autopilot/goal-store.js";
+import type { CanonicalAutomationClient } from "../canonical-herder.js";
+import { nativeAutopilotCommand } from "../autopilot/native-command.js";
 import { parseChatCommand, type ChatCommandPipeline } from "../autopilot/chat-commands.js";
 import { browserChatInventorySummary } from "../adapters/browser-chat-inventory-cache.js";
 import { autopilotGoalApi, recordGoalHumanInput, stopGoalForSession } from "./autopilot-goal-api.js";
-import { isMcpConnectionOwnerRequest as isGoalControlOwnerRequest } from "./fleet-wiring.js";
+import { isMcpConnectionOwnerRequest as isPanelOwnerRequest } from "./fleet-wiring.js";
 import { codexSelectorKey, createCodexSelectorFromStopSession, effectivePolicyAllowsTarget } from "../autopilot/policy.js";
 import type { AutoCompactService, AutoCompactStore } from "../autocontinue/auto-compact.js";
 import type { OperatorCohortEnrollmentTarget, OperatorContinuationEnrollmentTarget, SessionAutostartStore } from "../autopilot/unfinished-session-launcher.js";
@@ -165,6 +170,7 @@ export interface WebDependencies {
   allowOwnerLoopbackMcp?: boolean;
   /** Read-only proof from the process-owned canonical scheduler and wait gate. */
   canonicalRuntimeStatus?: CanonicalRuntimeStatusSource;
+  canonicalClient?: CanonicalAutomationClient;
   herderEvents?: HerderEventBus;
   choiceRegistry?: ChoiceRegistry;
   choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>;
@@ -1041,7 +1047,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
   const manualChoiceResume = dependencies.choiceResume ?? ((request: ResumeTransportRequest) => resumeSelectedTarget(request, supervisor, "human"));
   const ownsUserMessageDelivery=!dependencies.userMessageDelivery;
   const userMessageDelivery = dependencies.userMessageDelivery ?? (dependencies.jobs ? new UserMessageDelivery(dependencies.adapters, supervisor, dependencies.jobs) : undefined);
-  const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore(join(homedir(), ".local/state/agent-herder/session-images"));
+  const sessionImages = dependencies.sessionImageStore ?? new SessionImageStore();
   const rag = agentHerderRag();
   const stopActiveFleetInventory = process.env.VITEST ? undefined : startActiveFleetInventoryOwner();
   const stopActiveInventory = process.env.VITEST ? undefined : startActiveInventoryOwner(()=>supervisor.nativeInventorySnapshot(),dependencies.adapters);
@@ -1230,7 +1236,7 @@ export function createWebServer(dependencies: WebDependencies): Server {
       // checks the owner of the request itself.
       if (await settingsApi(request, response)) return;
       if (await rag.handleHttp(request, response, async (harness, id) => (await dependencies.adapters.get(harness)?.getSession(id)) || undefined)) return;
-      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus, dependencies.resumeAfter, dependencies.cadence);
+      await route(request, response, supervisor, dependencies.adapters, dependencies.humanRequests, dependencies.projectLaunchDispatch, mcpNodeHandler, dependencies.adapterRegistry, mcpAuthToken, dependencies.allowOwnerLoopbackMcp === true, dependencies.choiceRegistry, selectedResume, dependencies.humanResume, manualChoiceResume, dependencies.choiceQuery, dependencies.autopilotSessionStore, dependencies.autopilotPolicyStore, dependencies.sessionAutostartStore, dependencies.automationLaunchPolicyStore, sessionVisualizer, dependencies.jobs, dependencies.herderEvents, userMessageDelivery, dependencies.autoCompactService, dependencies.autoCompactStore, sessionImages, dependencies.backgroundAutopilotStop, dependencies.integratorRuntime, dependencies.scopedSupervisorFactory, noticeplaceHealthObserver, launchHealthPlans, dependencies.automationDisarmStore, dependencies.automationDisarmTransport, dependencies.noticeAnswerFetch, dependencies.composerTranscriber, dependencies.sessionQueueControl, dependencies.mcpOAuthTokenStore, dependencies.humanRequestJoin, dependencies.projectIntegrationWake, dependencies.chatCommands, dependencies.canonicalRuntimeStatus, dependencies.resumeAfter, dependencies.cadence, dependencies.canonicalClient);
     } catch (err) {
       // A cancelled/streaming response cannot receive a second JSON status.
       // Re-throwing from this async listener would terminate the singleton.
@@ -1687,7 +1693,7 @@ export async function computeModelLaunchVerdicts(input: {
   return Object.fromEntries(entries);
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource, resumeAfter?: ResumeAfterBackend, cadence?: CadenceScheduler): Promise<void> {
+async function route(request: IncomingMessage, response: ServerResponse, supervisor: SessionSupervisor, adapters: Map<string, HarnessAdapter>, humanRequests?: HumanRequestRegistry, projectLaunchDispatch?: ProjectLaunchDispatcher, mcpNodeHandler?: NodeMcpRequestHandler, adapterRegistry?: AdapterRegistry, mcpAuthToken?: string, allowOwnerLoopbackMcp=false, choiceRegistry?: ChoiceRegistry, choiceResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, humanResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceManualResume?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, choiceQuery?: (request: ResumeTransportRequest) => Promise<ResumeReceipt>, autopilotSessionStore?: AutopilotSessionStore, autopilotPolicyStore?: AutopilotPolicyStore, sessionAutostartStore?: SessionAutostartStore, automationLaunchPolicyStore?: AutomationLaunchPolicyStore, sessionVisualizer?: (details: SessionDetails) => Promise<string>, jobs?: HerderJobRegistry, events?: HerderEventBus, userMessageDelivery?: UserMessageDelivery, autoCompactService?: AutoCompactService, autoCompactStore?: AutoCompactStore, sessionImages?: SessionImageStore, backgroundAutopilotStop?: BackgroundAutopilotStop, integratorRuntime?: Pick<IntegratorFleetRuntime, "adapterForSession">, scopedSupervisorFactory?: (adapters: Map<string, HarnessAdapter>) => SessionSupervisor, noticeplaceHealthObserver?: NoticeplaceHealthObserver, launchHealthPlans?: LaunchHealthPlans, automationDisarmStore?: AutomationDisarmStore, automationDisarmTransport?: FleetDisarmTransport, noticeAnswerFetch?: typeof fetch, composerTranscriber?: ComposerTranscriber, sessionQueueControl?: SessionQueueControlGateway, mcpOAuthTokenStore?: McpOAuthTokenStore, humanRequestJoin?: (requestId: string, reason: string) => Promise<number>, projectIntegrationWake?: IntegrationWake, chatCommands?: ChatCommandPipeline, canonicalRuntimeStatus?: CanonicalRuntimeStatusSource, resumeAfter?: ResumeAfterBackend, cadence?: CadenceScheduler, canonicalClient?: CanonicalAutomationClient): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
   if (await handleMcpOAuthRequest(request, response, { store: mcpOAuthTokenStore })) return;
   if (await handleMcpConnectionRequest(request, response, { configured: !!mcpAuthToken, enabled: !!mcpNodeHandler })) return;
@@ -2290,7 +2296,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
   }
   const goalMatch = url.pathname.match(/^\/api\/autopilot\/goals\/([^/]+)\/([^/]+)$/);
   if (goalMatch && (request.method === "GET" || request.method === "PUT")) {
-    if (!await isGoalControlOwnerRequest(request)) return sendJson(response, 401, { available: false, error: "Управление целью доступно владельцу выбранной сессии." });
+    if (!await isPanelOwnerRequest(request)) return sendJson(response, 401, { available: false, error: "Управление целью доступно владельцу выбранной сессии." });
     const body = request.method === "PUT" ? await readJson(request) : undefined;
     const harness = decodeURIComponent(goalMatch[1]);
     const sessionId = decodeURIComponent(goalMatch[2]);
@@ -2312,6 +2318,29 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     const harness = decodeURIComponent(autopilotSessionMatch[1]);
     const sessionId = decodeURIComponent(autopilotSessionMatch[2]);
     if (!isAutopilotHarness(harness) || sessionId.trim().length === 0) return sendJson(response, 400, { error: "unsupported harness or empty session id" });
+    const body: Record<string, unknown> = request.method === "PUT" ? await readJson(request)
+      : { enabled: false, cwd: url.searchParams.get("cwd") || "/" };
+    if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || !body.cwd.trim())
+      return sendJson(response, 400, { error: "enabled and cwd are required" });
+    let resetNative = false;
+    if (harness === "codex" && body.noticeIncident === undefined && body.noticeAttempt === undefined) {
+      if (canonicalClient) {
+        const authorized = request.headers.authorization
+          ? !!mcpAuthToken && sameSecret(request.headers.authorization, "Bearer " + mcpAuthToken)
+          : await isPanelOwnerRequest(request);
+        if (!authorized) return sendJson(response, 401, { error: "Autopilot session control requires the panel owner" });
+      }
+      const command = request.method === "GET" ? "status" : request.method === "DELETE" ? "reset" : body.enabled ? "on" : "off";
+      try {
+        if (command === "on" && await getHumanStopStore().isHeld(harness, sessionId))
+          return sendJson(response, 200, { harness, sessionId, enabled: false, source: "session", human_stop_held: true });
+        const result = await nativeAutopilotCommand(canonicalClient, command, { harness, sessionId, cwd: body.cwd }, autopilotSessionStore, autopilotPolicyStore);
+        if (result && command !== "reset") return sendJson(response, 200, result);
+        resetNative = !!result;
+      } catch (error) {
+        return sendJson(response, 503, { error: (error as Error).message });
+      }
+    }
     if (request.method === "GET") {
       const record = await autopilotSessionStore.get(harness, sessionId);
       const effective = autopilotPolicyStore ? await autopilotPolicyStore.readEffective() : undefined;
@@ -2319,16 +2348,21 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const inheritedEnabled = effective
         ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd })
         : harness === "codex";
+      const goal = harness === "codex" ? await readGoalSnapshot(new GoalStore(autopilotSessionStore.stateDir), { harness, sessionId, cwd }) : undefined;
+      const goalOptIn = record?.enabled !== false && goal?.armed === true;
       return sendJson(response, 200, {
         harness,
         sessionId,
-        enabled: record?.enabled ?? inheritedEnabled,
+        enabled: goalOptIn || (record?.enabled ?? inheritedEnabled),
         source: record?.enabled !== undefined ? "session" : effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
+        ...(harness === "codex" && { command_source: goalOptIn ? "goal-session" : record?.enabled !== undefined ? "session" : effective?.source,
+          goal_opt_in: goalOptIn, goal_revision: goal?.goalRevision, goal_completed: goal?.completed,
+          human_stop_held: await getHumanStopStore().isHeld(harness, sessionId) }),
         ...(record ? { cwd: record.cwd, updatedAt: record.updatedAt } : {}),
       });
     }
     if (request.method === "DELETE") {
-      await autopilotSessionStore.delete(harness, sessionId);
+      if (!resetNative) await autopilotSessionStore.delete(harness, sessionId);
       // The incident binding of this session is gone: its card must not keep
       // receiving progress from this session.
       noticeplaceHealthObserver?.stopTarget({ harness, sessionId });
@@ -2341,10 +2375,6 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         enabled: effective ? effectivePolicyAllowsTarget(effective, { harness, sessionId, cwd }) : harness === "codex",
         source: effective ? "policy" : harness === "codex" ? "plugin-default" : "default",
       });
-    }
-    const body = await readJson(request);
-    if (typeof body.enabled !== "boolean" || typeof body.cwd !== "string" || body.cwd.trim().length === 0) {
-      return sendJson(response, 400, { error: "enabled and cwd are required" });
     }
     try {
       const previous = await autopilotSessionStore.get(harness, sessionId);
@@ -2359,6 +2389,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       const noticeIncident = requested === undefined ? undefined : { ...requested, ...(planId ? { planId } : {}) };
       const record = await autopilotSessionStore.set({ harness, sessionId, cwd: body.cwd, ...(noticeIncident === undefined ? {} : { noticeIncident }),
         ...(body.noticeAttempt === undefined ? {} : { noticeAttempt: parseNoticeAttempt(body.noticeAttempt) }) }, body.enabled);
+      if (body.enabled && harness === "codex" && !record.noticeIncident && !record.noticeAttempt)
+        await autopilotSessionStore.resumeGoalIfPresent(record);
       if (body.enabled && record.noticeIncident) {
         // The center armed this session for one original incident: watch it
         // until it ends and keep that incident's card truthful meanwhile.
@@ -3076,7 +3108,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendJson(response, 404, { error: (error as Error).message });
     }
   }
-  if (url.pathname === "/mcp" || url.pathname === CANONICAL_RUNTIME_STATUS_PATH) {
+  if (url.pathname === "/mcp" || url.pathname === CANONICAL_RUNTIME_STATUS_PATH || url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
     const authorization = request.headers.authorization;
     let authenticatedToken: string | undefined;
     let oauthPrincipal: Awaited<ReturnType<ReturnType<typeof getDefaultMcpOAuthTokenStore>["verifyAccessToken"]>>;
@@ -3095,7 +3127,7 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       response.setHeader("Cache-Control", "no-store");
       return sendJson(response, 401, { error: "unauthorized" });
     }
-    if (url.pathname === CANONICAL_RUNTIME_STATUS_PATH) {
+    if (url.pathname === CANONICAL_RUNTIME_STATUS_PATH || url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("X-Content-Type-Options", "nosniff");
       if (request.method !== "GET") {
@@ -3104,6 +3136,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       }
       try {
         const query = parseCanonicalRuntimeStatusRequest(url.searchParams);
+        if (url.pathname === LOCAL_RECOVERY_WAIT_PATH) {
+          if (!query.probe) return sendJson(response, 400, { error: "invalid_runtime_probe" });
+          return sendJson(response, 200, { challenge: query.challenge, pid: process.pid,
+            decision: await observeInstalledRecoveryWait(query.probe) });
+        }
         if (!canonicalRuntimeStatus) throw new CanonicalRuntimeStatusError("canonical_runtime_unavailable");
         return sendJson(response, 200, await canonicalRuntimeStatus.observe(query));
       } catch (error) {
@@ -4000,6 +4037,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "scoped" && !route.supervisor) return sendJson(response, 503, { ok: false, state: "not_attempted", nonRetryable: true, error: "Scoped session control port is unavailable." });
     if (route.kind === "scoped" && !["message", "resume", "stop"].includes(action)) return sendJson(response, 409, { ok: false, state: "not_attempted", nonRetryable: true, error: "This project-scoped control is not supported." });
     const sessionSupervisor = route.kind === "scoped" ? route.supervisor! : supervisor;
+    const capabilities = (route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities;
+    if (capabilities?.stableInputIdRequired && ["message", "stop", "cancel"].includes(action)) {
+      if (body.hostId !== undefined && body.hostId !== hostname()) return sendJson(response, 409, { error: "browser_session_host_mismatch" });
+      if (!validBrowserInputId(body.inputId)) return sendJson(response, 400, { error: "browser_input_id_required" });
+    }
     if (["stop", "cancel", "terminate"].includes(action)) {
       const localRecord = route.kind !== "scoped" && isAutopilotHarness(harness) ? await autopilotSessionStore?.get(harness, id) : undefined;
       if (localRecord) await stopGoalForSession({ harness, sessionId: id, cwd: localRecord.cwd });
@@ -4013,13 +4055,13 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
       return sendOperationResult(response, await sessionSupervisor.resumeSession(harness, id, optionalString(body.message), body.humanRequested === true, optionalString(body.inputId)));
     }
     if (action === "stop") {
-      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id));
+      return sendOperationResult(response, await sessionSupervisor.stopSession(harness, id, optionalString(body.inputId)));
     }
     if (action === "terminate") {
       return sendOperationResult(response, await supervisor.terminateSession(harness, id));
     }
     if (action === "cancel") {
-      return sendOperationResult(response, await supervisor.cancelTurn(harness, id));
+      return sendOperationResult(response, await supervisor.cancelTurn(harness, id, optionalString(body.inputId)));
     }
     if (action === "compact") {
       if (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512) return sendJson(response, 400, { error: "compact requires a stable inputId" });
@@ -4069,16 +4111,19 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
         body.remember === true,
       ));
     }
-    if (typeof body.message !== "string" || body.message.trim().length === 0) {
+    const attachmentIds = body.attachmentIds ?? body.imageIds;
+    const attachmentOnly = harness === "chatgpt" && capabilities?.stableInputIdRequired && Array.isArray(attachmentIds) && attachmentIds.length > 0;
+    if (typeof body.message !== "string" || (body.message.trim().length === 0 && !attachmentOnly)) {
       return sendJson(response, 400, { error: "message must be a non-empty string" });
     }
     if (body.mode !== undefined && (typeof body.mode !== "string" || !["queue", "steer", "sync"].includes(body.mode))) return sendJson(response, 400, { error: "invalid delivery mode" });
     if (body.inputId !== undefined && (typeof body.inputId !== "string" || !body.inputId.trim() || body.inputId.length > 512)) return sendJson(response, 400, { error: "invalid inputId" });
     // A chat command is the owner talking to the herder, not to the agent: it
     // is executed here and never delivered to the harness chat as a message.
-    if (body.imageIds === undefined && typeof body.message === "string" && parseChatCommand(body.message)) {
+    const chatCommand = attachmentIds === undefined ? parseChatCommand(body.message) : null;
+    if (chatCommand) {
       if (!chatCommands) return sendJson(response, 503, { ok: false, error: "Команды чата недоступны" });
-      const outcome = await chatCommands.handleDirect(parseChatCommand(body.message)!, harness, id);
+      const outcome = await chatCommands.handleDirect(chatCommand, harness, id);
       return sendJson(response, outcome.ok ? 200 : 409, {
         ok: outcome.ok,
         admitted: true,
@@ -4097,10 +4142,8 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     }
     let images: import("../types/index.js").MessageImage[];
     try {
-      const attachmentIds = body.attachmentIds ?? body.imageIds;
-      const supportsAttachment = (route.kind === "scoped" ? route.adapter : adapters.get(harness))?.controlCapabilities;
-      if (body.imageIds !== undefined && !supportsAttachment?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
-      if (body.attachmentIds !== undefined && !supportsAttachment?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
+      if (body.imageIds !== undefined && !capabilities?.imageInput) throw new Error("Эта среда пока не принимает изображения.");
+      if (body.attachmentIds !== undefined && !capabilities?.fileInput) throw new Error("Эта среда пока не принимает файлы.");
       images = await sessionImages!.resolve(harness, id, attachmentIds);
     } catch (error) { return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
     if (body.humanRequested === true && route.kind !== "scoped" && isAutopilotHarness(harness)) {
@@ -4267,10 +4310,6 @@ function validSourceSessionFields(value: Record<string, unknown>): boolean {
 
 function hasControlCharacters(value: string): boolean {
   return /[\u0000-\u001f\u007f]/u.test(value);
-}
-
-function isAutopilotHarness(value: string): value is AutopilotHarness {
-  return value === "codex" || value === "opencode" || value === "claude" || value === "hermes" || value === "zcode" || value === "chatgpt" || value === "zai";
 }
 
 /**

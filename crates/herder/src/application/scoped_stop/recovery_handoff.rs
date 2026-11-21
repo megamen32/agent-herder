@@ -1,4 +1,8 @@
 //! Owner state and read fences for existing-session recovery.
+use crate::{
+    adapters::codex::control::CodexControl,
+    domain::{adapter::ReadError, address::SessionAddress, recovery::RecoveryControl},
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
@@ -7,6 +11,7 @@ use std::{
     io::{self, Read},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Component, Path, PathBuf},
+    sync::{Arc, OnceLock},
 };
 
 const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
@@ -16,6 +21,12 @@ const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 pub struct LegacyRecoveryHandoff {
     #[serde(default, deserialize_with = "explicit_cohort")]
     native_sessions: Option<BTreeSet<String>>,
+    #[serde(default, deserialize_with = "explicit_workspaces")]
+    workspaces: BTreeSet<WorkspaceChannel>,
+    // Wait status receives a clone of this profile before recovery is composed.
+    // Both consumers use the same instance-bound reader.
+    #[serde(skip)]
+    workspace_probe: Arc<OnceLock<Arc<dyn RecoveryWorkspaceProbe>>>,
     #[serde(default)]
     pub(super) instance_wide: bool,
     activation_file: PathBuf,
@@ -23,6 +34,64 @@ pub struct LegacyRecoveryHandoff {
     human_requests: PathBuf,
     choices: PathBuf,
     unfinished_sessions: PathBuf,
+}
+
+#[derive(Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceChannel {
+    cwd: String,
+    provider: String,
+}
+
+impl WorkspaceChannel {
+    fn valid(&self) -> bool {
+        super::registration::canonical_nested_workspace_path(&self.cwd).as_deref()
+            == Some(&self.cwd)
+            && super::session_recovery::route_id(&self.provider)
+    }
+}
+
+/// Metadata from the same addressed owner. A missing or incomplete observation
+/// cannot identify the workspace to the compatibility writer.
+pub trait RecoveryWorkspaceProbe: RecoveryControl {
+    fn read_workspace(&self, _target: &SessionAddress) -> Result<WorkspaceChannel, ReadError> {
+        Err(ReadError("native workspace probe unavailable".into()))
+    }
+}
+
+impl<T: RecoveryControl + super::session_recovery::RecoveryListing> RecoveryWorkspaceProbe for T {}
+
+impl RecoveryWorkspaceProbe for CodexControl {
+    fn read_workspace(&self, target: &SessionAddress) -> Result<WorkspaceChannel, ReadError> {
+        let thread = self.read_snapshot_thread(target)?;
+        let cwd = thread["cwd"]
+            .as_str()
+            .ok_or_else(|| ReadError("missing native cwd".into()))?;
+        let provider = thread["modelProvider"]
+            .as_str()
+            .ok_or_else(|| ReadError("missing native provider".into()))?;
+        Ok(WorkspaceChannel {
+            cwd: cwd.into(),
+            provider: provider.into(),
+        })
+    }
+}
+
+fn explicit_workspaces<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> Result<BTreeSet<WorkspaceChannel>, D::Error> {
+    use serde::de::Error;
+    let entries = Vec::<WorkspaceChannel>::deserialize(de)?;
+    if entries.is_empty() {
+        return Err(D::Error::custom("empty workspace transfer"));
+    }
+    let mut workspaces = BTreeSet::new();
+    for entry in entries {
+        if !entry.valid() || !workspaces.insert(entry) {
+            return Err(D::Error::custom("invalid or duplicate workspace channel"));
+        }
+    }
+    Ok(workspaces)
 }
 
 fn explicit_cohort<'de, D: serde::Deserializer<'de>>(
@@ -41,12 +110,19 @@ impl LegacyRecoveryHandoff {
         self.native_sessions.as_ref()
     }
 
+    pub(super) fn scans_workspaces(&self) -> bool {
+        !self.workspaces.is_empty()
+    }
+
     pub(super) fn valid(&self) -> bool {
         (match &self.native_sessions {
-            None => self.instance_wide,
-            Some(ids) => !self.instance_wide && (1..=128).contains(&ids.len())
-                && ids.iter().all(|id| valid_native_id(id)),
-        })
+            None => self.instance_wide || self.scans_workspaces(),
+            Some(ids) => {
+                !self.instance_wide
+                    && (1..=128).contains(&ids.len())
+                    && ids.iter().all(|id| valid_native_id(id))
+            }
+        }) && !(self.instance_wide && self.scans_workspaces())
             && [
                 &self.activation_file,
                 &self.human_stops,
@@ -58,13 +134,87 @@ impl LegacyRecoveryHandoff {
             .all(|path| path.is_absolute())
     }
 
-    pub(super) fn owns(&self, native_id: &str) -> bool {
+    pub(super) fn owns_id(&self, native_id: &str) -> bool {
         valid_native_id(native_id)
             && (self.instance_wide
                 || self
                     .native_sessions
                     .as_ref()
                     .is_some_and(|ids| ids.contains(native_id)))
+    }
+
+    /// Exact transfers retain their original contract. For a dynamic transfer,
+    /// the native channel must match and legacy must have released its attempt.
+    pub(super) fn owns(
+        &self,
+        harness: &str,
+        id: &str,
+        observe: impl FnOnce() -> Option<WorkspaceChannel>,
+    ) -> io::Result<bool> {
+        if self.owns_id(id) {
+            return Ok(true);
+        }
+        if harness != "codex" || !self.scans_workspaces() || !valid_native_id(id) {
+            return Ok(false);
+        }
+        let matches = observe()
+            .filter(WorkspaceChannel::valid)
+            .map(|c| self.workspaces.contains(&c));
+        if matches == Some(false) {
+            return Ok(false);
+        }
+        let previous: Sessions<LegacyAttempt> = private_json(&self.unfinished_sessions)?;
+        require_v1(previous.version)?;
+        if previous
+            .sessions
+            .iter()
+            .any(|r| r.harness == harness && r.session_id == id && r.retains_workspace_session())
+        {
+            return Ok(false);
+        }
+        matches.ok_or_else(|| io::Error::other("native recovery workspace unavailable"))
+    }
+
+    pub(super) fn bind_workspace_probe(&self, probe: Arc<dyn RecoveryWorkspaceProbe>) {
+        if self.scans_workspaces() {
+            self.workspace_probe.get_or_init(|| probe);
+        }
+    }
+
+    pub(super) fn native_channel(
+        &self,
+        harness: &str,
+        target: &SessionAddress,
+    ) -> Option<WorkspaceChannel> {
+        let probe = self.workspace_probe.get()?;
+        if probe.instance() != &target.instance || probe.harness() != harness {
+            return None;
+        }
+        probe.read_workspace(target).ok()
+    }
+
+    pub(super) fn owns_native(&self, harness: &str, target: &SessionAddress) -> io::Result<bool> {
+        self.owns(harness, &target.native_session_id, || {
+            self.native_channel(harness, target)
+        })
+    }
+
+    pub(super) fn owns_ancestor(&self, harness: &str, target: &SessionAddress, cwd: &str) -> bool {
+        self.owns(harness, &target.native_session_id, || {
+            self.native_channel(harness, target)
+                .filter(|c| c.cwd == cwd)
+        })
+        .unwrap_or(false)
+    }
+
+    pub(super) fn owns_boundary(&self, harness: &str, id: &str, cwd: &str, provider: &str) -> bool {
+        self.owns(harness, id, || {
+            Some(WorkspaceChannel {
+                cwd: cwd.into(),
+                provider: provider.into(),
+            })
+        })
+        .unwrap_or(false)
     }
 
     pub(super) fn released(&self) -> bool {
@@ -77,64 +227,20 @@ impl LegacyRecoveryHandoff {
     }
 
     fn read_held(&self, harness: &str, native_id: &str) -> io::Result<bool> {
-        let holds: Sessions<Hold> = private_json(&self.human_stops)?;
-        require_v1(holds.version)?;
-        if holds
-            .sessions
-            .iter()
-            .any(|r| r.harness == harness && r.id == native_id && r.active)
-        {
-            return Ok(true);
-        }
-        let requests: Requests<HumanRequest> = private_json(&self.human_requests)?;
-        require_v1(requests.version)?;
-        for request in requests.requests {
-            let target = request.target;
-            if target.session_id == native_id
-                && target
-                    .agent
-                    .or(target.harness)
-                    .as_deref()
-                    .unwrap_or("codex")
-                    == harness
-                && (matches!(request.status.as_str(), "pending" | "resuming")
-                    || request.status == "resume_failed"
-                        && (request.receipt.as_deref() != Some("agent-resume:native-unavailable")
-                            || request.resume_retryable == Some(false)))
-            {
-                return Ok(true);
-            }
-        }
-        let choices: Requests<Choice> = private_json(&self.choices)?;
-        require_v1(choices.version)?;
-        if choices.requests.iter().any(|r| {
-            r.session_id == native_id
-                && r.harness.as_deref().unwrap_or("codex") == harness
-                && matches!(
-                    r.status.as_str(),
-                    "pending"
-                        | "claimed"
-                        | "dispatching"
-                        | "expired-needs-human"
-                        | "delivery_unknown"
-                )
-        }) {
+        if human_held(harness, native_id, &self.human_stops, &self.human_requests, &self.choices)? {
             return Ok(true);
         }
         let previous: Sessions<LegacyAttempt> = private_json(&self.unfinished_sessions)?;
         require_v1(previous.version)?;
+        let dynamic = self.scans_workspaces() && !self.owns_id(native_id);
         Ok(previous.sessions.iter().any(|r| {
             r.harness == harness
                 && r.session_id == native_id
-                && (r.delivery_pending
-                    || r.state.as_deref() == Some("recovering")
-                    || r.admission_phase.as_deref() == Some("accepted_pending")
-                    || r.recovery_blocked_reason.is_some()
-                    || r.non_retryable_admission
-                    || r.quota_recovery.as_ref().is_some_and(|q| {
-                        q.state == "dispatching"
-                            || q.reason_code.as_deref() == Some("delivery_unknown")
-                    }))
+                && if dynamic {
+                    r.retains_workspace_session()
+                } else {
+                    r.in_flight()
+                }
         }))
     }
 }
@@ -344,6 +450,75 @@ struct AutopilotSession {
     enabled: bool,
 }
 
+fn human_held(
+    harness: &str,
+    native_id: &str,
+    human_stops: &Path,
+    human_requests: &Path,
+    choice_path: &Path,
+) -> io::Result<bool> {
+    let holds: Sessions<Hold> = private_json(human_stops)?;
+    require_v1(holds.version)?;
+    if holds
+        .sessions
+        .iter()
+        .any(|r| r.harness == harness && r.id == native_id && r.active)
+    {
+        return Ok(true);
+    }
+    let requests: Requests<HumanRequest> = private_json(human_requests)?;
+    require_v1(requests.version)?;
+    for request in requests.requests {
+        let target = request.target;
+        if target.session_id == native_id
+            && target
+                .agent
+                .or(target.harness)
+                .as_deref()
+                .unwrap_or("codex")
+                == harness
+            && (matches!(request.status.as_str(), "pending" | "resuming")
+                || request.status == "resume_failed"
+                    && (request.receipt.as_deref() != Some("agent-resume:native-unavailable")
+                        || request.resume_retryable == Some(false)))
+        {
+            return Ok(true);
+        }
+    }
+    let choices: Requests<Choice> = private_json(choice_path)?;
+    require_v1(choices.version)?;
+    Ok(choices.requests.iter().any(|r| {
+        r.session_id == native_id
+            && r.harness.as_deref().unwrap_or("codex") == harness
+            && matches!(
+                r.status.as_str(),
+                "pending"
+                    | "claimed"
+                    | "dispatching"
+                    | "expired-needs-human"
+                    | "delivery_unknown"
+            )
+    }))
+}
+
+pub(super) fn read_automation_holds(
+    harness: &str,
+    native_id: &str,
+    human_stops: &Path,
+    human_requests: &Path,
+    choices: &Path,
+    unfinished_sessions: &Path,
+) -> io::Result<bool> {
+    if human_held(harness, native_id, human_stops, human_requests, choices)? {
+        return Ok(true);
+    }
+    let previous: Sessions<LegacyAttempt> = private_json(unfinished_sessions)?;
+    require_v1(previous.version)?;
+    Ok(previous.sessions.iter().any(|r| {
+        r.harness == harness && r.session_id == native_id && r.retains_workspace_session()
+    }))
+}
+
 fn require_v1(version: u8) -> io::Result<()> {
     if version == 1 {
         Ok(())
@@ -418,10 +593,68 @@ struct LegacyQuotaAttempt {
     reason_code: Option<String>,
 }
 
+impl LegacyAttempt {
+    fn retains_workspace_session(&self) -> bool {
+        self.quota_recovery.is_some() || self.in_flight()
+    }
+
+    fn in_flight(&self) -> bool {
+        self.delivery_pending
+            || self.state.as_deref() == Some("recovering")
+            || self.admission_phase.as_deref() == Some("accepted_pending")
+            || self.recovery_blocked_reason.is_some()
+            || self.non_retryable_admission
+            || self.quota_recovery.as_ref().is_some_and(|q| {
+                q.state == "dispatching" || q.reason_code.as_deref() == Some("delivery_unknown")
+            })
+    }
+}
+
 #[cfg(test)]
 mod handoff_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn handed_over_workspaces_can_extend_an_existing_exact_cohort() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let unfinished =
+            std::env::temp_dir().join(format!("herder-scope-{}-{stamp}", std::process::id()));
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&unfinished)
+            .unwrap();
+        serde_json::to_writer(
+            file,
+            &json!({"version":1,"sessions":[
+                {"harness":"codex","sessionId":"legacy","quotaRecovery":{"state":"waiting"}}
+            ]}),
+        )
+        .unwrap();
+        let profile = json!({
+            "native_sessions": ["explicit-id"],
+            "workspaces": [{"cwd": "/work/handed-over", "provider": "opencodex"}],
+            "activation_file": "/activate", "choices": "/choices", "human_stops": "/holds",
+            "human_requests": "/requests", "unfinished_sessions": unfinished
+        });
+        let handoff: LegacyRecoveryHandoff = serde_json::from_value(profile).unwrap();
+        assert!(handoff.valid());
+        assert!(handoff.owns("codex", "explicit-id", || None).unwrap());
+        let owns = |id, cwd, provider| handoff.owns_boundary("codex", id, cwd, provider);
+        assert!(owns("future", "/work/handed-over", "opencodex"));
+        assert!(!owns("foreign", "/work/handed-over-old", "opencodex"));
+        assert!(!owns("nested", "/work/handed-over/nested", "opencodex"));
+        assert!(!owns("other-channel", "/work/handed-over", "openai"));
+        assert!(!owns("legacy", "/work/handed-over", "opencodex"));
+        assert!(!handoff.owns("codex", "legacy", || None).unwrap());
+        std::fs::remove_file(unfinished).unwrap();
+        assert!(!owns("future", "/work/handed-over", "opencodex"));
+    }
 
     #[test]
     fn discovery_requires_an_explicit_unambiguous_instance_scope() {
@@ -437,8 +670,11 @@ mod handoff_tests {
                 .filter(LegacyRecoveryHandoff::valid)
         };
         let cohort = parse(json!({"native_sessions":["one"]})).unwrap();
-        assert!(cohort.owns("one") && !cohort.owns("two"));
-        assert!(parse(json!({"instance_wide":true})).unwrap().owns("two"));
+        assert!(cohort.owns_id("one") && !cohort.owns_id("two"));
+        assert!(parse(json!({"instance_wide":true})).unwrap().owns_id("two"));
+        let channel = json!({"cwd":"/work/one","provider":"opencodex"});
+        let scoped = parse(json!({"workspaces":[channel]})).unwrap();
+        assert!(scoped.cohort().is_none() && scoped.scans_workspaces());
         for invalid in [
             json!({}),
             json!({"native_sessions":[]}),
@@ -447,6 +683,17 @@ mod handoff_tests {
             json!({"native_sessions":null, "instance_wide":true}),
             json!({"native_sessions":[], "instance_wide":true}),
             json!({"native_sessions":["one"], "instance_wide":true}),
+            json!({"workspaces":[],"native_sessions":["one"]}),
+            json!({"workspaces":null,"instance_wide":true}),
+            json!({"workspaces":[channel],"instance_wide":true}),
+            json!({"workspaces":[channel,channel]}),
+            json!({"workspaces":[{"cwd":"work/one","provider":"opencodex"}]}),
+            json!({"workspaces":[{"cwd":"/work/../other","provider":"opencodex"}]}),
+            json!({"workspaces":[{"cwd":"/work//one","provider":"opencodex"}]}),
+            json!({"workspaces":[{"cwd":"/work/one/","provider":"opencodex"}]}),
+            json!({"workspaces":[{"cwd":"/work/./one","provider":"opencodex"}]}),
+            json!({"workspaces":[{"cwd":"/work/one","provider":"*"}]}),
+            json!({"workspaces":[{"cwd":"/work/one"}]}),
         ] {
             assert!(parse(invalid.clone()).is_none(), "{invalid}");
         }

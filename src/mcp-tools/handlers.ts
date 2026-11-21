@@ -890,15 +890,24 @@ export async function handleStopAgent(
     const structured: StopAgentReceipt = { ...base, reason: "native_session_not_found", retryable: true };
     return { text: `Session '${parsed.sessionId}' not found.`, structured };
   }
+  const keyedStop = found.adapter.controlCapabilities?.stableInputIdRequired === true;
+  if (keyedStop && !parsed.inputId) {
+    const structured = { ...base, reason: "browser_stop_input_id_required", retryable: false };
+    return { text: stopAgentText(structured), structured };
+  }
   const stopOnce = async (): Promise<StopAgentReceipt> => {
     await holdManualStop(found.session);
-    const held = await getHumanStopStore().isHeld(found.session.harness, found.session.id).catch(() => false);
+    let held = await getHumanStopStore().isHeld(found.session.harness, found.session.id).catch(() => false);
     const stopStartedAt = Date.now();
     let result: Awaited<ReturnType<typeof found.adapter.stopSession>>;
     try {
-      result = await found.adapter.stopSession(parsed.sessionId);
+      result = keyedStop ? await found.adapter.stopSession(parsed.sessionId, parsed.inputId) : await found.adapter.stopSession(parsed.sessionId);
     } catch {
       return { ...base, state: "unknown", held, reason: "native_stop_unknown", retryable: false };
+    }
+    if (keyedStop) {
+      held ||= result.held === true;
+      if (result.admissionUnknown) return { ...base, state: "unknown", held, reason: result.error, retryable: false };
     }
     if (result.ok) {
       await projectReleaseLeases.endSession({ hostId: localHostId, harness: found.session.harness, nativeSessionId: parsed.sessionId }, stopStartedAt);
@@ -906,7 +915,7 @@ export async function handleStopAgent(
       await recordProjectLifecycle({ harness: found.session.harness, sessionId: parsed.sessionId, cwd: found.session.cwd, event: "end", at: new Date(stopStartedAt).toISOString() }).catch(() => undefined);
       return { ...base, state: "admitted", held, reason: held ? "native_session_stopped" : "native_session_stopped_without_hold", retryable: false };
     }
-    return { ...base, state: "not_attempted", held, reason: result.error || "native_stop_failed", retryable: true };
+    return { ...base, state: "not_attempted", held, reason: result.error || "native_stop_failed", retryable: !(keyedStop && result.nonRetryable) };
   };
   if (!parsed.inputId) {
     const structured = await stopOnce();

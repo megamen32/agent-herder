@@ -9,6 +9,7 @@ import type {DeliveryResponseResourceBinding} from '../mcp/delivery-response-res
 import {FLEET_DIRECT_TOOLS} from './fleet-tool-allowlist.js';
 import {meshDeliverySchema} from './delivery-schema.js';
 import {isBrowserMeshHarness,unwrapResult} from './protocol.js';
+import {supportsFleetChatDetails} from './fleet-contract.js';
 import {FleetGptAdminTransport} from './fleet-gptadmin-transport.js';
 import {meshFleetTarget,meshNodeOf,readFleetMeshBinding} from './fleet-mesh-binding.js';
 /** Reuses owner-authorized fleet SSH, transporting HTTP to each existing singleton. Never starts MCP stdio or a native controller. */
@@ -214,7 +215,7 @@ if r['method']=='session/read':
  if len(body)>1048576:raise RuntimeError('direct_response_limit')
  details=json.loads(body);session=details['session']
  if history_unavailable or details.get('history',{}).get('source')=='unavailable':details['historyUnavailable']=True
- if session.get('id')!=p['sessionId'] or session.get('harness')!=p['harness']:raise RuntimeError('native_session_identity_mismatch')
+ if session.get('id')!=p['sessionId'] or session.get('harness')!=p['harness'] or session.get('hostId',r['hostId'])!=r['hostId']:raise RuntimeError('native_session_identity_mismatch')
  print(json.dumps({'hostId':r['hostId'],'details':details}))
 else:
  value=rpc(r['method'],r['params'])
@@ -363,11 +364,21 @@ export class FleetDirectTransport implements GptAdminTransport {
   }
   return this.rpc(peer,'herder_runtime_probe',{},this.readDeadline(peer,'probe')) as Promise<{hasRuntime:boolean;hasDisarmTool?:boolean;reason?:string;tools?:string[]}>;
  }
- readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
+ private sessionPeer(target:string,harness:string,sessionId:string):DirectPeer{
   // The validation of the caller's own arguments stays synchronous: a forged
   // target or session identity never becomes an async rejection.
-  if(!['codex','zcode','opencode','minimax-code'].includes(harness)||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
-  return this.readSessionOnPeer(this.peer(target),harness,sessionId);
+  if(!(supportsFleetChatDetails(harness)||harness==='minimax-code')||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))throw new Error('direct_session_invalid');
+  return this.peer(target);
+ }
+ readSessionDetails(target:string,harness:string,sessionId:string):Promise<unknown>{
+  return this.ownerDetails(this.sessionPeer(target,harness,sessionId),harness,sessionId);
+ }
+ private ownerDetails(peer:DirectPeer,harness:string,sessionId:string):Promise<unknown>{
+  return this.rpc(peer,'session/read',{harness,sessionId},this.readDeadline(peer,'session'));
+ }
+ readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
+  if(isBrowserMeshHarness(harness))return this.readSessionDetails(target,harness,sessionId);
+  return this.readSessionOnPeer(this.sessionPeer(target,harness,sessionId),harness,sessionId);
  }
  private async readSessionOnPeer(peer:DirectPeer,harness:string,sessionId:string):Promise<unknown>{
   const mesh=await this.meshFor(peer).catch(()=>undefined);
@@ -384,7 +395,7 @@ export class FleetDirectTransport implements GptAdminTransport {
    if(session.id!==sessionId||session.harness!==harness)throw new Error('fleet_session_identity_mismatch');
    return result;
   }
-  return this.rpc(peer,'session/read',{harness,sessionId},this.readDeadline(peer,'session'));
+  return this.ownerDetails(peer,harness,sessionId);
  }
  /** Read one exact response resource from the native owner MCP; never use caller-local jobs for a remote binding. */
  async readDeliveryResponseResource(target:string,binding:DeliveryResponseResourceBinding):Promise<unknown>{

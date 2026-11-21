@@ -1,11 +1,17 @@
 //! Read thread addresses from one explicitly selected Codex app-server profile.
 
-use std::{fs, path::PathBuf, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
+use crate::domain::adapter::{NativeReceipt, Observation};
 
 #[derive(Debug)]
 pub enum CodexReadError {
@@ -14,6 +20,8 @@ pub enum CodexReadError {
     ProfilePath(std::io::Error),
     ProfileMismatch { expected: PathBuf, observed: String },
     InvalidThreadList(String),
+    InvalidReceipt(&'static str),
+    ReceiptDeadline,
 }
 
 impl std::fmt::Display for CodexReadError {
@@ -30,6 +38,8 @@ impl std::fmt::Display for CodexReadError {
             Self::InvalidThreadList(message) => {
                 write!(f, "invalid Codex thread/list response: {message}")
             }
+            Self::InvalidReceipt(message) => f.write_str(message),
+            Self::ReceiptDeadline => f.write_str("Codex receipt deadline elapsed"),
         }
     }
 }
@@ -97,31 +107,106 @@ pub enum ItemSortDirection {
     Desc,
 }
 
+// Only pagination progress survives a receipt deadline. The next attempt reads
+// the native head and the exact receipt page again before observing any items.
+pub(super) struct ReceiptCursor {
+    pub(super) head_page: Value,
+    pub(super) next: String,
+    pub(super) seen_cursors: HashSet<String>,
+    pub(super) seen_turns: HashSet<String>,
+}
+
 pub struct CodexReader {
     connection: CodexConnection,
     instance: CodexInstance,
     timeout: Duration,
     refresh_before_first_message_read: bool,
+    receipt_cursors: HashMap<(String, String, String), ReceiptCursor>,
 }
 
 impl CodexReader {
     pub fn open(instance: CodexInstance, timeout: Duration) -> Result<Self, CodexReadError> {
-        let connection = open_connection(&instance, timeout)?;
+        let connection = open_connection(&instance, timeout, None)?;
         Ok(Self {
             connection,
             instance,
             timeout,
             refresh_before_first_message_read: true,
+            receipt_cursors: HashMap::new(),
         })
     }
 
     fn reopen(&mut self) -> Result<(), CodexReadError> {
-        self.connection = open_connection(&self.instance, self.timeout)?;
-        Ok(())
+        self.reopen_with_deadline(None)
     }
 
     fn shared_connection_closed(&mut self) -> bool {
         self.instance.socket_path.is_some() && self.connection.unavailable()
+    }
+
+    fn reopen_with_deadline(&mut self, deadline: Option<Instant>) -> Result<(), CodexReadError> {
+        self.receipt_cursors.clear();
+        self.connection = open_connection(&self.instance, self.timeout, deadline)?;
+        Ok(())
+    }
+
+    pub fn observe_admitted_recovery(
+        &mut self,
+        receipt: &NativeReceipt,
+        key: &str,
+    ) -> Result<Observation, CodexReadError> {
+        if receipt.target.instance.instance_id != self.instance_id()
+            || receipt.target.native_session_id.is_empty()
+            || receipt.native_id.is_empty()
+            || key.is_empty()
+        {
+            return Err(CodexReadError::InvalidReceipt(
+                "invalid Codex receipt binding",
+            ));
+        }
+        let deadline =
+            Instant::now()
+                .checked_add(self.timeout)
+                .ok_or(CodexReadError::InvalidReceipt(
+                    "invalid Codex receipt timeout",
+                ))?;
+        if self.shared_connection_closed() {
+            self.reopen_with_deadline(Some(deadline))?;
+        }
+        let result = self.read_receipt_before(receipt, key, deadline);
+        if matches!(&result, Err(CodexReadError::Rpc(error)) if is_stale_history_lineage(error))
+            || (result.is_err() && self.shared_connection_closed())
+        {
+            // Restart pagination from the head on the verified replacement reader.
+            self.reopen_with_deadline(Some(deadline))?;
+            return self.read_receipt_before(receipt, key, deadline);
+        }
+        result
+    }
+
+    fn read_receipt_before(
+        &mut self,
+        receipt: &NativeReceipt,
+        key: &str,
+        deadline: Instant,
+    ) -> Result<Observation, CodexReadError> {
+        let binding = (
+            receipt.target.native_session_id.clone(),
+            receipt.native_id.clone(),
+            key.to_owned(),
+        );
+        let mut cursor = self.receipt_cursors.remove(&binding);
+        let result = self
+            .connection
+            .read_admitted_receipt(receipt, key, &mut cursor, deadline);
+        if matches!(
+            &result,
+            Err(CodexReadError::ReceiptDeadline | CodexReadError::Rpc(RpcError::Timeout { .. }))
+        ) && let Some(cursor) = cursor
+        {
+            self.receipt_cursors.insert(binding, cursor);
+        }
+        result
     }
 
     pub fn read_thread_with_turns(&mut self, thread_id: &str) -> Result<Value, CodexReadError> {
@@ -153,13 +238,24 @@ impl CodexReader {
     }
 }
 
+pub(super) fn receipt_time_left(deadline: Instant) -> Result<Duration, CodexReadError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|time| !time.is_zero())
+        .ok_or(CodexReadError::ReceiptDeadline)
+}
+
 fn open_connection(
     instance: &CodexInstance,
     timeout: Duration,
+    deadline: Option<Instant>,
 ) -> Result<CodexConnection, CodexReadError> {
+    if let Some(deadline) = deadline {
+        receipt_time_left(deadline)?;
+    }
     let expected_profile =
         fs::canonicalize(&instance.code_home).map_err(CodexReadError::ProfilePath)?;
-    let mut connection = CodexConnection::open(instance.clone())?;
+    let mut connection = CodexConnection::open_with_deadline(instance.clone(), deadline)?;
     let initialized = connection.request(
         "initialize",
         json!({
@@ -169,7 +265,10 @@ fn open_connection(
             },
             "capabilities": {"experimentalApi": true},
         }),
-        timeout,
+        match deadline {
+            Some(deadline) => receipt_time_left(deadline)?,
+            None => timeout,
+        },
     )?;
     let observed = initialized
         .get("codexHome")
@@ -181,7 +280,7 @@ fn open_connection(
             observed: observed.to_owned(),
         });
     }
-    connection.notify("initialized", json!({}))?;
+    connection.notify_with_deadline("initialized", json!({}), deadline)?;
     Ok(connection)
 }
 

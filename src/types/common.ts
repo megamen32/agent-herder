@@ -148,6 +148,8 @@ export interface HarnessEventSourceHealth {
 }
 
 export interface HarnessCapabilities {
+  /** Send and stop require the caller's stable inputId. */
+  stableInputIdRequired?: boolean;
   imageInput?: boolean;
   fileInput?: boolean;
   steer?: boolean;
@@ -200,6 +202,8 @@ export interface SendMessageResult {
 
 export interface ControlResult extends SendMessageResult {
   sessionId?: string;
+  held?: boolean;
+  nativeInterrupt?: "acknowledged" | "not_sent" | "not_attempted_no_known_handoff" | "required_or_reconcile";
 }
 
 /**
@@ -495,10 +499,10 @@ export interface HarnessAdapter {
 
   /** Abort / stop a running session */
   /** Legacy alias retained for callers that still mean terminate. */
-  stopSession(id: string): Promise<ControlResult>;
+  stopSession(id: string, inputId?: string): Promise<ControlResult>;
 
   /** Cancel the active turn while keeping the native session resumable. */
-  cancelTurn?(id: string): Promise<ControlResult>;
+  cancelTurn?(id: string, inputId?: string): Promise<ControlResult>;
 
   /** Release this adapter's live transport without terminating the native session. */
   detach?(id: string): Promise<ControlResult>;
@@ -638,6 +642,7 @@ export function getHarnessCapabilities(adapter: HarnessAdapter): HarnessCapabili
         (key === "terminate" && (typeof adapter.terminate === "function" || typeof adapter.stopSession === "function")),
   ])) as unknown as HarnessCapabilities;
   if (adapter.controlCapabilities?.imageInput) capabilities.imageInput = true;
+  if (adapter.controlCapabilities?.stableInputIdRequired) capabilities.stableInputIdRequired = true;
   if (adapter.controlCapabilities?.fileInput) capabilities.fileInput = true;
   if (adapter.controlCapabilities?.steer) capabilities.steer = true;
   if (adapter.controlCapabilities?.projects) capabilities.projects = true;

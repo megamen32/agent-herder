@@ -187,3 +187,34 @@ account identity, run the following commands with the same Chrome installation.
 node --test crates/herder/src/adapters/chatgpt/native.test.mjs acceptance/native/z-ai/list-scope.test.mjs
 cargo test --locked --manifest-path crates/herder/Cargo.toml --lib adapters::zai::chrome_tests -- --ignored
 ```
+
+### ChatGPT ↔ OpenCode mesh pair on Linux
+
+A passing run delivers a PNG and a binary file from OpenCode to ChatGPT,
+compares each original byte for byte with the copy downloaded by a separate
+Rust process, and delivers the browser reply read by that process back to the
+originating OpenCode session. The existing Node.js `OpenCodeAdapter` serves
+OpenCode on this public mesh path, and the stand simulates the ChatGPT site,
+model and Fleet relay on private loopback.
+
+Use the Rust binaries and Playwright Core from the browser smoke build above,
+Node with `--experimental-transform-types`, and Linux with `unshare`, `nsenter`,
+`ip`, `bwrap` and unprivileged namespaces enabled. From the checkout, `npm ci`,
+`npm run build:core` and `./node_modules/.bin/tsc -p tsconfig.json` prepare the
+JS dependencies and both dist trees. For existing out-of-tree builds, pass
+`--router-dist DIR` and `--resume-dist DIR`.
+
+```sh
+python3 tests/native/launch_chatgpt_opencode_mesh.py \
+  --core "$build/debug/herder_native_stdio" \
+  --bootstrap "$build/debug/ahap-owner-bootstrap" \
+  --opencode "$(npm root -g)/@opencode/cli/bin/opencode.exe" \
+  --playwright-core "$build/fixture/node_modules/playwright-core"
+```
+
+You can use `--opencode "$(command -v opencode)"` if it resolves to a
+standalone Linux ELF with the v2 `/api/session` API. Append `--check` to mount
+the inputs and display the stand's help inside a nested UTS namespace. Each
+real run prints the path to its `evidence/proof/receipt.json` under a fresh
+private directory in system temp or `--output-parent DIR`. Look for
+`"status": "PASS"` in that receipt.

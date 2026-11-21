@@ -1,4 +1,6 @@
-use super::{MAX_AGE_MS, MAX_STARTS_PER_TICK, PAGE_SIZE, SessionRecovery, now_ms, recent, utc_now};
+use super::{
+    MAX_AGE_MS, MAX_STARTS_PER_TICK, PAGE_SIZE, Scan, SessionRecovery, now_ms, recent, utc_now,
+};
 use crate::application::scoped_stop::GateError;
 use crate::application::scoped_stop::registration::{BoundedSessionProbe, RegistrationRequest};
 use crate::auth::identity::{ConnectionIdentity, Grant, PrincipalId};
@@ -7,7 +9,11 @@ use crate::domain::{
     address::{SessionAddress, SessionRef},
 };
 use rusqlite::{OptionalExtension, params};
-use std::{collections::{BTreeSet, VecDeque}, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    sync::Arc,
+    time::Instant,
+};
 
 /// A page from this owner's native instance, ordered by last activity.
 pub struct RecoveryPage {
@@ -133,24 +139,84 @@ impl NativePages {
 
 impl SessionRecovery {
     pub(super) fn recover_cohort(
-        &self, identity: &ConnectionIdentity, principal: &PrincipalId,
-        ids: &BTreeSet<String>, offset: &mut usize, deadline: Instant,
+        &self,
+        identity: &ConnectionIdentity,
+        principal: &PrincipalId,
+        ids: &BTreeSet<String>,
+        offset: &mut usize,
+        deadline: Instant,
+        start_limit: u32,
     ) {
         let mut starts = 0;
         for id in ids.iter().skip(*offset).take(PAGE_SIZE as usize) {
-            if Instant::now() >= deadline || starts >= MAX_STARTS_PER_TICK { break; }
+            if Instant::now() >= deadline || starts >= start_limit {
+                break;
+            }
             *offset += 1;
-            if self.recover_listed(identity, principal, id).unwrap_or(false) { starts += 1; }
+            if self
+                .recover_listed(identity, principal, id)
+                .unwrap_or(false)
+            {
+                starts += 1;
+            }
         }
-        if *offset == ids.len() { *offset = 0; }
+        if *offset == ids.len() {
+            *offset = 0;
+        }
     }
 
-    pub(super) fn discover(
+    pub(super) fn discover_scope(
+        &self,
+        identity: &ConnectionIdentity,
+        principal: &PrincipalId,
+        scan: &mut Scan,
+        deadline: Instant,
+    ) {
+        let ids = self
+            .profile
+            .legacy_handoff
+            .as_ref()
+            .and_then(|h| h.cohort());
+        let Some(ids) = ids else {
+            self.discover(
+                identity,
+                principal,
+                &mut scan.native,
+                deadline,
+                MAX_STARTS_PER_TICK,
+            );
+            return;
+        };
+        // Each source keeps its own cursor and half the starts. A slow native
+        // operation can overrun its deadline, so alternate who gets to go first.
+        let now = Instant::now();
+        let halfway = now + deadline.saturating_duration_since(now) / 2;
+        let half = MAX_STARTS_PER_TICK / 2;
+        let native_first = scan.workspaces_first;
+        scan.workspaces_first = !native_first;
+        if native_first {
+            self.discover(identity, principal, &mut scan.native, halfway, half);
+        }
+        self.recover_cohort(
+            identity,
+            principal,
+            ids,
+            &mut scan.cohort_offset,
+            if native_first { deadline } else { halfway },
+            MAX_STARTS_PER_TICK - half,
+        );
+        if !native_first {
+            self.discover(identity, principal, &mut scan.native, deadline, half);
+        }
+    }
+
+    fn discover(
         &self,
         identity: &ConnectionIdentity,
         principal: &PrincipalId,
         scan: &mut NativePages,
         deadline: Instant,
+        start_limit: u32,
     ) {
         let listing = self.discovery.listing.as_ref();
         if listing.instance() != self.control.instance()
@@ -160,15 +226,23 @@ impl SessionRecovery {
         }
         let mut starts = 0;
         let Some(now) = now_ms() else { return };
+        let exact = self
+            .profile
+            .legacy_handoff
+            .as_ref()
+            .and_then(|h| h.cohort());
         let visit = |id: &str, updated| {
-            if recent(updated)
+            // Explicit IDs have their own cursor, including IDs absent from
+            // the native recent page.
+            if !exact.is_some_and(|ids| ids.contains(id))
+                && recent(updated)
                 && self
                     .recover_listed(identity, principal, id)
                     .unwrap_or(false)
             {
                 starts += 1;
             }
-            starts >= MAX_STARTS_PER_TICK
+            starts >= start_limit
         };
         scan.tick(
             |cursor| {
@@ -187,15 +261,24 @@ impl SessionRecovery {
         principal: &PrincipalId,
         id: &str,
     ) -> Result<bool, GateError> {
-        let Some(handoff) = &self.profile.legacy_handoff else { return Ok(false) };
+        let Some(handoff) = &self.profile.legacy_handoff else {
+            return Ok(false);
+        };
         let probe = self.discovery.listing.as_ref();
-        if !handoff.owns(id) || probe.instance() != self.control.instance() || probe.harness() != self.control.harness() {
+        if probe.instance() != self.control.instance() || probe.harness() != self.control.harness()
+        {
             return Ok(false);
         }
         let address = SessionAddress {
             instance: self.control.instance().clone(),
             native_session_id: id.into(),
         };
+        if !handoff
+            .owns_native(probe.harness(), &address)
+            .map_err(|_| GateError::Unavailable)?
+        {
+            return Ok(false);
+        }
         // A registered target still reconciles outstanding receipts even while
         // a stop is held. The ordinary recover path revalidates its owner grants.
         let registered = {
@@ -214,9 +297,6 @@ impl SessionRecovery {
                 let Some((_, boundary)) = self.eligible_boundary(&address)? else {
                     return Ok(false);
                 };
-                if boundary.ancestors.iter().any(|a| !handoff.owns(&a.address.native_session_id)) {
-                    return Ok(false);
-                }
                 // The ordinary gate requires a verified binding for every native parent.
                 for ancestor in &boundary.ancestors {
                     if ancestor.address.instance != address.instance {
@@ -244,7 +324,12 @@ impl SessionRecovery {
         let harness = self.control.harness();
         if self
             .profile
-            .recovery_held(harness, &address.native_session_id)
+            .legacy_handoff
+            .as_ref()
+            .is_none_or(|h| !h.owns_native(harness, address).unwrap_or(false))
+            || self
+                .profile
+                .recovery_held(harness, &address.native_session_id)
         {
             return Err(GateError::Unavailable);
         }

@@ -10,6 +10,13 @@
 
 ## Proposed
 
+- [ ] **Установить семантический автопилот Codex после автопродолжателя и проверить его на рабочем сервере.**
+  - [x] Rust восстанавливает прерванный ход Codex на сохранённой модели. Стенды Codex и OpenCode сверяют нативную квитанцию, проверяют разрешённый запасной маршрут и отсутствие повторной отправки после перезапуска. [Codex](tests/native/codex_recovery_stand.py) · [OpenCode](tests/native/opencode_recovery_stand.py)
+  - [x] Судья получает поручение, уточнения человека и последний завершённый ответ явно включённого чата. На стенде пропущенный пункт привёл к одному продолжению. На полный ответ судья вернул `done`, после перезапуска число отправок сохранилось. Проверены ручная остановка, ожидание решения человека, активная цель Codex и потеря подтверждения. [Правило Rust](crates/herder/SESSION_AUTOPILOT.md) · [Нативный стенд](tests/native/codex_autopilot_stand.py)
+  - [x] Установщик принимает профиль судьи при действующем восстановлении. При совместном обновлении он проверяет область автовозобновления и совпадение реестров ручных остановок. [Тест установки](deploy/fleet/process-leases-adapters-test.py)
+  - [ ] Проверить на установленной версии, что инспектор и `/autopilot on|status|off` управляют одним правилом через действующий Rust-процесс. Выбор чата должен сохраняться при перезапуске. Режим `self` и полные цели продолжают обслуживаться их текущим исполнителем. [Проверка команд](tests/autopilot-plugin-stand.py)
+  - [ ] Получить в тестовом чате квитанцию продолжения от установленного Herder со штатным судьёй. В проверке 21 ноября судья вернул HTTP 429 с кодом 1113, квота Z.AI исчерпана. В тестовом чате было ноль автоматических отправок. Проверка повторного запуска после сбоя Codex работает независимо от доступности судьи.
+
 - [x] Context-mode-backed transcript retrieval — completed 2026-07-30; Agent Herder now uses bounded Context Mode-style local ranking for `query` or lead `need`.
 - [x] Workspace-scoped canonical transcript archive — completed 2026-07-30; raw-source archive, CWD isolation, retention, and navigation are available.
 - [x] Simplify transcript access to raw export plus permanent navigation card — completed 2026-07-30; `export_transcript` supersedes internal context ranking and transcript search.

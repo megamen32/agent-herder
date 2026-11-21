@@ -1,4 +1,4 @@
-import {fleetHarnesses} from '../mesh/fleet-contract.js';
+import {supportsFleetChatDetails} from '../mesh/fleet-contract.js';
 import type {MeshAddress} from '../mesh/protocol.js';
 
 export type SessionListSort = "created" | "activity" | "status" | "harness" | "title" | "cwd";
@@ -127,7 +127,7 @@ export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddres
   if(key.startsWith('mesh:')){
     try{
       const parts:unknown=JSON.parse(key.slice(5));
-      if(!Array.isArray(parts)||parts.length!==3||!parts.every(valid)||!fleetHarnesses.includes(parts[1] as any))return {kind:'invalid'};
+      if(!Array.isArray(parts)||parts.length!==3||!parts.every(valid)||!supportsFleetChatDetails(parts[1]))return {kind:'invalid'};
       const [hostId,harness,nativeSessionId]=parts as string[];
       if(!localHostId)return {kind:'pending'};
       return hostId===localHostId?{kind:'local',key:`${harness}:${nativeSessionId}`}:{kind:'remote',address:{hostId,harness,nativeSessionId}};
@@ -141,7 +141,7 @@ export function resolveSessionDeepLink(key:string, addresses:readonly MeshAddres
   if(matches.length>1)return {kind:'ambiguous'};
   if(!localHostId)return {kind:'pending'};
   if(matches.length===1&&matches[0].hostId===localHostId)return {kind:'local',key};
-  if(matches.length===1)return fleetHarnesses.includes(harness as any)?{kind:'remote',address:matches[0]}:{kind:'invalid'};
+  if(matches.length===1)return supportsFleetChatDetails(harness)?{kind:'remote',address:matches[0]}:{kind:'invalid'};
   if(!complete)return {kind:'pending'};
   // Historical local sessions may be absent from the list: the existing detail
   // reader independently verifies harness/id before rendering their messages.

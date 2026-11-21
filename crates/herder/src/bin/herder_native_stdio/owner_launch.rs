@@ -10,6 +10,7 @@ use herder::{
             BoundedFreshRootCreate, BoundedNativeHandoff, BoundedNativeInterrupt, InterruptAttempt,
             ScopeGenerationIssuer, ScopedAuthority,
             automation_driver,
+            session_autopilot::SessionAutopilot,
             session_recovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage, SessionRecovery},
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
@@ -149,6 +150,10 @@ struct OwnerNativeReader {
     control: Arc<Control>,
     reopened: Arc<NativeReader>,
 }
+#[cfg(test)]
+#[path = "owner_recovery_receipt_tests.rs"]
+mod receipt_tests;
+
 impl NativeSessionReader for OwnerNativeReader {
     async fn snapshot(&self, target: &SessionAddress) -> Result<SessionSnapshot, ReadError> {
         let thread = self
@@ -162,6 +167,14 @@ impl NativeSessionReader for OwnerNativeReader {
     }
     async fn reconcile(&self, receipt: &NativeReceipt) -> Result<Observation, ReadError> {
         self.reopened.reconcile(receipt).await
+    }
+
+    async fn reconcile_admitted_recovery(
+        &self,
+        receipt: &NativeReceipt,
+        key: &str,
+    ) -> Result<Observation, ReadError> {
+        self.reopened.reconcile_admitted_recovery(receipt, key).await
     }
 
     async fn recover_admission(
@@ -198,6 +211,7 @@ struct OwnerApp {
     deliver: Arc<dyn ApplicationPort>,
     interrupt: Arc<Control>,
     waits: Arc<WaitAutomationApplication>,
+    autopilot: Option<Arc<SessionAutopilot>>,
 }
 impl ApplicationPort for OwnerApp {
     fn call<'a>(
@@ -223,7 +237,28 @@ impl ApplicationPort for OwnerApp {
                     identity, operation, &self.policy, SendMode::Start, &self.waits, self.deliver.as_ref(),
                 ).await;
             }
-            if let Some(result) = self.waits.call(identity, request.clone()).await {
+            if let Some(pilot) = &self.autopilot {
+                if let Some(result) = pilot.call(identity, request.clone()).await {
+                    return Some(result);
+                }
+            } else if matches!(&request, catalog::Request::Automation(catalog::Automation::Create {
+                rule: catalog::AutomationRule::Autopilot { .. }, ..
+            })) {
+                return Some(rmcp::model::CallToolResult::structured_error(
+                    serde_json::json!({"code":"autopilot_not_configured","effect":"none"})));
+            }
+            if let Some(mut result) = self.waits.call(identity, request.clone()).await {
+                if let (Some(pilot), catalog::Request::Automation(catalog::Automation::List {session_ref,..}))
+                    = (&self.autopilot, &request)
+                    && result.is_error != Some(true)
+                    && let Some(rows) = result.structured_content.as_mut().and_then(|v| v["rules"].as_array_mut()) {
+                    match pilot.list(identity, session_ref.as_deref()) {
+                        Ok(extra) => rows.extend(extra),
+                        Err(code) => return Some(rmcp::model::CallToolResult::structured_error(
+                            serde_json::json!({"code":code,"effect":"none"}))),
+                    }
+                    return Some(rmcp::model::CallToolResult::structured(result.structured_content.take().unwrap()));
+                }
                 return Some(result);
             }
             let session = match &request {
@@ -431,6 +466,10 @@ pub fn build_with_registry(
         reconciler.clone(),
         policy.clone(),
     ).with_recovery_handoff(handoff, control.clone()));
+    let autopilot = opened.owner.codex_autopilot.map(|profile| SessionAutopilot::new(
+        source.clone(), control.create.share_native_control(), reconciler.clone(),
+        policy.clone(), &policy.principal.0, profile,
+    ).map(Arc::new)).transpose()?;
     let session_recovery = opened.owner.codex_recovery.map(|profile| {
         Arc::new(SessionRecovery::new(
             authority.clone(),
@@ -452,11 +491,13 @@ pub fn build_with_registry(
         deliver,
         interrupt: control.clone(),
         waits: waits.clone(),
+        autopilot: autopilot.clone(),
     });
     let server = ScopedTaskServer::new(identity.clone(), grants, authority, app)
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(super::owner_opencode::BoundOwner {
+        autopilot,
         harness: "codex".into(),
         session_recovery,
         process: None,

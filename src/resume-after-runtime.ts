@@ -133,10 +133,13 @@ export function createResumeAfterRuntime(adapters:Map<string,HarnessAdapter>,sup
 }
 
 /** Select one backend at startup; a broken canonical binding never falls back. */
-export async function createConfiguredResumeAfterRuntime(...args: Parameters<typeof createResumeAfterRuntime>): Promise<{
+export function resumeAfterRuntimeForClient(client: CanonicalAutomationClient | undefined, ...args: Parameters<typeof createResumeAfterRuntime>): {
   service: ResumeAfterBackend; canonicalClient?: CanonicalAutomationClient; start(): Promise<() => void>;
-}> {
-  const client = await createCanonicalAutomationClient();
+} {
   if (client) return { ...createCanonicalResumeAfterRuntime(client), canonicalClient: client };
   return createResumeAfterRuntime(...args);
+}
+
+export async function createConfiguredResumeAfterRuntime(...args: Parameters<typeof createResumeAfterRuntime>) {
+  return resumeAfterRuntimeForClient(await createCanonicalAutomationClient(), ...args);
 }

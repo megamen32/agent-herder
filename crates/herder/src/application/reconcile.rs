@@ -424,6 +424,14 @@ pub async fn reconcile_dispatching<R: NativeSessionReader>(
     let Some(receipt) = receipt else {
         return Reconciliation::ReceiptAbsent;
     };
+    reconcile_bound_receipt(reader, receipt, None).await
+}
+
+pub(crate) async fn reconcile_bound_receipt<R: NativeSessionReader>(
+    reader: &R,
+    receipt: &NativeReceipt,
+    admitted_recovery_key: Option<&str>,
+) -> Reconciliation {
     let target = &receipt.target;
     if receipt.native_id.is_empty()
         || target.native_session_id.is_empty()
@@ -432,7 +440,11 @@ pub async fn reconcile_dispatching<R: NativeSessionReader>(
     {
         return Reconciliation::Unknown;
     }
-    match reader.reconcile(receipt).await {
+    let observed = match admitted_recovery_key {
+        Some(key) => reader.reconcile_admitted_recovery(receipt, key).await,
+        None => reader.reconcile(receipt).await,
+    };
+    match observed {
         Ok(Observation::Confirmed { receipt: observed }) if observed == *receipt => {
             Reconciliation::Confirmed(observed)
         }

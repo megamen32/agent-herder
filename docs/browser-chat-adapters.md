@@ -18,7 +18,16 @@ JSONL interface. Each owner uses its own explicit browser binding.
 | `AHAP_BROWSER_CDP_CONTEXT_ID` | Exact Chrome browser context |
 | `AHAP_BROWSER_CDP_TARGET_ID` | Exact signed-in site tab in that context |
 | `AHAP_BROWSER_ACCOUNT_SCOPE` | Lowercase SHA-256 of the provider's account ID |
-| `AHAP_BROWSER_CDP_ORIGIN_PORT` | Optional remote Chrome origin port when the loopback tunnel uses a different port |
+| `AHAP_BROWSER_CDP_ORIGIN_PORT` | Optional port in the WebSocket Origin header sent to Chrome |
+
+Chrome must accept the loopback origin used by the adapter. For a dedicated
+Chrome with a dynamic debugging port, launch it with
+`--remote-debugging-port=0 --remote-allow-origins=http://127.0.0.1:9222`
+and set `AHAP_BROWSER_CDP_ORIGIN_PORT=9222` in the owner profile. Use the
+actual browser WebSocket URL for `AHAP_BROWSER_CDP_WS_URL`. This also works
+when an SSH tunnel forwards the debugging socket to a different local port.
+An HTTP 403 during the WebSocket handshake occurs before the adapter can
+inspect the page or verify the provider account.
 
 In a V1 installation, select the profile in the usual private launcher
 selector. Set `owner.executable` to the exact `core` path from its pinned
@@ -36,6 +45,9 @@ Each entry carries `name`, `mime_type`, and standard padded `data_base64`.
 The inline transfer supports up to 16 files and 2 MiB of original bytes in
 total per input. Reuse the same request key to recover the original receipt.
 Changing the attached content under that key produces an idempotency conflict.
+Fleet mesh accepts attachments for a ChatGPT or Z.ai target that advertises
+`browserInlineAttachments`. Through the GPTAdmin relay, the whole encoded
+request must fit in 64 KiB, including the envelope and base64 data.
 ChatGPT accepts an empty caption. The Z.ai web composer requires text with
 an upload. Its native adapter advertises `browserFeatures.attachmentCaptionRequired`
 and checks the prompt before uploading.

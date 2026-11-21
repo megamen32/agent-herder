@@ -1013,28 +1013,37 @@ impl WaitAutomationApplication {
         let Some((handoff, probe)) = &self.recovery_handoff else {
             return Ok(value);
         };
-        if !handoff.owns(native) {
+        let mapped = value["mapped"] == true;
+        if !mapped && value["reason"] != "native_session_not_registered" {
             return Ok(value);
         }
-        if value["mapped"] != true {
-            // Several owners can serve the same harness and node. Fence an
-            // unmapped chat only on the instance that actually observes it.
-            if value["reason"] != "native_session_not_registered" {
-                return Ok(value);
-            }
-            if probe.instance() != &self.source.instance || probe.harness() != self.source.harness() {
-                return Err("owner_profile_mismatch");
-            }
-            match probe.probe_session(native) {
-                Ok(s) if s.address.instance == self.source.instance && s.address.native_session_id == native => {}
+        if probe.instance() != &self.source.instance || probe.harness() != self.source.harness() {
+            return Err("owner_profile_mismatch");
+        }
+        let target = SessionAddress {
+            instance: self.source.instance.clone(),
+            native_session_id: native.to_owned(),
+        };
+        let owned = handoff.owns_native(probe.harness(), &target);
+        let observed = match owned {
+            Ok(false) => return Ok(value),
+            // Workspace ownership already required an exact live metadata read,
+            // including for a registered session. Explicit unmapped transfers
+            // still need their original proof of presence on this instance.
+            Ok(true) if mapped || !handoff.owns_id(native) => true,
+            Ok(true) => match probe.probe_session(native) {
+                Ok(session) => session.address == target,
                 Err(()) if probe.confirms_absence(native) => return Ok(value),
-                _ => {
-                    value["complete"] = false.into();
-                    value["blocked"] = true.into();
-                    value["reason"] = "native_recovery_ownership_unavailable".into();
-                    return Ok(value);
-                }
-            }
+                Err(()) => false,
+            },
+            Err(_) if !mapped && probe.confirms_absence(native) => return Ok(value),
+            Err(_) => false,
+        };
+        if !observed {
+            value["complete"] = false.into();
+            value["blocked"] = true.into();
+            value["reason"] = "native_recovery_ownership_unavailable".into();
+            return Ok(value);
         }
         // Publish the compatibility fence before the new recovery writer is armed.
         value["recoveryOwner"] = "rust".into();

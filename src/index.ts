@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { installedLocalRecovery } from "./host-local-recovery.js";
 import { createCanonicalRuntimeStatus } from "./canonical-runtime-status.js";
 import { createAutostartSourceVerifierTick } from "./autopilot/autostart-source-verifier.js";
 import { isMainEntrypoint } from "./main-entrypoint.js";
@@ -10,7 +11,8 @@ import { BrowserTurnAutopilotObserver } from "./autopilot/browser-turn-observer.
 import { ChatCommandPipeline } from "./autopilot/chat-commands.js";
 import { NativeTurnAutopilotObserver } from "./autopilot/native-turn-observer.js";
 import { deliverAutopilotGoal } from "./autopilot/continuation-delivery.js";
-import { evaluateAutopilotStop, runAutopilotCommand } from "./autopilot-runner.js";
+import { nativeAutopilotCommand } from "./autopilot/native-command.js";
+import { evaluateAutopilotStop, legacyAutopilotStatus, runAutopilotCommand } from "./autopilot-runner.js";
 import { selfJudgeEvaluate } from "./autopilot/self-judge.js";
 import { PendingQuestionGate } from "./autopilot/pending-question-gate.js";
 import { AutoCompactStore, AutoCompactService } from "./autocontinue/auto-compact.js";
@@ -92,8 +94,10 @@ import { registerDeliveryResponseResource, type DeliveryResponseResourceBinding 
 import { createDeliveryResponseOwnerReader } from "./mcp/delivery-response-owner-routing.js";
 import { registerControlPlaneTools } from "./mcp/control-plane-tools.js";
 import { registerResumeAfterTools } from "./mcp/resume-after-tools.js";
-import { createConfiguredResumeAfterRuntime } from "./resume-after-runtime.js";
-import type { CanonicalAutomationClient } from "./canonical-herder.js";
+import { resumeAfterRuntimeForClient } from "./resume-after-runtime.js";
+import { createCanonicalAutomationClient, type CanonicalAutomationClient } from "./canonical-herder.js";
+import { CanonicalBrowserActions } from "./adapters/canonical-browser-actions.js";
+import { SessionImageStore } from "./session-images.js";
 import type { ResumeAfterBackend } from "./resume-after.js";
 import type { CadenceScheduler } from "./cadence-scheduler.js";
 import { createCadenceRuntime } from "./cadence-runtime.js";
@@ -315,7 +319,7 @@ const openCodeModelProviderResolver = () => ({
   omniRouteManagementToken: process.env.AGENT_HERDER_OMNIROUTE_MANAGEMENT_TOKEN,
   omniRouteCliToken: process.env.AGENT_HERDER_OMNIROUTE_CLI_TOKEN,
 });
-function configureAdapterRegistry(): void {
+function configureAdapterRegistry(browserActions?: CanonicalBrowserActions): void {
   adapterFactories.set("opencode", () => new OpenCodeAdapter({
     baseUrl: process.env.OPENCODE_URL,
     password: process.env.OPENCODE_SERVER_PASSWORD,
@@ -347,8 +351,8 @@ function configureAdapterRegistry(): void {
     home: process.env.FAST_AGENT_HOME || join(homedir(), ".fast-agent"),
     cwd: process.env.FAST_AGENT_CWD || process.cwd(),
   }));
-  adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt"));
-  adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai"));
+  adapterFactories.set("chatgpt", () => loadBrowserChatProviderAdapter("chatgpt", undefined, browserActions));
+  adapterFactories.set("zai", () => loadBrowserChatProviderAdapter("zai", undefined, browserActions));
   adapterFactories.set("minimax-code", () => new MinimaxCodeAdapter({
     sessionStore: process.env.MINIMAX_CODE_SESSION_STORE,
     cwd: process.env.MINIMAX_CODE_CWD,
@@ -699,6 +703,7 @@ function sameNotice(left: Parameters<ReturnType<typeof createNoticePlaceSink>["s
 /** Autopilot needs an absolute cwd; prefer the native session, then the store. */
 async function autopilotSessionCommand(
   input: { command: "on" | "off" | "status"; harness: string; sessionId: string; cwd?: string },
+  canonicalClient?: CanonicalAutomationClient,
 ): Promise<Record<string, unknown>> {
   const harness = input.harness as AutopilotHarness;
   const explicit = input.cwd?.trim();
@@ -709,7 +714,8 @@ async function autopilotSessionCommand(
   if (!cwd || !cwd.startsWith("/")) {
     return { ok: false, command: input.command, harness: input.harness, session_id: input.sessionId, reason: "cwd is required: pass cwd or a session Herder can locate" };
   }
-  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd });
+  return runAutopilotCommand({ command: input.command, harness, sessionId: input.sessionId, cwd },
+    (command, target, store, policy) => nativeAutopilotCommand(canonicalClient, command, target, store, policy));
 }
 
 function registerTools(
@@ -742,7 +748,7 @@ function registerTools(
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
   registerUserIoDotTools(server, userioDot);
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: autopilotSessionCommand } });
+  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) } });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 
@@ -1018,6 +1024,7 @@ async function main() {
   }
   const releaseSingleton = acquireAgentHerderSingleton();
   process.once("exit", releaseSingleton);
+  if (isManagedFleetNode()) installedLocalRecovery?.start();
 
   // The file of the product keeps the marker of every secret, so the raw value
   // of a secret is taken from the store of the secrets and put into the
@@ -1039,7 +1046,10 @@ async function main() {
   }
 
   trustedOperatorProfile = await loadTrustedOperatorProfile();
-  configureAdapterRegistry();
+  const canonicalClient = await createCanonicalAutomationClient();
+  const sessionImageStore = new SessionImageStore();
+  const browserActions = canonicalClient && new CanonicalBrowserActions(canonicalClient, sessionImageStore);
+  configureAdapterRegistry(browserActions);
   const adoptedState = await autopilotStateReady;
   if (adoptedState.length > 0) {
     console.error(`[agent-herder] adopted pre-seam autopilot state: ${adoptedState.length} file(s)`);
@@ -1059,7 +1069,7 @@ async function main() {
             return false;
           }
           try {
-            const browser = await loadBrowserChatProviderAdapter(id);
+            const browser = await loadBrowserChatProviderAdapter(id, undefined, browserActions);
             await browser.init();
             adapterRegistry.registerActive(browser);
             console.error(`[agent-herder] browser provider ${id} initialized`);
@@ -1245,7 +1255,7 @@ async function main() {
     autoCompact: autoCompactService, admissionGate: recoveryAdmissionGate,
     permissionNoticeObserver,
   });
-  const resumeAfterRuntime = await createConfiguredResumeAfterRuntime(adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
+  const resumeAfterRuntime = resumeAfterRuntimeForClient(canonicalClient, adapters, processSupervisor, (harness,id) => humanStopStore.isHeld(harness,id),
     undefined, undefined, async wait => {
       if (!wait.humanRequestId) return "closed";
       const verdict = await humanRequests.timeoutResumeWait(wait.humanRequestId, wait.id, "question expired");
@@ -1268,7 +1278,7 @@ async function main() {
     held: (harness, id) => humanStopStore.isHeld(harness, id),
     allowed: async input => {
       stopPendingQuestions.invalidate();
-      const status = await runAutopilotCommand({ ...input, command: "status" });
+      const status = await legacyAutopilotStatus(input);
       return status.enabled === true && !await stopPendingQuestions.blocks(input.harness, input.sessionId, input.cwd);
     },
     deliver: async (input, goal, inputId) => {
@@ -1321,7 +1331,7 @@ async function main() {
       const observer = new NativeTurnAutopilotObserver({
         harness,
         adapter,
-        enabled: async (input) => (await runAutopilotCommand({ ...input, command: "status" })).enabled === true,
+        enabled: async (input) => (await legacyAutopilotStatus(input)).enabled === true,
         submit: (input) => backgroundAutopilotStop!.submit(input),
         resolveCwd: async (sessionId) => (await adapter.getSession(sessionId))?.cwd,
         onError: (message) => console.error(`[agent-herder] ${message}`),
@@ -1348,7 +1358,7 @@ async function main() {
     ? createNoticePlaceSink({ eventUrl: chatCommandNotifyEventUrl, token: chatCommandNotifyToken })
     : undefined;
   const chatCommandPipeline = new ChatCommandPipeline({
-    run: (input) => autopilotSessionCommand(input),
+    run: (input) => autopilotSessionCommand(input, canonicalClient),
     reply: (harness, sessionId, text, inputId) => processSupervisor.sendMessage(harness, sessionId, {
       message: text,
       origin: "automation",
@@ -1501,6 +1511,7 @@ async function main() {
     for (const stop of stopNativeTurnObservers) stop();
     userMessageDelivery.close();
     void (async () => {
+      await installedLocalRecovery?.close().catch(() => undefined);
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await integratorFleetRuntime.dispose(); }
       catch (error) { console.error('[agent-herder] scoped Codex shutdown failed:', String(error)); }
@@ -1520,6 +1531,8 @@ async function main() {
     if (isQuotaLensEnabled()) startQuotaLensSampler();
     const webServer = createWebServer({
       adapters,
+      sessionImageStore,
+      canonicalClient,
       canonicalRuntimeStatus: createCanonicalRuntimeStatus(resumeAfterRuntime.service),
       hooksProhibitionsStore: hooksLeverStore,
       converter: processSessionConverter,

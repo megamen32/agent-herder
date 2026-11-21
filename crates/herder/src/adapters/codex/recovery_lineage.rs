@@ -37,10 +37,18 @@ pub(super) enum ThreadLineage<'a> {
 }
 
 pub(super) fn thread_lineage<'a>(thread: &'a Value, id: &str) -> Option<ThreadLineage<'a>> {
+    if !absent_or_null(thread, "forkedFromId") {
+        return None;
+    }
+    direct_input_lineage(thread, id)
+}
+
+/// An explicitly selected fork has its own address and history. Recovery discovery
+/// retains its stricter fork exclusion above.
+pub(super) fn direct_input_lineage<'a>(thread: &'a Value, id: &str) -> Option<ThreadLineage<'a>> {
     if thread["id"] != id
         || !matches!(thread.get("ephemeral"), None | Some(Value::Bool(false)))
         || !matches!(thread.get("archived"), None | Some(Value::Bool(false)))
-        || !absent_or_null(thread, "forkedFromId")
         || !absent_or_null(thread, "attachedToThreadId")
     {
         return None;
@@ -211,7 +219,7 @@ pub(super) fn read_ancestors(
         )? {
             return Ok(None);
         }
-        if !goal_allows_recovery(connection, &parent_id, deadline)? {
+        if !goal_allows_recovery(connection, &parent_id, None, deadline)? {
             return Ok(None);
         }
         let turns = read_rpc(

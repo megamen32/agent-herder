@@ -153,7 +153,11 @@ app-server, bind the existing socket through `owner.ahap_env.AHAP_CODEX_SOCKET`
 to observe its active and queued turns.
 
 For a staged handoff, set `legacy_handoff.native_sessions` to the exact
-thread IDs being transferred. Once every project on the instance has been
+thread IDs being transferred. To cover future Codex threads in a handed-over
+workspace, add its exact native directory and provider to
+`legacy_handoff.workspaces`, for example
+`[{"cwd":"/work/project","provider":"opencodex"}]`. A profile can use both
+selectors. Once every project on the instance has been
 handed over, `legacy_handoff.instance_wide: true` enables discovery for the
 whole instance. The owner reads recent native sessions in descending order
 of activity and follows the cursor across polling cycles. Bind the existing
@@ -168,7 +172,16 @@ admissions from the previous owner, then atomically publish JSON `true` at
 the activation path. Rust rereads existing holds and pending admissions
 before submission.
 
-The owner preserves the saved provider when continuing the same thread.
+The owner preserves the saved provider and model when continuing the same thread.
+Codex can mark a native goal blocked when its last provider request fails.
+The owner matches that goal update to the failed turn and checks the native
+turn trigger. This also covers a goal turn with no user message. Clearing or
+pausing the goal, an outstanding question, or a newer active turn holds recovery.
+When `opencodex` exhausts its HTTP retries on a generic 429, the owner
+rechecks the same failed turn after 30 seconds. It can continue once on the
+saved model, including after Codex unloads the thread. A second 429 on the
+recovery turn retains its original receipt. A native subscription quota error
+continues to use the configured account quota policy.
 The optional `fallback_routes` list accepts exact `workspace`, `provider`
 and `model` triples. A provider switch requires the quota fallback setting
 and fresh positive quota for that route. On Codex 0.170, an unloaded thread

@@ -6,6 +6,7 @@ import type {ClientRequest,IncomingMessage,IncomingHttpHeaders} from 'node:http'
 import {randomUUID} from 'node:crypto';
 import {hostname} from 'node:os';
 import {unwrapResult} from './protocol.js';
+import {supportsFleetChatDetails} from './fleet-contract.js';
 import type {GptAdminTransport} from './gptadmin.js';
 import {fleetSessionControlSchema,type FleetSessionControl,type FleetSessionResponse} from './fleet-session-control.js';
 
@@ -210,7 +211,10 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
   }).catch(error=>{diagnosticLog(stage,diagnosticCategory(error));throw error;});
  }
  readSession(target:string,harness:string,sessionId:string):Promise<unknown>{
-  if(!['codex','zcode','opencode','minimax-code'].includes(harness)||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
+  return this.readSessionDetails(target,harness,sessionId);
+ }
+ readSessionDetails(target:string,harness:string,sessionId:string):Promise<unknown>{
+  if(!(supportsFleetChatDetails(harness)||harness==='minimax-code')||typeof sessionId!=='string'||!sessionId||sessionId.length>512||/[\x00-\x1f\x7f]/.test(sessionId))return Promise.reject(new Error('owner_http_session_invalid'));
   return this.operation(target,10000,async(state,signal)=>{
    await this.connect(state,signal);await this.info(state,signal);
    const path=`/api/sessions/${encodeURIComponent(harness)}/${encodeURIComponent(sessionId)}`;
@@ -218,7 +222,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
    if(unavailable)response=await this.http(state,signal,'GET',path);
    if(response.status!==200)throw new Error('owner_http_http_'+response.status);
    const details=record(response.data),session=record(details?.session);
-   if(session?.id!==sessionId||session.harness!==harness)throw new Error('owner_http_session_identity_mismatch');
+   if(session?.id!==sessionId||session.harness!==harness||(session.hostId!==undefined&&session.hostId!==state.peer.hostId))throw new Error('owner_http_session_identity_mismatch');
    return {hostId:state.peer.hostId,details:{...details,...(unavailable?{history:{source:'unavailable',complete:false}}:{}),
     ...(unavailable||details?.history?.source==='unavailable'?{historyUnavailable:true}:{})}};
   });

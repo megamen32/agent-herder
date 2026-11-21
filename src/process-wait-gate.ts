@@ -1,3 +1,4 @@
+import { installedLocalRecovery, recoveryUnavailable, type LocalRecoveryOwner } from "./host-local-recovery.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -23,6 +24,7 @@ export type ProcessWaitDecision = {
   sessionRefs?: string[];
   ruleRefs?: string[];
   observedAt?: string;
+  recoveryOwner?: "rust";
 };
 export type CanonicalWaitDecision = ProcessWaitDecision & {
   version: 1; configured: boolean; complete: boolean; mapped: boolean;
@@ -42,6 +44,7 @@ export interface ProcessWaitSource {
 }
 
 type Options = {
+  localRecovery?: LocalRecoveryOwner;
   query?: (target: ProcessWaitTarget) => Promise<ProcessWaitDecision>;
   selector?: string;
   launcher?: string;
@@ -132,7 +135,7 @@ async function boundedRead<T>(read: Promise<T>): Promise<T> {
 }
 
 /** No negative-result cache: a newly armed wait must be visible to the next judge/send fence. */
-export function createProcessWaitGate(options: Options = {}): ProcessWaitSource {
+export function createProcessWaitGate(options: Options = {}): ProcessWaitSource & { decision(target: ProcessWaitTarget): Promise<ProcessWaitDecision> } {
   const env = options.env ?? process.env;
   const explicitSelector = options.selector ?? env.AGENT_HERDER_PROCESS_WAIT_SELECTOR ?? env.HERDER_V1_ENTRY;
   const selector = explicitSelector ?? path.join(os.homedir(), ".config/agent-herder/gptadmin-entry.json");
@@ -226,25 +229,40 @@ export function createProcessWaitGate(options: Options = {}): ProcessWaitSource 
     };
     return { request, decision, gateBlocked, ...binding, epoch: canonicalClient.epoch, authority: canonicalClient.config.authority };
   };
-  return {
-    observeCanonical,
-    async blocks(harness, sessionId) {
+  const local = options.localRecovery ?? installedLocalRecovery;
+  const decision = async (target: ProcessWaitTarget): Promise<ProcessWaitDecision> => {
+    if (local && target.harness === "codex" && (typeof local.scope === "string" || target.nativeSessionId === local.scope.nativeId) &&
+        (target.nodeRef === undefined || target.nodeRef === local.nodeRef)) {
       try {
-        if (canonicalMode(env) === "canonical") {
-          return (await observeCanonical({ harness, nativeSessionId: sessionId })).gateBlocked;
-        }
-        const decision = validateDecision(await query({
-          harness, nativeSessionId: sessionId, ...(nodeRef ? { nodeRef } : {}),
-        }));
-        return decision.blocked;
-      } catch {
-        return true;
+        const result = await local.decision(target.nativeSessionId);
+        if (result !== undefined) return result;
+      } catch { return recoveryUnavailable(); }
+    }
+    try {
+      if (canonicalMode(env) === "canonical") {
+        const observed = await observeCanonical(target);
+        return { blocked: observed.gateBlocked, reason: observed.decision.reason };
       }
+      return validateDecision(await query(target));
+    } catch { return unavailable("process_wait_unavailable"); }
+  };
+  return {
+    observeCanonical, decision,
+    async blocks(harness, nativeSessionId) {
+      return (await decision({ harness, nativeSessionId, ...(nodeRef ? { nodeRef } : {}) })).blocked;
     },
   };
 }
 
 const installedProcessWaits = createProcessWaitGate();
+export const LOCAL_RECOVERY_WAIT_PATH = "/api/local-recovery-wait";
+export async function observeInstalledRecoveryWait(target: ProcessWaitTarget) {
+  const value = await installedProcessWaits.decision(target);
+  const known = ["rust_recovery_handoff", "native_recovery_held", "native_recovery_ownership_unavailable",
+    "process_wait_unconfigured"];
+  const reason = known.includes(value.reason) ? value.reason : (value.blocked ? "legacy_wait_active" : "legacy_wait_clear");
+  return { blocked: value.blocked, reason, ...(value.recoveryOwner ? { recoveryOwner: value.recoveryOwner } : {}) };
+}
 export async function observeInstalledCanonicalProcessWait(target: ProcessWaitTarget): Promise<CanonicalWaitObservation> {
   return await installedProcessWaits.observeCanonical!(target);
 }

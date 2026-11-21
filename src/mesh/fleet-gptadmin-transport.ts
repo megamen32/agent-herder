@@ -1,7 +1,7 @@
 import {assertRemoteCodexAdmission} from "../codex-quota-guard.js";
 import {randomUUID} from 'node:crypto';
 import {isBrowserMeshHarness,unwrapResult,type MeshAddress} from './protocol.js';
-import {FleetAttachmentFrameTooLarge,meshDeliverySchema} from './delivery-schema.js';
+import {FleetAttachmentFrameTooLarge,meshAttachmentsSchema,meshDeliverySchema} from './delivery-schema.js';
 import type {GptAdminTransport} from './gptadmin.js';
 export interface FleetFacadeOptions {
  endpoint:string;
@@ -103,23 +103,40 @@ function assertNativeHerderCall(tool:string,args:Record<string,unknown>):void{
    &&exact(row.harness)&&row.harness.length<=64&&exact(row.nativeSessionId)&&row.nativeSessionId.length<=512;
  };
  const revision=()=>Number.isSafeInteger(args.revision)&&Number(args.revision)>0;
+ const autopilotRule = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const rule = value as Record<string, unknown>;
+  return Object.keys(rule).length === 2 && rule.kind === 'autopilot' && typeof rule.instructions === 'string'
+   && rule.instructions.trim().length > 0 && !rule.instructions.includes('\0') && Buffer.byteLength(rule.instructions) <= 4096;
+ };
  let valid=false;
+ if(tool==='discover' && args.action==='instances')valid=keys(['action'],['node_ref'])&&(args.node_ref===undefined||exact(args.node_ref));
+ if(tool==='session' && args.action==='register')valid=keys(['action','instance_ref','native_session_id','request_key'])
+  &&exact(args.instance_ref)&&exact(args.native_session_id)&&exact(args.request_key);
  if(tool==='session'&&args.action==='resolve')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
  if(tool==='deliver'&&args.action==='receipt')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
- if(tool==='deliver'&&args.action==='session')valid=keys(['action','session_ref','request_key','message','mode'])&&exact(args.session_ref)&&exact(args.request_key)&&typeof args.message==='string'&&args.message.length>0&&args.message.length<=1024*1024&&['queue','start'].includes(String(args.mode));
+ if(tool==='deliver'&&args.action==='session'){
+  const files=args.attachments;
+  valid=keys(['action','session_ref','request_key','message','mode'],['attachments'])
+   &&exact(args.session_ref)&&exact(args.request_key)&&(args.mode==='queue'||args.mode==='start')
+   &&typeof args.message==='string'&&args.message.length<=1024*1024&&(args.message.length>0||Array.isArray(files)&&files.length>0)
+   &&(files===undefined||meshAttachmentsSchema.safeParse(files).success);
+ }
+ if(tool==='stop'&&args.action==='stop')valid=keys(['action','session_ref','request_key'])&&exact(args.session_ref)&&exact(args.request_key);
  if(tool==='deliver'&&keys(['target','sender','inputId','message'],['attachments'])){
   valid=peer(args.target)&&isBrowserMeshHarness(args.target.harness)&&peer(args.sender)
    &&exact(args.inputId)&&meshDeliverySchema.safeParse(args).success;
  }
  if(tool==='compat_task'&&args.action==='get')valid=keys(['action','task_ref'])&&exact(args.task_ref);
  if(tool==='automation'){
-  if(args.action==='list')valid=keys(['action']);
+  if(args.action==='list')valid=keys(['action'],['session_ref'])&&(args.session_ref===undefined||exact(args.session_ref));
   if(args.action==='get')valid=keys(['action','rule_ref'])&&exact(args.rule_ref);
   if(args.action==='delete'||args.action==='pause')valid=keys(['action','rule_ref','revision'])&&exact(args.rule_ref)&&revision();
   if(args.action==='wait_status')valid=keys(['action','harness','native_session_id'],['node_ref'])&&exact(args.harness)&&exact(args.native_session_id)&&(args.node_ref===undefined||exact(args.node_ref));
+  if(args.action==='update')valid=keys(['action','rule_ref','revision','rule'])&&exact(args.rule_ref)&&revision()&&autopilotRule(args.rule);
   if(args.action==='create'){
    const rule=args.rule&&typeof args.rule==='object'&&!Array.isArray(args.rule)?args.rule as Record<string,unknown>:undefined;
-   valid=keys(['action','session_ref','request_key','rule'])&&exact(args.session_ref)&&exact(args.request_key)&&!!rule&&['timer','session_completion'].includes(String(rule.kind));
+   valid=keys(['action','session_ref','request_key','rule'])&&exact(args.session_ref)&&exact(args.request_key)&&!!rule&&(['timer','session_completion'].includes(String(rule.kind))||autopilotRule(rule));
   }
  }
  if(!valid)throw new Error('native_herder_call_not_allowed');

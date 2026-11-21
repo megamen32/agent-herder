@@ -1,9 +1,13 @@
-import type {MeshAddress,MeshSession} from "./protocol.js";
+import {isBrowserMeshHarness,type MeshAddress,type MeshSession} from "./protocol.js";
 export type FleetHarness="codex"|"zcode"|"opencode";
 /** Harnesses a fleet node can host. Extending this list is one edit here, but every
  * node must already observe that harness; a node that cannot fails closed instead of
  * silently disappearing from the fleet view. */
 export const fleetHarnesses:readonly FleetHarness[]=["codex","zcode","opencode"];
+/** An addressed browser chat also has owner details. Creation and control keep their own allowlist. */
+export function supportsFleetChatDetails(harness:string):boolean {
+ return fleetHarnesses.some(value=>value===harness)||isBrowserMeshHarness(harness);
+}
 /** Display/expected-host policy only. Routes and liveness come from GPTAdmin. */
 export interface FleetHostDefinition {hostId:string;label:string;uiUrl?:string;nativeUser?:string;
 /** A machine another session leads: our fleet reads it as offline and never probes it. */

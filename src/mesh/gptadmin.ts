@@ -22,6 +22,8 @@ export interface GptAdminTransport {
   readSessionPage?(target:string,cursor?:string,limit?:number):Promise<unknown>;
   /** Optional owner-direct read; no session mutation or token mint. */
   readSession?(target:string,harness:string,sessionId:string):Promise<unknown>;
+  /** Exact owner HTTP {hostId, details}, including history or its unavailability. */
+  readSessionDetails?(target:string,harness:string,sessionId:string):Promise<unknown>;
   requestSession?(target:string,harness:string,sessionId:string,control:FleetSessionControl):Promise<FleetSessionResponse>;
   schema(target:string):Promise<unknown>;
   call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>;

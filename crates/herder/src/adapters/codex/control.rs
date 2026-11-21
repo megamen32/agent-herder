@@ -26,6 +26,7 @@ use super::connection::{CodexConnection, CodexInstance, OpenError, RpcError};
 
 #[path = "recovery.rs"]
 mod recovery;
+pub(crate) use recovery::autopilot::{SemanticBaseline, SemanticTurn};
 
 const LOOKUP_PAGE_LIMIT: u32 = 200;
 const LOOKUP_MAX_PAGES: usize = 128;
@@ -291,6 +292,13 @@ impl CodexControl {
         let mut state = self.state.lock().map_err(|_| {
             RequestLookupError::InvalidResponse("connection lock is poisoned".into())
         })?;
+        if self.process.socket_path.is_some() && state.connection.unavailable() {
+            // A lost submit ACK may close the proxy. Reconnect only to read the
+            // original clientUserMessageId from the same verified native profile.
+            state.connection = Self::connect(&self.process, self.timeout).map_err(|_| {
+                RequestLookupError::InvalidResponse("Codex receipt connection unavailable".into())
+            })?;
+        }
         let mut cursor: Option<String> = None;
         let mut seen_cursors = HashSet::new();
         let mut matched_turn: Option<String> = None;

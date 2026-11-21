@@ -159,9 +159,14 @@ export async function prepareCodexNativeProjection(packageRoot, outputRoot, nati
     || marketplace.plugins[0].name !== pkg.name || marketplace.plugins[0].source?.source !== 'local'
     || marketplace.plugins[0].source?.path !== '.') throw new Error('unexpected native marketplace route');
   const mcp = JSON.parse(await regular(join(packageRoot, '.mcp.json')));
-  const server = mcp.mcpServers?.['agent-herder'];
-  if (server?.type !== 'http' || server.url !== 'http://127.0.0.1:18787/mcp'
-    || ['command','args','env','cwd'].some(key => key in server)) throw new Error('MCP must retain the existing singleton HTTP route');
+  const servers = mcp.mcpServers;
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) throw new Error('invalid plugin MCP registration');
+  // Current packages inherit the shared registration. Older packages name the singleton explicitly.
+  if (Object.keys(servers).length) {
+    const server = servers['agent-herder'];
+    if (Object.keys(servers).length !== 1 || server?.type !== 'http' || server.url !== 'http://127.0.0.1:18787/mcp'
+      || ['command','args','env','cwd'].some(key => key in server)) throw new Error('MCP must retain the existing singleton HTTP route');
+  }
 
   const files = new Map(); let bytes = 0;
   async function include(path, output = path) {

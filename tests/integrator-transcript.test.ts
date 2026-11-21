@@ -211,6 +211,24 @@ describe("readIntegratorTranscriptPage", () => {
     await expect(readIntegratorTranscriptPage({ scope, cursor: first.nextCursor!, limit: 1, reader: restartedReader })).rejects.toThrow(/not issued by this reader or has expired/);
   });
 
+  it("pages Codex messages across a NUL-only line and still rejects damaged JSON", async () => {
+    const message = (id: string) => JSON.stringify({ type: "response_item", payload: {
+      type: "message", id, role: "assistant", content: [{ type: "output_text", text: id }],
+    } });
+    const padding = "\0".repeat(328);
+    let middle = padding;
+    const reader = createRawTranscriptPageReader({ scope, getRawTranscript: async () => ({
+      bytes: Buffer.from([message("before"), middle, message("after")].join("\r\n") + "\n"),
+      complete: true, source: { kind: "native-file", location: "fixture", format: "jsonl" }, timestampCoverage: "native",
+    }) });
+    const first = await readIntegratorTranscriptPage({ scope, reader, limit: 1 });
+    expect(first).toMatchObject({ totalEvents: 2, events: [{ sequence: 0, text: "before" }] });
+    const second = await readIntegratorTranscriptPage({ scope, reader, limit: 1, cursor: first.nextCursor! });
+    expect(second).toMatchObject({ complete: true, events: [{ sequence: 1, text: "after" }] });
+    middle = padding + message("damaged");
+    await expect(readIntegratorTranscriptPage({ scope, reader })).rejects.toThrow("record 1 is corrupt");
+  });
+
   it("rejects impossible trailing UTF-8 but excludes a valid incomplete multibyte EOF", async () => {
     const row = JSON.stringify({ type: "response_item", payload: { type: "message", id: "valid", role: "user", content: [{ type: "input_text", text: "valid" }] } });
     const source = { kind: "native-file" as const, location: "fixture", format: "jsonl" as const };

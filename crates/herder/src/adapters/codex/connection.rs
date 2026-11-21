@@ -230,6 +230,13 @@ impl CodexConnection {
     /// Start the official CLI for the selected instance, using its configured
     /// shared socket or a private stdio app-server.
     pub fn open(instance: CodexInstance) -> Result<Self, OpenError> {
+        Self::open_with_deadline(instance, None)
+    }
+
+    pub(super) fn open_with_deadline(
+        instance: CodexInstance,
+        deadline: Option<Instant>,
+    ) -> Result<Self, OpenError> {
         if instance.instance_id.trim().is_empty() {
             return Err(OpenError::EmptyInstanceId);
         }
@@ -279,7 +286,7 @@ impl CodexConnection {
         drop(command);
         let (incoming_tx, incoming) = mpsc::channel();
         let outgoing = match proxy_stream {
-            Some(stream) => start_proxy(stream, incoming_tx),
+            Some(stream) => start_proxy(stream, incoming_tx, deadline),
             None => start_stdio(&mut child, incoming_tx),
         };
         let outgoing = match outgoing {
@@ -316,6 +323,15 @@ impl CodexConnection {
 
     /// Send a one-way app-server notification such as `initialized`.
     pub fn notify(&mut self, method: &str, params: Value) -> Result<(), RpcError> {
+        self.notify_with_deadline(method, params, None)
+    }
+
+    pub(super) fn notify_with_deadline(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: Option<Instant>,
+    ) -> Result<(), RpcError> {
         if self.child.try_wait().map_err(RpcError::Process)?.is_some() {
             return Err(RpcError::NotRunning);
         }
@@ -324,9 +340,11 @@ impl CodexConnection {
             "params": params,
         }))
         .map_err(RpcError::Encode)?;
-        self.send(notification, None, |source| RpcError::NotificationWrite {
-            method: method.to_owned(),
-            source,
+        self.send(notification, deadline, |source| {
+            RpcError::NotificationWrite {
+                method: method.to_owned(),
+                source,
+            }
         })
     }
 
@@ -460,9 +478,11 @@ fn start_stdio(
 fn start_proxy(
     stream: UnixStream,
     incoming: mpsc::Sender<Result<Value, IncomingError>>,
+    deadline: Option<Instant>,
 ) -> Result<Outgoing, OpenError> {
     stream.set_nonblocking(true).map_err(OpenError::Proxy)?;
-    let deadline = Instant::now() + PROXY_TIMEOUT;
+    let proxy_deadline = Instant::now() + PROXY_TIMEOUT;
+    let deadline = deadline.unwrap_or(proxy_deadline).min(proxy_deadline);
     let (ready, connected) = mpsc::channel();
     let (outgoing, writes) = async_mpsc::channel(1);
     thread::Builder::new()
@@ -761,16 +781,9 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn proxy_exchanges_native_websocket_rpc_and_fails_closed() {
-        let TestDirectory(root) = &TestDirectory::new();
-        let socket = root.join("socket");
-        let listener = UnixListener::bind(&socket).unwrap();
-        let alias = root.join("alias");
-        symlink("socket", &alias).unwrap();
-        let proxy_fixture = root.join("app-server");
+    fn write_test_proxy(root: &Path) {
         fs::write(
-            &proxy_fixture,
+            root.join("app-server"),
             r#"import os, socket, sys, threading
 home = os.environ['CODEX_HOME']
 with open(os.path.join(home, 'launches'), 'a') as launches:
@@ -791,11 +804,81 @@ with socket.socket(socket.AF_UNIX) as peer:
 "#,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn admitted_receipt_deadline_includes_replacement_proxy_handshake() {
+        use crate::domain::{
+            adapter::NativeReceipt,
+            address::{InstanceRef, NodeRef, SessionAddress},
+        };
+        let TestDirectory(root) = &TestDirectory::new();
+        let socket = root.join("socket");
+        let listener = UnixListener::bind(&socket).unwrap();
+        write_test_proxy(root);
+        let home = root.clone();
+        let server = thread::spawn(move || {
+            let mut websocket = accept_proxy(&listener);
+            let id = rpc(&mut websocket, "initialize");
+            reply(&mut websocket, id, json!({"codexHome": home}));
+            rpc(&mut websocket, "initialized");
+            let id = rpc(&mut websocket, "thread/read");
+            websocket
+                .send(Message::text(
+                    json!({"id":id, "error":{
+                        "code": -32600, "message":"invalid paginated history lineage"
+                    }})
+                    .to_string(),
+                ))
+                .unwrap();
+            let (_replacement, _) = listener.accept().unwrap();
+            thread::sleep(Duration::from_secs(2));
+        });
+        let receipt = NativeReceipt {
+            native_id: "receipt".into(),
+            target: SessionAddress {
+                native_session_id: "thread".into(),
+                instance: InstanceRef {
+                    node: NodeRef("node".into()),
+                    instance_id: "fixture".into(),
+                },
+            },
+        };
+        let mut reader = CodexReader::open(
+            CodexInstance {
+                instance_id: "fixture".into(),
+                executable: PathBuf::from("/usr/bin/python3"),
+                code_home: root.clone(),
+                cwd: root.clone(),
+                socket_path: Some(socket),
+            },
+            Duration::from_millis(500),
+        )
+        .unwrap();
+        let start = Instant::now();
+        let result = reader.observe_admitted_recovery(&receipt, "key");
+        let elapsed = start.elapsed();
+        server.join().unwrap();
+        assert!(result.is_err());
+        assert!(
+            elapsed < Duration::from_millis(1500),
+            "reconnect exceeded the receipt deadline: {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn proxy_exchanges_native_websocket_rpc_and_fails_closed() {
+        let TestDirectory(root) = &TestDirectory::new();
+        let socket = root.join("socket");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let alias = root.join("alias");
+        symlink("socket", &alias).unwrap();
+        write_test_proxy(root);
         // Python reads the fixture as app-server from cwd. A concurrent fork
         // may hold a writable descriptor without affecting the interpreter.
         let _writer = fs::OpenOptions::new()
             .write(true)
-            .open(&proxy_fixture)
+            .open(root.join("app-server"))
             .unwrap();
 
         let (ping_answered, pong) = mpsc::channel();

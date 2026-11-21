@@ -206,6 +206,21 @@ impl NativeSessionReader for NativeReader {
         let thread = self.read(&receipt.target)?;
         Ok(observe(&thread, receipt))
     }
+
+    async fn reconcile_admitted_recovery(
+        &self,
+        receipt: &NativeReceipt,
+        key: &str,
+    ) -> Result<Observation, ReadError> {
+        if receipt.target.instance != self.instance {
+            return Err(ReadError("wrong Codex receipt instance".into()));
+        }
+        self.reader
+            .try_lock()
+            .map_err(|_| ReadError("Codex receipt reader unavailable".into()))?
+            .observe_admitted_recovery(receipt, key)
+            .map_err(|error| ReadError(error.to_string()))
+    }
 }
 #[cfg(test)]
 mod tests {

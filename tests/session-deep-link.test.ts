@@ -50,4 +50,12 @@ describe('exact native session deep links',()=>{
    expect(resolveSessionDeepLink(key,[],'100',true).kind).toBe('invalid');
   }
  });
+ it.each([['chatgpt','chatgpt::qa%2Fchat'],['zai','zai::route%3Aqa']])('opens both forms of an addressed %s link with its complete native id', (harness,nativeSessionId)=>{
+  const address={hostId:'44',harness,nativeSessionId};
+  const explicit='mesh:'+JSON.stringify([address.hostId,harness,nativeSessionId]);
+  const key=sessionKeyFromHash('#/session/'+encodeURIComponent(explicit))!;
+  expect(resolveSessionDeepLink(key,[],'100',false)).toEqual({kind:'remote',address});
+  expect(resolveSessionDeepLink(harness+':'+nativeSessionId,[address],'100',true)).toEqual({kind:'remote',address});
+  expect(resolveSessionDeepLink(harness+':'+nativeSessionId,[address,{...address,hostId:'88'}],'100',true).kind).toBe('ambiguous');
+ });
 });
