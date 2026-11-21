@@ -221,17 +221,17 @@ impl LegacyRecoveryHandoff {
         private_json::<bool>(&self.activation_file).unwrap_or(false)
     }
 
-    pub(super) fn held(&self, harness: &str, native_id: &str) -> bool {
+    pub(super) fn held(&self, harness: &str, native_id: &str, open_turn: Option<&str>) -> bool {
         // Failure to read any registry means we cannot take over a legacy session.
-        !self.released() || self.read_held(harness, native_id).unwrap_or(true)
+        !self.released() || self.read_held(harness, native_id, open_turn).unwrap_or(true)
     }
 
     pub(super) fn legacy_stop_reason(&self, harness: &str, native_id: &str) -> Option<&'static str> {
-        legacy_stop_reason(harness, native_id, &self.human_stops).ok().flatten()
+        legacy_stop_reason(harness, native_id, &self.human_stops, StopCheck::Recovery(None)).ok().flatten()
     }
 
-    fn read_held(&self, harness: &str, native_id: &str) -> io::Result<bool> {
-        if human_held(harness, native_id, &self.human_stops, &self.human_requests, &self.choices)? {
+    fn read_held(&self, harness: &str, native_id: &str, open_turn: Option<&str>) -> io::Result<bool> {
+        if human_held(harness, native_id, &self.human_stops, &self.human_requests, &self.choices, StopCheck::Recovery(open_turn))? {
             return Ok(true);
         }
         let previous: Sessions<LegacyAttempt> = private_json(&self.unfinished_sessions)?;
@@ -454,10 +454,19 @@ struct AutopilotSession {
     enabled: bool,
 }
 
+// Recovery reads the native terminal failure. A legacy Codex abort can only
+// contradict a projected *unclosed* turn if both refer to that very turn.
+#[derive(Clone, Copy)]
+enum StopCheck<'a> {
+    Recovery(Option<&'a str>),
+    Autopilot,
+}
+
 fn legacy_stop_reason(
     harness: &str,
     native_id: &str,
     human_stops: &Path,
+    check: StopCheck<'_>,
 ) -> io::Result<Option<&'static str>> {
     let holds: Sessions<Hold> = private_json(human_stops)?;
     require_v1(holds.version)?;
@@ -465,16 +474,11 @@ fn legacy_stop_reason(
     for hold in holds.sessions.iter().filter(|hold| {
         hold.harness == harness && hold.id == native_id && hold.active
     }) {
-        // The compatibility stop command writes this marker. A native
-        // interrupted frame alone contains no evidence of who requested it.
-        if hold.stop["reason"] == "explicit-stop"
-            && hold.stop["id"].as_str()
-                .and_then(|id| id.strip_prefix("explicit-stop:"))
-                .is_some_and(|id| !id.is_empty())
-        {
-            return Ok(Some("human_stop_active"));
+        match hold.reason(check) {
+            Some("human_stop_active") => return Ok(Some("human_stop_active")),
+            Some(other) => reason = Some(other),
+            None => {}
         }
-        reason = Some("legacy_stop_provenance_unknown");
     }
     Ok(reason)
 }
@@ -485,8 +489,9 @@ fn human_held(
     human_stops: &Path,
     human_requests: &Path,
     choice_path: &Path,
+    check: StopCheck<'_>,
 ) -> io::Result<bool> {
-    if legacy_stop_reason(harness, native_id, human_stops)?.is_some() {
+    if legacy_stop_reason(harness, native_id, human_stops, check)?.is_some() {
         return Ok(true);
     }
     let requests: Requests<HumanRequest> = private_json(human_requests)?;
@@ -532,7 +537,7 @@ pub(super) fn read_automation_holds(
     choices: &Path,
     unfinished_sessions: &Path,
 ) -> io::Result<bool> {
-    if human_held(harness, native_id, human_stops, human_requests, choices)? {
+    if human_held(harness, native_id, human_stops, human_requests, choices, StopCheck::Autopilot)? {
         return Ok(true);
     }
     let previous: Sessions<LegacyAttempt> = private_json(unfinished_sessions)?;
@@ -569,6 +574,32 @@ struct Hold {
     active: bool,
     #[serde(default)]
     stop: Value,
+    #[serde(default, rename = "ignoredStopIds")]
+    ignored_stop_ids: Vec<String>,
+}
+
+impl Hold {
+    fn reason(&self, check: StopCheck<'_>) -> Option<&'static str> {
+        let id = self.stop["id"].as_str().unwrap_or("");
+        let scope_stop = format!("owner-scope-stop:{}:{}", self.harness, self.id);
+        if (self.stop["reason"] == "explicit-stop"
+            && id.strip_prefix("explicit-stop:").is_some_and(|suffix| !suffix.is_empty()))
+            || id == scope_stop
+        {
+            return Some("human_stop_active");
+        }
+        // The Node observer records {id: turnId, reason: "interrupted"} for
+        // transport events. It can also replace a prior owner command, moving
+        // that command's ID into ignoredStopIds without recording a release.
+        if self.harness == "codex" && self.stop["reason"] == "interrupted"
+            && valid_native_id(id) && self.stop["turnId"].as_str() == Some(id)
+            && !self.ignored_stop_ids.iter().any(|old| old.starts_with("explicit-stop:") || old == &scope_stop)
+            && matches!(check, StopCheck::Recovery(open_turn) if open_turn != Some(id))
+        {
+            return None;
+        }
+        Some("legacy_stop_provenance_unknown")
+    }
 }
 
 #[derive(Deserialize)]
@@ -639,6 +670,28 @@ impl LegacyAttempt {
 mod handoff_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn observer_abort_only_fences_an_unclosed_matching_turn() {
+        let row = json!({"harness":"codex","id":"chat","active":true,
+            "stop":{"id":"one","turnId":"one","reason":"interrupted"}});
+        let parse = |row| serde_json::from_value::<Hold>(row).unwrap();
+        let abort = parse(row.clone());
+        assert!(abort.reason(StopCheck::Recovery(None)).is_none());
+        assert!(abort.reason(StopCheck::Recovery(Some("two"))).is_none());
+        assert!(abort.reason(StopCheck::Recovery(Some("one"))).is_some());
+        assert!(abort.reason(StopCheck::Autopilot).is_some());
+
+        let mut overwritten = row.clone();
+        overwritten["ignoredStopIds"] = json!(["explicit-stop:owner"]);
+        assert!(parse(overwritten).reason(StopCheck::Recovery(None)).is_some());
+        let mut malformed = row.clone();
+        malformed["stop"]["turnId"] = json!("other");
+        assert!(parse(malformed).reason(StopCheck::Recovery(None)).is_some());
+        let mut scope = row;
+        scope["stop"]["id"] = json!("owner-scope-stop:codex:chat");
+        assert_eq!(parse(scope).reason(StopCheck::Recovery(None)), Some("human_stop_active"));
+    }
 
     #[test]
     fn handed_over_workspaces_can_extend_an_existing_exact_cohort() {

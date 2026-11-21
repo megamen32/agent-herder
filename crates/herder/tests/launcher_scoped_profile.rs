@@ -1127,13 +1127,17 @@ for line in sys.stdin:
             ("held", "explicit-resume"),
         ] {
             let turn = format!("stopped-{target}");
-            let mut row = json!({"harness":"codex","id":target,"active":interrupt_active,"ignoredStopIds":[],
+            let mut row = json!({"harness":"codex","id":target,"active":interrupt_active || target == "old-interrupt","ignoredStopIds":[],
                 "stop":{"id":turn,"reason":"interrupted","turnId":turn,"at":"2000-01-01T00:00:00Z"}});
-            if !interrupt_active {
+            if target == "manual-release" {
+                row["stop"]["id"] = json!("explicit-stop:manual");
+                row["stop"]["reason"] = json!("explicit-stop");
+            }
+            if !interrupt_active && target != "old-interrupt" {
                 // Model the release as persisted by the legacy writer.
                 row["clearedBy"] = json!(cleared_by);
                 row["clearedAt"] = json!(chrono::DateTime::<chrono::Utc>::from(SystemTime::now()).to_rfc3339());
-                row["ignoredStopIds"] = json!([turn]);
+                row["ignoredStopIds"] = json!([row["stop"]["id"]]);
             }
             rows.push(row);
         }
@@ -1258,7 +1262,7 @@ for line in sys.stdin:
     assert_eq!(fence["mapped"], false, "{fence}");
     if scope == CodexHandoff::Cohort {
         for (id, reason) in [
-            ("old-interrupt", "legacy_stop_provenance_unknown"),
+            ("old-interrupt", "rust_recovery_handoff"),
             ("explicit-legacy", "human_stop_active"),
             ("held", "human_stop_active"),
         ] {
@@ -1303,10 +1307,10 @@ for line in sys.stdin:
         }
     };
     let recovered = launch();
-    wait_for(if instance_wide { 2 } else { 3 });
+    wait_for(if instance_wide { 2 } else { 4 });
     close(recovered);
     if scope == CodexHandoff::Cohort {
-        for target in ["old-interrupt", "manual-release", "explicit-legacy", "held"] {
+        for target in ["manual-release", "explicit-legacy", "held"] {
             assert!(!f.root.join(format!("attach-{target}")).exists(), "{target} resumed while held");
             assert!(!f.root.join(format!("sent-{target}")).exists(), "{target} started while held");
         }
