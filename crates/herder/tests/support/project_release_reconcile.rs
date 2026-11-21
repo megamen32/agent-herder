@@ -245,6 +245,31 @@ fn canonical_reconcile_settles_exact_expired_generation_and_replays_only_same_re
     );
 }
 #[test]
+fn reconciliation_uses_the_proof_target_when_another_resource_is_default() {
+    let mut recovery = Recovery::new();
+    let mut config = super::targets::two_targets(&recovery.f);
+    config["mappings"][0]["default_for_project"] = json!(false);
+    config["mappings"][2]["default_for_project"] = json!(true);
+    let other_target = config["mappings"][2]["deployment_target"].clone();
+    config["mappings"].as_array_mut().unwrap().reverse();
+    write_private(&recovery.f.config, &config);
+    recovery.evidence["config_sha256"] = json!(digest(&recovery.f.config));
+    recovery.save_evidence();
+    recovery.f.force_expired();
+
+    let original = recovery.request["proof"]["deploymentTarget"].clone();
+    recovery.request["proof"]["deploymentTarget"] = other_target;
+    assert_eq!(recovery.call()["ok"], false);
+    recovery.assert_unresolved();
+    recovery.request["proof"]["deploymentTarget"] = original;
+    assert_eq!(recovery.call()["result"]["reconciled"], true);
+    let default_status = recovery.f.call(recovery.f.request("status", 0));
+    assert_eq!(default_status["result"]["resourceRef"], "deployment-fleet");
+    assert_eq!(default_status["result"]["nextFence"], 42);
+    assert_eq!(default_status["result"]["deploymentInProgress"], false);
+}
+
+#[test]
 fn canonical_reconcile_refuses_live_coordinator_and_busy_execution_lock() {
     let mut f = Recovery::new();
     let live = birth(std::process::id());

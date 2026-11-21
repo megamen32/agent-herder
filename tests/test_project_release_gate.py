@@ -115,7 +115,7 @@ class ReleaseGateTests(unittest.TestCase):
         source=(Path(__file__).resolve().parents[1]/"deploy/fleet/rollout-candidate.py").read_text()
         self.assertIn('"--release-proof", arguments.release_proof',source)
         self.assertIn('"release_rules.py", "release_gate.py", "remote_release_gate.py"',source)
-        self.assertIn('with ReleaseGate(arguments.release_proof, target=target) as gate:',source)
+        self.assertIn('target=target, require_target_lease=bool(node.get("authorityGroup"))',source)
         self.assertIn('return finish_staged_rollout(command, gate, contract, ssh, stage)',source)
         remote=source[source.index('side = remote_python_command(node)'):source.index('command = ssh +')]
         self.assertNotIn('--release-proof',remote)

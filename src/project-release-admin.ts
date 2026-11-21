@@ -4,7 +4,7 @@ import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { executeProjectRelease } from "./mcp/project-release-tools.js";
-import { ProjectReleaseLeaseStore, type ReleaseOwner } from "./project-release-lease.js";
+import { ProjectReleaseLeaseStore, type ReleaseLease, type ReleaseProof } from "./project-release-lease.js";
 
 /** Offline owner route. The operator must independently verify the live authority path.
  * No default ledger, discovery, new authority, or implicit bootstrap is allowed.
@@ -28,28 +28,29 @@ export async function runReleaseAdmin(options: {
   if (!acquiring && options.proofOut) throw new Error("release_admin_unexpected_proof_output");
   // Reserve exclusively before taking a lease. Never overwrite another capability.
   const output = acquiring ? await open(options.proofOut!, "wx", 0o600) : undefined;
-  let result: Record<string, unknown> | undefined;
+  let acquiredProof: (ReleaseProof & { project: string }) | undefined;
   try {
-    result = await executeProjectRelease(options.request, store);
+    const result: { project: string } & Record<string, unknown> = await executeProjectRelease(options.request, store);
     if (output) {
       if (result.acquired !== true || typeof result.token !== "string")
         throw new Error("release_admin_lease_not_acquired");
-      await output.writeFile(JSON.stringify({
-        project: result.project, owner: request.owner, token: result.token, fence: (result.lease as { fence: number }).fence,
-      }) + "\n");
+      const lease = result.lease as ReleaseLease;
+      acquiredProof = {
+        project: result.project, owner: request.owner as ReleaseProof["owner"], token: result.token, fence: lease.fence,
+        ...(request.deploymentTarget !== undefined && { deploymentTarget: lease.deploymentTarget }),
+      };
+      await output.writeFile(JSON.stringify(acquiredProof) + "\n");
       await output.sync();
     }
     const { token: _token, ...safe } = result;
     return { ...safe, ...(output ? { proofPath: options.proofOut } : {}) };
   } catch (error) {
-    if (result?.token) {
+    if (acquiredProof) {
       // Failure to save the capability must not leave an inaccessible lease.
       // Roll back the exact acquired project even if cwd vanished or changed.
       // If rollback fails, retain the protected output for operator recovery.
-      await store.release(result.project as string, {
-        owner: request.owner as ReleaseOwner, token: result.token as string,
-        fence: (result.lease as { fence: number }).fence,
-      });
+      const { project, ...proof } = acquiredProof;
+      await store.release(project, proof);
     }
     if (output) await unlink(options.proofOut!);
     throw error;

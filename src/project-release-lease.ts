@@ -4,13 +4,14 @@ import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import lockfile from "proper-lockfile";
 import { execFileSync } from "node:child_process";
-import { canonicalAuthority, canonicalCall, readCanonicalAuthority, withCanonicalGuard } from "./project-release-canonical.js";
+import { canonicalAuthority, canonicalCall, readCanonicalAuthority, withCanonicalGuard, type CanonicalReleaseAuthority } from "./project-release-canonical.js";
 import { liveReleaseOccupancyEnabled } from "./harness-runtime-settings.js";
 
 export interface ReleaseProcessIdentity { pid: number; bootId: string; startTicks: number }
 export interface ReleaseOwner { hostId: string; harness: string; nativeSessionId: string; process?: ReleaseProcessIdentity }
+export interface DeploymentTarget { fleetDir: string; unit: string }
 export interface ReleaseLease {
-  project: string; deploymentTarget?: { fleetDir: string; unit: string }; owner: ReleaseOwner; fence: number; acquiredAt: number; expiresAt: number;
+  project: string; deploymentTarget?: DeploymentTarget; owner: ReleaseOwner; fence: number; acquiredAt: number; expiresAt: number;
 }
 interface StoredLease extends ReleaseLease { tokenHash: string }
 export interface IntegrationSession { owner: ReleaseOwner; cwd: string; at: number; state: "active" | "ended" }
@@ -24,7 +25,7 @@ interface State { version: 1 | 2; projects: Record<string, ProjectState> }
 export interface ReleaseStatus {
   deploymentInProgress: boolean; lease: ReleaseLease | null; remainingSeconds: number; nextFence: number;
   contact: { tool: string; hostId: string; harness: string; sessionId: string } | null;
-  resourceRef?: string; revision?: number; canonicalBusy?: boolean; currentClaim?: unknown;
+  resourceRef?: string; revision?: number; deploymentTarget?: DeploymentTarget | null; canonicalBusy?: boolean; currentClaim?: unknown;
   releaseOccupancyEnabled?: boolean; disabled?: boolean; reason?: string;
 }
 export type ReleaseAcquisition = { acquired: true; lease: ReleaseLease; token: string }
@@ -34,7 +35,11 @@ const processKey = (process?: ReleaseProcessIdentity) => process
   ? [process.pid, process.bootId, process.startTicks]
   : null;
 const ownerKey = (owner: ReleaseOwner) => JSON.stringify([owner.hostId, owner.harness, owner.nativeSessionId, processKey(owner.process)]);
-export interface ReleaseProof { owner: ReleaseOwner; fence: number; token: string }
+export interface ReleaseProof { owner: ReleaseOwner; fence: number; token: string; deploymentTarget?: DeploymentTarget }
+function requireDeploymentTarget(lease: ReleaseLease, requested?: DeploymentTarget) {
+  if (requested && (lease.deploymentTarget?.fleetDir !== requested.fleetDir || lease.deploymentTarget?.unit !== requested.unit))
+    throw new Error("release_lease_target_mismatch");
+}
 const sameOwner = (a: ReleaseOwner, b: ReleaseOwner) => a.hostId === b.hostId
   && a.harness === b.harness
   && a.nativeSessionId === b.nativeSessionId
@@ -107,19 +112,39 @@ export class ProjectReleaseLeaseStore {
   private require(state: State, project: string, proof: ReleaseProof): StoredLease {
     const lease = this.live(state, project);
     if (!lease || lease.fence !== proof.fence || !sameOwner(lease.owner, proof.owner) || lease.tokenHash !== hash(proof.token)) throw new Error("release_lease_not_owned_or_expired");
+    requireDeploymentTarget(lease, proof.deploymentTarget);
     return lease;
   }
-  private async requireForState(state: State, project: string, proof: ReleaseProof): Promise<ReleaseLease | null> {
-    if (!liveReleaseOccupancyEnabled()) return null;
-    const authority = canonicalAuthority(state);
-    return authority ? canonicalCall<ReleaseLease>(authority, { action: "check", project, ...proof }) : this.require(state, project, proof);
+  private async bypassProof(authority: CanonicalReleaseAuthority | undefined, project: string, proof: ReleaseProof) {
+    if (liveReleaseOccupancyEnabled()) return false;
+    if (authority) {
+      // Never send a mutation with the local switch off. Only an explicit
+      // bypass from the sealed authority preserves the old proof-less path.
+      const result = await canonicalCall<{ bypassed?: boolean }>(authority, { action: "check", project, ...proof });
+      if (result.bypassed !== true) throw new Error("release_occupancy_disabled");
+    }
+    return true;
   }
-  async acquire(project: string, owner: ReleaseOwner, ttlSeconds = 300, deploymentTarget?: { fleetDir: string; unit: string }): Promise<ReleaseAcquisition> {
+  private async requireIntegrationLease(state: State, project: string, proof: ReleaseProof): Promise<ReleaseLease | null> {
+    const authority = canonicalAuthority(state);
+    const { owner, token, fence } = proof;
+    const defaultProof = { owner, token, fence };
+    if (await this.bypassProof(authority, project, defaultProof)) return null;
+    if (!authority) return this.require(state, project, proof);
+    // Project-wide integration always checks the default mapping. A selector on
+    // a saved proof can confirm that lease, but cannot choose another resource.
+    const lease = await canonicalCall<ReleaseLease | { bypassed: true }>(authority, { action: "check", project, ...defaultProof });
+    if ("bypassed" in lease) return null;
+    requireDeploymentTarget(lease, proof.deploymentTarget);
+    return lease;
+  }
+  async acquire(project: string, owner: ReleaseOwner, ttlSeconds = 300, deploymentTarget?: DeploymentTarget): Promise<ReleaseAcquisition> {
+    const authority = await readCanonicalAuthority(this.file);
     if (!liveReleaseOccupancyEnabled()) {
+      if (authority) await canonicalCall(authority, { action: "status", project, deploymentTarget });
       return { acquired: false, lease: null, remainingSeconds: 0, disabled: true, bypassed: true, reason: "release_occupancy_disabled" };
     }
     const ttl = this.ttl(ttlSeconds);
-    const authority = await readCanonicalAuthority(this.file);
     if (authority) return canonicalCall<ReleaseAcquisition>(authority, {
       action: "acquire", project, owner, ttlSeconds, deploymentTarget,
       // One IPC request keeps its nonce stable even if the bridge response is lost.
@@ -137,38 +162,39 @@ export class ProjectReleaseLeaseStore {
       return { acquired: true as const, lease: publicLease(lease), token };
     }, false);
   }
-  async status(project: string): Promise<ReleaseStatus> {
+  async status(project: string, deploymentTarget?: DeploymentTarget): Promise<ReleaseStatus> {
+    const authority = await readCanonicalAuthority(this.file);
+    if (authority) return canonicalCall<ReleaseStatus>(authority, { action: "status", project, deploymentTarget });
     if (!liveReleaseOccupancyEnabled()) {
       return { deploymentInProgress: false, lease: null, remainingSeconds: 0, nextFence: 0,
         contact: null, releaseOccupancyEnabled: false, disabled: true, reason: "release_occupancy_disabled" };
     }
-    const authority = await readCanonicalAuthority(this.file);
-    if (authority) return canonicalCall<ReleaseStatus>(authority, { action: "status", project });
     return this.transaction(state => {
       const previous = state.projects[project]?.lease;
       const deploymentInProgress = this.deploying(previous);
       const lease = this.live(state, project) || (deploymentInProgress ? previous : undefined);
+      if (lease) requireDeploymentTarget(lease, deploymentTarget);
       return { deploymentInProgress, lease: lease ? publicLease(lease) : null, remainingSeconds: lease ? Math.max(0, Math.ceil((lease.expiresAt - this.now()) / 1000)) : 0,
         nextFence: (state.projects[project]?.fence || 0) + 1,
         contact: lease ? { tool: "SendMessage", hostId: lease.owner.hostId, harness: lease.owner.harness, sessionId: lease.owner.nativeSessionId } : null };
     }, false);
   }
   async renew(project: string, proof: ReleaseProof, ttlSeconds = 300) {
-    if (!liveReleaseOccupancyEnabled()) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
-    const ttl = this.ttl(ttlSeconds);
     const authority = await readCanonicalAuthority(this.file);
+    if (await this.bypassProof(authority, project, proof)) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
+    const ttl = this.ttl(ttlSeconds);
     if (authority) return canonicalCall<ReleaseLease>(authority, { action: "renew", project, ...proof, ttlSeconds });
     return this.transaction(state => { const lease = this.require(state, project, proof); lease.expiresAt = this.now() + ttl; return publicLease(lease); }, false);
   }
   async release(project: string, proof: ReleaseProof) {
-    if (!liveReleaseOccupancyEnabled()) return { released: false, bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     const authority = await readCanonicalAuthority(this.file);
+    if (await this.bypassProof(authority, project, proof)) return { released: false, bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     if (authority) return canonicalCall<{ released: boolean }>(authority, { action: "release", project, ...proof });
     return this.transaction(state => { this.require(state, project, proof); this.retire(state.projects[project]!); return { released: true }; }, false);
   }
   async check(project: string, proof: ReleaseProof) {
-    if (!liveReleaseOccupancyEnabled()) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     const authority = await readCanonicalAuthority(this.file);
+    if (await this.bypassProof(authority, project, proof)) return { bypassed: true, disabled: true, reason: "release_occupancy_disabled" };
     if (authority) return canonicalCall<ReleaseLease>(authority, { action: "check", project, ...proof });
     return this.transaction(state => publicLease(this.require(state, project, proof)), false);
   }
@@ -227,7 +253,7 @@ export class ProjectReleaseLeaseStore {
   }
   async claimIntegration(project: string, proof: ReleaseProof, id: string) {
     return this.transaction(async state => {
-      await this.requireForState(state, project, proof);
+      await this.requireIntegrationLease(state, project, proof);
       const value = state.projects[project]!, item = value.integration;
       if (!item || item.id !== id || item.state === "done") throw new Error("project_integration_not_pending");
       if (Object.values(value.sessions || {}).some(s => s.state === "active" && !sameOwner(s.owner, proof.owner)))
@@ -238,7 +264,7 @@ export class ProjectReleaseLeaseStore {
   }
   async finishIntegration(project: string, proof: ReleaseProof, id: string, blockers: string[], verification?: string) {
     return this.transaction(async state => {
-      await this.requireForState(state, project, proof);
+      await this.requireIntegrationLease(state, project, proof);
       const item = state.projects[project]?.integration;
       if (!item || item.id !== id || item.state !== "claimed" || item.claimFence !== proof.fence || !sameOwner(item.owner, proof.owner))
         throw new Error("project_integration_claim_changed");
@@ -249,9 +275,9 @@ export class ProjectReleaseLeaseStore {
   /** Hold the same ledger transaction through recheck+cleanup. Another cooperating
    * worker's start cannot race an admitted cleanup; unknown worktrees stay held. */
   async withIntegrationCleanup<T>(project: string, proof: ReleaseProof, id: string, cwd: string, cleanup: () => Promise<T>, target = "main") {
-    if (!liveReleaseOccupancyEnabled()) return cleanup();
+    if (!liveReleaseOccupancyEnabled() && !await readCanonicalAuthority(this.file)) return cleanup();
     return this.transaction(async state => {
-      const ownedLease = await this.requireForState(state, project, proof);
+      const ownedLease = await this.requireIntegrationLease(state, project, proof);
       if (!ownedLease) return cleanup();
       const value = state.projects[project]!, item = value.integration;
       if (!item || item.id !== id || item.state !== "claimed" || item.claimFence !== proof.fence || !sameOwner(item.owner, proof.owner))
