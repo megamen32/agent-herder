@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify crash and quota recovery against a native OpenCode v2 in launch.py."""
+"""Verify crash, throttling, and quota recovery against a native OpenCode v2 in launch.py."""
 
 import argparse
 from contextlib import closing, contextmanager
@@ -23,6 +23,7 @@ from opencode_mcp_create_stand import api
 
 INSTANCE = "opencode-recovery-fixture"
 CRASH_MODEL = "recover-after-crash"
+THROTTLED_MODEL = "temporary-rate-limit"
 QUOTA_MODEL = "terminal-quota"
 FALLBACK_PROVIDER = "fixture-reserve"
 
@@ -30,6 +31,7 @@ FALLBACK_PROVIDER = "fixture-reserve"
 def providers(model, token):
     entered = threading.Event()
     release = threading.Event()
+    throttle_cleared = threading.Event()
 
     class Primary(model.Handler):
         received = []
@@ -40,6 +42,19 @@ def providers(model, token):
             if selected == CRASH_MODEL and self.received.count(selected) == 1:
                 entered.set()
                 release.wait(30)
+                return
+            if selected == THROTTLED_MODEL:
+                if throttle_cleared.is_set():
+                    return super().chat(request, sequence)
+                error = json.dumps({"error": {"type": "rate_limit_exceeded", "code": "rate_limit_exceeded",
+                                              "message": "Temporary fixture throttle"}}).encode()
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(error)))
+                # Make the original turn terminal immediately instead of waiting out OpenCode's retry budget.
+                self.send_header("x-should-retry", "false")
+                self.end_headers()
+                self.wfile.write(error)
                 return
             if selected == QUOTA_MODEL:
                 error = {"error": {"type": "insufficient_quota", "code": "insufficient_quota",
@@ -57,7 +72,7 @@ def providers(model, token):
             self.received.append(request["model"])
             return super().chat(request, sequence)
 
-    return Primary, Reserve, entered, release
+    return Primary, Reserve, entered, release, throttle_cleared
 
 
 def provider(endpoint, key, models):
@@ -180,10 +195,10 @@ def main():
         endpoint = f"http://127.0.0.1:{port.getsockname()[1]}"
     module = model_fixture()
     token = "fixture-" + secrets.token_hex(24)
-    primary, reserve, entered, release = providers(module, token)
+    primary, reserve, entered, release, throttle_cleared = providers(module, token)
     with http_fixture(primary) as primary_url, http_fixture(reserve) as reserve_url:
         private_write(project / "opencode.json", json.dumps({"autoupdate": False, "provider": {
-            "fixture-primary": provider(primary_url, "fixture-primary-only", [CRASH_MODEL, QUOTA_MODEL]),
+            "fixture-primary": provider(primary_url, "fixture-primary-only", [CRASH_MODEL, THROTTLED_MODEL, QUOTA_MODEL]),
             FALLBACK_PROVIDER: provider(reserve_url, token, [FALLBACK_MODEL]),
         }}))
         gate, database = make_authority(root, args.schema_dir)
@@ -217,12 +232,23 @@ def main():
             ), seconds=45)
             failures = primary.received.count(QUOTA_MODEL)
             require(failures > 0, "no quota failure reached the primary provider")
+            throttled, throttled_input = seed(endpoint, project, THROTTLED_MODEL)
+            wait_for("native OpenCode did not record a terminal temporary 429", lambda: (
+                any(m.get("type") == "idle" and m.get("outcome") == "failed"
+                    and (m.get("error") or {}).get("type") == "provider.rate-limit"
+                    and (m.get("error") or {}).get("status") == 429 for m in messages(endpoint, throttled))
+                and throttled not in call(endpoint, "/api/session/active")
+            ), seconds=15)
+            require(primary.received.count(THROTTLED_MODEL) == 1 and not durable(database, throttled),
+                    "expected one terminal 429 before launching the Rust recovery owner")
+            throttle_cleared.set()
+            sessions = (crashed, exhausted, throttled)
             with owner_client(args.core, profile, env) as provision:
                 registered = [session_tool(provision, action="register", instance_ref=INSTANCE,
                               native_session_id=native_id, request_key=f"register-{native_id}")
-                              for native_id in (crashed, exhausted)]
+                              for native_id in sessions]
             refs = {r["address"]["native_session_id"]: r["session_ref"] for r in registered}
-            require(set(refs) == {crashed, exhausted}, "registered session identities differ")
+            require(set(refs) == set(sessions), "registered session identities differ")
             wrong, exact = root / "foreign-quota.sqlite", root / "exact-quota.sqlite"
             quota_backup(wrong, token, OTHER_ACCOUNT)
             quota_backup(exact, token, ACCOUNT)
@@ -237,6 +263,14 @@ def main():
             with owner_client(args.core, profile, env) as active:
                 crashed_receipt = verified(active, endpoint, database, crashed, refs[crashed], crash_input,
                                             module.ANSWER, "fixture-primary", CRASH_MODEL)
+                throttle_receipt = verified(active, endpoint, database, throttled, refs[throttled], throttled_input,
+                                              module.ANSWER, "fixture-primary", THROTTLED_MODEL)
+                throttle_history = messages(endpoint, throttled)
+                require(not any(m.get("type") == "model-switched" for m in throttle_history),
+                        "temporary 429 caused an OpenCode model selection")
+                throttle_models = [m.get("model") for m in throttle_history if m.get("type") == "assistant"]
+                require(len(throttle_models) == 2 and throttle_models[0] == throttle_models[1],
+                        "OpenCode did not retain the exact original model variant")
             require(reserve.count == 0 and not durable(database, exhausted), "foreign quota authorized a recovery")
 
             route["omniroute"]["database"] = str(exact)
@@ -249,10 +283,15 @@ def main():
                 require(verified(reopened, endpoint, database, exhausted, refs[exhausted], exhausted_input,
                                  module.ANSWER, FALLBACK_PROVIDER, FALLBACK_MODEL) == fallback_receipt,
                         "owner restart did not retain the existing recovery")
+                require(verified(reopened, endpoint, database, throttled, refs[throttled], throttled_input,
+                                 module.ANSWER, "fixture-primary", THROTTLED_MODEL) == throttle_receipt,
+                        "owner restart did not retain the original-model recovery after 429")
             require(primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
+                    and primary.received.count(THROTTLED_MODEL) == 2
                     and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
             print(json.dumps({"result": "verified", "opencode_sha256": digest(args.opencode),
                               "owner_sha256": digest(args.core), "crash_receipt": crashed_receipt,
+                              "same_model_429_receipt": throttle_receipt, "same_model_429_requests": 2,
                               "fallback_receipt": fallback_receipt, "fallback_requests": reserve.count,
                               "replayed": 0}), flush=True)
 

@@ -21,6 +21,37 @@ afterEach(async () => {
 });
 
 describe("HumanStopStore", () => {
+  it("distinguishes a native interruption from persisted direct and inherited stops while running", async () => {
+    const { store } = await fixtureStore();
+    const child = {
+      id: "child", harness: "codex" as const, status: "idle" as const,
+      cwd: "/tmp/project", title: "Task", needsPermission: false,
+      lastActivity: "2026-11-21T01:28:31.000Z",
+      meta: { nativeLastTurn: { turnId: "interrupted-turn", status: "interrupted" } },
+    };
+    const sources = [{ harness: "codex", sessionId: "parent" }, { harness: "codex", sessionId: child.id }];
+    let admitted = 0;
+    const attempt = () => store.withSourcesUnheld(sources, async () => ++admitted);
+
+    // Native interruption alone is not persisted HumanStop evidence.
+    expect(await store.observe(child)).toBe(false);
+    expect(await attempt()).toEqual({ allowed: true, value: 1 });
+
+    await store.hold(child, { id: "child-stop", reason: "interrupted", turnId: "interrupted-turn", at: child.lastActivity });
+    const running = { ...child, status: "running" as const,
+      meta: { nativeLastTurn: { turnId: "new-turn", status: "inProgress" } } };
+    expect(await store.observe(running)).toBe(true);
+    expect(await attempt()).toEqual({ allowed: false });
+    expect(await attempt()).toEqual({ allowed: false });
+
+    // A separate child without its own stop is still fenced by its parent.
+    const otherSources = [{ harness: "codex", sessionId: "parent" }, { harness: "codex", sessionId: "other-child" }];
+    await store.hold({ harness: "codex", id: "parent" }, { id: "parent-stop", reason: "interrupted", at: child.lastActivity });
+    expect(await store.isHeld("codex", "other-child")).toBe(false);
+    expect(await store.withSourcesUnheld(otherSources, async () => ++admitted)).toEqual({ allowed: false });
+    expect(admitted).toBe(1);
+  });
+
   it("reads an unfenced user prompt without acquiring another process's write lock", async () => {
     const { path, store } = await fixtureStore();
     await store.rememberGeneratedPrompt("codex", "other-session", "previous generated input");
