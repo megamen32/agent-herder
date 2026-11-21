@@ -1,7 +1,10 @@
 //! Trusted local launch profile for an already provisioned scoped authority.
 //! Opening does not migrate, create a database, or authorize an MCP caller.
 use herder::{
-    application::{scoped_stop::ScopedAuthority, target_gate::acquire_pinned},
+    application::{
+        scoped_stop::{ScopedAuthority, session_recovery::RecoveryRunner},
+        target_gate::acquire_pinned,
+    },
     store::Writer,
 };
 use serde::Deserialize;
@@ -497,6 +500,10 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     if owner.codex_recovery.as_ref().is_some_and(|recovery| {
         owner.kind != "codex" || !recovery.valid()
             || (owner.ahap_script.is_some() && !owner.ahap_env.contains_key("AHAP_CODEX_BIN"))
+            || (recovery.runner == RecoveryRunner::Service
+                && (!super::owner_launch::has_native_codex_binding(&owner)
+                    || !owner.ahap_env.get("AHAP_CODEX_SOCKET")
+                        .is_some_and(|socket| Path::new(socket).is_absolute())))
     }) {
         return Err(invalid().into());
     }

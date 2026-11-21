@@ -56,6 +56,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             herder::adapters::browser::run(std::iter::once(flag).chain(args)).await
         }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
+        Some(flag) if flag == "--run-codex-recovery" => {
+            let path = args.next().ok_or("--run-codex-recovery requires a trusted owner profile")?;
+            if args.next().is_some() {
+                return Err("unexpected arguments".into());
+            }
+            owner_launch::run_recovery(scoped_profile::open_owner(std::path::Path::new(&path))?).await
+        }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         Some(flag) if flag == "--trusted-owner-profile" => {
             let path = args.next().ok_or_else(|| {
                 io::Error::new(
@@ -143,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(_) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: herder_native_stdio [--config PATH [--scoped-profile PATH]] | --trusted-owner-profile PATH ... | --enroll-existing-owner-profile PATH (--request-key KEY | --all-approved)",
+            "usage: herder_native_stdio [--config PATH [--scoped-profile PATH]] | --trusted-owner-profile PATH ... | --run-codex-recovery PATH | --enroll-existing-owner-profile PATH (--request-key KEY | --all-approved)",
         )
         .into()),
     }

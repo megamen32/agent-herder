@@ -85,21 +85,34 @@ impl AutomationOwner {
 /// Each configured owner has at most one in-flight tick. A slow native reader
 /// cannot block another owner; native reads must use their bounded blocking port.
 pub fn start(owners: Vec<AutomationOwner>) -> io::Result<()> {
+    start_until_shutdown(owners, std::future::pending()).map(|_| ())
+}
+
+/// Stop scheduling new work on shutdown and wait for each in-flight tick.
+pub fn start_until_shutdown(
+    owners: Vec<AutomationOwner>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> io::Result<tokio::task::JoinHandle<()>> {
     if owners.is_empty() || owners.len() > MAX_AUTOMATION_OWNERS {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "invalid automation owner count",
         ));
     }
-    tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         let mut slots: Vec<_> = owners
             .into_iter()
             .map(|owner| (owner, None::<tokio::task::JoinHandle<()>>))
             .collect();
         let mut interval = tokio::time::interval(Duration::from_secs(2));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        tokio::pin!(shutdown);
         loop {
-            interval.tick().await;
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => break,
+                _ = interval.tick() => {}
+            }
             let mut alive = false;
             for (owner, running) in &mut slots {
                 if running.as_ref().is_some_and(|task| !task.is_finished()) {
@@ -125,6 +138,54 @@ pub fn start(owners: Vec<AutomationOwner>) -> io::Result<()> {
                 break;
             }
         }
-    });
-    Ok(())
+        for (_, running) in slots {
+            if let Some(tick) = running {
+                let _ = tick.await;
+            }
+        }
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::identity::Caller;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::{Notify, oneshot};
+
+    #[derive(Default)]
+    struct BlockingTick {
+        started: Notify,
+        finish: Notify,
+        completed: AtomicUsize,
+    }
+
+    impl AutomationTick for BlockingTick {
+        fn tick<'a>(
+            &'a self,
+            _: &'a ConnectionIdentity,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async {
+                self.started.notify_one();
+                self.finish.notified().await;
+                self.completed.fetch_add(1, Ordering::Relaxed);
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_the_running_tick() {
+        let tick = Arc::new(BlockingTick::default());
+        let owner = AutomationOwner::new(ConnectionIdentity::new(Caller::Unknown, None), vec![tick.clone()]);
+        let (stop, stopped) = oneshot::channel();
+        let mut driver = start_until_shutdown(vec![owner], async {
+            let _ = stopped.await;
+        }).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), tick.started.notified()).await.unwrap();
+        stop.send(()).unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut driver).await.is_err());
+        tick.finish.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), driver).await.unwrap().unwrap();
+        assert_eq!(tick.completed.load(Ordering::Relaxed), 1);
+    }
 }

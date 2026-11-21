@@ -127,14 +127,35 @@ fn recheck_same_route_retry(
         return SameRouteRetry::Hold;
     };
     let provider = &providers[&boundary.provider];
-    // A known custom Responses route can retry without a subscription meter.
-    // An alias using the built-in OpenAI credential cannot take this path.
-    if provider["wire_api"] != "responses"
-        || !matches!(provider.get("requires_openai_auth"), None | Some(Value::Null | Value::Bool(false)))
-    {
+    if provider["wire_api"] != "responses" {
         return SameRouteRetry::Hold;
     }
-    retry
+    match provider.get("requires_openai_auth") {
+        None | Some(Value::Null | Value::Bool(false)) => retry,
+        // Codex can use its login to authenticate to an explicit custom proxy.
+        // A default endpoint or an alias of the official service still needs its quota gate.
+        Some(Value::Bool(true)) if explicit_responses_proxy(provider) => retry,
+        _ => SameRouteRetry::Hold,
+    }
+}
+
+fn explicit_responses_proxy(provider: &Value) -> bool {
+    required_string(provider, "base_url")
+        .and_then(|endpoint| reqwest::Url::parse(endpoint).ok())
+        .is_some_and(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.host_str().is_some_and(|host| {
+                    let host = host.trim_end_matches('.');
+                    !["openai.com", "chatgpt.com"].iter().any(|domain| {
+                        host == *domain
+                            || host
+                                .strip_suffix(*domain)
+                                .is_some_and(|prefix| prefix.ends_with('.'))
+                    })
+                })
+        })
 }
 
 fn retry_after_throttle(turn: &Value, boundary: &RecoveryBoundary, now: u64) -> SameRouteRetry {
@@ -1600,6 +1621,13 @@ for line in sys.stdin:
         providers = result["config"]["model_providers"]
         if case == "throttle-subscription":
             providers["pinned"]["requires_openai_auth"] = True
+        oauth_endpoints = {
+            "throttle-oauth-proxy": "http://192.0.2.10:10100/v1",
+            "throttle-oauth-openai": "https://api.openai.com/v1",
+            "throttle-oauth-chatgpt": "https://chatgpt.com./backend-api/codex",
+        }
+        if case in oauth_endpoints:
+            providers["pinned"].update(requires_openai_auth=True, base_url=oauth_endpoints[case])
         if case == "throttle-unconfigured":
             del providers["pinned"]
     elif method == "configRequirements/read":
@@ -1631,6 +1659,9 @@ for line in sys.stdin:
         for (case, provider, expected) in [
             ("throttle-responses", "pinned", SameRouteRetry::Ready),
             ("throttle-subscription", "pinned", SameRouteRetry::Hold),
+            ("throttle-oauth-openai", "pinned", SameRouteRetry::Hold),
+            ("throttle-oauth-chatgpt", "pinned", SameRouteRetry::Hold),
+            ("throttle-oauth-proxy", "pinned", SameRouteRetry::Ready),
             ("throttle-unconfigured", "pinned", SameRouteRetry::Hold),
             ("throttle-built-in", "openai", SameRouteRetry::UseQuotaPolicy),
         ] {
