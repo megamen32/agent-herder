@@ -24,6 +24,10 @@ from opencode_mcp_create_stand import api
 INSTANCE = "opencode-recovery-fixture"
 CRASH_MODEL = "recover-after-crash"
 THROTTLED_MODEL = "temporary-rate-limit"
+STOPPED_MODEL = "human-stop"
+QUESTION_MODEL = "pending-human-request"
+AMBIGUOUS_MODEL = "legacy-delivery-unknown"
+PROTECTED_MODELS = (STOPPED_MODEL, QUESTION_MODEL, AMBIGUOUS_MODEL)
 QUOTA_MODEL = "terminal-quota"
 FALLBACK_PROVIDER = "fixture-reserve"
 
@@ -43,7 +47,7 @@ def providers(model, token):
                 entered.set()
                 release.wait(30)
                 return
-            if selected == THROTTLED_MODEL:
+            if selected in (THROTTLED_MODEL, *PROTECTED_MODELS):
                 if throttle_cleared.is_set():
                     return super().chat(request, sequence)
                 error = json.dumps({"error": {"type": "rate_limit_exceeded", "code": "rate_limit_exceeded",
@@ -129,6 +133,18 @@ def messages(endpoint, native_id):
     return call(endpoint, f"/api/session/{native_id}/message?limit=30&order=asc")
 
 
+def seed_throttled(endpoint, project, primary, model):
+    native_id, original = seed(endpoint, project, model)
+    wait_for("native OpenCode did not record a terminal temporary 429", lambda: (
+        any(m.get("type") == "idle" and m.get("outcome") == "failed"
+            and (m.get("error") or {}).get("type") == "provider.rate-limit"
+            and (m.get("error") or {}).get("status") == 429 for m in messages(endpoint, native_id))
+        and native_id not in call(endpoint, "/api/session/active")
+    ), seconds=15)
+    require(primary.received.count(model) == 1, "expected a single terminal 429 per test chat")
+    return native_id, original
+
+
 def durable(database, native_id):
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as conn:
         return conn.execute(
@@ -198,7 +214,8 @@ def main():
     primary, reserve, entered, release, throttle_cleared = providers(module, token)
     with http_fixture(primary) as primary_url, http_fixture(reserve) as reserve_url:
         private_write(project / "opencode.json", json.dumps({"autoupdate": False, "provider": {
-            "fixture-primary": provider(primary_url, "fixture-primary-only", [CRASH_MODEL, THROTTLED_MODEL, QUOTA_MODEL]),
+            "fixture-primary": provider(primary_url, "fixture-primary-only",
+                                        [CRASH_MODEL, THROTTLED_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]),
             FALLBACK_PROVIDER: provider(reserve_url, token, [FALLBACK_MODEL]),
         }}))
         gate, database = make_authority(root, args.schema_dir)
@@ -232,30 +249,51 @@ def main():
             ), seconds=45)
             failures = primary.received.count(QUOTA_MODEL)
             require(failures > 0, "no quota failure reached the primary provider")
-            throttled, throttled_input = seed(endpoint, project, THROTTLED_MODEL)
-            wait_for("native OpenCode did not record a terminal temporary 429", lambda: (
-                any(m.get("type") == "idle" and m.get("outcome") == "failed"
-                    and (m.get("error") or {}).get("type") == "provider.rate-limit"
-                    and (m.get("error") or {}).get("status") == 429 for m in messages(endpoint, throttled))
-                and throttled not in call(endpoint, "/api/session/active")
-            ), seconds=15)
-            require(primary.received.count(THROTTLED_MODEL) == 1 and not durable(database, throttled),
-                    "expected one terminal 429 before launching the Rust recovery owner")
+            throttled, throttled_input = seed_throttled(endpoint, project, primary, THROTTLED_MODEL)
+            protected = {model: seed_throttled(endpoint, project, primary, model)[0]
+                         for model in PROTECTED_MODELS}
+            original_history = {sid: messages(endpoint, sid) for sid in protected.values()}
             throttle_cleared.set()
-            sessions = (crashed, exhausted, throttled)
+            sessions = (crashed, exhausted, throttled, *protected.values())
             with owner_client(args.core, profile, env) as provision:
                 registered = [session_tool(provision, action="register", instance_ref=INSTANCE,
                               native_session_id=native_id, request_key=f"register-{native_id}")
                               for native_id in sessions]
-            refs = {r["address"]["native_session_id"]: r["session_ref"] for r in registered}
-            require(set(refs) == set(sessions), "registered session identities differ")
+                refs = {r["address"]["native_session_id"]: r["session_ref"] for r in registered}
+                require(set(refs) == set(sessions), "registered session identities differ")
+                stopped = provision.request("tools/call", {
+                    "_meta": MCP_META, "name": "stop",
+                    "arguments": {"action": "stop", "session_ref": refs[protected[STOPPED_MODEL]],
+                                  "request_key": "fixture-operator-stop"},
+                })
+                require(not stopped.get("isError") and stopped["structuredContent"]["hold"] == "active",
+                        "OpenCode owner did not record the operator stop")
             wrong, exact = root / "foreign-quota.sqlite", root / "exact-quota.sqlite"
             quota_backup(wrong, token, OTHER_ACCOUNT)
             quota_backup(exact, token, ACCOUNT)
             route = {"workspace": str(project), "provider": FALLBACK_PROVIDER, "model": FALLBACK_MODEL,
                      "omniroute": {"upstream_provider": "codex", "account": ACCOUNT,
                                    "database": str(wrong), "endpoint": reserve_url}}
-            owner["opencode_recovery"] = {"autopilot_state_dir": str(root), "fallback_routes": [route]}
+            # Exercise the same protected registries as a real legacy-to-Rust transfer.
+            handoff = {"native_sessions": sessions}
+            registries = {
+                "activation_file": True,
+                "human_stops": {"version": 1, "sessions": []},
+                "choices": {"version": 1, "requests": []},
+                "human_requests": {"version": 1, "requests": [
+                    {"target": {"agent": "opencode", "sessionId": protected[QUESTION_MODEL]}, "status": "pending"},
+                ]},
+                "unfinished_sessions": {"version": 1, "sessions": [
+                    {"harness": "opencode", "sessionId": protected[AMBIGUOUS_MODEL],
+                     "quotaRecovery": {"state": "dispatching", "reasonCode": "delivery_unknown"}},
+                ]},
+            }
+            for name, contents in registries.items():
+                path = root / f"{name}.json"
+                private_write(path, json.dumps(contents))
+                handoff[name] = str(path)
+            owner["opencode_recovery"] = {"autopilot_state_dir": str(root), "fallback_routes": [route],
+                                         "legacy_handoff": handoff}
             private_write(root / "session-autostart.json", json.dumps({
                 "version": 8, "enabled": True, "waitForQuota": True, "fallbackForQuota": True, "sessions": [],
             }))
@@ -289,10 +327,15 @@ def main():
             require(primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
                     and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
+            for model, sid in protected.items():
+                require(primary.received.count(model) == 1 and not durable(database, sid)
+                        and messages(endpoint, sid) == original_history[sid],
+                        f"OpenCode recovery crossed the {model} guard")
             print(json.dumps({"result": "verified", "opencode_sha256": digest(args.opencode),
                               "owner_sha256": digest(args.core), "crash_receipt": crashed_receipt,
                               "same_model_429_receipt": throttle_receipt, "same_model_429_requests": 2,
                               "fallback_receipt": fallback_receipt, "fallback_requests": reserve.count,
+                              "protected_continuations": {model: 0 for model in protected},
                               "replayed": 0}), flush=True)
 
 
