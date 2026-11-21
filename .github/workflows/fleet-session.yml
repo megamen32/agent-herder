@@ -66,6 +66,50 @@ jobs:
           python3 -m unittest discover -s tests/native -p test_installed_smoke_provision.py
           node --test tests/native/ci-browser-fixture.test.mjs
 
+  native-recovery:
+    name: Native Codex and OpenCode recovery with a fake model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the Linux fixture tools and pinned harness binaries
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap iproute2 python3-websocket
+          # Ubuntu's hosted image may restrict unprivileged network namespaces.
+          # The fixtures require a new namespace containing only loopback.
+          if ! unshare --user --map-root-user --net -- true; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          npm install --prefix "$RUNNER_TEMP/herder-recovery-cli" --ignore-scripts --no-save --no-audit --no-fund \
+            'codex-native@npm:@openai/codex@0.170.0-linux-x64' '@opencode/cli-linux-x64@2.3.0'
+      - name: Build the Rust owner
+        run: |
+          cargo build --locked --manifest-path crates/herder/Cargo.toml \
+            --target-dir "$RUNNER_TEMP/herder-recovery-core" --bin herder_native_stdio
+      - name: Verify Codex recovery after 429, fallback and restart
+        shell: bash
+        run: |
+          codex_bin="$RUNNER_TEMP/herder-recovery-cli/node_modules/codex-native/vendor/x86_64-unknown-linux-musl/bin/codex"
+          owner_bin="$RUNNER_TEMP/herder-recovery-core/debug/herder_native_stdio"
+          /usr/bin/python3 -uB tests/native/codex_recovery_stand.py --codex "$codex_bin" --owner "$owner_bin" --same-route-429
+          /usr/bin/python3 -uB tests/native/codex_recovery_stand.py --codex "$codex_bin" --owner "$owner_bin"
+      - name: Verify OpenCode crash recovery and quota-bound fallback
+        shell: bash
+        run: |
+          opencode_bin="$RUNNER_TEMP/herder-recovery-cli/node_modules/@opencode/cli-linux-x64/bin/opencode"
+          owner_bin="$RUNNER_TEMP/herder-recovery-core/debug/herder_native_stdio"
+          schema_dir="$PWD/crates/herder/src/store"
+          /usr/bin/python3 -uB tests/native/launch.py --ro-bind "$owner_bin" --ro-bind "$schema_dir" -- \
+            /usr/bin/python3 -uB "$PWD/tests/native/opencode_recovery_stand.py" \
+            --opencode "$opencode_bin" --core "$owner_bin" --schema-dir "$schema_dir"
+
   installed-browser:
     name: Installed Vibe functional smoke
     if: >-
