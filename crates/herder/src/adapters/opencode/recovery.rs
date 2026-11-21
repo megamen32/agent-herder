@@ -1,6 +1,10 @@
 //! OpenCode v2 recovery with native synthetic-queue admission and exact readback.
 
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, de::DeserializeOwned};
@@ -543,10 +547,11 @@ fn derive_observation(
         let [idle, assistant, input, ..] = recent else {
             return None;
         };
+        let idle_at = valid_frame_time(idle)?;
         if session.outcome.as_deref() != Some("failed")
             || idle["type"] != "idle"
             || idle["outcome"] != "failed"
-            || Some(valid_frame_time(idle)?) != session.time.idle
+            || Some(idle_at) != session.time.idle
             || assistant["type"] != "assistant"
             || assistant["finish"] != "error"
             || !assistant["content"].as_array()?.is_empty()
@@ -557,17 +562,33 @@ fn derive_observation(
             || !pure_user(input)
             || valid_frame_time(input)? < busy
             || valid_frame_time(assistant)? <= valid_frame_time(input)?
-            || !(valid_frame_time(assistant)?..=valid_frame_time(idle)?)
+            || !(valid_frame_time(assistant)?..=idle_at)
                 .contains(&assistant["time"]["completed"].as_u64()?)
         {
             return None;
         }
-        let failure = typed_failure(&assistant["error"])?;
-        if assistant["error"]["type"] != idle["error"]["type"]
-            || assistant["error"]["status"] != idle["error"]["status"]
-            || typed_failure(&idle["error"])? != failure
+        let error = &assistant["error"];
+        let terminal_error = &idle["error"];
+        let failure = typed_failure(error)?;
+        if error["type"] != terminal_error["type"]
+            || error["status"] != terminal_error["status"]
+            || typed_failure(terminal_error)? != failure
         {
             return None;
+        }
+        if error["type"] == "provider.rate-limit" {
+            let retry_after = error.get("retryAfterMs");
+            if retry_after != terminal_error.get("retryAfterMs") {
+                return None;
+            }
+            if let Some(delay) = retry_after {
+                // The terminal idle timestamp records the failure.
+                let retry_at = idle_at.checked_add(delay.as_u64()?)?;
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+                if now < Duration::from_millis(retry_at) {
+                    return None;
+                }
+            }
         }
         (input, assistant["id"].as_str()?, failure)
     };
@@ -621,9 +642,9 @@ fn pure_user(row: &Value) -> bool {
 fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
     match (error["type"].as_str()?, error["status"].as_u64()) {
         ("provider.quota", Some(402 | 429)) => Some(RecoveryFailure::Quota),
-        ("provider.internal", Some(500 | 502..=504)) | ("provider.timeout", Some(408 | 504)) => {
-            Some(RecoveryFailure::Retryable)
-        }
+        ("provider.internal", Some(500 | 502..=504))
+        | ("provider.timeout", Some(408 | 504))
+        | ("provider.rate-limit", Some(429)) => Some(RecoveryFailure::Retryable),
         _ => None,
     }
 }
@@ -787,17 +808,21 @@ mod tests {
         );
     }
 
-    #[test]
-    fn quota_requires_exact_failed_packet_and_matching_history_model() {
-        let error = json!({"type":"provider.quota","status":429,"message":"fixture only"});
-        let mut recent = vec![
+    fn failed_history(error: Value) -> Vec<Value> {
+        vec![
             json!({"id":"msg_Idle","type":"idle","time":{"created":1040},"outcome":"failed",
                    "error":error}),
             json!({"id":"msg_Failed","type":"assistant","time":{"created":1020,"completed":1035},
                    "finish":"error","model":model(),"error":error,"content":[]}),
             input(),
             model_switch(),
-        ];
+        ]
+    }
+
+    #[test]
+    fn quota_requires_exact_failed_packet_and_matching_history_model() {
+        let error = json!({"type":"provider.quota","status":429,"message":"fixture only"});
+        let mut recent = failed_history(error);
         let observed =
             derive_observation(session(Some(1040), Some("failed")), &recent, None).unwrap();
         assert_eq!(observed.boundary.failure, RecoveryFailure::Quota);
@@ -807,6 +832,51 @@ mod tests {
         recent[1]["model"] = model();
         recent[0]["error"]["type"] = json!("provider.rate-limit");
         assert!(derive_observation(session(Some(1040), Some("failed")), &recent, None).is_none());
+    }
+
+    #[test]
+    fn paired_terminal_rate_limit_is_retryable_on_the_observed_model() {
+        let observe = |recent: &[Value]| {
+            derive_observation(session(Some(1040), Some("failed")), recent, None)
+        };
+        let error = json!({"type":"provider.rate-limit","status":429,"message":"fixture only"});
+        let observed = observe(&failed_history(error)).expect("paired native terminal 429");
+        assert_eq!(observed.boundary.failure, RecoveryFailure::Retryable);
+        assert_eq!(observed.boundary.turn_id, "msg_Failed");
+        assert_eq!(observed.boundary.input_item_id, "msg_User");
+        assert_eq!(observed.boundary.provider, "fixture");
+        assert_eq!(observed.boundary.model.as_deref(), Some("main"));
+
+        for status in [json!(503), json!("429"), Value::Null] {
+            let error = json!({"type":"provider.rate-limit","status":status});
+            assert!(observe(&failed_history(error)).is_none());
+        }
+    }
+
+    #[test]
+    fn terminal_rate_limit_requires_an_elapsed_and_matching_native_retry_delay() {
+        let observe = |recent: &[Value]| {
+            derive_observation(session(Some(1040), Some("failed")), recent, None)
+        };
+        let history = |delay: Value| {
+            failed_history(json!({
+                "type":"provider.rate-limit","status":429,"retryAfterMs":delay
+            }))
+        };
+        let mut recent = history(json!(1000));
+        assert!(observe(&recent).is_some());
+        recent[0]["error"]["retryAfterMs"] = json!(0);
+        assert!(observe(&recent).is_none());
+
+        let future_delay = u64::MAX - 1040;
+        for delay in [
+            json!(future_delay),
+            json!(u64::MAX),
+            json!("1000"),
+            json!(-1),
+        ] {
+            assert!(observe(&history(delay)).is_none());
+        }
     }
 
     #[test]
