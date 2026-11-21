@@ -279,6 +279,51 @@ fn require_dead(identity: &ProcessIdentity) -> Result<()> {
         Ok(())
     }
 }
+
+fn verify_retained_scheduler(
+    state: &Value,
+    paired: &Value,
+    scheduler: &Value,
+    evidence: &Evidence,
+    now: u64,
+) -> Result<()> {
+    equal(state, "/phase", json!("unknown"))?;
+    equal(state, "/scheduler_preflight_evidence/identity", scheduler.clone())?;
+    let preflight_pin = value_pin(paired, "/original_scheduler_preflight")?;
+    if preflight_pin.path != evidence.job_dir.join("scheduler-preflight.json")
+        || preflight_pin.sha256 != text_at(state, "/scheduler_preflight_sha256")?
+    {
+        return Err(fail("scheduler_preflight_changed"));
+    }
+    let preflight: Value = json_pin(&preflight_pin)?;
+    equal(&preflight, "/stage", json!("preflight"))?;
+    let operational = pinned_value(paired, "/scheduler_consumer")?;
+    equal(&operational, "/stage", json!("consumer"))?;
+    equal(&operational, "/job_id", json!(evidence.job_id))?;
+    equal(&operational, "/response/readiness_scope", json!("operational"))?;
+    equal(&operational, "/response/migration_ready", json!(true))?;
+    equal(&operational, "/response/probe/decision/complete", json!(true))?;
+    let challenge = text_at(&operational, "/request/challenge")?;
+    if !valid_hash(challenge) {
+        return Err(fail("scheduler_proof_changed"));
+    }
+    equal(&operational, "/response/challenge", json!(challenge))?;
+    for (field, pointer) in [("process", "/response/process"), ("runtime", "/response/runtime"),
+        ("canonical", "/response/canonical")] {
+        let expected = scheduler.get(field).ok_or_else(invalid)?;
+        equal(&preflight, pointer, expected.clone())?;
+        equal(&operational, pointer, expected.clone())?;
+    }
+    let observed = unsigned_at(&operational, "/observed_at_unix_ms")?;
+    if observed < unsigned_at(state, "/awaiting_restart_at_unix_ms")?
+        || observed > now + 5000
+        || now.saturating_sub(observed) > 60000
+    {
+        return Err(fail("scheduler_proof_stale"));
+    }
+    Ok(())
+}
+
 fn verify_sealed_files(config_path: &Path, bridge: &Bridge, evidence: &Evidence) -> Result<()> {
     expected_file(config_path, &evidence.config_sha256)?;
     expected_file(&bridge.config.ledger, &evidence.ledger_sha256)?;
@@ -470,8 +515,17 @@ fn verify_decision(
             return Err(fail("scheduler_artifact_changed"));
         }
     }
-    require_dead(&process_from_value(old_process)?)?;
-    if !process_live(&process_from_value(new_process)?)? {
+    let old_generation = process_from_value(old_process)?;
+    let new_generation = process_from_value(new_process)?;
+    if old_generation == new_generation && decision == Decision::Candidate {
+        if old != successor {
+            return Err(fail("retained_scheduler_changed"));
+        }
+        verify_retained_scheduler(&state, &paired, old, evidence, current)?;
+    } else {
+        require_dead(&old_generation)?;
+    }
+    if !process_live(&new_generation)? {
         return Err(fail("successor_not_live"));
     }
     let selector_sha = text_at(&state, "/selector_after_sha256")?;

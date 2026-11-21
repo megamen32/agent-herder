@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconcile one completed canonical rollout after an observed TS successor.
+"""Reconcile one completed canonical rollout using the observed TS scheduler.
 
 Reconciliation retains the original UNKNOWN checkpoint and resolves only its
 exact native binding after fresh operational consumer evidence. The separate
@@ -119,13 +119,14 @@ def same_original_state(state, original):
     return {key: value for key, value in state.items() if key != "canonical_reconciliation"} == original
 
 
-def check_original(state):
+def check_original(state, *, keep_scheduler=False):
     if state.get("phase") != "unknown" or "canonical_reconciliation" in state:
         raise ValueError("reconciliation requires the original unresolved UNKNOWN state")
     if rollout.identity_state(identity(state["coordinator"])) != "dead":
         raise ValueError("original coordinator is not proven dead")
-    if rollout.identity_state(identity(state["scheduler_identity"]["process"])) != "dead":
-        raise ValueError("original TS process is not proven dead")
+    scheduler_state = rollout.identity_state(identity(state["scheduler_identity"]["process"]))
+    if scheduler_state != ("live" if keep_scheduler else "dead"):
+        raise ValueError("original TS process is not live" if keep_scheduler else "original TS process is not proven dead")
     pointer = rollout.read_occupancy(Path(state["selector"]))
     if not pointer or pointer.get("phase") != "active" or pointer.get("job_id") != state["job_id"]:
         raise ValueError("original rollout does not own active occupancy")
@@ -177,8 +178,13 @@ def successor(state, pid, approved):
     old = state["scheduler_identity"]
     expected = {key: copy.deepcopy(old[key]) for key in ("process", "runtime", "canonical")}
     expected["process"].update(readiness.birth(pid))
-    if identity(expected["process"]) == identity(old["process"]):
-        raise ValueError("successor observation must identify the changed TS process")
+    keep_scheduler = identity(expected["process"]) == identity(old["process"])
+    check_original(state, keep_scheduler=keep_scheduler)
+    if keep_scheduler:
+        current = readiness.observe(old)
+        if current != old or approved:
+            raise ValueError("original scheduler or approved service inventory changed")
+        return current, service_delta(old["service"], current["service"], approved)
     current = readiness.observe(expected)
     if current["tree"] != old["tree"]:
         raise ValueError("immutable TS artifact tree changed")
@@ -197,6 +203,21 @@ def original_install(plan_pin, receipt_pin, state):
             or str(receipt.get("start_ticks")) != str(old["process"]["start_ticks"])
             or receipt.get("entry") != old["process"]["entry"] or receipt.get("node_binary") != old["process"]["node_binary"]):
         raise ValueError("original installation receipt does not bind the original scheduler")
+
+
+def original_scheduler_preflight(state):
+    saved = pin(Path(state["job_dir"]) / "scheduler-preflight.json")
+    recorded = state["scheduler_preflight_evidence"]
+    if (saved["sha256"] != state["scheduler_preflight_sha256"]
+            or recorded["identity"] != state["scheduler_identity"]
+            or recorded["readiness_scope"] != "preflight"):
+        raise ValueError("preflight does not bind the original scheduler")
+    return saved
+
+
+def keeps_original_scheduler(plan):
+    old = plan.get("old_scheduler_identity")
+    return old is not None and plan["successor_scheduler_identity"] == old
 
 
 def native_restart_binding(binding_pin, state, pair):
@@ -352,10 +373,17 @@ def verify_current(plan, binding=True):
     state = rollout.read_state(original["job_dir"])
     if state != original:
         raise ValueError("original rollout checkpoint changed after preparation")
-    check_original(state)
+    if state["scheduler_identity"] != plan["old_scheduler_identity"]:
+        raise ValueError("plan does not bind the original scheduler")
+    keep_scheduler = keeps_original_scheduler(plan)
+    check_original(state, keep_scheduler=keep_scheduler)
     read_pin(plan["state"])
     read_pin(plan["occupancy"])
-    original_install(plan["install_plan"], plan["install_receipt"], state)
+    if keep_scheduler:
+        if original_scheduler_preflight(state) != plan["original_scheduler_preflight"]:
+            raise ValueError("original scheduler preflight changed after preparation")
+    else:
+        original_install(plan["install_plan"], plan["install_receipt"], state)
     actual = readiness.observe(plan["successor_scheduler_identity"])
     service_delta(state["scheduler_identity"]["service"], actual["service"], plan["approved_service_changes"])
     pair = rollout.runtime_pair(Path(state["selector"]), Path(state["launcher"]),
@@ -377,11 +405,16 @@ def verify_current(plan, binding=True):
 def prepare(args):
     state_pin = {"path": str(args.job_dir / "state.json"), "sha256": args.state_sha256}
     state = read_pin(state_pin)
-    check_original(state)
     approved = [{"path": p, "before_sha256": before, "after_sha256": after} for p, before, after in args.service_change]
     current, delta = successor(state, args.ts_pid, approved)
-    install_plan, install_receipt = pin(args.install_plan), pin(args.install_receipt)
-    original_install(install_plan, install_receipt, state)
+    if current == state["scheduler_identity"]:
+        scheduler_provenance = {"original_scheduler_preflight": original_scheduler_preflight(state)}
+    else:
+        if args.install_plan is None or args.install_receipt is None:
+            raise ValueError("a scheduler successor requires the original install plan and receipt")
+        install_plan, install_receipt = pin(args.install_plan), pin(args.install_receipt)
+        original_install(install_plan, install_receipt, state)
+        scheduler_provenance = {"install_plan": install_plan, "install_receipt": install_receipt}
     proof_pin = pin(args.proof)
     bridge = bridge_evidence(state, proof_pin)
     pair = rollout.runtime_pair(Path(state["selector"]), Path(state["launcher"]), args.compat_pid, args.core_pid,
@@ -415,7 +448,7 @@ def prepare(args):
     plan = {"version": 1, "kind": KIND, "outcome": "candidate", "job_id": state["job_id"], "job_dir": state["job_dir"],
             "state": state_pin, "original_state_snapshot": snapshot,
             "occupancy": pin(rollout.occupancy_path(Path(state["selector"]))), "proof": proof_pin,
-            "bridge": bridge, "install_plan": install_plan, "install_receipt": install_receipt,
+            "bridge": bridge, **scheduler_provenance,
             "old_scheduler_identity": state["scheduler_identity"], "successor_scheduler_identity": current,
             "approved_service_changes": approved, "service_delta": delta, "service_delta_archives": archives, "native_runtime": pair,
             "native_restart_binding": restart_binding,
@@ -537,9 +570,13 @@ def evidence_files(plan, args):
         stage="consumer", expected=plan["successor_scheduler_identity"], challenge=plan["challenge"],
         job_id=plan["job_id"], minimum=minimum)
     stamp = readiness.now_ms()
+    scheduler_provenance = (
+        {"original_scheduler_preflight": plan["original_scheduler_preflight"]} if keeps_original_scheduler(plan)
+        else {"original_install_receipt": plan["install_receipt"]}
+    )
     paired = {"version": 1, "kind": "herder-paired-rollout-reconciliation-v1", "outcome": "candidate", "complete": True,
         "job_id": state["job_id"], "original_state_sha256": plan["state"]["sha256"],
-        "original_state_snapshot": plan["original_state_snapshot"], "original_install_receipt": plan["install_receipt"],
+        "original_state_snapshot": plan["original_state_snapshot"], **scheduler_provenance,
         "old_scheduler_identity": plan["old_scheduler_identity"], "successor_scheduler_identity": plan["successor_scheduler_identity"],
         "native_runtime": plan["native_runtime"], "native_restart_binding": plan["native_restart_binding"],
         "original_native_runtime": plan["original_native_runtime"], "observed_native_successor": plan["observed_native_successor"],
@@ -862,6 +899,8 @@ def failed_native_consumer(plan, provider_pin):
 
 def prepare_failed(args):
     plan = load_plan(args)
+    if keeps_original_scheduler(plan):
+        raise ValueError("failed reconciliation requires an observed successor scheduler")
     verify_current(plan)
     operator = {"path": str(args.failed_native_operator), "sha256": args.failed_native_operator_sha256}
     read_pin(operator, policy="unit", json_value=False)
@@ -889,6 +928,8 @@ def load_failed_plan(args):
     read_pin(prepared["native_operator"], policy="unit", json_value=False)
     base_pin = prepared["original_plan"]
     plan = load_plan(argparse.Namespace(plan=Path(base_pin["path"]), plan_sha256=base_pin["sha256"]))
+    if keeps_original_scheduler(plan):
+        raise ValueError("failed reconciliation requires an observed successor scheduler")
     if prepared.get("job_id") != plan["job_id"]:
         raise ValueError("failed plan names another original rollout")
     read_pin(prepared["effect_completion"])
@@ -1038,6 +1079,8 @@ def repair_request_key(value):
 def prepare_ts_repair(args):
     """Prepare a reviewable repair without requiring the failing HTTP consumer."""
     base = load_plan(args)
+    if keeps_original_scheduler(base):
+        raise ValueError("TS repair requires an observed successor scheduler")
     state = verify_current(base)
     request_key = repair_request_key(args.request_key)
     operator = {"path": str(args.repair_native_operator), "sha256": args.repair_native_operator_sha256}
@@ -1076,6 +1119,8 @@ def load_ts_repair_plan(args):
     base = read_pin(plan["original_plan"])
     if base.get("version") != 1 or base.get("kind") != KIND or base.get("outcome") != "candidate":
         raise ValueError("TS repair requires the exact original reconciliation plan")
+    if keeps_original_scheduler(base):
+        raise ValueError("TS repair requires an observed successor scheduler")
     verify_sources(base)
     state = read_pin(base["original_state_snapshot"])
     if (plan["job_id"] != state["job_id"] or plan["job_dir"] != state["job_dir"]
@@ -1290,8 +1335,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     p = commands.add_parser("prepare")
-    for key in ("job-dir", "proof", "install-plan", "install-receipt", "http-helper", "native-operator", "native-restart-binding", "output-directory"):
+    for key in ("job-dir", "proof", "http-helper", "native-operator", "native-restart-binding", "output-directory"):
         p.add_argument("--" + key, type=Path, required=True)
+    for key in ("install-plan", "install-receipt"):
+        p.add_argument("--" + key, type=Path)
     for key in ("state-sha256", "http-helper-sha256", "native-operator-sha256", "native-restart-binding-sha256"):
         p.add_argument("--" + key, required=True)
     for key in ("ts-pid", "compat-pid", "core-pid"):
