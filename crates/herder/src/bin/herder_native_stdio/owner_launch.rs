@@ -11,7 +11,9 @@ use herder::{
             ScopeGenerationIssuer, ScopedAuthority,
             automation_driver,
             session_autopilot::SessionAutopilot,
-            session_recovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage, SessionRecovery},
+            session_recovery::{
+                RecoveryDiscovery, RecoveryListing, RecoveryPage, RecoveryRunner, SessionRecovery,
+            },
             create_prompt::FreshSessionGrantPolicy,
             mcp_create::ScopedCreateApplication,
             mcp_deliver::ScopedDeliverApplication,
@@ -346,7 +348,7 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     if !has_native_codex_binding(&opened.owner) && opened.owner.has_ahap_runner() {
         return super::owner_opencode::serve(opened).await;
     }
-    let binding = build(opened)?;
+    let binding = build(opened, RecoveryRunner::Mcp)?;
     automation_driver::start(vec![binding.driver_owner()])?;
     let service = binding.server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
@@ -358,13 +360,12 @@ pub(super) async fn run_recovery(opened: OpenedOwner) -> Result<(), Box<dyn std:
     use tokio::signal::unix::{SignalKind, signal};
 
     let owner = &opened.owner;
-    if !has_native_codex_binding(owner)
-        || owner.codex_recovery.as_ref()
-            .is_none_or(|profile| profile.legacy_handoff.is_none())
-        || !owner.ahap_env.get("AHAP_CODEX_SOCKET")
-            .is_some_and(|socket| Path::new(socket).is_absolute())
+    if owner
+        .codex_recovery
+        .as_ref()
+        .is_none_or(|profile| profile.runner != RecoveryRunner::Service)
     {
-        return Err("Codex recovery service requires an explicit recovery handoff and a shared app-server socket".into());
+        return Err("Codex recovery service requires codex_recovery.runner=service".into());
     }
     let code_home = Path::new(&owner.ahap_env["CODEX_HOME"]).canonicalize()?;
     let directory = code_home.metadata()?;
@@ -384,21 +385,26 @@ pub(super) async fn run_recovery(opened: OpenedOwner) -> Result<(), Box<dyn std:
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&lock)?;
     let metadata = file.metadata()?;
-    let _owner = herder::application::target_gate::acquire_pinned(&lock, metadata.dev(), metadata.ino())
-        .map_err(|error| {
-            if error.kind() == io::ErrorKind::WouldBlock {
-                io::Error::new(error.kind(), "Codex recovery service is already running")
-            } else {
-                error
-            }
-        })?;
+    let _owner =
+        herder::application::target_gate::acquire_pinned(&lock, metadata.dev(), metadata.ino())
+            .map_err(|error| {
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    io::Error::new(error.kind(), "Codex recovery service is already running")
+                } else {
+                    error
+                }
+            })?;
     drop(file);
 
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
-    let binding = build(opened)?;
-    let recovery = binding.session_recovery.as_ref().ok_or("Codex recovery is not configured")?;
-    let owner = automation_driver::AutomationOwner::new(binding.identity.clone(), vec![recovery.clone()]);
+    let binding = build(opened, RecoveryRunner::Service)?;
+    let recovery = binding
+        .session_recovery
+        .as_ref()
+        .ok_or("Codex recovery is not configured")?;
+    let owner =
+        automation_driver::AutomationOwner::new(binding.identity.clone(), vec![recovery.clone()]);
     let shutdown = async move {
         tokio::select! {
             _ = terminate.recv() => {}
@@ -410,11 +416,12 @@ pub(super) async fn run_recovery(opened: OpenedOwner) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-pub fn build(
+fn build(
     opened: OpenedOwner,
+    runner: RecoveryRunner,
 ) -> Result<super::owner_opencode::BoundOwner, Box<dyn std::error::Error>> {
     let registry = Arc::new(DependencyRegistry::new());
-    let binding = build_with_registry(opened, registry.clone())?;
+    let binding = build_owner(opened, registry.clone(), runner)?;
     registry.configure(vec![binding.source.clone()])?;
     Ok(binding)
 }
@@ -422,6 +429,14 @@ pub fn build(
 pub fn build_with_registry(
     opened: OpenedOwner,
     registry: Arc<DependencyRegistry>,
+) -> Result<super::owner_opencode::BoundOwner, Box<dyn std::error::Error>> {
+    build_owner(opened, registry, RecoveryRunner::Mcp)
+}
+
+fn build_owner(
+    opened: OpenedOwner,
+    registry: Arc<DependencyRegistry>,
+    runner: RecoveryRunner,
 ) -> Result<super::owner_opencode::BoundOwner, Box<dyn std::error::Error>> {
     let instance = InstanceRef {
         node: NodeRef(opened.owner.node.clone()),
@@ -530,17 +545,21 @@ pub fn build_with_registry(
         source.clone(), control.create.share_native_control(), reconciler.clone(),
         policy.clone(), &policy.principal.0, profile,
     ).map(Arc::new)).transpose()?;
-    let session_recovery = opened.owner.codex_recovery.map(|profile| {
-        Arc::new(SessionRecovery::new(
-            authority.clone(),
-            control.create.share_native_control(),
-            policy.clone(),
-            waits.clone(),
-            reconciler.clone(),
-            profile,
-            RecoveryDiscovery::new(control.clone(), grants.clone()),
-        )) as Arc<dyn automation_driver::AutomationTick>
-    });
+    let session_recovery = opened
+        .owner
+        .codex_recovery
+        .filter(|profile| profile.runner == runner)
+        .map(|profile| {
+            Arc::new(SessionRecovery::new(
+                authority.clone(),
+                control.create.share_native_control(),
+                policy.clone(),
+                waits.clone(),
+                reconciler.clone(),
+                profile,
+                RecoveryDiscovery::new(control.clone(), grants.clone()),
+            )) as Arc<dyn automation_driver::AutomationTick>
+        });
     let app = Arc::new(OwnerApp {
         authority: authority.clone(),
         instance: instance.clone(),

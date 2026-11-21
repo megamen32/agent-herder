@@ -641,7 +641,8 @@ def verify_crash(read, active, database, thread, interrupted, ref, original_prom
     return receipt
 
 
-def verify_independent_followup(read, wait_for_turn, owner, profile, env, database, thread, requests, activation):
+def verify_independent_followup(read, wait_for_turn, owner, profile, env, database, session, requests, activation):
+    thread, _, ref = session
     prior = turns(read, thread)
     old_recovery = prior[-1]["id"]
     old_row, = [row for row in receipt_rows(database) if row[0] == thread]
@@ -665,6 +666,17 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest()
     print(json.dumps({"phase": "independent_user_429", "old_recovery": old_recovery,
                       "old_receipt_state": old_row[1], "latest_user_turn": user_turn}), flush=True)
+    data = json.loads(profile.read_text())
+    data["owner"]["codex_recovery"]["runner"] = "service"
+    private_write(profile, json.dumps(data))
+    before = receipt_rows(database)
+    with owner_client(owner, profile, env) as client:
+        session_tool(client, action="messages", session_ref=ref)
+        # The same failed input will be eligible for the service after this window.
+        # Leave the MCP path open through a scan and the 429 cooldown.
+        time.sleep(max(0, failed["completedAt"] + 40 - time.time()))
+        require(len(requests) == 3 and receipt_rows(database) == before and turns(read, thread) == history,
+                "MCP scheduled recovery for a service-owned profile")
     private_write(activation, "false")
     with recovery_service(owner, profile, env) as active:
         lock = Path(env["CODEX_HOME"]) / ".agent-herder-codex-recovery.lock"
@@ -724,7 +736,8 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     return {"old_recovery_turn": old_recovery, "user_turn": user_turn, "new_recovery_turn": new_recovery,
             "old_admission": "confirmed", "old_turn_status": history[1]["status"],
             "http_requests": len(requests), "new_receipt": "confirmed", "cooldown_seconds": round(requests[3] - requests[2], 1),
-            "without_mcp_client": True, "duplicate_service_rejected": True, "service_restart_repeat": 0}
+            "without_mcp_client": True, "mcp_recovery_deliveries": 0, "default_service_start_rejected": True,
+            "duplicate_service_rejected": True, "service_restart_repeat": 0}
 
 
 def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
@@ -887,6 +900,17 @@ experimental_bearer_token = "{cold_token}"
                 "version": 1, "policy": {"enabled": True, "minRemainingPercent": 20, "onUnknown": "allow"},
             }))
         private_write(profile, json.dumps(data))
+        private_write(activation, "false")
+        try:
+            service = subprocess.run(
+                [str(owner), "--run-codex-recovery", str(profile)], env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=6,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("standalone recovery accepted a profile assigned to MCP") from error
+        require(service.returncode != 0 and b"codex_recovery.runner=service" in service.stderr,
+                f"unexpected service profile refusal: {service.stderr.decode(errors='replace')}")
+        private_write(activation, "true")
         with owner_client(owner, profile, env) as active:
             check_holds(active)
             time.sleep(3)  # The initial owner scan runs immediately.
@@ -964,7 +988,7 @@ experimental_bearer_token = "{cold_token}"
         proof.update({case: {"thread": thread, "failed_turn": turn, "reason": reason, "recovery_requests": 0}
                       for case, (_, thread, turn, reason) in protected.items()})
         proof["independent_followup"] = verify_independent_followup(
-            read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent], activation)
+            read, wait_for_turn, owner, profile, env, database, sessions[persistent], requests[persistent], activation)
         require(all(len(requests[model]) == 1 for model, _, _, _ in protected.values()),
                 "recovery service sent input to a protected chat")
         return proof

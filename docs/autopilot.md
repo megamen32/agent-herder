@@ -51,11 +51,17 @@ completion hook for that exact session.
 ## Explicit stops in Codex and ZCode
 
 A stop through Herder persists a fence for that native session before the
-transport is interrupted. Native Codex interrupted turns and ZCode cancelled
-turns also pause automation; a plain completed/stopped status is not sufficient
-evidence. Codex does not identify the interrupting actor, so an external native
-interruption is treated conservatively. Herder's own transport interruptions
-are recorded separately and cannot erase an existing human stop.
+transport is interrupted. A legacy Codex stop whose only evidence is
+`turn_aborted` with `reason: interrupted` stays blocked as
+`legacy_stop_provenance_unknown`. Classifying that abort requires an
+authenticated Stop event or a typed runtime abort cause bound to the same
+native thread and turn. Herder records its own transport interruptions
+separately. They leave an existing human stop in effect.
+
+Recovery can use a typed, retryable 429 on the latest failed Codex turn when
+the stop checks are clear. It can also use Codex's projection of an unclosed
+turn after the app-server disappears. A terminal native abort with missing
+provenance and a ZCode cancellation keep their automation hold.
 
 The fence survives restarts and blocks automatic delivery, retries, watchdogs,
 handoffs and replacement sessions. Creating a related session accepts
@@ -144,12 +150,14 @@ single owner, so a second retry loop cannot bypass these settings.
 
 ### Native Rust Codex owner
 
-For service startup use `herder_native_stdio --run-codex-recovery PATH` with
-the trusted Codex owner profile, an explicit recovery handoff and the existing
-shared app-server socket. The service keeps the same recovery receipts and
-hold checks when no MCP client is connected. It holds an exclusive lock in
-the private Codex home until the active recovery tick finishes on shutdown.
-Transfer release ownership before arming the service. On macOS the
+Set `runner` to `service` in the trusted profile's `owner.codex_recovery`
+section, bind the existing shared app-server socket and provide an explicit
+recovery handoff. Start it with `herder_native_stdio --run-codex-recovery PATH`.
+The service owns recovery for this profile and retains the same receipts and
+stop checks. MCP remains available for session operations. Existing profiles
+default to scheduling recovery through MCP. The service holds an exclusive
+lock in the private Codex home until its active tick finishes on shutdown.
+Transfer ownership before arming the service. On macOS the
 [`launchd` template](../deploy/fleet/mac-codex-recovery.plist.in) starts it
 on login and retries startup if the shared socket is still unavailable.
 

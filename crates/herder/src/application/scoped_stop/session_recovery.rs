@@ -60,6 +60,14 @@ fn recent(timestamp_ms: u64) -> bool {
         .is_some_and(|age| age <= MAX_AGE_MS)
 }
 
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryRunner {
+    #[default]
+    Mcp,
+    Service,
+}
+
 /// This profile binds the existing owner settings and the provider/model pairs
 /// explicitly authorized for this workspace. It is never sourced from a prompt.
 #[derive(Clone, Deserialize)]
@@ -67,6 +75,8 @@ fn recent(timestamp_ms: u64) -> bool {
 pub struct RecoveryProfile {
     pub autopilot_state_dir: PathBuf,
     pub legacy_handoff: Option<LegacyRecoveryHandoff>,
+    #[serde(default)]
+    pub runner: RecoveryRunner,
     #[serde(default)]
     fallback_routes: Vec<FallbackRoute>,
 }
@@ -109,11 +119,14 @@ impl OmniRouteQuota {
 impl RecoveryProfile {
     pub fn valid_for(&self, harness: &str) -> bool {
         self.valid()
-            && (harness == "codex" || self.legacy_handoff.as_ref().is_none_or(|h| !h.scans_workspaces()))
+            && (harness == "codex"
+                || self.runner == RecoveryRunner::Mcp
+                    && self.legacy_handoff.as_ref().is_none_or(|h| !h.scans_workspaces()))
     }
 
     pub fn valid(&self) -> bool {
         self.autopilot_state_dir.is_absolute()
+            && (self.runner == RecoveryRunner::Mcp || self.legacy_handoff.is_some())
             && self
                 .legacy_handoff
                 .as_ref()
@@ -1269,6 +1282,7 @@ mod tests {
         let profile = RecoveryProfile {
             autopilot_state_dir: state.0.clone(),
             legacy_handoff: None,
+            runner: RecoveryRunner::Mcp,
             fallback_routes: Vec::new(),
         };
         let control = DisarmAtSubmit {
