@@ -119,7 +119,22 @@ fn recheck_same_route_retry(
     let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
         return SameRouteRetry::Hold;
     };
-    retry_after_throttle(turn, boundary, now.as_secs())
+    let retry = retry_after_throttle(turn, boundary, now.as_secs());
+    if !matches!(retry, SameRouteRetry::Ready) {
+        return retry;
+    }
+    let Some(providers) = read_recovery_providers(connection, &boundary.cwd, deadline) else {
+        return SameRouteRetry::Hold;
+    };
+    let provider = &providers[&boundary.provider];
+    // A known custom Responses route can retry without a subscription meter.
+    // An alias using the built-in OpenAI credential cannot take this path.
+    if provider["wire_api"] != "responses"
+        || !matches!(provider.get("requires_openai_auth"), None | Some(Value::Null | Value::Bool(false)))
+    {
+        return SameRouteRetry::Hold;
+    }
+    retry
 }
 
 fn retry_after_throttle(turn: &Value, boundary: &RecoveryBoundary, now: u64) -> SameRouteRetry {
@@ -208,10 +223,12 @@ impl RecoveryControl for CodexControl {
         boundary: &RecoveryBoundary,
     ) -> SameRouteRetry {
         if target.instance != self.instance
-            || boundary.provider != "opencodex"
             || boundary.failure != RecoveryFailure::Throttled
         {
             return SameRouteRetry::Hold;
+        }
+        if !custom_provider_id(&boundary.provider) {
+            return SameRouteRetry::UseQuotaPolicy;
         }
         let (Ok(deadline), Ok(mut state)) =
             (recovery_deadline(self.timeout), self.state.try_lock()) else {
@@ -365,7 +382,7 @@ impl RecoveryControl for CodexControl {
             params["model"] = json!(expected_model);
             params["config"] = selected.overrides(&boundary.provider);
         } else if before.unloaded
-            && boundary.provider == "opencodex"
+            && custom_provider_id(&boundary.provider)
             && boundary.failure == RecoveryFailure::Throttled
             && let Some(model) = expected_model
         {
@@ -446,7 +463,7 @@ impl RecoveryControl for CodexControl {
             return Err(not_sent("Codex recovery boundary changed after resume"));
         }
         if !alternate
-            && boundary.provider == "opencodex"
+            && custom_provider_id(&boundary.provider)
             && boundary.failure == RecoveryFailure::Throttled
             && matches!(
                 recheck_same_route_retry(connection, target, &after.boundary, deadline),
@@ -1555,6 +1572,9 @@ for line in sys.stdin:
         if case.startswith("goal-"):
             result["data"][0].update(rootTurnId="old-turn", items=[], error={
                 "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}})
+        if case.startswith("throttle-"):
+            result["data"][0]["error"] = {
+                "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}}
     elif method == "thread/goal/get":
         result = {"goal": None}
         if case.startswith("goal-") and case != "goal-cleared":
@@ -1577,6 +1597,11 @@ for line in sys.stdin:
         result = {"config": {"model_providers": {"pinned": {"wire_api": "responses"},
             "alternate": {"wire_api": "responses", "base_url": "http://127.0.0.1:19090/v1",
                           "experimental_bearer_token": bearer}}}}
+        providers = result["config"]["model_providers"]
+        if case == "throttle-subscription":
+            providers["pinned"]["requires_openai_auth"] = True
+        if case == "throttle-unconfigured":
+            del providers["pinned"]
     elif method == "configRequirements/read":
         result = {"requirements": {"modelProviders": {"pinned": {}}} if case == "managed" else None}
     elif method == "thread/resume":
@@ -1600,6 +1625,40 @@ for line in sys.stdin:
         raise RuntimeError("unexpected fixture method")
     print(json.dumps({"id": request["id"], "result": result}), flush=True)
 "#;
+
+    #[test]
+    fn retry_429_without_a_meter_requires_a_configured_custom_responses_route() {
+        for (case, provider, expected) in [
+            ("throttle-responses", "pinned", SameRouteRetry::Ready),
+            ("throttle-subscription", "pinned", SameRouteRetry::Hold),
+            ("throttle-unconfigured", "pinned", SameRouteRetry::Hold),
+            ("throttle-built-in", "openai", SameRouteRetry::UseQuotaPolicy),
+        ] {
+            let dir = std::env::temp_dir()
+                .join(format!("herder-codex-retry-{}-{case}", std::process::id()));
+            fs::create_dir(&dir).unwrap();
+            let home = dir.canonicalize().unwrap();
+            fs::write(home.join("app-server"), RPC_FIXTURE).unwrap();
+            fs::write(home.join("case"), case).unwrap();
+            let target = SessionAddress {
+                instance: InstanceRef { node: NodeRef("local".into()), instance_id: "test".into() },
+                native_session_id: "saved-thread".into(),
+            };
+            let control = CodexControl::open(CodexInstance {
+                instance_id: "test".into(), executable: PathBuf::from("/usr/bin/python3"),
+                code_home: home.clone(), cwd: home.clone(), socket_path: None,
+            }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+            let boundary = RecoveryBoundary {
+                turn_id: "old-turn".into(), input_item_id: "user-item".into(),
+                cwd: home.to_str().unwrap().into(), provider: provider.into(), model: Some("old-model".into()),
+                started_at_ms: 100_000, failure: RecoveryFailure::Throttled, ancestors: vec![],
+            };
+            let actual = control.same_route_retry(&target, &boundary);
+            drop(control);
+            fs::remove_dir_all(home).unwrap();
+            assert_eq!(actual, expected, "{case}");
+        }
+    }
 
     #[test]
     fn failed_native_goal_turn_can_resume_after_provider_429() {

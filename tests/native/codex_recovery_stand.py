@@ -687,14 +687,20 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
     }))
     warm, cold, held = "warm-model", "cold-model", "human-stop-model"
     ambiguous = "legacy-interruption-model"
+    cold_provider = "fixture-secondary-responses"
+    cold_token = "fixture-secondary-" + secrets.token_hex(24)
     persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
     recoverable_models = (warm, cold, persistent)
     requests = {model: [] for model in (*recoverable_models, held, ambiguous)}
 
+    def provider_for(model):
+        return cold_provider if model == cold else SOURCE_PROVIDER
+
     class Provider(module.Handler):
         def send_responses(self, request, sequence):
             model = request.get("model")
-            require(model in requests and self.headers.get("Authorization") == f"Bearer {token}",
+            expected_token = cold_token if model == cold else token
+            require(model in requests and self.headers.get("Authorization") == f"Bearer {expected_token}",
                     "unexpected recovery model or credential")
             requests[model].append(time.monotonic())
             failures = 3 if model == persistent else 1
@@ -716,10 +722,18 @@ wire_api = "responses"
 request_max_retries = 0
 stream_max_retries = 0
 experimental_bearer_token = "{token}"
+[model_providers.{cold_provider}]
+name = "Isolated secondary Responses provider"
+base_url = "{url}"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+experimental_bearer_token = "{cold_token}"
 ''')
         config_hash = digest(home / "config.toml")
         def seed(call, wait, model):
-            thread = call("thread/start", {"cwd": str(project), "model": model})["thread"]["id"]
+            provider = provider_for(model)
+            thread = call("thread/start", {"cwd": str(project), "model": model, "modelProvider": provider})["thread"]["id"]
             turn = call("turn/start", {"threadId": thread, "input": [
                 {"type": "text", "text": "Reply with one word without using tools."},
             ]})["turn"]["id"]
@@ -728,7 +742,7 @@ experimental_bearer_token = "{token}"
             require(failed["status"] == "failed" and message in failed["error"]["message"]
                     and failed["error"]["codexErrorInfo"] == {"responseTooManyFailedAttempts": {"httpStatusCode": 429}},
                     f"unexpected native failure: {failed['error']}")
-            print(json.dumps({"phase": "seeded", "provider": "opencodex", "model": model,
+            print(json.dumps({"phase": "seeded", "provider": provider, "model": model,
                               "failure": message}), flush=True)
             return thread, turn
 
@@ -742,7 +756,7 @@ experimental_bearer_token = "{token}"
                 thread, turn = cold_seed if model == cold else seed(read, wait_for_turn, model)
                 native_thread = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
                 statuses = ("notLoaded",) if model == cold else ("idle", "systemError")
-                require(native_thread["modelProvider"] == "opencodex" and native_thread["model"] == model
+                require(native_thread["modelProvider"] == provider_for(model) and native_thread["model"] == model
                         and native_thread["status"]["type"] in statuses, "original route or load state changed")
                 ref = session_tool(provision, action="register", instance_ref=INSTANCE,
                                    native_session_id=thread, request_key=f"register-{model}")["session_ref"]
@@ -837,7 +851,7 @@ experimental_bearer_token = "{token}"
                 current = turns(read, thread)
                 require(len(current) == 2 and current[0]["id"] == original, "original turn changed")
                 result = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
-                require(result["modelProvider"] == "opencodex" and result["model"] == model,
+                require(result["modelProvider"] == provider_for(model) and result["model"] == model,
                         "resumed thread changed provider or model")
                 if model != persistent:
                     wait_for_transcript_answer(active, ref, module.ANSWER, "owner could not read back the recovered answer")
@@ -887,6 +901,9 @@ experimental_bearer_token = "{token}"
                                 for model in recoverable_models},
             "same_chat": {"thread": sessions[warm][0], "failed_turn": sessions[warm][1],
                           "recovery_turn": turns(read, sessions[warm][0])[1]["id"], "model": warm},
+            "secondary_route": {"thread": sessions[cold][0], "failed_turn": sessions[cold][1],
+                                "recovery_turn": turns(read, sessions[cold][0])[1]["id"],
+                                "provider": cold_provider, "model": cold},
             "owner_restart_repeat": 0,
         }
         proof.update({case: {"thread": thread, "failed_turn": turn, "reason": reason, "recovery_requests": 0}

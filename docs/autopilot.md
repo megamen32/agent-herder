@@ -177,11 +177,12 @@ Codex can mark a native goal blocked when its last provider request fails.
 The owner matches that goal update to the failed turn and checks the native
 turn trigger. This also covers a goal turn with no user message. Clearing or
 pausing the goal, an outstanding question, or a newer active turn holds recovery.
-When `opencodex` exhausts its HTTP retries on a generic 429, the owner
-rechecks the same failed turn after 30 seconds. It can continue once on the
-saved model, including after Codex unloads the thread. A second 429 on the
-recovery turn retains its original receipt. A native subscription quota error
-continues to use the configured account quota policy.
+When a configured custom Responses provider exhausts its HTTP retries on a
+generic 429, the owner rechecks the same failed turn after 30 seconds. It can
+continue once on the saved provider and model, including after Codex unloads
+the thread. A second 429 on the recovery turn retains its original receipt.
+Built-in OpenAI and native subscription quota errors still use the configured
+account quota policy.
 The optional `fallback_routes` list accepts exact `workspace`, `provider`
 and `model` triples. A provider switch requires the quota fallback setting
 and fresh positive quota for that route. On Codex 0.170, an unloaded thread
