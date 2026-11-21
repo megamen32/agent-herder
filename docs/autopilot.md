@@ -198,6 +198,8 @@ When a configured custom Responses provider exhausts its HTTP retries on a
 generic 429, the owner rechecks the same failed turn after 30 seconds. It can
 continue once on the saved provider and model, including after Codex unloads
 the thread. A second 429 on the recovery turn retains its original receipt.
+This also covers an explicitly configured Responses proxy that uses the Codex
+login for authentication.
 Built-in OpenAI and native subscription quota errors still use the configured
 account quota policy.
 The optional `fallback_routes` list accepts exact `workspace`, `provider`
