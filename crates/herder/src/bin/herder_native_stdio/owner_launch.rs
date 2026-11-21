@@ -40,7 +40,10 @@ use herder::{
 };
 use rmcp::ServiceExt;
 use std::{
-    io::Read,
+    fs::OpenOptions,
+    io::{self, Read},
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    path::Path,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -347,6 +350,63 @@ pub async fn serve(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>
     automation_driver::start(vec![binding.driver_owner()])?;
     let service = binding.server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
+    Ok(())
+}
+
+/// Run the protected native owner under an OS supervisor without an MCP transport.
+pub(super) async fn run_recovery(opened: OpenedOwner) -> Result<(), Box<dyn std::error::Error>> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let owner = &opened.owner;
+    if !has_native_codex_binding(owner)
+        || owner.codex_recovery.as_ref()
+            .is_none_or(|profile| profile.legacy_handoff.is_none())
+        || !owner.ahap_env.get("AHAP_CODEX_SOCKET")
+            .is_some_and(|socket| Path::new(socket).is_absolute())
+    {
+        return Err("Codex recovery service requires an explicit recovery handoff and a shared app-server socket".into());
+    }
+    let code_home = Path::new(&owner.ahap_env["CODEX_HOME"]).canonicalize()?;
+    let directory = code_home.metadata()?;
+    if !directory.is_dir()
+        || directory.uid() != unsafe { libc::geteuid() }
+        || directory.mode() & 0o077 != 0
+    {
+        return Err("Codex recovery service requires a private Codex home".into());
+    }
+    let lock = code_home.join(".agent-herder-codex-recovery.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&lock)?;
+    let metadata = file.metadata()?;
+    let _owner = herder::application::target_gate::acquire_pinned(&lock, metadata.dev(), metadata.ino())
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::WouldBlock {
+                io::Error::new(error.kind(), "Codex recovery service is already running")
+            } else {
+                error
+            }
+        })?;
+    drop(file);
+
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let binding = build(opened)?;
+    let recovery = binding.session_recovery.as_ref().ok_or("Codex recovery is not configured")?;
+    let owner = automation_driver::AutomationOwner::new(binding.identity.clone(), vec![recovery.clone()]);
+    let shutdown = async move {
+        tokio::select! {
+            _ = terminate.recv() => {}
+            _ = interrupt.recv() => {}
+        }
+    };
+    automation_driver::start_until_shutdown(vec![owner], shutdown)?.await?;
+    drop(binding);
     Ok(())
 }
 

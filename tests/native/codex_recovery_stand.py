@@ -349,6 +349,27 @@ def owner_client(binary, profile, env):
         client.close()
 
 
+@contextmanager
+def recovery_service(binary, profile, env):
+    process = subprocess.Popen(
+        [str(binary), "--run-codex-recovery", str(profile)],
+        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    try:
+        yield process
+        require(process.poll() is None, "Codex recovery service exited without a shutdown signal")
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        try:
+            _, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise RuntimeError("Codex recovery service did not stop on SIGTERM")
+    require(process.returncode == 0, f"Codex recovery service failed: {stderr.decode(errors='replace')}")
+
+
 def session_tool(owner, **arguments):
     result = owner.request("tools/call", {"_meta": MCP_META, "name": "session", "arguments": arguments})
     require(not result.get("isError"), f"session {arguments['action']} failed: {result}")
@@ -643,9 +664,13 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest()
     print(json.dumps({"phase": "independent_user_429", "old_recovery": old_recovery,
                       "old_receipt_state": old_row[1], "latest_user_turn": user_turn}), flush=True)
-    with owner_client(owner, profile, env):
+    with recovery_service(owner, profile, env) as active:
+        def posted():
+            require(active.poll() is None, "Codex recovery service exited with stdin closed")
+            return len(requests) >= 4
+
         try:
-            wait_for("independent user turn remained blocked", lambda: len(requests) >= 4, seconds=68)
+            wait_for("independent user turn remained blocked", posted, seconds=68)
         except TimeoutError as error:
             states = [row[1] for row in receipt_rows(database) if row[0] == thread]
             raise RuntimeError(f"{error}; native_turns={len(turns(read, thread))}, "
@@ -667,9 +692,21 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
                     and any(r["native_id"] == new_recovery and r["request_key"] == new_key for r in confirmed))
 
         wait_for("missing durable receipts for the two distinct recoveries", exact_followup_receipts, seconds=45)
+        duplicate = subprocess.run(
+            [str(owner), "--run-codex-recovery", str(profile)], env=env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=8,
+        )
+        require(duplicate.returncode != 0 and b"Codex recovery service is already running" in duplicate.stderr,
+                "the same Codex home admitted a second recovery service")
+        admitted = receipt_rows(database)
+    with recovery_service(owner, profile, env):
+        time.sleep(34)
+        require(receipt_rows(database) == admitted and len(requests) == 4 and turns(read, thread) == now,
+                "recovery service replayed a native turn after restart")
     return {"old_recovery_turn": old_recovery, "user_turn": user_turn, "new_recovery_turn": new_recovery,
             "old_admission": "confirmed", "old_turn_status": history[1]["status"],
-            "http_requests": len(requests), "new_receipt": "confirmed", "cooldown_seconds": round(requests[3] - requests[2], 1)}
+            "http_requests": len(requests), "new_receipt": "confirmed", "cooldown_seconds": round(requests[3] - requests[2], 1),
+            "without_mcp_client": True, "duplicate_service_rejected": True, "service_restart_repeat": 0}
 
 
 def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
@@ -910,6 +947,8 @@ experimental_bearer_token = "{cold_token}"
                       for case, (_, thread, turn, reason) in protected.items()})
         proof["independent_followup"] = verify_independent_followup(
             read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent])
+        require(all(len(requests[model]) == 1 for model, _, _, _ in protected.values()),
+                "recovery service sent input to a protected chat")
         return proof
 
 

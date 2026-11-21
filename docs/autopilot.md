@@ -144,6 +144,15 @@ single owner, so a second retry loop cannot bypass these settings.
 
 ### Native Rust Codex owner
 
+For service startup use `herder_native_stdio --run-codex-recovery PATH` with
+the trusted Codex owner profile, an explicit recovery handoff and the existing
+shared app-server socket. The service keeps the same recovery receipts and
+hold checks when no MCP client is connected. It holds an exclusive lock in
+the private Codex home until the active recovery tick finishes on shutdown.
+Transfer release ownership before arming the service. On macOS the
+[`launchd` template](../deploy/fleet/mac-codex-recovery.plist.in) starts it
+on login and retries startup if the shared socket is still unavailable.
+
 The Rust owner uses the existing automation driver to continue interrupted
 turns in their original Codex threads. In its trusted owner profile, set `owner.codex_recovery`
 with `autopilot_state_dir` pointing to the owner's existing
