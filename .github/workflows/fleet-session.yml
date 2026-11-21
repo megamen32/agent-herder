@@ -58,6 +58,8 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/native -p test_runner_config.py
           python3 -m unittest discover -s tests/native -p test_candidate_release_gate.py
+          python3 -m unittest discover -s tests -p test_native_rollout_preflight.py
+          python3 -m unittest discover -s tests -p test_rollout_candidate_manifest.py
 
       - name: Verify installed browser collector, helper and rendered identity
         run: |
