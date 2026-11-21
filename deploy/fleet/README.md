@@ -4,6 +4,18 @@ Status: Linux100/44/88 deployed. One real cabinet-created Codex session on88 has
 
 The target is a local native Herder on server100, server44, server88, Mac Mini and Mac M1. The cabinet lists and filters sessions by host and creates a session with an explicit host and harness. Preserve native authentication, existing sessions and reverse SSH.
 
+## Upgrade native recovery owners
+
+On the release controller run `deploy/fleet/rollout-recovery`. The installed shortcut is `herder-recovery-rollout`. It uses the prepared release in `~/.config/agent-herder/recovery-rollout.json` (mode 0600). Use `--host server-44` to select one inventory entry or `--plan PATH` to select a different operator plan.
+
+The plan pins `source`, `bundle`, `controller_host`, `scheduler_unit`, `repo`, `ledger`, `journal` and the existing `deployment_config`. Its `hosts` entries select one of these installed paths.
+
+- `host-local` updates the Linux fleet service's Rust executable, preserving its profile, database, activation file and rollback binding.
+- `local` invokes a prepared release `command`, then reads its `receipt`, active `selector` and running executable.
+- `ssh` uses the configured SSH `routes` and checks the Mac's `identity` (local hostname, model and architecture). A prepared Darwin `command` and expected `sha256` are required for that host.
+
+Each invocation writes one result per host under `journal/source` and exits nonzero if any host is incomplete. Repeating the command reconciles the existing operation against the live owner. A candidate that fails readiness rolls back to its previous binding. An ambiguous switch keeps its lease evidence for reconciliation.
+
 ## Shared mesh boundary
 
 Reuse GPTAdmin's authenticated registry and child-MCP relay, which GrepMesh already consumes. Do not route Herder through file-search tools or create a second independent fleet registry. Generic responsibilities are host identity, service capabilities, bounded discovery, direct/relay selection, topology generation and freshness. Search/index/OCR stay in GrepMesh; native session control stays in Herder. Each service retains its own authorization, and mutable session state is scoped to user/profile/host/harness/native ID.
