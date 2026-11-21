@@ -686,9 +686,10 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
         "version": 8, "enabled": True, "sessions": [], "recoverOnFailure": True,
     }))
     warm, cold, held = "warm-model", "cold-model", "human-stop-model"
+    ambiguous = "legacy-interruption-model"
     persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
     recoverable_models = (warm, cold, persistent)
-    requests = {model: [] for model in (*recoverable_models, held)}
+    requests = {model: [] for model in (*recoverable_models, held, ambiguous)}
 
     class Provider(module.Handler):
         def send_responses(self, request, sequence):
@@ -757,8 +758,55 @@ experimental_bearer_token = "{token}"
             })
             require(not stop.get("isError") and stop["structuredContent"]["hold"] == "active",
                     "the owner did not record HumanStop for the fixture chat")
+            ambiguous_thread, ambiguous_turn = seed(read, wait_for_turn, ambiguous)
+            session_tool(provision, action="register", instance_ref=INSTANCE,
+                         native_session_id=ambiguous_thread, request_key="register-legacy-interruption")
 
-        data["owner"]["codex_recovery"] = {"autopilot_state_dir": str(root)}
+        activation, stops, questions, choices, unfinished = (root / name for name in (
+            "recovery-enabled.json", "human-stops.json", "human-requests.json", "choices.json",
+            "unfinished-sessions.json"))
+        private_write(activation, "true")
+        private_write(stops, json.dumps({"version": 1, "sessions": [{
+            "harness": "codex", "id": ambiguous_thread, "active": True,
+            "stop": {"id": "older-native-turn", "turnId": "older-native-turn", "reason": "interrupted",
+                     "at": "2000-01-01T00:00:00Z"},
+        }]}))
+        stops_hash = digest(stops)
+        for path in (questions, choices):
+            private_write(path, json.dumps({"version": 1, "requests": []}))
+        private_write(unfinished, json.dumps({"version": 1, "sessions": []}))
+        data["owner"]["codex_recovery"] = {
+            "autopilot_state_dir": str(root),
+            "legacy_handoff": {
+                "native_sessions": [session[0] for session in sessions.values()] + [held_thread, ambiguous_thread],
+                "activation_file": str(activation), "human_stops": str(stops), "human_requests": str(questions),
+                "choices": str(choices), "unfinished_sessions": str(unfinished),
+            },
+        }
+        protected = {
+            "human_stop": (held, held_thread, held_turn, "human_stop_active"),
+            "unknown_stop_provenance": (ambiguous, ambiguous_thread, ambiguous_turn, "legacy_stop_provenance_unknown"),
+        }
+
+        def check_holds(client):
+            for _, thread, _, reason in protected.values():
+                def read_status():
+                    result = client.request("tools/call", {"_meta": MCP_META, "name": "automation", "arguments": {
+                        "action": "wait_status", "harness": "codex", "native_session_id": thread,
+                        "node_ref": "fixture-node",
+                    }})
+                    status = result["structuredContent"]
+                    if result.get("isError") and status.get("code") in (
+                            "scope_unavailable", "legacy_migration_unavailable"):
+                        # The status reader and the recovery tick share the authority lock.
+                        return False
+                    require(not result.get("isError"), f"wait_status failed: {status}")
+                    return status
+
+                status = wait_for(f"could not read recovery hold for {reason}", read_status, seconds=5)
+                require(status["blocked"] and status["reason"] == reason,
+                        f"incorrect recovery hold for {reason}: {status}")
+
         if quota_profile:
             backup = root / "primary-quota.sqlite"
             quota_backup(backup, token, ACCOUNT)
@@ -771,6 +819,7 @@ experimental_bearer_token = "{token}"
             }))
         private_write(profile, json.dumps(data))
         with owner_client(owner, profile, env) as active:
+            check_holds(active)
             time.sleep(3)  # The initial owner scan runs immediately.
             early = {model: len(seen) for model, seen in requests.items()}
             require(all(n == 1 for n in early.values()) and not receipt_rows(database),
@@ -815,16 +864,19 @@ experimental_bearer_token = "{token}"
 
             wait_for("durable receipt did not match the exact native turn and outcome", exact_receipts, seconds=45)
         receipts = receipt_rows(database)
-        with owner_client(owner, profile, env):
+        with owner_client(owner, profile, env) as restarted:
             time.sleep(34)  # Let the restarted owner recheck the failed recovery across two scans.
+            check_holds(restarted)
         require(receipt_rows(database) == receipts and all(len(requests[m]) == 2 for m in recoverable_models)
                 and all(len(turns(read, thread)) == 2 for thread, _, _ in sessions.values()),
                 "owner delivered another continuation after the first recovery")
-        held_history = turns(read, held_thread)
-        require(len(requests[held]) == 1 and len(held_history) == 1
-                and held_history[0]["id"] == held_turn and held_history[0]["status"] == "failed",
-                "the owner recovered a chat protected by HumanStop")
+        for model, thread, failed_turn, reason in protected.values():
+            history = turns(read, thread)
+            require(len(requests[model]) == 1 and len(history) == 1
+                    and history[0]["id"] == failed_turn and history[0]["status"] == "failed",
+                    f"the owner recovered a protected chat: {reason}")
         require(digest(home / "config.toml") == config_hash, "native profile changed")
+        require(digest(stops) == stops_hash, "the historical stop record was modified")
         proof = {
             "provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
             "positive_quota_model": persistent if quota_profile else None,
@@ -835,9 +887,10 @@ experimental_bearer_token = "{token}"
                                 for model in recoverable_models},
             "same_chat": {"thread": sessions[warm][0], "failed_turn": sessions[warm][1],
                           "recovery_turn": turns(read, sessions[warm][0])[1]["id"], "model": warm},
-            "human_stop": {"thread": held_thread, "failed_turn": held_turn, "recovery_requests": 0},
             "owner_restart_repeat": 0,
         }
+        proof.update({case: {"thread": thread, "failed_turn": turn, "reason": reason, "recovery_requests": 0}
+                      for case, (_, thread, turn, reason) in protected.items()})
         proof["independent_followup"] = verify_independent_followup(
             read, wait_for_turn, owner, profile, env, database, sessions[persistent][0], requests[persistent])
         return proof

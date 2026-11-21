@@ -1427,6 +1427,27 @@ mod tests {
     };
 
     #[test]
+    fn recovery_separates_a_lost_turn_from_a_native_stop() {
+        let interrupted = json!({
+            "status": "interrupted", "startedAt": 100, "completedAt": null, "durationMs": null,
+        });
+        assert_eq!(recovery_failure(&interrupted), Some(RecoveryFailure::Interrupted));
+
+        let mut stopped = interrupted.clone();
+        stopped["completedAt"] = json!(105);
+        stopped["durationMs"] = json!(5000);
+        assert_eq!(recovery_failure(&stopped), None);
+
+        let mut explicitly_stopped = interrupted.clone();
+        explicitly_stopped["stopReason"] = json!("user");
+        assert_eq!(recovery_failure(&explicitly_stopped), None);
+
+        let mut older_history = interrupted;
+        older_history.as_object_mut().unwrap().remove("completedAt");
+        assert_eq!(recovery_failure(&older_history), None);
+    }
+
+    #[test]
     fn retry_429_requires_the_same_terminal_failure_and_cooldown_from_completion() {
         let boundary = RecoveryBoundary {
             turn_id: "failed".into(), input_item_id: "input".into(), cwd: "/project".into(),

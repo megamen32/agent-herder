@@ -34,8 +34,9 @@ export function nativeHandoff(reply: unknown, start: number, end: number, scope:
   if (scope === "instance" && !v.mapped && v.reason === "native_session_not_registered" &&
       v.blocked === false && v.recoveryOwner === undefined) return undefined;
   if (v.blocked !== true || v.recoveryOwner !== "rust") return recoveryUnavailable();
+  const known = ["rust_recovery_handoff", "human_stop_active", "legacy_stop_provenance_unknown"];
   return { blocked: true, recoveryOwner: "rust",
-    reason: v.reason === "rust_recovery_handoff" ? v.reason : "native_recovery_held" };
+    reason: known.includes(v.reason) ? v.reason : "native_recovery_held" };
 }
 
 async function pinned(path: string, pin: string, limit: number, keepBytes = false): Promise<Buffer> {

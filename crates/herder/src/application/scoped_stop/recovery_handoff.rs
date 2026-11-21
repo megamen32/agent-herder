@@ -226,6 +226,10 @@ impl LegacyRecoveryHandoff {
         !self.released() || self.read_held(harness, native_id).unwrap_or(true)
     }
 
+    pub(super) fn legacy_stop_reason(&self, harness: &str, native_id: &str) -> Option<&'static str> {
+        legacy_stop_reason(harness, native_id, &self.human_stops).ok().flatten()
+    }
+
     fn read_held(&self, harness: &str, native_id: &str) -> io::Result<bool> {
         if human_held(harness, native_id, &self.human_stops, &self.human_requests, &self.choices)? {
             return Ok(true);
@@ -450,6 +454,31 @@ struct AutopilotSession {
     enabled: bool,
 }
 
+fn legacy_stop_reason(
+    harness: &str,
+    native_id: &str,
+    human_stops: &Path,
+) -> io::Result<Option<&'static str>> {
+    let holds: Sessions<Hold> = private_json(human_stops)?;
+    require_v1(holds.version)?;
+    let mut reason = None;
+    for hold in holds.sessions.iter().filter(|hold| {
+        hold.harness == harness && hold.id == native_id && hold.active
+    }) {
+        // The compatibility stop command writes this marker. A native
+        // interrupted frame alone contains no evidence of who requested it.
+        if hold.stop["reason"] == "explicit-stop"
+            && hold.stop["id"].as_str()
+                .and_then(|id| id.strip_prefix("explicit-stop:"))
+                .is_some_and(|id| !id.is_empty())
+        {
+            return Ok(Some("human_stop_active"));
+        }
+        reason = Some("legacy_stop_provenance_unknown");
+    }
+    Ok(reason)
+}
+
 fn human_held(
     harness: &str,
     native_id: &str,
@@ -457,13 +486,7 @@ fn human_held(
     human_requests: &Path,
     choice_path: &Path,
 ) -> io::Result<bool> {
-    let holds: Sessions<Hold> = private_json(human_stops)?;
-    require_v1(holds.version)?;
-    if holds
-        .sessions
-        .iter()
-        .any(|r| r.harness == harness && r.id == native_id && r.active)
-    {
+    if legacy_stop_reason(harness, native_id, human_stops)?.is_some() {
         return Ok(true);
     }
     let requests: Requests<HumanRequest> = private_json(human_requests)?;
@@ -544,6 +567,8 @@ struct Hold {
     harness: String,
     id: String,
     active: bool,
+    #[serde(default)]
+    stop: Value,
 }
 
 #[derive(Deserialize)]

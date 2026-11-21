@@ -259,7 +259,7 @@ export const LOCAL_RECOVERY_WAIT_PATH = "/api/local-recovery-wait";
 export async function observeInstalledRecoveryWait(target: ProcessWaitTarget) {
   const value = await installedProcessWaits.decision(target);
   const known = ["rust_recovery_handoff", "native_recovery_held", "native_recovery_ownership_unavailable",
-    "process_wait_unconfigured"];
+    "process_wait_unconfigured", "human_stop_active", "legacy_stop_provenance_unknown"];
   const reason = known.includes(value.reason) ? value.reason : (value.blocked ? "legacy_wait_active" : "legacy_wait_clear");
   return { blocked: value.blocked, reason, ...(value.recoveryOwner ? { recoveryOwner: value.recoveryOwner } : {}) };
 }
