@@ -849,9 +849,12 @@ experimental_bearer_token = "{cold_token}"
             "unfinished-sessions.json"))
         private_write(activation, "true")
         private_write(stops, json.dumps({"version": 1, "sessions": [{
-            "harness": "codex", "id": ambiguous_thread, "active": True,
+            "harness": "codex", "id": sessions[warm][0], "active": True,
             "stop": {"id": "older-native-turn", "turnId": "older-native-turn", "reason": "interrupted",
                      "at": "2000-01-01T00:00:00Z"},
+        }, {
+            "harness": "codex", "id": ambiguous_thread, "active": True,
+            "stop": {"id": "unattributed", "reason": "unrecognized"},
         }]}))
         stops_hash = digest(stops)
         for path in (questions, choices):
@@ -978,7 +981,8 @@ experimental_bearer_token = "{cold_token}"
             "http_requests": {model: len(seen) for model, seen in requests.items()},
             "recheck_seconds": {model: round(requests[model][1] - requests[model][0], 1)
                                 for model in recoverable_models},
-            "same_chat": {"thread": sessions[warm][0], "failed_turn": sessions[warm][1],
+            "same_chat": {"thread": sessions[warm][0], "historical_abort_turn": "older-native-turn",
+                          "failed_turn": sessions[warm][1],
                           "recovery_turn": turns(read, sessions[warm][0])[1]["id"], "model": warm},
             "secondary_route": {"thread": sessions[cold][0], "failed_turn": sessions[cold][1],
                                 "recovery_turn": turns(read, sessions[cold][0])[1]["id"],

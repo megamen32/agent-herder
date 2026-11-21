@@ -152,10 +152,12 @@ impl RecoveryProfile {
             })
     }
 
-    fn recovery_held(&self, harness: &str, native_id: &str) -> bool {
+    fn recovery_held(&self, harness: &str, native_id: &str, boundary: Option<&RecoveryBoundary>) -> bool {
+        let open_turn = boundary.filter(|b| b.failure == RecoveryFailure::Interrupted)
+            .map(|b| b.turn_id.as_str());
         self.legacy_handoff
             .as_ref()
-            .is_some_and(|handoff| handoff.held(harness, native_id))
+            .is_some_and(|handoff| handoff.held(harness, native_id, open_turn))
             || (harness == "opencode"
                 && notice_attempt_held(&self.autopilot_state_dir.join("sessions.json"), native_id))
     }
@@ -165,7 +167,7 @@ impl RecoveryProfile {
             || boundary.ancestors.iter().any(|ancestor| {
                 automation_disarm_held(&self.autopilot_state_dir, harness, Path::new(&ancestor.cwd))
                     || self.legacy_handoff.as_ref().is_some_and(|handoff| {
-                        handoff.held(harness, &ancestor.address.native_session_id)
+                        handoff.held(harness, &ancestor.address.native_session_id, Some(&ancestor.turn_id))
                     })
             })
     }
@@ -563,12 +565,6 @@ impl SessionRecovery {
         address: &SessionAddress,
     ) -> Result<Option<(Autostart, RecoveryBoundary)>, GateError> {
         let harness = self.control.harness();
-        if self
-            .profile
-            .recovery_held(harness, &address.native_session_id)
-        {
-            return Ok(None);
-        }
         let settings = private_json::<Autostart>(
             &self
                 .profile
@@ -586,6 +582,7 @@ impl SessionRecovery {
         Ok(boundary
             .filter(|b| {
                 recent(b.started_at_ms)
+                    && !self.profile.recovery_held(harness, &address.native_session_id, Some(b))
                     && self.profile.owns_target(harness, address, b)
                     && self.profile.owns_ancestors(harness, address, b)
                     && settings.admits(harness, &address.native_session_id, b)
@@ -955,7 +952,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
         // The adapter revalidates this native boundary under its control lock.
         // The permit rechecks scope and legacy state without a recursive RPC.
         let target_allowed = || self.profile.owns_target(harness, &plan.target, &self.boundary)
-            && !self.profile.recovery_held(harness, &plan.target.native_session_id);
+            && !self.profile.recovery_held(harness, &plan.target.native_session_id, Some(&self.boundary));
         if !target_allowed() || !self.profile.owns_ancestors(harness, &plan.target, &self.boundary) {
             return Err(SubmitError::DefinitelyNotSent {
                 reason: "Native recovery ownership or legacy hold changed".into(),

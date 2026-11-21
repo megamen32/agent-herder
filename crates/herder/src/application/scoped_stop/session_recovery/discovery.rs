@@ -329,7 +329,7 @@ impl SessionRecovery {
             .is_none_or(|h| !h.owns_native(harness, address).unwrap_or(false))
             || self
                 .profile
-                .recovery_held(harness, &address.native_session_id)
+                .recovery_held(harness, &address.native_session_id, None)
         {
             return Err(GateError::Unavailable);
         }

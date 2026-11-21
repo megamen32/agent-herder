@@ -51,17 +51,15 @@ completion hook for that exact session.
 ## Explicit stops in Codex and ZCode
 
 A stop through Herder persists a fence for that native session before the
-transport is interrupted. A legacy Codex stop whose only evidence is
-`turn_aborted` with `reason: interrupted` stays blocked as
-`legacy_stop_provenance_unknown`. Classifying that abort requires an
-authenticated Stop event or a typed runtime abort cause bound to the same
-native thread and turn. Herder records its own transport interruptions
-separately. They leave an existing human stop in effect.
+transport is interrupted. The Rust recovery owner respects the explicit stop
+and owner-scope stop records from the compatibility service. If an old
+record obscures an owner command, recovery waits for its release.
 
-Recovery can use a typed, retryable 429 on the latest failed Codex turn when
-the stop checks are clear. It can also use Codex's projection of an unclosed
-turn after the app-server disappears. A terminal native abort with missing
-provenance and a ZCode cancellation keep their automation hold.
+The Codex observer also records individual turns as `interrupted`. Rust
+checks the latest native turn for a retryable failure, including HTTP 429,
+even when an earlier turn has such a record. For crash recovery, an abort
+record for the exact turn rules out treating it as unclosed. A terminal
+native abort and a pending human question both prevent a continuation.
 
 The fence survives restarts and blocks automatic delivery, retries, watchdogs,
 handoffs and replacement sessions. Creating a related session accepts
