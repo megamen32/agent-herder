@@ -166,6 +166,75 @@ class CanonicalBridgeIntegrationTest(unittest.TestCase):
         with MODULE.ReleaseGate(self.proof_path, self.ledger, target=self.target) as gate:
             self.assertEqual(gate.check()["fence"], 119)
 
+    def test_rotation_routes_default_and_two_independent_fleet_proofs(self):
+        proposed = self.root / "three-targets.json"
+        config = json.loads(self.config.read_bytes())
+        config["version"] = 2
+        config["mappings"][0]["default_for_project"] = True
+        targets = []
+        for node in ("server-44", "server-88"):
+            fleet_dir = self.root / node
+            fleet_dir.mkdir(mode=0o700)
+            target = {"fleetDir": str(fleet_dir), "unit": f"fixture-{node}.service"}
+            targets.append(target)
+            resource_ref = f"fixture-release-{node}"
+            directory = self.resource.parent / resource_ref
+            directory.mkdir(mode=0o700)
+            record = json.loads((self.resource / "resource.json").read_bytes())
+            record["resource_ref"] = resource_ref
+            record["descriptor"].update(resource_ref=resource_ref, external_ref=node)
+            self.write(directory / "resource.json", record)
+            config["mappings"].append({
+                "project": str(self.project), "resource_ref": resource_ref,
+                "revision": 1, "previous_fence": 118, "deployment_target": target,
+            })
+        self.write(proposed, config)
+
+        rotated = rotation.rotate(self.ledger, self.config, self.bridge, self.root / "archive",
+                                  rotation.digest(self.ledger), str(self.project), proposed)
+        original_config = self.config
+        self.config = Path(rotated["config"])
+        status = {"action": "status", "project": str(self.project)}
+        self.assertEqual(self.call(status)["resourceRef"], "fixture-release")
+        self.assertEqual(self.call({**status, "deploymentTarget": self.target})["resourceRef"],
+                         "fixture-release")
+        with MODULE.ReleaseGate(self.proof_path, self.ledger) as gate:
+            self.assertEqual(gate.check()["fence"], 119)
+
+        proofs = []
+        for target, node, token in zip(targets, ("server-44", "server-88"), ("b", "c")):
+            request = {"project": str(self.project), "owner": self.owner, "deploymentTarget": target}
+            self.assertEqual(self.call({**status, "deploymentTarget": target})["resourceRef"],
+                             f"fixture-release-{node}")
+            acquired = self.call({**request, "action": "acquire", "ttlSeconds": 30, "token": token * 64})
+            self.assertTrue(acquired["acquired"])
+            self.assertEqual(acquired["lease"]["fence"], 119)
+            proof = {**request, "fence": 119, "token": acquired["token"]}
+            path = self.root / f"{node}-proof.json"
+            self.write(path, proof)
+            proofs.append((target, path, proof))
+
+        for target, path, proof in proofs:
+            with MODULE.ReleaseGate(path, self.ledger, target=target, require_target_lease=True) as gate:
+                self.assertEqual(gate.check()["fence"], 119)
+            for wrong_target in [self.target, *(other for other in targets if other != target)]:
+                with self.assertRaisesRegex(RuntimeError, "proof_mismatch"):
+                    with MODULE.ReleaseGate(path, self.ledger, target=wrong_target, require_target_lease=True):
+                        self.fail("cross-target proof opened a guard")
+            with self.assertRaisesRegex(RuntimeError, "proof_mismatch"):
+                with MODULE.ReleaseGate(self.proof_path, self.ledger, target=target, require_target_lease=True):
+                    self.fail("default proof opened a fleet guard")
+            self.call({**proof, "action": "release"})
+
+        restored = rotation.rotate(self.ledger, self.config, self.bridge, self.root / "rollback",
+                                   rotation.digest(self.ledger), str(self.project), original_config)
+        self.config = Path(restored["config"])
+        self.assertEqual(self.call(status)["resourceRef"], "fixture-release")
+        for target in targets:
+            self.call({**status, "deploymentTarget": target}, error="proof_mismatch")
+        with MODULE.ReleaseGate(self.proof_path, self.ledger) as gate:
+            self.assertEqual(gate.check()["fence"], 119)
+
 
 if __name__ == "__main__":
     unittest.main()
