@@ -1256,6 +1256,18 @@ for line in sys.stdin:
     assert_eq!(fence["reason"], "rust_recovery_handoff", "{fence}");
     assert_eq!(fence["blocked"], true, "{fence}");
     assert_eq!(fence["mapped"], false, "{fence}");
+    if scope == CodexHandoff::Cohort {
+        for (id, reason) in [
+            ("old-interrupt", "legacy_stop_provenance_unknown"),
+            ("explicit-legacy", "human_stop_active"),
+            ("held", "human_stop_active"),
+        ] {
+            let status = recovery_wait_status(&mut staged, "codex", id);
+            assert_eq!(status["blocked"], true, "{id}: {status}");
+            assert_eq!(status["reason"], reason, "{id}: {status}");
+            assert_eq!(status["recoveryOwner"], "rust", "{id}: {status}");
+        }
+    }
     if instance_wide {
         check_unmapped_recovery_fences(&mut staged, "codex");
     } else {

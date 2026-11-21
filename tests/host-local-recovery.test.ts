@@ -62,6 +62,9 @@ it("requires a fresh complete native ownership decision", () => {
     sessionRefs: [], ruleRefs: [] };
   const proof = (v: Record<string, unknown>) => nativeHandoff({structuredContent: v}, now, now, "instance");
   expect(proof(value)).toEqual({ blocked: true, reason: "rust_recovery_handoff", recoveryOwner: "rust" });
+  for (const reason of ["human_stop_active", "legacy_stop_provenance_unknown"]) {
+    expect(proof({ ...value, reason })).toEqual({ blocked: true, reason, recoveryOwner: "rust" });
+  }
   for (const malformed of [{complete:false},{configured:false},{blocked:false},{mapped:null},{version:2},
     {observedAt:new Date(now - 10000).toISOString()},{reason:null},{recoveryOwner:undefined},{ruleRefs:["ambiguous"]}]) {
     expect(proof({...value,...malformed})).toEqual({ blocked: true, reason: "native_recovery_ownership_unavailable" });

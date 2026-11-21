@@ -39,10 +39,11 @@ pub struct RecoveryRoute {
     pub model: Option<String>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum SameRouteRetry {
     Hold,
     Ready,
-    /// The re-read matched a different known throttle. Use its existing quota policy.
+    /// The saved route must follow its configured quota policy.
     UseQuotaPolicy,
 }
 

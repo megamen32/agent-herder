@@ -424,7 +424,7 @@ fn select_route(
             }
         }
     }
-    let allowed = if throttled && native.harness() == "codex" && boundary.provider == "opencodex" {
+    let allowed = if throttled && native.harness() == "codex" {
         match native.same_route_retry(&target, boundary) {
             SameRouteRetry::Hold => false,
             SameRouteRetry::UseQuotaPolicy => same_route,
