@@ -33,6 +33,9 @@ class NativeRolloutPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             sha = 'a' * 40
+            release = root / 'release'
+            release.mkdir()
+            (release / 'build-manifest.json').write_text('{}')
             proof = {'project': 'test-project', 'fence': 1, 'owner': 'test', 'token': 'test-token'}
             proof_path = root / 'proof.json'
             proof_path.write_text(json.dumps(proof))
@@ -54,7 +57,7 @@ class NativeRolloutPreflightTests(unittest.TestCase):
                   patch.object(rollout.shutil, 'which', return_value='/fixture/codex'),
                   patch.object(rollout, '_stage_native_candidate', side_effect=lambda release, directory: (release, lambda: None)),
                   patch.object(Path, 'is_file', return_value=True)):
-                rollout.run_native_candidate_preflight(root / 'release', sha, root, gate)
+                rollout.run_native_candidate_preflight(release, sha, root, gate)
                 self.assertEqual(call.call_count, 2)
                 self.assertEqual(json.loads((root / 'ci-receipts' / f'{sha}-rollout.json').read_text())['release'], 'INCOMPLETE')
 
@@ -89,7 +92,14 @@ class NativeRolloutPreflightTests(unittest.TestCase):
             sha = 'a' * 40
             release = catalog / 'releases' / sha
             release.mkdir(parents=True)
-            (release / 'build-manifest.json').write_text(json.dumps({'sourceSha': sha, 'bundleFingerprint': 'bundle'}))
+            native_gate = {
+                'mode': 'local', 'runtime': '/fixture/zcode-runtime',
+                'runtime_sha256': 'b' * 64, 'version': '3.17.2',
+            }
+            (release / 'build-manifest.json').write_text(json.dumps({
+                'sourceSha': sha, 'bundleFingerprint': 'bundle', 'nativeCandidateGate': native_gate,
+                'payloadFingerprint': rollout.release_rules.payload_fingerprint({}), 'payloadFiles': 0,
+            }))
             node = {'id': 'server-44', 'kind': 'fleet', 'address': 'example', 'restartCmd': 'restart',
                     'sshUser': 'fixture', 'fleetDir': '/fixture', 'unit': 'fixture.service', 'hostId': 'server-44',
                     'pythonBin': 'python3', 'webPort': 1234, 'stateDir': '/fixture/state'}
@@ -109,19 +119,19 @@ class NativeRolloutPreflightTests(unittest.TestCase):
             with (patch.object(sys, 'argv', argv), patch.object(rollout, 'load_nodes', return_value={}),
                   patch.object(rollout, 'node_spec', return_value=node), patch.object(rollout, 'validate_node', return_value=node),
                   patch.object(rollout, 'descriptor_digest', return_value='descriptor'),
-                  patch.object(rollout.release_rules, 'bundle_entries', return_value={}),
-                  patch.object(rollout.release_rules, 'bundle_fingerprint', return_value='bundle'),
                   patch.object(rollout, 'remote_live_sha', return_value='b' * 40),
                   patch.object(rollout, 'pack_release', side_effect=pack),
                   patch.object(rollout, 'verify_descriptor', return_value=node),
                   patch.object(rollout, 'deployment_target', return_value={}),
                   patch.object(rollout, 'ReleaseGate', return_value=lease),
-                  patch.object(rollout, 'run_native_candidate_preflight') as preflight,
+                  patch.object(rollout, 'run_native_candidate_preflight',
+                               side_effect=lambda candidate, _sha, _catalog, _gate, native_candidate_gate=None:
+                               rollout.native_gate_options(candidate, native_candidate_gate)) as preflight,
                   patch.object(rollout, 'verify_remote_python'),
                   patch.object(rollout.subprocess, 'run', side_effect=run),
                   patch.object(rollout, 'finish_staged_rollout', return_value=0) as finish):
                 self.assertEqual(rollout.main(), 0)
-                preflight.assert_called_once_with(release, sha, catalog, gate)
+                preflight.assert_called_once_with(release, sha, catalog, gate, native_candidate_gate=native_gate)
                 command = finish.call_args.args[0]
                 self.assertIn('--authority-stdio', command[-1])
                 self.assertIs(finish.call_args.args[1], gate)
@@ -183,7 +193,10 @@ class NativeRolloutPreflightTests(unittest.TestCase):
             catalog = Path(tmp)
             release = catalog / 'releases' / ('a' * 40)
             release.mkdir(parents=True)
-            (release / 'build-manifest.json').write_text(json.dumps({'sourceSha': 'a' * 40, 'bundleFingerprint': 'bundle'}))
+            (release / 'build-manifest.json').write_text(json.dumps({
+                'sourceSha': 'a' * 40, 'bundleFingerprint': 'bundle',
+                'payloadFingerprint': rollout.release_rules.payload_fingerprint({}), 'payloadFiles': 0,
+            }))
             node = {'id': 'server-44', 'kind': 'fleet', 'address': 'example', 'restartCmd': 'restart',
                     'sshUser': 'fixture', 'fleetDir': '/fixture', 'unit': 'fixture.service', 'hostId': 'server-44'}
             gate = Mock()
@@ -198,8 +211,6 @@ class NativeRolloutPreflightTests(unittest.TestCase):
             with (patch.object(sys, 'argv', argv), patch.object(rollout, 'load_nodes', return_value={}),
                   patch.object(rollout, 'node_spec', return_value=node), patch.object(rollout, 'validate_node', return_value=node),
                   patch.object(rollout, 'descriptor_digest', return_value='descriptor'),
-                  patch.object(rollout.release_rules, 'bundle_entries', return_value={}),
-                  patch.object(rollout.release_rules, 'bundle_fingerprint', return_value='bundle'),
                   patch.object(rollout, 'remote_live_sha', return_value='b' * 40),
                   patch.object(rollout, 'pack_release', side_effect=pack),
                   patch.object(rollout, 'verify_descriptor', return_value=node),
@@ -215,6 +226,7 @@ class NativeRolloutPreflightTests(unittest.TestCase):
         gate = Mock()
         gate.check.side_effect = RuntimeError('lease expired')
         with tempfile.TemporaryDirectory() as tmp, patch.object(rollout.subprocess, 'run') as run:
+            (Path(tmp) / 'build-manifest.json').write_text('{}')
             with self.assertRaisesRegex(RuntimeError, 'lease expired'):
                 rollout.run_native_candidate_preflight(Path(tmp), 'a' * 40, Path(tmp), gate)
             run.assert_not_called()
@@ -228,6 +240,7 @@ class NativeRolloutPreflightTests(unittest.TestCase):
               patch.object(rollout.shutil, 'which', return_value='/fixture/codex'),
               patch.object(rollout, '_stage_native_candidate', side_effect=lambda release, directory: (release, lambda: None)),
                   patch.object(Path, 'is_file', return_value=True)):
+            (Path(tmp) / 'build-manifest.json').write_text('{}')
             with self.assertRaisesRegex(RuntimeError, 'deterministic model fixture') as error:
                 rollout.run_native_candidate_preflight(Path(tmp), 'a' * 40, Path(tmp), gate)
             self.assertNotIn('secret-test-value', str(error.exception))

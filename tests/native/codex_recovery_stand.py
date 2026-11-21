@@ -355,6 +355,21 @@ def session_tool(owner, **arguments):
     return result["structuredContent"]
 
 
+def wait_for_transcript_answer(owner, session_ref, answer, description):
+    def visible():
+        result = owner.request("tools/call", {
+            "_meta": MCP_META, "name": "session",
+            "arguments": {"action": "messages", "session_ref": session_ref},
+        })
+        if result.get("isError") and result.get("structuredContent") == {"code": "scope_unavailable", "effect": "none"}:
+            # The receipt and transcript readers share the scope with the recovery worker.
+            return False
+        require(not result.get("isError"), f"session messages failed: {result}")
+        return answer in json.dumps(result["structuredContent"])
+
+    wait_for(description, visible, seconds=12)
+
+
 def checked_transcript(call, session, failure_id):
     current = turns(call, session)
     require(len(current) == 2 and current[0]["id"] == failure_id and current[0]["status"] == "failed",
@@ -490,14 +505,12 @@ experimental_bearer_token = "{fallback_token}"
             receipt = json.loads(rows[0][2])
             require(rows[0][0] == receipt["address"]["native_session_id"] == thread
                     and receipt["native_id"] == recovery_id, "durable receipt points to another thread or turn")
-            messages = session_tool(active, action="messages", session_ref=ref)
-            require(answer in json.dumps(messages), "fallback reply unavailable in the owner transcript")
+            wait_for_transcript_answer(active, ref, answer, "fallback reply unavailable in the owner transcript")
 
         with owner_client(owner, profile, env) as restarted:
             require(attest_proxies(restarted, codex, endpoint) == proxy_count, "restarted owner lost proxy identity")
             time.sleep(3)
-            messages = session_tool(restarted, action="messages", session_ref=ref)
-            require(answer in json.dumps(messages), "restarted owner lost the fallback reply")
+            wait_for_transcript_answer(restarted, ref, answer, "restarted owner lost the fallback reply")
             require(daemon.poll() is None and checked_transcript(read, thread, failure_id) == recovery_id,
                     "shared server or native recovery turn changed during owner restart")
         require(receipt_rows(database) == rows, "owner restarted with a changed recovery receipt")
