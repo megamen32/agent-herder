@@ -212,6 +212,17 @@ impl ZaiReader {
         text: &str,
         attachments: &[BrowserAttachment],
     ) -> Result<(String, String), BrowserSubmitError> {
+        self.submit_with_ticket(conversation_id, text, attachments, |_| Ok(()))
+            .await
+    }
+
+    pub(crate) async fn submit_with_ticket(
+        &mut self,
+        conversation_id: Option<&str>,
+        text: &str,
+        attachments: &[BrowserAttachment],
+        before_click: impl FnOnce(&str) -> Result<(), BrowserSubmitError>,
+    ) -> Result<(String, String), BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         if text.len() > 8_000
             || !has_browser_caption(text)
@@ -231,6 +242,7 @@ impl ZaiReader {
         if !valid_message_id(&prepared.ticket) {
             return Err(BeforeSend);
         }
+        before_click(&prepared.ticket)?;
         // From dispatch of this evaluation onward only an explicit pre-click refusal
         // is replay-safe. Every subsequent evaluation is read-only.
         self.fresh_blank = false;
@@ -245,39 +257,44 @@ impl ZaiReader {
                 .map_err(|_| Unknown)?,
             None => return Err(Unknown),
         }
-        let mut chat_id = conversation_id.map(str::to_owned);
-        // The page retains the pre-click ID fingerprint and the set of already
-        // listed chats. Only the bounded receipt and its exact IDs cross CDP.
         let readback = async {
             loop {
-                let value = self
-                    .native_read(
-                        "receipt",
-                        chat_id.as_deref(),
-                        json!({"ticket":prepared.ticket, "text":text}),
-                    )
+                if let Some(receipt) = self
+                    .read_submission(conversation_id, &prepared.ticket)
                     .await
-                    .map_err(|_| Unknown)?;
-                if let Some(id) = value.get("chat_id").and_then(Value::as_str) {
-                    if !valid_chat_id(id) {
-                        return Err(Unknown);
-                    }
-                    chat_id = Some(id.to_owned());
-                }
-                if let Some(id) = value.get("user_message_id").and_then(Value::as_str) {
-                    if !valid_message_id(id) {
-                        return Err(Unknown);
-                    }
-                    return Ok((chat_id.ok_or(Unknown)?, id.to_owned()));
-                }
-                if value.get("pending").and_then(Value::as_bool) != Some(true) {
-                    return Err(Unknown);
+                    .map_err(|_| Unknown)?
+                {
+                    return Ok(receipt);
                 }
                 tokio::time::sleep(Duration::from_millis(350)).await;
             }
         };
-        tokio::time::timeout(Duration::from_secs(12), readback)
+        // New chats publish their route asynchronously. Beyond the inline
+        // budget a public task read can check the saved ticket on this tab.
+        let budget = if conversation_id.is_none() { 30 } else { 12 };
+        tokio::time::timeout(Duration::from_secs(budget), readback)
             .await
             .map_err(|_| Unknown)?
+    }
+
+    pub(crate) async fn read_submission(
+        &mut self,
+        conversation_id: Option<&str>,
+        ticket: &str,
+    ) -> Result<Option<(String, String)>, ZaiReadError> {
+        let value = self
+            .native_read("receipt", conversation_id, json!({"ticket":ticket}))
+            .await?;
+        let route = value["chat_id"].as_str();
+        if route.is_some_and(|id| !valid_chat_id(id)) {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        match (route, value["user_message_id"].as_str()) {
+            (Some(route), Some(message)) if valid_message_id(message) => {
+                Ok(Some((route.to_owned(), message.to_owned())))
+            }
+            (_, None) if value["pending"] == true => Ok(None),
+            _ => Err(ZaiReadError::InvalidResponse),
+        }
     }
 }

@@ -36,10 +36,35 @@ pub(super) struct Draft {
     pub(super) state: DraftState,
     pub(super) remote_id: Option<String>,
     pub(super) target_id: Option<String>,
+    pub(super) first_message: Option<String>,
+    pub(super) zai_attempt: Option<ZaiAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct ZaiAttempt {
+    key_sha256: String,
+    pub(super) ticket: String,
+    pub(super) target: String,
+    binding: String,
+}
+
+impl ZaiAttempt {
+    fn key_digest(input: &str) -> String {
+        Sha256::digest(input.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    pub(super) fn matches(&self, input: &str) -> bool {
+        self.key_sha256 == Self::key_digest(input)
+    }
 }
 
 enum Transition<'a> {
     Reserve(&'a str),
+    ArmZai(&'a str, ZaiAttempt),
     ResetBeforeClick(&'a str),
     MarkUncertain,
     Confirm {
@@ -70,6 +95,8 @@ struct Record {
     target_binding: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     native_reservation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zai_attempt: Option<ZaiAttempt>,
     // Preserve commandId, inputDigest and any extensions on read/modify/write.
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
@@ -163,6 +190,7 @@ impl Record {
             target_id: None,
             target_binding: None,
             native_reservation: None,
+            zai_attempt: None,
             extra: Default::default(),
         }
     }
@@ -175,6 +203,16 @@ impl Record {
                 native_reservation: Some(owner.into()),
                 ..self
             }),
+            (Sending, Transition::ArmZai(owner, attempt))
+                if provider == Provider::Zai
+                    && self.zai_attempt.is_none()
+                    && self.native_reservation.as_deref() == Some(owner) =>
+            {
+                Ok(Self {
+                    zai_attempt: Some(attempt),
+                    ..self
+                })
+            }
             // Only the instance which observed the pre-click failure may reopen a draft.
             (Sending, Transition::ResetBeforeClick(owner))
                 if self.native_reservation.as_deref() == Some(owner) =>
@@ -182,6 +220,7 @@ impl Record {
                 Ok(Self {
                     state: Pending,
                     native_reservation: None,
+                    zai_attempt: None,
                     ..self
                 })
             }
@@ -202,6 +241,10 @@ impl Record {
                 if !valid_remote(provider, remote)
                     || !valid_message(message)
                     || !valid_route(target)
+                    || self
+                        .zai_attempt
+                        .as_ref()
+                        .is_some_and(|a| a.target != target || a.binding != binding)
                 {
                     return Err(io::Error::new(
                         ErrorKind::InvalidInput,
@@ -248,6 +291,17 @@ impl Record {
         };
         let legacy_receipt = self.native_input_message_id.as_deref();
         if self.id != expected_id
+            || self.zai_attempt.as_ref().is_some_and(|a| {
+                provider != Provider::Zai
+                    || self.state == DraftState::Pending
+                    || !uuid(&a.ticket)
+                    || !valid_route(&a.target)
+                    || !sha256_hex(&a.key_sha256)
+                    || !sha256_hex(&a.binding)
+                    || admitted
+                        && (self.target_id.as_ref() != Some(&a.target)
+                            || self.target_binding.as_ref() != Some(&a.binding))
+            })
             || self.title.encode_utf16().count() > 180
             || !valid_binding
             || legacy_receipt.is_some_and(|s| !admitted || s.len() != 36 || !hex_route(s))
@@ -294,6 +348,8 @@ impl Record {
             state: self.state,
             remote_id,
             target_id,
+            first_message: self.native_input_message_id.or(self.native_message_id),
+            zai_attempt: self.zai_attempt.filter(|a| a.binding == target_binding),
         }
     }
 }
@@ -526,8 +582,28 @@ impl DraftStore {
     fn update(&self, id: &str, change: Transition<'_>) -> io::Result<()> {
         let (provider, dir, guard) = self.directory(false)?;
         guard.lock()?;
-        let record = read_record(&dir, provider, id)?.transition(provider, change)?;
-        save(&dir, &guard, &record)
+        let record = read_record(&dir, provider, id)?;
+        // A task read and the original sender can observe the same proof together.
+        if let Transition::Confirm {
+            remote,
+            message,
+            target,
+            binding,
+        } = &change
+            && record.state == DraftState::Admitted
+            && record.zai_attempt.is_some()
+            && record.raw_remote(provider) == Some(*remote)
+            && record
+                .native_input_message_id
+                .as_deref()
+                .or(record.native_message_id.as_deref())
+                == Some(*message)
+            && record.target_id.as_deref() == Some(*target)
+            && record.target_binding.as_deref() == Some(*binding)
+        {
+            return Ok(());
+        }
+        save(&dir, &guard, &record.transition(provider, change)?)
     }
 
     pub(super) fn begin(&self, id: &str) -> io::Result<()> {
@@ -544,6 +620,31 @@ impl DraftStore {
     pub(super) fn reset(&self, id: &str) -> io::Result<()> {
         let owner = self.reset_owner.get().ok_or_else(conflict)?;
         self.update(id, Transition::ResetBeforeClick(owner))
+    }
+
+    pub(super) fn arm_zai(
+        &self,
+        draft: &str,
+        input: &str,
+        target: &str,
+        ticket: &str,
+    ) -> io::Result<()> {
+        let owner = self.reset_owner.get().ok_or_else(conflict)?;
+        if !uuid(ticket) || !valid_route(target) {
+            return Err(invalid_record());
+        }
+        self.update(
+            draft,
+            Transition::ArmZai(
+                owner,
+                ZaiAttempt {
+                    key_sha256: ZaiAttempt::key_digest(input),
+                    ticket: ticket.into(),
+                    target: target.into(),
+                    binding: self.target_binding.clone(),
+                },
+            ),
+        )
     }
 
     pub(super) fn uncertain(&self, id: &str) -> io::Result<()> {
@@ -781,6 +882,45 @@ mod tests {
         );
         assert!(contender.bind(id, MESSAGE, REMOTE, "other-page").is_err());
         assert_eq!(home.disk("chatgpt", id), disk);
+    }
+
+    #[test]
+    fn zai_first_ticket_is_bound_to_one_reservation_key_and_target() {
+        let home = Home::new();
+        let store = home.store("zai");
+        let other = home.store("zai");
+        let id = store.create("private first tab").unwrap().id;
+        let ticket = new_uuid().unwrap();
+        let key = "a".repeat(4096);
+        store.begin(&id).unwrap();
+        assert!(other.arm_zai(&id, &key, "tab", &ticket).is_err());
+        store.arm_zai(&id, &key, "tab", &ticket).unwrap();
+        assert!(
+            store
+                .arm_zai(&id, "another-key", "other-tab", &ticket)
+                .is_err()
+        );
+        let attempt = other.get(&id).unwrap().zai_attempt.unwrap();
+        assert!(attempt.matches(&key));
+        assert!(!attempt.matches("another-key"));
+        assert_eq!(attempt.ticket, ticket);
+        let elsewhere = home.scoped("zai", SCOPE, [ENDPOINT, "other", "instance", "context"]);
+        assert!(elsewhere.get(&id).unwrap().zai_attempt.is_none());
+        store.reset(&id).unwrap();
+        assert!(other.get(&id).unwrap().zai_attempt.is_none());
+        store.begin(&id).unwrap();
+        store
+            .arm_zai(&id, &key, "new-tab", &new_uuid().unwrap())
+            .unwrap();
+        store.uncertain(&id).unwrap();
+        assert!(other.bind(&id, REMOTE, MESSAGE, "tab").is_err());
+        other.bind(&id, REMOTE, MESSAGE, "new-tab").unwrap();
+        store.bind(&id, REMOTE, MESSAGE, "new-tab").unwrap();
+        assert!(store.bind(&id, REMOTE, "other-user", "new-tab").is_err());
+        assert!(other.get(&id).unwrap().zai_attempt.unwrap().matches(&key));
+        let legacy = store.create("older unbound send").unwrap();
+        store.begin(&legacy.id).unwrap();
+        assert!(other.get(&legacy.id).unwrap().zai_attempt.is_none());
     }
 
     #[test]

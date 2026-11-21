@@ -512,6 +512,53 @@ async fn first_send_and_continuation_return_exact_new_user_ids() {
 
 #[tokio::test]
 #[ignore = "requires local Google Chrome and Node.js"]
+async fn late_first_route_can_only_settle_the_clicked_ticket() {
+    let (_chrome, mut reader) = fixture(&[]).await;
+    page(
+        &mut reader,
+        r#"
+        const replace = history.replaceState.bind(history);
+        history.replaceState = (...args) => {
+            fixture.publishRoute = () => replace(...args);
+        };
+        true
+    "#,
+    )
+    .await;
+    let mut ticket = String::new();
+    let files = [file("parcel.txt", "text/plain", "cGFyY2Vs")];
+    let send = reader.submit_with_ticket(None, TEXT, &files, |prepared| {
+        ticket = prepared.to_owned();
+        Ok(())
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), send)
+            .await
+            .is_err()
+    );
+    assert_eq!(page(&mut reader, "fixture.clicks").await, 1);
+    assert_eq!(reader.read_submission(None, &ticket).await.unwrap(), None);
+    page(&mut reader, "fixture.publishRoute(); true").await;
+    assert!(
+        reader
+            .read_submission(None, "another-ticket")
+            .await
+            .is_err()
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            reader.read_submission(None, &ticket).await.unwrap(),
+            Some((FRESH.into(), "user-1".into()))
+        );
+    }
+    assert_eq!(
+        page(&mut reader, "[fixture.clicks, fixture.uploads]").await,
+        json!([1, 1])
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires local Google Chrome and Node.js"]
 async fn uncertain_first_click_is_never_repeated() {
     let (_chrome, mut reader) = fixture(&[]).await;
     page(&mut reader, "fixture.mode = 'no-write'").await;
