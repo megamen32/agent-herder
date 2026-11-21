@@ -51,6 +51,22 @@ class RolloutCandidateManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "owner release"):
                 rollout.validate_release_manifest(release, "a" * 40, "owner")
 
+    def test_unpack_fresh_fleet_release_preserves_readonly_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            release = self.release(root, node_marker="built-on-owner")
+            dist = release / "dist"
+            dist.chmod(0o500)
+            try:
+                archive = rollout.pack_release(release, root / "release.tar")
+                installed = root / "fleet" / "releases" / release.name
+                rollout.unpack_release(archive, installed)
+                self.assertEqual((installed / "dist" / "index.js").read_bytes(), (dist / "index.js").read_bytes())
+                self.assertEqual((installed / "dist").stat().st_mode & 0o777, 0o500)
+                rollout.validate_release_manifest(installed, release.name, "fleet")
+            finally:
+                dist.chmod(0o700)
+
 
 if __name__ == "__main__":
     unittest.main()

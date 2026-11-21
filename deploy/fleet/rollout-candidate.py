@@ -393,16 +393,19 @@ def trim_releases(releases_root: Path, rollback_root: Path, keep: str, prefer: s
 def unpack_release(archive: Path, release: Path) -> None:
     """The release gets its own bytes: nothing is written over a link.
 
-    The archive is unpacked aside and the entries are put in place one by one.
-    A file that is unpacked over an existing one keeps its inode, and that
-    inode may belong to another release: the bytes of that release would
-    change with this one.
+    Publish a fresh payload as a directory so that read-only directories keep
+    their permissions without having to change parents individually.
     """
-    release.mkdir(parents=True, exist_ok=True)
+    release.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=str(release.parent)) as staging:
+        payload = Path(staging) / "payload"
+        payload.mkdir()
         with tarfile.open(archive) as handle:
-            handle.extractall(staging)
-        for entry in sorted(Path(staging).iterdir()):
+            handle.extractall(payload)
+        if not os.path.lexists(release):
+            payload.rename(release)
+            return
+        for entry in sorted(payload.iterdir()):
             target = release / entry.name
             if target.is_symlink() or target.is_file():
                 target.unlink()
