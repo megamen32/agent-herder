@@ -1,4 +1,4 @@
-import { installedLocalRecovery, recoveryUnavailable, type ExactRecoveryOwner } from "./host-local-recovery.js";
+import { installedLocalRecovery, recoveryUnavailable, type LocalRecoveryOwner } from "./host-local-recovery.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -44,7 +44,7 @@ export interface ProcessWaitSource {
 }
 
 type Options = {
-  localRecovery?: ExactRecoveryOwner;
+  localRecovery?: LocalRecoveryOwner;
   query?: (target: ProcessWaitTarget) => Promise<ProcessWaitDecision>;
   selector?: string;
   launcher?: string;
@@ -231,9 +231,12 @@ export function createProcessWaitGate(options: Options = {}): ProcessWaitSource 
   };
   const local = options.localRecovery ?? installedLocalRecovery;
   const decision = async (target: ProcessWaitTarget): Promise<ProcessWaitDecision> => {
-    if (local && target.harness === "codex" && target.nativeSessionId === local.nativeId &&
+    if (local && target.harness === "codex" && (typeof local.scope === "string" || target.nativeSessionId === local.scope.nativeId) &&
         (target.nodeRef === undefined || target.nodeRef === local.nodeRef)) {
-      try { return await local.decision(); } catch { return recoveryUnavailable(); }
+      try {
+        const result = await local.decision(target.nativeSessionId);
+        if (result !== undefined) return result;
+      } catch { return recoveryUnavailable(); }
     }
     try {
       if (canonicalMode(env) === "canonical") {
