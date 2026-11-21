@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -23,6 +24,8 @@ from opencode_mcp_create_stand import api
 
 INSTANCE = "opencode-recovery-fixture"
 CRASH_MODEL = "recover-after-crash"
+SHUTDOWN_MODEL = "recover-after-shutdown"
+NATIVE_STOPPED_MODEL = "native-interrupt"
 THROTTLED_MODEL = "temporary-rate-limit"
 STOPPED_MODEL = "human-stop"
 QUESTION_MODEL = "pending-human-request"
@@ -33,8 +36,8 @@ FALLBACK_PROVIDER = "fixture-reserve"
 
 
 def providers(model, token):
-    entered = threading.Event()
-    release = threading.Event()
+    interruptions = {name: (threading.Event(), threading.Event())
+                     for name in (CRASH_MODEL, SHUTDOWN_MODEL, NATIVE_STOPPED_MODEL)}
     throttle_cleared = threading.Event()
 
     class Primary(model.Handler):
@@ -43,10 +46,13 @@ def providers(model, token):
         def chat(self, request, sequence):
             selected = request.get("model")
             self.received.append(selected)
-            if selected == CRASH_MODEL and self.received.count(selected) == 1:
-                entered.set()
-                release.wait(30)
-                return
+            if selected in interruptions:
+                if self.received.count(selected) == 1:
+                    entered, release = interruptions[selected]
+                    entered.set()
+                    release.wait(30)
+                    return
+                return super().chat(request, sequence)
             if selected in (THROTTLED_MODEL, *PROTECTED_MODELS):
                 if throttle_cleared.is_set():
                     return super().chat(request, sequence)
@@ -64,8 +70,7 @@ def providers(model, token):
                 error = {"error": {"type": "insufficient_quota", "code": "insufficient_quota",
                                    "message": "Fixture account quota exhausted"}}
                 return self.reply(429, "application/json", json.dumps(error).encode())
-            require(selected == CRASH_MODEL, "unexpected request on the primary route")
-            return super().chat(request, sequence)
+            raise RuntimeError("unexpected request on the primary route")
 
     class Reserve(model.Handler):
         received = []
@@ -76,7 +81,7 @@ def providers(model, token):
             self.received.append(request["model"])
             return super().chat(request, sequence)
 
-    return Primary, Reserve, entered, release, throttle_cleared
+    return Primary, Reserve, interruptions, throttle_cleared
 
 
 def provider(endpoint, key, models):
@@ -211,11 +216,11 @@ def main():
         endpoint = f"http://127.0.0.1:{port.getsockname()[1]}"
     module = model_fixture()
     token = "fixture-" + secrets.token_hex(24)
-    primary, reserve, entered, release, throttle_cleared = providers(module, token)
+    primary, reserve, interruptions, throttle_cleared = providers(module, token)
     with http_fixture(primary) as primary_url, http_fixture(reserve) as reserve_url:
+        primary_models = [*interruptions, THROTTLED_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]
         private_write(project / "opencode.json", json.dumps({"autoupdate": False, "provider": {
-            "fixture-primary": provider(primary_url, "fixture-primary-only",
-                                        [CRASH_MODEL, THROTTLED_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]),
+            "fixture-primary": provider(primary_url, "fixture-primary-only", primary_models),
             FALLBACK_PROVIDER: provider(reserve_url, token, [FALLBACK_MODEL]),
         }}))
         gate, database = make_authority(root, args.schema_dir)
@@ -228,20 +233,42 @@ def main():
         data = {"database": str(database), "gate": str(gate), "generation": "fixture", "owner": owner}
         private_write(profile, json.dumps(data))
         log = root / "opencode.log"
-        with opencode(args.opencode, project, endpoint, env, log) as backend:
-            crashed, crash_input = seed(endpoint, project, CRASH_MODEL)
-            require(entered.wait(12), "the original native request never reached the model")
-            backend.kill()
-            backend.wait(6)
-            release.set()
+        interrupted = {}
+        for name, termination in ((CRASH_MODEL, signal.SIGKILL), (SHUTDOWN_MODEL, signal.SIGTERM)):
+            with opencode(args.opencode, project, endpoint, env, log) as backend:
+                interrupted[name] = seed(endpoint, project, name)
+                entered, release = interruptions[name]
+                require(entered.wait(12), "the original native request never reached the model")
+                backend.send_signal(termination)
+                backend.wait(6)
+                release.set()
+        crashed, crash_input = interrupted[CRASH_MODEL]
+        shutdown, shutdown_input = interrupted[SHUTDOWN_MODEL]
 
         with opencode(args.opencode, project, endpoint, env, log):
             cold = call(endpoint, f"/api/session/{crashed}")
             active = call(endpoint, "/api/session/active")
-            require(crashed not in active, "the original native session is still running")
+            require(crashed not in active and shutdown not in active, "an interrupted session is still running")
             print(json.dumps({"phase": "crashed_session", "outcome": cold.get("outcome"),
                               "busy_recorded": "busy" in cold["time"],
                               "packet": [m["type"] for m in messages(endpoint, crashed)]}), flush=True)
+            shutdown_state = call(endpoint, f"/api/session/{shutdown}")
+            shutdown_history = messages(endpoint, shutdown)
+            require(not shutdown_state.get("outcome") and shutdown_state["time"].get("idle") is None
+                    and any(m["type"] == "assistant" and (m.get("error") or {}).get("type") == "aborted"
+                            for m in shutdown_history),
+                    "SIGTERM did not record the unfinished native assistant step")
+
+            native_stopped, _ = seed(endpoint, project, NATIVE_STOPPED_MODEL)
+            entered, release = interruptions[NATIVE_STOPPED_MODEL]
+            require(entered.wait(12), "the native interrupt fixture never reached the model")
+            status, _ = api(endpoint, f"/api/session/{native_stopped}/interrupt", {}, timeout=10)
+            require(200 <= status < 300, f"native interrupt refused with HTTP {status}")
+            release.set()
+            wait_for("native interrupt did not record its terminal outcome", lambda: (
+                call(endpoint, f"/api/session/{native_stopped}").get("outcome") == "interrupted"
+                and native_stopped not in call(endpoint, "/api/session/active")
+            ), seconds=10)
             exhausted, exhausted_input = seed(endpoint, project, QUOTA_MODEL)
             wait_for("native OpenCode did not record terminal quota exhaustion", lambda: (
                 call(endpoint, f"/api/session/{exhausted}").get("outcome") == "failed"
@@ -252,9 +279,10 @@ def main():
             throttled, throttled_input = seed_throttled(endpoint, project, primary, THROTTLED_MODEL)
             protected = {model: seed_throttled(endpoint, project, primary, model)[0]
                          for model in PROTECTED_MODELS}
+            protected[NATIVE_STOPPED_MODEL] = native_stopped
             original_history = {sid: messages(endpoint, sid) for sid in protected.values()}
             throttle_cleared.set()
-            sessions = (crashed, exhausted, throttled, *protected.values())
+            sessions = (crashed, shutdown, exhausted, throttled, *protected.values())
             with owner_client(args.core, profile, env) as provision:
                 registered = [session_tool(provision, action="register", instance_ref=INSTANCE,
                               native_session_id=native_id, request_key=f"register-{native_id}")
@@ -301,6 +329,8 @@ def main():
             with owner_client(args.core, profile, env) as active:
                 crashed_receipt = verified(active, endpoint, database, crashed, refs[crashed], crash_input,
                                             module.ANSWER, "fixture-primary", CRASH_MODEL)
+                shutdown_receipt = verified(active, endpoint, database, shutdown, refs[shutdown], shutdown_input,
+                                             module.ANSWER, "fixture-primary", SHUTDOWN_MODEL)
                 throttle_receipt = verified(active, endpoint, database, throttled, refs[throttled], throttled_input,
                                               module.ANSWER, "fixture-primary", THROTTLED_MODEL)
                 throttle_history = messages(endpoint, throttled)
@@ -324,8 +354,12 @@ def main():
                 require(verified(reopened, endpoint, database, throttled, refs[throttled], throttled_input,
                                  module.ANSWER, "fixture-primary", THROTTLED_MODEL) == throttle_receipt,
                         "owner restart did not retain the original-model recovery after 429")
+                require(verified(reopened, endpoint, database, shutdown, refs[shutdown], shutdown_input,
+                                 module.ANSWER, "fixture-primary", SHUTDOWN_MODEL) == shutdown_receipt,
+                        "owner restart did not retain the recovery after SIGTERM")
             require(primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
+                    and primary.received.count(SHUTDOWN_MODEL) == 2
                     and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
             for model, sid in protected.items():
                 require(primary.received.count(model) == 1 and not durable(database, sid)
@@ -333,6 +367,7 @@ def main():
                         f"OpenCode recovery crossed the {model} guard")
             print(json.dumps({"result": "verified", "opencode_sha256": digest(args.opencode),
                               "owner_sha256": digest(args.core), "crash_receipt": crashed_receipt,
+                              "shutdown_receipt": shutdown_receipt,
                               "same_model_429_receipt": throttle_receipt, "same_model_429_requests": 2,
                               "fallback_receipt": fallback_receipt, "fallback_requests": reserve.count,
                               "protected_continuations": {model: 0 for model in protected},

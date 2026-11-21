@@ -511,9 +511,32 @@ fn derive_observation(
         {
             return None;
         }
+        let (aborted, recent) = match recent {
+            [step, tail @ ..] if step["type"] == "assistant" => (Some(step), tail),
+            _ => (None, recent),
+        };
         let (input, history) = recent.split_first()?;
-        if !pure_user(input) || valid_frame_time(input)? < busy {
+        let input_at = valid_frame_time(input)?;
+        if !pure_user(input) || input_at < busy {
             return None;
+        }
+        // SIGTERM can record an aborted step before the backend writes an idle
+        // outcome. A completed native interrupt has its own terminal outcome.
+        if let Some(step) = aborted {
+            let created = valid_frame_time(step)?;
+            let completed = step["time"]["completed"].as_u64()?;
+            if step["finish"] != "error"
+                || step["error"]["type"] != "aborted"
+                || !step["content"].as_array()?.is_empty()
+                || !step["snapshot"].is_null()
+                || !step["time"]["firstToken"].is_null()
+                || !step["time"]["streamed"].is_null()
+                || !source.matches(&read_model(&step["model"])?)
+                || created <= input_at
+                || !(created..=session.time.updated).contains(&completed)
+            {
+                return None;
+            }
         }
         if let Some(anchor) = history.first() {
             let bound_model = match anchor["type"].as_str()? {
@@ -540,8 +563,8 @@ fn derive_observation(
         }
         // A first turn can use the model persisted at session creation. That
         // selection has no model-switched frame and there is no earlier idle.
-        // A killed backend left a delivered user item without a native terminal
-        // frame or assistant ID. The user ID identifies that unfinished turn.
+        // The delivered user item identifies the same interrupted turn even
+        // when shutdown added an empty aborted step to its history.
         (input, input["id"].as_str()?, RecoveryFailure::Interrupted)
     } else {
         let [idle, assistant, input, ..] = recent else {
@@ -806,6 +829,37 @@ mod tests {
         assert!(
             derive_observation(session(Some(1040), Some("interrupted")), &recent, None).is_none()
         );
+    }
+
+    #[test]
+    fn interrupted_backend_keeps_the_same_user_boundary_after_recording_an_aborted_step() {
+        let aborted = json!({
+            "id": "msg_Aborted", "type": "assistant", "finish": "error",
+            "error": {"type": "aborted", "message": "Step interrupted"},
+            "time": {"created": 1020, "completed": 1030},
+            "model": model(), "content": []
+        });
+        let baseline = derive_observation(session(None, None), &[input(), model_switch()], None)
+            .unwrap();
+        let mut recent = vec![aborted.clone(), input(), model_switch()];
+        let observed = derive_observation(session(None, None), &recent, None).unwrap();
+        assert_eq!(observed.boundary, baseline.boundary);
+        assert!(derive_observation(session(Some(1040), Some("interrupted")), &recent, None).is_none());
+
+        for (field, value) in [
+            ("content", json!([{"type": "text", "text": "already streamed"}])),
+            ("snapshot", json!("recorded-action")),
+            ("finish", json!("stop")),
+            ("time", json!({"created": 1020, "completed": 1030, "firstToken": 1021})),
+            ("model", json!({"providerID": "fixture", "id": "different"})),
+        ] {
+            recent[0] = aborted.clone();
+            recent[0][field] = value;
+            assert!(
+                derive_observation(session(None, None), &recent, None).is_none(),
+                "{field} must prevent recovery"
+            );
+        }
     }
 
     fn failed_history(error: Value) -> Vec<Value> {
