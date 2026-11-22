@@ -274,41 +274,14 @@ impl RecoveryControl for CodexControl {
         else {
             return false;
         };
-        // Unsubscribe only the subscription this control acquired by resume.
-        // Other clients remain attached; if they keep the thread loaded the
-        // cold check below truthfully denies an override.
         if state.owned_threads.contains(&target.native_session_id) {
             return false;
         }
-        if state
-            .recovery_subscriptions
-            .contains(&target.native_session_id)
-        {
-            let result = state.connection.request(
-                "thread/unsubscribe",
-                json!({"threadId": target.native_session_id}),
-                match remaining_time(deadline) {
-                    Ok(time) => time,
-                    Err(_) => return false,
-                },
-            );
-            match result {
-                Ok(reply)
-                    if matches!(
-                        reply["status"].as_str(),
-                        Some("unsubscribed" | "notSubscribed" | "notLoaded")
-                    ) =>
-                {
-                    state
-                        .recovery_subscriptions
-                        .remove(&target.native_session_id);
-                }
-                _ => return false,
-            }
-        }
+        let own_subscription = state.recovery_subscriptions.contains(&target.native_session_id);
         let connection = &mut state.connection;
         read_thread(connection, &target.native_session_id, deadline).is_ok_and(|thread| {
-            thread["status"]["type"] == "notLoaded" && thread["modelProvider"] == boundary.provider
+            (thread["status"]["type"] == "notLoaded" || own_subscription && is_quiescent(&thread))
+                && thread["modelProvider"] == boundary.provider
         }) && read_recovery_providers(connection, &boundary.cwd, deadline)
             .is_some_and(|providers| plain_responses_provider(&providers[&boundary.provider]))
             && provider_can_be_overridden(connection, &boundary.provider, deadline)
@@ -371,7 +344,7 @@ impl RecoveryControl for CodexControl {
         let ControlState {
             connection,
             recovery_subscriptions,
-            ..
+            owned_threads,
         } = &mut *state;
 
         // Switching routes or retrying explicit exhaustion requires fresh
@@ -415,9 +388,35 @@ impl RecoveryControl for CodexControl {
         });
         if alternate {
             if !before.unloaded {
-                return Err(not_sent(
-                    "Codex alternate recovery requires a verified unloaded thread",
-                ));
+                if owned_threads.contains(&target.native_session_id)
+                    || !recovery_subscriptions.contains(&target.native_session_id)
+                {
+                    return Err(not_sent("Codex alternate recovery requires an unloaded thread; external attachment remains"));
+                }
+                // The latest failed turn must be the exact, delivered primary
+                // recovery input before this connection gives up its subscription.
+                let users = receipt::user_items(connection, &target.native_session_id,
+                    &boundary.turn_id, 2, deadline)
+                    .map_err(|_| not_sent("Codex primary receipt read is unavailable"))?;
+                let exact_primary = matches!(users.as_slice(), [user]
+                    if user["id"].as_str() == Some(boundary.input_item_id.as_str())
+                    && user["clientId"].as_str().is_some_and(|key|
+                        receipt::staged_recovery_key(key)
+                        && key.split(':').nth(2) == Some("primary")));
+                if !exact_primary || !still_allowed() {
+                    return Err(not_sent("Codex primary receipt or owner permit is unconfirmed before unsubscribe"));
+                }
+                let reply = connection.request("thread/unsubscribe",
+                    json!({"threadId": target.native_session_id}),
+                    remaining_time(deadline).map_err(read_refusal)?)
+                    .map_err(|_| not_sent("Codex recovery unsubscribe outcome is unconfirmed"))?;
+                if !matches!(reply["status"].as_str(), Some("unsubscribed" | "notSubscribed" | "notLoaded")) {
+                    return Err(not_sent("Codex recovery unsubscribe was not acknowledged"));
+                }
+                recovery_subscriptions.remove(&target.native_session_id);
+                // Never assume unload is synchronous or displace another client.
+                // A later scan may retry without having submitted a turn.
+                return Err(not_sent("Codex recovery unsubscribed; awaiting verified cold thread"));
             }
             // Use the provider identity already saved by Codex. Replacing its
             // endpoint and bearer in this resume does not write the profile.
@@ -440,10 +439,7 @@ impl RecoveryControl for CodexControl {
             params["modelProvider"] = json!(boundary.provider);
             params["model"] = json!(expected_model);
             params["config"] = selected.overrides(&boundary.provider);
-        } else if before.unloaded
-            && custom_provider_id(&boundary.provider)
-            && boundary.failure == RecoveryFailure::Throttled
-            && let Some(model) = expected_model
+        } else if before.unloaded && let Some(model) = expected_model
         {
             // On cold resume Codex can select today's default instead of the
             // model saved on this thread. Keep its original provider binding.
@@ -1636,7 +1632,7 @@ from pathlib import Path
 
 home = Path(os.environ["CODEX_HOME"])
 case = (home / "case").read_text()
-loaded = case == "already-loaded"
+loaded = case in ("already-loaded", "own-warm", "own-bad-key", "own-held")
 model = "old-model"
 resumed = False
 for line in sys.stdin:
@@ -1666,7 +1662,7 @@ for line in sys.stdin:
         assert params["itemsView"] == "summary" and params["limit"] == 1
         result = {"data": [{"id": "old-turn", "status": "failed", "startedAt": 100,
                             "completedAt": 101, "itemsView": "summary",
-                            "error": {"codexErrorInfo": "serverOverloaded" if case == "root-held" else "usageLimitExceeded"},
+                            "error": {"codexErrorInfo": "serverOverloaded" if case in ("root-held", "cold-same") else "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
         if case.startswith("goal-"):
             result["data"][0].update(rootTurnId="old-turn", items=[], error={
@@ -1686,8 +1682,12 @@ for line in sys.stdin:
             result["goal"] = {"threadId":"saved-thread", "status": status,
                               "updatedAt": 105 if case == "goal-blocked-later" else 101}
     elif method == "thread/items/list":
-        assert params["turnId"] == "old-turn" and params["sortDirection"] == "desc"
-        result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
+        assert params["turnId"] == "old-turn"
+        if params["sortDirection"] == "asc":
+            key = "codex-recovery:" + "a"*64 + (":fallback" if case == "own-bad-key" else ":primary")
+            result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage","clientId":key}}],"nextCursor":None}
+        else:
+            result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
         if case.startswith("goal-"):
             result = {"data": [{"turnId":"old-turn","item":{"id":"work","type":"commandExecution"}}],
                       "nextCursor":None}
@@ -1726,8 +1726,20 @@ for line in sys.stdin:
             del providers["pinned"]
     elif method == "configRequirements/read":
         result = {"requirements": {"modelProviders": {"pinned": {}}} if case == "managed" else None}
+    elif method == "thread/unsubscribe":
+        assert case == "own-warm" and params["threadId"] == "saved-thread"
+        loaded = False
+        result = {"status":"unsubscribed"}
     elif method == "thread/resume":
-        assert params["threadId"] == "saved-thread" and params["modelProvider"] == "pinned"
+        assert params["threadId"] == "saved-thread"
+        if case == "cold-same":
+            assert params["model"] == "old-model" and "config" not in params
+            resumed = loaded = True
+            result = {"thread": dict(thread, model=model, status={"type": "idle"}),
+                      "model": model, "modelProvider": "pinned", "cwd": str(home)}
+            print(json.dumps({"id": request["id"], "result": result}), flush=True)
+            continue
+        assert params["modelProvider"] == "pinned"
         assert params["config"]["model_providers.pinned.base_url"] == "http://127.0.0.1:19090/v1"
         assert params["config"]["model_providers.pinned.experimental_bearer_token"] == "synthetic-bearer-for-fixture"
         if case in ("rejected", "uncertain"):
@@ -1874,6 +1886,58 @@ for line in sys.stdin:
                 assert_eq!(boundary.provider, "pinned");
                 assert_eq!(boundary.model.as_deref(), Some("old-model"));
             }
+        }
+    }
+
+    #[test]
+    fn cold_same_route_pins_saved_model_for_non_throttle_failure() {
+        let root = std::env::temp_dir().join(format!("herder-codex-pin-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        fs::write(root.join("app-server"), RPC_FIXTURE).unwrap();
+        fs::write(root.join("case"), "cold-same").unwrap();
+        let target = SessionAddress { instance: InstanceRef { node: NodeRef("local".into()),
+            instance_id: "test".into() }, native_session_id: "saved-thread".into() };
+        let control = CodexControl::open(CodexInstance { instance_id: "test".into(),
+            executable: PathBuf::from("/usr/bin/python3"), code_home: root.clone(), cwd: root.clone(),
+            socket_path: None }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+        let boundary = control.read_boundary(&target).unwrap().unwrap();
+        let route = RecoveryRoute { provider: boundary.provider.clone(), model: boundary.model.clone() };
+        let result = control.submit(&target, &boundary, &route, RecoveryPermit { reserve: 0,
+            quota_proof: None, still_allowed: &|| true }, "continue", &RequestKey("exact-request".into()));
+        assert!(result.is_ok(), "{result:?}");
+        drop(control);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn alternate_capability_is_read_only_and_only_own_exact_primary_may_unsubscribe() {
+        for case in ["already-loaded", "own-warm", "own-bad-key", "own-held"] {
+            let root = std::env::temp_dir().join(format!("herder-codex-detach-{}-{case}", std::process::id()));
+            fs::create_dir(&root).unwrap();
+            let root = root.canonicalize().unwrap();
+            fs::write(root.join("app-server"), RPC_FIXTURE).unwrap();
+            fs::write(root.join("case"), case).unwrap();
+            let target = SessionAddress { instance: InstanceRef { node: NodeRef("local".into()),
+                instance_id: "test".into() }, native_session_id: "saved-thread".into() };
+            let control = CodexControl::open(CodexInstance { instance_id: "test".into(),
+                executable: PathBuf::from("/usr/bin/python3"), code_home: root.clone(), cwd: root.clone(),
+                socket_path: None }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+            let boundary = control.read_boundary(&target).unwrap().unwrap();
+            if case != "already-loaded" {
+                control.state.lock().unwrap().recovery_subscriptions.insert(target.native_session_id.clone());
+            }
+            let route = RecoveryRoute { provider: "alternate".into(), model: Some("model".into()) };
+            assert_eq!(control.supports_alternate(&target, &boundary, &route), case != "already-loaded");
+            assert!(!fs::read_to_string(root.join("calls")).unwrap().contains("thread/unsubscribe"));
+            let result = control.submit(&target, &boundary, &route, RecoveryPermit { reserve: 0,
+                quota_proof: None, still_allowed: &|| case != "own-held" }, "continue", &RequestKey("key".into()));
+            assert!(matches!(result, Err(SubmitError::DefinitelyNotSent { .. })));
+            let calls = fs::read_to_string(root.join("calls")).unwrap();
+            assert_eq!(calls.lines().filter(|m| *m == "thread/unsubscribe").count(), usize::from(case == "own-warm"));
+            assert!(!calls.contains("thread/resume") && !calls.contains("turn/start"));
+            drop(control);
+            fs::remove_dir_all(root).unwrap();
         }
     }
 

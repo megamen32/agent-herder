@@ -16,6 +16,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -306,6 +307,16 @@ def receipt_rows(database):
         ).fetchall()
 
 
+def staged_rows(database, native_id):
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as conn:
+        return conn.execute(
+            """SELECT i.request_key, i.state, i.native_receipt FROM intents i
+               JOIN session_bindings b ON b.session_ref=i.target
+               WHERE b.native_session_id=? AND i.request_key LIKE 'codex-recovery:%'""",
+            (native_id,),
+        ).fetchall()
+
+
 def thread_fields(thread):
     return {**{key: thread.get(key) for key in ("id", "cwd", "modelProvider", "status")},
             "model_present": "model" in thread, "model": thread.get("model")}
@@ -394,11 +405,11 @@ def wait_for_transcript_answer(owner, session_ref, answer, description):
 
 def checked_transcript(call, session, failure_id):
     current = turns(call, session)
-    require(len(current) == 2 and current[0]["id"] == failure_id and current[0]["status"] == "failed",
-            "native transcript does not contain exactly the original failure and one recovery")
-    require(current[1]["status"] == "completed" and current[1]["id"] != failure_id,
-            "native recovery did not complete as a distinct turn")
-    return current[1]["id"]
+    require(len(current) == 3 and current[0]["id"] == failure_id and current[0]["status"] == "failed"
+            and current[1]["status"] == "failed" and current[2]["status"] == "completed"
+            and len({turn["id"] for turn in current}) == 3,
+            "expected the original failure, failed primary recovery, and completed fallback")
+    return current[2]["id"]
 
 
 def make_owner_profile(root, codex, home, project, socket_path):
@@ -488,8 +499,8 @@ experimental_bearer_token = "{fallback_token}"
         private_write(profile, json.dumps(data))
         with owner_client(owner, profile, env):
             time.sleep(3)  # The owner automation's initial tick runs immediately, then every two seconds.
-        require(fallback.count == 0 and not receipt_rows(database),
-                "the backup with quota on a different account admitted recovery")
+        require(fallback.count == 0,
+                "the backup with quota on a different account admitted fallback")
 
         if isinstance(source.expected_error, dict):
             # Both the original route's backoff and the verified cold alternate
@@ -501,32 +512,38 @@ experimental_bearer_token = "{fallback_token}"
             require(attest_proxies(active, codex, endpoint) == proxy_count, "lost shared proxy identity")
 
             def completed():
-                rows = receipt_rows(database)
-                if len(rows) == 1 and rows[0][1] == "rejected":
-                    require(fallback.count == 0, "rejected recovery reached the fallback provider")
-                    diagnose_rejection(read, thread, rows[0])
-                if len(rows) != 1 or rows[0][1] != "confirmed" or not rows[0][2]:
-                    return None
+                staged = staged_rows(database, thread)
+                require(not any(state == "unknown" for _, state, _ in staged), "delivery became unknown")
+                confirmed = [(key, json.loads(receipt)) for key, state, receipt in staged
+                             if state == "confirmed" and receipt]
                 native_turns = turns(read, thread)
-                return rows if len(native_turns) == 2 and native_turns[1]["status"] == "completed" else None
+                if len(confirmed) != 2 or len(native_turns) != 3 or native_turns[-1]["status"] != "completed":
+                    return None
+                for stage, turn in zip(("primary", "fallback"), native_turns[1:]):
+                    matching = [(key, receipt) for key, receipt in confirmed
+                                if re.fullmatch(r"codex-recovery:[0-9a-f]{64}:" + stage + r"(?::[0-9]+)?", key)]
+                    require(len(matching) == 1 and matching[0][1]["native_id"] == turn["id"],
+                            f"{stage} receipt or request key did not match exact turn")
+                    user_items = [item for item in turn.get("items", []) if item.get("type") == "userMessage"]
+                    require(len(user_items) == 1 and user_items[0].get("clientId") == matching[0][0],
+                            f"{stage} key did not match the delivered native input")
+                return staged
 
             try:
-                # A receipt observed before native completion is reconciled on
-                # the next 30-second owner scan.
-                rows = wait_for("no confirmed owner recovery intent", completed, seconds=45)
+                rows = wait_for("staged primary and cold fallback did not complete", completed, seconds=100)
             except TimeoutError as error:
-                states = [row[1] for row in receipt_rows(database)]
+                states = [(key, state) for key, state, _ in staged_rows(database, thread)]
                 outcomes = [turn["status"] for turn in turns(read, thread)]
-                raise RuntimeError(f"{error}; intent states={states}, native turns={outcomes}, "
-                                   f"source requests={source.count}, fallback requests={fallback.count}") from error
+                raise RuntimeError(f"{error}; states={states}, native turns={outcomes}, "
+                                   f"source requests={source.count}, fallback requests={fallback.count}; "
+                                   "cold alternate not proven or core did not reach fallback") from error
             recovery_id = checked_transcript(read, thread, failure_id)
             live = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
             require(live["id"] == thread and live["modelProvider"] == SOURCE_PROVIDER
                     and live["model"] == FALLBACK_MODEL,
                     "recovery did not keep the pinned provider ID and select the alternate model")
-            receipt = json.loads(rows[0][2])
-            require(rows[0][0] == receipt["address"]["native_session_id"] == thread
-                    and receipt["native_id"] == recovery_id, "durable receipt points to another thread or turn")
+            require(any(state == "confirmed" and json.loads(receipt)["native_id"] == recovery_id
+                        for _, state, receipt in rows if receipt), "fallback receipt mismatch")
             wait_for_transcript_answer(active, ref, answer, "fallback reply unavailable in the owner transcript")
 
         with owner_client(owner, profile, env) as restarted:
@@ -535,18 +552,18 @@ experimental_bearer_token = "{fallback_token}"
             wait_for_transcript_answer(restarted, ref, answer, "restarted owner lost the fallback reply")
             require(daemon.poll() is None and checked_transcript(read, thread, failure_id) == recovery_id,
                     "shared server or native recovery turn changed during owner restart")
-        require(receipt_rows(database) == rows, "owner restarted with a changed recovery receipt")
-        require(source.count == 1 and fallback.count == 1 and fallback.accepted == [FALLBACK_MODEL],
+        require(staged_rows(database, thread) == rows, "owner restarted with changed recovery receipts")
+        require(source.count == 2 and fallback.count == 1 and fallback.accepted == [FALLBACK_MODEL],
                 "provider request counts changed or fallback did not use the authorized model")
         require([digest(wrong_backup), digest(exact_backup)] == backup_hashes,
                 "quota backup contents changed")
         require(digest(native_config) == native_config_hash, "native Codex profile changed")
         return {"result": "PASS", "thread": thread, "failed_turn": failure_id,
-                "recovery_turn": recovery_id, "source_http_status": 429, "source_requests": 1,
+                "recovery_turn": recovery_id, "source_http_status": 429, "source_requests": 2,
                 "fallback_requests": 1, "fallback_model": FALLBACK_MODEL,
                 "pinned_provider_id": SOURCE_PROVIDER, "exact_fallback_authorization": True,
                 "fixture_account": ACCOUNT, "native_profile_unchanged": True,
-                "other_account_blocked": True, "receipt_state": rows[0][1], "proxy_children": proxy_count,
+                "other_account_blocked": True, "receipt_state": "confirmed", "proxy_children": proxy_count,
                 "owner_restart_repeat": 0, "sqlite_backups_unchanged": True}
 
 
@@ -1020,17 +1037,11 @@ def inside(parent_namespace, same_route_only=False, quota_profile=False):
         proof = exercise_same_route_429(root, codex, owner, module, source_token, quota_profile)
         print(json.dumps(dict(proof, result="PASS", network="loopback-only", owner_sha256=digest(owner))), flush=True)
         return
-    source, fallback = model_providers(source_token, fallback_token, module)
+    source, fallback = model_providers(source_token, fallback_token, module, throttled=True)
     with http_fixture(source) as primary_url, http_fixture(fallback) as fallback_url:
         proof = exercise(root, codex, owner, primary_url, fallback_url, source,
                          fallback, module.ANSWER, source_token, fallback_token)
         proof.update(exercise_crash(root, codex, owner, source, fallback, module.ANSWER))
-    rate_limit = root / "generic-429"
-    rate_limit.mkdir(mode=0o700)
-    source, fallback = model_providers(source_token, fallback_token, module, throttled=True)
-    with http_fixture(source) as primary_url, http_fixture(fallback) as fallback_url:
-        proof["generic_429"] = exercise(rate_limit, codex, owner, primary_url, fallback_url, source,
-                                        fallback, module.ANSWER, source_token, fallback_token)
     proof.update({"codex_sha256": digest(codex), "owner_sha256": digest(owner), "network": "loopback-only"})
     print(json.dumps(proof, sort_keys=True), flush=True)
 

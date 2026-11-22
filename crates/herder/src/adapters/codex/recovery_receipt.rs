@@ -136,7 +136,7 @@ fn receipt_turns(
 
 // One user item proves ordinary admission. Two disprove a unique input on a
 // failed turn. A partial scan that found only one cannot prove uniqueness.
-fn user_items(
+pub(super) fn user_items(
     connection: &mut CodexConnection,
     thread: &str,
     turn: &str,
@@ -185,7 +185,7 @@ fn user_items(
     }
 }
 
-fn staged_recovery_key(key: &str) -> bool {
+pub(super) fn staged_recovery_key(key: &str) -> bool {
     let Some(rest) = key.strip_prefix("codex-recovery:") else {
         return false;
     };
