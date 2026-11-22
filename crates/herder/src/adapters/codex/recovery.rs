@@ -864,9 +864,12 @@ fn read_observation(
     };
     // A native goal tick can fail before Codex creates a user item. Codex
     // can also mark that goal blocked when the provider retries run out.
-    let native_goal = !child
-        && matches!(failure, RecoveryFailure::Throttled | RecoveryFailure::Retryable)
-        && native_turn_trigger(connection.code_home(), &thread, turn_id).as_deref() == Some("goal");
+    let trigger = if !child && matches!(failure, RecoveryFailure::Throttled | RecoveryFailure::Retryable) {
+        native_turn_trigger(connection.code_home(), &thread, turn_id)
+    } else {
+        None
+    };
+    let native_goal = trigger.as_deref() == Some("goal");
     let failed_goal_at = native_goal.then(|| turn["completedAt"].as_u64()).flatten();
     if !goal_allows_recovery(connection, thread_id, failed_goal_at, deadline)? {
         return Ok(None);
@@ -883,12 +886,19 @@ fn read_observation(
     if !queued.is_empty() || !absent_or_null(&queue, "nextCursor") {
         return Ok(None);
     }
+    // Desktop can resume a failed task as a new root turn with no user item.
+    // The indexed task_started event ties the continuation to this exact turn.
+    let input_source = if trigger.as_deref() == Some("resume_interrupted_task") {
+        TurnInput::Continuation
+    } else {
+        TurnInput::source(native_goal, root_turn_id, turn_id)
+    };
     let input_item_id = match read_input_item(
         connection,
         thread_id,
         turn_id,
         turn,
-        TurnInput::source(native_goal, root_turn_id, turn_id),
+        input_source,
         deadline,
     )? {
         Some(id) => id,
@@ -1573,7 +1583,7 @@ for line in sys.stdin:
               "status": {"type": "idle" if loaded else "notLoaded"}}
     if case == "root-held":
         thread.update(status={"type":"systemError"}, canAcceptDirectInput=True)
-    if case.startswith("goal-"):
+    if case.startswith(("goal-", "resumed-")):
         thread.update(path=str(home / "sessions" / "rollout-saved-thread.jsonl"),
                       status={"type":"idle"}, canAcceptDirectInput=True)
     if method == "initialize":
@@ -1593,6 +1603,11 @@ for line in sys.stdin:
         if case.startswith("goal-"):
             result["data"][0].update(rootTurnId="old-turn", items=[], error={
                 "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}})
+        if case.startswith("resumed-"):
+            turn = result["data"][0]
+            turn.update(rootTurnId="old-turn", items=[
+                {"type":"agentMessage", "id":"progress", "phase":"commentary", "text":"Working"}
+            ], error={"codexErrorInfo":{"responseTooManyFailedAttempts":{"httpStatusCode":429}}})
         if case.startswith("throttle-"):
             result["data"][0]["error"] = {
                 "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}}
@@ -1611,6 +1626,17 @@ for line in sys.stdin:
             if case == "goal-question":
                 result["data"].insert(0, {"turnId":"old-turn", "item":{"id":"question","type":"agentMessage",
                     "phase":"final_answer","delivery":"async","questions":[{"title":"Approve?"}]}})
+        if case.startswith("resumed-"):
+            items = [
+                {"type":"commandExecution","id":"tool","status":"completed"},
+                {"type":"agentMessage","id":"progress","phase":"commentary","text":"Working"}
+            ]
+            if case == "resumed-question":
+                items.insert(0, {"type":"agentMessage","id":"question","phase":"final_answer",
+                    "delivery":"async","questions":[{"title":"Approve?"}]})
+            if case == "resumed-final":
+                items.insert(0, {"type":"agentMessage","id":"final","phase":"final_answer","text":"Done"})
+            result = {"data":[{"turnId":"old-turn","item":item} for item in items],"nextCursor":None}
     elif method == "thread/queue/list":
         result = {"data": []}
     elif method == "config/read":
@@ -1692,8 +1718,12 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn failed_native_goal_turn_can_resume_after_provider_429() {
+    fn recovery_after_429_uses_verified_native_turn_attribution() {
         for (case, trigger, expected) in [
+            ("resumed-progress", "resume_interrupted_task", true),
+            ("resumed-unattributed", "composer", false),
+            ("resumed-question", "resume_interrupted_task", false),
+            ("resumed-final", "resume_interrupted_task", false),
             ("goal-provider-failure", "goal", true),
             ("goal-active", "goal", true),
             ("goal-cleared", "goal", false),
@@ -1731,6 +1761,8 @@ for line in sys.stdin:
             assert_eq!(observed.is_some(), expected, "{case}");
             if let Some(boundary) = observed {
                 assert_eq!(boundary.turn_id, "old-turn");
+                let anchor = if case == "resumed-progress" { "progress" } else { "old-turn" };
+                assert_eq!(boundary.input_item_id, anchor);
                 assert_eq!(boundary.provider, "pinned");
                 assert_eq!(boundary.model.as_deref(), Some("old-model"));
             }

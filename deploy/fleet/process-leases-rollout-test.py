@@ -459,7 +459,7 @@ class ComponentAncestry(unittest.TestCase):
         self.assertEqual(checked[0]["previous_source"], self.core)
         self.assertNotEqual(self.adapter, self.core)
 
-    def test_only_native_recovery_can_retain_the_unchanged_scheduler(self):
+    def test_native_recovery_with_existing_or_new_profiles_can_retain_the_unchanged_scheduler(self):
         receipt = {"response": {"runtime": {"source_commit": self.new}}}
         native = self.repo / "crates/herder"
         native.mkdir(parents=True)
@@ -467,13 +467,21 @@ class ComponentAncestry(unittest.TestCase):
         self.git(["add", "crates"])
         self.git(["commit", "-q", "-m", "native fix"])
         native_source = self.git(["rev-parse", "HEAD"])
+        tooling = self.repo / "deploy" / "fleet"
+        tooling.mkdir(parents=True)
+        (tooling / "rollout-recovery").write_text("operator command\n")
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "operator tooling"], cwd=self.repo, check=True)
+        native_source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo, text=True).strip()
         self.after["process_leases_build"]["source_commit"] = native_source
         git_dir = self.repo / ".git"
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, {"kind": "recovery"}, receipt), self.new)
-        self.assertEqual(rollout.scheduler_source(git_dir, self.after, None, receipt), native_source)
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, None, receipt), self.new)
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, {"kind": "adapter"}, receipt), native_source)
         self.after["process_leases_build"]["source_commit"] = self.commit("changed scheduler input")
-        with self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
-            rollout.scheduler_source(git_dir, self.after, {"kind": "recovery"}, receipt)
+        for migration in (None, {"kind": "recovery"}):
+            with self.subTest(migration=migration), self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
+                rollout.scheduler_source(git_dir, self.after, migration, receipt)
 
     def test_new_unmerged_core_is_refused(self):
         unmerged = self.commit("unmerged")
