@@ -530,13 +530,18 @@ experimental_bearer_token = "{fallback_token}"
                 return staged
 
             try:
-                rows = wait_for("staged primary and cold fallback did not complete", completed, seconds=100)
+                # The owner scans every 30s. Release of its native subscription
+                # can span two scans, followed by a scan to confirm the receipt.
+                rows = wait_for("staged primary and cold fallback did not complete", completed, seconds=165)
             except TimeoutError as error:
                 states = [(key, state) for key, state, _ in staged_rows(database, thread)]
                 outcomes = [turn["status"] for turn in turns(read, thread)]
-                raise RuntimeError(f"{error}; states={states}, native turns={outcomes}, "
-                                   f"source requests={source.count}, fallback requests={fallback.count}; "
-                                   "cold alternate not proven or core did not reach fallback") from error
+                rejected = [json.loads(result).get("reason") for sid, state, _, result in receipt_rows(database)
+                            if sid == thread and state == "rejected" and result]
+                status = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]["status"]
+                raise RuntimeError(f"{error}; states={states}, native turns={outcomes}, thread status={status}, "
+                                   f"source requests={source.count}, fallback requests={fallback.count}, "
+                                   f"rejected before submission={rejected}") from error
             recovery_id = checked_transcript(read, thread, failure_id)
             live = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
             require(live["id"] == thread and live["modelProvider"] == SOURCE_PROVIDER
