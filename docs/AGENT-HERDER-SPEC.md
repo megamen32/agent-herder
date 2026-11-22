@@ -21,7 +21,7 @@ Agent Herder — единый MCP/application control plane для незави�
 - OpenCode V1 не поддерживается.
 - Незавершённые Go adapters не входят в active registry.
 - ChatGPT, Z.ai и browser lanes не считаются готовыми по наличию в каталоге. После закрытого общего Rust-контракта их реальные adapter lanes являются P0: каждый должен получить отдельный capability и consumer proof.
-- Agent Herder не зависит от UserIO. Browser automation использует отдельный bezbrowser/direct-CDP core и браузерные extensions по соответствующей конфигурации.
+- Agent Herder использует общий bezbrowser core для браузерного транспорта. UserIO остаётся отдельным потребителем этого транспорта.
 
 ## Текущий приоритет исполнения
 
@@ -183,7 +183,7 @@ Durable message хранит message_ref, sender, recipient, project/session ide
 
 ## Browser and external adapter boundaries
 
-ChatGPT и Z.ai используют direct Chrome CDP и отдельную account/context изоляцию. Vibe/Chrome DevTools MCP не являются runtime dependency Agent Herder. Browser extensions должны идти через bezbrowser core.
+Целевой production-маршрут ChatGPT и Z.ai проходит через расширение Chrome и bezbrowser. Расширение устанавливается в уже авторизованный профиль, подключается к bezbrowser исходящим WSS и выполняет операции на вкладке с арендой. Rust проверяет аккаунт и точный чат, планирует восстановление, соблюдает HumanStop и хранит квитанцию. Прямой CDP используется на изолированном стенде. Подключение и критерии выпуска описаны в [Browser chat adapters](browser-chat-adapters.md#production-route-through-the-extension).
 
 Go adapters, незавершённые provider lanes и browser profiles без доказанного owner scope не входят в active registry. Capability без native evidence остаётся unsupported или unknown; имя harness само по себе capability не создаёт.
 

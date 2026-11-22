@@ -1,8 +1,52 @@
 # Browser chat providers
 
-## Native Rust owner profiles
+## Production route through the extension
 
-The native MCP server can run either browser adapter over direct Chrome CDP.
+Use the Chrome extension and the existing [bezbrowser deployment tools](https://github.com/megamen32/bezbrowser/blob/main/docs/EXTENSIONS.md).
+The extension connects over outbound WSS from a signed-in Chrome profile.
+Mac Intel and Mac mini are valid browser hosts for an owner running on
+server100. The browser must present the provider account already bound to
+the Herder profile. Installing the extension uses Chrome's normal extension
+permissions. Day-to-day recovery requires no manual DevTools connection or
+approval to expose a remote debugging port.
+
+1. Check the intended node with `browser_status` and `browser_profiles`.
+   Reuse a connected profile when its identity matches. If it needs the
+   extension, use the managed `browser_extensions` install workflow and verify
+   the extension ID, version and live connection on that profile.
+2. Pin the browser identity in the Herder profile. Use a tab leased to Herder
+   for provider operations and verify the pinned account and exact native chat
+   before reading or sending. A profile on another machine works through the
+   same extension route.
+3. The shared Rust scheduler retries in the same conversation. It checks
+   HumanStop and the failed input before one continuation. After a lost
+   acknowledgement it reads back the native input and the existing receipt.
+   Browser adapters without a provider-switch capability stop after that retry.
+4. Exercise HTTP 429, HumanStop and restart after a lost acknowledgement
+   on the fake provider through the extension transport. Verify that the
+   installed Herder reads one already registered ChatGPT conversation and that
+   recovery is armed for that conversation. Enable Z.ai once its provider
+   exposes a failure tied to the latest assistant message and user input.
+
+Implementation status on this branch: the Rust scheduler and ChatGPT recovery
+pass the fake-provider tests over direct CDP. The Rust owner still needs the
+bezbrowser transport and an end-to-end extension test. Installed UserIO
+profiles remain available during migration.
+
+The Rust browser port in [port.rs](../crates/herder/src/adapters/browser/port.rs)
+is where bezbrowser leases and page operations belong. The provider scripts
+continue to verify the same account, chat and failed input. The trusted owner
+binding in [scoped_profile.rs](../crates/herder/src/bin/herder_native_stdio/scoped_profile.rs)
+and the candidate builder in
+[process-leases-candidate.py](../deploy/fleet/process-leases-candidate.py)
+must carry the same pinned browser identity. The
+[browser smoke](../tests/native/browser_adapter_smoke.py) must exercise
+the recovery scenarios through the extension before this route is released.
+
+## Native Rust owner profiles for the direct-CDP stand
+
+On an isolated stand, the native MCP server runs either browser adapter over
+direct Chrome CDP.
 Rust handles validation, session routing and durable receipts. Each adapter
 executes JavaScript inside its bound page to operate the composer and read
 the site's conversation API.

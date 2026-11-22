@@ -99,7 +99,12 @@ The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only
 
 Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
 
-## Reviewed native browser profile migration
+## Native browser profile migration for the direct-CDP stand
+
+For browser recovery in production, follow the
+[extension route](browser-chat-adapters.md#production-route-through-the-extension).
+The direct-CDP binding and migration below are for isolated validation of the
+native owner and provider protocol.
 
 Use the same candidate builder and the same node, storage and state-root arguments as in **Build and inspect**. Select each legacy browser provider explicitly. Pass the following additional arguments for a pair of UserIO profiles.
 
