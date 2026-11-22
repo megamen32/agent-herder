@@ -126,16 +126,6 @@ impl RecoveryProfile {
                     && self.legacy_handoff.as_ref().is_none_or(|h| !h.scans_workspaces()))
     }
 
-    pub fn valid_for_browser(&self) -> bool {
-        self.valid()
-            && self.runner == RecoveryRunner::Mcp
-            && self.fallback_routes.is_empty()
-            && self
-                .legacy_handoff
-                .as_ref()
-                .is_some_and(|handoff| handoff.cohort().is_some() && !handoff.scans_workspaces())
-    }
-
     pub fn valid(&self) -> bool {
         self.autopilot_state_dir.is_absolute()
             && (self.runner == RecoveryRunner::Mcp || self.legacy_handoff.is_some())
@@ -1360,43 +1350,6 @@ mod tests {
                 .provider,
             "saved"
         );
-    }
-
-    #[test]
-    fn browser_recovery_requires_exact_mcp_handoff_without_alternates() {
-        let valid = |profile| {
-            serde_json::from_value::<RecoveryProfile>(profile)
-                .unwrap()
-                .valid_for_browser()
-        };
-        let exact = json!({
-            "autopilot_state_dir": "/state",
-            "legacy_handoff": {
-                "activation_file": "/activate",
-                "human_stops": "/holds",
-                "human_requests": "/requests",
-                "choices": "/choices",
-                "unfinished_sessions": "/unfinished",
-                "native_sessions": ["exact-session"],
-            },
-        });
-        assert!(valid(exact.clone()));
-        let mut service = exact.clone();
-        service["runner"] = json!("service");
-        assert!(!valid(service));
-        let mut alternate = exact.clone();
-        alternate["fallback_routes"] = json!([
-            {"workspace": "/work", "provider": "alternate", "model": "model"},
-        ]);
-        assert!(!valid(alternate));
-        let mut wide = exact;
-        wide["legacy_handoff"]
-            .as_object_mut()
-            .unwrap()
-            .remove("native_sessions");
-        wide["legacy_handoff"]["instance_wide"] = json!(true);
-        assert!(!valid(wide));
-        assert!(!valid(json!({"autopilot_state_dir": "/state"})));
     }
 
     struct DisarmAtSubmit<'a> {

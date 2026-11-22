@@ -661,48 +661,6 @@ class NativeProfileMigrationContracts(MigrationFixture):
         with self.assertRaisesRegex(ValueError, "exact reviewed profile bindings"):
             self.check()
 
-    def test_browser_recovery_stages_only_an_existing_native_owner_with_an_exact_cohort(self):
-        path = self.paths["zai"]
-        legacy = path.read_bytes()
-        profile = candidate.strict_json(legacy)
-        del profile["owner"]["ahap_script"]
-        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
-        self.save_profile(path, profile)
-        self.seal_baseline()
-
-        reviewed = self.reviewed / "zai-recovery.json"
-        handoff = {"native_sessions": ["existing-chat"], "activation_file": str(self.root / "browser-active")}
-        for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
-            private = self.root / (field + ".json")
-            candidate.create(private, b"{}")
-            handoff[field] = str(private)
-        recovery = {"autopilot_state_dir": str(self.root), "legacy_handoff": handoff}
-        profile["owner"]["browser_recovery"] = recovery
-        valid = candidate.encoded(profile)
-        candidate.create(reviewed, valid)
-        args = (self.base, self.manifest, self.selection, self.selector, self.new, self.source)
-        self.migration = candidate.stage_native_profile_migration(*args, [], {}, recovery_profiles=[reviewed])
-        self.reseal()
-        self.assertEqual(self.check()["profile_validation"], "staged_payloads_not_installed")
-        [row] = self.migration["profiles"]
-        payload = candidate.read_json(Path(row["payload"]))["owner"]
-        self.assertEqual(payload["browser_recovery"], recovery)
-        self.assertEqual(payload["executable"], self.manifest["core"])
-        self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
-        self.assert_unchanged()
-
-        with self.assertRaisesRegex(ValueError, "existing native browser owner"):
-            candidate.recovery_profile_payload(legacy, valid, browser_core=self.manifest["core"])
-        for changes in (
-            {"runner": "service"},
-            {"fallback_routes": [{"provider": "alternate", "model": "test"}]},
-            {"legacy_handoff": {**handoff, "instance_wide": True, "native_sessions": []}},
-        ):
-            with self.subTest(changes=changes), self.assertRaises(ValueError):
-                profile["owner"]["browser_recovery"] = {**recovery, **changes}
-                candidate.recovery_profile_payload(path.read_bytes(), candidate.encoded(profile),
-                                                   browser_core=self.manifest["core"])
-
     def test_schema_one_opencode_transition_keeps_original_payload_and_selector(self):
         path = self.root / "profile-opencode.json"
         previous = self.old_profiles[str(path)]

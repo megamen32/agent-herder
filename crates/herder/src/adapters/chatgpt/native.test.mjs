@@ -155,7 +155,7 @@ test('recovery requires explicit failure at the current branch head and its exac
   const {page, call} = await fixture(t, 'old');
   await page.evaluate(() => {
     chats.old.messages.push({id: 'failed', parent_id: 'old-user', author: {role: 'assistant'},
-      status: 'failed', end_turn: false, content: {parts: ['provider failure']}});
+      status: 'failed', end_turn: false, create_time: 1, content: {parts: ['provider failure']}});
   });
   assert.deepEqual((await call('recovery')).value, {
     id: 'old', turnId: 'failed', inputItemId: 'old-user', status: 'failed', startedAtMs: 1000,

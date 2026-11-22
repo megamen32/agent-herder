@@ -30,10 +30,10 @@ async function readChatGpt(request, {list, activity, conversation, newestFirst, 
     if (!input || !validId(input.id) || input.id !== parent) return null;
     const nearestUser = branch.find(m => m?.author?.role === 'user' && publicMessage(m));
     if (nearestUser?.id !== input.id) return null;
+    const startedAtMs = Math.trunc(assistant.create_time * 1000);
+    if (!Number.isFinite(assistant.create_time) || !Number.isSafeInteger(startedAtMs) || startedAtMs <= 0) return null;
     if (!await sameAccount()) fail('account');
-    return {id, turnId: assistant.id, inputItemId: input.id,
-      status: assistant.status, startedAtMs: Number.isFinite(assistant.create_time)
-        ? Math.trunc(assistant.create_time * 1000) : null};
+    return {id, turnId: assistant.id, inputItemId: input.id, status: assistant.status, startedAtMs};
   }
   if (request.op !== 'read') fail('invalid');
   const data = await conversation(id, 60, true);

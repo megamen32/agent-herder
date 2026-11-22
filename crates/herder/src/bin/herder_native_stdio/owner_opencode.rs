@@ -20,7 +20,6 @@ use herder::{
         mcp_stop::ScopedStopApplication,
         mcp_task_server::ScopedTaskServer,
         process_automation::ProcessAutomationApplication,
-        session_recovery::{RecoveryDiscovery, SessionRecovery},
         task_reconcile::ScopedReceiptReconciler,
         wait_automation::{DependencyRegistry, DependencySource, WaitAutomationApplication},
     },
@@ -561,10 +560,6 @@ pub fn build_with_registry(
     };
     let harness = opened.owner.kind.clone();
     let (adapter, delivery_mode) = open_adapter(&opened.owner, &instance)?;
-    let recovery = opened.owner.browser_recovery;
-    let handoff = recovery
-        .as_ref()
-        .and_then(|profile| profile.legacy_handoff.clone());
     let automatic_continuation = adapter.automatic_continuation_supported();
     let principal = PrincipalId(opened.owner.principal);
     let identity = ConnectionIdentity::new(
@@ -717,20 +712,8 @@ pub fn build_with_registry(
             reconciler.clone(),
             policy.clone(),
         )
-        .with_automatic_continuation(automatic_continuation)
-        .with_recovery_handoff(handoff, adapter.clone()),
+        .with_automatic_continuation(automatic_continuation),
     );
-    let session_recovery = recovery.map(|profile| {
-        Arc::new(SessionRecovery::new(
-            authority.clone(),
-            adapter.clone(),
-            policy.clone(),
-            waits.clone(),
-            reconciler.clone(),
-            profile,
-            RecoveryDiscovery::new(adapter.clone(), grants.clone()),
-        )) as Arc<dyn AutomationTick>
-    });
     let app = Arc::new(App {
         authority: authority.clone(),
         instance: instance.clone(),
@@ -751,7 +734,7 @@ pub fn build_with_registry(
         .with_reconciler(reconciler);
     Ok(BoundOwner {
         autopilot: None,
-        session_recovery,
+        session_recovery: None,
         server,
         policy,
         instance,
