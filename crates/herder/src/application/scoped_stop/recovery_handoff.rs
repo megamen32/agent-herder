@@ -226,8 +226,17 @@ impl LegacyRecoveryHandoff {
         !self.released() || self.read_held(harness, native_id, open_turn).unwrap_or(true)
     }
 
-    pub(super) fn legacy_stop_reason(&self, harness: &str, native_id: &str) -> Option<&'static str> {
-        legacy_stop_reason(harness, native_id, &self.human_stops, StopCheck::Recovery(None)).ok().flatten()
+    pub(super) fn legacy_stop_reason(
+        &self,
+        harness: &str,
+        native_id: &str,
+    ) -> io::Result<Option<&'static str>> {
+        legacy_stop_reason(
+            harness,
+            native_id,
+            &self.human_stops,
+            StopCheck::Recovery(None),
+        )
     }
 
     fn read_held(&self, harness: &str, native_id: &str, open_turn: Option<&str>) -> io::Result<bool> {
@@ -684,10 +693,19 @@ mod handoff_tests {
 
         let mut overwritten = row.clone();
         overwritten["ignoredStopIds"] = json!(["explicit-stop:owner"]);
-        assert!(parse(overwritten).reason(StopCheck::Recovery(None)).is_some());
+        assert_eq!(
+            parse(overwritten).reason(StopCheck::Recovery(None)),
+            Some("legacy_stop_provenance_unknown"),
+        );
         let mut malformed = row.clone();
         malformed["stop"]["turnId"] = json!("other");
         assert!(parse(malformed).reason(StopCheck::Recovery(None)).is_some());
+        let mut explicit = row.clone();
+        explicit["stop"] = json!({"id": "explicit-stop:owner", "reason": "explicit-stop"});
+        assert_eq!(
+            parse(explicit).reason(StopCheck::Recovery(None)),
+            Some("human_stop_active"),
+        );
         let mut scope = row;
         scope["stop"]["id"] = json!("owner-scope-stop:codex:chat");
         assert_eq!(parse(scope).reason(StopCheck::Recovery(None)), Some("human_stop_active"));
