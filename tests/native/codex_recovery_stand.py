@@ -663,8 +663,8 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     prior = turns(read, thread)
     old_recovery = prior[-1]["id"]
     old_row, = [row for row in receipt_rows(database) if row[0] == thread]
-    require(old_row[1] == "admitted" and json.loads(old_row[2])["native_id"] == old_recovery,
-            "follow-up needs the exact admission of the failed recovery")
+    require(old_row[1] == "confirmed" and json.loads(old_row[2])["native_id"] == old_recovery,
+            "follow-up needs the exact receipt of the failed recovery")
     client_id = "independent-native-user-input"
     user_turn = read("turn/start", {"threadId": thread, "turnTrigger": "composer",
                                     "clientUserMessageId": client_id, "input": [
@@ -680,7 +680,7 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
             and len(user_items) == 1 and user_items[0].get("clientId") == client_id,
             "independent user 429 was not the latest native turn")
     boundary = ["codex-recovery-v1", json.loads(old_row[2])["address"], user_turn, user_items[0]["id"]]
-    new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest()
+    new_key = "codex-recovery:" + hashlib.sha256(json.dumps(boundary, separators=(",", ":")).encode()).hexdigest() + ":primary"
     print(json.dumps({"phase": "independent_user_429", "old_recovery": old_recovery,
                       "old_receipt_state": old_row[1], "latest_user_turn": user_turn}), flush=True)
     data = json.loads(profile.read_text())
@@ -964,10 +964,9 @@ experimental_bearer_token = "{cold_token}"
                 if {row[0] for row in rows} != {s[0] for s in sessions.values()} or len(rows) != len(sessions):
                     return False
                 for thread, state, receipt, _ in rows:
-                    # The failed recovery is still the latest turn on this thread.
-                    # Its admission must stay pinned across the owner restart below.
-                    expected_state = "admitted" if thread == sessions[persistent][0] else "confirmed"
-                    if state != expected_state or not receipt:
+                    # Confirm the delivery even when its native model turn failed.
+                    # The failed fallback-free session must stay pinned on restart.
+                    if state != "confirmed" or not receipt:
                         return False
                     admitted = json.loads(receipt)
                     if (admitted["address"]["native_session_id"] != thread
