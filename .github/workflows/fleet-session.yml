@@ -88,11 +88,11 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           npm install --prefix "$RUNNER_TEMP/herder-recovery-cli" --ignore-scripts --no-save --no-audit --no-fund \
-            'codex-native@npm:@openai/codex@0.170.0-linux-x64' '@opencode/cli-linux-x64@2.3.0'
+            'codex-native@npm:@openai/codex@0.170.0-linux-x64' '@opencode/cli-linux-x64@2.3.0' 'playwright-core@1.61.1'
       - name: Build the Rust owner
         run: |
           cargo build --locked --manifest-path crates/herder/Cargo.toml \
-            --target-dir "$RUNNER_TEMP/herder-recovery-core" --bin herder_native_stdio
+            --target-dir "$RUNNER_TEMP/herder-recovery-core" --bin herder_native_stdio --bin herder-browser
       - name: Verify Codex recovery after 429, fallback and restart
         shell: bash
         run: |
@@ -109,6 +109,18 @@ jobs:
           /usr/bin/python3 -uB tests/native/launch.py --ro-bind "$owner_bin" --ro-bind "$schema_dir" -- \
             /usr/bin/python3 -uB "$PWD/tests/native/opencode_recovery_stand.py" \
             --opencode "$opencode_bin" --core "$owner_bin" --schema-dir "$schema_dir"
+      - name: Verify guarded ChatGPT recovery with a fake provider
+        shell: bash
+        run: |
+          cargo build --locked --manifest-path deploy/fleet/owner-bootstrap/Cargo.toml \
+            --target-dir "$RUNNER_TEMP/herder-recovery-core"
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/herder-recovery-cli/node_modules/playwright-core/index.mjs"
+          node --test crates/herder/src/adapters/chatgpt/native.test.mjs
+          for scenario in success failed-retry lost-receipt; do
+            /usr/bin/python3 -uB tests/native/browser_adapter_smoke.py \
+              --bin-dir "$RUNNER_TEMP/herder-recovery-core/debug" --recovery "$scenario" \
+              --output "$RUNNER_TEMP/browser-recovery-$scenario"
+          done
 
   installed-browser:
     name: Installed Vibe functional smoke
