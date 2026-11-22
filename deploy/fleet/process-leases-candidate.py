@@ -755,12 +755,13 @@ def check_recovery_scope(kind, handoff):
             seen.add(key)
 
 
-def recovery_profile_payload(previous, changed, *, installed=False):
+def recovery_profile_payload(previous, changed, *, installed=False, browser_core=None):
     """Stage a reviewed native socket, recovery handoff, or semantic autopilot binding."""
     expected = strict_json(previous)
     actual = strict_json(changed)
     owner, new = expected["owner"], actual["owner"]
     kind = owner.get("kind")
+    recovery_key = "browser_recovery" if kind in BROWSER_KINDS else f"{kind}_recovery"
     socket_only = False
     if kind == "codex":
         binding = owner.get("ahap_env", {})
@@ -777,10 +778,18 @@ def recovery_profile_payload(previous, changed, *, installed=False):
     elif kind == "opencode":
         if owner.get("ahap_script") is not None or not owner.get("ahap_base_url"):
             raise ValueError("OpenCode recovery requires the existing native HTTP profile")
+    elif kind in BROWSER_KINDS:
+        if (browser_core is None or owner.get("ahap_script") is not None
+                or owner.get("ahap_base_url") is not None):
+            raise ValueError("browser recovery requires the existing native browser owner")
+        validate_direct_cdp(owner["ahap_env"])
+        if new.get("executable") not in (owner["executable"], browser_core):
+            raise ValueError("browser recovery cannot change the installed executable binding")
+        owner["executable"] = new["executable"]
     else:
         raise ValueError("unsupported native recovery profile kind")
-    recovery = new.get(kind + "_recovery")
-    recovery_changed = recovery != owner.get(kind + "_recovery")
+    recovery = new.get(recovery_key)
+    recovery_changed = recovery != owner.get(recovery_key)
     autopilot_changed = kind == "codex" and owner.get("codex_autopilot") != new.get("codex_autopilot")
     # A change confined to the semantic rule binding keeps the active recovery marker.
     if not socket_only and (recovery_changed or not autopilot_changed):
@@ -788,13 +797,16 @@ def recovery_profile_payload(previous, changed, *, installed=False):
             raise ValueError("installed recovery requires an explicit compatibility handoff")
         handoff = recovery["legacy_handoff"]
         check_recovery_scope(kind, handoff)
+        if kind in BROWSER_KINDS and (handoff.get("instance_wide")
+                or recovery.get("runner", "mcp") != "mcp" or recovery.get("fallback_routes", [])):
+            raise ValueError("browser recovery requires exact session handoff and same-chat continuation")
         activation = handoff.get("activation_file")
         if not isinstance(activation, str) or not Path(activation).is_absolute() or ".." in Path(activation).parts \
                 or not installed and os.path.lexists(activation):
             raise ValueError("stage recovery with a fresh private activation path")
         for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
             private_file(handoff[field])
-        owner[kind + "_recovery"] = recovery
+        owner[recovery_key] = recovery
     if kind == "codex" and "codex_autopilot" in new and (autopilot_changed or recovery_changed):
         check_codex_autopilot(new["codex_autopilot"], recovery)
         owner["codex_autopilot"] = new["codex_autopilot"]
@@ -950,7 +962,13 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
             if identity in matched:
                 raise ValueError("selected recovery profile identity is ambiguous")
             matched.add(identity)
-            payload = recovery_profile_payload(raw, reviewed[identity], installed=installed)
+            payload = recovery_profile_payload(raw, reviewed[identity], installed=installed,
+                                               browser_core=manifest["core"] if native_browser else None)
+            if native_browser:
+                if owner.get("executable") != base["core"]:
+                    raise ValueError("previous browser owner does not select the exact installed executable")
+                if strict_json(payload)["owner"]["executable"] != manifest["core"]:
+                    payload = edit_owner(payload, {"executable": manifest["core"]})
         elif kind == "opencode":
             payload = native_profile_payload(raw)
         else:
@@ -1156,13 +1174,21 @@ def native_profile_transition(old, new, before, after, *, installed=False):
         for row in migration["profiles"]:
             if not isinstance(row, dict):
                 raise ValueError("invalid native recovery profile row")
-            if row.get("kind") in BROWSER_KINDS:
-                continue  # The planner derives browser rows exclusively from the old selector.
+            kind = row.get("kind")
             sha = row.get("payload_sha256")
-            if (row.get("kind") not in ("codex", "opencode") or not isinstance(sha, str)
+            if (kind not in {"codex", "opencode"} | BROWSER_KINDS or not isinstance(sha, str)
                     or not re.fullmatch(r"[a-f0-9]{64}", sha)):
                 raise ValueError("invalid native recovery profile row")
-            recovery_profiles.append(payload_dir / (sha + ".json"))
+            payload = payload_dir / (sha + ".json")
+            if kind in BROWSER_KINDS:
+                previous = row.get("previous_path")
+                if previous not in old["profiles"]:
+                    raise ValueError("browser recovery requires an exact selected owner profile")
+                before_owner = read_json(private_file(previous))["owner"]
+                new_owner = read_json(private_file(payload))["owner"]
+                if before_owner.get("browser_recovery") == new_owner.get("browser_recovery"):
+                    continue  # Existing browser owners can also be rebound for a core-only update.
+            recovery_profiles.append(payload)
         if not recovery_profiles:
             raise ValueError("native recovery migration requires a reviewed recovery profile")
     snapshots, planned = native_profile_plan(before, after, old, bundle, source, kinds, bindings,

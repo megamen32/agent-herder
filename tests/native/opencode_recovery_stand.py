@@ -342,14 +342,19 @@ def main():
                 throttle_models = [m.get("model") for m in throttle_history if m.get("type") == "assistant"]
                 require(len(throttle_models) == 2 and throttle_models[0] == throttle_models[1],
                         "OpenCode did not retain the exact original model variant")
-            require(reserve.count == 0 and not durable(database, exhausted), "foreign quota authorized a recovery")
+                wait_for("OpenCode did not fail its same-route retry", lambda: (
+                    primary.received.count(CHAIN_MODEL) == 2
+                    and chained not in call(endpoint, "/api/session/active")
+                ), seconds=45)
+                chain_rows = durable(database, chained)
+                require(len(chain_rows) == 1 and chain_rows[0][0] in ("admitted", "confirmed"),
+                        "same-route retry was not recorded")
+            require(reserve.count == 0 and not durable(database, exhausted),
+                    "an unverified quota authorized a send")
 
             route["omniroute"]["database"] = str(exact)
             private_write(profile, json.dumps(data))
             with owner_client(args.core, profile, env) as active:
-                fallback_receipt = verified(active, endpoint, database, exhausted, refs[exhausted],
-                                             exhausted_input, module.ANSWER, FALLBACK_PROVIDER, FALLBACK_MODEL)
-            with owner_client(args.core, profile, env) as reopened:
                 def chained_done():
                     rows = durable(database, chained)
                     packet = messages(endpoint, chained)
@@ -359,30 +364,41 @@ def main():
                                and module.ANSWER in json.dumps(m.get("content"))]
                     if len(rows) != 2 or len(inputs) != 2 or len(answers) != 1:
                         return False
-                    receipts = [json.loads(row[1])["native_id"] for row in rows if row[0] == "confirmed"]
+                    if any(row[0] != "confirmed" for row in rows):
+                        return False
+                    receipts = [json.loads(row[1]) for row in rows]
                     keys = [m["metadata"]["agentHerderInputId"] for m in inputs]
-                    require(set(receipts) == {m["id"] for m in inputs}, "staged receipts do not bind exact inputs")
+                    require({row["native_id"] for row in receipts} == {m["id"] for m in inputs}
+                            and all(row["address"]["native_session_id"] == chained for row in receipts),
+                            "staged receipts do not bind exact inputs in the same chat")
                     for key, stage in zip(keys, ("primary", "fallback")):
                         require(re.fullmatch(r"opencode-recovery:[0-9a-f]{64}:" + stage + r"(?::[0-9]+)?", key),
                                 "wrong recovery stage key")
+                    require(any(m["id"] == chained_input and m["type"] == "user" for m in packet),
+                            "the original input is absent from the recovered session")
                     require(answers[0]["model"]["providerID"] == FALLBACK_PROVIDER, "wrong fallback route")
-                    return True
-                wait_for("failed primary did not reach configured fallback", chained_done, seconds=60)
+                    projection = active.request("tools/call", {"_meta": MCP_META, "name": "session",
+                        "arguments": {"action": "messages", "session_ref": refs[chained]}})
+                    if projection.get("isError") and projection["structuredContent"].get("code") == "scope_unavailable":
+                        return False
+                    require(not projection.get("isError") and module.ANSWER in json.dumps(projection["structuredContent"]),
+                            "the owner did not read back the fallback response")
+                    return inputs[1]["id"]
+                fallback_receipt = wait_for("failed primary did not reach configured fallback", chained_done, seconds=60)
+            with owner_client(args.core, profile, env) as reopened:
                 time.sleep(3)
-                require(verified(reopened, endpoint, database, exhausted, refs[exhausted], exhausted_input,
-                                 module.ANSWER, FALLBACK_PROVIDER, FALLBACK_MODEL) == fallback_receipt,
-                        "owner restart did not retain the existing recovery")
                 require(verified(reopened, endpoint, database, throttled, refs[throttled], throttled_input,
                                  module.ANSWER, "fixture-primary", THROTTLED_MODEL) == throttle_receipt,
                         "owner restart did not retain the original-model recovery after 429")
                 require(verified(reopened, endpoint, database, shutdown, refs[shutdown], shutdown_input,
                                  module.ANSWER, "fixture-primary", SHUTDOWN_MODEL) == shutdown_receipt,
                         "owner restart did not retain the recovery after SIGTERM")
-            require(primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
+            require(not durable(database, exhausted)
+                    and primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
                     and primary.received.count(SHUTDOWN_MODEL) == 2
                     and primary.received.count(CHAIN_MODEL) == 2
-                    and reserve.count == 2 and reserve.received == [FALLBACK_MODEL, FALLBACK_MODEL], "model requests were repeated")
+                    and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
             for model, sid in protected.items():
                 require(primary.received.count(model) == 1 and not durable(database, sid)
                         and messages(endpoint, sid) == original_history[sid],
