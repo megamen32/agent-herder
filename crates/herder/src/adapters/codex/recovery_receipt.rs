@@ -185,6 +185,48 @@ fn user_items(
     }
 }
 
+fn staged_recovery_key(key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("codex-recovery:") else {
+        return false;
+    };
+    let mut parts = rest.split(':');
+    let Some(digest) = parts.next() else {
+        return false;
+    };
+    let valid_digest = digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    let valid_stage = matches!(parts.next(), Some("primary" | "fallback"));
+    let valid_attempt = parts
+        .next()
+        .is_none_or(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    valid_digest && valid_stage && valid_attempt && parts.next().is_none()
+}
+
+#[cfg(test)]
+mod staged_key_tests {
+    use super::staged_recovery_key;
+    #[test]
+    fn only_exact_staged_keys_use_failed_receipt_reconciliation() {
+        let digest = "a".repeat(64);
+        assert!(staged_recovery_key(&format!(
+            "codex-recovery:{digest}:primary"
+        )));
+        assert!(staged_recovery_key(&format!(
+            "codex-recovery:{digest}:fallback:2"
+        )));
+        for key in [
+            format!("codex-recovery:{digest}"),
+            format!("codex-recovery:{digest}:primary:x"),
+            format!("codex-recovery:{digest}:primary:2:3"),
+            "key".into(),
+        ] {
+            assert!(!staged_recovery_key(&key));
+        }
+    }
+}
+
 fn superseding_429(old: &Value, latest: &Value) -> bool {
     old["id"] != latest["id"]
         && (latest["rootTurnId"].is_null() || latest["rootTurnId"] == latest["id"])
@@ -235,6 +277,18 @@ impl CodexConnection {
             Some("completed") => {
                 let users = user_items(self, id, &receipt.native_id, 1, deadline)?;
                 return Ok(if users.is_empty() { unknown } else { confirmed });
+            }
+            Some("failed") if old["id"] == latest["id"] && staged_recovery_key(key) => {
+                let users = user_items(self, id, &receipt.native_id, 2, deadline)?;
+                return Ok(
+                    if matches!(users.as_slice(), [user] if
+                    required_string(user, "id").is_some() && user["clientId"] == key)
+                    {
+                        confirmed
+                    } else {
+                        unknown
+                    },
+                );
             }
             Some("failed") if superseding_429(&old, &latest) => {}
             _ => return Ok(unknown),

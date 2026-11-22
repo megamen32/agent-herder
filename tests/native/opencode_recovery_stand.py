@@ -5,6 +5,7 @@ import argparse
 from contextlib import closing, contextmanager
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import signal
@@ -27,6 +28,7 @@ CRASH_MODEL = "recover-after-crash"
 SHUTDOWN_MODEL = "recover-after-shutdown"
 NATIVE_STOPPED_MODEL = "native-interrupt"
 THROTTLED_MODEL = "temporary-rate-limit"
+CHAIN_MODEL = "failed-primary-then-fallback"
 STOPPED_MODEL = "human-stop"
 QUESTION_MODEL = "pending-human-request"
 AMBIGUOUS_MODEL = "legacy-delivery-unknown"
@@ -53,8 +55,8 @@ def providers(model, token):
                     release.wait(30)
                     return
                 return super().chat(request, sequence)
-            if selected in (THROTTLED_MODEL, *PROTECTED_MODELS):
-                if throttle_cleared.is_set():
+            if selected in (THROTTLED_MODEL, CHAIN_MODEL, *PROTECTED_MODELS):
+                if selected != CHAIN_MODEL and throttle_cleared.is_set():
                     return super().chat(request, sequence)
                 error = json.dumps({"error": {"type": "rate_limit_exceeded", "code": "rate_limit_exceeded",
                                               "message": "Temporary fixture throttle"}}).encode()
@@ -218,7 +220,7 @@ def main():
     token = "fixture-" + secrets.token_hex(24)
     primary, reserve, interruptions, throttle_cleared = providers(module, token)
     with http_fixture(primary) as primary_url, http_fixture(reserve) as reserve_url:
-        primary_models = [*interruptions, THROTTLED_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]
+        primary_models = [*interruptions, THROTTLED_MODEL, CHAIN_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]
         private_write(project / "opencode.json", json.dumps({"autoupdate": False, "provider": {
             "fixture-primary": provider(primary_url, "fixture-primary-only", primary_models),
             FALLBACK_PROVIDER: provider(reserve_url, token, [FALLBACK_MODEL]),
@@ -277,12 +279,13 @@ def main():
             failures = primary.received.count(QUOTA_MODEL)
             require(failures > 0, "no quota failure reached the primary provider")
             throttled, throttled_input = seed_throttled(endpoint, project, primary, THROTTLED_MODEL)
+            chained, chained_input = seed_throttled(endpoint, project, primary, CHAIN_MODEL)
             protected = {model: seed_throttled(endpoint, project, primary, model)[0]
                          for model in PROTECTED_MODELS}
             protected[NATIVE_STOPPED_MODEL] = native_stopped
             original_history = {sid: messages(endpoint, sid) for sid in protected.values()}
             throttle_cleared.set()
-            sessions = (crashed, shutdown, exhausted, throttled, *protected.values())
+            sessions = (crashed, shutdown, exhausted, throttled, chained, *protected.values())
             with owner_client(args.core, profile, env) as provision:
                 registered = [session_tool(provision, action="register", instance_ref=INSTANCE,
                               native_session_id=native_id, request_key=f"register-{native_id}")
@@ -347,6 +350,24 @@ def main():
                 fallback_receipt = verified(active, endpoint, database, exhausted, refs[exhausted],
                                              exhausted_input, module.ANSWER, FALLBACK_PROVIDER, FALLBACK_MODEL)
             with owner_client(args.core, profile, env) as reopened:
+                def chained_done():
+                    rows = durable(database, chained)
+                    packet = messages(endpoint, chained)
+                    inputs = [m for m in packet if m.get("type") == "synthetic"
+                              and m.get("metadata", {}).get("agentHerderInputId", "").startswith("opencode-recovery:")]
+                    answers = [m for m in packet if m.get("type") == "assistant"
+                               and module.ANSWER in json.dumps(m.get("content"))]
+                    if len(rows) != 2 or len(inputs) != 2 or len(answers) != 1:
+                        return False
+                    receipts = [json.loads(row[1])["native_id"] for row in rows if row[0] == "confirmed"]
+                    keys = [m["metadata"]["agentHerderInputId"] for m in inputs]
+                    require(set(receipts) == {m["id"] for m in inputs}, "staged receipts do not bind exact inputs")
+                    for key, stage in zip(keys, ("primary", "fallback")):
+                        require(re.fullmatch(r"opencode-recovery:[0-9a-f]{64}:" + stage + r"(?::[0-9]+)?", key),
+                                "wrong recovery stage key")
+                    require(answers[0]["model"]["providerID"] == FALLBACK_PROVIDER, "wrong fallback route")
+                    return True
+                wait_for("failed primary did not reach configured fallback", chained_done, seconds=60)
                 time.sleep(3)
                 require(verified(reopened, endpoint, database, exhausted, refs[exhausted], exhausted_input,
                                  module.ANSWER, FALLBACK_PROVIDER, FALLBACK_MODEL) == fallback_receipt,
@@ -360,7 +381,8 @@ def main():
             require(primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
                     and primary.received.count(SHUTDOWN_MODEL) == 2
-                    and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
+                    and primary.received.count(CHAIN_MODEL) == 2
+                    and reserve.count == 2 and reserve.received == [FALLBACK_MODEL, FALLBACK_MODEL], "model requests were repeated")
             for model, sid in protected.items():
                 require(primary.received.count(model) == 1 and not durable(database, sid)
                         and messages(endpoint, sid) == original_history[sid],
