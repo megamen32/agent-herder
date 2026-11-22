@@ -637,6 +637,31 @@ async fn activity_open_and_read_check_provider_identity() {
 
 #[tokio::test]
 #[ignore = "requires local Google Chrome and Node.js"]
+async fn recovery_reports_last_run_and_current_node_but_never_claims_failed_lineage() {
+    let (_chrome, mut reader) = fixture(&[]).await;
+    page(
+        &mut reader,
+        "fixture.status = 'failed'; fixture.current[fixture.old] = 'old-user'",
+    )
+    .await;
+    let evidence = reader
+        .native_read("recovery", Some(OLD), Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(evidence["available"], false);
+    assert_eq!(evidence["reason"], "terminal_failure_lineage_unavailable");
+    assert_eq!(evidence["lastRunStatus"], "failed");
+    page(&mut reader, "fixture.status = 'completed'").await;
+    let completed = reader
+        .native_read("recovery", Some(OLD), Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(completed["available"], false);
+    assert_eq!(completed["lastRunStatus"], "completed");
+}
+
+#[tokio::test]
+#[ignore = "requires local Google Chrome and Node.js"]
 async fn new_blank_waits_for_the_editor_before_first_send_or_offscreen_open() {
     for target in [None, Some(OLD)] {
         let (_chrome, mut reader) = fixture(&["--delayed-render"]).await;

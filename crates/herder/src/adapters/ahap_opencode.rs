@@ -5,7 +5,10 @@ mod browser_interrupt;
 use crate::{
     adapters::ahap::{AhapClient, AhapError},
     application::{
-        scoped_stop::{BoundedFreshRootCreate, BoundedNativeHandoff},
+        scoped_stop::{
+            BoundedFreshRootCreate, BoundedNativeHandoff,
+            session_recovery::{RecoveryListing, RecoveryPage},
+        },
         target::RegistryUnavailable,
     },
     domain::{
@@ -16,6 +19,10 @@ use crate::{
         address::{
             Authorization, Availability, Capability, CapabilityVersion, InstanceRef,
             SessionAddress, Support,
+        },
+        recovery::{
+            RecoveryBoundary, RecoveryControl, RecoveryCredential, RecoveryPermit,
+            RecoveryRoute, SameRouteRetry,
         },
     },
 };
@@ -54,6 +61,140 @@ impl crate::application::scoped_stop::registration::BoundedSessionProbe for Ahap
             native_session_id: native_session_id.to_owned(),
         })
         .map_err(|_| ())
+    }
+}
+
+// Keep the shared recovery owner on the existing AHAP wrapper. ChatGPT has a
+// typed current-branch failure read; Z.ai exposes its structured limitation.
+impl RecoveryControl for AhapOpenCode {
+    fn harness(&self) -> &'static str {
+        match self.policy.harness.as_str() {
+            "chatgpt" => "chatgpt",
+            "zai" => "zai",
+            "opencode" => "opencode",
+            _ => "unknown",
+        }
+    }
+
+    fn instance(&self) -> &InstanceRef {
+        &self.instance
+    }
+
+    fn mode(&self) -> SendMode {
+        SendMode::Queue
+    }
+
+    fn read_boundary(
+        &self,
+        target: &SessionAddress,
+    ) -> Result<Option<RecoveryBoundary>, ReadError> {
+        if !self.matches(target) {
+            return Err(ReadError("invalid AHAP recovery target".into()));
+        }
+        // A successful ordinary snapshot is not proof of a failed turn. In
+        // particular, don't treat idle/unknown activity or assistant text as
+        // a terminal failure.
+        if matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
+            && self.capabilities()["nativeProtocol"] == "direct-cdp"
+        {
+            let snapshot = self.read_snapshot(target)?;
+            if snapshot.human_stop || snapshot.activity != SessionActivity::Idle {
+                return Ok(None);
+            }
+            let evidence = self.raw_call(
+                "getRecoveryBoundary",
+                json!({"id": target.native_session_id}),
+            )?;
+            if evidence.is_null() {
+                return Ok(None);
+            }
+            if evidence["id"].as_str() != Some(target.native_session_id.as_str())
+                || evidence["status"].as_str() != Some("failed")
+                || evidence["turnId"].as_str().is_none_or(|id| !valid_native_id(id))
+                || evidence["inputItemId"].as_str().is_none_or(|id| !valid_native_id(id))
+            {
+                return Err(ReadError("invalid AHAP typed recovery boundary".into()));
+            }
+            let timestamp = evidence["startedAtMs"].as_u64().ok_or_else(|| {
+                ReadError("AHAP recovery boundary timestamp unavailable".into())
+            })?;
+            return Ok(Some(RecoveryBoundary {
+                turn_id: evidence["turnId"].as_str().unwrap().to_owned(),
+                input_item_id: evidence["inputItemId"].as_str().unwrap().to_owned(),
+                cwd: self.cwd.to_string_lossy().into_owned(),
+                provider: self.policy.harness.clone(),
+                model: None,
+                started_at_ms: timestamp,
+                failure: crate::domain::recovery::RecoveryFailure::Retryable,
+                ancestors: vec![],
+            }));
+        }
+        let session = self.raw_call("getSession", json!({"id": target.native_session_id}))?;
+        if session.get("id").and_then(Value::as_str)
+            != Some(target.native_session_id.as_str())
+            || session.get("harness").and_then(Value::as_str)
+                != Some(self.policy.harness.as_str())
+        {
+            return Err(ReadError("AHAP recovery session identity mismatch".into()));
+        }
+        Ok(None)
+    }
+
+    fn quota(&self, _provider: &str, _cwd: &str, _reserve: u8) -> Option<bool> {
+        None
+    }
+
+    fn credential(&self, _provider: &str, _model: &str, _cwd: &str) -> Option<RecoveryCredential> {
+        None
+    }
+
+    fn same_route_retry(
+        &self,
+        _target: &SessionAddress,
+        _boundary: &RecoveryBoundary,
+    ) -> SameRouteRetry {
+        SameRouteRetry::Hold
+    }
+
+    fn supports_alternate(
+        &self,
+        _target: &SessionAddress,
+        _boundary: &RecoveryBoundary,
+        _route: &RecoveryRoute,
+    ) -> bool {
+        false
+    }
+
+    fn submit(
+        &self,
+        _target: &SessionAddress,
+        _boundary: &RecoveryBoundary,
+        _route: &RecoveryRoute,
+        _permit: RecoveryPermit<'_>,
+        _message: &str,
+        _key: &RequestKey,
+    ) -> Result<Admission, SubmitError> {
+        Err(SubmitError::DefinitelyNotSent {
+            reason: "AHAP browser queue emptiness is not observable".into(),
+        })
+    }
+}
+
+impl RecoveryListing for AhapOpenCode {
+    fn list_recent(&self, cursor: Option<&str>, limit: u32) -> Result<RecoveryPage, ReadError> {
+        if cursor.is_some() || !(1..=32).contains(&limit) {
+            return Err(ReadError("invalid AHAP recovery listing page".into()));
+        }
+        // Browser adapters do not expose trustworthy chronological session
+        // metadata yet. An empty terminal page must not imply absence.
+        Ok(RecoveryPage {
+            sessions: Vec::new(),
+            next_cursor: None,
+        })
+    }
+
+    fn confirms_absence(&self, _native_id: &str) -> bool {
+        false
     }
 }
 impl AhapOpenCode {
@@ -983,6 +1124,68 @@ mod tests {
             "turn-7"
         ));
     }
+
+    #[test]
+    fn browser_recovery_composes_but_does_not_infer_failure_or_absence() {
+        for harness in ["chatgpt", "zai"] {
+            let (_fixture, adapter) = setup_with_policy(
+                "normal",
+                harness,
+                SendMode::Queue,
+                "browser-session",
+            )
+            .unwrap();
+            let target = SessionAddress {
+                instance: adapter.instance.clone(),
+                native_session_id: "browser-session".into(),
+            };
+            assert_eq!(adapter.read_boundary(&target).unwrap(), None);
+            assert!(!adapter.supports_alternate(
+                &target,
+                &RecoveryBoundary {
+                    turn_id: "turn".into(),
+                    input_item_id: "input".into(),
+                    cwd: "/tmp".into(),
+                    provider: harness.into(),
+                    model: None,
+                    started_at_ms: 1,
+                    failure: crate::domain::recovery::RecoveryFailure::Retryable,
+                    ancestors: vec![],
+                },
+                &RecoveryRoute { provider: "other".into(), model: None },
+            ));
+            assert!(adapter.list_recent(None, 32).unwrap().sessions.is_empty());
+            assert!(!adapter.confirms_absence("missing-session"));
+        }
+    }
+
+    #[test]
+    fn chatgpt_typed_failure_boundary_is_pinned_to_exact_latest_input() {
+        let (_fixture, adapter) = setup_with_policy(
+            "recovery",
+            "chatgpt",
+            SendMode::Queue,
+            "browser-session",
+        )
+        .unwrap();
+        let target = SessionAddress {
+            instance: adapter.instance.clone(),
+            native_session_id: "browser-session".into(),
+        };
+        let boundary = adapter.read_boundary(&target).unwrap().unwrap();
+        assert_eq!(boundary.turn_id, "failed-turn");
+        assert_eq!(boundary.input_item_id, "latest-user");
+        assert_eq!(boundary.provider, "chatgpt");
+        assert_eq!(boundary.model, None);
+        assert!(adapter.submit(
+            &target,
+            &boundary,
+            &RecoveryRoute { provider: "chatgpt".into(), model: None },
+            RecoveryPermit { reserve: 0, quota_proof: None, still_allowed: &|| true },
+            "resume",
+            &RequestKey("a".repeat(64)),
+        ).is_err());
+    }
     struct Temp(PathBuf);
     impl Drop for Temp {
         fn drop(&mut self) {
@@ -1017,10 +1220,11 @@ if automatic:native_id='msg_herderauto'+hashlib.sha256(json.dumps(['herder-openc
 for line in sys.stdin:
  r=json.loads(line);m=r['method'];p=r.get('params',{})
  with open(os.environ['TRACE'],'a') as f:f.write(m+'\n')
- if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','sendMessage','getSession','getSessionMessages']+([] if os.environ['MODE']=='no_create' else ['createSession']),'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
+ if m=='initialize':v={'harness':harness,'capabilities':{'methods':['init','sendMessage','getSession','getSessionMessages','getRecoveryBoundary']+([] if os.environ['MODE']=='no_create' else ['createSession']),'deliveryModes':['start'] if harness=='opencode' else ['queue']}}
  elif m=='init':v=None
  elif m=='createSession':v={'id':session,'harness':harness}
  elif m=='getSession':v={'id':session,'harness':harness,'status':'idle'}
+ elif m=='getRecoveryBoundary':v=({'id':session,'status':'failed','turnId':'failed-turn','inputItemId':'latest-user','startedAtMs':int(time.time()*1000)} if harness=='chatgpt' and os.environ['MODE']=='recovery' else None)
  elif m=='getQueuedContinuationState':
   mode=os.environ['MODE'];stamp=int(time.time()*1000)
   if mode=='cold_catalog_stale':stamp-=60000
@@ -1046,6 +1250,7 @@ for line in sys.stdin:
   if automatic:v=[{'id':native_id,'nativeMessageId':native_id,'role':'system','nativeInputType':'synthetic','inputId':'key','sessionId':session}]
  else:raise Exception(m)
  if m=='initialize' and automatic:v['capabilities'].update({'nativeProtocol':'v2','deliveryModes':['queue','start'],'nativeAutomaticContinuation':'synthetic-queue-v1'})
+ if m=='initialize' and harness in ('chatgpt','zai'):v['capabilities']['nativeProtocol']='direct-cdp'
  if m=='initialize' and os.environ['MODE']=='upload-marker':v['capabilities'].update({'nativeProtocol':'direct-cdp','browserFeatures':{'attachments':True}})
  if m=='initialize' and cold:v['capabilities']['methods'].append('getQueuedContinuationState');v['capabilities']['nativeAutomaticContinuation']='cold-queue-subscription-v1'
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)

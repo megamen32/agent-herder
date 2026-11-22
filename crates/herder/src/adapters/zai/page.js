@@ -171,6 +171,26 @@ async function zaiPage({op, expected, args, maxBytes}, zaiFiles, zaiStop) {
             return verified({activity: nativeActivity(status, id)});
         }
 
+        if (op === 'recovery') {
+            const chat = await detail(id, user);
+            const history = chat.chat?.history;
+            const currentId = history?.currentId;
+            const rows = history?.messages;
+            if (!isObject(rows) || typeof currentId !== 'string' || !Object.hasOwn(rows, currentId)) {
+                abort('invalid_history');
+            }
+            const latest = rows[currentId];
+            // Current Z.ai history exposes only id/role/content/done on
+            // messages; last_run has no exact failed-message or user-parent ID.
+            const result = {available: false, reason: 'terminal_failure_lineage_unavailable',
+                currentId: latest?.id === currentId ? currentId : null,
+                currentRole: typeof latest?.role === 'string' ? latest.role : null,
+                currentDone: typeof latest?.done === 'boolean' ? latest.done : null,
+                lastRunStatus: typeof chat.last_run?.status === 'string' ? chat.last_run.status : null};
+            if (await currentUser() !== user) abort('account_mismatch');
+            return verified(result);
+        }
+
         if (op === 'read') {
             const chat = await detail(id, user);
             const ids = historyIds(chat).slice(-180);

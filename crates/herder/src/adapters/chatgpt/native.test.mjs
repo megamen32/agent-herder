@@ -48,7 +48,7 @@ async function fixture(t, id = null) {
     document.addEventListener('input', e => { if (e.target.matches('textarea')) inputs++; });
     document.querySelector('form').onsubmit = e => { e.preventDefault(); clicks++; };
   });
-  const operations = {activity: read, read, cancel, download};
+  const operations = {activity: read, read, recovery: read, cancel, download};
   const call = (op, args = {}) => page.evaluate(
     '(' + native + ')(' + (operations[op] || composer) + ',' +
     JSON.stringify({op, id, text, scope, maxBytes: 2 * 1024 * 1024, ...args}) + ')'
@@ -149,6 +149,26 @@ test('read preserves observed message metadata including end_turn false', async 
   const [user, assistant] = (await call('read')).value.messages;
   assert.deepEqual([assistant.phase, assistant.completionStatus, assistant.endTurn], ['commentary', 'in_progress', false]);
   assert.ok(!Object.hasOwn(user, 'phase') && !Object.hasOwn(user, 'completionStatus') && !Object.hasOwn(user, 'endTurn'));
+});
+
+test('recovery requires explicit failure at the current branch head and its exact user parent', async t => {
+  const {page, call} = await fixture(t, 'old');
+  await page.evaluate(() => {
+    chats.old.messages.push({id: 'failed', parent_id: 'old-user', author: {role: 'assistant'},
+      status: 'failed', end_turn: false, content: {parts: ['provider failure']}});
+  });
+  assert.deepEqual((await call('recovery')).value, {
+    id: 'old', turnId: 'failed', inputItemId: 'old-user', status: 'failed', startedAtMs: 1000,
+  });
+  await page.evaluate(() => {
+    chats.old.messages.push({id: 'new-user', author: {role: 'user'}, content: {parts: ['new input']}});
+  });
+  assert.equal((await call('recovery')).value, null);
+  await page.evaluate(() => {
+    chats.old.messages.push({id: 'complete', parent_id: 'new-user', author: {role: 'assistant'},
+      status: 'finished_successfully', end_turn: true, content: {parts: ['done']}});
+  });
+  assert.equal((await call('recovery')).value, null);
 });
 
 test('attachment-only submit waits for the composer upload and proves the new native user ID and files', async t => {
