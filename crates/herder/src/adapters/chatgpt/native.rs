@@ -9,7 +9,7 @@ use tokio::time::{sleep, timeout};
 
 use super::{CdpError, ChatGptReadError, ChatGptReader, NormalizeError, NormalizedMessage};
 use crate::adapters::browser::{
-    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES,
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES, RecoveryInput,
     validate_attachments,
 };
 
@@ -257,11 +257,22 @@ impl ChatGptReader {
         text: &str,
         attachments: &[BrowserAttachment],
     ) -> Result<(String, String), BrowserSubmitError> {
+        self.submit_guarded(conversation_id, text, attachments, None).await
+    }
+
+    pub(crate) async fn submit_guarded(
+        &mut self,
+        conversation_id: Option<&str>,
+        text: &str,
+        attachments: &[BrowserAttachment],
+        recovery: Option<&RecoveryInput>,
+    ) -> Result<(String, String), BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         if (text.trim().is_empty() && attachments.is_empty())
             || text.len() > 16_000
             || conversation_id.is_some_and(|id| !native_id(id))
             || (conversation_id.is_none() && !(self.fresh_blank && self.cdp.owns_target()))
+            || (recovery.is_some() && (conversation_id.is_none() || !attachments.is_empty()))
         {
             return Err(BeforeSend);
         }
@@ -269,7 +280,7 @@ impl ChatGptReader {
         // Independent readers can share a Chrome target. Bind all stages to
         // this invocation, including two submissions with identical content.
         let ticket = RandomState::new().hash_one(()).to_string();
-        let args = json!({"id": conversation_id, "text": text, "ticket": ticket});
+        let args = json!({"id": conversation_id, "text": text, "ticket": ticket, "recovery": recovery});
         let value = self
             .native("baseline", args.clone())
             .await

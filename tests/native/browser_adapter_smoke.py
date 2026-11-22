@@ -577,7 +577,65 @@ def lost_receipt_case(rpc, start, fixture, setup, name, args, record):
     record["replay_task"] = replay_id
 
 
-def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt, media):
+def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scenario, record):
+    route, protected = setup["seedIds"]
+    stop = tool("stop", action="stop", session_ref=refs[1], request_key="fixture-explicit-stop")
+    exact(stop["hold"], "active", "HumanStop before failure")
+    failure = fixture.call("failedTurn", {"id": route})
+    fixture.call("failedTurn", {"id": protected})
+    exact(failure["httpStatus"], 429, "fake provider terminal status")
+    if scenario == "failed-retry":
+        fixture.call("failNext")
+    if scenario == "lost-receipt":
+        fixture.call("withholdReceipt", {"enabled": True})
+
+    rpc.close()
+    persist_evidence(activation, True)
+    active = start()
+
+    def rows():
+        with closing(sqlite3.connect(Path(seed["database"]).as_uri() + "?mode=ro", uri=True)) as db:
+            return db.execute(
+                """SELECT i.request_key, i.state, i.native_receipt, i.target
+                   FROM intents i WHERE request_key GLOB 'chatgpt-recovery:*'"""
+            ).fetchall()
+
+    expected = "unknown" if scenario == "lost-receipt" else "confirmed"
+    deadline = time.monotonic() + 70
+    while time.monotonic() < deadline:
+        observed = rows()
+        if len(observed) == 1 and observed[0][1] == expected:
+            break
+        time.sleep(0.2)
+    else:
+        active.close()
+        record["owner_stderr"] = active.process.stderr.read(4096)
+        raise RuntimeError(f"browser recovery did not reach {expected}: {rows()}")
+    key, state, receipt, target = observed[0]
+    exact(target, refs[0], "recovery addressed the exact Rust session")
+    check(key.endswith(":primary"), "browser recovery staged more than one attempt")
+    snapshot = fixture.call("snapshot")
+    [sent] = snapshot["sends"]
+    exact(sent["addressed"], route, "same provider chat")
+    check(sent["rows"][0]["text"].startswith("Продолжай"), "unexpected recovery text")
+    if expected == "confirmed":
+        native = json.loads(receipt)["native_id"]
+        exact(receipt_reference(native), ("message", sent["rows"][0]["id"]), "native input receipt")
+    if scenario == "failed-retry":
+        exact(sent["rows"][1]["httpStatus"], 429, "same-route retry also failed")
+
+    active.close()
+    restarted = start()
+    # Prove one full recovery scan on the replacement owner.
+    time.sleep(32)
+    check(restarted.process.poll() is None, "owner exited after restart")
+    exact(rows(), observed, "restart changed the attempt ledger")
+    exact(fixture.call("snapshot")["sends"], [sent], "restart or HumanStop produced another send")
+    record.update(failed_turn=failure, recovery_state=state,
+                  native_receipt_id=sent["rows"][0]["id"], protected_sends=0)
+
+
+def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt, media, recovery=None):
     protected = home / "herder-owner-home"
     protected.mkdir(mode=0o700)
     seed = parse_fresh_seed(subprocess.check_output([bins["ahap-owner-bootstrap"], protected],
@@ -586,6 +644,35 @@ def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt
     profile["owner"] = {"kind": harness, "principal": "browser-fixture-owner", "node": NODE,
                         "instance": INSTANCE, "executable": str(bins["herder_native_stdio"]),
                         "cwd": str(home), "code_home": str(home), "ahap_env": setup["env"]}
+    seed_keys = native_ids(harness, setup["seedIds"])
+    if recovery:
+        profile["owner"]["ahap_env"] = {**setup["env"], "AHAP_BROWSER_ACCOUNT_SCOPE": setup["userioScope"]}
+        if recovery == "failed-retry":
+            # This alias already points to a provider conversation. Use the
+            # existing UserIO on-disk record and keep its Rust session ID.
+            draft = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            directory = home / ".local/state/agent-herder/browser-chat-drafts/chatgpt" / setup["userioScope"]
+            directory.mkdir(parents=True, mode=0o700)
+            persist_evidence(directory / f"{draft}.json", {
+                "id": "draft:" + draft, "title": "Existing fixture alias",
+                "createdAt": "2026-01-01T00:00:00Z", "state": "admitted",
+                "remoteId": setup["seedIds"][0],
+            })
+            seed_keys[0] = "chatgpt::draft%3A" + draft
+        handoff = {"native_sessions": seed_keys}
+        for name, contents in (
+            ("activation_file", False),
+            ("human_stops", {"version": 1, "sessions": []}),
+            ("human_requests", {"version": 1, "requests": []}),
+            ("choices", {"version": 1, "requests": []}),
+            ("unfinished_sessions", {"version": 1, "sessions": []}),
+        ):
+            path = protected / f"{name}.json"
+            persist_evidence(path, contents)
+            handoff[name] = str(path)
+        persist_evidence(protected / "session-autostart.json",
+                         {"version": 8, "enabled": True, "recoverOnFailure": True, "sessions": []})
+        profile["owner"]["browser_recovery"] = {"autopilot_state_dir": str(protected), "legacy_handoff": handoff}
     profile_path = Path(seed["profile_seed"]).with_name("profile.json")
     with os.fdopen(os.open(profile_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
         json.dump(profile, f)
@@ -638,7 +725,7 @@ def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt
 
     rpc = start()
     seeds = []
-    for i, key in enumerate(native_ids(harness, setup["seedIds"])):
+    for i, key in enumerate(seed_keys):
         binding = tool("session", action="register", instance_ref=INSTANCE, native_session_id=key,
                        request_key=f"register-seed-{i}")
         ref = binding["session_ref"]
@@ -648,6 +735,9 @@ def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt
     exact(sorted(inventory()), sorted(seeds), "owner seed inventory")
     exact_seeds(read, seeds)
     check_sends(fixture, [], setup["seedIds"])
+    if recovery:
+        return recovery_case(fixture, setup, seed, seeds, tool, rpc, start,
+                             Path(handoff["activation_file"]), recovery, record)
     create_args = {"action": "create", "instance_ref": INSTANCE,
                    "request_key": "first-input", "prompt": PROMPT}
     if media and harness == "zai" and not lost_receipt:
@@ -774,6 +864,8 @@ def run_case(args, bins, harness, surface, content, case):
     record = {"harness": harness, "surface": surface, "content": content, "phase": "fixture"}
     if args.lost_receipt:
         record["scenario"] = "lost-receipt" if args.lost_receipt == "create" else "lost-delivery-receipt"
+    if args.recovery:
+        record["scenario"] = "recovery-" + args.recovery
     with tempfile.TemporaryDirectory(prefix="herder-browser-smoke-", dir=Path.home()) as temp, ExitStack() as stack:
         home = Path(temp)
         env = private_env(home)
@@ -788,11 +880,14 @@ def run_case(args, bins, harness, surface, content, case):
             if surface == "ahap":
                 ahap_case(bins["herder-browser"], home, fixture, setup, harness, args.iterations, record, stack, media)
             else:
-                mcp_case(bins, home, fixture, setup, harness, args.iterations, record, stack, args.lost_receipt, media)
+                mcp_case(bins, home, fixture, setup, harness, args.iterations, record, stack,
+                         args.lost_receipt, media, args.recovery)
             snapshot = fixture.call("snapshot")
             exact(snapshot["unexpected"], [], "unexpected browser requests")
             exact(snapshot["pinnedRoute"], "/c/" + setup["seedIds"][1], "pinned tab moved off seed B")
             expected_sends = {"create": 1, "deliver": 2}.get(args.lost_receipt, 2)
+            if args.recovery:
+                expected_sends = 1
             if media and not args.lost_receipt:
                 expected_sends = 4 if surface == "mcp" else 3
             exact(len(snapshot["sends"]), expected_sends, "total browser submits")
@@ -819,6 +914,8 @@ def main():
     parser.add_argument("--content", choices=["text", "attachments"], help="default: run both in separate fixtures")
     parser.add_argument("--lost-receipt", nargs="?", const="create", choices=["create", "deliver"],
                         help="withhold the accepted submit's native receipt (default: create), then replay through MCP")
+    parser.add_argument("--recovery", choices=["success", "failed-retry", "lost-receipt"],
+                        help="exercise the native ChatGPT recovery scheduler in a disposable browser")
     parser.add_argument("--iterations", default=20, type=int)
     parser.add_argument("--output", type=Path, help="fresh receipt directory")
     args = parser.parse_args()
@@ -828,6 +925,10 @@ def main():
         if args.surface == "ahap":
             parser.error("--lost-receipt uses the owner MCP surface")
         args.surface = "mcp"
+    if args.recovery:
+        if args.lost_receipt or args.harness == "zai" or args.surface == "ahap" or args.content == "attachments":
+            parser.error("--recovery uses the ChatGPT owner MCP text surface")
+        args.harness, args.surface, args.content = "chatgpt", "mcp", "text"
     names = ["herder-browser", "herder_native_stdio", "ahap-owner-bootstrap"]
     bins = {name: (args.bin_dir / name).resolve(strict=True) for name in names}
     output = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="herder-browser-evidence-"))

@@ -1,5 +1,5 @@
 use super::{
-    BrowserActivity, BrowserAttachment, BrowserSubmitError, Config, Provider,
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, Config, Provider, RecoveryInput,
     drafts::{Draft, DraftState, DraftStore},
     port::Page,
     protocol::RpcError,
@@ -244,22 +244,34 @@ impl Sessions {
         config: &Config,
         id: &str,
     ) -> Result<Value, RpcError> {
-        match config.provider.parse_id(id)? {
-            SessionId::Remote(remote) => {
-                let value = self.anchor.recovery_boundary(remote).await?;
-                if value.is_null() {
-                    return Ok(value);
-                }
-                // Use the existing user-message read and require exact native
-                // parent membership in this same conversation before returning.
-                let messages = self.anchor.messages(remote, id, 200).await?;
-                let input = value["inputItemId"].as_str().ok_or(RpcError::Unavailable)?;
-                let exact_parent = messages.as_array().is_some_and(|rows| rows.iter().any(|row|
-                    row["id"].as_str() == Some(input) && row["role"].as_str() == Some("user")));
-                if exact_parent { Ok(value) } else { Err(RpcError::Unavailable) }
+        let draft;
+        let remote = match config.provider.parse_id(id)? {
+            SessionId::Remote(remote) => remote,
+            SessionId::Draft(key) => {
+                self.anchor.verify_scope(config).await?;
+                draft = self.drafts.get(&key).map_err(stored_error)?;
+                let (DraftState::Admitted, Some(remote)) = (draft.state, draft.remote_id.as_deref()) else {
+                    return Ok(Value::Null);
+                };
+                remote
             }
-            SessionId::Draft(_) => Err(RpcError::Unavailable),
+        };
+        let mut value = self.anchor.recovery_boundary(remote).await?;
+        if value.is_null() {
+            return Ok(value);
         }
+        let messages = self.anchor.messages(remote, id, 200).await?;
+        let input = value["inputItemId"].as_str().ok_or(RpcError::Unavailable)?;
+        let exact_parent = messages.as_array().is_some_and(|rows| {
+            rows.iter().any(|row| {
+                row["id"].as_str() == Some(input) && row["role"].as_str() == Some("user")
+            })
+        });
+        if !exact_parent {
+            return Err(RpcError::Unavailable);
+        }
+        value["id"] = json!(id);
+        Ok(value)
     }
 
     /// Only the first send has a private tab, a pre-click ticket and a reserved
@@ -453,7 +465,7 @@ impl Sessions {
                 })
                 .await
             }
-            page => page.submit(None, text, files).await,
+            page => page.submit(None, text, files, None).await,
         };
         match submitted {
             Ok((remote, message)) if valid_route(&remote) && super::valid_label(&message) => {
@@ -482,6 +494,7 @@ impl Sessions {
         input: &str,
         text: &str,
         files: &[BrowserAttachment],
+        recovery: Option<&RecoveryInput>,
     ) -> Result<String, BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         let session = config.provider.parse_id(id).map_err(|_| BeforeSend)?;
@@ -495,10 +508,11 @@ impl Sessions {
             SessionId::Draft(key) => {
                 draft = self.drafts.get(&key).map_err(|_| BeforeSend)?;
                 match (&draft.state, draft.remote_id.as_deref()) {
-                    (DraftState::Pending, None) => {
+                    (DraftState::Pending, None) if recovery.is_none() => {
                         return self.first(config, &key, input, text, files).await;
                     }
                     (DraftState::Admitted, Some(remote)) => (remote, draft.target_id.as_deref()),
+                    _ if recovery.is_some() => return Err(BeforeSend),
                     _ => return Err(Unknown),
                 }
             }
@@ -507,7 +521,7 @@ impl Sessions {
             .writer_for(config, remote, target)
             .await
             .map_err(|_| BeforeSend)?;
-        let (confirmed, message) = writer.submit(Some(remote), text, files).await?;
+        let (confirmed, message) = writer.submit(Some(remote), text, files, recovery).await?;
         if confirmed != remote || !super::valid_label(&message) {
             return Err(Unknown);
         }

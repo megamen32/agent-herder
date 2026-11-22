@@ -51,6 +51,8 @@ pub struct OwnerProfile {
     pub codex_autopilot: Option<herder::application::scoped_stop::session_autopilot::AutopilotProfile>,
     #[serde(default)]
     pub opencode_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
+    #[serde(default)]
+    pub browser_recovery: Option<herder::application::scoped_stop::session_recovery::RecoveryProfile>,
 }
 
 impl OwnerProfile {
@@ -522,6 +524,13 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
     }) {
         return Err(invalid().into());
     }
+    if owner.browser_recovery.as_ref().is_some_and(|recovery| {
+        !matches!(owner.kind.as_str(), "chatgpt" | "zai")
+            || owner.ahap_script.is_some()
+            || !recovery.valid_for_browser()
+    }) {
+        return Err(invalid().into());
+    }
     Ok(OpenedOwner {
         authority,
         owner,
@@ -688,6 +697,7 @@ mod enrollment_tests {
             codex_recovery:None,
             codex_autopilot:None,
             opencode_recovery:None,
+            browser_recovery:None,
         }
     }
     #[test]

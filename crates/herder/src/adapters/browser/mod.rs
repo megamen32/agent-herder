@@ -23,6 +23,21 @@ pub enum BrowserSubmitError {
     Unknown,
 }
 
+/// The failed response and its user input on the current conversation branch.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RecoveryInput {
+    pub turn_id: String,
+    pub input_item_id: String,
+}
+
+impl RecoveryInput {
+    fn valid(&self) -> bool {
+        valid_label(&self.turn_id) && valid_label(&self.input_item_id)
+            && self.turn_id != self.input_item_id
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrowserActivity {
     Idle,

@@ -866,13 +866,37 @@ def read_browser_binding(pin, bundle, kind, profile_hash):
     if len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != pin["sha256"]:
         raise ValueError("private browser binding digest mismatch")
     binding = strict_json(raw)
-    if (not isinstance(binding, dict) or set(binding) != {"kind", "profile_sha256", "ahap_env"}
+    required = {"kind", "profile_sha256", "ahap_env"}
+    if (not isinstance(binding, dict) or set(binding) not in (required, required | {"browser_recovery"})
             or binding["kind"] != kind or binding["profile_sha256"] != profile_hash):
         raise ValueError("private browser binding does not select this provider and protected profile")
-    return binding["ahap_env"]
+    return binding
 
 
-def browser_profile_payload(raw, owner, core, binding):
+def check_browser_recovery(kind, recovery, *, installed):
+    if (not isinstance(recovery, dict)
+            or not isinstance(recovery.get("legacy_handoff"), dict)
+            or recovery.get("runner", "mcp") != "mcp"
+            or recovery.get("fallback_routes", []) != []
+            or not isinstance(recovery.get("autopilot_state_dir"), str)
+            or not Path(recovery["autopilot_state_dir"]).is_absolute()):
+        raise ValueError("browser recovery requires a same-chat MCP profile")
+    handoff = recovery["legacy_handoff"]
+    check_recovery_scope(kind, handoff)
+    if handoff.get("instance_wide") or "native_sessions" not in handoff or "workspaces" in handoff:
+        raise ValueError("browser recovery requires an exact session handoff")
+    marker = handoff.get("activation_file")
+    if (not isinstance(marker, str) or not Path(marker).is_absolute()
+            or ".." in Path(marker).parts or (not installed and os.path.lexists(marker))):
+        raise ValueError("stage browser recovery with a fresh private activation path")
+    for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+        path = handoff.get(field)
+        if not isinstance(path, str):
+            raise ValueError("browser recovery requires the existing private hold files")
+        private_file(path)
+
+
+def browser_profile_payload(raw, owner, core, binding, *, installed=False):
     env = owner.get("ahap_env")
     if (not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values())
             or owner.get("ahap_base_url") is not None):
@@ -889,7 +913,7 @@ def browser_profile_payload(raw, owner, core, binding):
             raise ValueError("unsupported previous browser transport or fields")
         if binding is None:
             raise ValueError("legacy browser transport requires a reviewed private browser binding")
-        new_env = binding
+        new_env = binding["ahap_env"]
     validate_direct_cdp(new_env)
     scopes = [env[key] for key in (BROWSER_SCOPE, USERIO_SCOPE) if key in env]
     grants = owner.get("existing_sessions", [])
@@ -901,7 +925,16 @@ def browser_profile_payload(raw, owner, core, binding):
     changes = {"executable": core}
     if new_env != env:
         changes["ahap_env"] = new_env
-    return edit_owner(raw, changes, remove_script=legacy)
+    payload = edit_owner(raw, changes, remove_script=legacy)
+    if binding is not None and "browser_recovery" in binding:
+        recovery = binding["browser_recovery"]
+        check_browser_recovery(owner["kind"], recovery, installed=installed)
+        updated = strict_json(payload)
+        updated["owner"]["browser_recovery"] = recovery
+        payload = encoded(updated)
+        if len(payload) > 16384:
+            raise ValueError("browser recovery exceeds the native profile limit")
+    return payload
 
 
 def native_profile_plan(base, manifest, selection, output, source, kinds, bindings, *,
@@ -960,7 +993,7 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
                     and env.get("AHAP_BROWSER_TRANSPORT") != "direct-cdp"):
                 binding = read_browser_binding(bindings[kind], output, kind, profile_hash)
                 used_bindings.add(kind)
-            payload = browser_profile_payload(raw, owner, manifest["core"], binding)
+            payload = browser_profile_payload(raw, owner, manifest["core"], binding, installed=installed)
         after_hash = hashlib.sha256(payload).hexdigest()
         # Schema 1 recovery receipts recorded the resolved authority directory.
         parent = path.parent if recovering and legacy_recovery_paths else authority_parent(path, profile)

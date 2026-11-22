@@ -1,4 +1,4 @@
-async function useChatGptComposer(request, {list, activity, conversation, newestFirst, messageText, filesOf, validId, exact, surface, sameAccount, fail}) {
+async function useChatGptComposer(request, {list, activity, conversation, newestFirst, messageText, readFailedBoundary, filesOf, validId, exact, surface, sameAccount, fail}) {
   const {id, text} = request;
   const witnessKey = Symbol.for('agent-herder.chatgpt.submission');
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -137,6 +137,13 @@ async function useChatGptComposer(request, {list, activity, conversation, newest
     return previous.outsideSend || (previous.clicked && !previous.confirmed) ||
       (previous.editor === editor && previous.batch && !previous.batch.changed);
   };
+  const recovery = request.recovery;
+  const recoveryMatches = async () => {
+    if (!validId(id) || !validId(recovery.turnId) || !validId(recovery.inputItemId)) return false;
+    if (!await sameAccount() || await activity(id) === 'busy') return false;
+    const current = await readFailedBoundary(id);
+    return current?.turnId === recovery.turnId && current?.inputItemId === recovery.inputItemId;
+  };
   if (request.op === 'opened') return exact(id);
   if (request.op === 'open' || request.op === 'baseline') {
     const target = request.op === 'open' ? null : id;
@@ -148,6 +155,7 @@ async function useChatGptComposer(request, {list, activity, conversation, newest
       location.assign('/c/' + encodeURIComponent(id));
       return true;
     }
+    if (recovery && !await recoveryMatches()) fail('preflight');
     const users = id === null ? [] : await userTail(id);
     const before = id === null ? await inventory() : null;
     if (controls(id).editor !== editor || !empty(editor) || !clean(form) || unsettled(id, editor) ||
@@ -187,6 +195,7 @@ async function useChatGptComposer(request, {list, activity, conversation, newest
       if (witness.outsideSend) return 'unknown';
       if (!accepted) return false;
     }
+    if (recovery) editor.addEventListener('input', () => { witness.draftChanged = true; }, options);
     if (batch) {
       if (controls(id).form !== form || !clean(form) || draft(editor) !== text) return false;
       witness.batch = batch;
@@ -210,6 +219,16 @@ async function useChatGptComposer(request, {list, activity, conversation, newest
   // or document replacement cannot attest a first-send receipt.
   if (request.op === 'click') {
     if (witness?.ticket === request.ticket && witness?.outsideSend) return 'unknown';
+    if (recovery) {
+      const matches = await recoveryMatches().catch(() => false);
+      if (witness?.ticket === request.ticket && witness?.outsideSend) return 'unknown';
+      const {editor} = controls(id);
+      if (!matches || witness?.draftChanged) {
+        if (prepared(editor) && !witness.draftChanged && draft(editor) === text &&
+            document.activeElement === editor) document.execCommand('undo');
+        return false;
+      }
+    }
     const {editor, button, form} = controls(id);
     if (!prepared(editor) || !witness.expected || !button || draft(editor) !== text) return false;
     const expected = staged(form, witness.batch);

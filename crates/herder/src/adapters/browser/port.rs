@@ -1,5 +1,5 @@
 use super::{
-    BrowserActivity, BrowserAttachment, BrowserFile, BrowserSubmitError, Config, Provider,
+    BrowserActivity, BrowserAttachment, BrowserFile, BrowserSubmitError, Config, Provider, RecoveryInput,
     protocol::RpcError,
 };
 use crate::adapters::{
@@ -99,7 +99,8 @@ impl Page {
     pub(super) async fn verify_scope(&mut self, config: &Config) -> Result<(), RpcError> {
         let observed = match self {
             Self::ChatGpt(page) => {
-                ChatGptReader::account_scope_for_target(page.connection_mut()).await?
+                page.verify_account_pin().await?;
+                page.account_scope().to_owned()
             }
             Self::Zai(page) => ZaiReader::account_scope_for_target(page.connection_mut()).await?,
         };
@@ -254,9 +255,11 @@ impl Page {
         remote: Option<&str>,
         text: &str,
         files: &[BrowserAttachment],
+        recovery: Option<&RecoveryInput>,
     ) -> Result<(String, String), BrowserSubmitError> {
         match self {
-            Self::ChatGpt(page) => page.submit_with_attachments(remote, text, files).await,
+            Self::ChatGpt(page) => page.submit_guarded(remote, text, files, recovery).await,
+            Self::Zai(_) if recovery.is_some() => Err(BrowserSubmitError::BeforeSend),
             Self::Zai(page) => page.submit_with_attachments(remote, text, files).await,
         }
     }

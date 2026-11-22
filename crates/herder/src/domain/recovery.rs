@@ -4,6 +4,7 @@ use super::{
     adapter::{Admission, ReadError, RequestKey, SendMode, SubmitError},
     address::{InstanceRef, SessionAddress},
 };
+use std::borrow::Cow;
 
 /// Exact latest eligible failed or interrupted native turn and its input.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,6 +82,10 @@ pub trait RecoveryControl: Send + Sync {
     fn harness(&self) -> &'static str;
     fn instance(&self) -> &InstanceRef;
     fn mode(&self) -> SendMode;
+    /// Match the latest failed input against the ID stored by this adapter's delivery receipt.
+    fn receipt_id<'a>(&self, boundary: &'a RecoveryBoundary) -> Cow<'a, str> {
+        Cow::Borrowed(boundary.receipt_id(self.harness()))
+    }
     fn read_boundary(&self, target: &SessionAddress)
     -> Result<Option<RecoveryBoundary>, ReadError>;
     fn quota(&self, provider: &str, cwd: &str, reserve: u8) -> Option<bool>;

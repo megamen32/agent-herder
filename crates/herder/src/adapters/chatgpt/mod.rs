@@ -138,24 +138,7 @@ impl ChatGptReader {
                 return Err(ChatGptReadError::Cdp(error));
             }
         }
-        let scope = reader.cdp.evaluate(CHATGPT_ACCOUNT_SCOPE_EXPRESSION).await;
-        let verified = match scope {
-            Ok(scope)
-                if scope.get("origin").and_then(Value::as_str) == Some("https://chatgpt.com")
-                    && scope.get("scope").and_then(Value::as_str)
-                        == Some(reader.account_scope.as_str()) =>
-            {
-                Ok(())
-            }
-            Ok(scope)
-                if scope.get("origin").and_then(Value::as_str) != Some("https://chatgpt.com") =>
-            {
-                Err(ChatGptReadError::WrongOrigin)
-            }
-            Ok(_) => Err(ChatGptReadError::AccountMismatch),
-            Err(error) => Err(ChatGptReadError::Cdp(error)),
-        };
-        if let Err(error) = verified {
+        if let Err(error) = reader.verify_account_pin().await {
             reader.cdp.close_created_target().await;
             return Err(error);
         }
@@ -178,17 +161,7 @@ impl ChatGptReader {
             .await
             .map_err(ChatGptReadError::Cdp)?;
         let expected = expected_account_scope.to_ascii_lowercase();
-        let scope = cdp
-            .evaluate(CHATGPT_ACCOUNT_SCOPE_EXPRESSION)
-            .await
-            .map_err(ChatGptReadError::Cdp)?;
-        let actual = scope.get("scope").and_then(Value::as_str);
-        if scope.get("origin").and_then(Value::as_str) != Some("https://chatgpt.com") {
-            return Err(ChatGptReadError::WrongOrigin);
-        }
-        if actual != Some(expected.as_str()) {
-            return Err(ChatGptReadError::AccountMismatch);
-        }
+        verify_chatgpt_scope(&mut cdp, &expected).await?;
         Ok(Self {
             cdp,
             account_scope: expected,
@@ -246,6 +219,10 @@ impl ChatGptReader {
 
     pub fn account_scope(&self) -> &str {
         &self.account_scope
+    }
+
+    pub(crate) async fn verify_account_pin(&mut self) -> Result<(), ChatGptReadError> {
+        verify_chatgpt_scope(&mut self.cdp, &self.account_scope).await
     }
 
     pub(crate) fn connection_mut(&mut self) -> &mut CdpConnection {
@@ -316,7 +293,7 @@ async fn verify_chatgpt_scope(
         return Err(ChatGptReadError::WrongOrigin);
     }
     let expected = expected_account_scope.to_ascii_lowercase();
-    if scope.get("scope").and_then(Value::as_str) != Some(expected.as_str()) {
+    if !["scope", "userioScope"].iter().any(|key| scope.get(key).and_then(Value::as_str) == Some(expected.as_str())) {
         return Err(ChatGptReadError::AccountMismatch);
     }
     Ok(())
@@ -329,8 +306,14 @@ const CHATGPT_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
   const s=await r.json();
   const id=s&&s.account&&s.account.id;
   if(typeof id!=="string"||!id)return {origin:location.origin};
-  const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(id));
-  return {origin:location.origin,scope:[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+  const hash=async value=>{
+    const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+    return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  };
+  const user=s?.user?.id;
+  const userioScope=typeof user==='string'&&user
+    ? await hash(JSON.stringify({provider:'chatgpt',user_id:user,account_id:id})) : null;
+  return {origin:location.origin,scope:await hash(id),userioScope};
 })()"#;
 
 fn response_seen(messages: &[NormalizedMessage], input_id: &str, marker: &str) -> bool {

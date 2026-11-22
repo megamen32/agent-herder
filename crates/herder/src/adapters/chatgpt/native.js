@@ -14,10 +14,17 @@ async function chatGptNative(operation, request) {
     return {origin, error: 'account'};
   }
   const encoder = new TextEncoder();
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(account));
-  const scope = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',
+    encoder.encode(value))), b => b.toString(16).padStart(2, '0')).join('');
+  const nativeScope = await hash(account);
+  const user = session.user?.id;
+  const userioBound = nativeScope !== request.scope;
+  if (userioBound && (typeof user !== 'string' || !user ||
+      await hash(JSON.stringify({provider: 'chatgpt', user_id: user, account_id: account})) !== request.scope)) {
+    return {origin, error: 'account'};
+  }
+  const scope = request.scope;
   if (location.origin !== origin) return {origin: location.origin, error: 'origin'};
-  if (scope !== request.scope) return {origin, scope, error: 'account'};
 
   class ReadFailure extends Error {
     constructor(reason, status) { super(reason); this.status = status; }
@@ -100,6 +107,28 @@ async function chatGptNative(operation, request) {
   const publicMessage = m => validId(m?.id) && !m.metadata?.is_visually_hidden_from_conversation &&
     (m.author?.role === 'user' || (m.author?.role === 'assistant' &&
       (!m.channel || ['final', 'commentary'].includes(m.channel)) && (!m.recipient || m.recipient === 'all')));
+  const failedBoundary = (id, data) => {
+    const branch = [...newestFirst(data)].filter(publicMessage);
+    const failed = branch[0];
+    if (failed?.author?.role !== 'assistant' || failed.status !== 'failed') return null;
+    const parent = data.mapping?.[failed.id]?.parent ?? failed.parent_id;
+    const input = branch.find(m => m.author?.role === 'user');
+    if (!input || input.id !== parent) return null;
+    const startedAtMs = Math.trunc(failed.create_time * 1000);
+    if (!Number.isFinite(failed.create_time) || !Number.isSafeInteger(startedAtMs) || startedAtMs <= 0) return null;
+    return {id, turnId: failed.id, inputItemId: input.id, status: failed.status, startedAtMs};
+  };
+  const readFailedBoundary = async id => {
+    const recent = await conversation(id, 60, true);
+    const boundary = failedBoundary(id, recent);
+    if (boundary || !Array.isArray(recent.messages)) return boundary;
+    const head = [...newestFirst(recent)].find(publicMessage);
+    if (head?.author?.role !== 'assistant' || head.status !== 'failed' || head.parent_id != null) return null;
+    // Some lightweight responses omit parents. The detailed branch must
+    // confirm this same head, so any newer input or branch switch still wins.
+    const detailed = failedBoundary(id, await fullConversation(id));
+    return detailed?.turnId === head.id ? detailed : null;
+  };
   const validName = name => typeof name === 'string' && !!name.trim() && !['.', '..'].includes(name) &&
     encoder.encode(name).length <= 255 && !/[\\/\p{Cc}]/u.test(name);
   const validMime = mime => typeof mime === 'string' && mime.length <= 255 &&
@@ -166,9 +195,12 @@ async function chatGptNative(operation, request) {
     return state === 'idle' ? state : listed;
   };
   try {
-    const sameAccount = async () => (await loadSession())?.account?.id === account;
+    const sameAccount = async () => {
+      const observed = await loadSession();
+      return observed?.account?.id === account && (!userioBound || observed.user?.id === user);
+    };
     const value = await operation(request, {get, list, activity, conversation, fullConversation, newestFirst, messageText, sameAccount,
-      validId, validName, validMime, publicMessage, filesOf, fail, exact, surface, visible});
+      validId, validName, validMime, publicMessage, readFailedBoundary, filesOf, fail, exact, surface, visible});
     return {origin, scope, value};
   } catch (error) {
     if (!(error instanceof ReadFailure)) throw error;

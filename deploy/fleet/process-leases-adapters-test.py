@@ -613,6 +613,32 @@ class NativeProfileMigrationContracts(MigrationFixture):
         self.assertEqual([row["kind"] for row in self.migration["profiles"]], ["zai"])
         self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
 
+    def test_chatgpt_cutover_installs_only_exact_pinned_recovery(self):
+        activation = self.root / "browser-recovery-active.json"
+        handoff = {"native_sessions": ["chatgpt::existing"], "activation_file": str(activation)}
+        for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+            path = self.root / (field + ".json")
+            candidate.create(path, b"{}")
+            handoff[field] = str(path)
+        recovery = {"autopilot_state_dir": str(self.root), "legacy_handoff": handoff}
+        for invalid in ({**recovery, "fallback_routes": [{"provider": "elsewhere"}]},
+                        {**recovery, "legacy_handoff": {**handoff, "instance_wide": True}}):
+            self.pin("chatgpt", browser_recovery=invalid)
+            with self.assertRaises(ValueError):
+                self.plan(["chatgpt"], {"chatgpt": self.pins["chatgpt"]})
+        self.pin("chatgpt", browser_recovery=recovery)
+        self.stage(["chatgpt"], {"chatgpt": self.pins["chatgpt"]})
+        self.check()
+        [row] = self.migration["profiles"]
+        previous = candidate.read_json(self.paths["chatgpt"])
+        successor = candidate.read_json(Path(row["payload"]))
+        self.assertEqual(successor["owner"]["browser_recovery"], recovery)
+        for field in ("database", "gate", "generation"):
+            self.assertEqual(successor[field], previous[field])
+        self.assertEqual(successor["owner"]["existing_sessions"], previous["owner"]["existing_sessions"])
+        self.assertFalse(activation.exists())
+        self.assertIn(str(self.paths["zai"]), self.new_selection["profiles"])
+
     def test_core_only_rebind_changes_only_exact_old_executable(self):
         path = self.paths["zai"]
         profile = candidate.read_json(path)

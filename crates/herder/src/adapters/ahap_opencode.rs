@@ -3,7 +3,7 @@
 mod browser_interrupt;
 
 use crate::{
-    adapters::ahap::{AhapClient, AhapError},
+    adapters::{ahap::{AhapClient, AhapError}, browser::RecoveryInput},
     application::{
         scoped_stop::{
             BoundedFreshRootCreate, BoundedNativeHandoff,
@@ -28,7 +28,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 #[derive(Clone)]
 pub struct AhapOpenCode {
@@ -167,16 +167,38 @@ impl RecoveryControl for AhapOpenCode {
 
     fn submit(
         &self,
-        _target: &SessionAddress,
-        _boundary: &RecoveryBoundary,
-        _route: &RecoveryRoute,
-        _permit: RecoveryPermit<'_>,
-        _message: &str,
-        _key: &RequestKey,
+        target: &SessionAddress,
+        boundary: &RecoveryBoundary,
+        route: &RecoveryRoute,
+        permit: RecoveryPermit<'_>,
+        message: &str,
+        key: &RequestKey,
     ) -> Result<Admission, SubmitError> {
-        Err(SubmitError::DefinitelyNotSent {
-            reason: "AHAP browser queue emptiness is not observable".into(),
-        })
+        let refuse = || SubmitError::DefinitelyNotSent {
+            reason: "The browser recovery target or latest failed input changed".into(),
+        };
+        if !self.guarded_recovery_supported()
+            || !self.matches(target)
+            || route.provider != boundary.provider
+            || route.provider != self.policy.harness
+            || route.model != boundary.model
+            || message.trim().is_empty()
+            || !valid_native_id(&key.0)
+            || self.read_boundary(target).map_err(|_| refuse())?.as_ref() != Some(boundary)
+            || !(permit.still_allowed)()
+        {
+            return Err(refuse());
+        }
+        let guard = RecoveryInput {
+            turn_id: boundary.turn_id.clone(),
+            input_item_id: boundary.input_item_id.clone(),
+        };
+        let options = json!({"message":message,"queue":true,"activeTurnOnly":false,"inputId":key.0});
+        self.send_message(target.clone(), options, key, Some(&guard))
+    }
+
+    fn receipt_id<'a>(&self, boundary: &'a RecoveryBoundary) -> Cow<'a, str> {
+        Cow::Owned(ReceiptReference::Message(boundary.input_item_id.clone()).encode())
     }
 }
 
@@ -247,6 +269,14 @@ impl AhapOpenCode {
     /// Unmodified initialize capabilities from this exact configured instance.
     pub fn capabilities(&self) -> &Value {
         self.client.capabilities()
+    }
+
+    pub fn guarded_recovery_supported(&self) -> bool {
+        matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
+            && self.capabilities()["nativeProtocol"] == "direct-cdp"
+            && self.capabilities().pointer("/browserFeatures/guardedRecovery") == Some(&Value::Bool(true))
+            && self.client.supports("getRecoveryBoundary")
+            && self.mutation_ready()
     }
 
     /// Invoke only a method advertised by the existing TypeScript port.
@@ -877,8 +907,21 @@ impl BoundedNativeHandoff for AhapOpenCode {
         if self.automatic_delivery {
             options["origin"] = json!("automation");
         }
-        let mut params = json!({"id":plan.target.native_session_id});
-        params["options"] = options;
+        self.send_message(plan.target, options, key, None)
+    }
+}
+impl AhapOpenCode {
+    fn send_message(
+        &self,
+        target: SessionAddress,
+        options: Value,
+        key: &RequestKey,
+        recovery: Option<&RecoveryInput>,
+    ) -> Result<Admission, SubmitError> {
+        let mut params = json!({"id":target.native_session_id,"options":options});
+        if let Some(guard) = recovery {
+            params["expectedRecovery"] = json!(guard);
+        }
         let result = self.client.call("sendMessage", params).map_err(transport_failure)?;
         let admitted = result.get("admitted").and_then(Value::as_bool) == Some(true)
             || matches!(
@@ -893,13 +936,13 @@ impl BoundedNativeHandoff for AhapOpenCode {
             || result.get("admission").and_then(Value::as_str) == Some("unknown");
         let correlated = result
             .get("inputId")
-            .is_none_or(|v| v.as_str() == Some(key.0.as_str()))
+            .map_or(recovery.is_none(), |v| v.as_str() == Some(key.0.as_str()))
             && result
                 .get("sessionId")
-                .is_none_or(|v| v.as_str() == Some(plan.target.native_session_id.as_str()))
+                .map_or(recovery.is_none(), |v| v.as_str() == Some(target.native_session_id.as_str()))
             && result
                 .get("harness")
-                .is_none_or(|v| v.as_str() == Some(self.policy.harness.as_str()));
+                .map_or(recovery.is_none(), |v| v.as_str() == Some(self.policy.harness.as_str()));
         if correlated
             && !admitted
             && !unknown
@@ -913,11 +956,11 @@ impl BoundedNativeHandoff for AhapOpenCode {
         let id = result
             .get("nativeInputMessageId")
             .and_then(Value::as_str)
-            .filter(|s| valid_native_id(s))
+            .filter(|s| valid_native_id(s) && recovery.is_none_or(|guard| *s != guard.input_item_id && *s != guard.turn_id))
             .map(|id| ReceiptReference::Message(id.into()).encode())
             .or_else(|| {
                 // A turn ID without explicit admission is not evidence of a send.
-                (result.get("admitted").and_then(Value::as_bool) == Some(true)
+                (recovery.is_none() && result.get("admitted").and_then(Value::as_bool) == Some(true)
                     && result.get("admissionKind").and_then(Value::as_str)
                         != Some("current_turn_context"))
                 .then(|| {
@@ -937,16 +980,16 @@ impl BoundedNativeHandoff for AhapOpenCode {
         if !admitted || unknown || conflicting || id.is_none() {
             return Err(SubmitError::OutcomeUnknown {
                 receipt: id.filter(|_| correlated).map(|native_id| NativeReceipt {
-                    target: plan.target.clone(),
-                    native_id: native_id.into(),
+                    target: target.clone(),
+                    native_id,
                 }),
                 reason: "native input receipt unavailable or invalid".into(),
             });
         }
         Ok(Admission {
             receipt: NativeReceipt {
-                target: plan.target,
-                native_id: id.unwrap().into(),
+                target,
+                native_id: id.unwrap(),
             },
         })
     }

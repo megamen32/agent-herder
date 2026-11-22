@@ -1,5 +1,5 @@
 use super::{
-    BrowserAttachment, BrowserSubmitError, Config, Provider, sessions::Sessions,
+    BrowserAttachment, BrowserSubmitError, Config, Provider, RecoveryInput, sessions::Sessions,
     validate_attachments,
 };
 use serde::Deserialize;
@@ -55,6 +55,7 @@ fn capabilities(provider: Provider) -> Value {
         "capabilities":{"nativeProtocol":"direct-cdp","methods":METHODS,"deliveryModes":["queue"],
         "controlCapabilities":{"cancelTurn":true,"permissionReply":false,"steer":false},
         "browserFeatures":{"projects":false,"modelSwitch":false,"attachments":true,
+            "guardedRecovery":provider == Provider::ChatGpt,
             "attachmentCaptionRequired":provider.requires_attachment_caption(),
             "maxAttachments":crate::domain::attachment::MAX_ATTACHMENTS,"maxAttachmentBytes":super::MAX_ATTACHMENT_BYTES}}})
 }
@@ -245,9 +246,15 @@ impl Runner {
             "sendMessage" => {
                 let id = session_id(params)?;
                 let (text, key, files) = send_options(config.provider, &params["options"])?;
+                let recovery = params.get("expectedRecovery")
+                    .map(|value| RecoveryInput::deserialize(value).map_err(|_| RpcError::Invalid))
+                    .transpose()?;
+                if recovery.as_ref().is_some_and(|input| !input.valid() || !files.is_empty()) {
+                    return Err(RpcError::Invalid);
+                }
                 let mut result =
                     json!({"inputId":key,"sessionId":id,"harness":config.provider.name()});
-                let admission = match sessions.send(config, id, key, text, &files).await {
+                let admission = match sessions.send(config, id, key, text, &files, recovery.as_ref()).await {
                     Ok(native) => {
                         result["nativeInputMessageId"] = Value::String(native);
                         result["ok"] = Value::Bool(true);

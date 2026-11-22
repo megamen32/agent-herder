@@ -34,6 +34,7 @@ const stops = [];
 const active = new Map();
 let holdNext = false;
 let withholdAfter = null;
+let failNext = false;
 const requests = {};
 const documents = [];
 const unexpected = [];
@@ -80,10 +81,11 @@ function chatgptConversation(id, rows) {
     }));
     const running = row.role === "assistant" && active.get(id) === parent;
     mapping[row.id] = { id: row.id, parent, children: [], message: {
-      id: row.id, author: { role: row.role }, create_time: 1700000000 + i,
+      id: row.id, author: { role: row.role }, create_time: row.time ?? 1700000000 + i,
       content: { content_type: images.length ? "multimodal_text" : "text", parts: [...images, row.text] },
       metadata: { attachments: attached.map(({ id, name, mime_type, size }) => ({ id, name, mime_type, size })) },
-      status: running ? "in_progress" : "finished_successfully", end_turn: !running, recipient: "all",
+      status: row.httpStatus === 429 ? "failed" : running ? "in_progress" : "finished_successfully",
+      end_turn: !running && row.httpStatus !== 429, recipient: "all",
     } };
     parent = row.id;
   }
@@ -302,6 +304,10 @@ async function serve(request, response) {
         { id: randomUUID(), role: "user", text, files: attached },
         { id: randomUUID(), role: "assistant", text: replyMode === "--echo" ? "Fixture received " + text : "Fixture answer " + turn, files: replyFiles },
       ];
+      if (failNext) {
+        Object.assign(rows[1], {httpStatus: 429, time: Date.now() / 1000, text: "Fixture provider returned HTTP 429"});
+        failNext = false;
+      }
       sends.push({ id, addressed, account, rows });
       if (!addressed) chats.set(id, []);
       chats.get(id).push(...rows);
@@ -332,7 +338,7 @@ async function serve(request, response) {
     if (harness === "chatgpt" && method === "GET") {
       if (path === "/api/auth/session") {
         count("account");
-        return json({ account: { id: account }, accessToken: "local-fixture" });
+        return json({ account: { id: account }, user: { id: "fixture-user" }, accessToken: "local-fixture" });
       }
       if (path === "/backend-api/conversations") {
         count("list");
@@ -453,12 +459,27 @@ try {
     const { id, method, params } = JSON.parse(line);
     let result;
     switch (method) {
-      case "setup": result = { env, seedIds, version: product, replyOriginals }; break;
+      case "setup": result = { env, seedIds, version: product, replyOriginals,
+        userioScope: createHash("sha256").update(JSON.stringify({
+          provider: harness, user_id: "fixture-user", account_id: accountName,
+        })).digest("hex") }; break;
       case "snapshot": result = { sends, requests, uploads, downloads, stops, active: Object.fromEntries(active),
         chatIds: [...chats.keys()], submitClicks: await page.evaluate(() => Number(localStorage.getItem("fixtureSubmitClicks"))),
         documents, unexpected, pinnedRoute: new URL(page.url()).pathname }; break;
       case "switchAccount": account = accountName + "-other"; result = true; break;
       case "holdNext": holdNext = true; result = true; break;
+      case "failNext": failNext = true; result = true; break;
+      case "failedTurn": {
+        assert.equal(harness, "chatgpt");
+        const rows = chats.get(params.id);
+        assert.ok(rows);
+        const input = {id: randomUUID(), role: "user", text: "Original fixture task"};
+        const failed = {id: randomUUID(), role: "assistant", text: "Fixture provider returned HTTP 429",
+          httpStatus: 429, time: Date.now() / 1000};
+        rows.push(input, failed);
+        result = {inputId: input.id, turnId: failed.id, httpStatus: failed.httpStatus};
+        break;
+      }
       case "withholdReceipt":
         assert.equal(typeof params.enabled, "boolean");
         withholdAfter = params.enabled ? sends.length : null;
