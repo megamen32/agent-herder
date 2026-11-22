@@ -642,10 +642,13 @@ def status(args):
 
 def scheduler_source(git_dir, proposed, migration, receipt):
     source = proposed["process_leases_build"]["source_commit"]
-    if not migration or migration.get("kind") != "recovery":
+    # An in-place native update keeps the already registered profiles. It
+    # needs the same scheduler compatibility proof as a recovery handoff.
+    if migration is not None and migration.get("kind") != "recovery":
         return source
     installed = receipt.get("response", {}).get("runtime", {}).get("source_commit")
-    if installed == source:
+    if installed == source or (installed is None and migration is None):
+        # Without a pin to compare, require evidence for the candidate SHA.
         return source
     if not isinstance(installed, str) or not main_guard.SHA_RE.fullmatch(installed):
         raise ValueError("missing installed scheduler source")
@@ -655,7 +658,10 @@ def scheduler_source(git_dir, proposed, migration, receipt):
     excluded = ["crates/herder", "tests", "docs", "bugs.md",
                 "deploy/fleet/process-leases-candidate.py", "deploy/fleet/process-leases-rollout.py",
                 "deploy/fleet/rollout-node.py", "deploy/fleet/process-leases-ts-runtime.py",
-                "deploy/fleet/process-leases-adapters-test.py", "deploy/fleet/process-leases-rollout-test.py"]
+                "deploy/fleet/process-leases-adapters-test.py", "deploy/fleet/process-leases-rollout-test.py",
+                # Operator tools added by #118 are outside the scheduler build.
+                "deploy/fleet/rollout-recovery", "deploy/fleet/recovery_owner_update.py",
+                "deploy/fleet/test_recovery_owner_update.py", "deploy/fleet/README.md"]
     paths = [":(top,exclude)" + path for path in excluded]
     if (subprocess.run(git + ["merge-base", "--is-ancestor", installed, source]).returncode
             or subprocess.run(git + ["diff", "--quiet", "--no-ext-diff", installed, source, "--", *paths]).returncode):
