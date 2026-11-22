@@ -17,6 +17,24 @@ async function readChatGpt(request, {list, activity, conversation, newestFirst, 
   if (request.op === 'activity') {
     return {id, activity: await activity(id)};
   }
+  if (request.op === 'recovery') {
+    const data = await conversation(id, 60, true);
+    const branch = [...newestFirst(data)];
+    // Only the head of the provider's current branch can define the latest
+    // turn. A later user input or assistant response fences any older failure.
+    const head = branch.find(m => publicMessage(m));
+    const assistant = head?.author?.role === 'assistant' ? head : null;
+    if (!assistant || assistant.status !== 'failed' || !validId(assistant.id)) return null;
+    const parent = data.mapping?.[assistant.id]?.parent ?? assistant.parent_id;
+    const input = branch.find(m => m?.id === parent && m?.author?.role === 'user' && publicMessage(m));
+    if (!input || !validId(input.id) || input.id !== parent) return null;
+    const nearestUser = branch.find(m => m?.author?.role === 'user' && publicMessage(m));
+    if (nearestUser?.id !== input.id) return null;
+    const startedAtMs = Math.trunc(assistant.create_time * 1000);
+    if (!Number.isFinite(assistant.create_time) || !Number.isSafeInteger(startedAtMs) || startedAtMs <= 0) return null;
+    if (!await sameAccount()) fail('account');
+    return {id, turnId: assistant.id, inputItemId: input.id, status: assistant.status, startedAtMs};
+  }
   if (request.op !== 'read') fail('invalid');
   const data = await conversation(id, 60, true);
   const messages = [];

@@ -1049,12 +1049,13 @@ impl WaitAutomationApplication {
         value["recoveryOwner"] = "rust".into();
         if value["blocked"] == false {
             value["blocked"] = true.into();
-            let reason = if probe.harness() == "codex" {
-                handoff.legacy_stop_reason("codex", native)
-            } else {
-                None
-            };
-            value["reason"] = reason.unwrap_or("rust_recovery_handoff").into();
+            match handoff.legacy_stop_reason(probe.harness(), native) {
+                Ok(reason) => value["reason"] = reason.unwrap_or("rust_recovery_handoff").into(),
+                Err(_) => {
+                    value["complete"] = false.into();
+                    value["reason"] = "legacy_stop_state_unavailable".into();
+                }
+            }
         }
         Ok(value)
     }

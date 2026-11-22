@@ -5,6 +5,7 @@ use super::{
     address::{InstanceRef, SessionAddress},
 };
 
+/// Exact latest eligible failed or interrupted native turn and its input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryBoundary {
     pub turn_id: String,
@@ -16,6 +17,16 @@ pub struct RecoveryBoundary {
     pub failure: RecoveryFailure,
     /// Native parents, nearest first, verified against this turn's root.
     pub ancestors: Vec<RecoveryAncestor>,
+}
+
+impl RecoveryBoundary {
+    /// Codex starts turns directly. Queued native recovery receipts identify the input.
+    pub(crate) fn receipt_id(&self, harness: &str) -> &str {
+        match harness {
+            "codex" => &self.turn_id,
+            _ => &self.input_item_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -74,13 +85,13 @@ pub trait RecoveryControl: Send + Sync {
     -> Result<Option<RecoveryBoundary>, ReadError>;
     fn quota(&self, provider: &str, cwd: &str, reserve: u8) -> Option<bool>;
     fn credential(&self, provider: &str, model: &str, cwd: &str) -> Option<RecoveryCredential>;
-    /// Recheck a terminal throttle before resuming on the saved provider and model.
+    /// Recheck a terminal throttle if the adapter needs more evidence than its boundary.
     fn same_route_retry(
         &self,
         _target: &SessionAddress,
         _boundary: &RecoveryBoundary,
     ) -> SameRouteRetry {
-        SameRouteRetry::Hold
+        SameRouteRetry::Ready
     }
     fn supports_alternate(
         &self,
@@ -88,7 +99,7 @@ pub trait RecoveryControl: Send + Sync {
         _boundary: &RecoveryBoundary,
         _route: &RecoveryRoute,
     ) -> bool {
-        true
+        false
     }
 
     /// Submit at most once. If admission is uncertain, the owner reconciles

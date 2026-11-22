@@ -1,5 +1,6 @@
 //! Crash recovery for a native session owner, using the ordinary scoped intent and stop gate.
 mod discovery;
+mod stages;
 use super::{
     BoundedNativeHandoff, GateError, ScopedAuthority,
     automation_driver::AutomationTick,
@@ -28,6 +29,7 @@ pub use discovery::{RecoveryDiscovery, RecoveryListing, RecoveryPage};
 use rusqlite::{OptionalExtension, params};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use stages::{RecoveryAttempt, RecoveryStage};
 use std::{
     future::Future,
     io,
@@ -197,6 +199,17 @@ impl RecoveryProfile {
             })?
             .omniroute
             .as_ref()
+    }
+
+    fn saved_route_quota_guarded(
+        &self,
+        native: &dyn RecoveryControl,
+        route: &RecoveryRoute,
+        cwd: &str,
+    ) -> bool {
+        self.router(&route.provider, route.model.as_deref(), cwd)
+            .is_some()
+            || native.harness() == "codex" && route.provider == "openai"
     }
 
     fn quota(
@@ -382,79 +395,70 @@ fn select_route(
     profile: &RecoveryProfile,
     settings: &Autostart,
     quota_policy: &QuotaPolicy,
-    id: &str,
+    target: &SessionAddress,
     boundary: &RecoveryBoundary,
     native: &dyn RecoveryControl,
+    stage: RecoveryStage,
 ) -> Option<RecoveryRoute> {
-    let (wait, fallback) = settings.quota_options(native.harness(), id);
+    let (wait, fallback) = settings.quota_options(native.harness(), &target.native_session_id);
     let reserve = quota_policy.min_remaining_percent.ceil() as u8;
-    let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
-    let throttled = boundary.failure == RecoveryFailure::Throttled;
-    let needs_primary_quota = from_quota_failure
-        || throttled
-        || (quota_policy.enabled
-            && (native.harness() == "codex" && boundary.provider == "openai"
-                || profile
-                    .router(&boundary.provider, boundary.model.as_deref(), &boundary.cwd)
-                    .is_some()));
-    let primary = if needs_primary_quota {
-        profile.quota(
-            native,
-            &boundary.provider,
-            boundary.model.as_deref(),
-            &boundary.cwd,
-            reserve,
-        )
-    } else {
-        Some(true)
+    let saved = RecoveryRoute {
+        provider: boundary.provider.clone(),
+        model: boundary.model.clone(),
     };
-
-    let same_route = if from_quota_failure {
-        wait && primary == Some(true)
-    } else {
-        primary.unwrap_or(quota_policy.on_unknown == UnknownQuota::Allow)
-    };
-    let target = SessionAddress {
-        instance: native.instance().clone(),
-        native_session_id: id.into(),
-    };
-    if fallback && (throttled || !same_route && (from_quota_failure || primary == Some(false))) {
-        for route in &profile.fallback_routes {
+    if stage == RecoveryStage::Fallback {
+        if !fallback {
+            return None;
+        }
+        return profile.fallback_routes.iter().find_map(|route| {
             let candidate = RecoveryRoute {
                 provider: route.provider.clone(),
                 model: Some(route.model.clone()),
             };
-            if route.provider != boundary.provider
+            (candidate != saved
                 && route.workspace == Path::new(&boundary.cwd)
+                && native.supports_alternate(target, boundary, &candidate)
                 && profile.quota(
                     native,
                     &route.provider,
                     Some(&route.model),
                     &boundary.cwd,
                     reserve,
-                ) == Some(true)
-                && native.supports_alternate(&target, boundary, &candidate)
-            {
-                return Some(candidate);
+                ) == Some(true))
+            .then_some(candidate)
+        });
+    }
+
+    let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
+    let throttled = boundary.failure == RecoveryFailure::Throttled;
+    let metered = profile.saved_route_quota_guarded(native, &saved, &boundary.cwd);
+    let primary = if from_quota_failure || throttled || quota_policy.enabled {
+        profile.quota(
+            native,
+            &saved.provider,
+            saved.model.as_deref(),
+            &boundary.cwd,
+            reserve,
+        )
+    } else {
+        Some(true)
+    };
+    let allowed = if from_quota_failure {
+        wait && primary == Some(true)
+    } else if throttled {
+        match native.same_route_retry(target, boundary) {
+            SameRouteRetry::Hold => false,
+            SameRouteRetry::UseQuotaPolicy => {
+                primary.unwrap_or(quota_policy.on_unknown == UnknownQuota::Allow)
+            }
+            SameRouteRetry::Ready => {
+                primary.unwrap_or(!metered || quota_policy.on_unknown == UnknownQuota::Allow)
             }
         }
-    }
-    let allowed = if throttled && native.harness() == "codex" {
-        match native.same_route_retry(&target, boundary) {
-            SameRouteRetry::Hold => false,
-            SameRouteRetry::UseQuotaPolicy => same_route,
-            // Absence of an account meter on this custom route is expected.
-            // A configured meter with unknown or exhausted quota retains its policy.
-            SameRouteRetry::Ready => same_route || (primary.is_none()
-                && profile.router(&boundary.provider, boundary.model.as_deref(), &boundary.cwd).is_none()),
-        }
     } else {
-        same_route
+        primary.unwrap_or(!metered || quota_policy.on_unknown == UnknownQuota::Allow)
     };
-    allowed.then(|| RecoveryRoute {
-        provider: boundary.provider.clone(),
-        model: boundary.model.clone(),
-    })
+    allowed.then_some(saved)
 }
 
 #[derive(Clone)]
@@ -582,6 +586,8 @@ impl SessionRecovery {
         Ok(boundary
             .filter(|b| {
                 recent(b.started_at_ms)
+                    && !b.turn_id.trim().is_empty()
+                    && !b.input_item_id.trim().is_empty()
                     && !self.profile.recovery_held(harness, &address.native_session_id, Some(b))
                     && self.profile.owns_target(harness, address, b)
                     && self.profile.owns_ancestors(harness, address, b)
@@ -623,80 +629,53 @@ impl SessionRecovery {
         let Some(quota_policy) = quota_policy(&self.profile, harness) else {
             return Ok(false);
         };
-        let route = select_route(
+        let now = utc_now().map_err(|_| GateError::Unavailable)?;
+        let boundary_key = recovery_key(harness, &address, &boundary)?;
+        let history = stages::RecoveryHistory::new(
+            harness,
+            principal,
+            session,
+            &address,
+            &boundary_key,
+            &boundary,
+        );
+        let attempt = {
+            let (_gate, mut writer) = self.authority.lock()?;
+            let binding = ReceiptBinding {
+                intent_id: "recovery-history",
+                principal: &principal.0,
+                target_ref: &session.0,
+                request_key: "recovery-history",
+                address: &address,
+            };
+            if !super::scope_identity_valid(
+                writer.connection(),
+                &binding,
+                &scope,
+                &self.authority.generation,
+            )? {
+                return Ok(false);
+            }
+            history.next_attempt(writer.connection_mut(), &scope, &now)?
+        };
+        let Some(attempt) = attempt else {
+            return Ok(false);
+        };
+        let Some(route) = select_route(
             &self.profile,
             &settings,
             &quota_policy,
-            &address.native_session_id,
+            &address,
             &boundary,
             native,
-        );
-        let Some(route) = route else { return Ok(false) };
-
-        let now = utc_now().map_err(|_| GateError::Unavailable)?;
-        let boundary_key = recovery_key(harness, &address, &boundary)?;
-        let (suffix, already_claimed, may_start) = {
-            let (_gate, writer) = self.authority.lock()?;
-            let connection = writer.connection();
-            let base_key = format!("{harness}-recovery:{boundary_key}");
-            let attempts: u32 = connection
-                .query_row(
-                    "SELECT COUNT(*) FROM intents WHERE principal=?1 AND target=?2 AND
-                   (request_key=?3 OR request_key GLOB ?4)",
-                    params![principal.0, session.0, base_key, format!("{base_key}:*")],
-                    |r| r.get(0),
-                )
-                .map_err(|_| GateError::Store)?;
-            let mut suffix = if attempts > 1 {
-                format!("{boundary_key}:{}", attempts - 1)
-            } else {
-                boundary_key.clone()
-            };
-            let key = format!("{harness}-recovery:{suffix}");
-            let state = connection
-                .query_row(
-                    "SELECT i.state, d.phase, i.native_receipt IS NULL AND
-                   coalesce(json_extract(t.result_json, '$.native_submit')='definitely_not_sent', 0)
-                 FROM intents i JOIN tasks t ON t.task_id=i.task_id
-                 LEFT JOIN humanstop_dispatches d ON d.intent_id=i.intent_id
-                 WHERE i.principal=?1 AND i.target=?2 AND i.request_key=?3",
-                    params![principal.0, session.0, key],
-                    |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, Option<String>>(1)?,
-                            r.get::<_, bool>(2)?,
-                        ))
-                    },
-                )
-                .optional()
-                .map_err(|_| GateError::Store)?;
-            let retry = matches!(&state, Some((s, Some(p), true))
-                if s == "rejected" && matches!(p.as_str(), "finished" | "stopped"));
-            if retry {
-                // This is a new attempt only after an explicit no-submit receipt.
-                suffix = format!("{boundary_key}:{attempts}");
-            }
-            let key = format!("{harness}-recovery:{suffix}");
-            let recovery_keys = format!("{harness}-recovery:*");
-            let held = recovery_delivery_held(connection, &principal.0, &session.0, &key, harness, &boundary)?;
-            let previous: u32 = connection.query_row(
-                "SELECT COUNT(*) FROM intents WHERE principal=?1 AND target=?2 AND request_key<>?3
-                   AND request_key GLOB ?4 AND julianday(created_at) > julianday(?5, '-10 minutes')",
-                params![principal.0, session.0, key, recovery_keys, now], |r| r.get(0),
-            ).map_err(|_| GateError::Store)?;
-            let claimed =
-                matches!(&state, Some((s, Some(p), _)) if s == "dispatching" && p == "claimed");
-            let ready = retry || attempts == 0 || state.is_some_and(|(s, _, _)| s == "prepared");
-            (
-                suffix,
-                claimed,
-                !held && previous < 3 && (ready || claimed),
-            )
+            attempt.stage,
+        ) else {
+            return Ok(false);
         };
-        if !may_start || self.waits.recovery_blocked(identity, &address) {
+        if self.waits.recovery_blocked(identity, &address) {
             return Ok(false);
         }
+        let suffix = &attempt.suffix;
         let key = format!("{harness}-recovery:{suffix}");
         let intent_id = format!("{harness}-recovery-intent:{suffix}");
         let task = format!("{harness}-recovery-task:{suffix}");
@@ -712,7 +691,7 @@ impl SessionRecovery {
             mode: native.mode(),
             expected_turn: None,
         };
-        if !already_claimed {
+        if !attempt.claimed {
             let Some(prepared) = self.authority.prepare(
                 identity,
                 &grants,
@@ -745,6 +724,12 @@ impl SessionRecovery {
             control: native,
             boundary,
             route,
+            attempt,
+            boundary_key,
+            address: &address,
+            now: &now,
+            principal,
+            session,
             settings_path: self
                 .profile
                 .autopilot_state_dir
@@ -763,7 +748,9 @@ impl SessionRecovery {
         )?;
         if matches!(
             outcome,
-            DurableDispatch::Admitted(_) | DurableDispatch::Unknown
+            DurableDispatch::Admitted(_)
+                | DurableDispatch::Unknown
+                | DurableDispatch::BrowserOutcomeUnknown(_)
         ) {
             self.reconciler
                 .reconcile(identity.clone(), grants, task, Some(self.policy.clone()));
@@ -885,27 +872,6 @@ impl AutomationTick for SessionRecovery {
     }
 }
 
-fn recovery_delivery_held(
-    connection: &rusqlite::Connection,
-    principal: &str,
-    session: &str,
-    key: &str,
-    harness: &str,
-    boundary: &RecoveryBoundary,
-) -> Result<bool, GateError> {
-    // A failed continuation has a new turn and input, hence a new request key.
-    // The earlier admission receipt still identifies its output turn after restart.
-    let retryable_codex = harness == "codex"
-        && matches!(boundary.failure, RecoveryFailure::Retryable | RecoveryFailure::Throttled);
-    connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM intents WHERE principal=?1 AND target=?2 AND request_key<>?3
-            AND request_key GLOB ?4 AND (state IN ('dispatching','unknown','admitted')
-                OR (?5 AND json_extract(native_receipt,'$.native_id')=?6)))",
-        params![principal, session, key, format!("{harness}-recovery:*"), retryable_codex, boundary.turn_id],
-        |r| r.get(0),
-    ).map_err(|_| GateError::Store)
-}
-
 fn recovery_key(
     harness: &str,
     address: &SessionAddress,
@@ -928,11 +894,29 @@ struct RecoveryHandoff<'a> {
     control: &'a dyn RecoveryControl,
     boundary: RecoveryBoundary,
     route: RecoveryRoute,
+    attempt: RecoveryAttempt,
+    boundary_key: String,
+    address: &'a SessionAddress,
+    now: &'a str,
+    principal: &'a PrincipalId,
+    session: &'a SessionRef,
     settings_path: PathBuf,
     profile: &'a RecoveryProfile,
 }
 
 impl BoundedNativeHandoff for RecoveryHandoff<'_> {
+    fn permits_claim_locked(&self, writer: &crate::store::Writer) -> Result<bool, GateError> {
+        let history = stages::RecoveryHistory::new(
+            self.control.harness(),
+            self.principal,
+            self.session,
+            self.address,
+            &self.boundary_key,
+            &self.boundary,
+        );
+        history.matches_claim(writer.connection(), &self.attempt, self.now)
+    }
+
     fn recovery_ancestors(&self) -> &[RecoveryAncestor] {
         &self.boundary.ancestors
     }
@@ -969,9 +953,10 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                     self.profile,
                     &settings,
                     &policy,
-                    &plan.target.native_session_id,
+                    &plan.target,
                     &self.boundary,
                     native,
+                    self.attempt.stage,
                 )?;
                 Some((route, policy.min_remaining_percent.ceil() as u8))
             });
@@ -1003,19 +988,32 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
                 == Some(true)
                 && target_allowed() && !disarm_held()
         };
+        if router.is_some()
+            && credential.is_none()
+            && (self.attempt.stage == RecoveryStage::Fallback
+                || self.boundary.failure == RecoveryFailure::Quota)
+        {
+            return Err(SubmitError::DefinitelyNotSent {
+                reason: "Native recovery quota proof is unavailable before admission".into(),
+            });
+        }
         let quota_proof = credential.as_ref().map(|credential| RecoveryQuotaProof {
             credential,
             still_available: &still_available,
         });
         let still_allowed = || {
-            recent(self.boundary.started_at_ms) && target_allowed()
+            recent(self.boundary.started_at_ms)
+                && target_allowed()
+                && (router.is_none()
+                    || self.attempt.stage != RecoveryStage::Fallback
+                    || still_available())
                 && private_json::<Autostart>(&self.settings_path)
                     .ok()
                     .is_some_and(|settings| {
                         let (wait, fallback) =
                             settings.quota_options(harness, &plan.target.native_session_id);
                         settings.admits(harness, &plan.target.native_session_id, &self.boundary)
-                            && if self.route.provider != self.boundary.provider {
+                            && if self.attempt.stage == RecoveryStage::Fallback {
                                 fallback
                             } else {
                                 self.boundary.failure != RecoveryFailure::Quota || wait
@@ -1117,31 +1115,10 @@ mod tests {
         os::unix::fs::{DirBuilderExt, PermissionsExt, symlink},
     };
 
-    struct TestState(PathBuf);
-
-    #[test]
-    fn retry_429_cannot_recover_a_confirmed_recovery_turn() {
-        let db = rusqlite::Connection::open_in_memory().unwrap();
-        db.execute_batch("CREATE TABLE intents(principal, target, request_key, state, native_receipt);
-            INSERT INTO intents VALUES ('owner','session','codex-recovery:original','confirmed',
-                                         '{\"native_id\":\"recovery-turn\"}');").unwrap();
-        let mut boundary = RecoveryBoundary {
-            turn_id: "recovery-turn".into(), input_item_id: "new-input".into(),
-            cwd: "/project".into(), provider: "opencodex".into(), model: Some("saved".into()),
-            started_at_ms: 1000, failure: RecoveryFailure::Throttled, ancestors: vec![],
-        };
-        let held = |boundary: &RecoveryBoundary| {
-            recovery_delivery_held(&db, "owner", "session", "codex-recovery:next", "codex", boundary).unwrap()
-        };
-        assert!(held(&boundary));
-        boundary.turn_id = "subsequent-user-turn".into();
-        assert!(!held(&boundary));
-        db.execute("UPDATE intents SET state='unknown', native_receipt=NULL", []).unwrap();
-        assert!(held(&boundary));
-    }
+    pub(super) struct TestState(pub(super) PathBuf);
 
     impl TestState {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let stamp = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
@@ -1228,6 +1205,153 @@ mod tests {
         assert!(held(&child));
     }
 
+    struct RouteControl {
+        target: SessionAddress,
+        quota: Option<bool>,
+        alternate: bool,
+    }
+
+    impl RecoveryControl for RouteControl {
+        fn harness(&self) -> &'static str {
+            "codex"
+        }
+        fn instance(&self) -> &InstanceRef {
+            &self.target.instance
+        }
+        fn mode(&self) -> SendMode {
+            SendMode::Start
+        }
+        fn read_boundary(&self, _: &SessionAddress) -> Result<Option<RecoveryBoundary>, ReadError> {
+            unreachable!()
+        }
+        fn quota(&self, provider: &str, _: &str, _: u8) -> Option<bool> {
+            match provider {
+                "saved" => self.quota,
+                "unknown-quota" => None,
+                _ => Some(true),
+            }
+        }
+        fn credential(&self, _: &str, _: &str, _: &str) -> Option<RecoveryCredential> {
+            None
+        }
+        fn same_route_retry(&self, _: &SessionAddress, _: &RecoveryBoundary) -> SameRouteRetry {
+            SameRouteRetry::Ready
+        }
+        fn supports_alternate(
+            &self,
+            _: &SessionAddress,
+            _: &RecoveryBoundary,
+            route: &RecoveryRoute,
+        ) -> bool {
+            self.alternate && route.provider != "unsupported"
+        }
+        fn submit(
+            &self,
+            _: &SessionAddress,
+            _: &RecoveryBoundary,
+            _: &RecoveryRoute,
+            _: RecoveryPermit<'_>,
+            _: &str,
+            _: &RequestKey,
+        ) -> Result<Admission, SubmitError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn throttle_retries_the_saved_route_first_even_with_a_good_fallback() {
+        let mut control = RouteControl {
+            target: SessionAddress {
+                instance: InstanceRef {
+                    node: NodeRef("local".into()),
+                    instance_id: "owner".into(),
+                },
+                native_session_id: "thread".into(),
+            },
+            quota: Some(true),
+            alternate: true,
+        };
+        let mut boundary = RecoveryBoundary {
+            turn_id: "failed-turn".into(),
+            input_item_id: "user-input".into(),
+            cwd: "/project".into(),
+            provider: "saved".into(),
+            model: Some("saved-model".into()),
+            started_at_ms: 1000,
+            failure: RecoveryFailure::Throttled,
+            ancestors: vec![],
+        };
+        let settings = serde_json::from_value(json!({
+            "version": 8, "enabled": true, "fallbackForQuota": true, "waitForQuota": true,
+            "sessions": [],
+        }))
+        .unwrap();
+        let profile = serde_json::from_value(json!({
+            "autopilot_state_dir": "/state",
+            "fallback_routes": [
+                {"workspace": "/elsewhere", "provider": "wrong-workspace", "model": "replacement"},
+                {"workspace": "/project", "provider": "unsupported", "model": "replacement"},
+                {"workspace": "/project", "provider": "unknown-quota", "model": "replacement"},
+                {"workspace": "/project", "provider": "alternate", "model": "replacement"},
+                {"workspace": "/project", "provider": "other", "model": "replacement"}
+            ],
+        }))
+        .unwrap();
+        let select = |control: &RouteControl, boundary: &RecoveryBoundary, stage| {
+            select_route(
+                &profile,
+                &settings,
+                &QuotaPolicy::default(),
+                &control.target,
+                boundary,
+                control,
+                stage,
+            )
+        };
+        let selected = select(&control, &boundary, RecoveryStage::Primary).unwrap();
+        assert_eq!(selected.provider, "saved");
+        assert_eq!(selected.model.as_deref(), Some("saved-model"));
+        let alternate = select(&control, &boundary, RecoveryStage::Fallback).unwrap();
+        assert_eq!(alternate.provider, "alternate");
+        let mut unconfigured = profile.clone();
+        unconfigured.fallback_routes.clear();
+        assert!(
+            select_route(
+                &unconfigured,
+                &settings,
+                &QuotaPolicy::default(),
+                &control.target,
+                &boundary,
+                &control,
+                RecoveryStage::Fallback,
+            )
+            .is_none()
+        );
+
+        control.alternate = false;
+        assert!(select(&control, &boundary, RecoveryStage::Fallback).is_none());
+        control.alternate = true;
+        for failure in [
+            RecoveryFailure::Throttled,
+            RecoveryFailure::Quota,
+            RecoveryFailure::Retryable,
+        ] {
+            boundary.failure = failure;
+            control.quota = Some(false);
+            assert!(select(&control, &boundary, RecoveryStage::Primary).is_none());
+        }
+        boundary.failure = RecoveryFailure::Quota;
+        control.quota = None;
+        assert!(select(&control, &boundary, RecoveryStage::Primary).is_none());
+        control.quota = Some(true);
+        assert_eq!(
+            select(&control, &boundary, RecoveryStage::Primary)
+                .unwrap()
+                .provider,
+            "saved"
+        );
+    }
+
     struct DisarmAtSubmit<'a> {
         state: &'a TestState,
         instance: InstanceRef,
@@ -1247,7 +1371,7 @@ mod tests {
             unreachable!()
         }
         fn quota(&self, _: &str, _: &str, _: u8) -> Option<bool> {
-            unreachable!()
+            None
         }
         fn credential(&self, _: &str, _: &str, _: &str) -> Option<RecoveryCredential> {
             unreachable!()
@@ -1295,6 +1419,10 @@ mod tests {
             r#"{"version": 8, "enabled": true, "sessions": []}"#,
         )
         .unwrap();
+        let address = SessionAddress {
+            instance: control.instance.clone(),
+            native_session_id: "test-session".into(),
+        };
         let handoff = RecoveryHandoff {
             control: &control,
             boundary: RecoveryBoundary {
@@ -1311,14 +1439,21 @@ mod tests {
                 provider: "test-provider".into(),
                 model: None,
             },
+            attempt: RecoveryAttempt {
+                stage: RecoveryStage::Primary,
+                suffix: "test".into(),
+                claimed: false,
+            },
+            boundary_key: "test".into(),
+            address: &address,
+            now: "2026-11-22T00:00:00Z",
+            principal: &PrincipalId("test-principal".into()),
+            session: &SessionRef("test-session-ref".into()),
             settings_path,
             profile: &profile,
         };
         let plan = DispatchPlan {
-            target: SessionAddress {
-                instance: control.instance.clone(),
-                native_session_id: "test-session".into(),
-            },
+            target: address.clone(),
             mode: control.mode(),
             expected_turn: None,
         };

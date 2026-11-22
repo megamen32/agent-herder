@@ -37,7 +37,7 @@ fn check_id(id: &str) -> Result<(), ChatGptReadError> {
 impl ChatGptReader {
     async fn native(&mut self, op: &str, mut args: Value) -> Result<Value, ChatGptReadError> {
         let operation = match op {
-            "list" | "read" | "activity" => READ,
+            "list" | "read" | "activity" | "recovery" => READ,
             "cancel" => CANCEL,
             "download" => DOWNLOAD,
             _ => COMPOSER,
@@ -131,6 +131,27 @@ impl ChatGptReader {
             Some("unknown") => Ok(BrowserActivity::Unknown),
             _ => Err(ChatGptReadError::InvalidResponse),
         }
+    }
+
+    /// Return an exact, positively failed assistant node and its native user
+    /// parent on the current conversation branch. Absence is not inferred.
+    pub async fn recovery_boundary(
+        &mut self,
+        id: &str,
+    ) -> Result<Option<Value>, ChatGptReadError> {
+        check_id(id)?;
+        let value = self.native("recovery", json!({"id": id})).await?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        if value["id"].as_str() != Some(id)
+            || value["status"].as_str() != Some("failed")
+            || value["turnId"].as_str().is_none_or(|s| !native_id(s))
+            || value["inputItemId"].as_str().is_none_or(|s| !native_id(s))
+        {
+            return Err(ChatGptReadError::InvalidResponse);
+        }
+        Ok(Some(value))
     }
 
     pub async fn cancel_turn(

@@ -185,6 +185,21 @@ impl Page {
         }
     }
 
+    pub(super) async fn recovery_boundary(&mut self, id: &str) -> Result<Value, RpcError> {
+        match self {
+            Self::ChatGpt(page) => page
+                .recovery_boundary(id)
+                .await
+                .map(|value| value.unwrap_or(Value::Null))
+                .map_err(|_| RpcError::Unavailable),
+            Self::Zai(page) => page
+                .recovery_boundary(id)
+                .await
+                .map(|value| value.unwrap_or(Value::Null))
+                .map_err(|_| RpcError::Unavailable),
+        }
+    }
+
     pub(super) async fn messages(
         &mut self,
         remote: &str,

@@ -117,6 +117,21 @@ impl ZaiReader {
         })
     }
 
+    pub async fn recovery_boundary(&mut self, id: &str) -> Result<Option<Value>, ZaiReadError> {
+        let value = self.native_read("recovery", Some(id), Value::Null).await?;
+        if value.is_null() || value["available"] == false {
+            return Ok(None);
+        }
+        if value["chat_id"].as_str() != Some(id)
+            || value["status"].as_str() != Some("failed")
+            || value["turn_id"].as_str().is_none_or(|s| !valid_message_id(s))
+            || value["input_item_id"].as_str().is_none_or(|s| !valid_message_id(s))
+        {
+            return Err(ZaiReadError::InvalidResponse);
+        }
+        Ok(Some(value))
+    }
+
     pub async fn cancel_turn(
         &mut self,
         remote: &str,

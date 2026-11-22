@@ -86,7 +86,10 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 
 fn thread_block_on<T: Send>(future: impl Future<Output = T> + Send) -> T {
     std::thread::scope(|scope| {
-        scope.spawn(|| block_on(future)).join().expect("native OpenCode I/O thread")
+        scope
+            .spawn(|| block_on(future))
+            .join()
+            .expect("native OpenCode I/O thread")
     })
 }
 
@@ -128,6 +131,21 @@ impl RecoveryControl for NativeControl {
 
     fn credential(&self, provider: &str, model: &str, cwd: &str) -> Option<RecoveryCredential> {
         self.block(self.control.recovery_credential(provider, model, cwd))
+    }
+
+    fn supports_alternate(
+        &self,
+        target: &SessionAddress,
+        boundary: &RecoveryBoundary,
+        route: &RecoveryRoute,
+    ) -> bool {
+        target.instance == *self.control.connection().instance()
+            && !route.provider.is_empty()
+            && route
+                .model
+                .as_deref()
+                .is_some_and(|model| !model.is_empty())
+            && (route.provider != boundary.provider || route.model != boundary.model)
     }
 
     fn submit(
@@ -397,8 +415,14 @@ impl ApplicationPort for OwnerApp {
             }
             if let catalog::Request::Deliver(operation) = request {
                 return super::owner_opencode::deliver_to_owner(
-                    identity, operation, &self.policy, SendMode::Queue, &self.waits, self.deliver.as_ref(),
-                ).await;
+                    identity,
+                    operation,
+                    &self.policy,
+                    SendMode::Queue,
+                    &self.waits,
+                    self.deliver.as_ref(),
+                )
+                .await;
             }
             if let Some(result) = self.waits.call(identity, request.clone()).await {
                 return Some(result);

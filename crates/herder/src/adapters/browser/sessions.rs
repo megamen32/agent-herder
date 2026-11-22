@@ -239,6 +239,29 @@ impl Sessions {
         }
     }
 
+    pub(super) async fn recovery_boundary(
+        &mut self,
+        config: &Config,
+        id: &str,
+    ) -> Result<Value, RpcError> {
+        match config.provider.parse_id(id)? {
+            SessionId::Remote(remote) => {
+                let value = self.anchor.recovery_boundary(remote).await?;
+                if value.is_null() {
+                    return Ok(value);
+                }
+                // Use the existing user-message read and require exact native
+                // parent membership in this same conversation before returning.
+                let messages = self.anchor.messages(remote, id, 200).await?;
+                let input = value["inputItemId"].as_str().ok_or(RpcError::Unavailable)?;
+                let exact_parent = messages.as_array().is_some_and(|rows| rows.iter().any(|row|
+                    row["id"].as_str() == Some(input) && row["role"].as_str() == Some("user")));
+                if exact_parent { Ok(value) } else { Err(RpcError::Unavailable) }
+            }
+            SessionId::Draft(_) => Err(RpcError::Unavailable),
+        }
+    }
+
     /// Only the first send has a private tab, a pre-click ticket and a reserved
     /// draft. Check the requested key before attaching to that tab.
     pub(super) async fn zai_receipt_messages(

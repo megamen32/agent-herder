@@ -130,6 +130,7 @@ struct ControlState {
     /// Only threads created by this control object may receive an ordinary turn/start.
     /// This is a local scope check, not a native concurrency fence.
     owned_threads: HashSet<String>,
+    recovery_subscriptions: HashSet<String>,
 }
 
 /// A single native Codex app-server connection bound to one configured instance.
@@ -160,6 +161,7 @@ impl CodexControl {
             state: Mutex::new(ControlState {
                 connection,
                 owned_threads: HashSet::new(),
+                recovery_subscriptions: HashSet::new(),
             }),
         })
     }

@@ -13,11 +13,11 @@ use std::{
 
 use serde_json::{Map, Value, json};
 
-use super::{CodexConnection, CodexControl, RpcError, map_rpc_error};
-#[path = "recovery_lineage.rs"]
-mod lineage;
+use super::{CodexConnection, CodexControl, ControlState, RpcError, map_rpc_error};
 #[path = "autopilot.rs"]
 pub(super) mod autopilot;
+#[path = "recovery_lineage.rs"]
+mod lineage;
 #[path = "recovery_receipt.rs"]
 mod receipt;
 use lineage::{ThreadLineage, is_unarchived, read_ancestors, read_thread, thread_lineage};
@@ -170,7 +170,9 @@ fn retry_after_throttle(turn: &Value, boundary: &RecoveryBoundary, now: u64) -> 
     if info == "serverOverloaded" {
         return SameRouteRetry::UseQuotaPolicy;
     }
-    let age = turn["completedAt"].as_u64().and_then(|end| now.checked_sub(end));
+    let age = turn["completedAt"]
+        .as_u64()
+        .and_then(|end| now.checked_sub(end));
     if is_retry_limit(info)
         && boundary.model.as_deref().is_some_and(bounded_model_id)
         && age.is_some_and(|age| age >= RETRY_429_COOLDOWN.as_secs())
@@ -213,6 +215,7 @@ impl RecoveryControl for CodexControl {
             .map_err(|_| ReadError("Codex control connection is busy or unavailable".into()))?;
         if self.process.socket_path.is_some() && state.connection.unavailable() {
             // Reopen only before a later read. No failed write is repeated.
+            state.recovery_subscriptions.clear();
             state.connection =
                 Self::connect(&self.process, remaining_time(deadline)?).map_err(|_| {
                     ReadError("Codex recovery could not reopen the shared app-server".into())
@@ -243,16 +246,15 @@ impl RecoveryControl for CodexControl {
         target: &SessionAddress,
         boundary: &RecoveryBoundary,
     ) -> SameRouteRetry {
-        if target.instance != self.instance
-            || boundary.failure != RecoveryFailure::Throttled
-        {
+        if target.instance != self.instance || boundary.failure != RecoveryFailure::Throttled {
             return SameRouteRetry::Hold;
         }
         if !custom_provider_id(&boundary.provider) {
             return SameRouteRetry::UseQuotaPolicy;
         }
         let (Ok(deadline), Ok(mut state)) =
-            (recovery_deadline(self.timeout), self.state.try_lock()) else {
+            (recovery_deadline(self.timeout), self.state.try_lock())
+        else {
             return SameRouteRetry::Hold;
         };
         recheck_same_route_retry(&mut state.connection, target, boundary, deadline)
@@ -272,9 +274,14 @@ impl RecoveryControl for CodexControl {
         else {
             return false;
         };
+        if state.owned_threads.contains(&target.native_session_id) {
+            return false;
+        }
+        let own_subscription = state.recovery_subscriptions.contains(&target.native_session_id);
         let connection = &mut state.connection;
         read_thread(connection, &target.native_session_id, deadline).is_ok_and(|thread| {
-            thread["status"]["type"] == "notLoaded" && thread["modelProvider"] == boundary.provider
+            (thread["status"]["type"] == "notLoaded" || own_subscription && is_quiescent(&thread))
+                && thread["modelProvider"] == boundary.provider
         }) && read_recovery_providers(connection, &boundary.cwd, deadline)
             .is_some_and(|providers| plain_responses_provider(&providers[&boundary.provider]))
             && provider_can_be_overridden(connection, &boundary.provider, deadline)
@@ -334,7 +341,11 @@ impl RecoveryControl for CodexControl {
             .state
             .try_lock()
             .map_err(|_| not_sent("Codex control connection is busy or unavailable"))?;
-        let connection = &mut state.connection;
+        let ControlState {
+            connection,
+            recovery_subscriptions,
+            owned_threads,
+        } = &mut *state;
 
         // Switching routes or retrying explicit exhaustion requires fresh
         // positive native quota for the configured route and workspace.
@@ -377,9 +388,35 @@ impl RecoveryControl for CodexControl {
         });
         if alternate {
             if !before.unloaded {
-                return Err(not_sent(
-                    "Codex alternate recovery requires a verified unloaded thread",
-                ));
+                if owned_threads.contains(&target.native_session_id)
+                    || !recovery_subscriptions.contains(&target.native_session_id)
+                {
+                    return Err(not_sent("Codex alternate recovery requires an unloaded thread; external attachment remains"));
+                }
+                // The latest failed turn must be the exact, delivered primary
+                // recovery input before this connection gives up its subscription.
+                let users = receipt::user_items(connection, &target.native_session_id,
+                    &boundary.turn_id, 2, deadline)
+                    .map_err(|_| not_sent("Codex primary receipt read is unavailable"))?;
+                let exact_primary = matches!(users.as_slice(), [user]
+                    if user["id"].as_str() == Some(boundary.input_item_id.as_str())
+                    && user["clientId"].as_str().is_some_and(|key|
+                        receipt::staged_recovery_key(key)
+                        && key.split(':').nth(2) == Some("primary")));
+                if !exact_primary || !still_allowed() {
+                    return Err(not_sent("Codex primary receipt or owner permit is unconfirmed before unsubscribe"));
+                }
+                let reply = connection.request("thread/unsubscribe",
+                    json!({"threadId": target.native_session_id}),
+                    remaining_time(deadline).map_err(read_refusal)?)
+                    .map_err(|_| not_sent("Codex recovery unsubscribe outcome is unconfirmed"))?;
+                if !matches!(reply["status"].as_str(), Some("unsubscribed" | "notSubscribed" | "notLoaded")) {
+                    return Err(not_sent("Codex recovery unsubscribe was not acknowledged"));
+                }
+                recovery_subscriptions.remove(&target.native_session_id);
+                // Never assume unload is synchronous or displace another client.
+                // A later scan may retry without having submitted a turn.
+                return Err(not_sent("Codex recovery unsubscribed; awaiting verified cold thread"));
             }
             // Use the provider identity already saved by Codex. Replacing its
             // endpoint and bearer in this resume does not write the profile.
@@ -402,10 +439,7 @@ impl RecoveryControl for CodexControl {
             params["modelProvider"] = json!(boundary.provider);
             params["model"] = json!(expected_model);
             params["config"] = selected.overrides(&boundary.provider);
-        } else if before.unloaded
-            && custom_provider_id(&boundary.provider)
-            && boundary.failure == RecoveryFailure::Throttled
-            && let Some(model) = expected_model
+        } else if before.unloaded && let Some(model) = expected_model
         {
             // On cold resume Codex can select today's default instead of the
             // model saved on this thread. Keep its original provider binding.
@@ -417,6 +451,8 @@ impl RecoveryControl for CodexControl {
         let remaining = remaining_time(deadline).map_err(read_refusal)?;
         // An uncertain resume must stop the sequence. Its error remains UNKNOWN
         // because the native load or route change may have taken effect.
+        // A lost resume response can still have created our subscription.
+        recovery_subscriptions.insert(target.native_session_id.clone());
         let resumed = connection
             .request("thread/resume", params, remaining)
             .map_err(if alternate {
@@ -864,7 +900,11 @@ fn read_observation(
     };
     // A native goal tick can fail before Codex creates a user item. Codex
     // can also mark that goal blocked when the provider retries run out.
-    let trigger = if !child && matches!(failure, RecoveryFailure::Throttled | RecoveryFailure::Retryable) {
+    let trigger = if !child
+        && matches!(
+            failure,
+            RecoveryFailure::Throttled | RecoveryFailure::Retryable
+        ) {
         native_turn_trigger(connection.code_home(), &thread, turn_id)
     } else {
         None
@@ -893,27 +933,21 @@ fn read_observation(
     } else {
         TurnInput::source(native_goal, root_turn_id, turn_id)
     };
-    let input_item_id = match read_input_item(
-        connection,
-        thread_id,
-        turn_id,
-        turn,
-        input_source,
-        deadline,
-    )? {
-        Some(id) => id,
-        None if !child
-            && turn["status"] == "failed"
-            && turn["items"].as_array().is_some_and(Vec::is_empty) =>
-        {
-            let Some(id) = prior_retry_input(connection, &thread, turn, &response, deadline)?
-            else {
-                return Ok(None);
-            };
-            id
-        }
-        None => return Ok(None),
-    };
+    let input_item_id =
+        match read_input_item(connection, thread_id, turn_id, turn, input_source, deadline)? {
+            Some(id) => id,
+            None if !child
+                && turn["status"] == "failed"
+                && turn["items"].as_array().is_some_and(Vec::is_empty) =>
+            {
+                let Some(id) = prior_retry_input(connection, &thread, turn, &response, deadline)?
+                else {
+                    return Ok(None);
+                };
+                id
+            }
+            None => return Ok(None),
+        };
     let Some(ancestors) =
         read_ancestors(connection, target, lineage, turn_id, root_turn_id, deadline)?
     else {
@@ -1025,8 +1059,10 @@ fn native_turn_trigger(home: &Path, thread: &Value, turn: &str) -> Option<String
     let event: Value = serde_json::from_slice(&line).ok()?;
     let payload = &event["payload"];
     let attribution = &payload["turn_attribution"];
-    if event["type"] != "event_msg" || payload["type"] != "task_started"
-        || payload["turn_id"] != turn || attribution["turn_id"] != turn
+    if event["type"] != "event_msg"
+        || payload["type"] != "task_started"
+        || payload["turn_id"] != turn
+        || attribution["turn_id"] != turn
     {
         return None;
     }
@@ -1218,7 +1254,11 @@ fn read_input_item(
             if row["turnId"] != turn_id {
                 return Ok(None);
             }
-            match tail_item(&row["item"], user.or(goal_anchor), source == TurnInput::Continuation) {
+            match tail_item(
+                &row["item"],
+                user.or(goal_anchor),
+                source == TurnInput::Continuation,
+            ) {
                 RecoveryTail::Hold => return Ok(None),
                 RecoveryTail::Continue(id) => return Ok(Some(id.to_owned())),
                 RecoveryTail::Earlier => {}
@@ -1270,7 +1310,7 @@ fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
             return Some(RecoveryFailure::Quota);
         }
         Some("serverOverloaded") => return Some(RecoveryFailure::Throttled),
-        Some("internalServerError" | "flexUnavailable") => {
+        Some("internalServerError" | "flexUnavailable" | "policyCapacityUnavailable") => {
             return Some(RecoveryFailure::Retryable);
         }
         _ => {}
@@ -1290,7 +1330,7 @@ fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
             | "responseStreamConnectionFailed"
             | "responseStreamDisconnected"
             | "responseTooManyFailedAttempts",
-            Some(408 | 500 | 502..=504),
+            Some(408 | 500..=599),
         ) => Some(RecoveryFailure::Retryable),
         ("responseStreamDisconnected", Some(200)) => Some(RecoveryFailure::Retryable),
         (
@@ -1479,7 +1519,10 @@ mod tests {
         let interrupted = json!({
             "status": "interrupted", "startedAt": 100, "completedAt": null, "durationMs": null,
         });
-        assert_eq!(recovery_failure(&interrupted), Some(RecoveryFailure::Interrupted));
+        assert_eq!(
+            recovery_failure(&interrupted),
+            Some(RecoveryFailure::Interrupted)
+        );
 
         let mut stopped = interrupted.clone();
         stopped["completedAt"] = json!(105);
@@ -1498,14 +1541,24 @@ mod tests {
     #[test]
     fn retry_429_requires_the_same_terminal_failure_and_cooldown_from_completion() {
         let boundary = RecoveryBoundary {
-            turn_id: "failed".into(), input_item_id: "input".into(), cwd: "/project".into(),
-            provider: "opencodex".into(), model: Some("saved".into()), started_at_ms: 1000,
-            failure: RecoveryFailure::Throttled, ancestors: vec![],
+            turn_id: "failed".into(),
+            input_item_id: "input".into(),
+            cwd: "/project".into(),
+            provider: "opencodex".into(),
+            model: Some("saved".into()),
+            started_at_ms: 1000,
+            failure: RecoveryFailure::Throttled,
+            ancestors: vec![],
         };
         let mut turn = json!({"id": "failed", "status": "failed", "startedAt": 1, "completedAt": 100,
             "error": {"message": "exceeded retry limit, last status: 429 Too Many Requests",
                       "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}}});
-        let ready = |turn: &Value, now| matches!(retry_after_throttle(turn, &boundary, now), SameRouteRetry::Ready);
+        let ready = |turn: &Value, now| {
+            matches!(
+                retry_after_throttle(turn, &boundary, now),
+                SameRouteRetry::Ready
+            )
+        };
         assert!(!ready(&turn, 99));
         assert!(!ready(&turn, 129));
         assert!(ready(&turn, 130));
@@ -1515,12 +1568,23 @@ mod tests {
         turn["id"] = json!("later-turn");
         assert!(!ready(&turn, 130));
         turn["id"] = json!("failed");
-        for info in [json!("usageLimitExceeded"), json!("rateLimitExceeded"), json!("other"), Value::Null] {
+        for info in [
+            json!("usageLimitExceeded"),
+            json!("rateLimitExceeded"),
+            json!("other"),
+            Value::Null,
+        ] {
             turn["error"]["codexErrorInfo"] = info;
-            assert!(matches!(retry_after_throttle(&turn, &boundary, 130), SameRouteRetry::Hold));
+            assert!(matches!(
+                retry_after_throttle(&turn, &boundary, 130),
+                SameRouteRetry::Hold
+            ));
         }
         turn["error"]["codexErrorInfo"] = json!("serverOverloaded");
-        assert!(matches!(retry_after_throttle(&turn, &boundary, 130), SameRouteRetry::UseQuotaPolicy));
+        assert!(matches!(
+            retry_after_throttle(&turn, &boundary, 130),
+            SameRouteRetry::UseQuotaPolicy
+        ));
     }
 
     const BASE_URL: &str = "http://127.0.0.1:19090/v1";
@@ -1568,7 +1632,7 @@ from pathlib import Path
 
 home = Path(os.environ["CODEX_HOME"])
 case = (home / "case").read_text()
-loaded = case == "already-loaded"
+loaded = case in ("already-loaded", "own-warm", "own-bad-key", "own-held")
 model = "old-model"
 resumed = False
 for line in sys.stdin:
@@ -1598,7 +1662,7 @@ for line in sys.stdin:
         assert params["itemsView"] == "summary" and params["limit"] == 1
         result = {"data": [{"id": "old-turn", "status": "failed", "startedAt": 100,
                             "completedAt": 101, "itemsView": "summary",
-                            "error": {"codexErrorInfo": "serverOverloaded" if case == "root-held" else "usageLimitExceeded"},
+                            "error": {"codexErrorInfo": "serverOverloaded" if case in ("root-held", "cold-same") else "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
         if case.startswith("goal-"):
             result["data"][0].update(rootTurnId="old-turn", items=[], error={
@@ -1618,8 +1682,12 @@ for line in sys.stdin:
             result["goal"] = {"threadId":"saved-thread", "status": status,
                               "updatedAt": 105 if case == "goal-blocked-later" else 101}
     elif method == "thread/items/list":
-        assert params["turnId"] == "old-turn" and params["sortDirection"] == "desc"
-        result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
+        assert params["turnId"] == "old-turn"
+        if params["sortDirection"] == "asc":
+            key = "codex-recovery:" + "a"*64 + (":fallback" if case == "own-bad-key" else ":primary")
+            result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage","clientId":key}}],"nextCursor":None}
+        else:
+            result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
         if case.startswith("goal-"):
             result = {"data": [{"turnId":"old-turn","item":{"id":"work","type":"commandExecution"}}],
                       "nextCursor":None}
@@ -1658,8 +1726,20 @@ for line in sys.stdin:
             del providers["pinned"]
     elif method == "configRequirements/read":
         result = {"requirements": {"modelProviders": {"pinned": {}}} if case == "managed" else None}
+    elif method == "thread/unsubscribe":
+        assert case == "own-warm" and params["threadId"] == "saved-thread"
+        loaded = False
+        result = {"status":"unsubscribed"}
     elif method == "thread/resume":
-        assert params["threadId"] == "saved-thread" and params["modelProvider"] == "pinned"
+        assert params["threadId"] == "saved-thread"
+        if case == "cold-same":
+            assert params["model"] == "old-model" and "config" not in params
+            resumed = loaded = True
+            result = {"thread": dict(thread, model=model, status={"type": "idle"}),
+                      "model": model, "modelProvider": "pinned", "cwd": str(home)}
+            print(json.dumps({"id": request["id"], "result": result}), flush=True)
+            continue
+        assert params["modelProvider"] == "pinned"
         assert params["config"]["model_providers.pinned.base_url"] == "http://127.0.0.1:19090/v1"
         assert params["config"]["model_providers.pinned.experimental_bearer_token"] == "synthetic-bearer-for-fixture"
         if case in ("rejected", "uncertain"):
@@ -1689,7 +1769,11 @@ for line in sys.stdin:
             ("throttle-oauth-chatgpt", "pinned", SameRouteRetry::Hold),
             ("throttle-oauth-proxy", "pinned", SameRouteRetry::Ready),
             ("throttle-unconfigured", "pinned", SameRouteRetry::Hold),
-            ("throttle-built-in", "openai", SameRouteRetry::UseQuotaPolicy),
+            (
+                "throttle-built-in",
+                "openai",
+                SameRouteRetry::UseQuotaPolicy,
+            ),
         ] {
             let dir = std::env::temp_dir()
                 .join(format!("herder-codex-retry-{}-{case}", std::process::id()));
@@ -1698,17 +1782,33 @@ for line in sys.stdin:
             fs::write(home.join("app-server"), RPC_FIXTURE).unwrap();
             fs::write(home.join("case"), case).unwrap();
             let target = SessionAddress {
-                instance: InstanceRef { node: NodeRef("local".into()), instance_id: "test".into() },
+                instance: InstanceRef {
+                    node: NodeRef("local".into()),
+                    instance_id: "test".into(),
+                },
                 native_session_id: "saved-thread".into(),
             };
-            let control = CodexControl::open(CodexInstance {
-                instance_id: "test".into(), executable: PathBuf::from("/usr/bin/python3"),
-                code_home: home.clone(), cwd: home.clone(), socket_path: None,
-            }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+            let control = CodexControl::open(
+                CodexInstance {
+                    instance_id: "test".into(),
+                    executable: PathBuf::from("/usr/bin/python3"),
+                    code_home: home.clone(),
+                    cwd: home.clone(),
+                    socket_path: None,
+                },
+                target.instance.clone(),
+                Duration::from_secs(3),
+            )
+            .unwrap();
             let boundary = RecoveryBoundary {
-                turn_id: "old-turn".into(), input_item_id: "user-item".into(),
-                cwd: home.to_str().unwrap().into(), provider: provider.into(), model: Some("old-model".into()),
-                started_at_ms: 100_000, failure: RecoveryFailure::Throttled, ancestors: vec![],
+                turn_id: "old-turn".into(),
+                input_item_id: "user-item".into(),
+                cwd: home.to_str().unwrap().into(),
+                provider: provider.into(),
+                model: Some("old-model".into()),
+                started_at_ms: 100_000,
+                failure: RecoveryFailure::Throttled,
+                ancestors: vec![],
             };
             let actual = control.same_route_retry(&target, &boundary);
             drop(control);
@@ -1733,7 +1833,8 @@ for line in sys.stdin:
             ("goal-question", "goal", false),
             ("goal-unrelated-turn", "composer", false),
         ] {
-            let dir = std::env::temp_dir().join(format!("herder-goal-{}-{case}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("herder-goal-{}-{case}", std::process::id()));
             fs::create_dir(&dir).unwrap();
             let home = dir.canonicalize().unwrap();
             fs::create_dir(home.join("sessions")).unwrap();
@@ -1742,30 +1843,101 @@ for line in sys.stdin:
             let event = json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"old-turn",
                 "root_turn_id":"old-turn","turn_attribution":{"turn_id":"old-turn","root_turn_id":"old-turn",
                 "turn_trigger":trigger,"parent_turn_id":null,"initiating_agent_path":null}}});
-            fs::write(home.join("sessions/rollout-saved-thread.jsonl"), format!("{event}\n")).unwrap();
+            fs::write(
+                home.join("sessions/rollout-saved-thread.jsonl"),
+                format!("{event}\n"),
+            )
+            .unwrap();
             let db = rusqlite::Connection::open(home.join("thread_history_1.sqlite")).unwrap();
             db.execute_batch("CREATE TABLE thread_turns(thread_id TEXT, turn_id TEXT, status TEXT, rollout_byte_offset INTEGER);
                 INSERT INTO thread_turns VALUES ('saved-thread','old-turn','failed',0);").unwrap();
             drop(db);
             let target = SessionAddress {
-                instance: InstanceRef { node: NodeRef("local".into()), instance_id: "test".into() },
+                instance: InstanceRef {
+                    node: NodeRef("local".into()),
+                    instance_id: "test".into(),
+                },
                 native_session_id: "saved-thread".into(),
             };
-            let control = CodexControl::open(CodexInstance {
-                instance_id: "test".into(), executable: PathBuf::from("/usr/bin/python3"),
-                code_home: home.clone(), cwd: home.clone(), socket_path: None,
-            }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+            let control = CodexControl::open(
+                CodexInstance {
+                    instance_id: "test".into(),
+                    executable: PathBuf::from("/usr/bin/python3"),
+                    code_home: home.clone(),
+                    cwd: home.clone(),
+                    socket_path: None,
+                },
+                target.instance.clone(),
+                Duration::from_secs(3),
+            )
+            .unwrap();
             let observed = control.read_boundary(&target).unwrap();
             drop(control);
             fs::remove_dir_all(home).unwrap();
             assert_eq!(observed.is_some(), expected, "{case}");
             if let Some(boundary) = observed {
                 assert_eq!(boundary.turn_id, "old-turn");
-                let anchor = if case == "resumed-progress" { "progress" } else { "old-turn" };
+                let anchor = if case == "resumed-progress" {
+                    "progress"
+                } else {
+                    "old-turn"
+                };
                 assert_eq!(boundary.input_item_id, anchor);
                 assert_eq!(boundary.provider, "pinned");
                 assert_eq!(boundary.model.as_deref(), Some("old-model"));
             }
+        }
+    }
+
+    #[test]
+    fn cold_same_route_pins_saved_model_for_non_throttle_failure() {
+        let root = std::env::temp_dir().join(format!("herder-codex-pin-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        fs::write(root.join("app-server"), RPC_FIXTURE).unwrap();
+        fs::write(root.join("case"), "cold-same").unwrap();
+        let target = SessionAddress { instance: InstanceRef { node: NodeRef("local".into()),
+            instance_id: "test".into() }, native_session_id: "saved-thread".into() };
+        let control = CodexControl::open(CodexInstance { instance_id: "test".into(),
+            executable: PathBuf::from("/usr/bin/python3"), code_home: root.clone(), cwd: root.clone(),
+            socket_path: None }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+        let boundary = control.read_boundary(&target).unwrap().unwrap();
+        let route = RecoveryRoute { provider: boundary.provider.clone(), model: boundary.model.clone() };
+        let result = control.submit(&target, &boundary, &route, RecoveryPermit { reserve: 0,
+            quota_proof: None, still_allowed: &|| true }, "continue", &RequestKey("exact-request".into()));
+        assert!(result.is_ok(), "{result:?}");
+        drop(control);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn alternate_capability_is_read_only_and_only_own_exact_primary_may_unsubscribe() {
+        for case in ["already-loaded", "own-warm", "own-bad-key", "own-held"] {
+            let root = std::env::temp_dir().join(format!("herder-codex-detach-{}-{case}", std::process::id()));
+            fs::create_dir(&root).unwrap();
+            let root = root.canonicalize().unwrap();
+            fs::write(root.join("app-server"), RPC_FIXTURE).unwrap();
+            fs::write(root.join("case"), case).unwrap();
+            let target = SessionAddress { instance: InstanceRef { node: NodeRef("local".into()),
+                instance_id: "test".into() }, native_session_id: "saved-thread".into() };
+            let control = CodexControl::open(CodexInstance { instance_id: "test".into(),
+                executable: PathBuf::from("/usr/bin/python3"), code_home: root.clone(), cwd: root.clone(),
+                socket_path: None }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+            let boundary = control.read_boundary(&target).unwrap().unwrap();
+            if case != "already-loaded" {
+                control.state.lock().unwrap().recovery_subscriptions.insert(target.native_session_id.clone());
+            }
+            let route = RecoveryRoute { provider: "alternate".into(), model: Some("model".into()) };
+            assert_eq!(control.supports_alternate(&target, &boundary, &route), case != "already-loaded");
+            assert!(!fs::read_to_string(root.join("calls")).unwrap().contains("thread/unsubscribe"));
+            let result = control.submit(&target, &boundary, &route, RecoveryPermit { reserve: 0,
+                quota_proof: None, still_allowed: &|| case != "own-held" }, "continue", &RequestKey("key".into()));
+            assert!(matches!(result, Err(SubmitError::DefinitelyNotSent { .. })));
+            let calls = fs::read_to_string(root.join("calls")).unwrap();
+            assert_eq!(calls.lines().filter(|m| *m == "thread/unsubscribe").count(), usize::from(case == "own-warm"));
+            assert!(!calls.contains("thread/resume") && !calls.contains("turn/start"));
+            drop(control);
+            fs::remove_dir_all(root).unwrap();
         }
     }
 

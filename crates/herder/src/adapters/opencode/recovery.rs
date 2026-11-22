@@ -517,7 +517,7 @@ fn derive_observation(
         };
         let (input, history) = recent.split_first()?;
         let input_at = valid_frame_time(input)?;
-        if !pure_user(input) || input_at < busy {
+        if !recovery_input(input, &session.id) || input_at < busy {
             return None;
         }
         // SIGTERM can record an aborted step before the backend writes an idle
@@ -582,7 +582,7 @@ fn derive_observation(
             || !assistant["time"]["firstToken"].is_null()
             || !assistant["time"]["streamed"].is_null()
             || !source.matches(&read_model(&assistant["model"])?)
-            || !pure_user(input)
+            || !recovery_input(input, &session.id)
             || valid_frame_time(input)? < busy
             || valid_frame_time(assistant)? <= valid_frame_time(input)?
             || !(valid_frame_time(assistant)?..=idle_at)
@@ -662,10 +662,33 @@ fn pure_user(row: &Value) -> bool {
             .all(|field| row[*field].is_null() || row[*field].as_array().is_some_and(Vec::is_empty))
 }
 
+// A delivered synthetic continuation is the input to its own failed turn.
+// Only our session-bound, deterministic queue metadata can substitute for a user.
+fn recovery_input(row: &Value, sid: &str) -> bool {
+    if pure_user(row) {
+        return true;
+    }
+    let Some(id) = row["id"].as_str() else {
+        return false;
+    };
+    let Some(key) = row["metadata"]["agentHerderInputId"].as_str() else {
+        return false;
+    };
+    row["type"] == "synthetic"
+        && row["text"]
+            .as_str()
+            .is_some_and(|text| !text.trim().is_empty())
+        && row["description"] == DESCRIPTION
+        && row
+            .get("sessionID")
+            .is_none_or(|value| value.as_str() == Some(sid))
+        && scoped_metadata(&row["metadata"], sid, id, key)
+}
+
 fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
     match (error["type"].as_str()?, error["status"].as_u64()) {
         ("provider.quota", Some(402 | 429)) => Some(RecoveryFailure::Quota),
-        ("provider.internal", Some(500 | 502..=504))
+        ("provider.internal" | "provider.error" | "system.error", Some(500..=599))
         | ("provider.timeout", Some(408 | 504))
         | ("provider.rate-limit", Some(429)) => Some(RecoveryFailure::Retryable),
         _ => None,
@@ -839,18 +862,26 @@ mod tests {
             "time": {"created": 1020, "completed": 1030},
             "model": model(), "content": []
         });
-        let baseline = derive_observation(session(None, None), &[input(), model_switch()], None)
-            .unwrap();
+        let baseline =
+            derive_observation(session(None, None), &[input(), model_switch()], None).unwrap();
         let mut recent = vec![aborted.clone(), input(), model_switch()];
         let observed = derive_observation(session(None, None), &recent, None).unwrap();
         assert_eq!(observed.boundary, baseline.boundary);
-        assert!(derive_observation(session(Some(1040), Some("interrupted")), &recent, None).is_none());
+        assert!(
+            derive_observation(session(Some(1040), Some("interrupted")), &recent, None).is_none()
+        );
 
         for (field, value) in [
-            ("content", json!([{"type": "text", "text": "already streamed"}])),
+            (
+                "content",
+                json!([{"type": "text", "text": "already streamed"}]),
+            ),
             ("snapshot", json!("recorded-action")),
             ("finish", json!("stop")),
-            ("time", json!({"created": 1020, "completed": 1030, "firstToken": 1021})),
+            (
+                "time",
+                json!({"created": 1020, "completed": 1030, "firstToken": 1021}),
+            ),
             ("model", json!({"providerID": "fixture", "id": "different"})),
         ] {
             recent[0] = aborted.clone();
@@ -871,6 +902,26 @@ mod tests {
             input(),
             model_switch(),
         ]
+    }
+
+    #[test]
+    fn failed_scoped_synthetic_is_the_next_exact_input() {
+        let key = format!("opencode-recovery:{}:primary", "a".repeat(64));
+        let id = recovery_id(SESSION, &key).unwrap();
+        let mut history = failed_history(json!({"type":"provider.internal","status":503}));
+        history[2] = json!({"id":id,"sessionID":SESSION,"type":"synthetic",
+            "time":{"created":1010},"text":"continue","description":DESCRIPTION,
+            "metadata":{"agentHerderInputId":key,"agentHerderSessionId":SESSION,
+                        "agentHerderContinuation":CONTINUATION}});
+        let observed =
+            derive_observation(session(Some(1040), Some("failed")), &history, None).unwrap();
+        assert_eq!(observed.boundary.input_item_id, id);
+        assert_eq!(observed.boundary.turn_id, "msg_Failed");
+        history[2]["metadata"]["agentHerderSessionId"] = json!("ses_other");
+        assert!(derive_observation(session(Some(1040), Some("failed")), &history, None).is_none());
+        history[2]["metadata"]["agentHerderSessionId"] = json!(SESSION);
+        history[2]["metadata"]["agentHerderContinuation"] = json!("other");
+        assert!(derive_observation(session(Some(1040), Some("failed")), &history, None).is_none());
     }
 
     #[test]

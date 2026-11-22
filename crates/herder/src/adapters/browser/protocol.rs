@@ -10,11 +10,12 @@ use std::{
 };
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
-const METHODS: [&str; 8] = [
+const METHODS: [&str; 9] = [
     "init",
     "listSessions",
     "getSession",
     "getSessionMessages",
+    "getRecoveryBoundary",
     "createSession",
     "sendMessage",
     "cancelTurn",
@@ -209,6 +210,7 @@ impl Runner {
                 }
                 sessions.messages(config, session_id(params)?, size).await
             }
+            "getRecoveryBoundary" => sessions.recovery_boundary(config, session_id(params)?).await,
             "createSession" => {
                 let options = &params["options"];
                 let title = options["name"]
