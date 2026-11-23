@@ -86,13 +86,14 @@ impl ZaiReader {
         if id.is_some_and(|id| !valid_chat_id(id)) {
             return Err(ZaiReadError::InvalidResponse);
         }
-        let expression = expression(
-            op,
-            Some(&self.account_scope),
-            json!({"id": id, "params": params}),
-        );
+        let args = json!({"id": id, "params": params});
+        let scope = &self.account_scope;
         self.cdp
-            .evaluate(&expression)
+            .site(
+                op,
+                json!({"expected": scope, "args": args, "maxBytes": MAX_ATTACHMENT_BYTES}),
+                || expression(op, Some(scope), args),
+            )
             .await
             .map_err(ZaiReadError::Cdp)
     }

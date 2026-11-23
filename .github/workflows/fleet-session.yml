@@ -8,6 +8,7 @@ on:
       - '.cargo/**'
       - 'Cargo.*'
       - 'packages/**'
+      - 'integrations/chrome/**'
       - 'tests/**'
       - 'deploy/**'
       - 'scripts/**'
@@ -109,16 +110,24 @@ jobs:
           /usr/bin/python3 -uB tests/native/launch.py --ro-bind "$owner_bin" --ro-bind "$schema_dir" -- \
             /usr/bin/python3 -uB "$PWD/tests/native/opencode_recovery_stand.py" \
             --opencode "$opencode_bin" --core "$owner_bin" --schema-dir "$schema_dir"
-      - name: Verify guarded ChatGPT recovery with a fake provider
+      - name: Verify browser delivery and ChatGPT recovery through the Herder extension
         shell: bash
         run: |
           cargo build --locked --manifest-path deploy/fleet/owner-bootstrap/Cargo.toml \
             --target-dir "$RUNNER_TEMP/herder-recovery-core"
           export PLAYWRIGHT_MODULE="$RUNNER_TEMP/herder-recovery-cli/node_modules/playwright-core/index.mjs"
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/herder-playwright-browsers"
+          node "$RUNNER_TEMP/herder-recovery-cli/node_modules/playwright-core/cli.js" install chromium --no-shell
           node --test crates/herder/src/adapters/chatgpt/native.test.mjs
-          for scenario in success failed-retry lost-receipt; do
+          for harness in chatgpt zai; do
             /usr/bin/python3 -uB tests/native/browser_adapter_smoke.py \
-              --bin-dir "$RUNNER_TEMP/herder-recovery-core/debug" --recovery "$scenario" \
+              --bin-dir "$RUNNER_TEMP/herder-recovery-core/debug" --extension \
+              --harness "$harness" --surface mcp --content text --iterations 1 \
+              --output "$RUNNER_TEMP/browser-delivery-$harness"
+          done
+          for scenario in success failed-retry lost-receipt lost-ack stale; do
+            /usr/bin/python3 -uB tests/native/browser_adapter_smoke.py \
+              --bin-dir "$RUNNER_TEMP/herder-recovery-core/debug" --extension --recovery "$scenario" \
               --output "$RUNNER_TEMP/browser-recovery-$scenario"
           done
 

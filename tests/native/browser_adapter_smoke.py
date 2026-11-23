@@ -157,7 +157,8 @@ def check_sends(fixture, receipt_ids, seed_ids, media=False, followup_text=PROMP
     if receipt_ids:
         exact(snapshot["documents"][:2], [pinned, "/"], "pinned and fresh provider documents")
     else:
-        exact(snapshot["documents"], [pinned], "documents before first submit")
+        expected_documents = [pinned, "/"] if snapshot["extension"] else [pinned]
+        exact(snapshot["documents"], expected_documents, "documents before first submit")
     sends = snapshot["sends"]
     exact(len(sends), len(receipt_ids), "fixture submit count")
     check(len(set(receipt_ids)) == len(receipt_ids), "repeated prompt reused an earlier native user ID")
@@ -588,6 +589,10 @@ def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scen
         fixture.call("failNext")
     if scenario == "lost-receipt":
         fixture.call("withholdReceipt", {"enabled": True})
+    if scenario == "lost-ack":
+        fixture.call("loseExtensionAck")
+    if scenario == "stale":
+        fixture.call("supersedeOnInput", {"id": route})
 
     rpc.close()
     persist_evidence(activation, True)
@@ -600,7 +605,7 @@ def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scen
                    FROM intents i WHERE request_key GLOB 'chatgpt-recovery:*'"""
             ).fetchall()
 
-    expected = "unknown" if scenario == "lost-receipt" else "confirmed"
+    expected = {"lost-receipt": "unknown", "lost-ack": "unknown", "stale": "rejected"}.get(scenario, "confirmed")
     deadline = time.monotonic() + 70
     while time.monotonic() < deadline:
         observed = rows()
@@ -615,6 +620,12 @@ def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scen
     exact(target, refs[0], "recovery addressed the exact Rust session")
     check(key.endswith(":primary"), "browser recovery staged more than one attempt")
     snapshot = fixture.call("snapshot")
+    if scenario == "stale":
+        check(snapshot["superseded"], "the fixture did not add a newer input during recovery")
+        exact(snapshot["sends"], [], "newer input allowed a recovery submit")
+        exact(snapshot["submitClicks"], 0, "newer input allowed a recovery click")
+        record.update(failed_turn=failure, recovery_state=state, protected_sends=0)
+        return
     [sent] = snapshot["sends"]
     exact(sent["addressed"], route, "same provider chat")
     check(sent["rows"][0]["text"].startswith("Продолжай"), "unexpected recovery text")
@@ -626,6 +637,22 @@ def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scen
 
     active.close()
     restarted = start()
+    if scenario == "lost-ack":
+        record["state_after_lost_ack"] = state
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            reconciled = rows()
+            if len(reconciled) == 1 and reconciled[0][1] == "confirmed":
+                break
+            time.sleep(0.2)
+        else:
+            raise AssertionError(f"lost extension ACK did not reconcile: {rows()}")
+        [row] = reconciled
+        exact((row[0], row[3]), (key, target), "same recovery attempt after reconnect")
+        native = json.loads(row[2])["native_id"]
+        exact(receipt_reference(native), ("message", sent["rows"][0]["id"]), "reconciled extension receipt")
+        state = "confirmed"
+        observed = reconciled
     # Prove one full recovery scan on the replacement owner.
     time.sleep(32)
     check(restarted.process.poll() is None, "owner exited after restart")
@@ -681,6 +708,8 @@ def mcp_case(bins, home, fixture, setup, harness, n, record, stack, lost_receipt
         rpc = RpcProcess(bins["herder_native_stdio"], profile_path, private_env(home))
         stack.callback(rpc.close)
         check({"session", "sessions", "create", "deliver", "stop"} <= set(rpc.preflight()), "owner tools missing")
+        if setup["extension"]:
+            check(fixture.call("waitExtension"), "extension did not connect directly to the Rust owner")
         record.setdefault("pids", []).append(rpc.process.pid)
         return rpc
 
@@ -869,13 +898,21 @@ def run_case(args, bins, harness, surface, content, case):
     with tempfile.TemporaryDirectory(prefix="herder-browser-smoke-", dir=Path.home()) as temp, ExitStack() as stack:
         home = Path(temp)
         env = private_env(home)
-        if "PLAYWRIGHT_MODULE" in os.environ:
-            env["PLAYWRIGHT_MODULE"] = os.environ["PLAYWRIGHT_MODULE"]
-        fixture = JsonLines([shutil.which("node"), HERE / "browser_adapter_fixture.mjs", harness,
-                             "9222", case], env, home)
+        for key in ("PLAYWRIGHT_MODULE", "PLAYWRIGHT_BROWSERS_PATH", "HERDER_FIXTURE_CHROMIUM"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        fixture_argv = [shutil.which("node"), HERE / "browser_adapter_fixture.mjs", harness,
+                        "9222", case]
+        if args.extension:
+            fixture_argv.append("--extension")
+        fixture = JsonLines(fixture_argv, env, home)
         stack.callback(fixture.close)
         try:
             setup = fixture.call("setup")
+            if args.extension:
+                exact(setup["env"]["AHAP_BROWSER_TRANSPORT"], "herder-extension", "browser transport")
+                check(setup["extension"], "extension manifest not loaded")
+                record["extension_version"] = setup["extension"]
             record.update(chrome=setup["version"], phase="seed inventory and exact reads")
             if surface == "ahap":
                 ahap_case(bins["herder-browser"], home, fixture, setup, harness, args.iterations, record, stack, media)
@@ -887,7 +924,7 @@ def run_case(args, bins, harness, surface, content, case):
             exact(snapshot["pinnedRoute"], "/c/" + setup["seedIds"][1], "pinned tab moved off seed B")
             expected_sends = {"create": 1, "deliver": 2}.get(args.lost_receipt, 2)
             if args.recovery:
-                expected_sends = 1
+                expected_sends = 0 if args.recovery == "stale" else 1
             if media and not args.lost_receipt:
                 expected_sends = 4 if surface == "mcp" else 3
             exact(len(snapshot["sends"]), expected_sends, "total browser submits")
@@ -909,12 +946,14 @@ def run_case(args, bins, harness, surface, content, case):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin-dir", type=Path, required=True)
+    parser.add_argument("--extension", action="store_true",
+                        help="load Agent Herder's own Chrome extension and connect to Rust")
     parser.add_argument("--harness", choices=["chatgpt", "zai"])
     parser.add_argument("--surface", choices=["ahap", "mcp"])
     parser.add_argument("--content", choices=["text", "attachments"], help="default: run both in separate fixtures")
     parser.add_argument("--lost-receipt", nargs="?", const="create", choices=["create", "deliver"],
                         help="withhold the accepted submit's native receipt (default: create), then replay through MCP")
-    parser.add_argument("--recovery", choices=["success", "failed-retry", "lost-receipt"],
+    parser.add_argument("--recovery", choices=["success", "failed-retry", "lost-receipt", "lost-ack", "stale"],
                         help="exercise the native ChatGPT recovery scheduler in a disposable browser")
     parser.add_argument("--iterations", default=20, type=int)
     parser.add_argument("--output", type=Path, help="fresh receipt directory")
@@ -929,6 +968,10 @@ def main():
         if args.lost_receipt or args.harness == "zai" or args.surface == "ahap" or args.content == "attachments":
             parser.error("--recovery uses the ChatGPT owner MCP text surface")
         args.harness, args.surface, args.content = "chatgpt", "mcp", "text"
+    if args.extension and args.surface != "mcp":
+        parser.error("--extension uses the owner MCP surface")
+    if args.recovery == "lost-ack" and not args.extension:
+        parser.error("--recovery lost-ack requires the Herder extension")
     names = ["herder-browser", "herder_native_stdio", "ahap-owner-bootstrap"]
     bins = {name: (args.bin_dir / name).resolve(strict=True) for name in names}
     output = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="herder-browser-evidence-"))

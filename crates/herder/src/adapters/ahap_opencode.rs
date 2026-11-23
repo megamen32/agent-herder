@@ -94,9 +94,7 @@ impl RecoveryControl for AhapOpenCode {
         // A successful ordinary snapshot is not proof of a failed turn. In
         // particular, don't treat idle/unknown activity or assistant text as
         // a terminal failure.
-        if matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
-            && self.capabilities()["nativeProtocol"] == "direct-cdp"
-        {
+        if self.native_browser() {
             let snapshot = self.read_snapshot(target)?;
             if snapshot.human_stop || snapshot.activity != SessionActivity::Idle {
                 return Ok(None);
@@ -271,10 +269,20 @@ impl AhapOpenCode {
         self.client.capabilities()
     }
 
-    pub fn guarded_recovery_supported(&self) -> bool {
+    fn native_browser(&self) -> bool {
         matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
-            && self.capabilities()["nativeProtocol"] == "direct-cdp"
-            && self.capabilities().pointer("/browserFeatures/guardedRecovery") == Some(&Value::Bool(true))
+            && matches!(
+                self.capabilities()["nativeProtocol"].as_str(),
+                Some("direct-cdp" | "herder-extension")
+            )
+    }
+
+    pub fn guarded_recovery_supported(&self) -> bool {
+        self.native_browser()
+            && self
+                .capabilities()
+                .pointer("/browserFeatures/guardedRecovery")
+                == Some(&Value::Bool(true))
             && self.client.supports("getRecoveryBoundary")
             && self.mutation_ready()
     }
@@ -824,10 +832,12 @@ impl BoundedNativeHandoff for AhapOpenCode {
 
     fn supports_attachments(&self) -> bool {
         let caps = self.capabilities();
-        matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
+        self.native_browser()
             && self.mutation_ready()
-            && caps["nativeProtocol"] == "direct-cdp"
-            && caps.pointer("/browserFeatures/attachments").and_then(Value::as_bool) == Some(true)
+            && caps
+                .pointer("/browserFeatures/attachments")
+                .and_then(Value::as_bool)
+                == Some(true)
     }
 
     fn submit_bounded(
@@ -1012,8 +1022,9 @@ impl NativeSessionReader for AhapOpenCode {
         {
             return Err(ReadError("AHAP session identity mismatch".into()));
         }
-        let messages = if self.policy.harness == "zai"
-            && self.capabilities()["nativeProtocol"] == "direct-cdp"
+        let messages = if self.native_browser()
+            && (self.policy.harness == "zai"
+                || self.capabilities()["nativeProtocol"] == "herder-extension")
         {
             self.raw_call(
                 "getSessionMessages",

@@ -9,7 +9,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, time::Duration};
 
-use crate::adapters::browser::BrowserFile;
+use crate::adapters::browser::{BrowserFile, page::PageConnection};
 use crate::application::recent::{RecentMessages, SourceMessage, normalize_recent};
 use crate::domain::{
     address::{InstanceRef, NodeRef, SessionAddress},
@@ -87,12 +87,20 @@ pub struct ZaiSendReceipt {
 /// Z.ai adapter bound to one exact Chrome instance/context/target
 /// and the expected hashed Z.ai account scope.
 pub struct ZaiReader {
-    cdp: CdpConnection,
+    cdp: PageConnection,
     account_scope: String,
     fresh_blank: bool,
 }
 
 impl ZaiReader {
+    pub(crate) fn from_extension(cdp: PageConnection, scope: &str, fresh_blank: bool) -> Self {
+        Self {
+            cdp,
+            account_scope: scope.to_owned(),
+            fresh_blank,
+        }
+    }
+
     pub async fn account_scope_for_target(cdp: &mut CdpConnection) -> Result<String, ZaiReadError> {
         let value = cdp
             .evaluate(&native::expression("account", None, Value::Null))
@@ -101,7 +109,7 @@ impl ZaiReader {
         Ok(native::verified_scope(&value)?.to_ascii_lowercase())
     }
 
-    pub(crate) fn connection_mut(&mut self) -> &mut CdpConnection {
+    pub(crate) fn connection_mut(&mut self) -> &mut PageConnection {
         &mut self.cdp
     }
 
@@ -131,7 +139,7 @@ impl ZaiReader {
         .await
         .map_err(ZaiReadError::TargetCreate)?;
         let mut reader = Self {
-            cdp,
+            cdp: cdp.into(),
             account_scope: expected_account_scope.to_ascii_lowercase(),
             fresh_blank: true,
         };
@@ -168,7 +176,8 @@ impl ZaiReader {
         let mut reader = Self {
             cdp: CdpConnection::connect_page(endpoint, identity)
                 .await
-                .map_err(ZaiReadError::Cdp)?,
+                .map_err(ZaiReadError::Cdp)?
+                .into(),
             account_scope: expected_account_scope.to_ascii_lowercase(),
             fresh_blank: false,
         };
@@ -213,7 +222,7 @@ impl ZaiReader {
             .await
             .map_err(ZaiReadError::Cdp)?;
         let mut reader = Self {
-            cdp,
+            cdp: cdp.into(),
             account_scope: expected_account_scope.to_ascii_lowercase(),
             fresh_blank: false,
         };
@@ -221,11 +230,10 @@ impl ZaiReader {
         Ok(reader)
     }
 
-    async fn verify_account(&mut self) -> Result<(), ZaiReadError> {
-        if Self::account_scope_for_target(&mut self.cdp).await? != self.account_scope {
-            return Err(ZaiReadError::AccountMismatch);
-        }
-        Ok(())
+    pub(crate) async fn verify_account(&mut self) -> Result<(), ZaiReadError> {
+        self.native_read("account", None, Value::Null)
+            .await
+            .map(|_| ())
     }
 
     pub fn identity(&self) -> &CdpTargetIdentity {
@@ -253,25 +261,15 @@ impl ZaiReader {
         native_limit: Option<usize>,
     ) -> Result<Vec<ZaiChatRef>, ZaiReadError> {
         let account = serde_json::json!(self.account_scope);
-        let list = ZAI_CHAT_LIST_EXPRESSION
-            .replace("__EXPECTED_SCOPE__", &account.to_string())
-            .replace(
-                "/* authenticateEmpty */",
-                if native_limit.is_some() {
-                    "true"
-                } else {
-                    "false"
-                },
-            );
+        let authenticate = native_limit.is_some();
         // The list operation already proves the owner of its own page. Only IDs
         // cross CDP, including when a provider adds fields such as chat titles.
         let limit = native_limit.unwrap_or(u32::MAX as usize);
-        let expression = format!(
-            "(async()=>{{const r=await {list}; if(Array.isArray(r.chats)) r.chats=r.chats.slice(0,{limit}).map(row=>({{id:row?.id}})); return r}})()"
-        );
         let result = self
             .cdp
-            .evaluate(&expression)
+            .site("list", serde_json::json!({"scope": account, "limit": limit, "authenticate": authenticate}), || format!(
+                "(async()=>{{const r=await ({ZAI_CHAT_LIST})({account},{authenticate}); if(Array.isArray(r.chats)) r.chats=r.chats.slice(0,{limit}).map(row=>({{id:row?.id}})); return r}})()"
+            ))
             .await
             .map_err(ZaiReadError::Cdp)?;
         native::verify_response(&result, &self.account_scope, None)?;
@@ -409,35 +407,7 @@ impl ZaiReader {
     }
 }
 
-const ZAI_CHAT_LIST_EXPRESSION: &str = r#"(async(authenticateEmpty = false)=>{
-  if(location.origin!=="https://chat.z.ai")return {origin:location.origin};
-  const expected=__EXPECTED_SCOPE__;
-  const options={credentials:'same-origin',cache:'no-store',mode:'same-origin',redirect:'error'};
-  const r=await fetch('/api/v1/chats/?page=1&type=all&channel=zai-web&project_id=',options);
-  if(!r.ok)return {origin:location.origin,status:r.status};
-  let chats;try{chats=await r.json()}catch{return {origin:location.origin,error:'invalid_json'}};
-  if(!Array.isArray(chats))return {origin:location.origin,error:'invalid_list'};
-  const unverified={origin:location.origin,error:'account_unverified'};
-  const empty=chats.length===0, first=chats[0]?.id;
-  if(empty ? !authenticateEmpty : typeof first!=='string')return unverified;
-  const proof=await fetch(empty ? '/api/v1/auths/' : '/api/v1/chats/'+encodeURIComponent(first),options);
-  if(!proof.ok)return empty ? {origin:location.origin,status:proof.status} : unverified;
-  let record;try{record=await proof.json()}catch{return unverified};
-  const owner=empty ? record?.id : record?.user_id;
-  if(empty ? typeof owner!=='string'||!owner.trim() : record?.id!==first||!owner)return unverified;
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(owner)));
-  const scope=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
-  if(scope!==expected)return {origin:location.origin,error:'account_mismatch',scope,scope_verified:true};
-  // A cached owned chat can still be readable after the browser switches
-  // accounts. The native inventory also proves the current login.
-  if(authenticateEmpty&&!empty){
-    const auth=await fetch('/api/v1/auths/',options);
-    if(!auth.ok)return {origin:location.origin,status:auth.status};
-    let session;try{session=await auth.json()}catch{return unverified};
-    if(typeof session?.id!=='string'||session.id!==String(owner))return {origin:location.origin,error:'account_mismatch'};
-  }
-  return {origin:location.origin,chats,scope,scope_verified:true};
-})(/* authenticateEmpty */)"#;
+const ZAI_CHAT_LIST: &str = include_str!("list.js");
 
 #[derive(Debug, Deserialize)]
 struct Batch {

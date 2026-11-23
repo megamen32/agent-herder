@@ -613,6 +613,63 @@ class NativeProfileMigrationContracts(MigrationFixture):
         self.assertEqual([row["kind"] for row in self.migration["profiles"]], ["zai"])
         self.assertIn(str(self.paths["chatgpt"]), self.new_selection["profiles"])
 
+    def herder_extension(self, scope):
+        token = self.reviewed / "token"
+        if not token.exists():
+            candidate.create(token, b"private-token-sentinel-32-byte-fixture")
+        return {"AHAP_BROWSER_TRANSPORT": "herder-extension", candidate.BROWSER_SCOPE: scope,
+                "AHAP_BROWSER_EXTENSION_LISTEN": "127.0.0.1:1234",
+                "AHAP_BROWSER_EXTENSION_TOKEN_FILE": str(token)}
+
+    def test_herder_extension_userio_and_explicit_direct_cdp_cutover(self):
+        for kind in ("chatgpt", "zai"):
+            self.pin(kind, ahap_env=self.herder_extension(self.env[kind][candidate.BROWSER_SCOPE]))
+        self.stage(["chatgpt", "zai"], self.pins)
+        self.assertNotIn("private-token-sentinel", json.dumps(self.migration))
+        self.plan(["chatgpt", "zai"], self.pins)
+        for row in self.migration["profiles"]:
+            old = candidate.read_json(self.paths[row["kind"]])
+            new = candidate.read_json(row["payload"])
+            for field in ("database", "gate", "generation"):
+                self.assertEqual(new[field], old[field])
+            self.assertEqual(new["owner"].get("existing_sessions"), old["owner"].get("existing_sessions"))
+            self.assertEqual(new["owner"]["ahap_env"], self.herder_extension(self.env[row["kind"]][candidate.BROWSER_SCOPE]))
+
+    def test_herder_extension_invalid_bindings_fail_closed(self):
+        good = self.herder_extension(self.env["chatgpt"][candidate.BROWSER_SCOPE])
+        invalid = [{k: v for k, v in good.items() if k != key} for key in good]
+        for key, value in (("AHAP_BROWSER_EXTENSION_LISTEN", "0.0.0.0:1234"),
+                           ("AHAP_BROWSER_EXTENSION_LISTEN", "127.0.0.1:0"),
+                           ("AHAP_BROWSER_EXTENSION_LISTEN", "127.0.0.1:65536"),
+                           ("AHAP_BROWSER_EXTENSION_LISTEN", "[::]:1234"),
+                           ("AHAP_BROWSER_EXTENSION_LISTEN", "localhost:1234"),
+                           ("AHAP_BROWSER_EXTENSION_LISTEN", "private-sentinel"),
+                           ("AHAP_BROWSER_EXTENSION_TOKEN_FILE", "/missing/private-sentinel"),
+                           ("AHAP_BROWSER_CDP_TARGET_ID", "private-sentinel"),
+                           (candidate.BROWSER_SCOPE, "d" * 64)):
+            invalid.append({**good, key: value})
+        for env in invalid:
+            self.pin("chatgpt", ahap_env=env)
+            with self.assertRaises((ValueError, OSError)) as refused:
+                self.plan(["chatgpt"], self.pins)
+            self.assertNotIn("private-sentinel", str(refused.exception))
+        Path(good["AHAP_BROWSER_EXTENSION_TOKEN_FILE"]).chmod(0o644)
+        self.pin("chatgpt", ahap_env=good)
+        with self.assertRaises((ValueError, OSError)):
+            self.plan(["chatgpt"], self.pins)
+
+    def test_herder_extension_native_direct_cdp_and_loopback_listeners(self):
+        path = self.paths["zai"]
+        profile = candidate.read_json(path)
+        del profile["owner"]["ahap_script"]
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.env["zai"])
+        self.save_profile(path, profile)
+        env = self.herder_extension(self.env["zai"][candidate.BROWSER_SCOPE])
+        for address in ("127.0.0.1:1234", "127.1.2.3:1234", "[::1]:1234"):
+            self.pin("zai", ahap_env={**env, "AHAP_BROWSER_EXTENSION_LISTEN": address})
+            _, rows = self.plan(["zai"], {"zai": self.pins["zai"]})
+            self.assertEqual(json.loads(rows[0][1])["owner"]["ahap_env"]["AHAP_BROWSER_EXTENSION_LISTEN"], address)
+
     def test_chatgpt_cutover_installs_only_exact_pinned_recovery(self):
         activation = self.root / "browser-recovery-active.json"
         handoff = {"native_sessions": ["chatgpt::existing"], "activation_file": str(activation)}
@@ -626,6 +683,10 @@ class NativeProfileMigrationContracts(MigrationFixture):
             self.pin("chatgpt", browser_recovery=invalid)
             with self.assertRaises(ValueError):
                 self.plan(["chatgpt"], {"chatgpt": self.pins["chatgpt"]})
+        self.pin("chatgpt", browser_recovery=recovery,
+                 ahap_env=self.herder_extension(self.env["chatgpt"][candidate.BROWSER_SCOPE]))
+        _, extension_rows = self.plan(["chatgpt"], {"chatgpt": self.pins["chatgpt"]})
+        self.assertEqual(json.loads(extension_rows[0][1])["owner"]["browser_recovery"], recovery)
         self.pin("chatgpt", browser_recovery=recovery)
         self.stage(["chatgpt"], {"chatgpt": self.pins["chatgpt"]})
         self.check()
@@ -728,8 +789,7 @@ class NativeProfileMigrationContracts(MigrationFixture):
         with self.assertRaisesRegex(ValueError, "requires a reviewed private"):
             self.plan(["chatgpt"], {})
         self.pin("zai")
-        with self.assertRaisesRegex(ValueError, "binding must match"):
-            self.plan(["zai"], {"zai": self.pins["zai"]})
+        self.plan(["zai"], {"zai": self.pins["zai"]})
 
     def test_incomplete_mixed_or_unsafe_cdp_is_rejected_without_disclosing_values(self):
         good = self.env["chatgpt"]

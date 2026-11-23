@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, time::Duration};
 
-use super::browser::{BrowserAttachment, BrowserFile};
+use super::browser::{BrowserAttachment, BrowserFile, page::PageConnection};
 use super::cdp::{
     CdpConnection, CdpCreateError, CdpError, CdpTargetIdentity, create_page_target_with_origin_port,
 };
@@ -73,12 +73,20 @@ pub struct ChatGptSendReceipt {
 /// Authenticated adapter bound to one browser instance, context,
 /// and page target. Auth data never leaves the selected Chrome page.
 pub struct ChatGptReader {
-    cdp: CdpConnection,
+    cdp: PageConnection,
     account_scope: String,
     fresh_blank: bool,
 }
 
 impl ChatGptReader {
+    pub(crate) fn from_extension(cdp: PageConnection, scope: &str, fresh_blank: bool) -> Self {
+        Self {
+            cdp,
+            account_scope: scope.to_owned(),
+            fresh_blank,
+        }
+    }
+
     pub async fn account_scope_for_target(
         cdp: &mut CdpConnection,
     ) -> Result<String, ChatGptReadError> {
@@ -123,7 +131,7 @@ impl ChatGptReader {
         .await
         .map_err(ChatGptReadError::TargetCreate)?;
         let mut reader = Self {
-            cdp,
+            cdp: cdp.into(),
             account_scope: expected_account_scope.to_ascii_lowercase(),
             fresh_blank: true,
         };
@@ -163,7 +171,7 @@ impl ChatGptReader {
         let expected = expected_account_scope.to_ascii_lowercase();
         verify_chatgpt_scope(&mut cdp, &expected).await?;
         Ok(Self {
-            cdp,
+            cdp: cdp.into(),
             account_scope: expected,
             fresh_blank: false,
         })
@@ -207,7 +215,7 @@ impl ChatGptReader {
             .map_err(ChatGptReadError::Cdp)?;
         verify_chatgpt_scope(&mut cdp, expected_account_scope).await?;
         Ok(Self {
-            cdp,
+            cdp: cdp.into(),
             account_scope: expected_account_scope.to_ascii_lowercase(),
             fresh_blank: false,
         })
@@ -222,10 +230,17 @@ impl ChatGptReader {
     }
 
     pub(crate) async fn verify_account_pin(&mut self) -> Result<(), ChatGptReadError> {
-        verify_chatgpt_scope(&mut self.cdp, &self.account_scope).await
+        let result = self
+            .cdp
+            .site("account", Value::Null, || {
+                CHATGPT_ACCOUNT_SCOPE_EXPRESSION.into()
+            })
+            .await
+            .map_err(ChatGptReadError::Cdp)?;
+        check_chatgpt_scope(&result, &self.account_scope)
     }
 
-    pub(crate) fn connection_mut(&mut self) -> &mut CdpConnection {
+    pub(crate) fn connection_mut(&mut self) -> &mut PageConnection {
         &mut self.cdp
     }
 
@@ -289,6 +304,13 @@ async fn verify_chatgpt_scope(
         .evaluate(CHATGPT_ACCOUNT_SCOPE_EXPRESSION)
         .await
         .map_err(ChatGptReadError::Cdp)?;
+    check_chatgpt_scope(&scope, expected_account_scope)
+}
+
+fn check_chatgpt_scope(
+    scope: &Value,
+    expected_account_scope: &str,
+) -> Result<(), ChatGptReadError> {
     if scope.get("origin").and_then(Value::as_str) != Some("https://chatgpt.com") {
         return Err(ChatGptReadError::WrongOrigin);
     }
@@ -299,22 +321,7 @@ async fn verify_chatgpt_scope(
     Ok(())
 }
 
-const CHATGPT_ACCOUNT_SCOPE_EXPRESSION: &str = r#"(async()=>{
-  if(location.origin!=="https://chatgpt.com")return {origin:location.origin};
-  const r=await fetch('/api/auth/session',{credentials:'same-origin',cache:'no-store'});
-  if(!r.ok)return {origin:location.origin};
-  const s=await r.json();
-  const id=s&&s.account&&s.account.id;
-  if(typeof id!=="string"||!id)return {origin:location.origin};
-  const hash=async value=>{
-    const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
-    return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');
-  };
-  const user=s?.user?.id;
-  const userioScope=typeof user==='string'&&user
-    ? await hash(JSON.stringify({provider:'chatgpt',user_id:user,account_id:id})) : null;
-  return {origin:location.origin,scope:await hash(id),userioScope};
-})()"#;
+const CHATGPT_ACCOUNT_SCOPE_EXPRESSION: &str = concat!("(", include_str!("account.js"), ")()");
 
 fn response_seen(messages: &[NormalizedMessage], input_id: &str, marker: &str) -> bool {
     let mut turn = messages.iter().skip_while(|m| m.id != input_id || m.role != Role::User);

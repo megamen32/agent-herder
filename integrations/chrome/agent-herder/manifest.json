@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Agent Herder",
+  "version": "0.1.0",
+  "description": "Connect your signed-in browser chats directly to Agent Herder.",
+  "minimum_chrome_version": "120",
+  "permissions": ["alarms", "scripting", "storage"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.z.ai/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "action": { "default_title": "Agent Herder settings" }
+}

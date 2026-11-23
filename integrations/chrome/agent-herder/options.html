@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Agent Herder settings</title>
+<main>
+  <h1>Agent Herder</h1>
+  <form>
+    <p><label>Provider <select name="provider"><option value="chatgpt">ChatGPT</option><option value="zai">Z.ai</option></select></label></p>
+    <p><label>Herder WebSocket URL <input name="endpoint" type="url" required></label></p>
+    <p><label>Connection token <input name="token" type="password" autocomplete="off" required></label></p>
+    <button type="submit">Connect</button>
+    <button type="button" id="disconnect">Disconnect</button>
+  </form>
+  <p role="status" id="status"></p>
+</main>
+<script type="module" src="options.js"></script>
+</html>

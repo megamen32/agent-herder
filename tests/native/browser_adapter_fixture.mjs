@@ -1,19 +1,26 @@
-// Rust attaches over real CDP. Chrome loads each provider document and API
-// response from a loopback HTTPS server, including a new target's first GET.
+// Chrome loads provider documents and API responses from loopback HTTPS.
+// The public owner uses either its own extension or the direct-CDP stand.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID, X509Certificate } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash, randomBytes, randomUUID, X509Certificate } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { buffer as readBytes, json as readJson } from "node:stream/consumers";
+import { build as buildExtension } from "../../integrations/chrome/agent-herder/build.mjs";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright-core");
-const [harness, originPort, evidenceDir, replyMode] = process.argv.slice(2);
-assert.ok(replyMode === undefined || replyMode === "--echo");
+const [harness, originPort, evidenceDir, ...options] = process.argv.slice(2);
+let useExtension = false;
+let replyMode;
+for (let i = 0; i < options.length; i++) {
+  if (options[i] === "--echo") replyMode = options[i];
+  else if (options[i] === "--extension") useExtension = true;
+  else throw Error("unknown fixture option: " + options[i]);
+}
 const origin = { chatgpt: "https://chatgpt.com", zai: "https://chat.z.ai" }[harness];
 assert.ok(origin && /^[1-9]\d*$/.test(originPort));
 const { hostname } = new URL(origin);
@@ -35,6 +42,8 @@ const active = new Map();
 let holdNext = false;
 let withholdAfter = null;
 let failNext = false;
+let supersedeOnInput = null;
+let superseded = false;
 const requests = {};
 const documents = [];
 const unexpected = [];
@@ -119,7 +128,7 @@ function zaiMessages(id, rows) {
 
 // Runs in Chrome. Only actual File objects from the picker's change event
 // reach the upload endpoint, and only form submission links them to a message.
-function installPage(harness, initialRows, activeInput) {
+function installPage(harness, initialRows, activeInput, supersede) {
   const form = document.querySelector("form");
   const composer = form.querySelector("[contenteditable],textarea");
   const picker = document.querySelector("input[type=file]");
@@ -196,7 +205,17 @@ function installPage(harness, initialRows, activeInput) {
       controls();
     }
   };
-  composer.oninput = controls;
+  composer.oninput = () => {
+    controls();
+    if (supersede && (composer.value ?? composer.innerText).startsWith("Продолжай")) {
+      supersede = false;
+      // Put the newer input on the provider before the extension can re-read
+      // the failed boundary or click the composer.
+      const request = new XMLHttpRequest();
+      request.open("POST", "/__fixture/supersede", false);
+      request.send(chatId());
+    }
+  };
   submit.addEventListener("click", () => {
     const count = Number(localStorage.getItem("fixtureSubmitClicks"));
     localStorage.setItem("fixtureSubmitClicks", String(count + 1));
@@ -240,7 +259,8 @@ function renderPage(id) {
   const stop = harness === "chatgpt"
     ? '<button type="button" data-testid="stop-button" aria-label="Stop generating" hidden>Stop</button>'
     : '<button type="button" hidden><span class="block size-3 rounded-xs bg-text-inverted">■</span></button>';
-  const state = JSON.stringify([harness, chats.get(id) ?? [], active.get(id) ?? null]).replaceAll("<", "\\u003c");
+  const state = JSON.stringify([harness, chats.get(id) ?? [], active.get(id) ?? null, supersedeOnInput === id])
+    .replaceAll("<", "\\u003c");
   const picker = harness === "chatgpt" ? '<input id="upload-files" type="file" multiple hidden>'
     : '<input type="file" multiple hidden>';
   return `<!doctype html><meta charset="utf-8"><title>Local browser fixture</title>
@@ -272,6 +292,14 @@ async function serve(request, response) {
         .end(renderPage(path.slice(3)));
     }
     if (method === "GET" && path === "/favicon.ico") return response.writeHead(204).end();
+    if (method === "POST" && path === "/__fixture/supersede") {
+      const id = (await readBytes(request)).toString();
+      if (id !== supersedeOnInput || !chats.has(id)) return json({}, 400);
+      chats.get(id).push({ id: randomUUID(), role: "user", text: "New input from the operator" });
+      supersedeOnInput = null;
+      superseded = true;
+      return json({});
+    }
     if (method === "POST" && path === "/__fixture/upload") {
       const file = storeFile(url.searchParams.get("name"), url.searchParams.get("mime_type"), await readBytes(request));
       uploads.push(file);
@@ -410,19 +438,73 @@ const provider = createHttpsServer(tls, (request, response) => {
 });
 const sink = createServer(socket => socket.destroy());
 let browser;
+let context;
+let extensionRoot;
+let worker;
 try {
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
   await new Promise(resolve => sink.listen(0, "127.0.0.1", resolve));
-  browser = await chromium.launch({ channel: "chrome", headless: true, args: [
+  const bypass = "<-loopback>;" + origin + ":443" + (useExtension ? ";127.0.0.1" : "");
+  const localBridge = useExtension ? ", EXCLUDE 127.0.0.1" : "";
+  const launchArgs = [
     "--enable-automation", "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1",
     "--remote-allow-origins=http://127.0.0.1:" + originPort,
     "--proxy-server=http://127.0.0.1:" + sink.address().port,
-    "--proxy-bypass-list=<-loopback>;" + origin + ":443",
-    "--host-resolver-rules=MAP " + hostname + ":443 127.0.0.1:" + provider.address().port + ", MAP * ~NOTFOUND",
+    "--proxy-bypass-list=" + bypass,
+    "--host-resolver-rules=MAP " + hostname + ":443 127.0.0.1:" + provider.address().port + localBridge + ", MAP * ~NOTFOUND",
     "--ignore-certificate-errors-spki-list=" + createHash("sha256").update(spki).digest("base64"),
     "--disable-quic",
-  ] });
-  const context = await browser.newContext({ serviceWorkers: "block" });
+  ];
+  const scope = createHash("sha256").update(accountName).digest("hex");
+  let env;
+  if (useExtension) {
+    extensionRoot = await mkdtemp(join(tmpdir(), "herder-extension-smoke-"));
+    const extension = join(extensionRoot, "extension");
+    await buildExtension(extension);
+    const reservation = createServer();
+    await new Promise(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    const host = "127.0.0.1:" + reservation.address().port;
+    await new Promise(resolve => reservation.close(resolve));
+    const token = randomBytes(32).toString("hex");
+    const tokenPath = join(extensionRoot, "token");
+    await writeFile(tokenPath, token + "\n", { mode: 0o600 });
+    launchArgs.push(`--disable-extensions-except=${extension}`, `--load-extension=${extension}`);
+    context = await chromium.launchPersistentContext(join(extensionRoot, "chrome-profile"), {
+      channel: "chromium", headless: true, args: launchArgs, ignoreDefaultArgs: ["--disable-extensions"],
+      executablePath: process.env.HERDER_FIXTURE_CHROMIUM || undefined,
+    });
+    worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker", { timeout: 15000 });
+    await worker.evaluate(async ({ harness, endpoint, token }) => {
+      const execute = chrome.scripting.executeScript.bind(chrome.scripting);
+      const results = globalThis.fixtureCalls = [];
+      chrome.scripting.executeScript = async request => {
+        const op = request.args[1];
+        try {
+          const response = await execute(request);
+          const row = typeof response[0]?.result === "string" ? JSON.parse(response[0].result) : null;
+          const value = row?.value;
+          results.push({ op, error: row?.error, outcome: row?.status, clicked: row?.clicked,
+            value: Array.isArray(value) ? "array" : typeof value === "boolean" ? value : typeof value });
+          return response;
+        } catch (error) {
+          results.push({ op, error: error.name });
+          throw error;
+        } finally {
+          if (results.length > 64) results.shift();
+        }
+      };
+      await chrome.storage.local.set({ connections: { [harness]: { endpoint, token } } });
+    }, { harness, endpoint: "ws://" + host + "/browser-extension", token });
+    env = {
+      AHAP_BROWSER_TRANSPORT: "herder-extension",
+      AHAP_BROWSER_EXTENSION_LISTEN: host,
+      AHAP_BROWSER_EXTENSION_TOKEN_FILE: tokenPath,
+      AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+    };
+  } else {
+    browser = await chromium.launch({ channel: "chrome", headless: true, args: launchArgs });
+    context = await browser.newContext({ serviceWorkers: "block" });
+  }
   context.on("request", request => {
     const url = new URL(request.url());
     if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
@@ -432,43 +514,78 @@ try {
   const page = await context.newPage();
   // Reading A while parked on B must never silently return the displayed chat.
   await page.goto(origin + "/c/" + seedIds[1]);
-  const session = await context.newCDPSession(page);
-  const { targetInfo } = await session.send("Target.getTargetInfo");
-  const browserSession = await browser.newBrowserCDPSession();
-  const { browserContextIds } = await browserSession.send("Target.getBrowserContexts");
-  assert.ok(browserContextIds.includes(targetInfo.browserContextId), "expected non-default Chrome context");
-  // Discover the endpoint allocated by this Chrome, even with concurrent fixtures.
-  const { arguments: argv } = await browserSession.send("Browser.getBrowserCommandLine");
-  const prefix = "--user-data-dir=";
-  const profile = argv.find(arg => arg.startsWith(prefix)).slice(prefix.length);
-  const [port, wsPath] = (await readFile(join(profile, "DevToolsActivePort"), "utf8")).trim().split("\n");
-  assert.match(port, /^[1-9]\d*$/);
-  assert.match(wsPath, /^\/devtools\/browser\/[\da-f-]+$/);
-  const { product } = await browserSession.send("Browser.getVersion");
-  await browserSession.detach();
-  await session.detach();
-  const env = {
-    AHAP_BROWSER_TRANSPORT: "direct-cdp",
-    AHAP_BROWSER_CDP_WS_URL: "ws://127.0.0.1:" + port + wsPath,
-    AHAP_BROWSER_CDP_ORIGIN_PORT: originPort,
-    AHAP_BROWSER_CDP_CONTEXT_ID: targetInfo.browserContextId,
-    AHAP_BROWSER_CDP_TARGET_ID: targetInfo.targetId,
-    AHAP_BROWSER_ACCOUNT_SCOPE: createHash("sha256").update(accountName).digest("hex"),
-  };
+  let product;
+  if (useExtension) {
+    product = await page.evaluate(() => navigator.userAgent);
+  } else {
+    const session = await context.newCDPSession(page);
+    const { targetInfo } = await session.send("Target.getTargetInfo");
+    const browserSession = await browser.newBrowserCDPSession();
+    const { browserContextIds } = await browserSession.send("Target.getBrowserContexts");
+    assert.ok(browserContextIds.includes(targetInfo.browserContextId), "expected non-default Chrome context");
+    const { arguments: argv } = await browserSession.send("Browser.getBrowserCommandLine");
+    const prefix = "--user-data-dir=";
+    const profile = argv.find(arg => arg.startsWith(prefix)).slice(prefix.length);
+    const [port, wsPath] = (await readFile(join(profile, "DevToolsActivePort"), "utf8")).trim().split("\n");
+    assert.match(port, /^[1-9]\d*$/);
+    assert.match(wsPath, /^\/devtools\/browser\/[\da-f-]+$/);
+    ({ product } = await browserSession.send("Browser.getVersion"));
+    await browserSession.detach();
+    await session.detach();
+    env = {
+      AHAP_BROWSER_TRANSPORT: "direct-cdp",
+      AHAP_BROWSER_CDP_WS_URL: "ws://127.0.0.1:" + port + wsPath,
+      AHAP_BROWSER_CDP_ORIGIN_PORT: originPort,
+      AHAP_BROWSER_CDP_CONTEXT_ID: targetInfo.browserContextId,
+      AHAP_BROWSER_CDP_TARGET_ID: targetInfo.targetId,
+      AHAP_BROWSER_ACCOUNT_SCOPE: scope,
+    };
+  }
   for await (const line of createInterface({ input: process.stdin })) {
     const { id, method, params } = JSON.parse(line);
     let result;
     switch (method) {
       case "setup": result = { env, seedIds, version: product, replyOriginals,
+        extension: worker ? await worker.evaluate(() => chrome.runtime.getManifest().version) : null,
         userioScope: createHash("sha256").update(JSON.stringify({
           provider: harness, user_id: "fixture-user", account_id: accountName,
         })).digest("hex") }; break;
+      case "waitExtension": {
+        assert.ok(worker);
+        const until = Date.now() + 15_000;
+        result = false;
+        while (!result && Date.now() < until) {
+          result = await worker.evaluate(async provider => {
+            const key = "connected:" + provider;
+            return (await chrome.storage.session.get(key))[key] === true;
+          }, harness);
+          if (!result) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        break;
+      }
       case "snapshot": result = { sends, requests, uploads, downloads, stops, active: Object.fromEntries(active),
         chatIds: [...chats.keys()], submitClicks: await page.evaluate(() => Number(localStorage.getItem("fixtureSubmitClicks"))),
-        documents, unexpected, pinnedRoute: new URL(page.url()).pathname }; break;
+        extensionCalls: worker ? await worker.evaluate(() => globalThis.fixtureCalls) : null,
+        documents, unexpected, extension: useExtension, superseded, pinnedRoute: new URL(page.url()).pathname }; break;
+      case "loseExtensionAck":
+        await worker.evaluate(() => {
+          const send = WebSocket.prototype.send;
+          WebSocket.prototype.send = function (data) {
+            const reply = JSON.parse(data);
+            if (reply?.ok && reply.result?.status === "sent" && reply.result?.messageId) {
+              WebSocket.prototype.send = send;
+              this.close();
+              return;
+            }
+            return send.call(this, data);
+          };
+        });
+        result = true;
+        break;
       case "switchAccount": account = accountName + "-other"; result = true; break;
       case "holdNext": holdNext = true; result = true; break;
       case "failNext": failNext = true; result = true; break;
+      case "supersedeOnInput": supersedeOnInput = params.id; result = true; break;
       case "failedTurn": {
         assert.equal(harness, "chatgpt");
         const rows = chats.get(params.id);
@@ -503,6 +620,8 @@ try {
   }
 } finally {
   if (browser) await browser.close();
+  else await context?.close();
+  if (extensionRoot) await rm(extensionRoot, { recursive: true, force: true });
   sink.close();
   provider.close();
 }

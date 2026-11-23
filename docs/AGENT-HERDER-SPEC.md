@@ -21,7 +21,7 @@ Agent Herder — единый MCP/application control plane для незави�
 - OpenCode V1 не поддерживается.
 - Незавершённые Go adapters не входят в active registry.
 - ChatGPT, Z.ai и browser lanes не считаются готовыми по наличию в каталоге. После закрытого общего Rust-контракта их реальные adapter lanes являются P0: каждый должен получить отдельный capability и consumer proof.
-- Agent Herder использует общий bezbrowser core для браузерного транспорта. UserIO остаётся отдельным потребителем этого транспорта.
+- Целевой browser runtime использует собственное расширение Agent Herder с прямой связью с Herder. Bezbrowser — необязательный инструмент разработки и отладки; UserIO сохраняется для legacy compatibility.
 
 ## Текущий приоритет исполнения
 
@@ -183,7 +183,11 @@ Durable message хранит message_ref, sender, recipient, project/session ide
 
 ## Browser and external adapter boundaries
 
-Целевой production-маршрут ChatGPT и Z.ai проходит через расширение Chrome и bezbrowser. Расширение устанавливается в уже авторизованный профиль, подключается к bezbrowser исходящим WSS и выполняет операции на вкладке с арендой. Rust проверяет аккаунт и точный чат, планирует восстановление, соблюдает HumanStop и хранит квитанцию. Прямой CDP используется на изолированном стенде. Подключение и критерии выпуска описаны в [Browser chat adapters](browser-chat-adapters.md#production-route-through-the-extension).
+Маршрут ChatGPT и Z.ai через расширение использует уже авторизованный профиль Chrome. На server100 используется профиль сервера, а при доступном loopback расширение подключается к Rust по локальному WebSocket. Расширение Agent Herder само читает сайт и выполняет действия на нём. Bezbrowser используется при разработке и отладке. UserIO сохранён как совместимый маршрут для существующих профилей.
+
+Единый Rust `SessionRecovery` решает, когда восстанавливать сессию, учитывает HumanStop и ожидающий запрос человека, сохраняет тот же чат и модель и не допускает fallback без явной capability. Расширение перед действием сверяет точный account, chat, failed turn и input. Продолжение имеет один request key и native receipt; после unknown или потерянного подтверждения допускается readback, но не повторная отправка.
+
+CI для fake 429 должен проходить через собственное расширение и проверять HumanStop, pending request, устаревшую привязку, потерянное подтверждение и неудачный retry. Прямой CDP остаётся изолированным fixture. Это целевой контракт, а не подтверждение публикации; критерии выпуска описаны в [Browser chat adapters](browser-chat-adapters.md#production-route-through-the-extension).
 
 Go adapters, незавершённые provider lanes и browser profiles без доказанного owner scope не входят в active registry. Capability без native evidence остаётся unsupported или unknown; имя harness само по себе capability не создаёт.
 

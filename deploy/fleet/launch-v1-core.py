@@ -156,11 +156,12 @@ def prepare(selector):
             raise ValueError('profile does not select the installed executable')
         identity = (owner.get('node'), owner.get('instance'), kind)
         if native_browser:
-            # The pinned core validates the complete CDP binding before attachment.
+            # The pinned core validates the transport and account binding.
             adapter_env = owner.get('ahap_env')
-            if (not isinstance(adapter_env, dict) or adapter_env.get('AHAP_BROWSER_TRANSPORT') != 'direct-cdp'
+            if (not isinstance(adapter_env, dict)
+                    or adapter_env.get('AHAP_BROWSER_TRANSPORT') not in ('direct-cdp', 'herder-extension')
                     or owner.get('ahap_base_url') is not None):
-                raise ValueError('native browser profile requires direct CDP')
+                raise ValueError('native browser profile requires a supported browser transport')
         elif ahap_script is None:
             # Native OpenCode profiles select the endpoint directly. The Rust
             # owner composition validates the endpoint and owns the transport.

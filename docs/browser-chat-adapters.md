@@ -2,46 +2,68 @@
 
 ## Production route through the extension
 
-Use the Chrome extension and the existing [bezbrowser deployment tools](https://github.com/megamen32/bezbrowser/blob/main/docs/EXTENSIONS.md).
-The extension connects over outbound WSS from a signed-in Chrome profile.
-Mac Intel and Mac mini are valid browser hosts for an owner running on
-server100. The browser must present the provider account already bound to
-the Herder profile. Installing the extension uses Chrome's normal extension
-permissions. Day-to-day recovery requires no manual DevTools connection or
-approval to expose a remote debugging port.
+Agent Herder's Chrome extension uses the existing signed-in Chrome profile on
+server100. It reads and acts on the provider site and communicates directly
+with Agent Herder. Existing site authorization stays in that profile.
+Bezbrowser is a tool for development and debugging. UserIO remains a
+compatibility route for existing profiles.
 
-1. Check the intended node with `browser_status` and `browser_profiles`.
-   Reuse a connected profile when its identity matches. If it needs the
-   extension, use the managed `browser_extensions` install workflow and verify
-   the extension ID, version and live connection on that profile.
-2. Pin the browser identity in the Herder profile. Use a tab leased to Herder
-   for provider operations and verify the pinned account and exact native chat
-   before reading or sending. A profile on another machine works through the
-   same extension route.
-3. The shared Rust scheduler retries in the same conversation. It checks
-   HumanStop and the failed input before one continuation. After a lost
-   acknowledgement it reads back the native input and the existing receipt.
-   Browser adapters without a provider-switch capability stop after that retry.
-4. Exercise HTTP 429, HumanStop and restart after a lost acknowledgement
-   on the fake provider through the extension transport. Verify that the
-   installed Herder reads one already registered ChatGPT conversation and that
-   recovery is armed for that conversation. Enable Z.ai once its provider
-   exposes a failure tied to the latest assistant message and user input.
+One Rust `SessionRecovery` owns the decision of when to recover. It checks
+HumanStop and pending human requests, keeps the exact original chat and model,
+and does not switch providers or models without an explicit supported
+capability. Before acting, the extension confirms the exact account, chat,
+failed turn and input. A continuation uses one request key and a native
+receipt. An unknown outcome or lost acknowledgement is resolved by readback of
+the same input and receipt, never by replaying an uncertain action. A stale
+or ambiguous binding fails closed.
 
-Implementation status on this branch: the Rust scheduler and ChatGPT recovery
-pass the fake-provider tests over direct CDP. The Rust owner still needs the
-bezbrowser transport and an end-to-end extension test. Installed UserIO
-profiles remain available during migration.
+ChatGPT supports this recovery flow. Z.ai exposes `last_run.status` and
+the history cursor separately. Z.ai can read, create and send through the
+extension. Recovery for Z.ai requires a provider signal linking a failed
+message to its user input.
 
-The Rust browser port in [port.rs](../crates/herder/src/adapters/browser/port.rs)
-is where bezbrowser leases and page operations belong. The provider scripts
-continue to verify the same account, chat and failed input. The trusted owner
-binding in [scoped_profile.rs](../crates/herder/src/bin/herder_native_stdio/scoped_profile.rs)
-and the candidate builder in
-[process-leases-candidate.py](../deploy/fleet/process-leases-candidate.py)
-must carry the same pinned browser identity. The
-[browser smoke](../tests/native/browser_adapter_smoke.py) must exercise
-the recovery scenarios through the extension before this route is released.
+Release acceptance must exercise the fake 429 provider through Agent Herder's
+own extension, not just a direct-CDP fixture. CI must cover HumanStop, a
+pending request, stale account/chat/turn/input, lost acknowledgement and a
+failed retry, including no unintended resend or fallback. Direct-CDP tests
+remain useful isolated fixtures; they do not establish the extension route.
+Installed-runtime and real consumer readback are separate release evidence.
+This is the target contract, not a claim that the extension route is deployed.
+
+### Local extension package and owner profile
+
+From the repository root, build into a new directory and load that directory
+with Chrome's **Load unpacked** in the intended signed-in profile:
+
+```sh
+node integrations/chrome/agent-herder/build.mjs /new/extension-dir
+```
+
+In the extension options, select the provider and enter the Herder WebSocket
+URL and connection token. When Chrome can reach the Rust listener on loopback,
+use `ws://127.0.0.1:<port>/browser-extension`. For a browser on another host,
+use a `wss` reverse proxy that preserves the WebSocket upgrade and
+`/browser-extension` path and forwards to the Rust listener.
+
+Set these fields in the protected provider owner profile's `owner.ahap_env`:
+
+| Field | Value |
+| --- | --- |
+| `AHAP_BROWSER_TRANSPORT` | `herder-extension` |
+| `AHAP_BROWSER_ACCOUNT_SCOPE` | The existing account scope for this provider |
+| `AHAP_BROWSER_EXTENSION_LISTEN` | A separate loopback socket address for each provider |
+| `AHAP_BROWSER_EXTENSION_TOKEN_FILE` | Absolute path to a private 0600 file containing the same Base64URL token configured in the extension, 32–128 characters |
+
+To run the local extension recovery success smoke, supply the directory holding
+the required binaries (`herder-browser`, `herder_native_stdio` and
+`ahap-owner-bootstrap`):
+
+```sh
+python3 tests/native/browser_adapter_smoke.py --bin-dir /path/to/bin --extension --recovery success
+```
+
+This local setup and smoke do not establish production deployment or replace the
+other recovery and installed-consumer release checks above.
 
 ## Native Rust owner profiles for the direct-CDP stand
 
@@ -110,11 +132,15 @@ input. The browser verifies the open conversation and active input before
 clicking its Stop control. The response reports the scoped hold and the
 outcome of the native interruption separately.
 
-The reproducible browser acceptance test starts a private Chrome context,
-serves local fixtures for each origin, and exercises both the standalone and
-owner MCP interfaces. See [browser_adapter_smoke.py](../tests/native/browser_adapter_smoke.py).
+The existing direct-CDP fixture starts a private Chrome context, serves local
+fixtures for each origin, and exercises the standalone and owner MCP interfaces.
+See [browser_adapter_smoke.py](../tests/native/browser_adapter_smoke.py). It is
+not the extension-based fake-429 CI or installed-runtime acceptance.
 
 ## TypeScript compatibility profiles
+
+This section and the legacy adapter behavior described below document existing
+compatibility, not the target production extension route.
 
 ChatGPT and Z.ai are **two separate Agent Herder adapters** with one shared
 implementation: `BrowserChatAdapter`. The adapter registry, UI, harness
@@ -126,14 +152,14 @@ not to an aggregate `browser-chat` adapter.
 | `chatgpt` | `builtin:chatgpt-userio` | stable native `/c/<uuid>` | UserIO extension channel |
 | `zai` | `builtin:zai-userio` | stable native `/c/<uuid>` route | UserIO extension channel |
 
-The maintained AHAP browser transport is the UserIO extension channel. It runs
+The legacy UserIO compatibility transport runs
 inside the selected owner browser profile and does not expose cookies or site
 credentials to Herder. A complete UserIO profile is required; missing fields
 fail clearly and never trigger Vibe or direct CDP fallback.
 
 Vibe and direct CDP remain explicit experimental/unmaintained compatibility
 transports only. They are not selected implicitly and are not part of the
-maintained browser adapter contract.
+legacy UserIO compatibility contract.
 
 Configure `AGENT_HERDER_BROWSER_CHAT_PROVIDERS` with a JSON array:
 
@@ -296,8 +322,8 @@ their first message. The browser adapter therefore supports explicit
    restart. No external request, model generation or synthetic message is
    sent during this stage.
 2. Only after the user types a real first message, the site driver opens
-   an **independent background tab** in the existing authenticated Mac mini
-   Chrome and submits once from the site's own blank composer. It confirms
+   an **independent background tab** in the bound signed-in Chrome profile
+   and submits once from the site's own blank composer. It confirms
    the exact site origin, blank route, editor content, idle Stop state and
    one enabled Send button. After the site's own `/c/<uuid>` route appears,
    the draft is durably linked to that ID. It retains the same Herder session

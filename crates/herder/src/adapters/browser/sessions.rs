@@ -103,7 +103,7 @@ pub(super) struct Sessions {
 
 impl Sessions {
     pub(super) async fn open(config: &Config) -> Result<Self, RpcError> {
-        let anchor = Page::attach(config, &config.identity.target_id).await?;
+        let anchor = Page::anchor(config).await?;
         let drafts = DraftStore::new(
             &config.home,
             config.provider.name(),
@@ -118,6 +118,19 @@ impl Sessions {
             drafts,
             writer: None,
         })
+    }
+
+    pub(super) async fn close(self) {
+        if let Some((_, page)) = self.writer {
+            page.release().await;
+        }
+        self.anchor.close_created().await;
+    }
+
+    async fn release_writer(&mut self) {
+        if let Some((_, page)) = self.writer.take() {
+            page.release().await;
+        }
     }
 
     pub(super) async fn create(&mut self, config: &Config, title: &str) -> Result<Value, RpcError> {
@@ -173,7 +186,7 @@ impl Sessions {
             && route == id
         {
             match page.activity(id).await {
-                Err(RpcError::Unavailable) => self.writer = None,
+                Err(RpcError::Unavailable) => self.release_writer().await,
                 result => return result,
             }
         }
@@ -184,6 +197,7 @@ impl Sessions {
             && page.on_route(config.provider, id).await?
         {
             let observed = page.activity(id).await?;
+            self.release_writer().await;
             self.writer = Some((id.to_owned(), page));
             return Ok(observed);
         }
@@ -324,6 +338,26 @@ impl Sessions {
         Ok(rows)
     }
 
+    pub(super) async fn chatgpt_receipt_messages(
+        &mut self,
+        id: &str,
+        input: &str,
+    ) -> Result<Value, RpcError> {
+        let Some((remote, _)) = self.bound_route(Provider::ChatGpt, id)? else {
+            return Ok(json!([]));
+        };
+        let Page::ChatGpt(page) = &mut self.anchor else {
+            return Err(RpcError::Identity);
+        };
+        let Some(message) = page.recovery_receipt(&remote, input).await? else {
+            return Ok(json!([]));
+        };
+        Ok(
+            json!([{"id":message,"nativeMessageId":message,"role":"user",
+            "sessionId":id,"inputId":input}]),
+        )
+    }
+
     /// A pending draft has no provider conversation. An unsettled draft cannot
     /// be inferred from the current tab, even when it happens to be busy.
     fn bound_route(
@@ -372,7 +406,7 @@ impl Sessions {
         {
             match page.on_route(config.provider, &remote).await {
                 Ok(true) => return page.cancel(&remote, input).await,
-                Ok(false) | Err(RpcError::Unavailable) => self.writer = None,
+                Ok(false) | Err(RpcError::Unavailable) => self.release_writer().await,
                 Err(error) => return Err(error),
             }
         }
@@ -380,14 +414,18 @@ impl Sessions {
             && let Ok(mut page) = Page::attach(config, &target).await
             && page.on_route(config.provider, &remote).await?
         {
-            return page.cancel(&remote, input).await;
+            let result = page.cancel(&remote, input).await;
+            page.release().await;
+            return result;
         }
         if self.anchor.on_route(config.provider, &remote).await? {
             return self.anchor.cancel(&remote, input).await;
         }
         let target = self.anchor.existing_target(config, &remote).await?;
         let mut page = Page::attach(config, &target).await?;
-        page.cancel(&remote, input).await
+        let result = page.cancel(&remote, input).await;
+        page.release().await;
+        result
     }
 
     /// Never navigate a pinned or reattached tab. Only a newly created private
@@ -409,7 +447,7 @@ impl Sessions {
                         .map(|(_, page)| page)
                         .ok_or(RpcError::Unavailable);
                 }
-                Ok(false) | Err(RpcError::Unavailable) => self.writer = None,
+                Ok(false) | Err(RpcError::Unavailable) => self.release_writer().await,
                 Err(error) => return Err(error),
             }
         }
@@ -434,6 +472,7 @@ impl Sessions {
                 fresh
             }
         };
+        self.release_writer().await;
         Ok(&mut self.writer.insert((remote.to_owned(), page)).1)
     }
 
@@ -465,13 +504,14 @@ impl Sessions {
                 })
                 .await
             }
-            page => page.submit(None, text, files, None).await,
+            page => page.submit(None, text, files, None, input).await,
         };
         match submitted {
             Ok((remote, message)) if valid_route(&remote) && super::valid_label(&message) => {
                 self.drafts
                     .bind(key, &remote, &message, fresh.target())
                     .map_err(|_| Unknown)?;
+                self.release_writer().await;
                 self.writer = Some((remote, fresh));
                 Ok(message)
             }
@@ -521,7 +561,9 @@ impl Sessions {
             .writer_for(config, remote, target)
             .await
             .map_err(|_| BeforeSend)?;
-        let (confirmed, message) = writer.submit(Some(remote), text, files, recovery).await?;
+        let (confirmed, message) = writer
+            .submit(Some(remote), text, files, recovery, input)
+            .await?;
         if confirmed != remote || !super::valid_label(&message) {
             return Err(Unknown);
         }
