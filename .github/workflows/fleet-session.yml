@@ -125,7 +125,7 @@ jobs:
               --harness "$harness" --surface mcp --content text --iterations 1 \
               --output "$RUNNER_TEMP/browser-delivery-$harness"
           done
-          for scenario in success failed-retry lost-receipt lost-ack stale; do
+          for scenario in success failed-retry lost-receipt lost-ack stale zai-refusal; do
             /usr/bin/python3 -uB tests/native/browser_adapter_smoke.py \
               --bin-dir "$RUNNER_TEMP/herder-recovery-core/debug" --extension --recovery "$scenario" \
               --output "$RUNNER_TEMP/browser-recovery-$scenario"

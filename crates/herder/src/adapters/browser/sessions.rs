@@ -537,6 +537,9 @@ impl Sessions {
         recovery: Option<&RecoveryInput>,
     ) -> Result<String, BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
+        if recovery.is_some() && !config.provider.supports_guarded_recovery() {
+            return Err(BeforeSend);
+        }
         let session = config.provider.parse_id(id).map_err(|_| BeforeSend)?;
         self.anchor
             .verify_scope(config)

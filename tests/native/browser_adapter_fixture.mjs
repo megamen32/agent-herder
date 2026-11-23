@@ -69,12 +69,17 @@ const replyOriginals = [
     data_base64: Buffer.from([0x80, 0, 0xde, 0xad, 0x0a, 0xff]).toString("base64") },
 ];
 
+function zaiRunStatus(id) {
+  if (active.has(id)) return "running";
+  return chats.get(id).at(-1)?.httpStatus === 429 ? "failed" : "completed";
+}
+
 function inventory() {
   return [...chats.keys()].map((id, i) => ({
     id, title: "Fixture " + (i + 1), create_time: 1700000000 + i,
     update_time: 1700000000 + i, updated_at: 1700000000 + i,
     ...(harness === "chatgpt" ? { async_status: active.has(id) ? 1 : 0 }
-      : { last_run: { status: active.has(id) ? "running" : "completed" } }),
+      : { last_run: { status: zaiRunStatus(id) } }),
   }));
 }
 
@@ -406,7 +411,7 @@ async function serve(request, response) {
         }
         count("read");
         return json({ id, user_id: accountName, title: "Fixture chat",
-          last_run: { status: active.has(id) ? "running" : "completed" },
+          last_run: { status: zaiRunStatus(id) },
           chat: { history: { messages: data, currentId: chats.get(id).at(-1)?.id } } });
       }
     }
@@ -484,7 +489,9 @@ try {
           const row = typeof response[0]?.result === "string" ? JSON.parse(response[0].result) : null;
           const value = row?.value;
           results.push({ op, error: row?.error, outcome: row?.status, clicked: row?.clicked,
-            value: Array.isArray(value) ? "array" : typeof value === "boolean" ? value : typeof value });
+            value: Array.isArray(value) ? "array" : typeof value === "boolean" ? value : typeof value,
+            ...(harness === "zai" && op === "recovery"
+              ? { available: row?.available, lastRunStatus: row?.lastRunStatus } : {}) });
           return response;
         } catch (error) {
           results.push({ op, error: error.name });
@@ -587,7 +594,6 @@ try {
       case "failNext": failNext = true; result = true; break;
       case "supersedeOnInput": supersedeOnInput = params.id; result = true; break;
       case "failedTurn": {
-        assert.equal(harness, "chatgpt");
         const rows = chats.get(params.id);
         assert.ok(rows);
         const input = {id: randomUUID(), role: "user", text: "Original fixture task"};

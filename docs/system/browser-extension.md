@@ -2,7 +2,7 @@
 
 ## Что система делает сейчас
 
-В checkout есть собственное расширение Chrome и его прямой WebSocket-канал до Rust. Расширение использует авторизацию своего профиля, читает сайт и выполняет действия. Установленный экземпляр в этом проходе не проверялся. [Сборка](../../integrations/chrome/agent-herder/build.mjs) · [Подключение](../../integrations/chrome/agent-herder/background.js) · [Rust listener](../../crates/herder/src/adapters/browser/extension.rs)
+В checkout есть собственное расширение Chrome и прямой WebSocket-канал до Rust. В изолированном CI этот транспорт используется для ChatGPT/Z.ai send и сценариев ChatGPT recovery; fake fixture также считает submit, user ID и readback. Это подтверждает кодовый extension path, но не установку или авторизацию в обычном профиле server100. [Сборка](../../integrations/chrome/agent-herder/build.mjs) · [Подключение](../../integrations/chrome/agent-herder/background.js) · [Rust listener](../../crates/herder/src/adapters/browser/extension.rs) · [Workflow](../../.github/workflows/fleet-session.yml)
 
 ## Проблема
 
@@ -10,7 +10,7 @@
 
 ## Идеальная система
 
-Расширение напрямую общается с Herder и выполняет команды сайта в обычном авторизованном профиле Chrome на 100. Установка видна в `chrome://extensions`. Для локального канала подходит loopback WebSocket. Для браузера на другой машине используется WSS. Playwright, CDP и bezbrowser служат средствами разработки и тестирования. UserIO относится к профилям совместимости.
+Расширение напрямую общается с Herder и выполняет команды сайта в авторизованном профиле Chrome. Установка видна в `chrome://extensions`. Текущий Rust listener принимает loopback WebSocket `/browser-extension`; удалённый WSS использует reverse proxy с сохранением upgrade и пути. bezbrowser — отдельная совместимая браузерная система, не транспорт этого Rust расширения. UserIO относится к профилям совместимости.
 
 ## Идеальный конечный результат
 

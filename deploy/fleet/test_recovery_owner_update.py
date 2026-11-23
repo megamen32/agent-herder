@@ -1,3 +1,8 @@
+import json
+import runpy
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,6 +10,53 @@ from unittest.mock import Mock, patch
 
 import recovery_owner_update as updater
 from recovery_owner_update import candidate_env, transition
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "the local owner is observed through /proc")
+class LocalOwnerReceipt(unittest.TestCase):
+    def setUp(self):
+        area = tempfile.TemporaryDirectory()
+        self.addCleanup(area.cleanup)
+        self.bundle = Path(area.name) / "bundle"
+        fixture = self.bundle / "fixture"
+        fixture.mkdir(parents=True)
+        core = fixture / "herder_native_stdio"
+        shutil.copy2(shutil.which("cat"), core)
+        self.owner = subprocess.Popen([core], stdin=subprocess.PIPE)
+        self.addCleanup(self.owner.wait, 5)
+        self.addCleanup(self.owner.stdin.close)
+        self.source = "a" * 40
+        self.sha = updater.digest(core)
+        self.selection = '{"profiles": []}'
+        (self.bundle / "selector.json").write_text(self.selection)
+        self.selector = Path(area.name) / "selector.json"
+        self.selector.write_text(self.selection)
+        self.receipt = Path(area.name) / "receipt.json"
+        self.entry = {"selector": self.selector, "receipt": self.receipt, "command": "/fixture/cutover"}
+        self.local_owner = runpy.run_path(str(Path(__file__).with_name("rollout-recovery")))["local_owner"]
+
+    def verified(self):
+        self.selector.write_text(self.selection)
+        self.receipt.write_text(json.dumps({"source": self.source, "core_sha256": self.sha}))
+
+    def test_reentry_reads_the_installed_owner_without_a_second_cutover(self):
+        self.selector.write_text('{"profiles":["before"]}')
+        with patch("subprocess.run", side_effect=lambda *a, **kw: self.verified()) as cutover:
+            first = self.local_owner(self.entry, self.bundle, self.source, self.sha)
+            second = self.local_owner(self.entry, self.bundle, self.source, self.sha)
+        self.assertEqual(cutover.call_count, 1)
+        self.assertEqual(first["core_pid"], self.owner.pid)
+        self.assertEqual(second["core_pid"], self.owner.pid)
+
+    def test_partial_switch_or_unrelated_receipt_never_restarts(self):
+        with patch("subprocess.run") as cutover:
+            with self.assertRaisesRegex(RuntimeError, "receipt"):
+                self.local_owner(self.entry, self.bundle, self.source, self.sha)
+            self.selector.write_text('{"profiles":["before"]}')
+            self.receipt.write_text(json.dumps({"source": "b" * 40, "core_sha256": self.sha}))
+            with self.assertRaisesRegex(RuntimeError, "receipt"):
+                self.local_owner(self.entry, self.bundle, self.source, self.sha)
+        cutover.assert_not_called()
 
 
 class ExistingOwnerUpdate(unittest.TestCase):

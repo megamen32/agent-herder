@@ -620,6 +620,8 @@ def record_receipt(args):
 def status(args):
     state = read_state(args.job_dir)
     pointer = read_occupancy(Path(state["selector"]))
+    if pointer and pointer["job_id"] != state["job_id"]:
+        pointer = None
     selector_hash = candidate.digest(candidate.private_file(state["selector"]))
     launcher_hash = candidate.digest(candidate.private_file(state["launcher"]))
     actual = (selector_hash, launcher_hash)
@@ -678,6 +680,173 @@ def scheduler_source(git_dir, proposed, migration, receipt):
     return installed
 
 
+def check_supersede_pointer(pointer, old_job):
+    active = pointer and pointer["phase"] == "active"
+    if old_job is None:
+        if active:
+            raise RuntimeError("unresolved rollout occupancy requires reconciliation")
+    elif not active or str(old_job) != pointer["job_dir"]:
+        raise ValueError("supersede requires the exact active rollout occupancy")
+
+
+def supersede_provider(read, path, receipt):
+    job = read(path)
+    operation = receipt["provider_operation_id"]
+    response = job.get("response", {})
+    envelope = response.get("structuredContent", {})
+    result = envelope.get("result", {})
+    payload = result.get("structuredContent", {})
+    if (job.get("status") != "completed" or job.get("server_id") != CONTROLLER
+            or job.get("job_id") != operation or job.get("task_id") != operation
+            or envelope.get("server") != CONTROLLER.removeprefix("shell:")
+            or response.get("isError") or result.get("isError")
+            or result.get("resultType") not in (None, "complete")):
+        raise ValueError("supersede requires an exact completed typed provider operation")
+    if receipt["kind"] == "restart":
+        if payload.get("ref") != CHILD or payload.get("action") != receipt["action"]:
+            raise ValueError("supersede provider did not settle the original restart")
+    elif (payload.get("ref", CHILD) != CHILD
+          or payload.get("tools") != receipt["tools"]):
+        raise ValueError("supersede provider schemas differ from the original consumer receipt")
+
+
+def archived_release_guard(read, gate, old, old_proof):
+    ledger = str(candidate.private_file(gate.state_path))
+    marker = gate._canonical
+    config = read(marker["config"])
+    project, target = gate.proof["project"], gate.target
+    mappings = [m for m in config["mappings"]
+                if m["project"] == project and m.get("deployment_target") == target]
+    if config["ledger"] != ledger or config["seal_id"] != marker["seal_id"] or len(mappings) != 1:
+        raise ValueError("supersede canonical mapping is not exact")
+    mapping = mappings[0]
+    resource = mapping["resource_ref"]
+    if Path(resource).name != resource or resource in (".", ".."):
+        raise ValueError("supersede has an invalid resource reference")
+    root = Path(read(config["process_config"])["resources"]["root"]) / "resources" / resource
+    token = old_proof.get("token", "")
+    if not re.fullmatch(r"[a-fA-F0-9]{64}", token):
+        raise ValueError("supersede original canonical claim proof is invalid")
+    # Same stable nonce as ProjectReleaseBridge::token_claim_id.
+    claim_id = str(uuid.UUID(bytes=hashlib.sha256(token.encode()).digest()[:16], version=5))
+    archive = read(root / "unresolved-executions" / (claim_id + ".json"))
+    binding = archive["binding"]
+    execution = binding.get("execution_ref", "")
+    context = {"resource_ref": resource, "claim_id": claim_id, "principal_ref": config["principal_ref"]}
+    if (archive.get("version") != 1 or archive.get("kind") != "herder-unresolved-execution-quarantine-v1"
+            or archive.get("reason") != "expired-owner-generation-with-free-target-lock"
+            or archive.get("claim_id") != claim_id or archive.get("resource_ref") != resource
+            or not re.fullmatch(r"release-guard-[a-f0-9]{32}", execution)
+            or any(binding.get(key) != value for key, value in context.items())
+            or binding.get("resource_revision") != mapping["revision"]
+            or "resolved_receipt" not in binding or binding["resolved_receipt"] is not None):
+        raise ValueError("supersede original binding was not archived as unresolved")
+    guard_id = execution.removeprefix("release-")
+    guard_dir = root / "compat-guards"
+    intent = read(guard_dir / (guard_id + ".intent.json"))
+    if (intent.get("version") != 1 or intent.get("guard_id") != guard_id
+            or intent.get("execution_ref") != execution or intent.get("revision") != mapping["revision"]
+            or any(intent.get(key) != value for key, value in context.items())
+            or intent.get("fence") != old["release_identity"]["fence"]
+            or intent.get("finished_at_seconds") is not None
+            or os.path.lexists(guard_dir / (guard_id + ".receipt.json"))):
+        raise ValueError("supersede archived guard does not bind the original fence")
+    return {"claim_id": claim_id, "execution_ref": execution, "fence": intent["fence"]}
+
+
+def supersede_evidence(args, gate, pointer, selector, launcher, selection, baseline, proposed, current_pair):
+    if gate._bridge is None or gate._canonical is None or gate.target is None:
+        raise ValueError("supersede requires a continuously held canonical target guard")
+    lease = gate.check()
+    project, owner, fence = (gate.proof[key] for key in ("project", "owner", "fence"))
+    if not isinstance(lease, dict) or any(lease.get(key) != value for key, value in
+            (("project", project), ("owner", owner), ("fence", fence), ("deploymentTarget", gate.target))):
+        raise ValueError("supersede guard did not check the exact new target lease")
+    old_dir = candidate.private_directory(args.supersede_job)
+    pins = {}
+
+    def read(path):
+        raw = candidate.private_file(path).read_bytes()
+        pins[str(path)] = hashlib.sha256(raw).hexdigest()
+        return json.loads(raw)
+
+    old = read(old_dir / "state.json")
+    prior = old["release_identity"]
+    if (old["phase"] != "unknown" or old["job_id"] != pointer["job_id"]
+            or old["job_dir"] != str(old_dir) or identity_state(old["coordinator"]) != "dead"
+            or old.get("native_drain") is not None or old.get("canonical_reconciliation") is not None):
+        raise ValueError("supersede requires an exact UNKNOWN job with a dead coordinator")
+    if (prior["project"] != project or type(prior["fence"]) is not int or type(fence) is not int
+            or fence <= prior["fence"] or old["release_state"] != str(candidate.private_file(gate.state_path))
+            or old["deployment_target"] != gate.target):
+        raise ValueError("supersede requires the same authority and a higher fence")
+    if (old["selector"] != str(selector) or old["launcher"] != str(launcher)
+            or current_pair["core"]["cwd"] != old["baseline_runtime"]["core"]["cwd"]
+            or old["selector_after_sha256"] != args.expected_selector_sha256
+            or candidate.digest(selector) != old["selector_after_sha256"]
+            or candidate.digest(launcher) != old["launcher_after_sha256"]
+            or selection["manifest"] != old["candidate_manifest"]
+            or selection["manifest_sha256"] != old["candidate_manifest_sha256"]):
+        raise ValueError("supersede baseline is not the fully installed old candidate")
+    if (args.candidate == Path(old["candidate"]) or candidate.digest(args.candidate) == old["selector_after_sha256"]
+            or proposed["process_leases_build"]["source_commit"] == baseline["process_leases_build"]["source_commit"]):
+        raise ValueError("supersede requires a distinct new release plan")
+    build = read(Path(args.candidate).parent / "process-leases-build.json")
+    if (build.get("base_selector") != str(selector)
+            or build.get("base_selector_sha256") != old["selector_after_sha256"]
+            or build.get("base_manifest_sha256") != old["candidate_manifest_sha256"]):
+        raise ValueError("supersede new build was not prepared from the installed candidate")
+    backup = Path(args.backup)
+    if not backup.is_absolute() or backup.parent.resolve(strict=True) != backup.parent or os.path.lexists(backup):
+        raise ValueError("supersede requires a fresh backup path")
+    install = read(old["install_receipt"])
+    if (install.get("status") != "configured_pending_restart"
+            or any(install.get(key) != old[key] for key in
+                   ("selector", "launcher", "candidate", "selector_after_sha256", "launcher_after_sha256"))):
+        raise ValueError("supersede old installation receipt does not bind the selected candidate")
+    restart_path = old_dir / "restart-ack.json"
+    restart = read(restart_path)
+    validate_restart(old, restart)
+    capture = old.get("restart_runtime_capture")
+    if capture is not None:
+        if capture["restart_receipt_sha256"] != pins[str(restart_path)]:
+            raise ValueError("supersede original restart capture disagrees with the ACK")
+        for role, current in current_pair.items():
+            process = capture["runtime_pair"][role]
+            changing = {"pid", "ppid", "boot_id", "start_ticks"} if current["pid"] != restart[role + "_pid"] else set()
+            if (process["pid"] != restart[role + "_pid"]
+                    or {k: v for k, v in process.items() if k not in changing}
+                    != {k: v for k, v in current.items() if k not in changing}):
+                raise ValueError("supersede runtime differs from the captured installed identity")
+    for role in ("compat", "core"):
+        original_pid = restart[role + "_pid"]
+        if original_pid != current_pair[role]["pid"]:
+            try:
+                identity(original_pid)
+            except (FileNotFoundError, ProcessLookupError):
+                pass
+            else:
+                raise ValueError("supersede original restart PID still exists outside the verified baseline")
+    for process in old["baseline_runtime"].values():
+        if identity_state(exact_identity(process)) != "dead":
+            raise ValueError("supersede pre-release runtime is not proven dead")
+    consumer = read(old_dir / "consumer-receipt.json")
+    validate_consumer(old, consumer, restart["observed_at_unix_ms"])
+    if (old.get("restart_operation_id") != restart["provider_operation_id"]
+            or consumer["provider_operation_id"] == restart["provider_operation_id"]):
+        raise ValueError("supersede receipts do not bind the old restart checkpoint")
+    supersede_provider(read, args.supersede_restart_provider, restart)
+    supersede_provider(read, args.supersede_consumer_provider, consumer)
+    old_proof = read(old["proof_path"])
+    if (any(old_proof.get(key) != prior[key] for key in ("project", "owner", "fence"))
+            or old_proof.get("deploymentTarget", gate.target) != gate.target):
+        raise ValueError("supersede original proof does not bind the checkpoint")
+    guard = archived_release_guard(read, gate, old, old_proof)
+    # Keep the proof pin only in memory until admission has validated it.
+    proof_pin = (old["proof_path"], pins.pop(old["proof_path"]))
+    return {"pointer": pointer, "archived_guard": guard, "evidence_sha256": pins}, proof_pin
+
+
 def admit(args, gate):
     selector = candidate.private_file(args.selector)
     launcher = candidate.private_file(args.launcher)
@@ -704,9 +873,22 @@ def admit(args, gate):
     if not root.is_absolute() or root.parent.resolve(strict=True) != root.parent or root.exists():
         raise ValueError("new private job directory must have a canonical existing parent")
     with candidate.selector_lock(selector):
+        path = occupancy_path(selector)
+        pointer_bytes = candidate.private_file(path).read_bytes() if path.exists() else None
         existing = read_occupancy(selector)
-        if existing and existing["phase"] != "resolved":
-            raise RuntimeError("unresolved rollout occupancy requires reconciliation")
+        if (json.loads(pointer_bytes) if pointer_bytes is not None else None) != existing:
+            raise ValueError("rollout occupancy changed during admission")
+        old_job = getattr(args, "supersede_job", None)
+        check_supersede_pointer(existing, old_job)
+        superseded = None
+        if old_job is not None:
+            if drained is not None:
+                raise ValueError("supersede requires the currently running candidate baseline")
+            superseded, old_proof_pin = supersede_evidence(
+                args, gate, existing, selector, launcher, selection, baseline, proposed, before_pair)
+            superseded["pointer_sha256"] = hashlib.sha256(pointer_bytes).hexdigest()
+            if runtime_pair(selector, launcher, args.compat_pid, args.core_pid) != before_pair:
+                raise ValueError("supersede running baseline changed before admission")
         if candidate.digest(selector) != args.expected_selector_sha256:
             raise ValueError("installed selector changed before admission")
         if drained is not None and drained_baseline(args) != drained:
@@ -741,12 +923,23 @@ def admit(args, gate):
                                      "receipt": {"path": str(receipt_copy), "sha256": drained["receipt"]["sha256"]},
                                      "provider_operation_id": drained["provider_operation_id"]}
         candidate.create(root / "scheduler-preflight.json", proof_bytes, 0o400)
+        if superseded is not None:
+            state["superseded_occupancy"] = superseded
+            candidate.create(root / "superseded-selector-pointer.json", pointer_bytes, 0o400)
         candidate.create(root / "state.json", candidate.encoded(state))
+        if superseded is not None:
+            candidate.sync_dir(root)
+            candidate.sync_dir(root.parent)
+            gate.check()
+            if (any(candidate.digest(candidate.private_file(file)) != digest
+                    for file, digest in [*superseded["evidence_sha256"].items(), old_proof_pin])
+                    or candidate.digest(selector) != state["selector_before_sha256"]
+                    or candidate.digest(launcher) != state["launcher_before_sha256"]):
+                raise ValueError("supersede evidence changed before pointer CAS")
         pointer = {"schema": 1, "job_id": state["job_id"], "job_dir": str(root),
                    "selector": str(selector), "phase": "active"}
-        path = occupancy_path(selector)
         if existing:
-            candidate.replace(path, candidate.encoded(pointer), candidate.digest(path), 0o600)
+            candidate.replace(path, candidate.encoded(pointer), hashlib.sha256(pointer_bytes).hexdigest(), 0o600)
         else:
             candidate.create(path, candidate.encoded(pointer))
         return state
@@ -810,14 +1003,21 @@ def run(args):
     candidate.private_file(args.proof)
     with candidate.selector_lock(selector):
         occupied = read_occupancy(selector)
-        if occupied and occupied["phase"] != "resolved":
-            raise RuntimeError("unresolved rollout occupancy requires reconciliation")
+        old_job = getattr(args, "supersede_job", None)
+        check_supersede_pointer(occupied, old_job)
+    if old_job is not None and not (getattr(args, "supersede_restart_provider", None)
+                                    and getattr(args, "supersede_consumer_provider", None)):
+        raise ValueError("supersede requires both original typed provider receipts")
     target = candidate.read_json(args.target) if args.target else None
+    if old_job is not None and (target is None or args.release_state is None
+            or ReleaseGate._canonical_authority(candidate.read_json(args.release_state)) is None):
+        raise ValueError("supersede requires an explicit sealed canonical ledger and target")
     state = None
     try:
         # __exit__ sends canonical finished only when the entire readiness path
         # completes normally. Any uncertain exit deliberately retains occupancy.
-        with ReleaseGate(args.proof, args.release_state, target=target) as gate:
+        guard_options = {"require_target_lease": True} if old_job is not None else {}
+        with ReleaseGate(args.proof, args.release_state, target=target, **guard_options) as gate:
             state = admit(args, gate)
             save_state(state, phase="installing")
             result = candidate.install(args, guard=MutationGuard(gate, state))
@@ -917,6 +1117,9 @@ def main():
     for name in ("candidate", "selector", "launcher", "backup", "job-dir", "proof", "scheduler-proof"):
         r.add_argument("--" + name, type=Path, required=True)
     r.add_argument("--release-state", type=Path)
+    r.add_argument("--supersede-job", type=Path, help="exact active UNKNOWN checkpoint directory")
+    r.add_argument("--supersede-restart-provider", type=Path, help="original completed GPTAdmin restart job")
+    r.add_argument("--supersede-consumer-provider", type=Path, help="original completed GPTAdmin tools job")
     r.add_argument("--target", type=Path, help="existing private deploymentTarget JSON")
     r.add_argument("--expected-selector-sha256", required=True)
     r.add_argument("--compat-pid", type=int, required=True)
