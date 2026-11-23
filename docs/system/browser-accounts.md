@@ -2,7 +2,7 @@
 
 ## Что система делает сейчас
 
-Rust различает адреса по node, instance и native session; отдельный Z.ai reader закреплён за account scope: [zai/mod.rs](../../crates/herder/src/adapters/zai/mod.rs). Multi-owner требует разные instance и одного principal: [owner_multi.rs](../../crates/herder/src/bin/herder_native_stdio/owner_multi.rs). В checkout добавление нового owner в установленный selector штатным candidate-переходом не предусмотрено. Live-сценарий двух аккаунтов в этом проходе не проверялся.
+Rust различает аккаунты одного провайдера по экземпляру адаптера и области аккаунта. Для каждого экземпляра существует собственная база. Общий реестр проверяет право вызывающего на чтение и возвращает точный адрес чата. Команда `register-browser` готовит добавление второго экземпляра к установленному селектору. [Адаптер Z.ai](../../crates/herder/src/adapters/zai/mod.rs) · [Реестр экземпляров](../../crates/herder/src/application/scoped_stop/wait_sources.rs) · [Команда установки](../../deploy/fleet/process-leases-candidate.py)
 
 ## Проблема
 
@@ -28,8 +28,16 @@ Rust различает адреса по node, instance и native session; от
 
 - Решение: B получает новый уникальный instance, приватный owner profile из seed и подтверждённый account scope; identity A сохраняется побайтно и по authority.
 - Наблюдение: перед регистрацией проверить точный native chat через adapter B; `session.register` использует стабильный request key и возвращает durable receipt и session ref. Неизвестную регистрацию разрешать readback исходного ключа.
-- Текущий `--browser-binding` индексирует привязку по провайдеру, а селектор допускает точную замену путей. Нужен один переход `добавить B`: индексировать действие по `(kind, instance)`, сохранить все текущие пути, добавить новый защищённый профиль, использовать штатный CAS и прежний селектор для rollback. [Candidate](../../deploy/fleet/process-leases-candidate.py) · [Rollout](../../deploy/fleet/process-leases-rollout.py)
-- В текущем [owner_multi.rs](../../crates/herder/src/bin/herder_native_stdio/owner_multi.rs) `session.resolve` делегируется первому binding с расчётом на общий ACL registry. При независимых DB проверить этот путь первым. Если B по нему теряется, переиспользовать адрес из `session.register` для действий с session ref и точное чтение соответствующих owner-ов для discovery/resolve. При двух совпадениях вернуть конфликт адресов. Это изменение маршрутизации чтения внутри текущего процесса.
+- Команда ниже формирует кандидат для одного нового экземпляра. Файл привязки содержит `kind`, `node`, `instance`, ссылку и SHA256 приватного `authority_seed`, а также `ahap_env` с областью аккаунта, listener и путём к файлу токена расширения. Пути установленных профилей сохраняются. Для применения штатный координатор получает новый `selector.json` и тот же ожидаемый SHA256 исходного селектора. Прежний селектор доступен для отката. [Формат команды](../../deploy/fleet/process-leases-candidate.py) · [Координатор](../../deploy/fleet/process-leases-rollout.py)
+
+```sh
+python3 deploy/fleet/process-leases-candidate.py register-browser \
+  --selector "$HERDER_SELECTOR" --launcher "$HERDER_LAUNCHER" --output "$CANDIDATE" \
+  --expected-selector-sha256 "$SELECTOR_SHA256" \
+  --browser-binding zai "$INSTANCE" "$BINDING_FILE" "$BINDING_SHA256"
+```
+
+- Регистрация по `instance_ref` адресует конкретную базу. `session.resolve` читает источники через общий реестр. Для одного совпадения он возвращает владельца, для двух совпадающих нативных ID сообщает неоднозначность. Тест поднимает один реальный Rust-процесс с двумя отдельными тестовыми базами, регистрирует чат только в B, а затем повторяет чтение после перезапуска. [Нативная проверка](../../crates/herder/tests/launcher_scoped_profile.rs)
 
 ## План и приёмка
 

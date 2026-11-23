@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import stat
 import subprocess
 import tempfile
@@ -638,6 +639,182 @@ class NativeProfileMigrationContracts(MigrationFixture):
         return {"AHAP_BROWSER_TRANSPORT": "herder-extension", candidate.BROWSER_SCOPE: scope,
                 "AHAP_BROWSER_EXTENSION_LISTEN": "127.0.0.1:1234",
                 "AHAP_BROWSER_EXTENSION_TOKEN_FILE": str(token)}
+
+    def browser_registration_fixture(self):
+        # Retain an already running extension owner A and its exact process config.
+        profile = candidate.read_json(self.paths["zai"])
+        profile["owner"].pop("ahap_script")
+        profile["owner"].update(executable=self.base["core"], ahap_env=self.herder_extension("c" * 64))
+        self.save_profile(self.paths["zai"], profile)
+        for field in ("process_config", "process_worker"):
+            self.base[field] = self.manifest[field]
+            self.base["sha256"][field] = self.manifest["sha256"][field]
+        self.base["source_commit"] = self.source
+        self.seal_baseline()
+        self.launcher.write_bytes(self.new_launcher.read_bytes())
+        protected = tempfile.TemporaryDirectory(prefix="herder-browser-registration-", dir=Path.home())
+        self.addCleanup(protected.cleanup)
+        self.account_home = Path(protected.name) / "herder-owner-home"
+        self.account_home.mkdir(mode=0o700)
+        self.fresh_authority = self.account_home / "authority"
+        self.fresh_authority.mkdir(mode=0o700)
+        self.fresh_db = self.fresh_authority / "state.db"
+        self.fresh_gate = self.fresh_authority / "gate"
+        self.seed = self.fresh_authority / "seed.json"
+        candidate.create(self.fresh_db, b"")
+        candidate.create(self.fresh_gate, b"")
+        dm, gm = self.fresh_db.stat(), self.fresh_gate.stat()
+        generation = "ahap-owner-123456789"
+        with sqlite3.connect(self.fresh_db) as db:
+            db.executescript("""
+                PRAGMA user_version=4;
+                CREATE TABLE humanstop_authority
+                    (singleton, generation, gate_device, gate_inode, database_device, database_inode);
+                CREATE TABLE intents (request_key);
+                CREATE TABLE session_bindings (session_ref);
+                CREATE TABLE humanstop_sessions (session_ref);
+            """)
+            db.execute("INSERT INTO humanstop_authority VALUES (1, ?, ?, ?, ?, ?)",
+                       (generation, gm.st_dev, gm.st_ino, dm.st_dev, dm.st_ino))
+        db.close()
+        candidate.create(self.seed, candidate.encoded({
+            "database": str(self.fresh_db), "gate": str(self.fresh_gate),
+            "generation": generation, "profile_seed": str(self.seed)}))
+        self.token_b = self.reviewed / "token-b"
+        candidate.create(self.token_b, b"private-second-token-sentinel-fixture")
+        self.binding = {"kind": "zai", "node": "node-a", "instance": "zai-second",
+                        "authority_seed": {"path": str(self.seed), "sha256": candidate.digest(self.seed)},
+                        "ahap_env": {**self.herder_extension("d" * 64),
+                                     "AHAP_BROWSER_EXTENSION_LISTEN": "127.0.0.1:1235",
+                                     "AHAP_BROWSER_EXTENSION_TOKEN_FILE": str(self.token_b)}}
+        self.registration_pin = self.reviewed / "registration.json"
+        candidate.create(self.registration_pin, b"")
+        self.registration_output = self.root / "registration"
+        self.before_launcher = self.launcher.read_bytes()
+        self.fresh_db_bytes = self.fresh_db.read_bytes()
+
+    def stage_browser_registration(self, *, cli=False):
+        self.registration_pin.write_bytes(candidate.encoded(self.binding))
+        pin_sha256 = candidate.digest(self.registration_pin)
+        if cli:
+            result = subprocess.run([
+                "python3", str(Path(candidate.__file__).resolve()), "register-browser",
+                "--selector", str(self.selector), "--launcher", str(self.launcher),
+                "--output", str(self.registration_output),
+                "--expected-selector-sha256", self.install_args.expected_selector_sha256,
+                "--browser-binding", "zai", "zai-second", str(self.registration_pin), pin_sha256,
+            ], capture_output=True, text=True, check=True)
+            return json.loads(result.stdout)
+        return candidate.stage_browser_registration(argparse.Namespace(
+            selector=self.selector, launcher=self.launcher, output=self.registration_output,
+            expected_selector_sha256=self.install_args.expected_selector_sha256,
+            browser_binding=("zai", "zai-second", str(self.registration_pin), pin_sha256)))
+
+    def test_second_browser_registration_is_additive_and_guarded_rollback_restores_exact_baseline(self):
+        self.browser_registration_fixture()
+        result = self.stage_browser_registration(cli=True)
+        new = Path(result["selector"])
+        manifest = candidate.read_json(result["manifest"])
+        selection = candidate.read_json(new)
+        self.assertEqual(selection["profiles"][:-1], self.selection["profiles"])
+        profile_b = Path(selection["profiles"][-1])
+        self.assertEqual(profile_b.parent, self.fresh_authority)
+        self.assertFalse(profile_b.exists())
+        self.assert_unchanged()
+        for field in ("core", "process_config", "process_worker", "component_provenance", "adapters"):
+            self.assertEqual(manifest[field], self.base[field])
+        config = candidate.read_json(manifest["process_config"])
+        launcher_before = self.launcher.stat()
+        self.install_args.candidate = new
+        installed = candidate.install(self.install_args, guard=self.guard)
+        self.assertEqual(candidate.read_json(self.selector), selection)
+        owner = candidate.read_json(profile_b)["owner"]
+        self.assertEqual(owner["instance"], "zai-second")
+        self.assertEqual(owner["ahap_env"], self.binding["ahap_env"])
+        self.assertEqual(profile_b.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(self.fresh_db.read_bytes(), self.fresh_db_bytes)
+        self.assertEqual(self.launcher.stat().st_ino, launcher_before.st_ino)
+        self.assertFalse(Path(config["resources"]["root"]).exists())
+        self.assertFalse(Path(config["execution_root"]).exists())
+        migration = candidate.read_json(manifest["native_profile_migration"])
+        rollout = load("browser_registration_rollout", "process-leases-rollout.py")
+        scheduler = {"response": {"runtime": {"source_commit": self.source}}}
+        self.assertEqual(rollout.scheduler_source(None, manifest, migration, scheduler), self.source)
+        self.assertTrue(candidate.read_json(installed["rollback_receipt"])["profiles_preserved"])
+        candidate.rollback(argparse.Namespace(receipt=Path(installed["rollback_receipt"])), guard=self.guard)
+        self.assert_unchanged()
+        self.assertEqual(self.launcher.read_bytes(), self.before_launcher)
+        self.assertTrue(profile_b.exists())
+        self.assertEqual(self.fresh_db.read_bytes(), self.fresh_db_bytes)
+
+    def test_second_browser_registration_rechecks_pins_and_rejects_stale_selector_cas(self):
+        self.browser_registration_fixture()
+        result = self.stage_browser_registration()
+        self.install_args.candidate = Path(result["selector"])
+        profile_b = Path(candidate.read_json(result["selector"])["profiles"][-1])
+        token = self.token_b.read_bytes()
+        self.token_b.write_bytes(b"different-valid-token-sentinel-fixture")
+        with self.assertRaisesRegex(ValueError, "exact reviewed browser registration"):
+            candidate.install(self.install_args, guard=self.guard)
+        self.token_b.write_bytes(token)
+        self.install_args.expected_selector_sha256 = "0" * 64
+        with self.assertRaisesRegex(ValueError, "installed selector changed"):
+            candidate.install(self.install_args, guard=self.guard)
+        self.assertFalse(self.install_args.backup.exists())
+        self.assertFalse(profile_b.exists())
+        self.assert_unchanged()
+        self.install_args.expected_selector_sha256 = candidate.digest(self.selector)
+        installed = candidate.install(self.install_args, guard=self.guard)
+        current = self.selector.read_bytes() + b"\n"
+        self.selector.write_bytes(current)
+        with self.assertRaisesRegex(ValueError, "another release changed"):
+            candidate.rollback(argparse.Namespace(receipt=Path(installed["rollback_receipt"])), guard=self.guard)
+        self.assertEqual(self.selector.read_bytes(), current)
+        self.assertEqual(self.fresh_db.read_bytes(), self.fresh_db_bytes)
+
+    def test_second_browser_registration_refuses_resealed_replacement(self):
+        self.browser_registration_fixture()
+        result = self.stage_browser_registration()
+        selector = Path(result["selector"])
+        selection = candidate.read_json(selector)
+        manifest = candidate.read_json(selection["manifest"])
+        selection["profiles"].remove(str(self.paths["zai"]))
+        selector.chmod(0o600)
+        selector.write_bytes(candidate.encoded(selection))
+        receipt_path = selector.parent / "process-leases-build.json"
+        receipt = candidate.read_json(receipt_path)
+        receipt["candidate_selector_sha256"] = candidate.digest(selector)
+        receipt_path.chmod(0o600)
+        receipt_path.write_bytes(candidate.encoded(receipt))
+        with self.assertRaisesRegex(ValueError, "must append exactly"):
+            candidate.check_candidate(selector, selector.parent / "fixture/launch-v1-core.py")
+        with self.assertRaisesRegex(ValueError, "must append exactly"):
+            candidate.profile_migration(self.selection, selection, self.base, manifest)
+        self.assert_unchanged()
+
+    def test_second_browser_registration_rejects_scope_identity_and_authority_substitution(self):
+        self.browser_registration_fixture()
+        binding = copy.deepcopy(self.binding)
+        for field, value, error in (
+                ("instance", "zai-local", "kind, node and instance"),
+                ("node", "remote-node", "kind, node and instance"),
+                ("authority_seed", {"path": str(self.seed), "sha256": "0" * 64}, "authority seed"),
+                ("ahap_env", {**binding["ahap_env"], candidate.BROWSER_SCOPE: "c" * 64}, "account scope"),
+                ("ahap_env", {**binding["ahap_env"], "AHAP_BROWSER_EXTENSION_LISTEN": "127.0.0.1:01234"}, "listener"),
+                ("ahap_env", {**binding["ahap_env"], "AHAP_BROWSER_EXTENSION_TOKEN_FILE":
+                              self.herder_extension("c" * 64)["AHAP_BROWSER_EXTENSION_TOKEN_FILE"]}, "token")):
+            with self.subTest(field=field, error=error):
+                self.binding = {**binding, field: value}
+                with self.assertRaisesRegex(ValueError, error):
+                    self.stage_browser_registration()
+                self.assertFalse(self.registration_output.exists())
+        self.binding = binding
+        self.fresh_gate.unlink()
+        candidate.create(self.fresh_authority / "decoy", b"")
+        candidate.create(self.fresh_gate, b"")
+        with self.assertRaisesRegex(ValueError, "authority identity"):
+            self.stage_browser_registration()
+        self.assert_unchanged()
 
     def test_herder_extension_userio_and_explicit_direct_cdp_cutover(self):
         for kind in ("chatgpt", "zai"):
