@@ -36,8 +36,13 @@ def private_json(path):
 
 def migration_binding(manifest):
     """Read the epoch from exact private configuration bytes selected by the manifest."""
+    binding, _ = migration_config(manifest)
+    return binding
+
+
+def migration_config(manifest):
     if 'canonical_migration' not in manifest:
-        return None
+        return None, None
     binding = manifest['canonical_migration']
     if (not isinstance(binding, dict) or set(binding) != {'config', 'sha256'}
             or not isinstance(binding['config'], str)
@@ -79,7 +84,23 @@ def migration_binding(manifest):
             or not 0 < len(epoch.encode('utf-8')) <= 128 or epoch.strip() != epoch
             or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in epoch)):
         raise ValueError('invalid canonical migration epoch')
-    return {'config': str(path), 'config_sha256': binding['sha256'], 'epoch': epoch}
+    return {'config': str(path), 'config_sha256': binding['sha256'], 'epoch': epoch}, config
+
+
+def migration_authorities(config):
+    if config is None or 'quarantine' not in config:
+        return frozenset(), frozenset()
+    snapshots = config['quarantine']['snapshots']
+    if not isinstance(snapshots, list) or not snapshots:
+        raise ValueError('invalid canonical migration snapshots')
+    scopes, generations = set(), set()
+    for snapshot in snapshots:
+        values = [snapshot[key] for key in ('node_ref', 'instance_ref', 'authority_generation')]
+        if not all(isinstance(value, str) and value for value in values):
+            raise ValueError('invalid canonical migration authority')
+        scopes.add(tuple(values[:2]))
+        generations.add(values[2])
+    return scopes, generations
 
 
 def prepare(selector):
@@ -132,7 +153,9 @@ def prepare(selector):
                 or companion.get('kind') != item['kind']):
             raise ValueError('remote configuration mismatch')
         pinned[identity] = str(script)
-    migration = migration_binding(manifest)
+    migration, canonical = migration_config(manifest)
+    migrated_scopes, migrated_generations = migration_authorities(canonical)
+    new_authorities = []
     process_env = {}
     if 'process_worker' in manifest or 'process_config' in manifest:
         for key in ('process_worker', 'process_config'):
@@ -162,6 +185,14 @@ def prepare(selector):
                     or adapter_env.get('AHAP_BROWSER_TRANSPORT') not in ('direct-cdp', 'herder-extension')
                     or owner.get('ahap_base_url') is not None):
                 raise ValueError('native browser profile requires a supported browser transport')
+            # This roster describes the authorities owned by the drained
+            # legacy writer. Browser accounts enrolled later have a separate
+            # authority and generation, including on the same node.
+            address = (owner.get('node'), owner.get('instance'))
+            generation = profile.get('generation')
+            if (migrated_scopes and all(isinstance(value, str) and value for value in (*address, generation))
+                    and address not in migrated_scopes and generation not in migrated_generations):
+                new_authorities.append([*address, generation])
         elif ahap_script is None:
             # Native OpenCode profiles select the endpoint directly. The Rust
             # owner composition validates the endpoint and owns the transport.
@@ -175,8 +206,11 @@ def prepare(selector):
     env.pop('HERDER_PROCESS_CONFIG', None)
     env.pop('HERDER_PROCESS_WORKER', None)
     env.pop('AGENT_HERDER_MIGRATION_EPOCH', None)
+    env.pop('AGENT_HERDER_MIGRATION_NEW_AUTHORITIES', None)
     if migration is not None:
         env['AGENT_HERDER_MIGRATION_EPOCH'] = migration['epoch']
+    if new_authorities:
+        env['AGENT_HERDER_MIGRATION_NEW_AUTHORITIES'] = json.dumps(sorted(new_authorities), separators=(',', ':'))
     env.update(process_env)
     env['HERDER_NATIVE_COMMAND'] = manifest['core']
     return argv, env, {

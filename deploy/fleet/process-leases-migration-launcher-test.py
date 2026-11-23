@@ -85,6 +85,29 @@ class MigrationLauncherContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "digest mismatched"):
             launcher.prepare(self.selector)
 
+    def test_browser_account_added_after_migration_uses_its_own_authority(self):
+        self.manifest["adapters"]["zai"] = self.manifest["adapters"]["codex"]
+        self.manifest["sha256"]["adapters"]["zai"] = self.manifest["sha256"]["adapters"]["codex"]
+        config = json.loads(self.config.read_bytes())
+        config["quarantine"] = {"snapshots": [
+            {"node_ref": "local", "instance_ref": "existing", "authority_generation": "original"},
+        ]}
+        self.save(self.config, config)
+        self.bind()
+        selector = json.loads(self.selector.read_bytes())
+        for instance, generation in [("existing", "changed"), ("relocated", "original"), ("new", "fresh")]:
+            profile = self.root / (instance + ".json")
+            self.save(profile, {"generation": generation, "owner": {
+                "kind": "zai", "node": "local", "instance": instance, "executable": self.manifest["core"],
+                "ahap_env": {"AHAP_BROWSER_TRANSPORT": "herder-extension"},
+            }})
+            selector["profiles"].append(str(profile))
+        self.save(self.selector, selector)
+        with patch.dict(os.environ, {"AGENT_HERDER_MIGRATION_NEW_AUTHORITIES": '[["local","existing","changed"]]'}):
+            _, env, _ = launcher.prepare(self.selector)
+        self.assertEqual(json.loads(env["AGENT_HERDER_MIGRATION_NEW_AUTHORITIES"]), [["local", "new", "fresh"]])
+        self.assertEqual(env["AGENT_HERDER_MIGRATION_EPOCH"], "reviewed-epoch")
+
     def test_old_launcher_cannot_pass_candidate_preflight_with_new_migration(self):
         candidate_loader = importlib.machinery.SourceFileLoader(
             "migration_candidate", str(Path(__file__).with_name("process-leases-candidate.py")))

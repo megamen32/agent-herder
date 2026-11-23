@@ -229,6 +229,13 @@ impl ScopedAuthority {
         };
         Ok(Self { db, gate, generation, migration_epoch })
     }
+    /// The trusted launcher matched a new authority outside the sealed legacy roster.
+    /// An existing quarantine, if present, is still read and enforced.
+    pub fn without_required_migration_epoch(mut self) -> Self {
+        self.migration_epoch = None;
+        self
+    }
+
     fn lock(&self) -> Result<(PinnedTargetGateGuard, Writer), GateError> {
         self.lock_inner(false)
     }
