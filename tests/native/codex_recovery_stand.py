@@ -667,7 +667,10 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     thread, _, ref = session
     prior = turns(read, thread)
     old_recovery = prior[-1]["id"]
-    old_row, = [row for row in receipt_rows(database) if row[0] == thread]
+    prior_rows = [row for row in receipt_rows(database) if row[0] == thread]
+    old_row, = [row for row in prior_rows
+                 if row[2] and json.loads(row[2])["native_id"] == old_recovery]
+    prior_request_count = len(requests)
     require(old_row[1] == "confirmed" and json.loads(old_row[2])["native_id"] == old_recovery,
             "follow-up needs the exact receipt of the failed recovery")
     client_id = "independent-native-user-input"
@@ -678,8 +681,9 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
     failed = wait_for_turn(thread, user_turn)
     history = turns(read, thread)
     user_items = [item for item in history[-1]["items"] if item["type"] == "userMessage"]
-    require(len(history) == 3 and history[:2] == prior and history[-1]["id"] == user_turn
-            and len({turn["id"] for turn in history}) == 3 and len(requests) == 3
+    require(len(history) == len(prior) + 1 and history[:-1] == prior and history[-1]["id"] == user_turn
+            and len({turn["id"] for turn in history}) == len(prior) + 1
+            and len(requests) == prior_request_count + 1
             and failed["status"] == "failed"
             and failed["error"]["codexErrorInfo"] == {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}
             and len(user_items) == 1 and user_items[0].get("clientId") == client_id,
@@ -697,7 +701,8 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
         # The same failed input will be eligible for the service after this window.
         # Leave the MCP path open through a scan and the 429 cooldown.
         time.sleep(max(0, failed["completedAt"] + 40 - time.time()))
-        require(len(requests) == 3 and receipt_rows(database) == before and turns(read, thread) == history,
+        require(len(requests) == prior_request_count + 1
+                and receipt_rows(database) == before and turns(read, thread) == history,
                 "MCP scheduled recovery for a service-owned profile")
     private_write(activation, "false")
     with recovery_service(owner, profile, env) as active:
@@ -725,7 +730,7 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
 
         def posted():
             require(active.poll() is None, "Codex recovery service exited with stdin closed")
-            return len(requests) >= 4
+            return len(requests) >= prior_request_count + 2
 
         try:
             wait_for("independent user turn remained blocked", posted, seconds=68)
@@ -733,11 +738,12 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
             states = [row[1] for row in receipt_rows(database) if row[0] == thread]
             raise RuntimeError(f"{error}; native_turns={len(turns(read, thread))}, "
                                f"http_requests={len(requests)}, receipt_states={states}") from error
-        wait_for("independent recovery did not complete", lambda: len(now := turns(read, thread)) == 4
+        wait_for("independent recovery did not complete", lambda: len(now := turns(read, thread)) == len(history) + 1
                  and now[-1]["status"] == "completed")
         now = turns(read, thread)
-        require(now[:3] == history and now[-1]["id"] not in {t["id"] for t in history}
-                and len(requests) == 4 and requests[3] - requests[2] >= 29
+        require(now[:-1] == history and now[-1]["id"] not in {t["id"] for t in history}
+                and len(requests) == prior_request_count + 2
+                and requests[-1] - requests[-2] >= 29
                 and any(item.get("clientId") == new_key and item["type"] == "userMessage"
                         for item in now[-1]["items"]),
                 "owner replayed or replaced an earlier turn, or bypassed the follow-up cooldown")
@@ -746,18 +752,21 @@ def verify_independent_followup(read, wait_for_turn, owner, profile, env, databa
         def exact_followup_receipts():
             rows = [row for row in receipt_rows(database) if row[0] == thread]
             confirmed = [json.loads(row[2]) for row in rows if row[1] == "confirmed" and row[2]]
-            return (len(rows) == len(confirmed) == 2 and any(row[2] == old_row[2] for row in rows)
+            return (len(rows) == len(confirmed) == len(prior_rows) + 1
+                    and any(row[2] == old_row[2] for row in rows)
                     and any(r["native_id"] == new_recovery and r["request_key"] == new_key for r in confirmed))
 
         wait_for("missing durable receipts for the two distinct recoveries", exact_followup_receipts, seconds=45)
         admitted = receipt_rows(database)
     with recovery_service(owner, profile, env):
         time.sleep(34)
-        require(receipt_rows(database) == admitted and len(requests) == 4 and turns(read, thread) == now,
+        require(receipt_rows(database) == admitted and len(requests) == prior_request_count + 2
+                and turns(read, thread) == now,
                 "recovery service replayed a native turn after restart")
     return {"old_recovery_turn": old_recovery, "user_turn": user_turn, "new_recovery_turn": new_recovery,
             "old_admission": "confirmed", "old_turn_status": history[1]["status"],
-            "http_requests": len(requests), "new_receipt": "confirmed", "cooldown_seconds": round(requests[3] - requests[2], 1),
+            "http_requests": len(requests), "new_receipt": "confirmed",
+            "cooldown_seconds": round(requests[-1] - requests[-2], 1),
             "without_mcp_client": True, "mcp_recovery_deliveries": 0, "default_service_start_rejected": True,
             "duplicate_service_rejected": True, "service_restart_repeat": 0}
 
@@ -799,6 +808,10 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
             if model == warm and len(requests[model]) == 1:
                 warm_requested.set()
                 require(warm_may_fail.wait(15), "fixture goal was not set before the fake 429")
+            if (model == persistent
+                    and "This is a new request." in json.dumps(request)
+                    and len(requests[model]) == 5):
+                return self.reply(429, "application/json", b'{"error":{"message":"Too many requests"}}')
             failures = 3 if model == persistent else 1
             if len(requests[model]) > failures:
                 return super().send_responses(request, sequence)
@@ -968,50 +981,64 @@ experimental_bearer_token = "{cold_token}"
             early = {model: len(seen) for model, seen in requests.items()}
             require(all(n == 1 for n in early.values()) and not receipt_rows(database),
                     f"recovery admitted before cooldown; HTTP requests={early}, receipts={len(receipt_rows(database))}")
+            expected_requests = {model: (4 if model == persistent else 2)
+                                 for model in recoverable_models}
             try:
-                wait_for("missing same-route recovery", lambda: all(len(requests[m]) >= 2 for m in recoverable_models),
-                         seconds=68)
+                wait_for("missing same-route recovery", lambda: all(
+                    len(requests[m]) >= expected_requests[m] for m in recoverable_models), seconds=180)
             except TimeoutError as error:
                 counts = {model: len(seen) for model, seen in requests.items()}
                 raise RuntimeError(f"{error}; HTTP requests={counts}, receipts={len(receipt_rows(database))}") from error
             for model, (thread, original, ref) in sessions.items():
-                outcome = "failed" if model == persistent else "completed"
-                wait_for("recovery did not settle", lambda: len(t := turns(read, thread)) == 2
-                         and t[1]["status"] == outcome)
+                expected_turns = expected_requests[model]
+                wait_for("recovery did not settle", lambda: len(t := turns(read, thread)) == expected_turns
+                         and t[-1]["status"] == "completed")
                 current = turns(read, thread)
-                require(len(current) == 2 and current[0]["id"] == original, "original turn changed")
+                require(len(current) == expected_turns and current[0]["id"] == original,
+                        "original turn changed or same-route retries did not finish")
                 result = read("thread/read", {"threadId": thread, "includeTurns": False})["thread"]
                 require(result["modelProvider"] == provider_for(model) and result["model"] == model,
                         "resumed thread changed provider or model")
-                if model != persistent:
-                    wait_for_transcript_answer(active, ref, module.ANSWER, "owner could not read back the recovered answer")
-                else:
-                    require(current[1]["error"]["codexErrorInfo"] == current[0]["error"]["codexErrorInfo"],
-                            "expected the recovery turn itself to hit the same 429")
+                wait_for_transcript_answer(active, ref, module.ANSWER,
+                                           "owner could not read back the recovered answer")
                 require(requests[model][1] - requests[model][0] >= 29, "owner immediately replayed a 429")
 
             def exact_receipts():
                 rows = receipt_rows(database)
-                if {row[0] for row in rows} != {s[0] for s in sessions.values()} or len(rows) != len(sessions):
+                if ({row[0] for row in rows} != {s[0] for s in sessions.values()}
+                        or len(rows) != sum(expected_requests.values()) - len(sessions)):
                     return False
+                for model, (thread, _, _) in sessions.items():
+                    expected_ids = {turn["id"] for turn in turns(read, thread)[1:]}
+                    thread_rows = [row for row in rows if row[0] == thread]
+                    if (len(thread_rows) != expected_requests[model] - 1
+                            or {json.loads(row[2])["native_id"] for row in thread_rows if row[2]} != expected_ids):
+                        return False
                 for thread, state, receipt, _ in rows:
                     # Confirm the delivery even when its native model turn failed.
-                    # The failed fallback-free session must stay pinned on restart.
                     if state != "confirmed" or not receipt:
                         return False
                     admitted = json.loads(receipt)
                     if (admitted["address"]["native_session_id"] != thread
-                            or admitted["native_id"] != turns(read, thread)[1]["id"]):
+                            or admitted["native_id"] not in {turn["id"] for turn in turns(read, thread)[1:]}):
                         return False
                 return True
 
-            wait_for("durable receipt did not match the exact native turn and outcome", exact_receipts, seconds=45)
+            try:
+                wait_for("durable receipt did not match the exact native turn and outcome", exact_receipts, seconds=45)
+            except TimeoutError as error:
+                raise RuntimeError(
+                    f"{error}; requests={{{model: len(seen) for model, seen in requests.items()}}}; "
+                    f"receipts={receipt_rows(database)}; turns={{{model: len(turns(read, thread)) for model, (thread, _, _) in sessions.items()}}}"
+                ) from error
         receipts = receipt_rows(database)
         with owner_client(owner, profile, env) as restarted:
-            time.sleep(34)  # Let the restarted owner recheck the failed recovery across two scans.
+            time.sleep(34)  # Let the restarted owner recheck the settled recovery across two scans.
             check_holds(restarted)
-        require(receipt_rows(database) == receipts and all(len(requests[m]) == 2 for m in recoverable_models)
-                and all(len(turns(read, thread)) == 2 for thread, _, _ in sessions.values()),
+        require(receipt_rows(database) == receipts
+                and all(len(requests[m]) == expected_requests[m] for m in recoverable_models)
+                and all(len(turns(read, thread)) == expected_requests[model]
+                        for model, (thread, _, _) in sessions.items()),
                 "owner delivered another continuation after the first recovery")
         for model, thread, failed_turn, reason in protected.values():
             history = turns(read, thread)
@@ -1021,23 +1048,24 @@ experimental_bearer_token = "{cold_token}"
         require(digest(home / "config.toml") == config_hash, "native profile changed")
         require(digest(stops) == stops_hash, "the historical stop record was modified")
         proof = {
-            "provider": "opencodex", "alternate_routes": 0, "unknown_quota": "allow" if quota_profile else "block",
+            "provider": "opencodex", "alternate_routes": 0,
+            "quota_state": "positive" if quota_profile else "unknown",
             "positive_quota_model": persistent if quota_profile else None,
             "receipts": {m: next(r[1] for r in receipts if r[0] == s[0]) for m, s in sessions.items()},
-            "outcomes": {m: turns(read, s[0])[1]["status"] for m, s in sessions.items()},
+            "outcomes": {m: turns(read, s[0])[-1]["status"] for m, s in sessions.items()},
             "http_requests": {model: len(seen) for model, seen in requests.items()},
             "recheck_seconds": {model: round(requests[model][1] - requests[model][0], 1)
                                 for model in recoverable_models},
             "same_chat": {"thread": sessions[warm][0], "historical_abort_turn": "older-native-turn",
                           "failed_turn": sessions[warm][1],
-                          "recovery_turn": turns(read, sessions[warm][0])[1]["id"], "model": warm},
+                          "recovery_turn": turns(read, sessions[warm][0])[-1]["id"], "model": warm},
             "secondary_route": {"thread": sessions[cold][0], "failed_turn": sessions[cold][1],
-                                "recovery_turn": turns(read, sessions[cold][0])[1]["id"],
+                                "recovery_turn": turns(read, sessions[cold][0])[-1]["id"],
                                 "provider": cold_provider, "model": cold},
             "preexisting_goal": {
                 "status_after_recovery": read("thread/goal/get", {"threadId": sessions[blocked][0]})["goal"]["status"],
                 "thread": sessions[blocked][0], "failed_turn": sessions[blocked][1],
-                "recovery_turn": turns(read, sessions[blocked][0])[1]["id"], "model": blocked,
+                "recovery_turn": turns(read, sessions[blocked][0])[-1]["id"], "model": blocked,
             },
             "owner_restart_repeat": 0,
         }
