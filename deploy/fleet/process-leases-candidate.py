@@ -761,6 +761,19 @@ def recovery_profile_payload(previous, changed, *, installed=False):
     actual = strict_json(changed)
     owner, new = expected["owner"], actual["owner"]
     kind = owner.get("kind")
+    inventory_key = "codex_metadata_inventory"
+    if kind == "codex" and (inventory_key in new or inventory_key in owner):
+        if inventory_key in new and type(new[inventory_key]) is not bool:
+            raise ValueError("Codex metadata inventory setting must be a boolean")
+        if (inventory_key in owner) != (inventory_key in new) or owner.get(inventory_key) != new.get(inventory_key):
+            if inventory_key in new:
+                owner[inventory_key] = new[inventory_key]
+            else:
+                del owner[inventory_key]
+            # A read-only inventory opt-in cannot rebind an owner or change recovery.
+            if encoded(actual) != encoded(expected) or len(changed) > 16384:
+                raise ValueError("Codex metadata inventory changes protected profile fields or exceeds the native limit")
+            return changed
     socket_only = False
     if kind == "codex":
         binding = owner.get("ahap_env", {})
@@ -1572,7 +1585,7 @@ def main():
     b.add_argument("--native-update", action="append", default=[], choices=sorted(NATIVE_PROFILE_UPDATES),
                    help="explicit reviewed native owner profile update")
     b.add_argument("--native-recovery-profile", "--native-autopilot-profile", action="append", default=[], type=Path,
-                   help="reviewed successor profile for a shared Codex socket, recovery handoff or session autopilot")
+                   help="reviewed successor profile for Codex inventory, shared socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed direct-CDP binding for a selected legacy browser")
     c = sub.add_parser("check")
