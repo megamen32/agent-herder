@@ -320,10 +320,6 @@ fn child_recovery_rejects_unproved_lineage_and_ineligible_ancestors() {
         "archived-parent",
         "unrelated-parent-turn",
         "unknown-work-root",
-        "parent-paused-goal",
-        "root-blocked-goal",
-        "root-foreign-goal",
-        "root-unknown-goal",
     ] {
         let stand = Stand::new(case);
         let control = stand.open();
@@ -332,6 +328,36 @@ fn child_recovery_rejects_unproved_lineage_and_ineligible_ancestors() {
             "{case}"
         );
         assert!(stand.mutation_calls().is_empty(), "{case}");
+    }
+}
+
+#[test]
+fn child_recovery_uses_active_ancestor_work_without_reading_goals() {
+    for case in [
+        "parent-paused-goal",
+        "root-blocked-goal",
+        "root-foreign-goal",
+        "root-unknown-goal",
+        "parent-goal-changed",
+    ] {
+        let stand = Stand::new(case);
+        let control = stand.open();
+        let boundary = control.read_boundary(&stand.target).unwrap().unwrap();
+        assert_eq!(boundary.ancestors.len(), 2, "{case}");
+        let receipt = submit(&control, &stand.target, &boundary, &|| true)
+            .unwrap()
+            .receipt;
+        assert_eq!(receipt.native_id, "child-continuation", "{case}");
+        assert_eq!(
+            stand.mutation_calls(),
+            ["thread/resume codex-child", "turn/start codex-child"],
+            "{case}"
+        );
+        let calls = fs::read_to_string(stand.home.join("calls")).unwrap();
+        assert!(
+            !calls.lines().any(|line| line.starts_with("thread/goal/get ")),
+            "{case}"
+        );
     }
 }
 
@@ -357,7 +383,6 @@ fn child_recovery_refuses_changed_native_work_or_unavailable_direct_input() {
     for case in [
         "child-turn-replaced",
         "parent-turn-replaced",
-        "parent-goal-changed",
         "no-input",
     ] {
         let stand = Stand::new(case);

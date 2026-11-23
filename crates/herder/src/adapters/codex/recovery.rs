@@ -898,8 +898,8 @@ fn read_observation(
             Some(id)
         }
     };
-    // A goal tick can fail without a user item. A composer turn can also
-    // create a goal and block it when the same turn runs out of retries.
+    // A native task_started event can identify work without a user item.
+    // The current goal state says nothing about admission for that turn.
     let trigger = if !child
         && matches!(
             failure,
@@ -910,17 +910,6 @@ fn read_observation(
         None
     };
     let native_goal = trigger.as_deref() == Some("goal");
-    let failed_goal = match (trigger.as_deref(), turn["completedAt"].as_u64()) {
-        (Some("goal"), Some(completed_at)) => Some(FailedGoalTurn::Goal { completed_at }),
-        (Some("composer"), Some(completed_at)) => Some(FailedGoalTurn::Composer {
-            started_at: started_at_ms / 1000,
-            completed_at,
-        }),
-        _ => None,
-    };
-    if !goal_allows_recovery(connection, thread_id, failed_goal, deadline)? {
-        return Ok(None);
-    }
     let queue = read_rpc(
         connection,
         "thread/queue/list",
@@ -1003,50 +992,6 @@ fn index_is_quiescent(thread: &Value) -> bool {
             thread.get("canAcceptDirectInput"),
             None | Some(Value::Null | Value::Bool(true))
         )
-}
-
-#[derive(Clone, Copy)]
-enum FailedGoalTurn {
-    Goal { completed_at: u64 },
-    Composer { started_at: u64, completed_at: u64 },
-}
-
-fn goal_allows_recovery(
-    connection: &mut CodexConnection,
-    thread_id: &str,
-    failed_goal: Option<FailedGoalTurn>,
-    deadline: Instant,
-) -> Result<bool, ReadError> {
-    let reply = read_rpc(
-        connection,
-        "thread/goal/get",
-        json!({"threadId":thread_id}),
-        deadline,
-    )?;
-    Ok(match reply.get("goal") {
-        Some(Value::Null) => !matches!(failed_goal, Some(FailedGoalTurn::Goal { .. })),
-        Some(goal) if goal["threadId"] == thread_id => {
-            goal["status"] == "active"
-                || (goal["status"] == "blocked"
-                    && match failed_goal {
-                        Some(FailedGoalTurn::Goal { completed_at }) => {
-                            goal["updatedAt"].as_u64() == Some(completed_at)
-                        }
-                        Some(FailedGoalTurn::Composer {
-                            started_at,
-                            completed_at,
-                        }) => {
-                            goal["updatedAt"].as_u64() == Some(completed_at)
-                                && goal["createdAt"].as_u64().is_some_and(|created_at| {
-                                    (started_at..=completed_at).contains(&created_at)
-                                })
-                        }
-                        None => false,
-                    })
-        }
-        Some(_) => false,
-        None => false,
-    })
 }
 
 // The RPC summary omits the trigger. Read the indexed native task_started
@@ -1304,70 +1249,56 @@ fn read_input_item(
 fn recovery_failure(turn: &Value) -> Option<RecoveryFailure> {
     if ["abortReason", "stopReason", "interruptReason", "reason"]
         .into_iter()
-        .any(|field| !absent_or_null(turn, field))
+        .any(|field| matches!(turn[field].as_str(), Some("user" | "replaced")))
     {
         return None;
     }
     match turn["status"].as_str()? {
-        // Native projects a stale in-progress turn as interrupted. An explicit
-        // abort records terminal timing, and older history can lack timing entirely.
-        "interrupted"
-            if turn.get("completedAt") == Some(&Value::Null)
-                && absent_or_null(turn, "durationMs")
-                && absent_or_null(turn, "error") =>
-        {
-            Some(RecoveryFailure::Interrupted)
-        }
-        "failed" => {
-            let completed_at = turn["completedAt"].as_u64()?;
-            if completed_at < turn["startedAt"].as_u64()?
-                || !absent_or_null(&turn["error"], "misalignment")
+        // Completion timing alone has no actor attribution.
+        "interrupted" if absent_or_null(turn, "error") => Some(RecoveryFailure::Interrupted),
+        "failed" | "interrupted" => {
+            if !absent_or_null(turn, "completedAt")
+                && !turn["completedAt"]
+                    .as_u64()
+                    .zip(turn["startedAt"].as_u64())
+                    .is_some_and(|(end, start)| end >= start)
             {
                 return None;
             }
-            typed_failure(&turn["error"]["codexErrorInfo"])
+            // The exact native turn and its input establish unfinished work.
+            // Error typing only selects the applicable quota or cooldown policy.
+            Some(classify_terminal_error(&turn["error"]["codexErrorInfo"]))
         }
         _ => None,
     }
 }
 
-fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
-    match error.as_str() {
-        Some("usageLimitExceeded" | "rateLimitExceeded") => {
-            return Some(RecoveryFailure::Quota);
-        }
-        Some("serverOverloaded") => return Some(RecoveryFailure::Throttled),
-        Some("internalServerError" | "flexUnavailable" | "policyCapacityUnavailable") => {
-            return Some(RecoveryFailure::Retryable);
-        }
-        _ => {}
+fn classify_terminal_error(info: &Value) -> RecoveryFailure {
+    if matches!(
+        info.as_str(),
+        Some("usageLimitExceeded" | "rateLimitExceeded")
+    ) {
+        return RecoveryFailure::Quota;
     }
-    let info = error.as_object().filter(|info| info.len() == 1)?;
-    let (variant, details) = info.iter().next()?;
-    let details = details.as_object()?;
-    let http = details
-        .get("httpStatusCode")
-        .or_else(|| details.get("http_status_code"));
-    match (variant.as_str(), http.and_then(Value::as_u64)) {
-        ("responseTooManyFailedAttempts" | "response_too_many_failed_attempts", Some(429)) => {
-            Some(RecoveryFailure::Throttled)
-        }
-        (
-            "httpConnectionFailed"
-            | "responseStreamConnectionFailed"
-            | "responseStreamDisconnected"
-            | "responseTooManyFailedAttempts",
-            Some(408 | 500..=599),
-        ) => Some(RecoveryFailure::Retryable),
-        ("responseStreamDisconnected", Some(200)) => Some(RecoveryFailure::Retryable),
-        (
-            "httpConnectionFailed"
-            | "responseStreamConnectionFailed"
-            | "responseStreamDisconnected",
-            None,
-        ) if http.is_none_or(Value::is_null) => Some(RecoveryFailure::Retryable),
-        _ => None,
+    let retry_limit = info
+        .as_object()
+        .filter(|variants| variants.len() == 1)
+        .and_then(|variants| {
+            variants
+                .get("responseTooManyFailedAttempts")
+                .or_else(|| variants.get("response_too_many_failed_attempts"))
+        });
+    let http_status = retry_limit
+        .and_then(|details| {
+            details
+                .get("httpStatusCode")
+                .or_else(|| details.get("http_status_code"))
+        })
+        .and_then(Value::as_u64);
+    if info == "serverOverloaded" || http_status == Some(429) {
+        return RecoveryFailure::Throttled;
     }
+    RecoveryFailure::Retryable
 }
 
 fn read_openai_quota(
@@ -1551,18 +1482,71 @@ mod tests {
             Some(RecoveryFailure::Interrupted)
         );
 
-        let mut stopped = interrupted.clone();
-        stopped["completedAt"] = json!(105);
-        stopped["durationMs"] = json!(5000);
-        assert_eq!(recovery_failure(&stopped), None);
+        let mut timed_interruption = interrupted.clone();
+        timed_interruption["completedAt"] = json!(105);
+        timed_interruption["durationMs"] = json!(5000);
+        assert_eq!(
+            recovery_failure(&timed_interruption),
+            Some(RecoveryFailure::Interrupted)
+        );
 
-        let mut explicitly_stopped = interrupted.clone();
+        timed_interruption["abortReason"] = json!("interrupted");
+        assert_eq!(
+            recovery_failure(&timed_interruption),
+            Some(RecoveryFailure::Interrupted)
+        );
+
+        let mut explicitly_stopped = timed_interruption;
         explicitly_stopped["stopReason"] = json!("user");
         assert_eq!(recovery_failure(&explicitly_stopped), None);
 
+        let mut superseded = interrupted.clone();
+        superseded["abortReason"] = json!("replaced");
+        assert_eq!(recovery_failure(&superseded), None);
+
         let mut older_history = interrupted;
         older_history.as_object_mut().unwrap().remove("completedAt");
-        assert_eq!(recovery_failure(&older_history), None);
+        assert_eq!(
+            recovery_failure(&older_history),
+            Some(RecoveryFailure::Interrupted)
+        );
+    }
+
+    #[test]
+    fn terminal_errors_outside_the_typed_allowlist_are_recoverable() {
+        for (status, error) in [
+            (
+                "failed",
+                json!({"codexErrorInfo":{"httpConnectionFailed":{"httpStatusCode":400}}}),
+            ),
+            ("failed", json!({"codexErrorInfo":"newErrorKind"})),
+            ("failed", json!({"message":"HTTP 400"})),
+            ("interrupted", json!({"message":"HTTP 400"})),
+        ] {
+            let turn = json!({"status":status,"startedAt":100,"completedAt":101,"error":error});
+            assert_eq!(
+                recovery_failure(&turn),
+                Some(RecoveryFailure::Retryable),
+                "{turn}"
+            );
+            let mut legacy = turn.clone();
+            legacy.as_object_mut().unwrap().remove("completedAt");
+            assert_eq!(
+                recovery_failure(&legacy),
+                Some(RecoveryFailure::Retryable),
+                "{legacy}"
+            );
+
+            for (field, value) in [
+                ("stopReason", "user"),
+                ("abortReason", "replaced"),
+                ("status", "completed"),
+            ] {
+                let mut settled = turn.clone();
+                settled[field] = json!(value);
+                assert_eq!(recovery_failure(&settled), None, "{settled}");
+            }
+        }
     }
 
     #[test]
@@ -1659,6 +1643,7 @@ from pathlib import Path
 
 home = Path(os.environ["CODEX_HOME"])
 case = (home / "case").read_text()
+started = False
 loaded = case in ("already-loaded", "own-warm", "own-bad-key", "own-held")
 model = "old-model"
 resumed = False
@@ -1689,8 +1674,13 @@ for line in sys.stdin:
         assert params["itemsView"] == "summary" and params["limit"] == 1
         result = {"data": [{"id": "old-turn", "status": "failed", "startedAt": 100,
                             "completedAt": 101, "itemsView": "summary",
-                            "error": {"codexErrorInfo": "serverOverloaded" if case in ("root-held", "cold-same") else "usageLimitExceeded"},
+                            "error": {"codexErrorInfo": "serverOverloaded" if case == "root-held" else "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
+        if case == "cold-same":
+            turn = result["data"][0]
+            turn["error"] = {"message":"provider rejected this request with HTTP 400"}
+            if started:
+                turn.update(id="new-turn", items=[{"type":"userMessage","id":"recovery-input"}])
         if case.startswith("goal-"):
             turn = result["data"][0]
             turn.update(rootTurnId="old-turn", error={
@@ -1702,10 +1692,18 @@ for line in sys.stdin:
             turn.update(rootTurnId="old-turn", items=[
                 {"type":"agentMessage", "id":"progress", "phase":"commentary", "text":"Working"}
             ], error={"codexErrorInfo":{"responseTooManyFailedAttempts":{"httpStatusCode":429}}})
+        if case in ("goal-composer-finished", "goal-composer-superseded", "goal-composer-running"):
+            result["data"][0]["status"] = {"goal-composer-finished": "completed",
+                "goal-composer-superseded": "completed", "goal-composer-running": "inProgress"}[case]
+            if case == "goal-composer-superseded":
+                result["data"][0].update(id="new-turn", items=[{"type":"userMessage","id":"new-input"}])
         if case.startswith("throttle-"):
             result["data"][0]["error"] = {
                 "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}}
     elif method == "thread/goal/get":
+        if case == "goal-composer-unavailable":
+            print(json.dumps({"id": request["id"], "error": {"code": -32601, "message": "goal unavailable"}}), flush=True)
+            continue
         result = {"goal": None}
         if case.startswith("goal-") and case != "goal-cleared":
             status = {"goal-active": "active", "goal-paused": "paused", "goal-complete": "complete"}.get(case, "blocked")
@@ -1713,12 +1711,14 @@ for line in sys.stdin:
                               "createdAt": 99 if case == "goal-composer-preexisting" else 100,
                               "updatedAt": 105 if case.endswith("blocked-later") else 101}
     elif method == "thread/items/list":
-        assert params["turnId"] == "old-turn"
+        assert params["turnId"] == "old-turn" or case == "cold-same" and started and params["turnId"] == "new-turn"
         if params["sortDirection"] == "asc":
             key = "codex-recovery:" + "a"*64 + (":fallback" if case == "own-bad-key" else ":primary")
             result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage","clientId":key}}],"nextCursor":None}
         else:
-            result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
+            turn_id = params["turnId"]
+            input_id = "recovery-input" if turn_id == "new-turn" else "user-item"
+            result = {"data":[{"turnId":turn_id,"item":{"id":input_id,"type":"userMessage"}}],"nextCursor":None}
         if case.startswith("goal-") and not case.startswith("goal-composer-"):
             result = {"data": [{"turnId":"old-turn","item":{"id":"work","type":"commandExecution"}}],
                       "nextCursor":None}
@@ -1737,7 +1737,7 @@ for line in sys.stdin:
                 items.insert(0, {"type":"agentMessage","id":"final","phase":"final_answer","text":"Done"})
             result = {"data":[{"turnId":"old-turn","item":item} for item in items],"nextCursor":None}
     elif method == "thread/queue/list":
-        result = {"data": []}
+        result = {"data": [{"id":"queued-input"}] if case == "goal-composer-queued" else []}
     elif method == "config/read":
         bearer = "another-synthetic-fixture-bearer" if resumed and case == "rotated" else "synthetic-bearer-for-fixture"
         result = {"config": {"model_providers": {"pinned": {"wire_api": "responses"},
@@ -1785,6 +1785,7 @@ for line in sys.stdin:
     elif method == "turn/start":
         assert params["threadId"] == "saved-thread"
         assert params["clientUserMessageId"] == "exact-request"
+        started = True
         result = {"turn": {"id": "new-turn", "status": "inProgress"}}
     else:
         raise RuntimeError("unexpected fixture method")
@@ -1851,21 +1852,26 @@ for line in sys.stdin:
     #[test]
     fn recovery_after_429_uses_verified_native_turn_attribution() {
         for (case, trigger, expected) in [
+            ("goal-composer-preexisting", "composer", true),
+            ("goal-composer-unavailable", "composer", true),
+            ("goal-composer-queued", "composer", false),
+            ("goal-composer-finished", "composer", false),
+            ("goal-composer-running", "composer", false),
+            ("goal-composer-superseded", "composer", false),
             ("resumed-progress", "resume_interrupted_task", true),
             ("resumed-unattributed", "composer", false),
             ("resumed-question", "resume_interrupted_task", false),
             ("resumed-final", "resume_interrupted_task", false),
             ("goal-provider-failure", "goal", true),
             ("goal-active", "goal", true),
-            ("goal-cleared", "goal", false),
-            ("goal-complete", "goal", false),
-            ("goal-paused", "goal", false),
-            ("goal-blocked-later", "goal", false),
+            ("goal-cleared", "goal", true),
+            ("goal-complete", "goal", true),
+            ("goal-paused", "goal", true),
+            ("goal-blocked-later", "goal", true),
             ("goal-question", "goal", false),
             ("goal-unrelated-turn", "composer", false),
             ("goal-composer-provider-failure", "composer", true),
-            ("goal-composer-blocked-later", "composer", false),
-            ("goal-composer-preexisting", "composer", false),
+            ("goal-composer-blocked-later", "composer", true),
         ] {
             let dir =
                 std::env::temp_dir().join(format!("herder-goal-{}-{case}", std::process::id()));
@@ -1907,8 +1913,13 @@ for line in sys.stdin:
             .unwrap();
             let observed = control.read_boundary(&target).unwrap();
             drop(control);
+            let calls = fs::read_to_string(home.join("calls")).unwrap();
             fs::remove_dir_all(home).unwrap();
             assert_eq!(observed.is_some(), expected, "{case}");
+            assert!(
+                !calls.lines().any(|method| method == "thread/goal/get"),
+                "{case}"
+            );
             if let Some(boundary) = observed {
                 assert_eq!(boundary.turn_id, "old-turn");
                 let anchor = match trigger {
@@ -1930,16 +1941,62 @@ for line in sys.stdin:
         let root = root.canonicalize().unwrap();
         fs::write(root.join("app-server"), RPC_FIXTURE).unwrap();
         fs::write(root.join("case"), "cold-same").unwrap();
-        let target = SessionAddress { instance: InstanceRef { node: NodeRef("local".into()),
-            instance_id: "test".into() }, native_session_id: "saved-thread".into() };
-        let control = CodexControl::open(CodexInstance { instance_id: "test".into(),
-            executable: PathBuf::from("/usr/bin/python3"), code_home: root.clone(), cwd: root.clone(),
-            socket_path: None }, target.instance.clone(), Duration::from_secs(3)).unwrap();
+        let target = SessionAddress {
+            instance: InstanceRef {
+                node: NodeRef("local".into()),
+                instance_id: "test".into(),
+            },
+            native_session_id: "saved-thread".into(),
+        };
+        let control = CodexControl::open(
+            CodexInstance {
+                instance_id: "test".into(),
+                executable: PathBuf::from("/usr/bin/python3"),
+                code_home: root.clone(),
+                cwd: root.clone(),
+                socket_path: None,
+            },
+            target.instance.clone(),
+            Duration::from_secs(3),
+        )
+        .unwrap();
         let boundary = control.read_boundary(&target).unwrap().unwrap();
-        let route = RecoveryRoute { provider: boundary.provider.clone(), model: boundary.model.clone() };
-        let result = control.submit(&target, &boundary, &route, RecoveryPermit { reserve: 0,
-            quota_proof: None, still_allowed: &|| true }, "continue", &RequestKey("exact-request".into()));
-        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(boundary.failure, RecoveryFailure::Retryable);
+        let route = RecoveryRoute {
+            provider: boundary.provider.clone(),
+            model: boundary.model.clone(),
+        };
+        let submit = || {
+            control.submit(
+                &target,
+                &boundary,
+                &route,
+                RecoveryPermit {
+                    reserve: 0,
+                    quota_proof: None,
+                    still_allowed: &|| true,
+                },
+                "continue",
+                &RequestKey("exact-request".into()),
+            )
+        };
+        let receipt = submit().unwrap().receipt;
+        let failed_retry = control.read_boundary(&target).unwrap().unwrap();
+        assert_eq!(failed_retry.turn_id, receipt.native_id);
+        assert_eq!(failed_retry.input_item_id, "recovery-input");
+        assert_eq!(failed_retry.failure, RecoveryFailure::Retryable);
+        assert!(matches!(
+            submit(),
+            Err(SubmitError::DefinitelyNotSent { .. })
+        ));
+        let calls = fs::read_to_string(root.join("calls")).unwrap();
+        assert_eq!(
+            calls
+                .lines()
+                .filter(|method| *method == "turn/start")
+                .count(),
+            1
+        );
         drop(control);
         fs::remove_dir_all(root).unwrap();
     }
