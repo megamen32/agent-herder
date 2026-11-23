@@ -207,6 +207,7 @@ impl ScopedMessageReader for SharedRead {
     }
 }
 struct OwnerApp {
+    metadata_inventory_home: Option<std::path::PathBuf>,
     authority: Arc<ScopedAuthority>,
     instance: InstanceRef,
     grants: Vec<Grant>,
@@ -225,6 +226,15 @@ impl ApplicationPort for OwnerApp {
         request: catalog::Request,
     ) -> ApplicationFuture<'a> {
         Box::pin(async move {
+            if let Some(result) = super::owner_reads::codex_registered_list(identity, &request, &self.policy, &self.messages) {
+                return Some(result);
+            }
+            if let catalog::Request::Sessions(catalog::Sessions::Inventory { node_ref, instance_ref, cwd, cursor, limit, updated_since_ms, archived }) = &request {
+                return Some(super::owner_codex_inventory::list(
+                    identity, &self.policy, self.metadata_inventory_home.as_deref(), &self.messages,
+                    node_ref, instance_ref, cwd.as_deref(), cursor.as_deref(), *limit, *updated_since_ms, *archived,
+                ));
+            }
             if let Some(result) = self.policy.discover_instance(identity, &request, None) {
                 return Some(result);
             }
@@ -443,6 +453,7 @@ fn build_owner(
         instance_id: opened.owner.instance.clone(),
     };
     let process = codex_process(&opened.owner, &instance)?;
+    let metadata_inventory_home = opened.owner.codex_metadata_inventory.then(|| process.code_home.clone());
     let timeout = Duration::from_secs(20);
     let reopened = Arc::new(NativeReader::open(
         process.clone(),
@@ -561,6 +572,7 @@ fn build_owner(
             )) as Arc<dyn automation_driver::AutomationTick>
         });
     let app = Arc::new(OwnerApp {
+        metadata_inventory_home,
         authority: authority.clone(),
         instance: instance.clone(),
         grants: grants.clone(),

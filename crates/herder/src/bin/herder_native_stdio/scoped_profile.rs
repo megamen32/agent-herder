@@ -29,6 +29,9 @@ struct Profile {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OwnerProfile {
+    /// Explicitly allow metadata inventory of this profile by its owning principal.
+    #[serde(default)]
+    pub codex_metadata_inventory: bool,
     pub principal: String,
     pub node: String,
     pub instance: String,
@@ -680,6 +683,7 @@ mod enrollment_tests {
     use herder::application::scoped_stop::enroll::ExistingSessionApproval;
     fn owner() -> OwnerProfile {
         OwnerProfile {
+            codex_metadata_inventory: false,
             principal:"owner".into(),node:"node".into(),instance:"profile".into(),
             executable:"/usr/bin/node".into(),code_home:"/home/owner".into(),cwd:"/home/owner/project".into(),
             kind:"chatgpt".into(),ahap_script:Some("/opt/herder/browser.js".into()),ahap_base_url:None,

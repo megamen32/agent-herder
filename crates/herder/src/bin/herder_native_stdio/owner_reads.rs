@@ -257,46 +257,8 @@ fn handle(
             instance_ref,
             cursor,
         }) => {
-            if cursor.is_some() {
-                return Err("unsupported_cursor");
-            }
-            if node_ref.as_ref().is_some_and(|v| v != &instance.node.0)
-                || instance_ref
-                    .as_ref()
-                    .is_some_and(|v| v != &instance.instance_id)
-            {
-                return Err("invalid_instance");
-            }
-            let corpus = registered(identity, policy, instance)?;
-            let observed = observe(&corpus, native)?;
-            let authority = ScopedAuthority::new(policy.db.clone(), policy.gate.clone(), policy.generation.clone())
-                .map_err(|_| "scope_unavailable")?;
-            let db = read_store(policy)?;
-            let mut sessions = Vec::with_capacity(corpus.sessions.len());
-            for (reference, address) in &corpus.sessions {
-                let metadata = observed.get(&address.native_session_id);
-                let workspace = registration::read_workspace(&db, reference).map_err(|_| "scope_unavailable")?;
-                if project_ref.as_deref().is_some_and(|p| {
-                    !session_matches_project(metadata, workspace.workspace.as_ref(), p)
-                }) {
-                    continue;
-                }
-                let grant = session_read_grant(identity, policy, instance, reference)?;
-                let held = authority.human_stop_held(identity, &[grant], reference, instance)
-                    .map_err(|_| "scope_unavailable")?;
-                sessions.push(json!({"session_ref":reference.0,"address":address,"native":metadata,
-                    "workspace":workspace.workspace,"workspace_revision":workspace.revision,
-                    "workspace_updated_at":workspace.updated_at,"workspace_source":"session_declaration",
-                    "human_stop":{"held":held},
-                    "source":if metadata.is_some(){"registered_and_native"}else{"registered"}}));
-            }
-            let complete = !corpus.truncated
-                && (project_ref.is_none() || observed.len() == corpus.sessions.len());
-            Ok(
-                json!({"sessions":sessions,"next_cursor":null,"complete":complete,
-                "scope":"authorized_registered_sessions","native_coverage_complete":observed.len()==corpus.sessions.len(),
-                "limitations":if complete {vec![]} else {vec!["Registry bound or missing native metadata limits coverage."]}}),
-            )
+            registered_listing(identity, policy, instance, project_ref.as_deref(), node_ref.as_deref(),
+                instance_ref.as_deref(), cursor.as_deref(), |corpus| observe(corpus, native))
         }
         Request::Search(Search::Search {
             query,
@@ -635,6 +597,112 @@ fn registered(
     Ok(Corpus {
         sessions,
         truncated,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn registered_listing(
+    identity: &ConnectionIdentity,
+    policy: &OwnerPolicy,
+    instance: &InstanceRef,
+    project_ref: Option<&str>,
+    node_ref: Option<&str>,
+    instance_ref: Option<&str>,
+    cursor: Option<&str>,
+    observation: impl FnOnce(&Corpus) -> ReadResult<BTreeMap<String, Value>>,
+) -> ReadResult<Value> {
+    if cursor.is_some() {
+        return Err("unsupported_cursor");
+    }
+    if node_ref.is_some_and(|v| v != instance.node.0)
+        || instance_ref.is_some_and(|v| v != instance.instance_id)
+    {
+        return Err("invalid_instance");
+    }
+    let corpus = registered(identity, policy, instance)?;
+    let observed = observation(&corpus)?;
+    let authority = ScopedAuthority::new(
+        policy.db.clone(),
+        policy.gate.clone(),
+        policy.generation.clone(),
+    )
+    .map_err(|_| "scope_unavailable")?;
+    let db = read_store(policy)?;
+    let mut sessions = Vec::with_capacity(corpus.sessions.len());
+    for (reference, address) in &corpus.sessions {
+        let metadata = observed.get(&address.native_session_id);
+        let workspace =
+            registration::read_workspace(&db, reference).map_err(|_| "scope_unavailable")?;
+        if project_ref
+            .is_some_and(|p| !session_matches_project(metadata, workspace.workspace.as_ref(), p))
+        {
+            continue;
+        }
+        let grant = session_read_grant(identity, policy, instance, reference)?;
+        let held = authority
+            .human_stop_held(identity, &[grant], reference, instance)
+            .map_err(|_| "scope_unavailable")?;
+        sessions.push(
+            json!({"session_ref":reference.0,"address":address,"native":metadata,
+            "workspace":workspace.workspace,"workspace_revision":workspace.revision,
+            "workspace_updated_at":workspace.updated_at,"workspace_source":"session_declaration",
+            "human_stop":{"held":held},
+            "source":if metadata.is_some(){"registered_and_native"}else{"registered"}}),
+        );
+    }
+    let complete =
+        !corpus.truncated && (project_ref.is_none() || observed.len() == corpus.sessions.len());
+    Ok(
+        json!({"sessions":sessions,"next_cursor":null,"complete":complete,
+        "scope":"authorized_registered_sessions","native_coverage_complete":observed.len()==corpus.sessions.len(),
+        "limitations":if complete {vec![]} else {vec!["Registry bound or missing native metadata limits coverage."]}}),
+    )
+}
+
+pub(super) fn codex_registered_list(
+    identity: &ConnectionIdentity,
+    request: &catalog::Request,
+    policy: &OwnerPolicy,
+    reader: &std::sync::Mutex<herder::adapters::codex::read::CodexReader>,
+) -> Option<CallToolResult> {
+    let catalog::Request::Sessions(catalog::Sessions::List {
+        project_ref,
+        node_ref,
+        instance_ref,
+        cursor,
+    }) = request
+    else {
+        return None;
+    };
+    if !matches!(identity.caller(),Caller::Principal(p) if p.id==policy.principal) {
+        return Some(error("unauthorized"));
+    }
+    let result = registered_listing(
+        identity,
+        policy,
+        &policy.instance,
+        project_ref.as_deref(),
+        node_ref.as_deref(),
+        instance_ref.as_deref(),
+        cursor.as_deref(),
+        |corpus| {
+            let mut rows = BTreeMap::new();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            if let Ok(mut reader) = reader.try_lock() {
+                for (_, addr) in &corpus.sessions {
+                    if let Some(row) =
+                        reader.inventory_thread_metadata(&addr.native_session_id, deadline)
+                    {
+                        rows.insert(addr.native_session_id.clone(), row);
+                    }
+                }
+            }
+            Ok(rows)
+        },
+    );
+    Some(match result {
+        Ok(value) => CallToolResult::structured(value),
+        Err(code) => error(code),
     })
 }
 
