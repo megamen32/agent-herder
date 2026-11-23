@@ -6,7 +6,7 @@ use crate::{
     auth::identity::PrincipalId,
     domain::{
         address::{SessionAddress, SessionRef},
-        recovery::{RecoveryBoundary, RecoveryFailure},
+        recovery::RecoveryBoundary,
     },
 };
 use rmcp::model::CallToolResult;
@@ -66,7 +66,6 @@ pub(super) struct RecoveryHistory<'a> {
     address: &'a SessionAddress,
     digest: &'a str,
     native_id: Cow<'a, str>,
-    terminal_failure: bool,
     boundary_started_at_ms: u64,
 }
 
@@ -88,7 +87,6 @@ struct Delivery {
     phase: Option<String>,
     task_result: Option<String>,
     dispatch_scope: Option<String>,
-    recent: bool,
     claim_before_boundary: bool,
     matches_boundary: bool,
 }
@@ -110,7 +108,6 @@ impl<'a> RecoveryHistory<'a> {
             address,
             digest,
             native_id,
-            terminal_failure: boundary.failure != RecoveryFailure::Interrupted,
             boundary_started_at_ms: boundary.started_at_ms,
         }
     }
@@ -125,7 +122,6 @@ impl<'a> RecoveryHistory<'a> {
                                   AND json_extract(t.result_json, '$.structuredContent.code')
                                       IN ('adapter_refused','human_stop_active'), 0)
                          ELSE 0 END,
-                    julianday(i.created_at) > julianday(?4, '-10 minutes'),
                     CASE WHEN json_valid(i.native_receipt)
                          THEN coalesce(json_extract(i.native_receipt, '$.native_id')=?5, 0)
                          ELSE 0 END AS same_id, d.updated_at, t.result_json
@@ -167,7 +163,7 @@ impl<'a> RecoveryHistory<'a> {
                         }
                         _ => DeliveryState::Uncertain,
                     };
-                    let dispatch_time: Option<String> = row.get(10)?;
+                    let dispatch_time: Option<String> = row.get(9)?;
                     let claim_before_boundary = dispatch_time
                         .as_deref()
                         .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -182,10 +178,9 @@ impl<'a> RecoveryHistory<'a> {
                         key: row.get(2)?,
                         state,
                         phase,
-                        task_result: row.get(11)?,
+                        task_result: row.get(10)?,
                         dispatch_scope: row.get(5)?,
-                        recent: row.get::<_, Option<bool>>(8)?.unwrap_or(false),
-                        matches_boundary: row.get(9)?,
+                        matches_boundary: row.get(8)?,
                         claim_before_boundary,
                     })
                 },
@@ -242,8 +237,7 @@ impl<'a> RecoveryHistory<'a> {
             .map_err(|_| GateError::Store)?;
         let mut deliveries = self.deliveries(&tx, now)?;
         for delivery in &mut deliveries {
-            if self.terminal_failure
-                && delivery.state == DeliveryState::Admitted
+            if delivery.state == DeliveryState::Admitted
                 && (delivery.phase.is_none() || delivery.dispatch_scope.as_deref() == Some(scope))
                 && self.exact_receipt(&tx, delivery)?
             {
@@ -381,15 +375,16 @@ impl<'a> RecoveryHistory<'a> {
             if !delivery.matches_boundary {
                 continue;
             }
-            if !self.terminal_failure
-                || stage == RecoveryStage::Fallback
+            if stage == RecoveryStage::Fallback
                 || delivery.state != DeliveryState::Settled
                 || !self.exact_receipt(db, delivery)?
             {
                 return Ok(None);
             }
             match parse_suffix(self.suffix(delivery)) {
-                Some((digest, RecoveryStage::Primary, _)) if digest != self.digest => {
+                Some((digest, RecoveryStage::Primary | RecoveryStage::Fallback, _))
+                    if digest != self.digest =>
+                {
                     stage = RecoveryStage::Fallback;
                 }
                 _ => return Ok(None),
@@ -434,15 +429,15 @@ impl<'a> RecoveryHistory<'a> {
             }
         }
 
-        let (retry, claimed, existing) = match current {
-            None => (0, false, false),
+        let (retry, claimed) = match current {
+            None => (0, false),
             Some((retry, row)) if row.state == DeliveryState::DefinitelyNotSent => {
                 let Some(next) = retry.checked_add(1) else {
                     return Ok(None);
                 };
-                (next, false, false)
+                (next, false)
             }
-            Some((retry, row)) => (retry, row.state == DeliveryState::Claimed, true),
+            Some((retry, row)) => (retry, row.state == DeliveryState::Claimed),
         };
         let base = format!("{}:{}", self.digest, stage.label());
         let suffix = if retry == 0 {
@@ -450,13 +445,7 @@ impl<'a> RecoveryHistory<'a> {
         } else {
             format!("{base}:{retry}")
         };
-        if claimed_suffix.is_some_and(|claimed| claimed != suffix)
-            || deliveries
-                .iter()
-                .filter(|row| row.recent && (!existing || self.suffix(row) != suffix))
-                .count()
-                >= 3
-        {
+        if claimed_suffix.is_some_and(|claimed| claimed != suffix) {
             return Ok(None);
         }
 
@@ -476,6 +465,7 @@ mod tests {
         domain::{
             adapter::NativeReceipt,
             address::{InstanceRef, NodeRef},
+            recovery::RecoveryFailure,
         },
     };
     use std::path::PathBuf;
@@ -613,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_failed_primary_advances_across_restarts_and_failed_fallback_holds() {
+    fn exact_failed_primary_advances_across_restarts_and_failed_fallback_continues() {
         for (harness, primary_id, fallback_id) in [
             ("codex", "retry-turn", "fallback-turn"),
             ("opencode", "retry-input", "fallback-input"),
@@ -695,19 +685,18 @@ mod tests {
                     .is_none()
             );
             let failed_fallback = fixture.history(harness, REPLACEMENT, &replacement);
-            assert!(
+            let next = failed_fallback
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap()
+                .unwrap();
+            assert_eq!(next.stage, RecoveryStage::Fallback);
+            assert_eq!(next.suffix, format!("{REPLACEMENT}:fallback"));
+            assert_eq!(
                 failed_fallback
                     .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none()
+                    .unwrap(),
+                Some(next)
             );
-            assert!(
-                failed_fallback
-                    .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none()
-            );
-
             let next = fixture
                 .history(harness, FRESH, &fresh)
                 .next_attempt(&mut fixture.db(), SCOPE, NOW)
@@ -718,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_or_mismatching_receipts_and_projected_interruptions_do_not_advance() {
+    fn absent_or_mismatching_receipts_block_but_technical_interruptions_continue() {
         let retry = boundary("retry-turn", "retry-input");
         for (state, phase, id) in [
             ("unknown", "finished", None),
@@ -756,13 +745,13 @@ mod tests {
         );
         let mut projected = retry;
         projected.failure = RecoveryFailure::Interrupted;
-        assert!(
-            fixture
-                .history("codex", RETRY, &projected)
-                .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                .unwrap()
-                .is_none()
-        );
+        let attempt = fixture
+            .history("codex", RETRY, &projected)
+            .next_attempt(&mut fixture.db(), SCOPE, NOW)
+            .unwrap()
+            .unwrap();
+        assert_eq!(attempt.stage, RecoveryStage::Fallback);
+        assert_eq!(attempt.suffix, format!("{RETRY}:fallback"));
     }
 
     #[test]
