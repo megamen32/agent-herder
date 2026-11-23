@@ -109,7 +109,7 @@ pub enum DispatchError {
 
 catalog! {
     "discover" => Discover(Discover) { read: ["nodes", "instances", "models", "projects"], mutate: [] },
-    "sessions" => Sessions(Sessions) { read: ["list"], mutate: [] },
+    "sessions" => Sessions(Sessions) { read: ["list", "inventory"], mutate: [] },
     "session" => Session(Session) { read: ["recent", "context", "messages", "attachment", "resolve"], mutate: ["archive", "register", "workspace"] },
     "create" => Create(Create) { read: [], mutate: ["create"] },
     "deliver" => Deliver(Deliver) { read: ["receipt"], mutate: ["session", "reply_to"] },
@@ -198,6 +198,11 @@ actions!(Discover {
     Projects { instance_ref: Option<String> },
 });
 actions!(Sessions {
+    // Read metadata from the owner's fixed Codex profile. Thread IDs are descriptive.
+    Inventory {
+        node_ref: String, instance_ref: String, cwd: Option<String>, cursor: Option<String>,
+        limit: Option<u32>, updated_since_ms: Option<i64>, archived: Option<bool>,
+    },
     List { project_ref: Option<String>, node_ref: Option<String>, instance_ref: Option<String>, cursor: Option<String> },
 });
 /// An advertised working location. This declaration does not acquire filesystem

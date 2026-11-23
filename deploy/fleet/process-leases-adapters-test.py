@@ -185,6 +185,24 @@ class AdapterMigrationContracts(MigrationFixture):
         candidate.create(path, candidate.encoded(manifest), 0o400)
         return staged, manifest, {**selection, "manifest": str(path), "manifest_sha256": candidate.digest(path)}
 
+    def test_codex_inventory_flag_only_changes_the_explicitly_reviewed_profile(self):
+        previous = candidate.strict_json(self.old_profiles[str(self.root / "profile-codex.json")])
+        before = candidate.encoded(previous)
+        enabled = copy.deepcopy(previous)
+        enabled["owner"]["codex_metadata_inventory"] = True
+        payload = candidate.encoded(enabled)
+        self.assertEqual(candidate.recovery_profile_payload(before, payload), payload)
+        self.assertEqual(candidate.recovery_profile_payload(payload, before), before)
+
+        invalid = copy.deepcopy(enabled)
+        invalid["owner"]["codex_metadata_inventory"] = 1
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            candidate.recovery_profile_payload(payload, candidate.encoded(invalid))
+        invalid = copy.deepcopy(enabled)
+        invalid["owner"]["instance"] = "a-different-owner"
+        with self.assertRaisesRegex(ValueError, "changes protected profile"):
+            candidate.recovery_profile_payload(before, candidate.encoded(invalid))
+
     def test_codex_socket_can_be_staged_before_a_recovery_cohort_is_registered(self):
         old_path = self.root / "native-codex-profile.json"
         old = candidate.strict_json(self.old_profiles[str(self.root / "profile-codex.json")])

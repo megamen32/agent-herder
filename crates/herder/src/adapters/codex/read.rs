@@ -116,6 +116,9 @@ pub(super) struct ReceiptCursor {
     pub(super) seen_turns: HashSet<String>,
 }
 
+#[path = "inventory_runtime.rs"]
+mod inventory_runtime;
+
 pub struct CodexReader {
     connection: CodexConnection,
     instance: CodexInstance,

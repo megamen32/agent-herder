@@ -616,6 +616,12 @@ for line in sys.stdin:
     let session: String = db
         .query_row("SELECT session_ref FROM session_bindings", [], |r| r.get(0))
         .unwrap();
+    let metadata_inventory = serde_json::json!({"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"_meta":meta,"name":"sessions","arguments":{"action":"inventory","node_ref":"local","instance_ref":"codex-test","limit":1}}});
+    let off = call(&mut input, &mut out, metadata_inventory.clone());
+    assert_eq!(off["result"]["structuredContent"]["code"], "metadata_inventory_not_enabled", "{off}");
+    let registered = call(&mut input, &mut out, serde_json::json!({"jsonrpc":"2.0","id":92,"method":"tools/call","params":{"_meta":meta,"name":"sessions","arguments":{"action":"list","node_ref":"local","instance_ref":"codex-test"}}}));
+    assert_eq!(registered["result"]["structuredContent"]["sessions"][0]["session_ref"], session, "{registered}");
+    assert_eq!(registered["result"]["structuredContent"]["scope"], "authorized_registered_sessions");
     let response = call(
         &mut input,
         &mut out,
@@ -665,6 +671,13 @@ for line in sys.stdin:
     drop(input);
     let _ = child.wait();
     // A fresh launcher must derive the same exact grant from the durable receipt.
+    let mut inventory_profile = p.clone();
+    inventory_profile["owner"]["codex_metadata_inventory"] = serde_json::json!(true);
+    fs::write(&f.profile, inventory_profile.to_string()).unwrap();
+    let state = Connection::open(f.root.join("state_5.sqlite")).unwrap();
+    state.execute_batch("CREATE TABLE threads(id TEXT PRIMARY KEY, archived INTEGER, cwd TEXT, updated_at INTEGER);
+        INSERT INTO threads VALUES ('unregistered', 0, '/project', 10);").unwrap();
+    drop(state);
     let mut reopened = Command::new(env!("CARGO_BIN_EXE_herder_native_stdio"))
         .arg("--trusted-owner-profile")
         .arg(&f.profile)
@@ -675,6 +688,17 @@ for line in sys.stdin:
         .unwrap();
     let mut input = reopened.stdin.take().unwrap();
     let mut out = BufReader::new(reopened.stdout.take().unwrap());
+    let inventory = call(&mut input, &mut out, metadata_inventory.clone());
+    let data = &inventory["result"]["structuredContent"];
+    assert_eq!(data["sessions"][0]["native_session_id"], "unregistered", "{inventory}");
+    assert!(data["sessions"][0].get("session_ref").is_none());
+    assert_eq!(data["runtime"]["complete"], false, "a private stdio child cannot assert shared controller coverage");
+    let mut wrong_node = metadata_inventory;
+    wrong_node["params"]["arguments"]["node_ref"] = serde_json::json!("other");
+    let denied_inventory = call(&mut input, &mut out, wrong_node);
+    assert_eq!(denied_inventory["result"]["structuredContent"]["code"], "owner_profile_mismatch");
+    let bound: i64 = db.query_row("SELECT COUNT(*) FROM session_bindings", [], |r| r.get(0)).unwrap();
+    assert_eq!(bound, 1, "listing metadata must not bind unregistered IDs");
     let after = call(
         &mut input,
         &mut out,

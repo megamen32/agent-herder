@@ -12,6 +12,8 @@ mod owner_multi;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_reads.rs"]
 mod owner_reads;
+#[path = "herder_native_stdio/owner_codex_inventory.rs"]
+mod owner_codex_inventory;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_registration.rs"]
