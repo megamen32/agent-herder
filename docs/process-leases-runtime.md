@@ -99,9 +99,30 @@ The OpenCode runner advertises `nativeStartAdmission: steer-before-turn-v1` only
 
 Lost-ACK readback preserves exact native identities across AHAP. For OpenCode, a proven `info.id` record uses its own `info.metadata.agentHerderInputId`; verified v2 also accepts the actual native top-level `msg_...`, `type: user`, `metadata.agentHerderInputId` envelope returned by the addressed session endpoint. Synthetic display IDs, text matching and other protocol families do not gain that proof. ZCode preserves observed native message/command/input anchors without guessing or resubmitting input.
 
-## Reviewed native browser profile migration
+## Native browser profile migration
 
-Use the same candidate builder and the same node, storage and state-root arguments as in **Build and inspect**. Select each legacy browser provider explicitly. Pass the following additional arguments for a pair of UserIO profiles.
+The extension route uses Agent Herder's own Chrome extension in an existing
+signed-in Chrome profile. On server100, use its signed-in profile and connect
+over loopback when the Chrome profile can reach the Rust listener there.
+The extension reads and acts on the site and communicates directly with
+Agent Herder. Bezbrowser is a tool for development and debugging. Existing
+UserIO profiles retain their compatibility route. See the
+[extension contract and release gates](browser-chat-adapters.md#production-route-through-the-extension).
+
+The migration must preserve the selected owner account scope,
+database, gate, generation, grants and existing recovery checks. The unified
+Rust `SessionRecovery` controls timing, HumanStop and pending requests, keeps
+the same chat and model, and permits no fallback without an explicit
+capability. The extension confirms the exact account, chat, failed turn and
+input; one request key and native receipt guard the continuation. After an
+unknown result, read back the same action and receipt without replay. CI must
+exercise fake 429 through our extension, including HumanStop, pending request,
+stale identity, lost acknowledgement and failed retry. Neither this contract
+nor the isolated fixtures below establish a deployed production route.
+
+For a reviewed extension binding, use the candidate builder with the node,
+storage and state-root arguments from **Build and inspect**, explicitly
+selecting each provider. For example, for two selected UserIO profiles:
 
 ~~~sh
 --native-update chatgpt --native-update zai \
@@ -109,7 +130,51 @@ Use the same candidate builder and the same node, storage and state-root argumen
 --browser-binding zai "$ZAI_BINDING_FILE" "$ZAI_BINDING_SHA256"
 ~~~
 
-Supply the absolute path and reviewed SHA-256 of each operator-owned file. Keep it in a private directory outside the candidate, with a single link, a canonical path and mode 0600 or 0400. Keep the same bytes available through staged checking and guarded installation. Each file authorizes the exact bytes of one selected previous profile. The example uses ChatGPT. For Z.ai, set `kind` to `zai` and use that profile’s hash and binding.
+Each independent operator-owned binding is a private JSON file outside the
+candidate, with a canonical absolute path, one link and mode 0600 or 0400.
+Supply its reviewed SHA-256 and keep the same bytes available during staged
+checking and guarded installation. Its `kind` and `profile_sha256` identify
+the exact selected provider and previous profile; `ahap_env` specifies the
+extension binding:
+
+~~~json
+{
+  "kind": "chatgpt",
+  "profile_sha256": "<SHA-256 of the selected previous profile file>",
+  "ahap_env": {
+    "AHAP_BROWSER_TRANSPORT": "herder-extension",
+    "AHAP_BROWSER_ACCOUNT_SCOPE": "<existing account scope>",
+    "AHAP_BROWSER_EXTENSION_LISTEN": "127.0.0.1:19001",
+    "AHAP_BROWSER_EXTENSION_TOKEN_FILE": "<absolute path to private token file>"
+  }
+}
+~~~
+
+Use a separate listener and binding for each provider; keep the existing
+account scope and grants. The optional top-level `browser_recovery` carries a
+reviewed exact-session handoff: it requires an absolute autopilot state
+directory, a fresh activation path and the existing private HumanStop, human
+request, choice and unfinished-session hold files. Instance-wide or workspace
+handoffs and fallback routes are rejected. The builder checks the binding
+against the old profile and preserves the database, gate, generation and
+grants. See [local extension package and owner profile](browser-chat-adapters.md#local-extension-package-and-owner-profile)
+for the build, token, listener, proxy and smoke-test details.
+
+On the stand, ChatGPT passed 429 recovery and lost-ACK recovery with one send
+and confirmation after restart. Z.ai passed ordinary read, create and
+delivery. Z.ai recovery requires a native signal tying the failure to the
+message and its input. Verify the selected transport in the installed owner
+profiles during deployment.
+
+### Isolated direct-CDP stand
+
+The direct-CDP binding and migration below are for isolated validation of the
+native owner and provider protocol only; they are not production extension
+configuration.
+
+Use the same candidate builder and private binding procedure described above.
+This example uses ChatGPT; for Z.ai, select `zai` and use that profile's hash
+and binding.
 
 ~~~json
 {

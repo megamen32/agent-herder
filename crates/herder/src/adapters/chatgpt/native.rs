@@ -9,7 +9,7 @@ use tokio::time::{sleep, timeout};
 
 use super::{CdpError, ChatGptReadError, ChatGptReader, NormalizeError, NormalizedMessage};
 use crate::adapters::browser::{
-    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES,
+    BrowserActivity, BrowserAttachment, BrowserSubmitError, MAX_ATTACHMENT_BYTES, RecoveryInput,
     validate_attachments,
 };
 
@@ -44,10 +44,10 @@ impl ChatGptReader {
         };
         args["op"] = json!(op);
         args["scope"] = json!(&self.account_scope);
-        let expression = format!("/* herder.chatgpt.{op} */\n({NATIVE})({operation},\n{args})");
+        let expression = || format!("/* herder.chatgpt.{op} */\n({NATIVE})({operation},\n{args})");
         let mut result = self
             .cdp
-            .evaluate(&expression)
+            .site(op, args.clone(), expression)
             .await
             .map_err(ChatGptReadError::Cdp)?;
         match result["origin"].as_str() {
@@ -177,6 +177,28 @@ impl ChatGptReader {
             .ok_or(ChatGptReadError::InvalidResponse)
     }
 
+    pub(crate) async fn recovery_receipt(
+        &mut self,
+        id: &str,
+        key: &str,
+    ) -> Result<Option<String>, ChatGptReadError> {
+        check_id(id)?;
+        if !self.cdp.is_extension() {
+            return Ok(None);
+        }
+        let params = json!({"scope": self.account_scope, "id": id, "requestKey": key});
+        let value = self
+            .cdp
+            .site("recovery-receipt", params, String::new)
+            .await
+            .map_err(ChatGptReadError::Cdp)?;
+        match value {
+            Value::Null => Ok(None),
+            Value::String(id) if native_id(&id) => Ok(Some(id)),
+            _ => Err(ChatGptReadError::InvalidResponse),
+        }
+    }
+
     pub async fn read_attachment(
         &mut self,
         remote: &str,
@@ -220,7 +242,7 @@ impl ChatGptReader {
         let url = format!("{ORIGIN}/c/{id}");
         timeout(Duration::from_secs(8), async {
             loop {
-                match self.cdp.evaluate("location.href").await {
+                match self.cdp.href().await {
                     Ok(value) if value.as_str() == Some(&url) => break,
                     Ok(value)
                         if matches!(
@@ -257,19 +279,56 @@ impl ChatGptReader {
         text: &str,
         attachments: &[BrowserAttachment],
     ) -> Result<(String, String), BrowserSubmitError> {
+        self.submit_guarded(conversation_id, text, attachments, None, None)
+            .await
+    }
+
+    pub(crate) async fn submit_guarded(
+        &mut self,
+        conversation_id: Option<&str>,
+        text: &str,
+        attachments: &[BrowserAttachment],
+        recovery: Option<&RecoveryInput>,
+        request_key: Option<&str>,
+    ) -> Result<(String, String), BrowserSubmitError> {
         use BrowserSubmitError::{BeforeSend, Unknown};
         if (text.trim().is_empty() && attachments.is_empty())
             || text.len() > 16_000
             || conversation_id.is_some_and(|id| !native_id(id))
             || (conversation_id.is_none() && !(self.fresh_blank && self.cdp.owns_target()))
+            || (recovery.is_some() && (conversation_id.is_none() || !attachments.is_empty()))
         {
             return Err(BeforeSend);
         }
         validate_attachments(attachments).map_err(|_| BeforeSend)?;
+        if let Some(recovery) = recovery
+            && self.cdp.is_extension()
+        {
+            let id = conversation_id.ok_or(BeforeSend)?;
+            let request_key = request_key.ok_or(BeforeSend)?;
+            let args = json!({ "scope": self.account_scope, "id": id, "text": text,
+                "recovery": recovery, "requestKey": request_key });
+            let response = self
+                .cdp
+                .site("recover", args, String::new)
+                .await
+                .map_err(|_| Unknown)?;
+            if response["status"] == "not_sent" {
+                return Err(BeforeSend);
+            }
+            if response["status"] != "sent" || response["id"].as_str() != Some(id) {
+                return Err(Unknown);
+            }
+            let message = response["messageId"]
+                .as_str()
+                .filter(|id| native_id(id))
+                .ok_or(Unknown)?;
+            return Ok((id.into(), message.into()));
+        }
         // Independent readers can share a Chrome target. Bind all stages to
         // this invocation, including two submissions with identical content.
         let ticket = RandomState::new().hash_one(()).to_string();
-        let args = json!({"id": conversation_id, "text": text, "ticket": ticket});
+        let args = json!({"id": conversation_id, "text": text, "ticket": ticket, "recovery": recovery});
         let value = self
             .native("baseline", args.clone())
             .await

@@ -1,9 +1,8 @@
 use super::{
     BrowserActivity, BrowserAttachment, BrowserFile, BrowserSubmitError, Config, Provider,
-    protocol::RpcError,
+    RecoveryInput, page::PageConnection, protocol::RpcError,
 };
 use crate::adapters::{
-    cdp::CdpConnection,
     chatgpt::{ChatGptReadError, ChatGptReader, Role as ChatGptRole},
     zai::{Role as ZaiRole, ZaiReadError, ZaiReader},
 };
@@ -35,7 +34,47 @@ impl From<ZaiReadError> for RpcError {
 }
 
 impl Page {
+    pub(super) async fn anchor(config: &Config) -> Result<Self, RpcError> {
+        match &config.extension {
+            Some(link) => Ok(Self::from_extension(
+                config,
+                PageConnection::anchor(link.clone(), config.identity.clone()),
+                false,
+            )),
+            None => Self::attach(config, &config.identity.target_id).await,
+        }
+    }
+
+    fn from_extension(config: &Config, transport: PageConnection, created: bool) -> Self {
+        let scope = &config.scope;
+        match config.provider {
+            Provider::ChatGpt => {
+                Self::ChatGpt(ChatGptReader::from_extension(transport, scope, created))
+            }
+            Provider::Zai => Self::Zai(ZaiReader::from_extension(transport, scope, created)),
+        }
+    }
+
+    async fn verified_extension(
+        config: &Config,
+        link: &super::extension::ExtensionLink,
+        target: Option<&str>,
+    ) -> Result<Self, RpcError> {
+        let connection = PageConnection::claim(link.clone(), config.identity.clone(), target)
+            .await
+            .map_err(|_| RpcError::Unavailable)?;
+        let mut page = Self::from_extension(config, connection, target.is_none());
+        if let Err(error) = page.verify_scope(config).await {
+            page.close_created().await;
+            return Err(error);
+        }
+        Ok(page)
+    }
+
     pub(super) async fn attach(config: &Config, target: &str) -> Result<Self, RpcError> {
+        if let Some(link) = &config.extension {
+            return Self::verified_extension(config, link, Some(target)).await;
+        }
         let mut identity = config.identity.clone();
         identity.target_id = target.to_owned();
         let url = &config.endpoint;
@@ -52,6 +91,9 @@ impl Page {
     }
 
     pub(super) async fn create(config: &Config) -> Result<Self, RpcError> {
+        if let Some(link) = &config.extension {
+            return Self::verified_extension(config, link, None).await;
+        }
         let i = &config.identity;
         let url = &config.endpoint;
         let scope = &config.scope;
@@ -89,7 +131,7 @@ impl Page {
         }
     }
 
-    fn connection(&mut self) -> &mut CdpConnection {
+    fn connection(&mut self) -> &mut PageConnection {
         match self {
             Self::ChatGpt(page) => page.connection_mut(),
             Self::Zai(page) => page.connection_mut(),
@@ -99,9 +141,13 @@ impl Page {
     pub(super) async fn verify_scope(&mut self, config: &Config) -> Result<(), RpcError> {
         let observed = match self {
             Self::ChatGpt(page) => {
-                ChatGptReader::account_scope_for_target(page.connection_mut()).await?
+                page.verify_account_pin().await?;
+                page.account_scope().to_owned()
             }
-            Self::Zai(page) => ZaiReader::account_scope_for_target(page.connection_mut()).await?,
+            Self::Zai(page) => {
+                page.verify_account().await?;
+                config.scope.clone()
+            }
         };
         if observed == config.scope {
             Ok(())
@@ -117,7 +163,7 @@ impl Page {
     ) -> Result<bool, RpcError> {
         let location = self
             .connection()
-            .evaluate("({origin:location.origin,path:location.pathname})")
+            .location()
             .await
             .map_err(|_| RpcError::Unavailable)?;
         if location["origin"].as_str() != Some(provider.origin()) {
@@ -168,6 +214,13 @@ impl Page {
         match self {
             Self::ChatGpt(page) => page.close_created_chat().await,
             Self::Zai(page) => page.close_created_chat().await,
+        }
+    }
+
+    pub(super) async fn release(self) {
+        match self {
+            Self::ChatGpt(page) => page.close().await,
+            Self::Zai(page) => page.close().await,
         }
     }
 
@@ -254,9 +307,15 @@ impl Page {
         remote: Option<&str>,
         text: &str,
         files: &[BrowserAttachment],
+        recovery: Option<&RecoveryInput>,
+        input: &str,
     ) -> Result<(String, String), BrowserSubmitError> {
         match self {
-            Self::ChatGpt(page) => page.submit_with_attachments(remote, text, files).await,
+            Self::ChatGpt(page) => {
+                page.submit_guarded(remote, text, files, recovery, Some(input))
+                    .await
+            }
+            Self::Zai(_) if recovery.is_some() => Err(BrowserSubmitError::BeforeSend),
             Self::Zai(page) => page.submit_with_attachments(remote, text, files).await,
         }
     }

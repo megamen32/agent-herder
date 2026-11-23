@@ -12,6 +12,7 @@ import fcntl
 import hashlib
 import importlib.machinery
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -827,6 +828,8 @@ USERIO_SCOPE = "AHAP_USERIO_ACCOUNT_SCOPE"
 CDP_FIELDS = {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT", "AHAP_BROWSER_CDP_WS_URL",
               "AHAP_BROWSER_CDP_CONTEXT_ID", "AHAP_BROWSER_CDP_TARGET_ID"}
 ORIGIN_PORT = "AHAP_BROWSER_CDP_ORIGIN_PORT"
+EXTENSION_FIELDS = {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT", "AHAP_BROWSER_EXTENSION_LISTEN",
+                    "AHAP_BROWSER_EXTENSION_TOKEN_FILE"}
 # Only transport settings understood by the legacy profile may be retired.
 LEGACY_BROWSER_FIELDS = {
     "userio": {USERIO_SCOPE, "AHAP_USERIO_ENDPOINT", "AHAP_USERIO_AGENT_ID", "AHAP_USERIO_INSTANCE_ID",
@@ -860,6 +863,41 @@ def validate_direct_cdp(env):
         raise ValueError("invalid native browser origin port")
 
 
+def validate_herder_extension(env):
+    if (not isinstance(env, dict) or set(env) != EXTENSION_FIELDS
+            or not all(isinstance(v, str) for v in env.values())
+            or env["AHAP_BROWSER_TRANSPORT"] != "herder-extension"
+            or not re.fullmatch(r"[a-f0-9]{64}", env[BROWSER_SCOPE])):
+        raise ValueError("invalid Herder extension binding fields or scope")
+    try:
+        match = re.fullmatch(r"(\[[0-9a-fA-F:]+\]|[0-9.]+):([0-9]{1,5})",
+                             env["AHAP_BROWSER_EXTENSION_LISTEN"])
+        if (match is None or not ipaddress.ip_address(match[1].strip("[]")).is_loopback
+                or not 0 < int(match[2]) <= 65535):
+            raise ValueError()
+    except ValueError:
+        raise ValueError("Herder extension listener must use a loopback address and a fixed port") from None
+    try:
+        path = private_file(env["AHAP_BROWSER_EXTENSION_TOKEN_FILE"])
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
+                    or info.st_nlink != 1 or info.st_size > 130):
+                raise ValueError()
+            token = stream.read(131)
+            if len(token) > 130 or re.fullmatch(rb"[A-Za-z0-9_-]{32,128}", token.rstrip(b"\r\n")) is None:
+                raise ValueError()
+    except (OSError, ValueError):
+        raise ValueError("invalid private Herder extension token file") from None
+
+
+def validate_browser_transport(env):
+    if isinstance(env, dict) and env.get("AHAP_BROWSER_TRANSPORT") == "herder-extension":
+        validate_herder_extension(env)
+    else:
+        validate_direct_cdp(env)
+
+
 def read_browser_binding(pin, bundle, kind, profile_hash):
     """Authenticate independent operator input. Receipts contain only the file pin."""
     if (not isinstance(pin, dict) or set(pin) != {"path", "sha256"}
@@ -879,31 +917,60 @@ def read_browser_binding(pin, bundle, kind, profile_hash):
     if len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != pin["sha256"]:
         raise ValueError("private browser binding digest mismatch")
     binding = strict_json(raw)
-    if (not isinstance(binding, dict) or set(binding) != {"kind", "profile_sha256", "ahap_env"}
+    required = {"kind", "profile_sha256", "ahap_env"}
+    if (not isinstance(binding, dict) or set(binding) not in (required, required | {"browser_recovery"})
             or binding["kind"] != kind or binding["profile_sha256"] != profile_hash):
         raise ValueError("private browser binding does not select this provider and protected profile")
-    return binding["ahap_env"]
+    return binding
 
 
-def browser_profile_payload(raw, owner, core, binding):
+def check_browser_recovery(kind, recovery, *, installed):
+    if (not isinstance(recovery, dict)
+            or not isinstance(recovery.get("legacy_handoff"), dict)
+            or recovery.get("runner", "mcp") != "mcp"
+            or recovery.get("fallback_routes", []) != []
+            or not isinstance(recovery.get("autopilot_state_dir"), str)
+            or not Path(recovery["autopilot_state_dir"]).is_absolute()):
+        raise ValueError("browser recovery requires a same-chat MCP profile")
+    handoff = recovery["legacy_handoff"]
+    check_recovery_scope(kind, handoff)
+    if handoff.get("instance_wide") or "native_sessions" not in handoff or "workspaces" in handoff:
+        raise ValueError("browser recovery requires an exact session handoff")
+    marker = handoff.get("activation_file")
+    if (not isinstance(marker, str) or not Path(marker).is_absolute()
+            or ".." in Path(marker).parts or (not installed and os.path.lexists(marker))):
+        raise ValueError("stage browser recovery with a fresh private activation path")
+    for field in ("human_stops", "human_requests", "choices", "unfinished_sessions"):
+        path = handoff.get(field)
+        if not isinstance(path, str):
+            raise ValueError("browser recovery requires the existing private hold files")
+        private_file(path)
+
+
+def browser_profile_payload(raw, owner, core, binding, *, installed=False):
     env = owner.get("ahap_env")
     if (not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values())
             or owner.get("ahap_base_url") is not None):
         raise ValueError("invalid previous browser profile transport")
     legacy = owner.get("ahap_script") is not None
     transport = env.get("AHAP_BROWSER_TRANSPORT")
-    if transport == "direct-cdp":
+    if binding is not None:
+        if transport in ("direct-cdp", "herder-extension"):
+            old_env = env.copy()
+            if legacy:
+                old_env.pop("AHAP_BROWSER_PAGE_ID", None)
+            validate_browser_transport(old_env)
+        elif (not legacy or transport not in LEGACY_BROWSER_FIELDS
+              or set(env) - LEGACY_BROWSER_FIELDS[transport] - {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT"}):
+            raise ValueError("unsupported previous browser transport or fields")
+        new_env = binding["ahap_env"]
+    elif transport in ("direct-cdp", "herder-extension"):
         new_env = env.copy()
         if legacy:
             new_env.pop("AHAP_BROWSER_PAGE_ID", None)  # The old runner's numeric display hint.
     else:
-        if (not legacy or transport not in LEGACY_BROWSER_FIELDS
-                or set(env) - LEGACY_BROWSER_FIELDS[transport] - {BROWSER_SCOPE, "AHAP_BROWSER_TRANSPORT"}):
-            raise ValueError("unsupported previous browser transport or fields")
-        if binding is None:
-            raise ValueError("legacy browser transport requires a reviewed private browser binding")
-        new_env = binding
-    validate_direct_cdp(new_env)
+        raise ValueError("legacy browser transport requires a reviewed private browser binding")
+    validate_browser_transport(new_env)
     scopes = [env[key] for key in (BROWSER_SCOPE, USERIO_SCOPE) if key in env]
     grants = owner.get("existing_sessions", [])
     if (not scopes or any(scope != new_env[BROWSER_SCOPE] for scope in scopes)
@@ -914,7 +981,16 @@ def browser_profile_payload(raw, owner, core, binding):
     changes = {"executable": core}
     if new_env != env:
         changes["ahap_env"] = new_env
-    return edit_owner(raw, changes, remove_script=legacy)
+    payload = edit_owner(raw, changes, remove_script=legacy)
+    if binding is not None and "browser_recovery" in binding:
+        recovery = binding["browser_recovery"]
+        check_browser_recovery(owner["kind"], recovery, installed=installed)
+        updated = strict_json(payload)
+        updated["owner"]["browser_recovery"] = recovery
+        payload = encoded(updated)
+        if len(payload) > 16384:
+            raise ValueError("browser recovery exceeds the native profile limit")
+    return payload
 
 
 def native_profile_plan(base, manifest, selection, output, source, kinds, bindings, *,
@@ -969,11 +1045,10 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
         else:
             binding = None
             env = owner.get("ahap_env")
-            if (not native_browser and kind in bindings and isinstance(env, dict)
-                    and env.get("AHAP_BROWSER_TRANSPORT") != "direct-cdp"):
+            if kind in bindings:
                 binding = read_browser_binding(bindings[kind], output, kind, profile_hash)
                 used_bindings.add(kind)
-            payload = browser_profile_payload(raw, owner, manifest["core"], binding)
+            payload = browser_profile_payload(raw, owner, manifest["core"], binding, installed=installed)
         after_hash = hashlib.sha256(payload).hexdigest()
         # Schema 1 recovery receipts recorded the resolved authority directory.
         parent = path.parent if recovering and legacy_recovery_paths else authority_parent(path, profile)
@@ -1587,7 +1662,7 @@ def main():
     b.add_argument("--native-recovery-profile", "--native-autopilot-profile", action="append", default=[], type=Path,
                    help="reviewed successor profile for Codex inventory, shared socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
-                   help="pin a private operator-reviewed direct-CDP binding for a selected legacy browser")
+                   help="pin a private operator-reviewed browser binding for a selected browser")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)

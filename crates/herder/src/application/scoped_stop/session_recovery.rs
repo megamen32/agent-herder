@@ -126,6 +126,15 @@ impl RecoveryProfile {
                     && self.legacy_handoff.as_ref().is_none_or(|h| !h.scans_workspaces()))
     }
 
+    pub fn valid_for_browser(&self) -> bool {
+        self.valid()
+            && self.runner == RecoveryRunner::Mcp
+            && self.fallback_routes.is_empty()
+            && self.legacy_handoff.as_ref().is_some_and(|handoff| {
+                handoff.cohort().is_some() && !handoff.scans_workspaces()
+            })
+    }
+
     pub fn valid(&self) -> bool {
         self.autopilot_state_dir.is_absolute()
             && (self.runner == RecoveryRunner::Mcp || self.legacy_handoff.is_some())
@@ -638,6 +647,7 @@ impl SessionRecovery {
             &address,
             &boundary_key,
             &boundary,
+            native.receipt_id(&boundary),
         );
         let attempt = {
             let (_gate, mut writer) = self.authority.lock()?;
@@ -913,6 +923,7 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             self.address,
             &self.boundary_key,
             &self.boundary,
+            self.control.receipt_id(&self.boundary),
         );
         history.matches_claim(writer.connection(), &self.attempt, self.now)
     }

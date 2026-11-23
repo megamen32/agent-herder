@@ -12,6 +12,7 @@ use crate::{
 use rmcp::model::CallToolResult;
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde_json::json;
+use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RecoveryStage {
@@ -64,7 +65,7 @@ pub(super) struct RecoveryHistory<'a> {
     session: &'a str,
     address: &'a SessionAddress,
     digest: &'a str,
-    native_id: &'a str,
+    native_id: Cow<'a, str>,
     terminal_failure: bool,
     boundary_started_at_ms: u64,
 }
@@ -100,6 +101,7 @@ impl<'a> RecoveryHistory<'a> {
         address: &'a SessionAddress,
         digest: &'a str,
         boundary: &'a RecoveryBoundary,
+        native_id: Cow<'a, str>,
     ) -> Self {
         Self {
             prefix: format!("{harness}-recovery"),
@@ -107,7 +109,7 @@ impl<'a> RecoveryHistory<'a> {
             session: &session.0,
             address,
             digest,
-            native_id: boundary.receipt_id(harness),
+            native_id,
             terminal_failure: boundary.failure != RecoveryFailure::Interrupted,
             boundary_started_at_ms: boundary.started_at_ms,
         }
@@ -142,7 +144,7 @@ impl<'a> RecoveryHistory<'a> {
                     self.session,
                     format!("{}:*", self.prefix),
                     now,
-                    self.native_id,
+                    self.native_id.as_ref(),
                     base,
                     format!("{base}:*"),
                 ],
@@ -226,7 +228,7 @@ impl<'a> RecoveryHistory<'a> {
         }
         let receipt =
             load_native_receipt(db, &self.binding(delivery)).map_err(|_| GateError::Store)?;
-        Ok(matches!(receipt, StoredReceipt::Found(receipt) if receipt.native_id == self.native_id))
+        Ok(matches!(receipt, StoredReceipt::Found(receipt) if receipt.native_id == self.native_id.as_ref()))
     }
 
     pub fn next_attempt(
@@ -536,6 +538,7 @@ mod tests {
                 &self.address,
                 digest,
                 boundary,
+                Cow::Borrowed(boundary.receipt_id(harness)),
             )
         }
 

@@ -1,13 +1,11 @@
 use super::{
-    BrowserAttachment, BrowserSubmitError, Config, Provider, sessions::Sessions,
+    BrowserAttachment, BrowserSubmitError, Config, Provider, RecoveryInput, sessions::Sessions,
     validate_attachments,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    io::{self, BufRead, Read, Write},
-    path::Path,
-};
+use std::{io, path::Path};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const MAX_FRAME: usize = 4 * 1024 * 1024;
 const METHODS: [&str; 9] = [
@@ -50,11 +48,18 @@ impl RpcError {
     }
 }
 
-fn capabilities(provider: Provider) -> Value {
+fn capabilities(config: &Config) -> Value {
+    let provider = config.provider;
+    let transport = if config.extension.is_some() {
+        "herder-extension"
+    } else {
+        "direct-cdp"
+    };
     json!({"harness":provider.name(),"name":match provider { Provider::ChatGpt => "ChatGPT", Provider::Zai => "Z.ai" },
-        "capabilities":{"nativeProtocol":"direct-cdp","methods":METHODS,"deliveryModes":["queue"],
+        "capabilities":{"nativeProtocol":transport,"methods":METHODS,"deliveryModes":["queue"],
         "controlCapabilities":{"cancelTurn":true,"permissionReply":false,"steer":false},
         "browserFeatures":{"projects":false,"modelSwitch":false,"attachments":true,
+            "guardedRecovery":provider == Provider::ChatGpt,
             "attachmentCaptionRequired":provider.requires_attachment_caption(),
             "maxAttachments":crate::domain::attachment::MAX_ATTACHMENTS,"maxAttachmentBytes":super::MAX_ATTACHMENT_BYTES}}})
 }
@@ -147,7 +152,7 @@ impl Runner {
                 return Err(RpcError::Protocol);
             }
             self.initialized = true;
-            return Ok(capabilities(config.provider));
+            return Ok(capabilities(config));
         }
         if !self.initialized {
             return Err(RpcError::Protocol);
@@ -197,16 +202,19 @@ impl Runner {
                     return Err(RpcError::Invalid);
                 }
                 let size = limit(params.get("limit"), 200, 200)?;
-                if config.provider == Provider::Zai
-                    && let Some(key) = params.get("recoverInputId")
-                {
+                if let Some(key) = params.get("recoverInputId") {
                     let key = key
                         .as_str()
                         .filter(|s| !s.is_empty() && s.len() <= 4096)
                         .ok_or(RpcError::Invalid)?;
-                    return sessions
-                        .zai_receipt_messages(config, session_id(params)?, key, size)
-                        .await;
+                    let id = session_id(params)?;
+                    return match config.provider {
+                        Provider::Zai => sessions.zai_receipt_messages(config, id, key, size).await,
+                        Provider::ChatGpt if config.extension.is_some() => {
+                            sessions.chatgpt_receipt_messages(id, key).await
+                        }
+                        Provider::ChatGpt => sessions.messages(config, id, size).await,
+                    };
                 }
                 sessions.messages(config, session_id(params)?, size).await
             }
@@ -245,9 +253,15 @@ impl Runner {
             "sendMessage" => {
                 let id = session_id(params)?;
                 let (text, key, files) = send_options(config.provider, &params["options"])?;
+                let recovery = params.get("expectedRecovery")
+                    .map(|value| RecoveryInput::deserialize(value).map_err(|_| RpcError::Invalid))
+                    .transpose()?;
+                if recovery.as_ref().is_some_and(|input| !input.valid() || !files.is_empty()) {
+                    return Err(RpcError::Invalid);
+                }
                 let mut result =
                     json!({"inputId":key,"sessionId":id,"harness":config.provider.name()});
-                let admission = match sessions.send(config, id, key, text, &files).await {
+                let admission = match sessions.send(config, id, key, text, &files, recovery.as_ref()).await {
                     Ok(native) => {
                         result["nativeInputMessageId"] = Value::String(native);
                         result["ok"] = Value::Bool(true);
@@ -289,20 +303,24 @@ fn request(value: &Value) -> Result<(&Value, &str, &Value), RpcError> {
     ))
 }
 
-fn write_response(output: &mut impl Write, id: &Value, response: Value) -> io::Result<()> {
+async fn write_response(
+    output: &mut (impl AsyncWrite + Unpin),
+    id: &Value,
+    response: Value,
+) -> io::Result<()> {
     let mut bytes = serde_json::to_vec(&response)?;
     if bytes.len() >= MAX_FRAME {
         bytes = serde_json::to_vec(&RpcError::TooLarge.frame(id))?;
     }
     bytes.push(b'\n');
-    output.write_all(&bytes)?;
-    output.flush()
+    output.write_all(&bytes).await?;
+    output.flush().await
 }
 
 pub(super) async fn serve(
     config: Config,
-    mut input: impl BufRead,
-    mut output: impl Write,
+    mut input: impl AsyncBufRead + Unpin,
+    mut output: impl AsyncWrite + Unpin,
 ) -> io::Result<()> {
     let mut runner = Runner {
         config,
@@ -312,22 +330,34 @@ pub(super) async fn serve(
     let mut line = Vec::new();
     loop {
         line.clear();
-        let size = input
-            .by_ref()
+        let size = (&mut input)
             .take(MAX_FRAME as u64 + 1)
-            .read_until(b'\n', &mut line)?;
+            .read_until(b'\n', &mut line)
+            .await?;
         if size == 0 {
             break;
         }
         if size > MAX_FRAME || !line.ends_with(b"\n") {
             if !line.ends_with(b"\n") {
-                input.skip_until(b'\n')?;
+                loop {
+                    let buffered = input.fill_buf().await?;
+                    if buffered.is_empty() {
+                        break;
+                    }
+                    if let Some(end) = buffered.iter().position(|byte| *byte == b'\n') {
+                        input.consume(end + 1);
+                        break;
+                    }
+                    let size = buffered.len();
+                    input.consume(size);
+                }
             }
             write_response(
                 &mut output,
                 &Value::Null,
                 RpcError::TooLarge.frame(&Value::Null),
-            )?;
+            )
+            .await?;
             continue;
         }
         if line.iter().all(u8::is_ascii_whitespace) {
@@ -340,14 +370,15 @@ pub(super) async fn serve(
                     &mut output,
                     &Value::Null,
                     RpcError::Parse.frame(&Value::Null),
-                )?;
+                )
+                .await?;
                 continue;
             }
         };
         let (id, method, params) = match request(&parsed) {
             Ok(request) => request,
             Err(e) => {
-                write_response(&mut output, &Value::Null, e.frame(&Value::Null))?;
+                write_response(&mut output, &Value::Null, e.frame(&Value::Null)).await?;
                 continue;
             }
         };
@@ -361,10 +392,13 @@ pub(super) async fn serve(
             }
             Err(error) => error.frame(id),
         };
-        write_response(&mut output, id, response)?;
+        write_response(&mut output, id, response).await?;
         if shutdown {
             break;
         }
+    }
+    if let Some(sessions) = runner.sessions.take() {
+        sessions.close().await;
     }
     Ok(())
 }
@@ -380,6 +414,7 @@ mod tests {
             endpoint: String::new(),
             scope: "0".repeat(64),
             origin_port: None,
+            extension: None,
             identity: CdpTargetIdentity {
                 node_id: "n".into(),
                 instance_id: "i".into(),

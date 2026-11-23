@@ -642,9 +642,15 @@ def status(args):
 
 def scheduler_source(git_dir, proposed, migration, receipt):
     source = proposed["process_leases_build"]["source_commit"]
-    # An in-place native update keeps the already registered profiles. It
-    # needs the same scheduler compatibility proof as a recovery handoff.
-    if migration is not None and migration.get("kind") != "recovery":
+    kinds = migration.get("kinds") if migration is not None else None
+    browser_migration = (
+        migration is not None and migration.get("schema") == 2
+        and migration.get("type") == "herder-native-profile-rebind"
+        and kinds and set(kinds) <= candidate.BROWSER_KINDS
+    )
+    # A browser-only rebind retains the existing authority and uses the same
+    # scheduler compatibility proof as a Rust recovery update.
+    if migration is not None and migration.get("kind") != "recovery" and not browser_migration:
         return source
     installed = receipt.get("response", {}).get("runtime", {}).get("source_commit")
     if installed == source or (installed is None and migration is None):
@@ -662,6 +668,9 @@ def scheduler_source(git_dir, proposed, migration, receipt):
                 # Operator tools added by #118 are outside the scheduler build.
                 "deploy/fleet/rollout-recovery", "deploy/fleet/recovery_owner_update.py",
                 "deploy/fleet/test_recovery_owner_update.py", "deploy/fleet/README.md"]
+    if browser_migration:
+        excluded.extend((".github/workflows/fleet-session.yml", "deploy/fleet/launch-v1-core.py",
+                         "integrations/chrome/agent-herder"))
     paths = [":(top,exclude)" + path for path in excluded]
     if (subprocess.run(git + ["merge-base", "--is-ancestor", installed, source]).returncode
             or subprocess.run(git + ["diff", "--quiet", "--no-ext-diff", installed, source, "--", *paths]).returncode):

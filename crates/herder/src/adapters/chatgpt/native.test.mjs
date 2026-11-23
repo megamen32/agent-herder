@@ -171,6 +171,25 @@ test('recovery requires explicit failure at the current branch head and its exac
   assert.equal((await call('recovery')).value, null);
 });
 
+test('recovery rechecks the failed input immediately before clicking', async t => {
+  for (const stale of [false, true]) {
+    const {page, call} = await fixture(t, 'old');
+    await page.evaluate(() => {
+      chats.old.messages.push({id: 'failed', parent_id: 'old-user', author: {role: 'assistant'},
+        status: 'failed', create_time: 2, content: {parts: ['provider failure']}});
+    });
+    const recovery = {turnId: 'failed', inputItemId: 'old-user'};
+    assert.deepEqual((await call('baseline', {recovery})).value, ['old-user']);
+    assert.equal((await call('fill', {recovery})).value, true);
+    if (stale) await page.evaluate(() => {
+      chats.old.messages.push({id: 'later', author: {role: 'user'}, content: {parts: ['new input']}});
+    });
+    assert.equal((await call('click', {recovery})).value, !stale);
+    assert.equal(await page.evaluate(() => clicks), stale ? 0 : 1);
+    if (stale) assert.equal(await page.locator('textarea').inputValue(), '');
+  }
+});
+
 test('attachment-only submit waits for the composer upload and proves the new native user ID and files', async t => {
   const {page, call} = await fixture(t, 'old');
   await page.evaluate(() => {

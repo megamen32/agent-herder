@@ -8,8 +8,7 @@ use serde_json::{Value, json};
 impl AhapOpenCode {
     /// Only the two configured native browser runners advertise this operation.
     pub fn supports_browser_interrupt(&self) -> bool {
-        matches!(self.policy.harness.as_str(), "chatgpt" | "zai")
-            && self.capabilities()["nativeProtocol"] == "direct-cdp"
+        self.native_browser()
             && self
                 .capabilities()
                 .pointer("/controlCapabilities/cancelTurn")
