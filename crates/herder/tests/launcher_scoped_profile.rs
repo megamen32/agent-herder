@@ -1140,7 +1140,8 @@ for line in sys.stdin:
     let unfinished = f.root.join("unfinished-sessions.json");
     let write_stops = |interrupt_active: bool| {
         let mut rows = vec![
-            json!({"harness":"codex","id":"held-new","active":true}),
+            json!({"harness":"codex","id":"held-new","active":true,
+                "stop":{"id":"explicit-stop:held-new","reason":"explicit-stop"}}),
             json!({"harness":"codex","id":"explicit-legacy","active":true,"ignoredStopIds":[],
                 "stop":{"id":"explicit-stop:fixture","reason":"explicit-stop","turnId":"stopped-explicit-legacy",
                         "at":"2000-01-01T00:00:00Z"}}),
@@ -1372,7 +1373,7 @@ for line in sys.stdin:
         let params: Value = serde_json::from_str(attach.trim()).unwrap();
         assert_eq!(params["threadId"], target);
         assert!(params.get("modelProvider").is_none(), "{params}");
-        assert!(params.get("model").is_none(), "{params}");
+        assert_eq!(params["model"], "gpt-fixture", "{params}");
     }
     for target in ["disabled", "held", "explicit-legacy", "unknown-quota", "pending-question", "legacy-uncertain",
         "outside-cohort"] {
