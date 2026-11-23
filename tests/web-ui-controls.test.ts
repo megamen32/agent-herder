@@ -136,7 +136,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('<ServiceTierPanel embedded');
     expect(serviceTier).toContain('className="service-tier-spark"');
     expect(main).toContain('void runAction("stop")');
-    expect(main).toContain('stop={(activeSession?.status === "running" || sending) ? { busy: stopSending, onStop: () => void runAction("stop") } : undefined}');
+    expect(main).toContain('stop={(activeSession?.status === "running" || sending) && !composer.trim() && !composerImages.length ? { busy: stopSending, onStop: () => void runAction("stop") } : undefined}');
     expect(main).toContain('&& activeSession?.status !== "running"');
     expect(main).toContain('effectiveDeliveryMode === "queue" ? "↳" : "↪"');
     expect(main).not.toContain('className="stop-button composer-stop" aria-label={stopSending ?');
