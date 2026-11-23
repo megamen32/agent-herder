@@ -220,7 +220,7 @@ def keeps_original_scheduler(plan):
     return old is not None and plan["successor_scheduler_identity"] == old
 
 
-def native_restart_binding(binding_pin, state, pair):
+def native_restart_binding(binding_pin, state, pair=None, parser_pin=None):
     binding = read_pin(binding_pin)
     restart_pin = pin(Path(state["job_dir"]) / "restart-ack.json")
     restart = read_pin(restart_pin)
@@ -234,15 +234,37 @@ def native_restart_binding(binding_pin, state, pair):
         raise ValueError("native restart audit does not bind the original acknowledgement")
     # These are immutable source receipts of the original completed operation;
     # the historical audit's state SHA is not asserted against today's UNKNOWN.
-    read_pin(binding["provider_result"])
-    read_pin(binding["child_status"])
+    provider = read_pin(binding["provider_result"])
+    child = read_pin(binding["child_status"])
     recorded = binding.get("runtime_pair")
+    if "runtime_capture_sha256" in binding:
+        capture = state.get("restart_runtime_capture")
+        if (not isinstance(capture, dict) or binding["runtime_capture_sha256"] != rollout.json_hash(capture)
+                or capture.get("restart_receipt_sha256") != restart_pin["sha256"]
+                or state.get("restart_operation_id") != restart["provider_operation_id"]):
+            raise ValueError("runtime capture does not bind the checkpoint and restart acknowledgement")
+        recorded = capture.get("runtime_pair")
+        if "runtime_pair" in binding and binding["runtime_pair"] != recorded:
+            raise ValueError("runtime capture differs from the supplied audit pair")
+        operation, reply = provider.get("operation"), provider.get("reply", {})
+        if "reply" not in provider and parser_pin is not None:
+            provider_pin = binding["provider_result"]
+            operation, reply, raw_pin, _ = load_http_helper(parser_pin).provider(
+                Path(provider_pin["path"]), provider_pin["sha256"])
+            if raw_pin != provider_pin:
+                raise ValueError("original restart provider pin changed")
+        status = child.get("status", {})
+        if (operation != restart["provider_operation_id"]
+                or reply.get("ref") != rollout.CHILD or reply.get("action") != restart["action"]
+                or child.get("ref", status.get("ref")) != rollout.CHILD
+                or status.get("running") is not True or status.get("pid") != restart["compat_pid"]):
+            raise ValueError("runtime capture requires the exact typed restart and original child receipts")
     if (not isinstance(recorded, dict) or set(recorded) != {"compat", "core"}
-            or recorded != pair
+            or (pair is not None and recorded != pair)
             or recorded["compat"].get("pid") != restart["compat_pid"]
             or recorded["core"].get("pid") != restart["core_pid"]):
         raise ValueError("native runtime is not the exact original restart pair")
-    return binding
+    return {**binding, "runtime_pair": recorded}
 
 
 def started_before_controller_observation(process, observed_at):
@@ -285,13 +307,10 @@ def validate_native_successor(state, original, current, status, previous_status,
 
 
 def native_provenance(state, pair, restart_pin, status_pin=None, parser_pin=None):
-    historical = read_pin(restart_pin)
-    original = historical.get("runtime_pair")
-    if not isinstance(original, dict):
-        raise ValueError("original native runtime pair is missing")
-    native_restart_binding(restart_pin, state, original)
+    historical = native_restart_binding(restart_pin, state, parser_pin=parser_pin)
+    original = historical["runtime_pair"]
     if pair == original:
-        if status_pin is not None or parser_pin is not None:
+        if status_pin is not None or (parser_pin is not None and "runtime_capture_sha256" not in historical):
             raise ValueError("a native successor observation requires a different exact pair")
         return original, None
     if status_pin is None or parser_pin is None:
@@ -420,10 +439,10 @@ def prepare(args):
     pair = rollout.runtime_pair(Path(state["selector"]), Path(state["launcher"]), args.compat_pid, args.core_pid,
                                 expected_cwd=state["baseline_runtime"]["core"]["cwd"])
     restart_binding = {"path": str(args.native_restart_binding), "sha256": args.native_restart_binding_sha256}
-    status_values = (args.native_successor_status, args.native_successor_status_sha256,
-                     args.native_successor_parser, args.native_successor_parser_sha256)
-    if any(value is not None for value in status_values) and any(value is None for value in status_values):
-        raise ValueError("native successor requires exact status and parser paths and SHA256 pins")
+    if ((args.native_successor_status is None) != (args.native_successor_status_sha256 is None)
+            or (args.native_successor_parser is None) != (args.native_successor_parser_sha256 is None)
+            or (args.native_successor_status is not None and args.native_successor_parser is None)):
+        raise ValueError("native controller evidence requires exact paths and SHA256 pins")
     status_pin = None if args.native_successor_status is None else {
         "path": str(args.native_successor_status), "sha256": args.native_successor_status_sha256}
     parser_pin = None if args.native_successor_parser is None else {
@@ -857,7 +876,8 @@ def validate_effect_completion(plan, inputs):
     restart = readiness.fields(inputs["native_restart"], ("binding", "provider_result"))
     if restart["binding"] != plan["native_restart_binding"]:
         raise ValueError("native effect completion has another original restart binding")
-    binding = native_restart_binding(restart["binding"], state, plan["original_native_runtime"])
+    binding = native_restart_binding(restart["binding"], state, plan["original_native_runtime"],
+                                     parser_pin=plan.get("native_successor_parser"))
     if restart["provider_result"] != binding["provider_result"]:
         raise ValueError("native restart provider differs from its original audit")
     operation, payload, _, stamp = completed_provider(plan, restart["provider_result"])

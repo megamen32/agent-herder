@@ -1868,7 +1868,7 @@ for line in sys.stdin:
  elif m=='init':
   open(os.path.join(home,'parent-pid'),'w').write(str(os.getppid()));v=None
  elif m=='createSession':v={'id':'same-native-id','harness':'chatgpt'}
- elif m=='getSession':v={'id':'same-native-id','harness':'chatgpt','status':'idle','cwd':home}
+ elif m=='getSession':v={'id':p['id'],'harness':'chatgpt','status':'idle','cwd':home}
  elif m=='listSessions':v=[{'id':'same-native-id','harness':'chatgpt','status':'idle','cwd':home}]
  elif m=='getSessionMessages':v=messages()
  elif m=='sendMessage':
@@ -1928,6 +1928,22 @@ for line in sys.stdin:
             assert_eq!(context["result"]["structuredContent"]["address"]["instance"]["instance_id"],format!("chatgpt-{i}"),"{context}");
             assert_eq!(context["result"]["structuredContent"]["is_self"],false,"{context}");
         }
+        // A session known only to B resolves through the shared registry, including
+        // when the first server consulted belongs to A and after an owner restart.
+        let register=call("tools/call",serde_json::json!({"name":"session","arguments":{
+            "action":"register","instance_ref":"chatgpt-1","native_session_id":"only-in-b","request_key":"register-b"
+        }}));
+        let registered=&register["result"]["structuredContent"]["session_ref"];
+        assert!(registered.is_string(),"{register}");
+        let resolve=call("tools/call",serde_json::json!({"name":"session","arguments":{
+            "action":"resolve","harness":"chatgpt","node_ref":"node","native_session_id":"only-in-b"
+        }}));
+        assert_eq!(&resolve["result"]["structuredContent"]["session_ref"],registered,"{resolve}");
+        assert_eq!(resolve["result"]["structuredContent"]["owner"]["instance_ref"],"chatgpt-1");
+        let ambiguous=call("tools/call",serde_json::json!({"name":"session","arguments":{
+            "action":"resolve","harness":"chatgpt","node_ref":"node","native_session_id":"same-native-id"
+        }}));
+        assert_eq!(ambiguous["result"]["structuredContent"]["code"],"ambiguous_native_session","{ambiguous}");
         let archive=call("tools/call",serde_json::json!({"name":"session","arguments":{"action":"archive","session_ref":sessions[0],"request_key":"archive-first"}}));
         assert_eq!(archive["result"]["structuredContent"]["archived"],true,"{archive}");
         assert_eq!(fs::read_to_string(a.root.join("archived")).unwrap(),"1");assert!(!b.root.join("archived").exists());

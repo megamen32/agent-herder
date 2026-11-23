@@ -3,8 +3,7 @@ use std::{collections::HashSet, path::Path, time::Instant};
 use serde_json::{Value, json};
 
 use super::{
-    CodexConnection, THREAD_PAGE_SIZE, absent_or_null, goal_allows_recovery, read_rpc,
-    required_string,
+    CodexConnection, THREAD_PAGE_SIZE, absent_or_null, read_rpc, required_string,
 };
 use crate::domain::{adapter::ReadError, address::SessionAddress, recovery::RecoveryAncestor};
 
@@ -217,9 +216,6 @@ pub(super) fn read_ancestors(
             deadline,
             active_without_human_input,
         )? {
-            return Ok(None);
-        }
-        if !goal_allows_recovery(connection, &parent_id, None, deadline)? {
             return Ok(None);
         }
         let turns = read_rpc(

@@ -248,11 +248,16 @@ def verify_live(ssh, node, sha, result):
 
 
 def local_owner(entry, bundle, src, sha):
-    subprocess.run([entry["command"]], check=True, timeout=600)
-    receipt = read(entry["receipt"])
-    check(receipt["source"] == src and receipt["core_sha256"] == sha, "wrong local release receipt")
+    receipt_path = Path(entry["receipt"])
     selector = Path(entry["selector"])
-    check(digest(selector) == digest(bundle / "selector.json"), "local core selector has changed")
+    candidate_selector = digest(bundle / "selector.json")
+    if not receipt_path.exists():
+        check(digest(selector) != candidate_selector,
+              "local selector already switched; reconcile the existing release receipt")
+        subprocess.run([entry["command"]], check=True, timeout=600)
+    receipt = read(receipt_path)
+    check(receipt["source"] == src and receipt["core_sha256"] == sha, "wrong local release receipt")
+    check(digest(selector) == candidate_selector, "local core selector has changed")
     core = (bundle / "fixture/herder_native_stdio").resolve()
     expected = [
         os.fsencode(part)

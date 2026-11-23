@@ -54,6 +54,15 @@ enum Provider {
 }
 
 impl Provider {
+    fn supports_guarded_recovery(self) -> bool {
+        // Guarded submit requires a provider implementation that can prove
+        // and recheck the failed response and its exact input before clicking.
+        match self {
+            Self::ChatGpt => true,
+            Self::Zai => false,
+        }
+    }
+
     fn requires_attachment_caption(self) -> bool {
         matches!(self, Self::Zai)
     }

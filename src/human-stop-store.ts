@@ -41,6 +41,7 @@ export type HumanStopRecord = {
   active: boolean;
   stop: HumanStopEvidence;
   ignoredStopIds: string[];
+  releasedOwnerStopIds?: string[];
   clearedAt?: string;
   clearedBy?: "explicit-resume" | "new-user-prompt";
   cwd?: string;
@@ -85,11 +86,14 @@ export class HumanStopStore {
   async hold(session: HumanStopTarget, evidence: HumanStopEvidence): Promise<void> {
     const target = normalizeTarget(session);
     const stop = normalizeStopEvidence(evidence);
+    if (looksLikeOwnerStop(stop) && !isOwnerStopEvidence(stop, target)) return;
     await this.mutate((file) => {
       const index = file.sessions.findIndex((record) => sessionKey(record.harness, record.id) === sessionKey(target.harness, target.id));
       const existing = index < 0 ? undefined : file.sessions[index];
-      if (existing?.ignoredStopIds.includes(stop.id)) return false;
-      if (existing && isStaleClearedStop(existing, stop)) {
+      const reinstallingScopeStop = isScopeStopEvidence(stop, target)
+        && existing?.releasedOwnerStopIds?.includes(stop.id) === true;
+      if (existing?.ignoredStopIds.includes(stop.id) && !reinstallingScopeStop) return false;
+      if (existing && !reinstallingScopeStop && isStaleClearedStop(existing, stop)) {
         file.sessions[index!] = { ...existing, ignoredStopIds: boundIgnoredIds([...existing.ignoredStopIds, stop.id]) };
         return true;
       }
@@ -100,8 +104,11 @@ export class HumanStopStore {
         file.sessions[index!] = enriched;
         return changed;
       }
+      if (existing?.active && isOwnerStopEvidence(existing.stop, existing) && !isOwnerStopEvidence(stop, target)) {
+        return false;
+      }
       const ignoredStopIds = boundIgnoredIds([...new Set([
-        ...(existing?.ignoredStopIds ?? []),
+        ...(existing?.ignoredStopIds ?? []).filter(id => !(reinstallingScopeStop && id === stop.id)),
         ...(existing?.stop.id && existing.stop.id !== stop.id ? [existing.stop.id] : []),
       ])]);
       const record: HumanStopRecord = {
@@ -109,6 +116,7 @@ export class HumanStopStore {
         active: true,
         stop,
         ignoredStopIds,
+        ...(existing?.releasedOwnerStopIds ? { releasedOwnerStopIds: existing.releasedOwnerStopIds.filter(id => id !== stop.id) } : {}),
       };
       if (index < 0) file.sessions.push(record);
       else file.sessions[index!] = record;
@@ -119,10 +127,12 @@ export class HumanStopStore {
   /** Apply native stop/prompt metadata and return whether the session remains fenced. */
   async observe(session: AgentSession): Promise<boolean> {
     const target = normalizeTarget(session);
-    const stop = normalizeStopEvidenceOrUndefined(session.meta?.automationStop);
+    const observation = normalizeStopEvidenceOrUndefined(session.meta?.automationStop);
+    const candidate = observation && (!looksLikeOwnerStop(observation) || isOwnerStopEvidence(observation, target))
+      ? observation : undefined;
     const prompt = normalizePromptEvidenceOrUndefined(session.meta?.latestUserPrompt);
-    if (!stop && !prompt) return this.isHeld(target.harness, target.id);
-    if (!stop) {
+    if (!candidate && !prompt) return this.isHeld(target.harness, target.id);
+    if (!candidate) {
       const file = await this.read();
       if (!file.sessions.some((record) => record.harness === target.harness && record.id === target.id && record.active)) return false;
     }
@@ -131,6 +141,8 @@ export class HumanStopStore {
       let index = file.sessions.findIndex((record) => sessionKey(record.harness, record.id) === key);
       let record = index < 0 ? undefined : file.sessions[index];
       let changed = false;
+      const stop = candidate && record?.active && isOwnerStopEvidence(record.stop, record)
+        && !isOwnerStopEvidence(candidate, target) ? undefined : candidate;
       if (stop && record && isStaleClearedStop(record, stop)) {
         if (!record.ignoredStopIds.includes(stop.id)) {
           record = { ...record, ignoredStopIds: boundIgnoredIds([...record.ignoredStopIds, stop.id]) };
@@ -166,6 +178,7 @@ export class HumanStopStore {
           ...record,
           active: false,
           ignoredStopIds,
+          releasedOwnerStopIds: releasedOwnerStopIds(record),
           clearedAt: prompt.at,
           clearedBy: "new-user-prompt",
         };
@@ -334,6 +347,7 @@ export class HumanStopStore {
         ...record,
         active: false,
         ignoredStopIds: boundIgnoredIds([...new Set([...record.ignoredStopIds, record.stop.id])]),
+        releasedOwnerStopIds: releasedOwnerStopIds(record),
         clearedAt: normalizedPrompt?.at ?? new Date().toISOString(),
         clearedBy: normalizedPrompt ? "new-user-prompt" : "explicit-resume",
       };
@@ -462,7 +476,7 @@ function parseHumanStopFile(value: unknown): HumanStopFile {
   const generatedInputs = input.generatedInputs === undefined
     ? undefined
     : Array.isArray(input.generatedInputs) ? input.generatedInputs.slice(-MAX_GENERATED_PROMPTS).map(parseGeneratedPromptRecord) : (() => { throw new Error("invalid generated inputs"); })();
-  return { version: 1, sessions: input.sessions.map(parseRecord), ...(generatedInputs ? { generatedInputs } : {}) };
+  return { version: 1, sessions: input.sessions.map(parseRecord).map(normalizeReleasedOwnerStopIds), ...(generatedInputs ? { generatedInputs } : {}) };
 }
 
 function parseRecord(value: unknown): HumanStopRecord {
@@ -470,12 +484,17 @@ function parseRecord(value: unknown): HumanStopRecord {
   const input = value as Record<string, unknown>;
   if (typeof input.active !== "boolean" || !Array.isArray(input.ignoredStopIds)
     || !input.ignoredStopIds.every((item) => typeof item === "string")) throw new Error("invalid human stop record");
+  if (input.releasedOwnerStopIds !== undefined && (!Array.isArray(input.releasedOwnerStopIds)
+    || !input.releasedOwnerStopIds.every(item => typeof item === "string"))) throw new Error("invalid released owner stop IDs");
   const record: HumanStopRecord = {
     harness: normalizeHarness(input.harness),
     id: bounded(input.id, "sessionId", MAX_ID_LENGTH),
     active: input.active,
     stop: normalizeStopEvidence(input.stop),
     ignoredStopIds: [...new Set(input.ignoredStopIds as string[])],
+    ...(input.releasedOwnerStopIds === undefined ? {} : {
+      releasedOwnerStopIds: [...new Set(input.releasedOwnerStopIds as string[])].slice(-MAX_IGNORED_STOP_IDS),
+    }),
     ...(typeof input.cwd === "string" ? { cwd: resolve(input.cwd) } : {}),
     ...(typeof input.title === "string" ? { title: bounded(input.title, "title", MAX_TITLE_LENGTH) } : {}),
     ...(typeof input.clearedAt === "string" ? { clearedAt: isoTimestamp(input.clearedAt, "clearedAt") } : {}),
@@ -610,7 +629,41 @@ function sessionKey(harness: string, id: string): string {
 }
 
 function cloneRecord(record: HumanStopRecord): HumanStopRecord {
-  return { ...record, stop: { ...record.stop }, ignoredStopIds: [...record.ignoredStopIds] };
+  return { ...record, stop: { ...record.stop }, ignoredStopIds: [...record.ignoredStopIds],
+    ...(record.releasedOwnerStopIds ? { releasedOwnerStopIds: [...record.releasedOwnerStopIds] } : {}) };
+}
+
+function isExplicitOwnerStopId(id: string): boolean {
+  return id.startsWith("explicit-stop:") && id.length > "explicit-stop:".length;
+}
+
+function scopeStopId(harness: string, sessionId: string): string {
+  return `owner-scope-stop:${harness}:${sessionId}`;
+}
+
+function isScopeStopEvidence(stop: HumanStopEvidence, target: Pick<HumanStopRecord, "harness" | "id">): boolean {
+  return stop.id === scopeStopId(target.harness, target.id);
+}
+
+function looksLikeOwnerStop(stop: HumanStopEvidence): boolean {
+  return stop.id.startsWith("explicit-stop:") || stop.id === "owner-scope-stop"
+    || stop.id.startsWith("owner-scope-stop:") || stop.reason === "explicit-stop";
+}
+
+function isOwnerStopEvidence(stop: HumanStopEvidence, target: Pick<HumanStopRecord, "harness" | "id">): boolean {
+  return isExplicitOwnerStopId(stop.id) && stop.reason === "explicit-stop" || isScopeStopEvidence(stop, target);
+}
+
+function releasedOwnerStopIds(record: HumanStopRecord): string[] {
+  const scope = scopeStopId(record.harness, record.id);
+  const ids = [...(record.releasedOwnerStopIds ?? []), ...record.ignoredStopIds, record.stop.id];
+  return boundIgnoredIds(ids.filter(id => isExplicitOwnerStopId(id) || id === scope));
+}
+
+function normalizeReleasedOwnerStopIds(record: HumanStopRecord): HumanStopRecord {
+  if (record.active || !record.clearedBy) return record;
+  const released = releasedOwnerStopIds(record);
+  return released.length ? { ...record, releasedOwnerStopIds: released } : record;
 }
 
 function mergeTarget(record: HumanStopRecord, target: HumanStopTarget): HumanStopRecord {

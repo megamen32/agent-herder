@@ -63,7 +63,8 @@ class CoordinatorContracts(unittest.TestCase):
         owner = self
 
         class FakeGate:
-            def __init__(self, proof_path, state_path=None, target=None):
+            _canonical_authority = staticmethod(rollout.ReleaseGate._canonical_authority)
+            def __init__(self, proof_path, state_path=None, target=None, *, require_target_lease=False):
                 self.proof = candidate.read_json(proof_path)
                 self.state_path = state_path
                 self.target = target
@@ -245,6 +246,23 @@ class CoordinatorContracts(unittest.TestCase):
         self.assertNotIn("finished", self.events)
         self.assertEqual(rollout.read_state(self.args.job_dir)["phase"], "unknown")
 
+    def test_first_verified_ack_pair_survives_scheduler_failure(self):
+        original_pair = self.runtime_pair(self.args.selector, self.args.launcher, 201, 202)
+        def reject_scheduler(state, receipt, minimum):
+            saved = rollout.read_state(self.args.job_dir)
+            self.assertEqual(saved["restart_runtime_capture"]["runtime_pair"], original_pair)
+            raise ValueError("scheduler proof failed")
+        with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts()), \
+                patch.object(rollout, "validate_scheduler_consumer", side_effect=reject_scheduler):
+            with self.assertRaisesRegex(ValueError, "scheduler proof failed"):
+                rollout.run(self.args)
+        state = rollout.read_state(self.args.job_dir)
+        self.assertEqual(state["phase"], "unknown")
+        self.assertEqual(state["restart_runtime_capture"]["runtime_pair"], original_pair)
+        self.assertEqual(state["restart_runtime_capture"]["restart_receipt_sha256"],
+                         candidate.digest(self.args.job_dir / "restart-ack.json"))
+        self.assertEqual(rollout.read_occupancy(self.fixture.selector)["phase"], "active")
+
     def test_old_schema_names_do_not_prove_new_core_ready(self):
         with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(process=False)):
             with self.assertRaisesRegex(ValueError, "lacks process_completion"):
@@ -254,6 +272,180 @@ class CoordinatorContracts(unittest.TestCase):
         self.assertEqual(rollout.read_occupancy(self.fixture.selector)["phase"], "active")
         self.assertIn("unknown", self.events)
         self.assertNotIn("finished", self.events)
+
+    def test_supersede_only_exact_active_job_reaches_new_guard(self):
+        old = self.root / "old-job"
+        other = self.root / "other-job"
+        pointer = {"phase": "active", "job_dir": str(old)}
+        self.args.supersede_restart_provider = self.root / "restart-provider.json"
+        self.args.supersede_consumer_provider = self.root / "consumer-provider.json"
+        self.args.target = self.root / "target.json"
+        candidate.create(self.args.target, candidate.encoded({"unit": "fixture.service"}))
+        candidate.replace(self.ledger, candidate.encoded({"version": 2, "projects": {},
+            "canonical": {"version": 1, "config": str(self.root / "config.json"),
+                          "bridge": str(self.root / "bridge"), "seal_id": "fixture"}}),
+            candidate.digest(self.ledger), 0o600)
+        for named, admitted in ((None, False), (other, False), (old, True)):
+            with self.subTest(named=named), patch.object(rollout, "read_occupancy", return_value=pointer), \
+                    patch.object(rollout, "admit", side_effect=ValueError("inside new guard")) as admit:
+                self.args.supersede_job = named
+                with self.assertRaisesRegex((ValueError, RuntimeError),
+                                            "inside new guard" if admitted else "occupancy"):
+                    rollout.run(self.args)
+                self.assertEqual(admit.called, admitted)
+
+    def test_supersede_requires_archived_claim_and_exact_typed_evidence(self):
+        old_dir = self.root / "old-job"
+        old_dir.mkdir(mode=0o700)
+        target = {"unit": "fixture.service", "fleetDir": str(self.root)}
+        selector, launcher = self.fixture.selector, self.fixture.launcher
+        selection = candidate.read_json(selector)
+        project = str(self.root)
+        token = "ab" * 32
+        claim_id = str(rollout.uuid.UUID(bytes=rollout.hashlib.sha256(token.encode()).digest()[:16], version=5))
+        resource = "fixture-resource"
+        guard_id = "guard-" + "1" * 32
+        execution = "release-" + guard_id
+
+        def write(path, value):
+            path = Path(path)
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if path.exists():
+                candidate.replace(path, candidate.encoded(value), candidate.digest(path), 0o600)
+            else:
+                candidate.create(path, candidate.encoded(value))
+            return path
+
+        proof = write(old_dir / "proof.json", {"project": project, "owner": "old-owner", "fence": 7, "token": token})
+        old = {"job_id": "rollout-" + "1" * 32, "job_dir": str(old_dir), "phase": "unknown",
+               "challenge": "a" * 64, "coordinator": {"pid": 111}, "awaiting_restart_at_unix_ms": 1,
+               "selector": str(selector), "launcher": str(launcher), "candidate": str(self.root / "prior.json"),
+               "selector_after_sha256": candidate.digest(selector), "launcher_after_sha256": candidate.digest(launcher),
+               "candidate_manifest": selection["manifest"], "candidate_manifest_sha256": selection["manifest_sha256"],
+               "release_identity": {"project": project, "owner": "old-owner", "fence": 7},
+               "release_state": str(self.ledger), "deployment_target": target, "proof_path": str(proof),
+               "baseline_runtime": self.runtime_pair(selector, launcher, 101, 102)}
+        old["install_receipt"] = str(write(old_dir / "install.json", {**old, "status": "configured_pending_restart"}))
+        restart, consumer = self.receipt(old, "restart"), self.receipt(old)
+        old["restart_operation_id"] = restart["provider_operation_id"]
+        state_path = write(old_dir / "state.json", old)
+        write(old_dir / "restart-ack.json", restart)
+        write(old_dir / "consumer-receipt.json", consumer)
+        context = {"claim_id": claim_id, "resource_ref": resource, "principal_ref": "fixture-principal"}
+        archive = {"version": 1, "kind": "herder-unresolved-execution-quarantine-v1",
+                   "claim_id": claim_id, "resource_ref": resource,
+                   "reason": "expired-owner-generation-with-free-target-lock",
+                   "binding": {**context, "execution_ref": execution, "resource_revision": 3, "resolved_receipt": None}}
+        resource_dir = self.root / "resources" / resource
+        archive_path = write(resource_dir / "unresolved-executions" / (claim_id + ".json"), archive)
+        intent = {**context, "version": 1, "guard_id": guard_id, "execution_ref": execution,
+                  "revision": 3, "fence": 7, "finished_at_seconds": None}
+        intent_path = write(resource_dir / "compat-guards" / (guard_id + ".intent.json"), intent)
+        config = write(self.root / "config.json", {"ledger": str(self.ledger), "seal_id": "fixture",
+            "principal_ref": context["principal_ref"],
+            "process_config": str(write(self.root / "process.json", {"resources": {"root": str(self.root)}})),
+            "mappings": [{"project": project, "deployment_target": target, "resource_ref": resource, "revision": 3}]})
+        lease = {"project": project, "owner": "new-owner", "fence": 8, "deploymentTarget": target}
+        gate = argparse.Namespace(_bridge=object(), _canonical={"config": str(config), "seal_id": "fixture"},
+                                  target=target, proof=lease, state_path=self.ledger, check=lambda: lease)
+
+        def provider(receipt, payload):
+            operation = receipt["provider_operation_id"]
+            return {"status": "completed", "server_id": rollout.CONTROLLER, "job_id": operation,
+                    "task_id": operation, "response": {"structuredContent": {
+                        "server": rollout.CONTROLLER.removeprefix("shell:"),
+                        "result": {"resultType": "complete", "structuredContent": payload}}}}
+
+        before = {"process_leases_build": {"source_commit": "a" * 40}}
+        after = {"process_leases_build": {"source_commit": "b" * 40}}
+        current = self.runtime_pair(selector, launcher, 201, 202)
+        self.args.supersede_job = old_dir
+        self.args.expected_selector_sha256 = old["selector_after_sha256"]
+        write(Path(self.args.candidate).parent / "process-leases-build.json", {
+            "base_selector": str(selector), "base_selector_sha256": old["selector_after_sha256"],
+            "base_manifest_sha256": old["candidate_manifest_sha256"]})
+        self.args.supersede_restart_provider = write(old_dir / "restart-provider.json",
+            provider(restart, {"ref": rollout.CHILD, "action": "restart"}))
+        self.args.supersede_consumer_provider = write(old_dir / "consumer-provider.json",
+            provider(consumer, {"tools": consumer["tools"]}))
+        pointer = {"job_id": old["job_id"], "job_dir": str(old_dir), "phase": "active"}
+
+        def verify():
+            return rollout.supersede_evidence(self.args, gate, pointer, selector, launcher,
+                                               selection, before, after, current)
+
+        with patch.object(rollout, "identity_state", return_value="dead"):
+            state_bytes = state_path.read_bytes()
+            self.assertEqual(verify()[0]["archived_guard"]["claim_id"], claim_id)
+            self.assertEqual(state_path.read_bytes(), state_bytes)
+            lease["fence"] = 7
+            with self.assertRaisesRegex(ValueError, "higher fence"):
+                verify()
+            lease["fence"] = 8
+            gate._bridge = None
+            with self.assertRaisesRegex(ValueError, "canonical target guard"):
+                verify()
+            gate._bridge = object()
+            after["process_leases_build"]["source_commit"] = "a" * 40
+            with self.assertRaisesRegex(ValueError, "distinct new release"):
+                verify()
+            after["process_leases_build"]["source_commit"] = "b" * 40
+            with patch.object(rollout, "identity", return_value={"pid": 201}):
+                current["compat"]["pid"] = 301
+                with self.assertRaisesRegex(ValueError, "restart PID still exists"):
+                    verify()
+                current["compat"]["pid"] = 201
+            write(intent_path, {**intent, "fence": 6})
+            with self.assertRaisesRegex(ValueError, "original fence"):
+                verify()
+            write(intent_path, intent)
+            archive_path.unlink()
+            with self.assertRaises(FileNotFoundError):
+                verify()
+            write(archive_path, archive)
+            write(self.args.supersede_consumer_provider, provider(consumer, {"tools": []}))
+            with self.assertRaisesRegex(ValueError, "schemas differ"):
+                verify()
+        with patch.object(rollout, "identity_state", return_value="live"):
+            with self.assertRaisesRegex(ValueError, "dead coordinator"):
+                verify()
+
+    def test_supersede_pointer_cas_keeps_old_job_and_rejects_pointer_drift(self):
+        old_dir = self.root / "old-job"
+        old_dir.mkdir(mode=0o700)
+        old = {"schema": 1, "job_id": "rollout-" + "a" * 32, "job_dir": str(old_dir),
+               "selector": str(self.fixture.selector), "phase": "unknown"}
+        checkpoint = old_dir / "state.json"
+        candidate.create(checkpoint, candidate.encoded(old))
+        old_bytes = checkpoint.read_bytes()
+        path = rollout.occupancy_path(self.fixture.selector)
+        pointer = {"schema": 1, "job_id": old["job_id"], "job_dir": str(old_dir),
+                   "selector": old["selector"], "phase": "active"}
+        candidate.create(path, candidate.encoded(pointer))
+        original_pointer = path.read_bytes()
+        self.args.supersede_job = old_dir
+        evidence = {"pointer": pointer, "evidence_sha256": {str(checkpoint): candidate.digest(checkpoint)}}
+        proof_pin = (str(self.proof), candidate.digest(self.proof))
+        replace = candidate.replace
+
+        def conflict(file, data, expected, mode):
+            if file == path:
+                replace(file, original_pointer + b" ", expected, mode)
+            return replace(file, data, expected, mode)
+
+        with self.FakeGate(self.proof, self.ledger) as gate:
+            with patch.object(rollout, "supersede_evidence", return_value=(evidence, proof_pin)):
+                with patch.object(candidate, "replace", side_effect=conflict):
+                    with self.assertRaisesRegex(ValueError, "concurrent change"):
+                        rollout.admit(self.args, gate)
+                self.assertEqual(path.read_bytes(), original_pointer + b" ")
+                self.assertEqual(checkpoint.read_bytes(), old_bytes)
+                self.args.job_dir = self.root / "second-job"
+                admitted = rollout.admit(self.args, gate)
+        self.assertEqual(rollout.read_occupancy(self.fixture.selector)["job_id"], admitted["job_id"])
+        self.assertEqual((self.args.job_dir / "superseded-selector-pointer.json").read_bytes(),
+                         original_pointer + b" ")
+        self.assertEqual(checkpoint.read_bytes(), old_bytes)
 
     def test_same_process_ack_is_not_restart_evidence(self):
         with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(

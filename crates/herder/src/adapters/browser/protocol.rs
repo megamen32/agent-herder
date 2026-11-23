@@ -59,7 +59,7 @@ fn capabilities(config: &Config) -> Value {
         "capabilities":{"nativeProtocol":transport,"methods":METHODS,"deliveryModes":["queue"],
         "controlCapabilities":{"cancelTurn":true,"permissionReply":false,"steer":false},
         "browserFeatures":{"projects":false,"modelSwitch":false,"attachments":true,
-            "guardedRecovery":provider == Provider::ChatGpt,
+            "guardedRecovery":provider.supports_guarded_recovery(),
             "attachmentCaptionRequired":provider.requires_attachment_caption(),
             "maxAttachments":crate::domain::attachment::MAX_ATTACHMENTS,"maxAttachmentBytes":super::MAX_ATTACHMENT_BYTES}}})
 }
