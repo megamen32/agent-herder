@@ -616,7 +616,7 @@
     scrollbar-width: none;
   }
   .oc-app > .codex-navigation .codex-navigation-items::-webkit-scrollbar { display: none; }
-  .oc-app > .codex-navigation button {
+  .oc-app > .codex-navigation :is(button, a) {
     flex: 1 0 48px;
     width: auto;
     min-width: 48px;
@@ -624,12 +624,16 @@
     gap: 3px;
     padding: 4px 2px;
   }
-  .oc-app > .codex-navigation .nav-label { font-size: 9px; line-height: 11px; }
+  .oc-app > .codex-navigation .nav-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 9px; line-height: 11px; }
   .oc-app > .codex-navigation .codex-navigation-mark { display: none; }
 
   /* Полоса навигации не закрывает содержимое окна. */
   .oc-app > .chat-pane,
   .oc-app > .sessions-pane { padding-bottom: 72px; }
+  .oc-app > .inspector-pane {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
 
   /*
    * Экран настроек должен прокручиваться, а не обрезаться окном.
