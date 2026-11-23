@@ -681,8 +681,25 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
         return Err(invalid().into());
     }
     db.execute_batch("COMMIT")?;
-    let authority = ScopedAuthority::new(p.database.clone(), p.gate.clone(), p.generation.clone())
+    let mut authority = ScopedAuthority::new(p.database.clone(), p.gate.clone(), p.generation.clone())
         .map_err(|_| invalid())?;
+    if let Some(owner) = &p.owner
+        && matches!(owner.kind.as_str(), "chatgpt" | "zai")
+        && owner.ahap_script.is_none()
+    {
+        match std::env::var("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES") {
+            Ok(raw) => {
+                let scopes: Vec<[String; 3]> = serde_json::from_str(&raw)?;
+                if scopes.iter().any(|[node, instance, generation]| {
+                    node == &owner.node && instance == &owner.instance && generation == &p.generation
+                }) {
+                    authority = authority.without_required_migration_epoch();
+                }
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     Ok((authority, p))
 }
 
