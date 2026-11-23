@@ -898,8 +898,8 @@ fn read_observation(
             Some(id)
         }
     };
-    // A native goal tick can fail before Codex creates a user item. Codex
-    // can also mark that goal blocked when the provider retries run out.
+    // A goal tick can fail without a user item. A composer turn can also
+    // create a goal and block it when the same turn runs out of retries.
     let trigger = if !child
         && matches!(
             failure,
@@ -910,8 +910,15 @@ fn read_observation(
         None
     };
     let native_goal = trigger.as_deref() == Some("goal");
-    let failed_goal_at = native_goal.then(|| turn["completedAt"].as_u64()).flatten();
-    if !goal_allows_recovery(connection, thread_id, failed_goal_at, deadline)? {
+    let failed_goal = match (trigger.as_deref(), turn["completedAt"].as_u64()) {
+        (Some("goal"), Some(completed_at)) => Some(FailedGoalTurn::Goal { completed_at }),
+        (Some("composer"), Some(completed_at)) => Some(FailedGoalTurn::Composer {
+            started_at: started_at_ms / 1000,
+            completed_at,
+        }),
+        _ => None,
+    };
+    if !goal_allows_recovery(connection, thread_id, failed_goal, deadline)? {
         return Ok(None);
     }
     let queue = read_rpc(
@@ -998,10 +1005,16 @@ fn index_is_quiescent(thread: &Value) -> bool {
         )
 }
 
+#[derive(Clone, Copy)]
+enum FailedGoalTurn {
+    Goal { completed_at: u64 },
+    Composer { started_at: u64, completed_at: u64 },
+}
+
 fn goal_allows_recovery(
     connection: &mut CodexConnection,
     thread_id: &str,
-    failed_goal_at: Option<u64>,
+    failed_goal: Option<FailedGoalTurn>,
     deadline: Instant,
 ) -> Result<bool, ReadError> {
     let reply = read_rpc(
@@ -1011,11 +1024,25 @@ fn goal_allows_recovery(
         deadline,
     )?;
     Ok(match reply.get("goal") {
-        Some(Value::Null) => failed_goal_at.is_none(),
+        Some(Value::Null) => !matches!(failed_goal, Some(FailedGoalTurn::Goal { .. })),
         Some(goal) if goal["threadId"] == thread_id => {
             goal["status"] == "active"
                 || (goal["status"] == "blocked"
-                    && failed_goal_at.is_some_and(|at| goal["updatedAt"].as_u64() == Some(at)))
+                    && match failed_goal {
+                        Some(FailedGoalTurn::Goal { completed_at }) => {
+                            goal["updatedAt"].as_u64() == Some(completed_at)
+                        }
+                        Some(FailedGoalTurn::Composer {
+                            started_at,
+                            completed_at,
+                        }) => {
+                            goal["updatedAt"].as_u64() == Some(completed_at)
+                                && goal["createdAt"].as_u64().is_some_and(|created_at| {
+                                    (started_at..=completed_at).contains(&created_at)
+                                })
+                        }
+                        None => false,
+                    })
         }
         Some(_) => false,
         None => false,
@@ -1665,8 +1692,11 @@ for line in sys.stdin:
                             "error": {"codexErrorInfo": "serverOverloaded" if case in ("root-held", "cold-same") else "usageLimitExceeded"},
                             "items": [{"type": "userMessage", "id": "user-item"}]}]}
         if case.startswith("goal-"):
-            result["data"][0].update(rootTurnId="old-turn", items=[], error={
+            turn = result["data"][0]
+            turn.update(rootTurnId="old-turn", error={
                 "codexErrorInfo": {"responseTooManyFailedAttempts": {"httpStatusCode": 429}}})
+            if not case.startswith("goal-composer-"):
+                turn["items"] = []
         if case.startswith("resumed-"):
             turn = result["data"][0]
             turn.update(rootTurnId="old-turn", items=[
@@ -1680,7 +1710,8 @@ for line in sys.stdin:
         if case.startswith("goal-") and case != "goal-cleared":
             status = {"goal-active": "active", "goal-paused": "paused", "goal-complete": "complete"}.get(case, "blocked")
             result["goal"] = {"threadId":"saved-thread", "status": status,
-                              "updatedAt": 105 if case == "goal-blocked-later" else 101}
+                              "createdAt": 99 if case == "goal-composer-preexisting" else 100,
+                              "updatedAt": 105 if case.endswith("blocked-later") else 101}
     elif method == "thread/items/list":
         assert params["turnId"] == "old-turn"
         if params["sortDirection"] == "asc":
@@ -1688,7 +1719,7 @@ for line in sys.stdin:
             result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage","clientId":key}}],"nextCursor":None}
         else:
             result = {"data":[{"turnId":"old-turn","item":{"id":"user-item","type":"userMessage"}}],"nextCursor":None}
-        if case.startswith("goal-"):
+        if case.startswith("goal-") and not case.startswith("goal-composer-"):
             result = {"data": [{"turnId":"old-turn","item":{"id":"work","type":"commandExecution"}}],
                       "nextCursor":None}
             if case == "goal-question":
@@ -1832,6 +1863,9 @@ for line in sys.stdin:
             ("goal-blocked-later", "goal", false),
             ("goal-question", "goal", false),
             ("goal-unrelated-turn", "composer", false),
+            ("goal-composer-provider-failure", "composer", true),
+            ("goal-composer-blocked-later", "composer", false),
+            ("goal-composer-preexisting", "composer", false),
         ] {
             let dir =
                 std::env::temp_dir().join(format!("herder-goal-{}-{case}", std::process::id()));
@@ -1877,10 +1911,10 @@ for line in sys.stdin:
             assert_eq!(observed.is_some(), expected, "{case}");
             if let Some(boundary) = observed {
                 assert_eq!(boundary.turn_id, "old-turn");
-                let anchor = if case == "resumed-progress" {
-                    "progress"
-                } else {
-                    "old-turn"
+                let anchor = match trigger {
+                    "resume_interrupted_task" => "progress",
+                    "composer" => "user-item",
+                    _ => "old-turn",
                 };
                 assert_eq!(boundary.input_item_id, anchor);
                 assert_eq!(boundary.provider, "pinned");

@@ -782,6 +782,8 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
     persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
     recoverable_models = (warm, cold, persistent)
     requests = {model: [] for model in (*recoverable_models, held, ambiguous)}
+    warm_requested = threading.Event()
+    warm_may_fail = threading.Event()
 
     def provider_for(model):
         return cold_provider if model == cold else SOURCE_PROVIDER
@@ -793,6 +795,9 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
             require(model in requests and self.headers.get("Authorization") == f"Bearer {expected_token}",
                     "unexpected recovery model or credential")
             requests[model].append(time.monotonic())
+            if model == warm and len(requests[model]) == 1:
+                warm_requested.set()
+                require(warm_may_fail.wait(15), "fixture goal was not set before the fake 429")
             failures = 3 if model == persistent else 1
             if len(requests[model]) > failures:
                 return super().send_responses(request, sequence)
@@ -824,14 +829,26 @@ experimental_bearer_token = "{cold_token}"
         def seed(call, wait, model):
             provider = provider_for(model)
             thread = call("thread/start", {"cwd": str(project), "model": model, "modelProvider": provider})["thread"]["id"]
-            turn = call("turn/start", {"threadId": thread, "input": [
+            turn = call("turn/start", {"threadId": thread, "turnTrigger": "composer", "input": [
                 {"type": "text", "text": "Reply with one word without using tools."},
             ]})["turn"]["id"]
+            if model == warm:
+                try:
+                    require(warm_requested.wait(10), "composer turn did not reach the fake model")
+                    goal = call("thread/goal/set", {"threadId": thread, "status": "active",
+                                                   "objective": "Finish the existing fixture response."})["goal"]
+                    require(goal["status"] == "active", "the composer turn did not acquire an active goal")
+                finally:
+                    warm_may_fail.set()
             failed = wait(thread, turn)
             message = "exceeded retry limit, last status: 429 Too Many Requests"
             require(failed["status"] == "failed" and message in failed["error"]["message"]
                     and failed["error"]["codexErrorInfo"] == {"responseTooManyFailedAttempts": {"httpStatusCode": 429}},
                     f"unexpected native failure: {failed['error']}")
+            if model == warm:
+                goal = call("thread/goal/get", {"threadId": thread})["goal"]
+                require(goal["status"] == "blocked" and goal["updatedAt"] == failed["completedAt"],
+                        "the fake 429 did not block the goal during the composer turn")
             print(json.dumps({"phase": "seeded", "provider": provider, "model": model,
                               "failure": message}), flush=True)
             return thread, turn
