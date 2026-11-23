@@ -672,6 +672,7 @@ def scheduler_source(git_dir, proposed, migration, receipt):
                 "deploy/fleet/test_recovery_owner_update.py", "deploy/fleet/README.md"]
     if browser_migration:
         excluded.extend((".github/workflows/fleet-session.yml", "deploy/fleet/launch-v1-core.py",
+                         "deploy/fleet/process-leases-migration-launcher-test.py",
                          "integrations/chrome/agent-herder"))
     paths = [":(top,exclude)" + path for path in excluded]
     if (subprocess.run(git + ["merge-base", "--is-ancestor", installed, source]).returncode
